@@ -5,8 +5,10 @@
 #include <foundation/core/DataAddress.h>
 
 int main() {
-    ::foundation::core::FixedArray<unsigned char, 8> bytes{};
-    auto const low = ::foundation::core::mint_run_address(bytes.view(), 0).expect("eight bytes");
-    auto const high = ::foundation::core::mint_run_address(bytes.view(), 4).expect("eight bytes");
-    return low < high ? 0 : 1;
+    ::foundation::core::FixedArray<unsigned char, 8> storage{};
+    return storage.with_mut([](auto bytes) noexcept -> int {
+        auto const low = ::foundation::core::mint_run_address(bytes.view(), 0).expect("eight bytes");
+        auto const high = ::foundation::core::mint_run_address(bytes.view(), 4).expect("eight bytes");
+        return low < high ? 0 : 1;
+    });
 }

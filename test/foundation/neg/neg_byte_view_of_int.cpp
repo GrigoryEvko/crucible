@@ -6,7 +6,9 @@
 #include <foundation/core/Region.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> run{};
-    auto bytes = ::foundation::core::byte_view(run.view());
-    return static_cast<int>(bytes.size());
+    ::foundation::core::FixedArray<int, 4> storage{};
+    return storage.with_mut([](auto run) noexcept -> int {
+        auto bytes = ::foundation::core::byte_view(run.view());
+        return static_cast<int>(bytes.size());
+    });
 }

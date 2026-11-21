@@ -106,9 +106,10 @@ concept HasData = requires(Array array) { array.data(); };
 static_assert(!HasSubscript<FixedArray<int, 4>&> && !HasData<FixedArray<int, 4>&>);
 static_assert(!std::is_convertible_v<FixedArray<int, 4>&, int*>);
 
-// view() of an lvalue gives a View of the fixed extent.  A view, a cursor
-// and an element of a temporary are refused.
-static_assert(std::is_same_v<decltype(std::declval<FixedArray<int, 4>&>().view()), View<int, 4>>);
+// view() of an lvalue gives a View of the const elements, of the fixed extent,
+// also for an array that is not const.  A view, a cursor and an element of a
+// temporary are refused.
+static_assert(std::is_same_v<decltype(std::declval<FixedArray<int, 4>&>().view()), View<int const, 4>>);
 static_assert(std::is_same_v<decltype(std::declval<FixedArray<int, 4> const&>().view()), View<int const, 4>>);
 template <class Array>
 concept ViewsTemporary = requires { std::declval<Array>().view(); };
@@ -118,6 +119,19 @@ template <class Array>
 concept ReadsTemporary = requires { std::declval<Array>().at(std::declval<Index<4>>()); };
 static_assert(!ViewsTemporary<FixedArray<int, 4>> && !ViewsTemporary<FixedArray<int, 4> const>);
 static_assert(!LoopsOverTemporary<FixedArray<int, 4>> && !ReadsTemporary<FixedArray<int, 4>>);
+
+// A FixedArray lends its run in place through the member with_mut, and one
+// element through with_element.  The free frame door takes no FixedArray, a
+// const array lends no writer of its run, and a temporary lends nothing.
+template <class Array>
+concept LendsRun = requires(Array&& array) { static_cast<Array&&>(array).with_mut([](auto) noexcept {}); };
+template <class Array>
+concept LendsElement =
+    requires(Array&& array) { static_cast<Array&&>(array).with_element(index<0>(), [](auto&) noexcept {}); };
+static_assert(LendsRun<FixedArray<int, 4>&> && !LendsRun<FixedArray<int, 4> const&> && !LendsRun<FixedArray<int, 4>>);
+static_assert(!ArrayFrameOwner<FixedArray<int, 4>> && ArrayFrameOwner<HeapArray<int>>);
+static_assert(LendsElement<FixedArray<int, 4>&> && LendsElement<FixedArray<int, 4> const&>
+              && !LendsElement<FixedArray<int, 4>>);
 
 // at takes an Index<N> or a constant index below N, and an Index of a
 // different count does not convert down.
@@ -147,9 +161,9 @@ static_assert(FixedArray<NoDefault, 2>{NoDefault{1}, NoDefault{2}}
 
 [[nodiscard]] consteval int write_and_read() noexcept {
     FixedArray<int, 3> array{};
-    array.at(index<0>()) = 10;
-    array.at(Index<3>::check(2).expect("2 is below 3")) = 30;
-    fill(array.view().window(1, 1).expect("one element fits"), 20);
+    array.with_element(index<0>(), [](int& element) noexcept { element = 10; });
+    array.with_element(Index<3>::check(2).expect("2 is below 3"), [](int& element) noexcept { element = 30; });
+    array.with_mut([](auto run) noexcept { fill(run.view().window(1, 1).expect("one element fits"), 20); });
     int total = 0;
     for (Index<3> const position : array.indices()) {
         total += array.at(position) * static_cast<int>(position.raw() + 1);
@@ -175,7 +189,7 @@ static_assert(view_reads() == 7 + 8 + 9 + 10 + 10);
 [[nodiscard]] consteval int get_reads() noexcept {
     FixedArray<int, 3> array{5, 6, 7};
     int total = *array.get(2).expect("2 is below 3");
-    *array.get(0).expect("0 is below 3") = 1;
+    array.with_mut([](auto run) noexcept { *run.get(0).expect("0 is below 3") = 1; });
     total += array.at(index<0>());
     return array.get(3).is_none() ? total : -1;
 }
@@ -228,9 +242,11 @@ static_assert(pairs_hold_an_index_and_refs());
 [[nodiscard]] consteval int enumerate_and_zip() noexcept {
     FixedArray<int, 4> const weights{1, 2, 3, 4};
     FixedArray<int, 4> values{};
-    for (auto const [position, element] : values.enumerate()) {
-        *element = static_cast<int>(position.raw()) + 10;
-    }
+    values.with_mut([](auto run) noexcept {
+        for (auto const [position, element] : run.view().enumerate()) {
+            *element = static_cast<int>(position.raw()) + 10;
+        }
+    });
     int total = 0;
     for (auto const [weight, value] : weights.view().walk().zip(values.view().walk())) {
         total += *weight * *value;

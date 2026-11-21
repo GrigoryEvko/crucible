@@ -20,7 +20,9 @@ int main() {
         .fabric_switch = {},
         .participant_count = shp::admit_sharp_participant_count(8).expect("8 participants is positive"),
     };
-    auto result = shp::dispatch_sharp_allreduce(input.view(), output.view(), recipe,
-                                                shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
-    return result.is_ok() ? 0 : 1;
+    return output.with_mut([&](auto run) noexcept -> int {
+        auto result = shp::dispatch_sharp_allreduce(
+            input.view(), run.view(), recipe, shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
+        return result.is_ok() ? 0 : 1;
+    });
 }

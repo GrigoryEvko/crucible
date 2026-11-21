@@ -51,6 +51,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     ::foundation::core::FixedArray<int, 4> values{1, 2, 3, 4};
-    ::foundation::core::View<int> const dynamic = values.view();
-    return dynamic.walk().try_zip(values.view().walk()).is_ok() ? 0 : 1;
+    return values.with_mut([](auto run) noexcept -> int {
+        ::foundation::core::View<int> const dynamic = run.view();
+        return dynamic.walk().try_zip(run.view().walk()).is_ok() ? 0 : 1;
+    });
 }

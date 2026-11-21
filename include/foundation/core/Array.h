@@ -17,11 +17,11 @@
 //
 // THE READS
 //   size()              N, a constant
-//   view()              the View<T, N> of the elements: the door to a View
-//                       for code outside the base.  A View of a temporary
-//                       array is refused, because it would dangle at the end
-//                       of the full expression
-//   for (x : array)     each element, in order
+//   view()              the View<T const, N> of the elements: the door to a
+//                       View for code outside the base.  A View of a
+//                       temporary array is refused, because it would dangle
+//                       at the end of the full expression
+//   for (x : array)     each element, in order, as T const&
 //   at(index)           the element at an Index<N> or at index<I>(), with no
 //                       check: the type of the index proves the bound
 //   indices()           each Index<N>, in order
@@ -29,9 +29,11 @@
 //
 // A FixedArray has no operator[], no data() and no pointer to its
 // elements, so no read takes an index that no check proved.  An index from
-// data goes through Index<N>::check(raw), which gives an Option.  fill(view,
-// value) and copy(destination, source) of the Region family write the
-// elements through view().
+// data goes through Index<N>::check(raw), which gives an Option.  Each read
+// gives a const element.  with_element writes one element (THE ELEMENT
+// DOOR), and fill(view, value) and copy(destination, source) of the Region
+// family write the elements through the ViewMut of with_mut (THE FRAME DOOR).
+// So no two Views of one array write the same elements.
 //
 // A FixedArray copies and moves its elements, and it is trivially copyable
 // when its element is, so the ABI passes a small array in registers.
@@ -84,10 +86,16 @@
 // and no pointer to its elements.
 //
 // THE FRAME DOOR
-//   with_mut(std::move(array), body)   of each of the three arrays: body gets
-//                       the ViewMut of the elements, with the brand of the
-//                       frame, and the door gives the array back
-//                       (foundation/core/Frame.h)
+//   array.with_mut(body)   of a FixedArray: body gets the ViewMut of the
+//                       elements in place, with the brand of the frame, and
+//                       the door gives the result of body.  The door writes
+//                       no byte of the array and copies no element
+//   with_mut(std::move(array), body)   of a HeapArray and of a MaskedArray:
+//                       the array moves into the frame, body gets the ViewMut
+//                       of the elements, and the door gives the array back.
+//                       The move takes a pointer and a count
+// foundation/core/Frame.h gives the rules of the two forms.  The member door
+// carries the annotation borrow_match, as the element door does.
 //
 // THE ELEMENT DOOR
 //   with_element(index, body)   of a FixedArray, with an Index<N>: body gets
@@ -221,10 +229,11 @@ public:
 
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
 
-    // The View of the elements.  It borrows this array.  The array holds N
-    // elements, so the View comes through the door of the base layer, with no
-    // check and no test of a null pointer.
-    [[nodiscard]] constexpr View<T, N> view() & noexcept { return View<T, N>{detail::ViewDoor::key(), elements_}; }
+    // The View of the const elements.  It borrows this array.  The array
+    // holds N elements, so the View comes through the door of the base layer,
+    // with no check and no test of a null pointer.  A write takes
+    // with_element for one element, or with_mut for the run, so no two Views
+    // of one array write the same elements.
     [[nodiscard]] constexpr View<T const, N> view() const& noexcept {
         return View<T const, N>{detail::ViewDoor::key(), elements_};
     }
@@ -239,10 +248,8 @@ public:
         return View<T, N>{detail::ViewDoor::key(), array.elements_};
     }
 
-    // The loop `for (T& element : array)`.  A loop over a temporary binds it
-    // to a reference first, and a cursor of an rvalue is refused.
-    [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept { return view().begin(); }
-    [[nodiscard]] constexpr ViewCursor<T> end() & noexcept { return view().end(); }
+    // The loop `for (T const& element : array)`.  A loop over a temporary
+    // binds it to a reference first, and a cursor of an rvalue is refused.
     [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept { return view().begin(); }
     [[nodiscard]] constexpr ViewCursor<T const> end() const& noexcept { return view().end(); }
     void begin() && = delete("a cursor of a temporary FixedArray points into an object that the full expression ends");
@@ -252,9 +259,8 @@ public:
     void
     end() const&& = delete("a cursor of a temporary FixedArray points into an object that the full expression ends");
 
-    // The element at a proven index.  index<I>() converts to an Index<N>
-    // when I < N, so a constant index needs no check either.
-    [[nodiscard]] constexpr T& at(Index<N> index) & noexcept { return elements_[index.raw()]; }
+    // The element at a proven index, for a read.  index<I>() converts to an
+    // Index<N> when I < N, so a constant index needs no check either.
     [[nodiscard]] constexpr T const& at(Index<N> index) const& noexcept { return elements_[index.raw()]; }
     T& at(Index<N>) && = delete("an element of a temporary FixedArray dangles at the end of the full expression");
     T const&
@@ -327,12 +333,6 @@ public:
     // type holds the brand in undeducible_brand_t.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
-    get(std::size_t position) & noexcept {
-        return detail::element_at_<Fresh>(&elements_[0], N, position);
-    }
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) const& noexcept {
         return detail::element_at_<Fresh>(&elements_[0], N, position);
@@ -353,12 +353,6 @@ public:
     // and the pack refuses each explicit argument.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr auto enumerate() & noexcept {
-        using Stage = detail::EnumerateStage<T, N, Fresh, N>;
-        return Walk<Stage>{Stage{view(), 0}};
-    }
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto enumerate() const& noexcept {
         using Stage = detail::EnumerateStage<T const, N, Fresh, N>;
         return Walk<Stage>{Stage{view(), 0}};
@@ -366,16 +360,10 @@ public:
     void enumerate() const&& =
         delete("a loop over a temporary FixedArray points into an object that the full expression ends");
 
-    [[nodiscard]] constexpr auto reverse() & noexcept { return view().reverse(); }
     [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
     void reverse() const&& =
         delete("a loop over a temporary FixedArray points into an object that the full expression ends");
 
-    template <std::size_t Width>
-        requires ViewExtent<T, Width> && (Width <= N)
-    [[nodiscard]] constexpr auto windows() & noexcept {
-        return view().template windows<Width>();
-    }
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width <= N)
     [[nodiscard]] constexpr auto windows() const& noexcept {
@@ -385,11 +373,6 @@ public:
     void windows() const&& =
         delete("a loop over a temporary FixedArray points into an object that the full expression ends");
 
-    template <std::size_t Width>
-        requires ViewExtent<T, Width> && (Width <= N)
-    [[nodiscard]] constexpr auto chunks() & noexcept {
-        return view().template chunks<Width>();
-    }
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width <= N)
     [[nodiscard]] constexpr auto chunks() const& noexcept {
@@ -1086,31 +1069,29 @@ template <class T, std::size_t Align = alignof(T), class Marker>
 
 // ── The frame doors ────────────────────────────────────────────────────────
 
-// The arrays that a frame door takes (foundation/core/Frame.h).  Each owns
-// its elements alone, and a move gives them to the target: a HeapArray and a
-// MaskedArray give their storage, and a FixedArray copies its elements.
+// The arrays that the free frame door takes (foundation/core/Frame.h).  Each
+// owns its elements on the heap alone, and a move gives the storage to the
+// target with no copy of an element.  A FixedArray holds its elements inline,
+// so a move would copy them: its frame door is the member with_mut, which
+// lends the elements in place.
 template <class Owner>
-concept ArrayFrameOwner = ::foundation::reflect::IsInstanceOfAny<Owner, ^^FixedArray, ^^HeapArray, ^^MaskedArray>;
+concept ArrayFrameOwner = ::foundation::reflect::IsInstanceOfAny<Owner, ^^HeapArray, ^^MaskedArray>;
 
 namespace detail {
 
 // The extent of the run of an array in a frame door: the extent of its
-// view().  A FixedArray of N elements gives N, and each other array gives the
-// dynamic extent.
+// view(), the dynamic extent for each array of the free door.
 template <class Owner>
-inline constexpr std::size_t frame_extent_v = decltype(std::declval<Owner&>().view())::extent;
+inline constexpr std::size_t frame_extent_v = decltype(std::declval<Owner const&>().view())::extent;
 
 }  // namespace detail
 
-// The frame door of an array.  The array moves into the frame, body gets the
-// ViewMut of its elements, and the door gives the array back: alone for a
+// The frame door of a heap array.  The array moves into the frame, body gets
+// the ViewMut of its elements, and the door gives the array back: alone for a
 // body that gives void, and after the result in a Record for each other body.
-// The ViewMut of a FixedArray has the fixed extent N.  The pack refuses each
-// explicit argument, so no caller names the brand of the frame.  A HeapArray
-// and a MaskedArray move a pointer and a count in and out.  A FixedArray
-// copies its N elements in and out, and the optimizer removes the two copies
-// only for a small array.  Complexity: O(1) for a heap array, O(N) for a
-// FixedArray, and the cost of the body.
+// The pack refuses each explicit argument, so no caller names the brand of
+// the frame.  A HeapArray and a MaskedArray move a pointer and a count in and
+// out.  Complexity: O(1), and the cost of the body.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
          && ArrayFrameOwner<Owner>

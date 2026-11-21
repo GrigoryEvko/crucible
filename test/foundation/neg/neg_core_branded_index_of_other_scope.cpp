@@ -6,10 +6,13 @@
 #include <foundation/core/Branded.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> values{1, 2, 3, 4};
-    return ::foundation::core::mint_branded_scope(values.view(), [&values](auto outer) noexcept -> int {
-        auto const last = outer.index(3).expect("3 is below the count");
-        return ::foundation::core::mint_branded_scope(values.view().window(0, 1).expect("one element fits"),
-                                                      [last](auto inner) noexcept -> int { return inner.at(last); });
+    ::foundation::core::FixedArray<int, 4> storage{1, 2, 3, 4};
+    return storage.with_mut([](auto values) noexcept -> int {
+        return ::foundation::core::mint_branded_scope(values.view(), [&values](auto outer) noexcept -> int {
+            auto const last = outer.index(3).expect("3 is below the count");
+            return ::foundation::core::mint_branded_scope(
+                values.view().window(0, 1).expect("one element fits"),
+                [last](auto inner) noexcept -> int { return inner.at(last); });
+        });
     });
 }

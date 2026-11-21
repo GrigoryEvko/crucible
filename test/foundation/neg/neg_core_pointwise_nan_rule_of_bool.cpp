@@ -28,11 +28,10 @@ int main() {
     ::foundation::core::FixedArray<std::size_t, 1> const strides{1};
     auto const input =
         ::foundation::core::mint_strided_view(source.view(), sizes.view(), strides.view(), 0).expect("it fits");
-    auto [is_written, kept] = ::foundation::core::with_mut(std::move(values), [&](auto run) noexcept {
+    bool const is_written = values.with_mut([&](auto run) noexcept {
         auto out = ::foundation::core::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
                        .expect("a dense row");
         return ::foundation::core::write_pointwise(out, Copy{}, input).is_ok();
     });
-    static_cast<void>(kept);
     return is_written ? 0 : 1;
 }

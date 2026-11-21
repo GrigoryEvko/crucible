@@ -15,7 +15,7 @@ namespace core = ::foundation::core;
 
 struct KeepsLastIndex final {
     template <class Brand>
-    int operator()(core::BrandedStridedView<int, 1, Brand> view) const noexcept {
+    int operator()(core::BrandedStridedView<int const, 1, Brand> view) const noexcept {
         static core::Option<core::StridedIndex<1, Brand>> const kept = view.index(std::size_t{7});
         core::Option<core::StridedIndex<1, Brand>> read = kept;
         core::StridedIndex<1, Brand> const last = static_cast<decltype(read)&&>(read).expect("kept by the first scope");
@@ -23,7 +23,7 @@ struct KeepsLastIndex final {
     }
 };
 
-int scope_of(core::StridedView<int, 1> view) { return core::mint_strided_scope(view, KeepsLastIndex{}); }
+int scope_of(core::StridedView<int const, 1> view) { return core::mint_strided_scope(view, KeepsLastIndex{}); }
 
 }  // namespace
 

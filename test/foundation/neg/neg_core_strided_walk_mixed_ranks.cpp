@@ -3,12 +3,15 @@
 // time.  The caller converts the static view to the dynamic form first.
 
 #include <foundation/core/Array.h>
+#include <foundation/core/List.h>
 #include <foundation/core/Strided.h>
 
 #include <cstddef>
 
 int main() {
-    ::foundation::core::FixedArray<int, 6> values{1, 2, 3, 4, 5, 6};
+    ::foundation::core::FixedList<int, 6> values{};
+    for (int value = 1; value <= 6; ++value)
+        static_cast<void>(values.append(value).expect("the list has room"));
     ::foundation::core::FixedArray<std::size_t, 2> const sizes{2, 3};
     ::foundation::core::FixedArray<std::size_t, 2> const strides{3, 1};
     ::foundation::core::View<std::size_t const> const dynamic_sizes = sizes.view();

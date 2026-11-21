@@ -14,7 +14,7 @@ int main() {
     ::foundation::core::FixedArray<std::size_t, 1> const strides{1};
     // The outer lambda states its result, so with_mut reads no body of it,
     // and the walk of rows gives the only error.
-    auto [is_written, kept] = ::foundation::core::with_mut(std::move(values), [&](auto run) noexcept -> bool {
+    bool const is_written = values.with_mut([&](auto run) noexcept -> bool {
         auto out = ::foundation::core::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
                        .expect("a dense row");
         return ::foundation::core::mint_strided_rows(out,
@@ -26,6 +26,5 @@ int main() {
                                                      })
             .is_ok();
     });
-    static_cast<void>(kept);
     return is_written ? 0 : 1;
 }

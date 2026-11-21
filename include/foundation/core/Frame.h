@@ -5,17 +5,22 @@
 // A frame door gives a body the unique borrow of what an owner holds, for
 // the time of the call.  This is the inout parameter of Hylo, and the split
 // of a borrow in the linear design: own -o view (x) (view -o own).  The door
-// has two forms.
+// has three forms.
 //
 //   with_mut(std::move(owner), body)
-//                       of FixedArray, HeapArray, MaskedArray, FixedList and
-//                       GrowList: the owner moves into the frame of the door,
-//                       body gets the ViewMut<T, Brand> of the elements
-//                       (foundation/core/Region.h), and the door gives the
-//                       owner back.  While the body runs, the caller holds no
-//                       name for the owner: the name that the caller moved
-//                       from holds no storage, or a copy of the elements of an
-//                       inline owner
+//                       of HeapArray, MaskedArray and GrowList, the owners on
+//                       the heap, and of FixedList: the owner moves into the
+//                       frame of the door, body gets the ViewMut<T, Brand> of
+//                       the elements (foundation/core/Region.h), and the door
+//                       gives the owner back.  While the body runs, the caller
+//                       holds no name for the owner: the name that the caller
+//                       moved from holds no storage, or no element of a
+//                       FixedList
+//   owner.with_mut(body)
+//                       of FixedArray, an inline owner: body gets the
+//                       ViewMut<T, Brand> of the elements in place, and the
+//                       door gives the result of body.  The door writes no
+//                       byte of the owner
 //   sum.with_mut(arms...)
 //                       of Option, Result and OneOf: the arm of the active
 //                       alternative gets the RefMut<T, Brand> of its payload
@@ -24,9 +29,14 @@
 // THE FAMILY
 //   Each door of the family stands beside its owner.  Each door that lends a
 //   ViewMut or a RefMut builds it with the key of this header:
-//     with_mut(std::move(owner), body)   the arrays (foundation/core/Array.h),
-//                       FixedList (List.h) and GrowList (Grow.h)
+//     with_mut(std::move(owner), body)   HeapArray and MaskedArray
+//                       (foundation/core/Array.h), FixedList (List.h) and
+//                       GrowList (Grow.h)
+//     array.with_mut(body)   a FixedArray, in place (Array.h)
 //     sum.with_mut(arms...)   Option and Result (Choice.h) and OneOf (OneOf.h)
+//     array.with_element(index, body)   the element at an Index<N> of a
+//                       FixedArray, given to the body in place (Array.h),
+//                       with no key
 //     list.with_element(position, on_some, on_none)   the element at a
 //                       position of a GrowList, given to an arm in place
 //                       (Grow.h), with no key
@@ -37,12 +47,29 @@
 //                       The block stays with the caller, so its frame proves
 //                       only that its windows do not overlap
 //
+// A borrow that spans more than one call, such as the records of one op that
+// runs other ops, takes a loan of a WindowStack (foundation/core/WindowStack.h):
+// each loan holds a window that no other open loan holds, and the loans end in
+// the reverse order of their opens.
+//
 // A body of the first form that gives void gives the owner back alone.  A
 // body that gives a value gives a Record of the value and the owner.  The
 // value holds no borrow and names no brand of the frame (FrameResult of
 // foundation/core/Choice.h), so no unique borrow leaves its frame through
-// the return.  The arms of the second form give their result, under the
-// same rule.
+// the return.  The bodies and the arms of the other two forms give their
+// result, under the same rule.
+//
+// THE TWO FORMS OF AN OWNER
+//   A move of an owner on the heap takes a pointer and a count, so its frame
+//   holds the owner at the cost of O(1), and the caller holds no name for it.
+//   A move of an inline owner copies each of its elements into the frame and
+//   back, and the old name keeps a stale copy.  For a large array that is a
+//   copy of the whole run for each frame.  So an inline owner lends its run
+//   in place, as a sum does.  Its door carries the annotation borrow_match,
+//   so the rule borrow-match refuses a call of a member of the same owner
+//   that is not const in the body, such as a second door.  A function that
+//   the body calls can still reach the owner, as for a sum, and the alias
+//   proof then holds only for the body that the rule reads.
 //
 // THE TWO FORMS
 //   A sum is a small value that its holder keeps, often as a member that
@@ -56,8 +83,9 @@
 //
 //   An owner gives a run, and a door of a kernel reads the brands of runs to
 //   prove that they do not overlap (THE ALIAS PROOF).  That proof needs a
-//   frame that holds its owner, so the door of an owner takes the owner by
-//   move.
+//   frame that holds its owner, so the door of a heap owner takes the owner
+//   by move, and the door of an inline owner lends in place under the rule
+//   borrow-match (THE TWO FORMS OF AN OWNER).
 //
 // THE BRAND OF A FRAME
 //   Each frame door takes a scope brand (CRUCIBLE_SCOPE_BRAND of
@@ -66,17 +94,19 @@
 //   that the frame gives carries that brand.  Only a frame door makes the key
 //   of the constructors of ViewMut and RefMut, so each unique borrow comes
 //   from a frame.  Each call site of a door gives its frame a brand of its
-//   own.  The door of an owner is a function at namespace scope.  The door of
-//   a sum is a member template, and GCC 16 gives its default lambda a type for
-//   each call site too, as two nested frames of one Option type show.  No
-//   proof reads the brand of a frame of a sum.  The brand keeps the RefMut out
+//   own.  The door of a heap owner is a function at namespace scope.  The
+//   door of an inline owner and the door of a sum are member templates, and
+//   GCC 16 gives their default lambda a type for each call site too, as two
+//   nested frames of one Option type show.  No proof reads the brand of a
+//   frame of a sum.  The brand keeps the RefMut out
 //   of the result of the arm, and the rule brand-escape keeps it out of each
 //   object of static or thread storage duration.
 //
 // THE ALIAS PROOF
-//   A frame of an owner holds its owner by value, so no two live frames hold
-//   one object.  An owner owns its storage alone, so the runs of two frames
-//   do not overlap.  Thus two ViewMuts of two different brands name storage
+//   A frame of a heap owner holds its owner by value, and the rule
+//   borrow-match refuses a second door of an inline owner in the body of its
+//   frame, so no two live frames hold one object.  An owner owns its storage
+//   alone, so the runs of two frames do not overlap.  Thus two ViewMuts of two different brands name storage
 //   that does not overlap.  A call site that runs two times, in a loop or in
 //   a recursion, gives its two frames one brand.  One brand proves no
 //   difference, so a reader of the brands takes the slow and safe path for

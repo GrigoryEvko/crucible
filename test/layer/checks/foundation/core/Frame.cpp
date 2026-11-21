@@ -83,10 +83,12 @@ static_assert(!FrameResult<Proof<CheckBrand>, CheckBrand> && !FrameResult<CheckB
 
 // ── The frame door of an owner ────────────────────────────────────────
 
-// The door gives the owner back for a body that gives void, and a Record of
-// the result and the owner for a body that gives a value.
-static_assert(
-    std::is_same_v<decltype(with_mut(std::declval<FixedArray<int, 4>>(), WritesNothing{})), FixedArray<int, 4>>);
+// The free door gives the owner back for a body that gives void, and a
+// Record of the result and the owner for a body that gives a value.  The
+// member door of a FixedArray lends its run in place and gives the result of
+// the body.
+static_assert(std::is_same_v<decltype(std::declval<FixedArray<int, 4>&>().with_mut(WritesNothing{})), void>);
+static_assert(std::is_same_v<decltype(std::declval<FixedArray<int, 4>&>().with_mut(CountsElements{})), std::size_t>);
 static_assert(std::is_same_v<decltype(with_mut(std::declval<HeapArray<int>>(), CountsElements{})),
                              Record<std::size_t, HeapArray<int>>>);
 static_assert(std::is_same_v<decltype(with_mut(std::declval<MaskedArray<int>>(), WritesNothing{})), MaskedArray<int>>);
@@ -94,13 +96,16 @@ static_assert(std::is_same_v<decltype(with_mut(std::declval<FixedList<int, 4>>()
                              Record<std::size_t, FixedList<int, 4>>>);
 static_assert(std::is_same_v<decltype(with_mut(std::declval<GrowList<int>>(), WritesNothing{})), GrowList<int>>);
 
-// The door takes an owner only by move, and only an owner of the family: a
-// named owner, a const owner, a View and a text have no frame door.  The
-// probes are variable templates and not concepts, because they gate nothing.
+// The free door takes an owner only by move, and only an owner of the
+// family: a named owner, a const owner, a View and a text have no frame
+// door.  A FixedArray lends in place through its member door, so the free
+// door takes it in no form.  The probes are variable templates and not
+// concepts, because they gate nothing.
 template <class Owner>
 constexpr bool frames = requires(Owner&& owner) { with_mut(static_cast<Owner&&>(owner), WritesNothing{}); };
-static_assert(frames<HeapArray<int>> && frames<FixedArray<int, 2>> && frames<GrowList<int>>);
-static_assert(!frames<HeapArray<int>&> && !frames<HeapArray<int> const> && !frames<FixedArray<int, 2>&>);
+static_assert(frames<HeapArray<int>> && frames<GrowList<int>>);
+static_assert(!frames<HeapArray<int>&> && !frames<HeapArray<int> const>);
+static_assert(!frames<FixedArray<int, 2>> && !frames<FixedArray<int, 2>&>);
 static_assert(!frames<View<int>> && !frames<GrowText> && !frames<HeapText>);
 
 // A body whose result does not leave the frame binds to the deleted twin.

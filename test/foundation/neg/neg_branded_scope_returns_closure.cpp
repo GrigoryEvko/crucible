@@ -13,7 +13,7 @@ namespace core = ::foundation::core;
 
 struct ReturnsClosure final {
     template <class Brand>
-    auto operator()(core::BrandedView<int, Brand> view) const noexcept {
+    auto operator()(core::BrandedView<int const, Brand> view) const noexcept {
         core::BrandedIndex<Brand> const index = view.index(0).expect("the scope holds two elements");
         return [index]() noexcept { return index.raw(); };
     }
@@ -23,6 +23,6 @@ struct ReturnsClosure final {
 
 int main() {
     core::FixedArray<int, 2> narrow{};
-    auto const leaked = core::mint_branded_scope(core::View<int>{narrow.view()}, ReturnsClosure{});
+    auto const leaked = core::mint_branded_scope(core::View<int const>{narrow.view()}, ReturnsClosure{});
     return static_cast<int>(leaked());
 }

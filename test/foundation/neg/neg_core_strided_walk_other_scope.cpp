@@ -5,12 +5,15 @@
 // fails.
 
 #include <foundation/core/Array.h>
+#include <foundation/core/List.h>
 #include <foundation/core/Strided.h>
 
 #include <cstddef>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> values{1, 2, 3, 4};
+    ::foundation::core::FixedList<int, 4> values{};
+    for (int value = 1; value <= 4; ++value)
+        static_cast<void>(values.append(value).expect("the list has room"));
     ::foundation::core::FixedArray<std::size_t, 1> const wide_sizes{4};
     ::foundation::core::FixedArray<std::size_t, 1> const narrow_sizes{2};
     ::foundation::core::FixedArray<std::size_t, 1> const strides{1};

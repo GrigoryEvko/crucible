@@ -17,7 +17,9 @@ struct[[= ::foundation::core::derive_protocol{}]] HoldsUnmarked {
 
 int main() {
     HoldsUnmarked const value{};
-    ::foundation::core::FixedArray<std::byte, 4> image{};
-    ::foundation::core::encode(value, image.view());
-    return 0;
+    ::foundation::core::FixedArray<std::byte, 4> storage{};
+    return storage.with_mut([&value](auto image) noexcept -> int {
+        ::foundation::core::encode(value, image.view());
+        return 0;
+    });
 }

@@ -14,7 +14,7 @@ namespace core = ::foundation::core;
 
 struct ReturnsClosure final {
     template <class Brand>
-    auto operator()(core::BrandedStridedView<int, 1, Brand> view) const noexcept {
+    auto operator()(core::BrandedStridedView<int const, 1, Brand> view) const noexcept {
         core::StridedIndex<1, Brand> const last = view.index(std::size_t{3}).expect("3 is below 4");
         return [last]() noexcept { return last.coordinates().size(); };
     }

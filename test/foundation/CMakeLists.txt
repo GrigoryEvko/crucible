@@ -3774,6 +3774,9 @@ foundation_neg_compile_test(neg_core_fixed_array_at_wider_index
 foundation_neg_compile_test(neg_core_fixed_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_fixed_array_nested_frame_door
+  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
+  "the payload that the arm borrows can end while the arm holds its reference")
 # The result of a body of the member frame door leaves the frame, so it holds
 # no borrow and names no brand of the frame.  The refused twin of the door
 # gives the reason.
@@ -3794,6 +3797,11 @@ foundation_neg_compile_test(neg_core_window_loan_moved
 foundation_neg_compile_test(neg_core_window_stack_copied
   "use of deleted function .foundation::core::WindowStack<T, N>::WindowStack\\(const foundation::core::WindowStack<T, N>&\\)"
   "each open loan holds a Ref to its stack")
+# view() of a FixedArray gives a View of the const elements, so no two Views
+# of one array write its elements.
+foundation_neg_compile_test(neg_core_fixed_array_two_mutable_views
+  "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
+  "neg_core_fixed_array_two_mutable_views\\.cpp:10:")
 foundation_neg_compile_test(neg_core_text_view_window_member_forged
   "no declaration matches .constexpr auto foundation::core::TextView::window\\(std::size_t, std::size_t\\) const."
   ".class foundation::core::TextView. defined here")
@@ -4060,7 +4068,7 @@ foundation_neg_compile_test(neg_core_view_mut_split_of_const
   "use of deleted function .void foundation::core::split_chunks\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a part")
 foundation_neg_compile_test(neg_core_with_mut_named_owner
-  "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = FixedArray<int, 4>&"
+  "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = .*HeapArray<int>&"
   "with_mut takes the owner into its frame and gives it back: pass std::move\\(owner\\)")
 foundation_neg_compile_test(neg_core_ref_mut_copied
   "use of deleted function .foundation::core::RefMut<T, Brand>::RefMut\\(const foundation::core::RefMut<T, Brand>&\\)"
@@ -4133,10 +4141,10 @@ foundation_test(test_core_branded)
 # The mint refuses a body whose result holds the brand and an explicit
 # template argument, and an index of one scope is no index of another.
 foundation_neg_compile_test(neg_core_branded_scope_gives_index
-  "no matching function for call to .mint_branded_scope\\(foundation::core::View<int, 4>, main\\(\\)::<lambda\\(auto:7\\)>\\)."
+  "no matching function for call to .mint_branded_scope\\(foundation::core::View<const int, 4>, main\\(\\)::<lambda\\(auto:7\\)>\\)."
   "template argument deduction/substitution failed")
 foundation_neg_compile_test(neg_core_branded_scope_names_brand
-  "no matching function for call to .mint_branded_scope<int>\\(foundation::core::View<int, 4>, main\\(\\)::<lambda\\(auto:7\\)>\\)."
+  "no matching function for call to .mint_branded_scope<int>\\(foundation::core::View<const int, 4>, main\\(\\)::<lambda\\(auto:7\\)>\\)."
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_branded_index_of_other_scope
   "cannot convert .BrandedIndex<foundation::core::<lambda\\(\\)>>. to .BrandedIndex<foundation::core::<lambda\\(\\)>>."
@@ -4172,7 +4180,7 @@ foundation_neg_compile_test(neg_core_strided_scope_names_brand
   "no matching function for call to .mint_strided_scope<int>\\(const foundation::core::StridedView<int, 1>&"
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_strided_scope_gives_index
-  "no matching function for call to .mint_strided_scope\\(const foundation::core::StridedView<int, 1>&, main\\(\\)::<lambda\\(auto:7\\)>\\)."
+  "no matching function for call to .mint_strided_scope\\(const foundation::core::StridedView<const int, 1>&, main\\(\\)::<lambda\\(auto:7\\)>\\)."
   "template argument deduction/substitution failed")
 foundation_neg_compile_test(neg_core_strided_index_of_other_scope
   "cannot convert .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >. to .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >&."
@@ -4344,9 +4352,6 @@ foundation_neg_compile_test(neg_core_view_first_of_specialized
 # explicit specialization with a declared type, set no brand.  The result
 # type holds the brand in undeducible_brand_t, so the fresh default applies,
 # and a type that names a held brand matches no function.
-foundation_neg_compile_test(neg_core_fixed_array_get_brand_from_target_type
-  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) &")
 foundation_neg_compile_test(neg_core_fixed_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) const &")

@@ -38,6 +38,8 @@ int main() {
     using Pairs = core::Result<core::Walk<core::detail::ZipStage<StageOf<Dynamic>::type, StageOf<Fixed>::type, Held>>,
                                core::LengthMismatch>;
     using Pick = Pairs (Dynamic::*)(Fixed&&) && noexcept;
-    core::View<int> const dynamic = values.view();
-    return (dynamic.walk().*static_cast<Pick>(&Dynamic::try_zip))(values.view().walk()).is_ok() ? 0 : 1;
+    return values.with_mut([](auto run) noexcept -> int {
+        core::View<int> const dynamic = run.view();
+        return (dynamic.walk().*static_cast<Pick>(&Dynamic::try_zip))(run.view().walk()).is_ok() ? 0 : 1;
+    });
 }

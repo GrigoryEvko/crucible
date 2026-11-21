@@ -10,13 +10,15 @@
 #include <foundation/core/Ref.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 2> numbers{1, 2};
-    return ::foundation::core::mint_branded_scope(numbers.view(), [](auto scope) noexcept {
-        int sum = 0;
-        for (auto [index, element] : scope.enumerate()) {
-            auto const escaped = ::foundation::core::erase_brand(element);
-            sum += *escaped + static_cast<int>(index.raw());
-        }
-        return sum;
+    ::foundation::core::FixedArray<int, 2> storage{1, 2};
+    return storage.with_mut([](auto numbers) noexcept -> int {
+        return ::foundation::core::mint_branded_scope(numbers.view(), [](auto scope) noexcept {
+            int sum = 0;
+            for (auto [index, element] : scope.enumerate()) {
+                auto const escaped = ::foundation::core::erase_brand(element);
+                sum += *escaped + static_cast<int>(index.raw());
+            }
+            return sum;
+        });
     });
 }

@@ -6,7 +6,9 @@
 #include <foundation/core/DataAddress.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 8> numbers{};
-    static_cast<void>(::foundation::core::mint_run_address(numbers.view(), 1));
-    return 0;
+    ::foundation::core::FixedArray<int, 8> storage{};
+    return storage.with_mut([](auto numbers) noexcept -> int {
+        static_cast<void>(::foundation::core::mint_run_address(numbers.view(), 1));
+        return 0;
+    });
 }

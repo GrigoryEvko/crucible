@@ -8,7 +8,7 @@
 
 int main() {
     ::foundation::core::FixedArray<int, 4> array{1, 2, 3, 4};
-    array = ::foundation::core::with_mut(std::move(array), [](auto out) noexcept {
+    array.with_mut([](auto out) noexcept {
         auto parts = ::foundation::core::split_at(out, 2);
         static_cast<void>(parts);
     });
