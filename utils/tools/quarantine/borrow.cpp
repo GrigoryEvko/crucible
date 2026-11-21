@@ -47,6 +47,14 @@
 //                      parameter is not const
 //     The entity of a finding is the kind of the write and the receiver.
 //
+// THE CALLS
+//     The front end gives a call as a CALL_EXPR, but a call whose result is a
+//     class that a call cannot pass in registers (a class with a destructor, or
+//     with a copy or a move that is not trivial) as an AGGR_INIT_EXPR.  The rule
+//     reads the two forms, for a call of a borrow match and for a call in an
+//     arm.  So a take of an Option of a payload with a destructor in a cast to
+//     void, or in the initializer of a local, is a mutating call too.
+//
 // THE JOIN
 //     PLUGIN_PRE_GENERICIZE gives the body of each arm before the body of the
 //     function with the call, and the instance of a generic arm can come after
@@ -319,15 +327,17 @@ bool is_mutable_object_parameter(tree type) {
         && !TYPE_READONLY(TREE_TYPE(type));
 }
 
+// CALL is a CALL_EXPR, or the AGGR_INIT_EXPR of a call whose result is a
+// class with a destructor or a copy that is not trivial (THE CALLS).
 void record_call_write(ArmWalk& walk, tree call) {
     tree callee = cp_get_callee_fndecl_nofold(call);
-    if (callee == NULL_TREE || call_expr_nargs(call) < 1) {
+    if (callee == NULL_TREE || argument_count(call) < 1) {
         return;
     }
     if (is_std_move_cast(callee)) {
         tree result = TREE_TYPE(TREE_TYPE(callee));
         if (result != NULL_TREE && TYPE_REF_P(result) && TYPE_REF_IS_RVALUE(result)) {
-            record_write(walk, pointee_path(CALL_EXPR_ARG(call, 0), walk.closure, 0), WriteKind::move, call);
+            record_write(walk, pointee_path(argument_at(call, 0), walk.closure, 0), WriteKind::move, call);
         }
         return;
     }
@@ -339,7 +349,7 @@ void record_call_write(ArmWalk& walk, tree call) {
         return;
     }
     WriteKind kind = DECL_ASSIGNMENT_OPERATOR_P(callee) ? WriteKind::assignment : WriteKind::mutating_call;
-    record_write(walk, pointee_path(CALL_EXPR_ARG(call, 0), walk.closure, 0), kind, call);
+    record_write(walk, pointee_path(argument_at(call, 0), walk.closure, 0), kind, call);
 }
 
 // The callback of cp_walk_tree over the body of an arm (THE WRITES).
@@ -361,6 +371,7 @@ tree walk_arm_writes(tree* node_pointer, int* walk_subtrees, void* data) {
             record_write(walk, lvalue_path(TREE_OPERAND(node, 0), walk.closure, 0), WriteKind::assignment, node);
             break;
         case CALL_EXPR:
+        case AGGR_INIT_EXPR:
             record_call_write(walk, node);
             break;
         case NOP_EXPR:
@@ -486,17 +497,18 @@ void record_initializer(CallWalk& walk, tree left, tree right) {
     }
 }
 
+// CALL is a CALL_EXPR or an AGGR_INIT_EXPR of a borrow match (THE CALLS).
 void record_call(const CallWalk& walk, tree call) {
     MatchCall record;
-    record.receiver = pointee_path(CALL_EXPR_ARG(call, 0), NULL_TREE, 0);
+    record.receiver = pointee_path(argument_at(call, 0), NULL_TREE, 0);
     if (record.receiver.root == kNoRoot) {
         return;
     }
     if (ends_with_arrow(record.receiver.text)) {
         record.receiver.text = "*" + record.receiver.text.substr(0, record.receiver.text.size() - 2);
     }
-    for (int index = 1; index < call_expr_nargs(call); ++index) {
-        tree object = arm_object(CALL_EXPR_ARG(call, index));
+    for (int index = 1; index < argument_count(call); ++index) {
+        tree object = arm_object(argument_at(call, index));
         if (object == NULL_TREE || !is_arm_class(TREE_TYPE(object))) {
             continue;
         }
@@ -540,7 +552,8 @@ tree walk_calls(tree* node_pointer, int* walk_subtrees, void* data) {
             }
             break;
         case CALL_EXPR:
-            if (call_expr_nargs(node) >= 2 && is_borrow_match(cp_get_callee_fndecl_nofold(node))) {
+        case AGGR_INIT_EXPR:
+            if (argument_count(node) >= 2 && is_borrow_match(cp_get_callee_fndecl_nofold(node))) {
                 record_call(walk, node);
             }
             break;

@@ -1,5 +1,7 @@
 # No write reaches a payload that an arm borrows, and no line names the rule
-# borrow-match.
+# borrow-match.  A take or a replace of an Option of a payload with a
+# destructor, whose result has a destructor too, writes a different sum or
+# runs in the arm on_none.
 
 compile others src/others.cpp
 flag others -freflection

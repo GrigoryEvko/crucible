@@ -1,7 +1,9 @@
 // No write here reaches a payload that an arm borrows: a write to a different
 // local, a write to a different member, a write in the arm on_none that gets
 // no reference, a write to a copy that the arm captures, and a write in an arm
-// of the rvalue match, which moves the payload out before the arm runs.
+// of the rvalue match, which moves the payload out before the arm runs.  A
+// take or a replace of a different Option of a payload with a destructor, or
+// in the arm on_none, writes no borrowed payload either.
 #include <foundation/core/Choice.h>
 
 #include <utility>
@@ -38,10 +40,38 @@ int rvalue_match(Option<int> held) {
     return std::move(held).match([&](int value) { held = none; return value; }, [] { return 0; });
 }
 
-int calls(Option<int>& source) {
+// A call whose result is a class with a destructor writes no borrowed payload
+// when it changes a different sum, or when it runs in the arm on_none.
+struct Handle {
+    int value = 0;
+    explicit Handle(int given) noexcept : value(given) {}
+    Handle(Handle&& other) noexcept : value(other.value) { other.value = 0; }
+    Handle& operator=(Handle&&) = delete;
+    ~Handle() { value = -1; }
+};
+
+int other_owner(Option<Handle>& held) {
+    Option<Handle> other = Option<Handle>::some(Handle{7});
+    return held.match([&](Handle const& handle) { static_cast<void>(other.take()); return handle.value; },
+                      [] { return 0; });
+}
+
+int empty_arm_replace(Option<Handle>& held) {
+    return held.match([](Handle const& handle) { return handle.value; },
+                      [&] { static_cast<void>(held.replace(Handle{8})); return 0; });
+}
+
+Option<Handle> class_result_other(Option<Handle>& held) {
+    Option<Handle> other = Option<Handle>::some(Handle{9});
+    return held.match([&](Handle const& handle) { return other.replace(Handle{handle.value}); },
+                      [] { return Option<Handle>{}; });
+}
+
+int calls(Option<int>& source, Option<Handle>& owned) {
     Holder holder;
     return other_local(source) + holder.other_member() + empty_arm(source) + copied(Option<int>::some(5))
-         + rvalue_match(Option<int>::some(6));
+         + rvalue_match(Option<int>::some(6)) + other_owner(owned) + empty_arm_replace(owned)
+         + static_cast<int>(class_result_other(owned).is_some());
 }
 
 }  // namespace planted

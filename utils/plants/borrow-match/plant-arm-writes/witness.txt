@@ -8,6 +8,10 @@
 # OneOf (71).  The opt-out region turns the write on line 77 into opted-out.
 # An arm that the call gets by name as a closure (85) or as an object of a
 # class (91), and an arm that takes its payload by value (100), are arms too.
+# A call whose result is a class with a destructor is a write too: a take of
+# an Option of such a payload in a cast to void (115), a replace that
+# initializes a local with a destructor (121), and an assignment in an arm of
+# a match whose result has a destructor (127).
 # The second compile shows that a parse with no object gives the same errors.
 
 compile writes src/writes.cpp
@@ -27,6 +31,9 @@ finding writes quarantine opted-out src/writes.cpp:77:59 | borrow-match assignme
 finding writes borrow-match borrow-match src/writes.cpp:85:45 | assignment held
 finding writes borrow-match borrow-match src/writes.cpp:91:53 | assignment held
 finding writes borrow-match borrow-match src/writes.cpp:100:45 | assignment held
+finding writes borrow-match borrow-match src/writes.cpp:115:78 | mutating-call held
+finding writes borrow-match borrow-match src/writes.cpp:121:48 | mutating-call held
+finding writes borrow-match borrow-match src/writes.cpp:127:58 | assignment held
 error writes src/writes.cpp:21 | this arm of a borrow match writes the sum that the match reads (assignment held)
 error writes src/writes.cpp:26 | this arm of a borrow match writes the sum that the match reads (move held)
 error writes src/writes.cpp:32 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
@@ -39,6 +46,9 @@ error writes src/writes.cpp:71 | this arm of a borrow match writes the sum that 
 error writes src/writes.cpp:85 | this arm of a borrow match writes the sum that the match reads (assignment held)
 error writes src/writes.cpp:91 | this arm of a borrow match writes the sum that the match reads (assignment held)
 error writes src/writes.cpp:100 | this arm of a borrow match writes the sum that the match reads (assignment held)
+error writes src/writes.cpp:115 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
+error writes src/writes.cpp:121 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
+error writes src/writes.cpp:127 | this arm of a borrow match writes the sum that the match reads (assignment held)
 text writes | an assignment, a move or a mutating call of the sum ends or changes the payload
 text writes | PROBE: reason
 
