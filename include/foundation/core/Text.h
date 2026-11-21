@@ -56,6 +56,7 @@
 //   value when no enumerator holds the value.  for_each_enumerator_text<E>(f)
 //   calls f with each value and the TextView of its identifier.  These forms
 //   take the characters of each name from foundation/reflect/EnumName.h.
+//   identifier_text(entity) gives the identifier of any reflected entity.
 //   That header is on a lower layer than this one, so it cannot name a
 //   TextView itself.  Each text has static storage and a zero after its last
 //   character, so the view never dangles.  enumerator_named<E>(name) is the
@@ -445,6 +446,16 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
     ::foundation::reflect::detail::NameChars const words =
         ::foundation::reflect::detail::enum_words_chars<E, Separator>(value);
     return detail::c_text_over_(words.first, words.size).view();
+}
+
+// The identifier of the entity that entity reflects, such as a class, an
+// enumerator or a data member.  The identifier of a reflection has static
+// storage and a zero after its last character, so the view never dangles.
+// An entity with no identifier stops the build.  The function runs at
+// compile time only.  Complexity: constant.
+[[nodiscard]] consteval TextView identifier_text(std::meta::info entity) noexcept {
+    ::foundation::reflect::detail::NameChars const name = ::foundation::reflect::detail::read_identifier_chars(entity);
+    return detail::c_text_over_(name.first, name.size).view();
 }
 
 // The text "<unknown E>" with the unqualified name of E: the name that

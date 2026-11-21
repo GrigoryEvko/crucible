@@ -53,9 +53,7 @@ template <class Anchor = void>
 // an integer.  A type pole is named by its class, or by its template
 // when it is a specialisation, so pole::Unconstrained<A> reads as
 // Unconstrained and Row<> as Row.  The Type axis has no pole; its grade
-// is the payload the caller named.  The identifier of a reflection has
-// static storage and a zero after its last character, so the static text
-// door gives it as a TextView.
+// is the payload the caller named.
 template <Axis A>
 [[nodiscard]] consteval ::foundation::core::TextView strict_pole_name_() noexcept {
     if constexpr (::fixy::IsCallerSupplied<A>) {
@@ -73,10 +71,9 @@ template <Axis A>
         } else {
             constexpr std::meta::info pole = std::meta::dealias(^^Strict);
             if constexpr (std::meta::has_template_arguments(pole)) {
-                return ::foundation::core::mint_static_text(
-                    std::meta::identifier_of(std::meta::template_of(pole)).data());
+                return ::foundation::core::identifier_text(std::meta::template_of(pole));
             } else {
-                return ::foundation::core::mint_static_text(std::meta::identifier_of(pole).data());
+                return ::foundation::core::identifier_text(pole);
             }
         }
     }

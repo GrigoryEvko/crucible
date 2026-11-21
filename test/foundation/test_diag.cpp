@@ -250,9 +250,7 @@ void test_accessor_strings_match_tag_fields(Tally& checks) {
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         constexpr diag::Category c = [:en:];
-        // The identifier of a reflection has static storage and a zero after
-        // its last character, so the static text door gives it as a TextView.
-        if (::fixy::mint_static_text(std::meta::identifier_of(en).data()) != diag::tag_of_t<c>::name) return false;
+        if (::fixy::identifier_text(en) != diag::tag_of_t<c>::name) return false;
         // tag_of_t is an alias, and an alias has no identifier of its own.
         if (std::meta::identifier_of(en) != std::meta::identifier_of(std::meta::dealias(^^diag::tag_of_t<c>))) {
             return false;

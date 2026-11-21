@@ -23,7 +23,6 @@
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/RowMismatch.h>
 #include <foundation/reflect/Anchor.h>
-#include <foundation/reflect/EnumName.h>
 
 #include <concepts>
 #include <cstddef>
@@ -95,9 +94,7 @@ inline constexpr core::View<core::TextView const, 8> json_record_fields{core::de
                                                                         json_record_names};
 
 // The members of Record, in declaration order, are exactly `expected`.  The
-// identifier of a reflection has a zero after its last character, so its
-// view borrows the characters that reflection gives.  The walk reads the
-// roster through its cursor, one name for each member.
+// walk reads the roster through its cursor, one name for each member.
 template <typename Record, std::size_t N>
 [[nodiscard]] consteval bool record_fields_are(core::View<core::TextView const, N> expected) noexcept {
     static constexpr auto members =
@@ -112,9 +109,7 @@ template <typename Record, std::size_t N>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {
-        constexpr ::foundation::reflect::detail::NameChars name =
-            ::foundation::reflect::detail::read_identifier_chars(member);
-        matched = matched && core::detail::c_text_over_(name.first, name.size).view() == *roster;
+        matched = matched && core::identifier_text(member) == *roster;
         ++roster;
     }
 #pragma GCC diagnostic pop

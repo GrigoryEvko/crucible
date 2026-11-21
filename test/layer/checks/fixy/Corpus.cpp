@@ -70,14 +70,12 @@ namespace detail::corpus_self_test {
 // Every entry is a diagnostic tag whose name is its own class name, so
 // the string the message carries cannot drift from the type the
 // instantiation trail names.  Each carries a citation, and its full
-// diagnostic names it.  The identifier of a reflection has static storage
-// and a zero after its last character, so the static text door gives it as a
-// TextView.
+// diagnostic names it.
 template <class Entry>
 [[nodiscard]] consteval bool entry_is_well_formed_() noexcept {
     return ::foundation::diag::is_diagnostic_class_v<Entry>
-        && Entry::name == ::foundation::core::mint_static_text(std::meta::identifier_of(^^Entry).data())
-        && Entry::description.size() != 0 && Entry::remediation.size() != 0 && Entry::cite().size() != 0
+        && Entry::name == ::foundation::core::identifier_text(^^Entry) && Entry::description.size() != 0
+        && Entry::remediation.size() != 0 && Entry::cite().size() != 0
         && ::foundation::core::starts_with(Entry::full_diagnostic(), "fixy::fn<")
         && ::foundation::core::find(Entry::full_diagnostic(), Entry::name).is_some()
         && ::foundation::core::find(Entry::full_diagnostic(), Entry::cite()).is_some();

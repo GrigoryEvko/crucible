@@ -26,17 +26,13 @@ using ::fixy::Wrapper;
 static_assert(::fixy::every_axis_has_traits());
 
 // The name of every axis is the identifier reflection reads off its
-// enumerator, and a value outside the enum yields the sentinel.  The
-// identifier has static storage and a zero after its last character, so the
-// static text door gives it as a TextView.
+// enumerator, and a value outside the enum yields the sentinel.
 [[nodiscard]] consteval bool every_axis_name_is_its_identifier() noexcept {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : axes) {
-        if (::fixy::axis_name([:en:]) != ::foundation::core::mint_static_text(std::meta::identifier_of(en).data())) {
-            return false;
-        }
+        if (::fixy::axis_name([:en:]) != ::foundation::core::identifier_text(en)) return false;
     }
 #pragma GCC diagnostic pop
     return true;

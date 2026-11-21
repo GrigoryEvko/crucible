@@ -85,8 +85,7 @@ template <class C>
     static_assert(!std::is_default_constructible_v<C>,
                   "A context's default constructor must stay private.  Build one through a friended entry "
                   "point, or through the test witness.");
-    static_assert(effect_name(C::own_effect)
-                      == ::foundation::core::mint_static_text(std::meta::identifier_of(^^C).data()),
+    static_assert(effect_name(C::own_effect) == ::foundation::core::identifier_text(^^C),
                   "A context is named after its own atom.");
     return true;
 }

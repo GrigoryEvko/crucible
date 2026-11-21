@@ -134,7 +134,7 @@ template <typename L, typename E = typename L::element_type>
         std::size_t const lattice_size = L::name().size();
         TextView const middle = name.window(lattice_size, name.size() - lattice_size).value_or(TextView{});
         if (!::fixy::starts_with(middle, "::At<")) return false;
-        TextView const identifier = ::fixy::mint_static_text(std::meta::identifier_of(en).data());
+        TextView const identifier = ::fixy::identifier_text(en);
         if (middle.window(5, middle.size() - 6).value_or(TextView{}) != identifier) return false;
     }
 #pragma GCC diagnostic pop

@@ -220,15 +220,12 @@ template <ResourceKind K>
 // True when T is a specialization of the tag template of its own axis,
 // and its value and name are the budget and the template it spells.  A
 // type that copies the three members of a tag is not one, and neither is
-// an explicit specialization that states another budget.  The identifier
-// of a reflection is a static text with a zero after it, so
-// mint_static_text gives its TextView.
+// an explicit specialization that states another budget.
 template <typename T>
 [[nodiscard]] consteval bool is_axis_tag_() noexcept {
     return std::meta::has_template_arguments(^^T) && std::meta::template_of(^^T) == tag_template_of_<T::kind>()
         && std::meta::extract<std::uint64_t>(std::meta::template_arguments_of(^^T)[0]) == T::value
-        && ::foundation::core::mint_static_text(std::meta::identifier_of(std::meta::template_of(^^T)).data())
-               == T::name;
+        && ::foundation::core::identifier_text(std::meta::template_of(^^T)) == T::name;
 }
 
 }  // namespace detail

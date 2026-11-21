@@ -29,7 +29,7 @@ namespace policy = ::fixy::tags::secret_policy;
 using Eff = ::foundation::effects::Effect;
 using ::fixy::IsAccepted;
 using ::foundation::core::find;
-using ::foundation::core::mint_static_text;
+using ::foundation::core::identifier_text;
 using ::foundation::core::starts_with;
 
 // ---------------------------------------------------------------------
@@ -274,8 +274,8 @@ static_assert(corpus::corpus_full_diagnostic_v<int>.size() == 0);
         // `^^Entry` would reflect the alias just declared, whose
         // identifier is the word Entry; the class is behind dealias.
         all_named = all_named && ::foundation::diag::is_diagnostic_class_v<Entry>
-                 && Entry::name == mint_static_text(std::meta::identifier_of(std::meta::dealias(^^Entry)).data())
-                 && Entry::cite().size() != 0 && find(Entry::full_diagnostic(), Entry::name).is_some();
+                 && Entry::name == identifier_text(std::meta::dealias(^^Entry)) && Entry::cite().size() != 0
+                 && find(Entry::full_diagnostic(), Entry::name).is_some();
     }
     return all_named;
 }

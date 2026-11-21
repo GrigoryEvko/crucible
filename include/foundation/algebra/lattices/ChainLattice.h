@@ -169,12 +169,9 @@ struct EnumChainLattice : ChainLatticeOps<EnumT> {
 
     [[nodiscard]] static constexpr EnumT bottom() noexcept { return first_enumerator_; }
     [[nodiscard]] static constexpr EnumT top() noexcept { return last_enumerator_; }
-    // The identifier of a reflection has a zero after its last character,
-    // so the view borrows the characters that reflection gives.
+    // The identifier of the derived lattice.
     [[nodiscard]] static consteval ::foundation::core::TextView name() noexcept {
-        ::foundation::reflect::detail::NameChars const chars =
-            ::foundation::reflect::detail::read_identifier_chars(^^Derived);
-        return ::foundation::core::detail::c_text_over_(chars.first, chars.size).view();
+        return ::foundation::core::identifier_text(^^Derived);
     }
 
 private:

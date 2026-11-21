@@ -32,6 +32,7 @@ using ::fixy::axis_name;
 using ::fixy::strict_pole_t;
 using ::fixy::duplicate_atom_on;
 using ::foundation::core::find;
+using ::foundation::core::identifier_text;
 using ::foundation::core::mint_static_text;
 using ::foundation::core::starts_with;
 using ::foundation::core::TextView;
@@ -39,10 +40,9 @@ using ::foundation::core::TextView;
 // ---------------------------------------------------------------------
 // The independent splice.  Three shapes: a value pole named by its
 // value, a specialisation named by its template, a class named by
-// itself; and the caller-supplied axis, which has no pole.  Each text
-// that reflection or a static string gives has static storage and a zero
-// after its last character, so the static text door gives it as a
-// TextView.
+// itself; and the caller-supplied axis, which has no pole.  A static
+// string has static storage and a zero after its last character, so the
+// static text door gives it as a TextView.
 
 [[nodiscard]] consteval TextView digits(unsigned long long value) noexcept {
     std::string text;
@@ -60,7 +60,7 @@ template <auto Value>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : std::define_static_array(std::meta::enumerators_of(^^decltype(Value)))) {
-        if ([:en:] == Value) return mint_static_text(std::meta::identifier_of(en).data());
+        if ([:en:] == Value) return identifier_text(en);
     }
 #pragma GCC diagnostic pop
     return {};
@@ -80,10 +80,9 @@ template <Axis A>
                 return digits(static_cast<unsigned long long>(value));
             }
         } else if constexpr (std::meta::has_template_arguments(std::meta::dealias(^^Strict))) {
-            return mint_static_text(
-                std::meta::identifier_of(std::meta::template_of(std::meta::dealias(^^Strict))).data());
+            return identifier_text(std::meta::template_of(std::meta::dealias(^^Strict)));
         } else {
-            return mint_static_text(std::meta::identifier_of(std::meta::dealias(^^Strict)).data());
+            return identifier_text(std::meta::dealias(^^Strict));
         }
     }
 }

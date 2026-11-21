@@ -97,9 +97,7 @@ static_assert(category_count == catalog_size, "Category enum cardinality and Cat
 // checked here is the pin: the enumerator at position I must have the value
 // I, the tuple must hold its tag at I, that tag's name must spell the
 // enumerator, and the three accessors must answer for it with the tag's own
-// fields rather than the sentinel.  The identifier of a reflection has static
-// storage and a zero after its last character, so the static text door gives
-// it as a TextView.
+// fields rather than the sentinel.
 [[nodiscard]] consteval bool category_mirrors_catalog() noexcept {
     constexpr ::foundation::core::TextView sentinel{"<unknown Category>"};
     bool mirrors = true;
@@ -110,11 +108,11 @@ static_assert(category_count == catalog_size, "Category enum cardinality and Cat
         constexpr std::size_t index = enumerator_position(en);
         constexpr Category c = [:en:];
         using tag = std::tuple_element_t<index, Catalog<>>;
-        mirrors =
-            mirrors && static_cast<std::size_t>(std::to_underlying(c)) == index && std::is_same_v<tag, tag_of_t<c>>
-            && ::foundation::core::mint_static_text(std::meta::identifier_of(en).data()) == tag::name
-            && name_of(c) == tag::name && description_of(c) == tag::description && remediation_of(c) == tag::remediation
-            && name_of(c) != sentinel && description_of(c) != sentinel && remediation_of(c) != sentinel;
+        mirrors = mirrors && static_cast<std::size_t>(std::to_underlying(c)) == index
+               && std::is_same_v<tag, tag_of_t<c>> && ::foundation::core::identifier_text(en) == tag::name
+               && name_of(c) == tag::name && description_of(c) == tag::description
+               && remediation_of(c) == tag::remediation && name_of(c) != sentinel && description_of(c) != sentinel
+               && remediation_of(c) != sentinel;
     }
 #pragma GCC diagnostic pop
     return mirrors;

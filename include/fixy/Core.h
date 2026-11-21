@@ -86,6 +86,7 @@ using ::foundation::core::unreachable;
 using ::foundation::core::CText;
 using ::foundation::core::enum_name_text;
 using ::foundation::core::enum_words_text;
+using ::foundation::core::identifier_text;
 using ::foundation::core::enumerator_name_text;
 using ::foundation::core::enumerator_named;
 using ::foundation::core::for_each_enumerator_text;

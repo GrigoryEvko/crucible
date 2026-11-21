@@ -212,6 +212,20 @@ static_assert(enumerator_named<Lane>("send").is_none() && enumerator_named<NoLan
 static_assert(has_enumerator_named<Lane>("Alias") && !has_enumerator_named<Lane>("Copy"));
 static_assert(!has_enumerator_named<NoLane>("Send"));
 
+// The identifier of a reflected entity: an enum, an enumerator, an alias
+// enumerator by its own identifier, a class template and a data member.  A
+// zero follows each text.
+template <class Payload>
+struct Carrier {
+    Payload payload_field{};
+};
+static_assert(identifier_text(^^Lane) == TextView{"Lane"});
+static_assert(identifier_text(^^Lane::CopyHostToDevice) == TextView{"CopyHostToDevice"});
+static_assert(identifier_text(^^Lane::Alias) == TextView{"Alias"});
+static_assert(identifier_text(^^Carrier) == TextView{"Carrier"});
+static_assert(identifier_text(^^Carrier<int>::payload_field) == TextView{"payload_field"});
+static_assert(ends_with_zero(identifier_text(^^Lane)) && ends_with_zero(identifier_text(^^Lane::Alias)));
+
 }  // namespace detail::text_checks
 
 }  // namespace foundation::core

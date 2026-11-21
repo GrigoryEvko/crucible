@@ -172,7 +172,7 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 238 | - | -
+include/fixy/ | base-std-entity | 236 | - | -
 include/fixy/ | base-std-object | 81 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
@@ -289,7 +289,7 @@ include/foundation/diag/ | replace-pending:<string> | 1 | - | -
 include/foundation/diag/ | replace-pending:<string_view> | 1 | - | -
 include/foundation/diag/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/diag/ | replace-pending:<vector> | 3 | - | -
-include/foundation/effects/ | base-std-entity | 60 | - | -
+include/foundation/effects/ | base-std-entity | 59 | - | -
 include/foundation/effects/ | base-std-object | 15 | - | -
 include/foundation/effects/ | replace-pending:<array> | 3 | - | -
 include/foundation/effects/ | replace-pending:<atomic> | 1 | - | -
@@ -462,7 +462,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2221 | - | -
+test/fixy/ | std-entity | 2216 | - | -
 test/fixy/ | std-object | 744 | - | -
 test/fixy/neg/ | c-array-object | 42 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
@@ -622,7 +622,7 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | region | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | region | 2 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
-test/foundation/ | std-entity | 130 | - | -
+test/foundation/ | std-entity | 128 | - | -
 test/foundation/ | std-object | 28 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
@@ -698,7 +698,7 @@ test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 2 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 8 | - | -
-test/layer/checks/fixy/ | std-entity | 72 | - | -
+test/layer/checks/fixy/ | std-entity | 71 | - | -
 test/layer/checks/fixy/ | std-object | 5 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 18 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 4 | - | -
@@ -721,11 +721,11 @@ test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 28 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-object | 3 | - | -
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -
-test/layer/checks/foundation/diag/ | std-entity | 37 | - | -
+test/layer/checks/foundation/diag/ | std-entity | 36 | - | -
 test/layer/checks/foundation/diag/ | std-object | 1 | - | -
 test/layer/checks/foundation/effects/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/effects/ | raw-function-pointer | 1 | - | -
-test/layer/checks/foundation/effects/ | std-entity | 33 | - | -
+test/layer/checks/foundation/effects/ | std-entity | 32 | - | -
 test/layer/checks/foundation/effects/ | std-object | 3 | - | -
 test/layer/checks/foundation/permissions/ | raw-new-delete | 1 | - | -
 test/layer/checks/foundation/permissions/ | raw-pointer-object | 1 | - | -
