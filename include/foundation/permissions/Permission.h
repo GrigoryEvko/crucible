@@ -712,6 +712,47 @@ template <typename Tag, typename... Args, typename Brand = CRUCIBLE_FRESH_BRAND>
 [[nodiscard]] constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
 mint_permission_root(Args const&...) noexcept;
 
+// ── The scope mint ───────────────────────────────────────────────────
+//
+// THE SCOPE MINT
+//   A scope door gives its body the token of a tag on a scope brand: the
+//   brand CRUCIBLE_SCOPE_BRAND of foundation/Brand.h in the last template
+//   parameter of the door, fresh for each call site.  The rule brand-escape
+//   refuses each result of the door and each object of static or thread
+//   storage duration that holds that brand, so no value of the scope outlives
+//   the call.  A root mint gives the fresh brand of its own site, and no rule
+//   bounds a value of that brand to a scope.  So the door mints the token on
+//   its own brand, with mint_scope_permission.
+//
+//   A body can name the brand of its scope.  A mint that took each brand from
+//   each caller would thus let a body mint a second token of a brand that it
+//   holds.  So the mint takes a scope_mint_key of the tag, and only the one
+//   door that the tag names, its member type scope_door, builds that key.  The
+//   door gives the mint only the scope brand of its own call.  The tag has the
+//   empty row, because the door takes no context: the door takes the authority
+//   of its scope itself.  The rule specialization-home refuses a
+//   specialization of the key or of the mint outside this header.
+
+template <typename Tag>
+class scope_mint_key;
+
+// A tag whose tokens a scope door mints: a tag that the root mint admits, with
+// the empty row and a member type scope_door that names its door.
+template <typename Tag>
+concept ScopeMintableTag =
+    RootMintableTag<Tag> && permission_row_empty(^^Tag) && requires { typename Tag::scope_door; };
+
+// The fit of one scope mint: a tag of a scope door, and a brand of one
+// instance.
+template <typename Tag, typename Brand>
+concept ScopePermissionArgs = ScopeMintableTag<Tag> && ::foundation::brand::IsFreshBrand<Brand>;
+
+// The token of the tag on the scope brand of the call of its door (THE SCOPE
+// MINT).  Complexity: O(1), and no code: a token is an empty class.
+template <typename Tag, typename Brand>
+    requires ScopePermissionArgs<Tag, Brand>
+[[nodiscard]] constexpr Permission<Tag, Brand> mint_scope_permission(scope_mint_key<Tag> const& key) noexcept;
+
 // The token of a tag on the erased identity DefaultBrand, under which each
 // token of the tag is one type.  For a tag that a root mint admits, only the
 // singleton root door gives a token of this type.
@@ -755,11 +796,11 @@ mint_permission_combine_n(Args&&...) noexcept;
 // the constraint exactly.  An edit to a mint's requires-clause that is
 // not mirrored resolves the friendship to a different overload, and
 // every minting site then fails with a private-member error far from
-// the cause.  Five mints make that hazard five times over.
+// the cause.  Seven mints make that hazard seven times over.
 //
 // The repetition does not go away, because the language requires the
 // constraint on a friend declaration to match.  What changes is where
-// the five declarations sit: in one class whose only purpose is to hold
+// the seven declarations sit: in one class whose only purpose is to hold
 // them, in front of whoever edits a requires-clause, rather than in the
 // middle of Permission's class body.  Permission also stops handing the
 // mints access to everything else it declares.
@@ -794,6 +835,10 @@ private:
         requires PermissionRootArgs<Tag, Args...>
     friend constexpr Permission<Tag, ::foundation::brand::undeducible_brand_t<Brand>>
     mint_permission_root(Args const&...) noexcept;
+
+    template <typename Tag, typename Brand>
+        requires ScopePermissionArgs<Tag, Brand>
+    friend constexpr Permission<Tag, Brand> mint_scope_permission(scope_mint_key<Tag> const& key) noexcept;
 
     template <typename Tag, typename... Args>
         requires SingletonRootArgs<Tag, Args...>
@@ -860,7 +905,7 @@ public:
     using tag_type = Tag;
     using brand_type = Brand;
 
-    // Holding the key is the proof of authority, and only the five
+    // Holding the key is the proof of authority, and only the seven
     // mints can make one, so this is the sole route to a Permission for
     // every tag but a federation peer.
     // Permission itself befriends nobody.  The constraint keeps a forged
@@ -956,6 +1001,26 @@ mint_permission_root(Args const&...) noexcept {
                       "permission_row<Tag> == Row<>.  Effectful permission tags must be "
                       "minted with mint_permission_root<Tag>(ctx) so Ctx admits the tag's row.");
     }
+    return Permission<Tag, Brand>{perm_mint_key{}};
+}
+
+// The key of the scope mint of a tag (THE SCOPE MINT).  Its one friend is the
+// scope door that the tag names.  The two constructors are user-provided, for
+// the reason that perm_mint_key gives.
+template <typename Tag>
+class scope_mint_key {
+    friend typename Tag::scope_door;
+
+    constexpr scope_mint_key() noexcept {}
+
+public:
+    constexpr scope_mint_key(scope_mint_key const&) noexcept {}
+};
+
+template <typename Tag, typename Brand>
+    requires ScopePermissionArgs<Tag, Brand>
+[[nodiscard]] constexpr Permission<Tag, Brand> mint_scope_permission(scope_mint_key<Tag> const& key) noexcept {
+    static_cast<void>(key);
     return Permission<Tag, Brand>{perm_mint_key{}};
 }
 

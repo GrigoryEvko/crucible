@@ -8,7 +8,7 @@
 //                                    thread of a heap
 //   SlabSizeClass<Class>             a class with a slab, 1 to 52: the
 //                                    refinement of the class of each door
-//   mint_heap_scope(capability, owner, body)
+//   mint_heap_scope(capability, body)
 //                                    calls body with the HeapScope of the heap
 //                                    of the calling thread, and gives the
 //                                    result of body
@@ -23,22 +23,25 @@
 //                                    the scope: linear and not sendable
 //
 // THE SCOPE
-//   mint_heap_scope takes the permission of the owner of a heap, which the
-//   caller mints with mint_permission_root<heap_tag::Owner>().  The scope and
-//   each block that it gives carry the brand of that permission.  So the
-//   release of a scope of another brand does not take a block
-//   (neg_heap_scope_release_into_other_brand), and the release of a block
-//   reads no owner entry: the brand and the marks not_sendable put the block
-//   and the scope on one thread, and on one thread a scope names the one heap
-//   of the thread.
-//
-//   The brand is the fresh brand of the site of the root mint of the
-//   permission, not a scope brand.  No mint of the base gives a Permission
-//   with a brand that a door selects, so the scope takes the brand of the
-//   permission that it holds.  The rule brand-escape then does not check the
-//   brand, so the concept of the mint refuses a result of the body that
-//   names it, and a scope cannot copy or move.  The end of the body ends the
-//   scope, and the end of the scope ends the permission.
+//   mint_heap_scope is a scope mint: its last template parameter is the scope
+//   brand CRUCIBLE_SCOPE_BRAND of foundation/Brand.h, fresh for each call site.
+//   The scope, the permission of the owner that it holds, and each block that
+//   it gives carry that brand.  The door of the tag heap_tag::Owner mints the
+//   permission on the brand with mint_scope_permission of
+//   foundation/permissions/Permission.h (THE SCOPE MINT there).  So:
+//     - The release of a scope of another brand does not take a block
+//       (neg_heap_scope_release_into_other_brand).
+//     - The concept of the mint refuses a result of the body that names the
+//       brand (neg_heap_scope_result_names_brand), and the rule brand-escape
+//       refuses a result that holds it in a capture
+//       (neg_heap_scope_block_in_returned_closure).
+//     - The rule brand-escape refuses each object of static or thread storage
+//       duration that holds the brand (neg_heap_scope_block_in_static).
+//   The release of a block thus reads no owner entry: the brand and the marks
+//   not_sendable put the block and the scope on one thread and in the call
+//   of one mint, and on one thread a scope names the one heap of the thread.
+//   A scope cannot copy or move.  The end of the body ends the scope, and the
+//   end of the scope ends the permission.
 //
 //   The mint claims the heap of the thread before it takes its Ref, so the
 //   scope never holds the sentinel.  Each door takes only a class with a
@@ -73,12 +76,22 @@
 
 namespace foundation::heap {
 
+namespace detail {
+
+// The one builder of a HeapScope and the scope door of heap_tag::Owner: the
+// mint below calls it.
+struct HeapScopeDoor;
+
+}  // namespace detail
+
 namespace heap_tag {
 
 // The tag of the permission of the owner thread of a heap.  The permission
-// names no effect, so its row is empty, and a root mint takes no context.
+// names no effect, so its row is empty, and a mint takes no context.  The one
+// door that mints the permission on a scope brand is HeapScopeDoor.
 struct Owner final {
     using permission_row = ::foundation::effects::Row<>;
+    using scope_door = detail::HeapScopeDoor;
 };
 
 }  // namespace heap_tag
@@ -89,13 +102,6 @@ concept SlabSizeClass = ::foundation::alloc::is_slab_class(Class);
 
 template <::foundation::brand::IsBrand Brand>
 class HeapScope;
-
-namespace detail {
-
-// The one builder of a HeapScope: the mint below calls it.
-struct HeapScopeDoor;
-
-}  // namespace detail
 
 // One block of a class with a slab from the heap of the scope of Brand (THE
 // SCOPE).  Only a scope makes one, and only the release of a scope of the
@@ -183,12 +189,14 @@ private:
 
 namespace detail {
 
+// The scope door of heap_tag::Owner (THE SCOPE MINT of
+// foundation/permissions/Permission.h): it builds the key of the scope mint,
+// and the one caller gives it the scope brand of its own call.
 struct HeapScopeDoor {
     template <::foundation::brand::IsBrand Brand>
-    [[nodiscard]] static HeapScope<Brand>
-    open(::foundation::alloc::HeapState& heap,
-         ::foundation::permissions::Permission<heap_tag::Owner, Brand>&& owner) noexcept {
-        return HeapScope<Brand>{heap, std::move(owner)};
+    [[nodiscard]] static HeapScope<Brand> open(::foundation::alloc::HeapState& heap) noexcept {
+        ::foundation::permissions::scope_mint_key<heap_tag::Owner> const key{};
+        return HeapScope<Brand>{heap, ::foundation::permissions::mint_scope_permission<heap_tag::Owner, Brand>(key)};
     }
 };
 
@@ -203,17 +211,15 @@ concept CanMintHeapScope =
     && !::foundation::core::detail::names_brand(^^std::invoke_result_t<Body&&, HeapScope<Brand>&>, ^^Brand);
 
 // Calls body with the scope of the heap of the calling thread, which holds
-// the permission of its owner, and gives the result of body.  A thread on
-// the sentinel claims its heap first.  The capability is the authority to
-// allocate, and the scope holds no copy of it.
-template <class Body, ::foundation::brand::IsBrand Brand>
-    requires CanMintHeapScope<Brand, Body>
-[[nodiscard]] auto mint_heap_scope(::foundation::core::Alloc const& capability,
-                                   ::foundation::permissions::Permission<heap_tag::Owner, Brand>&& owner,
-                                   Body&& body) noexcept {
+// the permission of its owner on the scope brand of this call site, and gives
+// the result of body.  A thread on the sentinel claims its heap first.  The
+// capability is the authority to allocate, and the scope holds no copy of it.
+// The pack refuses each explicit argument, so no caller names the brand.
+template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0 && CanMintHeapScope<Fresh, Body>)
+[[nodiscard]] auto mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) noexcept {
     static_cast<void>(capability);
-    ::foundation::alloc::HeapState& heap = ::foundation::alloc::claim_thread_heap();
-    HeapScope<Brand> scope = detail::HeapScopeDoor::open(heap, std::move(owner));
+    HeapScope<Fresh> scope = detail::HeapScopeDoor::open<Fresh>(::foundation::alloc::claim_thread_heap());
     return static_cast<Body&&>(body)(scope);
 }
 

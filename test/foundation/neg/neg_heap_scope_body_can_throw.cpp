@@ -4,14 +4,10 @@
 
 #include <foundation/effects/Effect.h>
 #include <foundation/heap/HeapScope.h>
-#include <foundation/permissions/Permission.h>
-
-#include <utility>
 
 int main() {
     auto const context = ::foundation::effects::testing::test();
-    auto owner = ::foundation::permissions::mint_permission_root<::foundation::heap::heap_tag::Owner>();
-    return ::foundation::heap::mint_heap_scope(context.alloc, std::move(owner), [](auto& scope) {
+    return ::foundation::heap::mint_heap_scope(context.alloc, [](auto& scope) {
         scope.flush_bins();
         return 0;
     });

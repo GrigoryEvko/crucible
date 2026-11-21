@@ -2,6 +2,7 @@
 
 #include <foundation/heap/HeapScope.h>
 
+#include <foundation/Brand.h>
 #include <foundation/Linear.h>
 #include <foundation/alloc/Layout.h>
 #include <foundation/permissions/Permission.h>
@@ -34,9 +35,13 @@ static_assert(!std::is_move_constructible_v<heap_scope_check::Scope>);
 static_assert(SlabSizeClass<alloc::SizeClass{1}> && SlabSizeClass<alloc::SizeClass{52}>);
 static_assert(!SlabSizeClass<alloc::SizeClass{0}> && !SlabSizeClass<alloc::SizeClass{53}>);
 
-// The tag of the owner declares an empty row, so its root mint takes no
-// context.
+// The tag of the owner declares an empty row, so its mints take no context,
+// and it names its scope door, so the scope mint gives its permission on the
+// scope brand of a call of mint_heap_scope.
 static_assert(permissions::has_permission_row(^^heap_tag::Owner));
 static_assert(permissions::permission_row_empty(^^heap_tag::Owner));
+static_assert(permissions::ScopeMintableTag<heap_tag::Owner>);
+static_assert(permissions::ScopePermissionArgs<heap_tag::Owner, heap_scope_check::Brand>);
+static_assert(!permissions::ScopePermissionArgs<heap_tag::Owner, brand::DefaultBrand>);
 
 }  // namespace foundation::heap

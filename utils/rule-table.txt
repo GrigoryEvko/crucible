@@ -678,6 +678,9 @@ witness <foundation/effects/Effect.h> private | foundation::effects::host::AtomO
 
 # -- Permissions -----------------------------------------------------
 witness <foundation/permissions/Permission.h> private | foundation::permissions::perm_mint_key | foundation::permissions::perm_mint_key{}
+# Only the scope door that a tag names builds the key of its scope mint.  The
+# tag of the owner of a heap names HeapScopeDoor.
+witness <foundation/heap/HeapScope.h> private | foundation::permissions::scope_mint_key<foundation::heap::heap_tag::Owner> | foundation::permissions::scope_mint_key<foundation::heap::heap_tag::Owner>{}
 witness <foundation/permissions/Permission.h> no-match | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag> | foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>{}
 # Only the write borrow door builds the view that it lends a body.  Any
 # empty class is a brand, so a second canonical tag stands in for one here.

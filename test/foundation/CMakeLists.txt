@@ -2887,8 +2887,9 @@ target_link_libraries(test_alloc_heap_state PRIVATE fixy)
 # heap of its thread, its blocks of each slab kind lie in chunks of that heap,
 # and two scopes of one thread name one heap.  The fixtures: a block does not
 # pass to a scope of another brand, a class with no slab does not compile,
-# and the mint refuses a body whose result names the brand and a body that
-# can throw.
+# the mint refuses a body whose result names the brand and a body that can
+# throw, and the rule brand-escape refuses a block in a static and a block in
+# a capture of the result.
 foundation_test(test_heap_scope)
 target_link_libraries(test_heap_scope PRIVATE fixy)
 foundation_neg_compile_test(neg_heap_scope_release_into_other_brand
@@ -2903,6 +2904,24 @@ foundation_neg_compile_test(neg_heap_scope_result_names_brand
 foundation_neg_compile_test(neg_heap_scope_body_can_throw
   "the expression .is_nothrow_invocable_v<Body&&, foundation::heap::HeapScope<Brand>&>"
   "neg_heap_scope_body_can_throw\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_heap_scope_block_in_static
+  "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint"
+  "KeepsBlock::operator\\(\\): kept")
+foundation_neg_compile_test(neg_heap_scope_block_in_returned_closure
+  "a scope mint gives a result that holds its own scope brand"
+  "foundation::heap::mint_heap_scope: the result .anonymous.::ReturnsClosure::operator\\(\\)")
+# The scope mint of foundation/permissions/Permission.h: it refuses the erased
+# brand and a tag with an effect row, also from the door of the tag, and the
+# key of a tag does not build outside the door that the tag names.
+foundation_neg_compile_test(neg_scope_permission_erased_brand
+  "required for the satisfaction of .IsFreshBrand<Brand>. .with Brand = foundation::brand::DefaultBrand."
+  "neg_scope_permission_erased_brand\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_scope_permission_tag_with_row
+  "required for the satisfaction of .ScopeMintableTag<Tag>."
+  "neg_scope_permission_tag_with_row\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_scope_permission_key_outside_door
+  "scope_mint_key<Tag>::scope_mint_key\\(\\) .with Tag = foundation::heap::heap_tag::Owner.. is private within this context"
+  "neg_scope_permission_key_outside_door\\.cpp:[0-9]+:[0-9]+: error:")
 # The root of foundation/alloc/Root.h in one process: the sentinel before the
 # init, the map that the init writes into it, the sentinel of a new thread,
 # and the claims of the heap table.  The threads come from the thread door of

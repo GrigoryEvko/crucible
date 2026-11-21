@@ -17,7 +17,6 @@
 #include <fixy/check/Check.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/permissions/Permission.h>
 
 #include <cstdint>
 #include <utility>
@@ -48,9 +47,8 @@ template <class Body>
 void scope_gives_and_takes_blocks(TestRunnerCtx const& test) {
     bool const is_sound = on_other_thread([] noexcept {
         bool const was_sentinel = alloc::is_sentinel(alloc::current_heap());
-        auto owner = ::foundation::permissions::mint_permission_root<heap::heap_tag::Owner>();
         return heap::mint_heap_scope(
-            ::foundation::effects::testing::test().alloc, std::move(owner), [was_sentinel](auto& scope) noexcept {
+            ::foundation::effects::testing::test().alloc, [was_sentinel](auto& scope) noexcept {
                 auto first = scope.template allocate<alloc::SizeClass{1}>();
                 auto eighth = scope.template allocate<alloc::SizeClass{8}>();
                 auto small_last = scope.template allocate<alloc::SizeClass{32}>();
@@ -78,17 +76,15 @@ void scope_gives_and_takes_blocks(TestRunnerCtx const& test) {
 }
 
 void two_scopes_name_one_heap(TestRunnerCtx const& test) {
-    auto first_owner = ::foundation::permissions::mint_permission_root<heap::heap_tag::Owner>();
-    auto second_owner = ::foundation::permissions::mint_permission_root<heap::heap_tag::Owner>();
-    std::uint16_t const first_entry = heap::mint_heap_scope(
-        ::foundation::effects::testing::test().alloc, std::move(first_owner), [](auto& scope) noexcept {
+    std::uint16_t const first_entry =
+        heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
             auto block = scope.template allocate<alloc::SizeClass{4}>();
             auto const entry = static_cast<std::uint16_t>(alloc::current_heap().chunk_map().owner_of(block.address()));
             scope.release(std::move(block));
             return entry;
         });
-    std::uint16_t const second_entry = heap::mint_heap_scope(
-        ::foundation::effects::testing::test().alloc, std::move(second_owner), [](auto& scope) noexcept {
+    std::uint16_t const second_entry =
+        heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
             auto block = scope.template allocate<alloc::SizeClass{4}>();
             auto const entry = static_cast<std::uint16_t>(alloc::current_heap().chunk_map().owner_of(block.address()));
             scope.release(std::move(block));
