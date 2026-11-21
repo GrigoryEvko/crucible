@@ -67,16 +67,21 @@ namespace {
         }
         ::fixy::Option<AllocatorKind> const allocator = allocator_of(argument.view());
         if (allocator.is_some()) {
-            *result.selection.allocators
-                 .get(static_cast<std::size_t>(::fixy::Option<AllocatorKind>{allocator}.value_or(AllocatorKind::base)))
-                 .expect("an allocator kind is below kAllocatorKinds") = true;
+            result.selection.allocators.with_element(
+                ::fixy::Index<kAllocatorKinds>::check(
+                    static_cast<std::size_t>(::fixy::Option<AllocatorKind>{allocator}.value_or(AllocatorKind::base)))
+                    .expect("an allocator kind is below kAllocatorKinds"),
+                [](bool& element) noexcept { element = true; });
             has_allocator = true;
             continue;
         }
         ::fixy::Option<RowKind> const row = row_of(argument.view());
         if (row.is_some()) {
-            *result.selection.rows.get(static_cast<std::size_t>(::fixy::Option<RowKind>{row}.value_or(RowKind::larson)))
-                 .expect("a row kind is below kRowKinds") = true;
+            result.selection.rows.with_element(
+                ::fixy::Index<kRowKinds>::check(
+                    static_cast<std::size_t>(::fixy::Option<RowKind>{row}.value_or(RowKind::larson)))
+                    .expect("a row kind is below kRowKinds"),
+                [](bool& element) noexcept { element = true; });
             has_row = true;
             continue;
         }
@@ -95,12 +100,16 @@ namespace {
             add(ThreadCount{threads});
     }
     if (!has_allocator) {
-        for (bool& allocator : result.selection.allocators)
-            allocator = true;
+        result.selection.allocators.with_mut([](auto run) noexcept {
+            for (bool& allocator : run)
+                allocator = true;
+        });
     }
     if (!has_row) {
-        for (bool& row : result.selection.rows)
-            row = true;
+        result.selection.rows.with_mut([](auto run) noexcept {
+            for (bool& row : run)
+                row = true;
+        });
     }
     return result;
 }

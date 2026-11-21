@@ -859,8 +859,10 @@ public:
             ::foundation::core::Philox4x32::Counter const words =
                 ::foundation::core::Philox4x32::generate(std::uint64_t{block}, key);
             for (::fixy::Index<4> const word : words.indices()) {
-                draws_.at(::fixy::Index<kDraws>::check(block * 4 + word.raw()).expect("a draw lies below kDraws")) =
-                    words.at(word);
+                std::uint32_t const draw = words.at(word);
+                draws_.with_element(
+                    ::fixy::Index<kDraws>::check(block * 4 + word.raw()).expect("a draw lies below kDraws"),
+                    [draw](std::uint32_t& element) noexcept { element = draw; });
             }
         }
     }
@@ -1038,7 +1040,7 @@ struct RowControl {
 
 [[nodiscard]] inline Phase read_phase(RowControl const& control) noexcept { return control.phase.phase.load_acquire(); }
 
-[[nodiscard]] inline ThreadLine& line_of(RowControl& control, bench::ThreadSlot slot) noexcept {
+[[nodiscard]] inline ThreadLine const& line_of(RowControl const& control, bench::ThreadSlot slot) noexcept {
     return *control.lines.get(slot.raw()).expect("a slot of a row is below kMaxThreads");
 }
 
@@ -1640,7 +1642,9 @@ struct CpuSteal {
         for (std::uint32_t slot = 0; slot < threads.raw(); ++slot) {
             bench::CpuId const cpu = places.cpu_of(bench::ThreadSlot{slot});
             if (cpu.is_valid() && static_cast<std::uint64_t>(cpu.raw()) == found.cpu)
-                *steal.get(slot).expect("a slot of a row is below kMaxThreads") = ::fixy::some(found.ticks);
+                steal.with_element(
+                    ::fixy::Index<kMaxThreads>::check(slot).expect("a slot of a row is below kMaxThreads"),
+                    [&found](::fixy::Option<std::uint64_t>& element) noexcept { element = ::fixy::some(found.ticks); });
         }
     }
     return steal;
@@ -1685,21 +1689,25 @@ inline constexpr std::uint64_t kClockOps = W::kItemsPerOp >= kItemsPerClock ? 1 
 // the row to stop, releases each of its blocks, and publishes its tally.
 template <class W>
 void stop_thread(RowControl& control, typename W::Shared& shared, typename W::Local& local, ThreadCount threads,
-                 ThreadLine& line) noexcept {
+                 bench::ThreadSlot slot) noexcept {
     static_cast<void>(control.stopped.value.fetch_add_acq_rel(1));
     while (control.stopped.value.load_acquire() < threads.raw())
         CRUCIBLE_SPIN_PAUSE;
     W::finish(shared, local);
-    line.allocations.store_release(local.tally.allocations);
-    line.releases.store_release(local.tally.releases);
-    line.live_bytes.store_release(local.tally.live_bytes);
+    // Each thread writes only the line of its own slot, and each field of a line is an Atomic.
+    control.lines.with_element(
+        ::fixy::Index<kMaxThreads>::check(slot.raw()).expect("a slot of a row is below kMaxThreads"),
+        [&local](ThreadLine& line) noexcept {
+            line.allocations.store_release(local.tally.allocations);
+            line.releases.store_release(local.tally.releases);
+            line.live_bytes.store_release(local.tally.live_bytes);
+        });
 }
 
 // The loop of a worker: the items of each window, which it publishes with
 // its live bytes, then the ops of the latency phase until the stop.
 template <class W>
 void run_worker(RowControl& control, typename W::Shared& shared, bench::ThreadSlot slot, ThreadCount threads) noexcept {
-    ThreadLine& line = line_of(control, slot);
     typename W::Local local = W::start(shared, slot, threads);
     static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
     while (read_phase(control) == Phase::Wait)
@@ -1711,17 +1719,27 @@ void run_worker(RowControl& control, typename W::Shared& shared, bench::ThreadSl
         for (std::uint64_t count = 0; count < kWorkerOps<W>; ++count)
             W::op(shared, local, control);
         for (WindowIndex const index : window)
-            items.at(index) += counted;
+            items.with_element(index, [counted](std::uint64_t& item) noexcept { item += counted; });
     }
-    for (WindowIndex const index : items.indices())
-        line.window_items.at(index).store_release(items.at(index));
-    line.window_live_bytes.store_release(local.tally.live_bytes);
-    line.is_published.store_release(true);
+    std::uint64_t const live_bytes = local.tally.live_bytes;
+    // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
+    control.lines.with_element(
+        ::fixy::Index<kMaxThreads>::check(slot.raw()).expect("a slot of a row is below kMaxThreads"),
+        [&items, live_bytes](ThreadLine& line) noexcept {
+            for (WindowIndex const index : items.indices()) {
+                std::uint64_t const value = items.at(index);
+                // The main thread reads this Atomic only after is_published, and no other thread writes it.
+                line.window_items.with_element(
+                    index, [value](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(value); });
+            }
+            line.window_live_bytes.store_release(live_bytes);
+            line.is_published.store_release(true);
+        });
     while (read_phase(control) != Phase::Stop) {
         for (std::uint64_t count = 0; count < kWorkerOps<W>; ++count)
             W::op(shared, local, control);
     }
-    stop_thread<W>(control, shared, local, threads, line);
+    stop_thread<W>(control, shared, local, threads, slot);
 }
 
 // The window of the main thread (THE PHASES OF A ROW of
@@ -1752,11 +1770,14 @@ template <class W, class Op>
             end = now();
         }
         bench::WindowClock const window_end = bench::detail::read_window_clock();
-        window.items.at(index) = ops * W::kItemsPerOp;
-        window.wall_ns.at(index) = end - start;
-        window.lost_ns.at(index) =
+        std::uint64_t const items = ops * W::kItemsPerOp;
+        std::uint64_t const wall_ns = end - start;
+        std::uint64_t const lost_ns =
             bench::detail::lost_between(::fixy::side_as<bench::side::ReadingBefore>(window_clock),
                                         ::fixy::side_as<bench::side::ReadingAfter>(window_end));
+        window.items.with_element(index, [items](std::uint64_t& element) noexcept { element = items; });
+        window.wall_ns.with_element(index, [wall_ns](std::uint64_t& element) noexcept { element = wall_ns; });
+        window.lost_ns.with_element(index, [lost_ns](std::uint64_t& element) noexcept { element = lost_ns; });
         window_clock = window_end;
         start = end;
     }
@@ -1840,8 +1861,10 @@ template <AllocatorAdapter A, class W>
         ThreadLine const& line = line_of(control, bench::ThreadSlot{slot});
         while (!line.is_published.load_acquire())
             op();
-        for (WindowIndex const index : items.indices())
-            items.at(index) += line.window_items.at(index).load_acquire();
+        for (WindowIndex const index : items.indices()) {
+            std::uint64_t const published = line.window_items.at(index).load_acquire();
+            items.with_element(index, [published](std::uint64_t& item) noexcept { item += published; });
+        }
         live_bytes += line.window_live_bytes.load_acquire();
     }
     memory.steady = read_resident();
@@ -1854,8 +1877,9 @@ template <AllocatorAdapter A, class W>
         std::uint64_t const wall_ns = window.wall_ns.at(index);
         all_items += items.at(index);
         all_wall_ns += wall_ns;
-        window_mops.at(index) =
+        double const mops =
             wall_ns == 0 ? 0.0 : static_cast<double>(items.at(index)) * 1000.0 / static_cast<double>(wall_ns);
+        window_mops.with_element(index, [mops](double& element) noexcept { element = mops; });
     }
     RowResult result{.threads = threads,
                      .placement = placement,
@@ -1878,18 +1902,20 @@ template <AllocatorAdapter A, class W>
                                          W::kRow == RowKind::pair ? ::fixy::TextView{", "} : ::fixy::TextView{},
                                          W::kRow == RowKind::pair ? name_of(placement) : ::fixy::TextView{})
                               .expect("the detail of a report fits in 64 characters"));
-        result.latency.at(report) = run_of(A::kind, W::kRow, detail.view())
-                                        .core(main_cpu.raw())
-                                        .batch(batch)
-                                        .samples(kLatencySamples)
-                                        .warmup(kLatencyWarmup)
-                                        .max_wall_ms(kLatencyMs)
-                                        .measure([&op] { op(); });
+        bench::Report measured = run_of(A::kind, W::kRow, detail.view())
+                                     .core(main_cpu.raw())
+                                     .batch(batch)
+                                     .samples(kLatencySamples)
+                                     .warmup(kLatencyWarmup)
+                                     .max_wall_ms(kLatencyMs)
+                                     .measure([&op] { op(); });
+        result.latency.with_element(report,
+                                    [&measured](bench::Report& element) noexcept { element = std::move(measured); });
     }
     control.phase.phase.store_release(Phase::Stop);
     {
         bench::CoreHold const hold{main_cpu};
-        stop_thread<W>(control, shared, local, threads, line_of(control, bench::kMeasuringSlot));
+        stop_thread<W>(control, shared, local, threads, bench::kMeasuringSlot);
     }
     workers.join();
     result.steal_ms = steal_ms_between(::fixy::side_as<bench::side::ReadingBefore>(steal_before),
@@ -2009,8 +2035,10 @@ void run_workload_rows(bench::Spread const& spread, ::fixy::View<ThreadCount con
                                     .threads = row.threads,
                                     .placement = row.placement,
                                     .item_ns = item_ns});
-        for (bench::Report& report : row.latency)
-            bench::add_report(record.reports, std::move(report));
+        row.latency.with_mut([&record](auto run) noexcept {
+            for (bench::Report& report : run)
+                bench::add_report(record.reports, std::move(report));
+        });
     }
 }
 
@@ -2049,43 +2077,65 @@ struct RoundWorkload {
         return *shared.banks.view().get(bank * shared.threads.raw() + slot).expect("a bank holds each slot");
     }
 
-    // The body of the thread of a slot in a round.
+    // The body of the thread of a slot in a round.  Each thread of a round
+    // writes only the tally of its own slot.
     static void run_round_body(Shared& shared, bench::ThreadSlot slot) noexcept {
-        Tally& tally = *shared.tallies.get(slot.raw()).expect("a slot of a round is below kMaxThreads");
+        shared.tallies.with_element(
+            ::fixy::Index<kMaxThreads>::check(slot.raw()).expect("a slot of a round is below kMaxThreads"),
+            [&shared, slot](Tally& tally) noexcept { run_round_with(shared, slot, tally); });
+    }
+
+    // The ops of the thread of a slot in a round, with the tally of the slot.
+    static void run_round_with(Shared& shared, bench::ThreadSlot slot, Tally& tally) noexcept {
         Draws draws{Kind, bench::ThreadSlot{static_cast<std::uint32_t>(slot.raw() + shared.round * kMaxThreads)}};
         Blocks local{};
         if constexpr (Kind == RowKind::mstress) {
             std::uint32_t const from = static_cast<std::uint32_t>((slot.raw() + shared.round) % shared.threads.raw());
-            for (::fixy::Option<Block>& held : bank_of(shared, (shared.round + 1) % 2, from)) {
-                if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
-            }
+            bank_of(shared, (shared.round + 1) % 2, from).with_mut([&tally](auto run) noexcept {
+                for (::fixy::Option<Block>& held : run) {
+                    if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
+                }
+            });
         }
         for (std::uint32_t replace = 0; replace < kReplaces; ++replace) {
             std::uint32_t const draw = draws.next();
-            ::fixy::Option<Block>& held = local.at(
-                ::fixy::Index<kSlots>::check(draw & (kSlots - 1)).expect("a masked draw lies below the slots"));
-            if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
-            held = ::fixy::Option<Block>::some(take_block<A>(tally, uniform_bytes<16, 1008>(draw >> 8)));
+            local.with_element(
+                ::fixy::Index<kSlots>::check(draw & (kSlots - 1)).expect("a masked draw lies below the slots"),
+                [&tally, draw](::fixy::Option<Block>& held) noexcept {
+                    if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
+                    held = ::fixy::Option<Block>::some(take_block<A>(tally, uniform_bytes<16, 1008>(draw >> 8)));
+                });
         }
         if constexpr (Kind == RowKind::mstress) {
             Blocks& given = bank_of(shared, shared.round % 2, slot.raw());
-            for (::fixy::Index<kSlots> const position : local.indices())
-                given.at(position) = std::move(local.at(position));
+            given.with_mut([&local](auto given_run) noexcept {
+                local.with_mut([&given_run](auto local_run) noexcept {
+                    for (::fixy::Index<kSlots> const position : ::fixy::IndexRange<kSlots>{})
+                        given_run.view().at(position) = std::move(local_run.view().at(position));
+                });
+            });
         } else {
-            for (::fixy::Option<Block>& held : local) {
-                if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
-            }
+            local.with_mut([&tally](auto run) noexcept {
+                for (::fixy::Option<Block>& held : run) {
+                    if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
+                }
+            });
         }
     }
 
     // The release of each block of the two banks.
     static void finish(Shared& shared) noexcept {
-        Tally& tally = *shared.tallies.get(0).expect("a round has slot 0");
-        for (Blocks& blocks : shared.banks) {
-            for (::fixy::Option<Block>& held : blocks) {
-                if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
-            }
-        }
+        shared.tallies.with_element(
+            ::fixy::Index<kMaxThreads>::check(0).expect("a round has slot 0"), [&shared](Tally& tally) noexcept {
+                for (Blocks& blocks : shared.banks) {
+                    blocks.with_mut([&tally](auto run) noexcept {
+                        for (::fixy::Option<Block>& held : run) {
+                            if (held.is_some())
+                                give_block<A>(tally, std::move(held).expect("the test above found a block"));
+                        }
+                    });
+                }
+            });
     }
 };
 

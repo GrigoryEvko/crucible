@@ -88,9 +88,10 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
             std::uint64_t const wall_ns = window.wall_ns.at(index);
             all_items += window.items.at(index);
             all_wall_ns += wall_ns;
-            window_mops.at(index) =
-                wall_ns == 0 ? 0.0
-                             : static_cast<double>(window.items.at(index)) * 1000.0 / static_cast<double>(wall_ns);
+            double const mops = wall_ns == 0
+                                  ? 0.0
+                                  : static_cast<double>(window.items.at(index)) * 1000.0 / static_cast<double>(wall_ns);
+            window_mops.with_element(index, [mops](double& element) noexcept { element = mops; });
         }
         RowResult result{.threads = ThreadCount{2},
                          .placement = placement,
@@ -108,13 +109,15 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
                 static_cast<void>(::fixy::format(detail, "mean of {} pushes, 2 threads, {}", batch, name_of(placement))
                                       .expect("the detail of a report fits in 64 characters"));
             }
-            result.latency.at(report) = run_of(AllocatorKind::base, RowKind::box_channel, detail.view())
-                                            .core(main_cpu.raw())
-                                            .batch(batch)
-                                            .samples(kLatencySamples)
-                                            .warmup(kLatencyWarmup)
-                                            .max_wall_ms(kLatencyMs)
-                                            .measure([&push] { push(); });
+            bench::Report measured = run_of(AllocatorKind::base, RowKind::box_channel, detail.view())
+                                         .core(main_cpu.raw())
+                                         .batch(batch)
+                                         .samples(kLatencySamples)
+                                         .warmup(kLatencyWarmup)
+                                         .max_wall_ms(kLatencyMs)
+                                         .measure([&push] { push(); });
+            result.latency.with_element(
+                report, [&measured](bench::Report& element) noexcept { element = std::move(measured); });
         }
         control.phase.phase.store_release(Phase::Stop);
         return result;
@@ -195,8 +198,10 @@ void run_box_channel_rows(bench::Spread const& spread, RunRecord& record) {
                                     .threads = row.threads,
                                     .placement = row.placement,
                                     .item_ns = item_ns});
-        for (bench::Report& report : row.latency)
-            bench::add_report(record.reports, std::move(report));
+        row.latency.with_mut([&record](auto run) noexcept {
+            for (bench::Report& report : run)
+                bench::add_report(record.reports, std::move(report));
+        });
     }
 }
 
