@@ -1269,6 +1269,45 @@ def count_sum_cases(expect: testing.Expect) -> None:
         )
 
 
+def registry_row(kinds: str, text: str) -> str:
+    """Return a planted registry with one rule row of the kinds and the text, after a path row."""
+    rule = f"rule demo engine=meta scope=tracked ledger=count kinds={kinds} doc=XV | {text} | fix it"
+    return f"format 1\npath utils/a.py | a planted path\n{rule}\n"
+
+
+def registry_merge_cases(expect: testing.Expect) -> None:
+    """Hold THE MERGE of the registry: two requests that each add a kind and change the text of one row compose.
+
+    Two changes of one word of the text still conflict.  On the old code the line merge refused the second request.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-registry-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        registry = "utils/registry.txt"
+        (root / registry).write_text(registry_row("a,b,c", "a text of the rule"), encoding="utf-8")
+        git.commit_all(root, "Add the registry")
+        added = patch_of(root, work, "added.patch", {registry: registry_row("a,x,b,c", "a full text of the rule")})
+        clash = patch_of(root, work, "clash.patch", {registry: registry_row("a,b,c", "a short text of the rule")})
+        (root / registry).write_text(
+            registry_row("a,b,c,d", "a text of the rule.  A second sentence"), encoding="utf-8"
+        )
+        git.commit_all(root, "Add a kind and a sentence on main")
+        decisions, _ = landed(root, [request_of(("Add a kind on the branch",), patches=(added,))], passing([]))
+        wanted = registry_row("a,x,b,c,d", "a full text of the rule.  A second sentence")
+        expect(
+            "two changes of one registry row compose: the kinds keep the add of each side, and the text keeps the "
+            "words of each side",
+            decisions[1].status == 0 and git.show(root, "HEAD", registry) == wanted.encode(),
+        )
+        decisions, _ = landed(root, [request_of(("Change the same word",), patches=(clash,))], passing([]))
+        refusal = " ".join(line.content for line in decisions[1].lines)
+        expect(
+            f"two changes of one word of the text of a row conflict: {refusal[:200]}",
+            decisions[1].status == ExitCode.USAGE and "the same words of a text of the registry row" in refusal,
+        )
+
+
 def budget_reason_cases(expect: testing.Expect) -> None:
     """Hold THE BUDGET REASON: the request file holds it, a chain gets it only from each request, and a verdict names
     each raised row."""
@@ -3756,6 +3795,7 @@ def main(argv: list[str]) -> int:
             falls_cases,
             merge_cases,
             count_sum_cases,
+            registry_merge_cases,
             budget_reason_cases,
             built_cases,
             built_race_cases,

@@ -79,6 +79,14 @@ THE MERGE
         candidate of the gate names the file.  The gate writes the file from
         the build of the composed tree, and it folds the file into the last
         commit (THE BUILT FILES of assay.loop.gate).
+      * The registry merges by its lines, and on a conflict by its rows
+        (merged_registry()).  The key of a row is its first two words, such
+        as `rule must-consume`.  The places of the rows merge with each row
+        read as its key, and each row that the two sides change merges by
+        its fields.  A list of a field, such as kinds=A,B, keeps the adds and
+        the removes of each side, and a text cell merges by its words.  Two
+        requests that each add a kind to one rule and a sentence to its text
+        then compose.  Two changes of one word or of one value conflict.
       * Each other file merges by its lines with `git merge-file`.
     Two changes of one line, one side that adds or removes a file that the
     other side changes, and a merge of a ledger that conflicts each refuse
@@ -810,6 +818,8 @@ FLAKY_MARK = "loop land: FLAKY, "
 # The directory of the ledgers and their suffix (THE MERGE).
 LEDGER_PREFIX = "utils/ledgers/"
 LEDGER_SUFFIX = ".txt"
+# The first words of a row of the registry, whose first two words are its key (THE MERGE).
+REGISTRY_ROW_WORDS = ("rule", "path")
 # The files of the code of the writer of the witness fixtures, which the merge compares with this copy (THE MERGE).
 WITNESS_WRITER = (
     "utils/assay/loop/derive/witness_fixtures.py",
@@ -1451,6 +1461,144 @@ def merged_text(root: Path, path: str, sides: tuple[git.TreeEntry | None, ...]) 
     return git.TreeEntry(mode, "blob", name)
 
 
+def merged_lines(root: Path, texts: tuple[str, str, str]) -> str | None:
+    """Merge the base, ours and theirs texts by their lines with `git merge-file`, or give None on a conflict."""
+    base, ours, theirs = (git.hash_object(root, text.encode("utf-8")) for text in texts)
+    name = git.merge_file(root, ours, base, theirs)
+    return None if name is None else (git.blobs(root, [name])[0] or b"").decode("utf-8")
+
+
+def merged_words(root: Path, texts: tuple[str, str, str]) -> str | None:
+    """Merge the base, ours and theirs copies of one text cell by their words, or give None on a conflict.
+
+    Each word goes on a line of its own, and a space between two spaces gives an empty word, so the join restores each
+    space of the text.
+    """
+    split = tuple("".join(f"{word}\n" for word in text.split(" ")) for text in texts)
+    merged = merged_lines(root, (split[0], split[1], split[2]))
+    return None if merged is None else " ".join(merged.split("\n")[:-1])
+
+
+def merged_set(texts: tuple[str, str, str]) -> str:
+    """Merge the base, ours and theirs copies of a list of names with commas: each side keeps its adds and removes.
+
+    An add of theirs goes after the name before it in theirs, or at the end.  Complexity: quadratic in the names.
+    """
+    base, ours, theirs = (text.split(",") for text in texts)
+    removed = (set(base) - set(ours)) | (set(base) - set(theirs))
+    result = [item for item in ours if item not in removed]
+    for index, item in enumerate(theirs):
+        if item in result or item in removed:
+            continue
+        before = theirs[index - 1] if index else ""
+        result.insert(result.index(before) + 1 if before in result else len(result), item)
+    return ",".join(result)
+
+
+def merged_row(root: Path, rows: tuple[str, str, str]) -> str:
+    """Merge three copies of one row of the registry by its fields (THE MERGE).
+
+    A word KEY=VALUE merges by its value: a value of a list with commas merges by merged_set(), and a text cell after
+    a bar merges by its words.  Each other change of one field by the two sides is a conflict.
+
+    Raises:
+        LandError: If the two sides change one field differently, and the field merges by no rule of this function
+    """
+    base, ours, theirs = rows
+    if ours == base or ours == theirs:
+        return theirs if ours == base else ours
+    if theirs == base:
+        return ours
+    parts = [row.split(" | ") for row in rows]
+    if len({len(part) for part in parts}) != 1:
+        raise LandError(f"the two sides change the cells of the registry row {ours.split(' ', 2)[:2]} differently")
+    heads = [part[0].split(" ") for part in parts]
+    if len({tuple(words[:2]) for words in heads}) != 1:
+        raise LandError("the two sides change the key of a registry row")
+    # Each word KEY=VALUE maps KEY to "=VALUE", and a word with no sign maps to "", so a join gives the word back.
+    fields = [{word.partition("=")[0]: "".join(word.partition("=")[1:]) for word in words[2:]} for words in heads]
+    words = heads[1][:2]
+    shown = " ".join(words)
+    for key in dict.fromkeys([*fields[1], *fields[2]]):
+        sides = (fields[0].get(key), fields[1].get(key), fields[2].get(key))
+        if sides[1] == sides[0] or sides[1] == sides[2] or sides[2] == sides[0]:
+            value = sides[2] if sides[1] == sides[0] else sides[1]
+        elif all(side is not None and side.startswith("=") for side in sides) and "," in f"{sides[1]}{sides[2]}":
+            value = "=" + merged_set((str(sides[0])[1:], str(sides[1])[1:], str(sides[2])[1:]))
+        else:
+            raise LandError(f"the two sides change the field {key} of the registry row {shown} differently")
+        if value is not None:
+            words.append(f"{key}{value}")
+    cells: list[str] = []
+    for index in range(1, len(parts[1])):
+        copies = (parts[0][index], parts[1][index], parts[2][index])
+        if copies[1] == copies[0] or copies[1] == copies[2] or copies[2] == copies[0]:
+            cell: str | None = copies[2] if copies[1] == copies[0] else copies[1]
+        else:
+            cell = merged_words(root, copies)
+        if cell is None:
+            raise LandError(f"the two sides change the same words of a text of the registry row {shown}")
+        cells.append(cell)
+    return " | ".join([" ".join(words), *cells])
+
+
+def row_key(line: str) -> str:
+    """Return the key of a row of the registry, its first two words, or "" for a line that is no row (THE MERGE)."""
+    words = line.split(" ", 2)
+    return f"{words[0]} {words[1]}" if len(words) == 3 and words[0] in REGISTRY_ROW_WORDS else ""
+
+
+def merged_registry(root: Path, texts: tuple[str, str, str]) -> str:
+    """Merge three copies of the registry by its rows: the place of each row by its key, and each row by its fields.
+
+    The merge of the places reads each row as its key, so two changes of one row do not conflict there.  A row that
+    one side removes and the other side changes is a conflict.  Complexity: linear in the lines, and one merge of the
+    fields for each row that the two sides change.
+
+    Raises:
+        LandError: If the places of the rows conflict, or a row does not merge (merged_row())
+    """
+    lines = [text.splitlines() for text in texts]
+    rows = [{row_key(line): line for line in side if row_key(line)} for side in lines]
+    for key, line in rows[0].items():
+        is_lost = key not in rows[1] and rows[2].get(key, line) != line
+        if is_lost or (key not in rows[2] and rows[1].get(key, line) != line):
+            raise LandError(
+                f"{rule_registry.REGISTRY_PATH}: one side removes the row {key}, and the other side changes it"
+            )
+    skeleton = tuple("".join(f"{row_key(line) or line}\n" for line in side) for side in lines)
+    merged = merged_lines(root, (skeleton[0], skeleton[1], skeleton[2]))
+    if merged is None:
+        raise LandError(f"{rule_registry.REGISTRY_PATH}: the two sides add, remove or move rows at the same place")
+    result: list[str] = []
+    for line in merged.splitlines():
+        copies = (rows[0].get(line), rows[1].get(line), rows[2].get(line))
+        if copies == (None, None, None):
+            result.append(line)
+            continue
+        present = [item for item in copies if item is not None]
+        if copies[0] is None and len(set(present)) > 1:
+            raise LandError(f"{rule_registry.REGISTRY_PATH}: the two sides add the row {line} differently")
+        result.append(merged_row(root, (copies[0] or present[0], copies[1] or present[0], copies[2] or present[0])))
+    return "".join(f"{line}\n" for line in result)
+
+
+def merged_registry_entry(root: Path, path: str, sides: tuple[git.TreeEntry | None, ...]) -> git.TreeEntry:
+    """Return the entry of the registry that two changes merge to: by its lines, else by its rows (THE MERGE).
+
+    Raises:
+        LandError: If the lines conflict and the rows do not merge either
+    """
+    try:
+        return merged_text(root, path, sides)
+    except LandError as problem:
+        base, ours, theirs = (blob_text(root, entry) for entry in sides)
+        if base is None or ours is None or theirs is None or sides[1] is None:
+            raise problem from None
+        text = merged_registry(root, (base, ours, theirs))
+        return git.TreeEntry(sides[1].mode, "blob", git.hash_object(root, text.encode("utf-8")))
+
+
 def regenerated_witnesses(root: Path, scratch: Path) -> list[tuple[git.TreeEntry | None, str]]:
     """Return the entry of each witness fixture and of the manifest that the composed rule table gives (THE MERGE).
 
@@ -1554,6 +1702,8 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str, held: Hel
                     continue
                 entries.append((entry, path))
                 is_summed = is_summed or summed
+            elif path == rule_registry.REGISTRY_PATH:
+                entries.append((merged_registry_entry(root, path, sides), path))
             else:
                 entries.append((merged_text(root, path, sides), path))
             merged.append(path)
