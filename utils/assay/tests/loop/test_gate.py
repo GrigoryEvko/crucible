@@ -35,6 +35,7 @@ must reject it.  The planted cmake compiles that vessel.
 """
 
 import fcntl
+import functools
 import json
 import os
 import sys
@@ -293,7 +294,9 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
 # reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
 # gate does.  `write --rule header-alone --reason TEXT` raises the row of include/a.h from 3.1 to 3.3 with that reason,
-# as a raise of a budget does.  `write --lower --row ITEM --reason TEXT` lowers the row of step-cost from 123.912 to
+# as a raise of a budget does, also in each other row with that value.  `write --row ITEM... --reason TEXT` writes
+# that reason into each row of the path ITEM.  `write --lower --row ITEM --reason TEXT` lowers the row of step-cost
+# from 123.912 to
 # 111.001 with that reason, as a lower of a budget does, and exits 1 for the item of a row that is not there.  `write --admit --reason TEXT` adds a row of door-unit, or two rows of owners, with that
 # reason.  Each write writes its rule, the count of its build directories, and the word admit and the reason of the
 # mode admit to writes.txt of each of them.
@@ -335,6 +338,16 @@ if words[0] == "write":
         ledger = pathlib.Path("utils/ledgers/step-cost.txt")
         lowered = f"| 111.001 | - | {words[words.index('--reason') + 1]}"
         ledger.write_text(ledger.read_text().replace("| 123.912 | - | a kept cost", lowered))
+    elif "--row" in words:
+        named = [words[index + 1] for index, word in enumerate(words) if word == "--row"]
+        ledger = pathlib.Path("utils/ledgers") / f"{words[2]}.txt"
+        lines = []
+        for line in ledger.read_text().splitlines():
+            cells = line.split(" | ")
+            if len(cells) == 5 and cells[0] in named:
+                cells[4] = words[words.index("--reason") + 1]
+            lines.append(" | ".join(cells))
+        ledger.write_text("".join(f"{line}\\n" for line in lines))
     elif words[2] == "header-alone":
         ledger = pathlib.Path("utils/ledgers/header-alone.txt")
         raised = f"| 3.3 | - | {words[words.index('--reason') + 1]}"
@@ -1719,6 +1732,66 @@ def budget_cases(expect: testing.Expect) -> None:
         )
 
 
+BUDGET_ROWS_LEDGER = (
+    "format 1\nrule header-alone\ninclude/a.h | - | 3.1 | - | a kept header\n"
+    "include/b.h | - | 3.1 | - | a kept header\n"
+)
+OWN_REASON = "the owner decision of 2026-11-15: a.h reads a new door"
+
+
+def budget_row_cases(expect: testing.Expect) -> None:
+    """Hold the text of one row in THE RAISE OF A BUDGET: --budget-reason ITEM=TEXT next to the plain text.
+
+    Two rows of header-alone cross.  The row of an item gets its own text, and the other row gets the plain text.  With
+    no plain text, the row with no own text refuses the commit.  An item that names no crossed row refuses it too.
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-budget-row-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root, {BUDGET_PATH: BUDGET_ROWS_LEDGER})
+        commit = commit_change(root, "src/a.cpp", "int a;\n", "Grow two headers")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "budget", OTHER_BUILDS)
+        build = tree / "build"
+        (build / "red.txt").write_text("guard_header_alone\n", encoding="utf-8")
+        finding = f"{tree}/include/a.h:0: error: [header-alone] include/a.h includes 3.3 MB, above its row\n"
+        (build / "guard_header_alone.out").write_text(finding, encoding="utf-8")
+        plain = gate.Candidate(head, commit, ("src/a.cpp",))
+        both = replace(plain, budget_reason=BUDGET_REASON, budget_rows=(("include/a.h", OWN_REASON),))
+        verdict, printed = testing.captured(lambda: planted.check(both, False))
+        landed = git.show(root, verdict.final, BUDGET_PATH) if verdict.final else None
+        wanted = (
+            f"format 1\nrule header-alone\ninclude/a.h | - | 3.3 | - | {OWN_REASON}\n"
+            f"include/b.h | - | 3.3 | - | {BUDGET_REASON}\n"
+        )
+        raised = (f"{BUDGET_PATH}: include/a.h from 3.1 to 3.3", f"{BUDGET_PATH}: include/b.h from 3.1 to 3.3")
+        holds = verdict.is_accepted and verdict.raised == raised and landed == wanted.encode()
+        label = f"the row of an item gets its own text, and the other crossed row gets the plain text: {landed!r}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        refusals = {
+            "a crossed row with no own text and no plain text": (
+                replace(plain, budget_rows=(("include/a.h", OWN_REASON),)),
+                "the crossed row include/b.h of utils/ledgers/header-alone.txt gets no text",
+            ),
+            "an item that names no crossed row": (
+                replace(both, budget_rows=(("include/c.h", OWN_REASON),)),
+                "--budget-reason include/c.h=TEXT names no crossed row of a budget",
+            ),
+        }
+        for name, (candidate, line) in refusals.items():
+            verdict, printed = testing.captured(functools.partial(planted.check, candidate, False))
+            holds = (
+                not verdict.is_accepted
+                and any("red alone too: guard_header_alone" in problem for problem in verdict.problems)
+                and verdict.raised == ()
+                and line in printed
+                and (tree / BUDGET_PATH).read_text(encoding="utf-8") == BUDGET_ROWS_LEDGER
+            )
+            label = f"{name} refuses the commit with a line that names it, and the ledger keeps its bytes"
+            expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
 LOWER_PATH = "utils/ledgers/step-cost.txt"
 LOWER_LEDGER = "format 1\nrule step-cost\n@build/CMakeFiles/a.dir/scan.cpp.o | compile | 123.912 | - | a kept cost\n"
 LOWER_REASON = "a cut of the door cost, measured at 111.0 G"
@@ -2770,6 +2843,7 @@ def main(argv: list[str]) -> int:
             built_fixture_cases,
             ratchet_cases,
             budget_cases,
+            budget_row_cases,
             lower_cases,
             changed_tests_cases,
             touched_cases,

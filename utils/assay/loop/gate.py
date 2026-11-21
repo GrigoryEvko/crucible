@@ -532,6 +532,16 @@ THE RAISE OF A BUDGET
         the warm tree for each such rule and configuration (Step.
         raise_budgets()).  The write of a measured rule writes each crossed
         row with the measured value (THE WRITE of assay.core.budget).
+      * A candidate can give a row its own text (Candidate.budget_rows,
+        `loop land --budget-reason ITEM=TEXT`).  The write then uses the
+        plain text, or the first own text when the candidate gives no plain
+        text.  After it, `guard write --rule RULE --row ITEM [--kind KIND]
+        --reason TEXT` gives each crossed row that an item names its own
+        text (Step.written_row_texts()).  An item names a row by its path,
+        its path with no @build/ mark, or its entity (is_named_row()).  A
+        crossed row with no own text and no plain text, and an item that
+        names no crossed row, each give a line that names the row or the
+        item, and the raise writes nothing.
       * A write that fails, or writes that change no row, give the ledgers
         their bytes back, and the problems of the round stay.
       * Else the round has no problem.  THE REDUCE runs when the round built
@@ -698,6 +708,7 @@ from pathlib import Path, PurePosixPath
 
 from assay.core import git, jobserver, paths, proc
 from assay.core import ledger as rule_ledger
+from assay.core import meter as cost_meter
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
@@ -968,7 +979,8 @@ class Candidate:
     the landing knows the kind of the run.  With no title, the line names the commit.  `on_fold` gets the new commit
     when the gate folds the built files into the commit, before the tests of each configuration (THE BUILT FILES).
     The landing then writes that commit into its entry of the stack (THE STACK of assay.loop.land).  `budget_reason`
-    is the reason of each row of a budget that the gate raises, or "" for no raise (THE RAISE OF A BUDGET).  `lowers`
+    is the reason of each row of a budget that the gate raises with no text of its own, or "".  `budget_rows` holds
+    the item and the text of each row with a text of its own (THE RAISE OF A BUDGET).  `lowers`
     holds the rule, the item and the reason of the cut of each row that the gate lowers, and a candidate with a lower
     selects each configuration (THE LOWER OF A BUDGET).
     """
@@ -983,6 +995,12 @@ class Candidate:
     on_fold: Callable[[str], None] | None = field(default=None, compare=False)
     budget_reason: str = ""
     lowers: tuple[tuple[str, str, str], ...] = ()
+    budget_rows: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def has_budget_reason(self) -> bool:
+        """Tell if the candidate gives a text for a raise of a budget: a plain text or the text of a named row."""
+        return bool(self.budget_reason or self.budget_rows)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1365,31 +1383,48 @@ def is_budget_round(outcomes: Sequence[Outcome]) -> bool:
     return bool(red) and all(is_budget_outcome(item) for item in red)
 
 
+def ledger_values(text: str) -> dict[tuple[str, str, str], str]:
+    """Return the value of each row of a ledger text by its key: PATH, KIND and ENTITY.
+
+    A row is PATH | KIND | VALUE | ENTITY | REASON.  Complexity: linear in the lines of the text.
+    """
+    rows: dict[tuple[str, str, str], str] = {}
+    for line in text.splitlines():
+        cells = line.split(" | ", 4)
+        if len(cells) == 5 and not line.startswith("#"):
+            rows[(cells[0], cells[1], cells[3])] = cells[2]
+    return rows
+
+
+def shown_key(key: tuple[str, str, str]) -> str:
+    """Return the cells of the key of a row with no empty cell '-', as one text."""
+    return " ".join(cell for cell in key if cell != "-")
+
+
 def raised_lines(path: str, before: str, after: str) -> list[str]:
     """Return a line for each row of a ledger that a write changed: its key, its old value or no row, and its new value.
 
-    A row is PATH | KIND | VALUE | ENTITY | REASON, and its key is PATH, KIND and ENTITY.  A row that the write did not
-    change gives no line, and a row that the write removed has the new value "no row".  Complexity: linear in the
-    lines of the two texts.
+    A row that the write did not change gives no line, and a row that the write removed has the new value "no row".
+    Complexity: linear in the lines of the two texts.
     """
-
-    def rows_of(text: str) -> dict[tuple[str, str, str], str]:
-        """Return the value of each row of a ledger text by its key."""
-        rows: dict[tuple[str, str, str], str] = {}
-        for line in text.splitlines():
-            cells = line.split(" | ", 4)
-            if len(cells) == 5 and not line.startswith("#"):
-                rows[(cells[0], cells[1], cells[3])] = cells[2]
-        return rows
-
-    old, new = rows_of(before), rows_of(after)
+    old, new = ledger_values(before), ledger_values(after)
     lines: list[str] = []
     for key in sorted(old.keys() | new.keys()):
         if old.get(key) == new.get(key):
             continue
-        shown = " ".join(cell for cell in key if cell != "-")
-        lines.append(f"{path}: {shown} from {old.get(key, 'no row')} to {new.get(key, 'no row')}")
+        lines.append(f"{path}: {shown_key(key)} from {old.get(key, 'no row')} to {new.get(key, 'no row')}")
     return lines
+
+
+def is_named_row(item: str, key: tuple[str, str, str]) -> bool:
+    """Tell if an item of `--budget-reason ITEM=TEXT` names a row: its path, its path with no @build/ mark, its entity.
+
+    The cell '-' is an empty cell, and no item names it (THE RAISE OF A BUDGET).
+    """
+    path, _kind, entity = key
+    return (path != "-" and item in (path, path.removeprefix(cost_meter.BUILD_PATH_PREFIX))) or (
+        entity != "-" and item == entity
+    )
 
 
 def is_checked(configuration: Configuration, rule_id: str) -> bool:
@@ -1960,7 +1995,7 @@ class Gate:
                 outcomes = step.run_all(plan, first_plan if others else None, False, is_retry)
                 step.require_problem(outcomes)
             raised: tuple[str, ...] = ()
-            if not candidate.focus and candidate.budget_reason and is_budget_round(outcomes):
+            if not candidate.focus and candidate.has_budget_reason and is_budget_round(outcomes):
                 raised = step.raise_budgets(outcomes)
             if raised:
                 step.unchecked = frozenset(item.name for item in outcomes if item.problems or item.is_stopped)
@@ -2516,6 +2551,7 @@ class Step:
         paths = {rule: rule_ledger.shown_path(rule) for rule in plan}
         before = {rule: (tree / path).read_bytes() if (tree / path).is_file() else None for rule, path in paths.items()}
         self.say(f"loop land: the gate raises the crossed rows of {' '.join(sorted(plan))} with the budget reason")
+        reason = self.candidate.budget_reason or self.candidate.budget_rows[0][1]
         with self.leased() as share:
 
             def write_rule(rule: str) -> bool:
@@ -2524,7 +2560,7 @@ class Step:
                     build = build_directory(tree, configuration)
                     log = log_name(configuration, f"raise-{rule}.log")
                     command = [*self.gate.master("guard"), "write", "--rule", rule, "--build-dir", str(build)]
-                    command += ["--reason", self.candidate.budget_reason]
+                    command += ["--reason", reason]
                     status = self.run_logged(command, log, share, proc.TOOL_S)
                     if status != ExitCode.OK:
                         shown = self.gate.logs / log
@@ -2533,6 +2569,7 @@ class Step:
                 return True
 
             is_written = all(self.concurrently(sorted(plan), write_rule))
+            is_written = is_written and self.written_row_texts(paths, before, share)
         lines: list[str] = []
         for rule, path in sorted(paths.items()):
             after = (tree / path).read_bytes() if (tree / path).is_file() else None
@@ -2547,6 +2584,59 @@ class Step:
                 (tree / path).write_bytes(kept)
         self.say("loop land: the raise writes no row, so the crossed rows of the budgets stay problems")
         return ()
+
+    def written_row_texts(
+        self, paths: Mapping[str, str], before: Mapping[str, bytes | None], share: heavy.Share
+    ) -> bool:
+        """Give each crossed row that an item of the candidate names its own text, and tell if each crossed row has one.
+
+        THE RAISE OF A BUDGET gives the rules.  The write of a rule gives each crossed row the plain text, or the first
+        own text when the candidate gives no plain text.  Then `guard write --rule RULE --row ITEM [--kind KIND]
+        --reason TEXT` gives each crossed row of an item its own text.  A crossed row with no text, an item that names
+        no crossed row, and a write that fails each give a line, and the function then gives False.  Complexity:
+        linear in the rows of the ledgers times the items.
+        """
+        named = dict(self.candidate.budget_rows)
+        if not named:
+            return True
+        tree = self.gate.tree
+        problems: list[str] = []
+        used: set[str] = set()
+        writes: dict[tuple[str, str, str], list[str]] = {}
+        for rule, path in sorted(paths.items()):
+            after = (tree / path).read_text(encoding="utf-8") if (tree / path).is_file() else ""
+            old, new = ledger_values((before[rule] or b"").decode("utf-8")), ledger_values(after)
+            for key in sorted(key for key, value in new.items() if old.get(key) != value):
+                item = next((name for name in named if is_named_row(name, key)), "")
+                if not item and not self.candidate.budget_reason:
+                    problems.append(
+                        f"the crossed row {shown_key(key)} of {path} gets no text: give --budget-reason "
+                        f"{key[0] if key[0] != '-' else key[2]}=TEXT, or a plain --budget-reason TEXT for each such row"
+                    )
+                if item:
+                    used.add(item)
+                    target = key[0] if key[0] != "-" else key[2]
+                    writes.setdefault((rule, key[1], named[item]), []).append(target)
+        problems += [
+            f"--budget-reason {item}=TEXT names no crossed row of a budget, so its text goes into no row: give the "
+            f"path or the entity of a crossed row"
+            for item in named
+            if item not in used
+        ]
+        for line in problems:
+            self.say(f"loop land: {line}")
+        if problems:
+            return False
+        for index, ((rule, kind, text), targets) in enumerate(sorted(writes.items())):
+            command = [*self.gate.master("guard"), "write", "--rule", rule, "--reason", text]
+            command += [word for target in targets for word in ("--row", target)]
+            command += ["--kind", kind] if kind != "-" else []
+            log = f"raise-reason-{rule}-{index}.log"
+            status = self.run_logged(command, log, share, proc.TOOL_S)
+            if status != ExitCode.OK:
+                self.say(f"loop land: the text of the named rows of {rule} exits {status}, see {self.gate.logs / log}")
+                return False
+        return True
 
     def lower_budgets(self) -> tuple[str, ...]:
         """Lower each row that the candidate names to the largest measure of the builds of the round, and give the lines.
@@ -2956,7 +3046,7 @@ class Step:
         self.say(f"loop land: {name}: {seconds:.0f} s after a wait of {wait_s:.0f} s for its first slot")
         items = self.red_items(run, red, is_again) if red else ()
         outcome = Outcome(name, tuple(problems), red, seconds, False, flaky, wait_s, slot_seconds, items)
-        is_raisable = bool(self.candidate.budget_reason) and not is_again and is_budget_outcome(outcome)
+        is_raisable = self.candidate.has_budget_reason and not is_again and is_budget_outcome(outcome)
         if problems and not self.candidate.focus and not is_raisable:
             self.stop.set()
         return outcome

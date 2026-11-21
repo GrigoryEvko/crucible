@@ -342,6 +342,13 @@ def word_cases(expect: testing.Expect) -> None:
             ("an empty budget reason", ["--budget-reason", " ", "-m", "s", "--patch", "p", "--"]),
             ("two budget reasons", ["--budget-reason", "a", "--budget-reason", "b", "-m", "s", "--patch", "p", "--"]),
             ("a budget reason with --dry-run", ["--budget-reason", "a", "--dry-run", "-m", "s", "--patch", "p", "--"]),
+            ("a row text with a bar", ["--budget-reason", "include/a.h=a | b", "-m", "s", "--patch", "p", "--"]),
+            ("an empty row text", ["--budget-reason", "include/a.h=", "-m", "s", "--patch", "p", "--"]),
+            (
+                "two texts of one row",
+                ["--budget-reason", "a.o=x", "--budget-reason", "a.o=y", "-m", "s", "--patch", "p", "--"],
+            ),
+            ("a row text with --tree", ["--budget-reason", "a.o=x", "--tree", "-m", "s", "--patch", "p", "--"]),
             ("a lower with no reason", ["--lower", "step-cost", "a.o", "-m", "s", "--patch", "p", "--"]),
             ("a lower reason with no lower", ["--lower-reason", "a cut", "-m", "s", "--patch", "p", "--"]),
             (
@@ -368,6 +375,19 @@ def word_cases(expect: testing.Expect) -> None:
         expect(
             "--budget-reason gives the reason of the raise of a budget, also for a series",
             reasoned.budget_reason == "the cause of the growth" and reasoned.series == "wt/a",
+        )
+        row_words = ["--budget-reason", "include/a.h=the cause of a.h", "--budget-reason", "the cause of x=y"]
+        _request, per_row = land.parse(
+            ["--series", "wt/a", *row_words, "--budget-reason", "@build/b.o=the cause of b.o", "--"], scratch
+        )
+        _request, only_rows = land.parse(["--series", "wt/a", "--budget-reason", "a.o=the cause of a.o", "--"], scratch)
+        expect(
+            f"--budget-reason ITEM=TEXT gives the text of one row, in the sequence of the words, and a value with a "
+            f"space before its '=' is the plain text: {per_row.budget_reason!r} {per_row.budget_rows}",
+            per_row.budget_reason == "the cause of x=y"
+            and per_row.budget_rows == (("include/a.h", "the cause of a.h"), ("@build/b.o", "the cause of b.o"))
+            and only_rows.budget_reason == ""
+            and only_rows.budget_rows == (("a.o", "the cause of a.o"),),
         )
         lower_words = ["--lower", "step-cost", "a.o", "--lower", "header-alone", "include/a.h", "--lower", "step-cost"]
         _request, lowering = land.parse(
@@ -1341,9 +1361,14 @@ def budget_reason_cases(expect: testing.Expect) -> None:
         queue = work / "queue"
         queue.mkdir()
         first, second = (land.Options(False, False, jobs=1, budget_reason=text) for text in ("a cause", "b cause"))
-        queued = land.Queued(7, root, request_of(("Add r1",), own=("r1.txt",)), first, token="planted")
+        own_row = (("include/a.h", "the a.h cause"),)
+        with_row = replace(first, budget_rows=own_row)
+        queued = land.Queued(7, root, request_of(("Add r1",), own=("r1.txt",)), with_row, token="planted")
         decoded = land.decoded_request(queue, 7, land.encoded_request(queued, []))
-        expect("the request file holds the budget reason", decoded.options.budget_reason == "a cause")
+        expect(
+            "the request file holds the budget reason and the text of each named row",
+            decoded.options.budget_reason == "a cause" and decoded.options.budget_rows == own_row,
+        )
         line = "utils/ledgers/header-alone.txt: include/a.h from 3.1 to 3.3"
         seen: list[gate.Candidate] = []
 
@@ -1352,10 +1377,11 @@ def budget_reason_cases(expect: testing.Expect) -> None:
             seen.append(candidate)
             return gate.Verdict(("debug",), (), 1.0, raised=(line,))
 
-        def reasons_of(chosen: Sequence[land.Options], label: str) -> tuple[str, list[str]]:
-            """Land one request with each option set, and give the reason of the candidate and the lines of request 1.
+        def reasons_of(chosen: Sequence[land.Options], label: str) -> tuple[gate.Candidate | None, list[str]]:
+            """Land one request with each option set, and give the candidate and the lines of request 1.
 
-            The label goes into each own file, so each request of each call changes its file.
+            The label goes into each own file, so each request of each call changes its file.  The candidate is None
+            when a request did not land.
             """
             seen.clear()
             requests = own_requests(root, [f"{label} {index}\n" for index in range(len(chosen))])
@@ -1366,19 +1392,42 @@ def budget_reason_cases(expect: testing.Expect) -> None:
             )
             landing.land(batch)
             numbers = [number for number, made in sorted(decisions.items()) if made.status == 0]
-            return (seen[0].budget_reason if numbers == [1, 2] else "both did not land"), [
-                item.content for item in decisions[1].lines
-            ]
+            candidate = seen[0] if numbers == [1, 2] else None
+            return candidate, [item.content for item in decisions[1].lines]
 
-        reason, lines = reasons_of([first, second], "reasoned")
+        candidate, lines = reasons_of([first, second], "reasoned")
+        reason = candidate.budget_reason if candidate is not None else "both did not land"
         expect(
             f"a chain of requests that each give a reason gets the reason of each, and the verdict names the raised "
             f"row: {reason!r} {lines}",
             reason == "a cause.  b cause"
             and f"loop land: the gate raised the row {line} with the budget reason" in lines,
         )
-        reason, _lines = reasons_of([first, land.Options(False, False, jobs=1)], "mixed")
-        expect("a chain with a request of no reason gets no reason, so it gets no raise", reason == "")
+        candidate, _lines = reasons_of([first, land.Options(False, False, jobs=1)], "mixed")
+        expect(
+            "a chain with a request of no reason gets no reason, so it gets no raise",
+            candidate is not None and candidate.budget_reason == "",
+        )
+        rows_only = land.Options(False, False, jobs=1, budget_rows=own_row)
+        chains = {
+            "own and plain": [with_row, second],
+            "rows only and plain": [rows_only, second],
+            "rows only and none": [rows_only, land.Options(False, False, jobs=1)],
+        }
+        found: dict[str, tuple[str, tuple[tuple[str, str], ...]] | None] = {}
+        for name, chosen in chains.items():
+            candidate, _lines = reasons_of(chosen, name.replace(" ", "-"))
+            found[name] = (candidate.budget_reason, candidate.budget_rows) if candidate is not None else None
+        expect(
+            f"the text of a named row in a chain holds the own text or the plain text of each request, and a chain "
+            f"with a request that gives no text for the row gets no text for it: {found}",
+            found
+            == {
+                "own and plain": ("a cause.  b cause", (("include/a.h", "the a.h cause.  b cause"),)),
+                "rows only and plain": ("", (("include/a.h", "the a.h cause.  b cause"),)),
+                "rows only and none": ("", ()),
+            },
+        )
 
 
 def lower_cases(expect: testing.Expect) -> None:

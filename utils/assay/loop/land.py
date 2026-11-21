@@ -11,7 +11,8 @@ THE REQUEST
       --jobs N                 The slice of the lease of one configuration of the gate, with SLICE as the most
       --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
       --budget-reason TEXT      The gate raises each crossed row of a budget with this reason (THE BUDGET REASON)
-      --lower RULE ITEM         The gate lowers the row of ITEM of RULE to the largest measure of its builds (THE LOWER)
+      --budget-reason ITEM=TEXT The gate raises the crossed row of ITEM with this reason (THE BUDGET REASON)
+      --lower RULE ITEM        The gate lowers the row of ITEM of RULE to the largest measure of its builds (THE LOWER)
       --lower-reason TEXT       The reason of the cut, which each lowered row of the request gets (THE LOWER)
       --check                   Run the gate on the commit, and do not land it
       --here                    With --check: run this copy of the module (THE DRIVER)
@@ -421,6 +422,17 @@ THE BUDGET REASON
     correctness never rises this way, so the gate refuses each other
     problem as before.  The text cannot hold '|' or a new line, because it
     goes into the reason cell of a row.
+    The option can occur more than one time.  A value ITEM=TEXT gives the
+    text of the crossed row of ITEM, and ITEM holds no space and no '='
+    (budget_reasons_of()).  ITEM is the path of the row, its path with no
+    @build/ mark, or its entity.  One value with no ITEM gives the text of
+    each other crossed row.  A request with only ITEM=TEXT values gives no
+    text to a row that it does not name, so such a crossed row refuses the
+    request.  An ITEM that names no crossed row refuses it too, with a line
+    that names the item (THE RAISE OF A BUDGET of assay.loop.gate).  The
+    text of an item in a chain holds the text of each request for the
+    item: its own text, else its plain text (chain_budget_rows()).  A
+    request file of an earlier copy holds no such row.
 
 THE LOWER
     A row of a budget goes down only by an explicit write of the named row,
@@ -703,10 +715,10 @@ THE DRIVER
 
 Usage
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
-              [--jobs N] [--all-configurations] [--budget-reason TEXT] [--lower RULE ITEM]... [--lower-reason TEXT]
-              [--check [--here] | --dry-run | --tree] -- [PATH]...
-    loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT] [--lower RULE ITEM]...
-              [--lower-reason TEXT] [--check [--here] | --dry-run | --tree] --
+              [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... [--lower RULE ITEM]...
+              [--lower-reason TEXT] [--check [--here] | --dry-run | --tree] -- [PATH]...
+    loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]...
+              [--lower RULE ITEM]... [--lower-reason TEXT] [--check [--here] | --dry-run | --tree] --
 
     Exit 0 when the request landed, when the gate accepts the commit of
     --check, or when --dry-run or --tree printed.  Exit 1 when the gate
@@ -788,12 +800,12 @@ HELP_WORDS = (["-h"], ["--help"])
 USAGE = (
     "usage: loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
     "[--block FILE AFTER BLOCK]...\n"
-    "                 [--jobs N] [--all-configurations] [--budget-reason TEXT] [--lower RULE ITEM]... "
-    "[--lower-reason TEXT]\n"
+    "                 [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... "
+    "[--lower RULE ITEM]... [--lower-reason TEXT]\n"
     "                 [--check [--here] | --dry-run | --tree] -- [PATH]...\n"
-    "       loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT] [--lower RULE ITEM]... "
-    "[--lower-reason TEXT]\n"
-    "                 [--check [--here] | --dry-run | --tree] --"
+    "       loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... "
+    "[--lower RULE ITEM]...\n"
+    "                 [--lower-reason TEXT] [--check [--here] | --dry-run | --tree] --"
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
@@ -980,6 +992,7 @@ class Options:
     budget_reason: str = ""
     lowers: tuple[tuple[str, str], ...] = ()
     lower_reason: str = ""
+    budget_rows: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1193,6 +1206,8 @@ BUDGET_REASON = ReasonOption(
     "Name the owner decision of 2026-11-15 and the measured cause of the growth",
 )
 LOWER_REASON = ReasonOption("--lower-reason", "each lowered row of a budget", "Name the cut and its measured effect")
+# A value ITEM=TEXT of --budget-reason: the item of one row, with no space and no '=', and the text of that row.
+BUDGET_ROW = re.compile(r"(?P<item>[^\s=|]+)=(?P<text>.*)", re.DOTALL)
 
 
 def reason_of(option: ReasonOption, reason_values: Sequence[Sequence[str]]) -> str:
@@ -1205,13 +1220,51 @@ def reason_of(option: ReasonOption, reason_values: Sequence[Sequence[str]]) -> s
         raise LandError(f"give {option.name} one time")
     if not reason_values:
         return ""
-    reason = reason_values[0][0].strip()
+    return checked_reason(option, reason_values[0][0])
+
+
+def checked_reason(option: ReasonOption, text: str) -> str:
+    """Return the text of an option of a row reason with no outer space.
+
+    Raises:
+        LandError: If the text cannot be the reason cell of a ledger row
+    """
+    reason = text.strip()
     if not reason or "|" in reason or "\n" in reason or reason.startswith("-"):
         raise LandError(
             f"{option.name} takes the reason of {option.rows}, a text with no '|' and no new line that does not start "
-            f"with '-', not {reason_values[0][0]!r}.  {option.cause}"
+            f"with '-', not {text!r}.  {option.cause}"
         )
     return reason
+
+
+def budget_reasons_of(reason_values: Sequence[Sequence[str]]) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Return the plain text and the text of each named row of the words of --budget-reason (THE BUDGET REASON).
+
+    A value ITEM=TEXT gives the text of the crossed row of the item, and ITEM holds no space and no '='.  Each other
+    value is the plain text of each crossed row with no text of its own.  Complexity: linear in the values.
+
+    Raises:
+        LandError: If the plain text occurs more than one time, an item occurs more than one time, or a text cannot be
+            the reason cell of a ledger row
+    """
+    plain: list[str] = []
+    rows: dict[str, str] = {}
+    for value in reason_values:
+        named = BUDGET_ROW.fullmatch(value[0].strip())
+        if named is None:
+            plain.append(checked_reason(BUDGET_REASON, value[0]))
+            continue
+        item = named["item"]
+        if item in rows:
+            raise LandError(f"give the text of the row {item} with --budget-reason {item}=TEXT one time")
+        rows[item] = checked_reason(BUDGET_REASON, named["text"])
+    if len(plain) > 1:
+        raise LandError(
+            "give the plain --budget-reason TEXT one time.  It is the text of each crossed row with no text of its "
+            "own.  Give the text of one row with --budget-reason ITEM=TEXT"
+        )
+    return (plain[0] if plain else ""), tuple(rows.items())
 
 
 def lowers_of(lower_values: Sequence[Sequence[str]]) -> tuple[tuple[str, str], ...]:
@@ -1241,8 +1294,8 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
         LandError: If the options do not apply together
     """
     jobs_values, series_values = values["--jobs"], values["--series"]
-    budget_reason = reason_of(BUDGET_REASON, values["--budget-reason"])
-    if budget_reason and (flags[FLAG_DRY_RUN] or flags[FLAG_TREE]):
+    budget_reason, budget_rows = budget_reasons_of(values["--budget-reason"])
+    if (budget_reason or budget_rows) and (flags[FLAG_DRY_RUN] or flags[FLAG_TREE]):
         raise LandError("--budget-reason applies to a run of the gate, so give it no --dry-run and no --tree")
     lowers = lowers_of(values["--lower"])
     lower_reason = reason_of(LOWER_REASON, values["--lower-reason"])
@@ -1287,6 +1340,7 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
         budget_reason,
         lowers,
         lower_reason,
+        budget_rows,
     )
 
 
@@ -2283,6 +2337,22 @@ def chain_budget_reason(chain: Sequence[Link]) -> str:
     return functools.reduce(rule_ledger.joined_reason, dict.fromkeys(reasons))
 
 
+def chain_budget_rows(chain: Sequence[Link]) -> tuple[tuple[str, str], ...]:
+    """Return the item and the text of each row that a request of a chain names with --budget-reason ITEM=TEXT.
+
+    The text of a row holds the text of each request of the chain for the item: its own text for the item, else its
+    plain text.  A row gets a text only when each request gives one (THE BUDGET REASON).  Complexity: linear in the
+    rows of the links times the links.
+    """
+    named = dict.fromkeys(item for link in chain for item, _ in link.queued.options.budget_rows)
+    found: list[tuple[str, str]] = []
+    for item in named:
+        texts = [dict(link.queued.options.budget_rows).get(item, link.queued.options.budget_reason) for link in chain]
+        if all(texts):
+            found.append((item, functools.reduce(rule_ledger.joined_reason, dict.fromkeys(texts))))
+    return tuple(found)
+
+
 def chain_lowers(chain: Sequence[Link]) -> tuple[tuple[str, str, str], ...]:
     """Return the rule, the item and the reason of the cut of each row that a request of a chain lowers (THE LOWER).
 
@@ -2746,6 +2816,7 @@ class BatchLanding:
             title=f"{kind} at {commit[:SHORT_HASH]}",
             on_fold=self.publish_fold if is_published else None,
             budget_reason=chain_budget_reason(chain),
+            budget_rows=chain_budget_rows(chain),
             lowers=chain_lowers(chain),
         )
         if is_published and self.stack is not None:
@@ -3573,6 +3644,7 @@ def encoded_request(queued: Queued, patch_names: Sequence[str], part_names: Sequ
         "jobs": queued.options.jobs,
         "every": queued.options.is_every,
         "budget_reason": queued.options.budget_reason,
+        "budget_rows": [{"item": item, "text": text} for item, text in queued.options.budget_rows],
         "lowers": [{"rule": rule, "item": item} for rule, item in queued.options.lowers],
         "lower_reason": queued.options.lower_reason,
         "claims": True,
@@ -3636,6 +3708,9 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
     budget_reason = record.get("budget_reason", "")
     if not isinstance(budget_reason, str):
         raise TypeError("the field budget_reason is not a text")
+    budget_rows = tuple(
+        (item, text) for item, text in records_of(record.get("budget_rows", []), "budget_rows", ("item", "text"))
+    )
     lowers = tuple((rule, item) for rule, item in records_of(record.get("lowers", []), "lowers", ("rule", "item")))
     lower_reason = record.get("lower_reason", "")
     if not isinstance(lower_reason, str):
@@ -3661,6 +3736,7 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         budget_reason=budget_reason,
         lowers=lowers,
         lower_reason=lower_reason,
+        budget_rows=budget_rows,
     )
     is_claiming = record.get("claims") is True
     return Queued(number, Path(root), request, options, branch, common, token, head, is_claiming, entry_time)
