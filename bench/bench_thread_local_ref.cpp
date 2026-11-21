@@ -72,15 +72,22 @@ int main() {
     cell.store(operand);
     plain_cell() = operand;
 
+    // The input sink makes the cell opaque, so each call reads it.  The cache
+    // of the index of ThreadLocalRef is an Atomic, and the optimizer loads an
+    // atomic in each call, so peek reads the index and its cell in each call
+    // with no sink.
     bench::Report const plain_read = bench::run("plain thread_local read", [&] {
+        bench::mark_changed(plain_cell());
         std::uint64_t const value = plain_cell();
         bench::do_not_optimize(value);
     });
     print_row("plain thread_local read", plain_read);
 
+    // The two rows of a store measure a store, so the barrier keeps the store
+    // of each call (THE SINK of bench_harness.h).
     bench::Report const plain_write = bench::run("plain thread_local write", [&] {
         plain_cell() = operand;
-        bench::do_not_optimize(operand);
+        bench::clobber_memory();
     });
     print_row("plain thread_local write", plain_write);
 
@@ -92,7 +99,7 @@ int main() {
 
     bench::Report const store = bench::run("ThreadLocalRef::store", [&] {
         cell.store(operand);
-        bench::do_not_optimize(operand);
+        bench::clobber_memory();
     });
     print_row("ThreadLocalRef::store", store);
 

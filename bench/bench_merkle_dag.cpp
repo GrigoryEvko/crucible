@@ -387,9 +387,13 @@ int run_bench(::fixy::os::Args const& arguments) {
                     ? load_trace(::fixy::TestRunnerCtx{test},
                                  std::move(sanitized_path).expect("the path passed the check"))
                     : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
+            // A trace that does not load gives a row with no sample, so the
+            // table shows the skip and no timed loop runs an empty body.
             if (loaded_trace.is_err()) {
                 ::fixy::report(::fixy::Sink::Err, "[skip] could not load {}\n", path_view);
-                return bench::run("build_trace (skipped — load fail)", [] { bench::clobber_memory(); });
+                bench::Report skipped{};
+                skipped.name = bench::name_of("build_trace (skipped — load fail)");
+                return skipped;
             }
             const LoadedTrace trace =
                 std::move(loaded_trace).expect("the load holds a trace after the check of its error");

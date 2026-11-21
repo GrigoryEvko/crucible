@@ -126,8 +126,11 @@ int main() {
                   bench::do_not_optimize(is_found);
               }));
 
+    // The two runs go through the input sink, so each call compares them
+    // again.  With no sink, the optimizer compares them one time before the
+    // timed loop (THE SINK of bench_harness.h).
     print_row("equal of two Views, 4096 elements", bench::run("equal of two Views", [&] {
-                  bool const is_equal = fixy::equal(run, same_run);
+                  bool const is_equal = fixy::equal(bench::make_opaque(run), bench::make_opaque(same_run));
                   bench::do_not_optimize(is_equal);
               }));
 

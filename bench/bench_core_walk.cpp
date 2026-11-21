@@ -162,30 +162,41 @@ int main() {
     fixy::View<float const, kElements> const left_run = left.view();
     fixy::View<float const, kElements> const right_run = right.view();
 
-    bench::Report const raw_map = bench::run("raw map + fold", [&] { bench::do_not_optimize(raw_map_fold(run)); });
-    bench::Report const walk_map = bench::run("walk map + fold", [&] { bench::do_not_optimize(walk_map_fold(run)); });
-    bench::Report const ranges_map =
-        bench::run("ranges map + fold", [&] { bench::do_not_optimize(ranges_map_fold(span_of(run))); });
+    // Each body takes its runs through the input sink, so each call computes
+    // its result again (THE SINK of bench_harness.h).  Each function of a row
+    // is pure, so with no sink the optimizer calls it one time before the
+    // timed loop.
+    bench::Report const raw_map =
+        bench::run("raw map + fold", [&] { bench::do_not_optimize(raw_map_fold(bench::make_opaque(run))); });
+    bench::Report const walk_map =
+        bench::run("walk map + fold", [&] { bench::do_not_optimize(walk_map_fold(bench::make_opaque(run))); });
+    bench::Report const ranges_map = bench::run(
+        "ranges map + fold", [&] { bench::do_not_optimize(ranges_map_fold(span_of(bench::make_opaque(run)))); });
     print_row("map + fold, f32, raw loop", raw_map, raw_map);
     print_row("map + fold, f32, walk", walk_map, raw_map);
     print_row("map + fold, f32, C++ ranges", ranges_map, raw_map);
 
-    bench::Report const raw_filter =
-        bench::run("raw filter + count", [&] { bench::do_not_optimize(raw_filter_count(word_run)); });
-    bench::Report const walk_filter =
-        bench::run("walk filter + count", [&] { bench::do_not_optimize(walk_filter_count(word_run)); });
-    bench::Report const ranges_filter =
-        bench::run("ranges filter + count", [&] { bench::do_not_optimize(ranges_filter_count(span_of(word_run))); });
+    bench::Report const raw_filter = bench::run(
+        "raw filter + count", [&] { bench::do_not_optimize(raw_filter_count(bench::make_opaque(word_run))); });
+    bench::Report const walk_filter = bench::run(
+        "walk filter + count", [&] { bench::do_not_optimize(walk_filter_count(bench::make_opaque(word_run))); });
+    bench::Report const ranges_filter = bench::run("ranges filter + count", [&] {
+        bench::do_not_optimize(ranges_filter_count(span_of(bench::make_opaque(word_run))));
+    });
     print_row("filter + count, u32, raw loop", raw_filter, raw_filter);
     print_row("filter + count, u32, walk", walk_filter, raw_filter);
     print_row("filter + count, u32, C++ ranges", ranges_filter, raw_filter);
 
-    bench::Report const raw_zip =
-        bench::run("raw zip + fold", [&] { bench::do_not_optimize(raw_zip_fold(left_run, right_run)); });
-    bench::Report const walk_zip =
-        bench::run("walk zip + fold", [&] { bench::do_not_optimize(walk_zip_fold(left_run, right_run)); });
-    bench::Report const ranges_zip = bench::run(
-        "ranges zip + fold", [&] { bench::do_not_optimize(ranges_zip_fold(span_of(left_run), span_of(right_run))); });
+    bench::Report const raw_zip = bench::run("raw zip + fold", [&] {
+        bench::do_not_optimize(raw_zip_fold(bench::make_opaque(left_run), bench::make_opaque(right_run)));
+    });
+    bench::Report const walk_zip = bench::run("walk zip + fold", [&] {
+        bench::do_not_optimize(walk_zip_fold(bench::make_opaque(left_run), bench::make_opaque(right_run)));
+    });
+    bench::Report const ranges_zip = bench::run("ranges zip + fold", [&] {
+        bench::do_not_optimize(
+            ranges_zip_fold(span_of(bench::make_opaque(left_run)), span_of(bench::make_opaque(right_run))));
+    });
     print_row("zip + fold, f32, raw loop", raw_zip, raw_zip);
     print_row("zip + fold, f32, walk", walk_zip, raw_zip);
     print_row("zip + fold, f32, C++ ranges", ranges_zip, raw_zip);
