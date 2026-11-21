@@ -806,6 +806,26 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
+        "heap_allocate",
+        "the allocation of a constant class from the bin of a heap is the raw pop of a stack of words: the load of "
+        "head, one compare with empty_end and its branch to the cold refill, the load of the block and the store of "
+        "head.  The cold path is a call of the refill of the heap in place of the call of the raw form",
+        calls=("foundation::alloc::HeapState::refill_",),
+    ),
+    Probe(
+        "heap_release",
+        "the release of a constant class into the bin of a heap is the raw push of a stack of words: the load of "
+        "head, one compare with full_begin and its branch to the cold flush, the store of the block and of head.  "
+        "The cold path is a call of the flush of the heap in place of the call of the raw form",
+        calls=("foundation::alloc::HeapState::flush_",),
+    ),
+    Probe(
+        "heap_scope_pairs",
+        "a loop of pairs in the body of a heap scope is the loop of the fast paths of the heap state of the thread, "
+        "with no instruction of the scope, the brand or the block type: the scope reads the cell one time and calls "
+        "the cold claim only for the sentinel",
+    ),
+    Probe(
         "box_in_hole",
         "mint_box in a Hole is the placement new of the raw form in the storage of the Hole, with no call of the "
         "allocation door.  It adds one test of the storage and one branch to a call of the fatal exit, the clear of "

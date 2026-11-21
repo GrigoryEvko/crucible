@@ -21,6 +21,7 @@
 //   is_sentinel(heap)  true for the sentinel heap
 //   claim_thread_heap()
 //                      the heap of the calling thread after its claim
+//   thread_heap()      the same heap, with the claim on a cold branch
 //
 // THE BINS
 //   A bin is a stack of the addresses of free blocks of one class: three
@@ -402,5 +403,18 @@ CRUCIBLE_PROCESS_WIDE
 // that meets the sentinel calls it.  src/foundation/alloc/Root.cpp holds the
 // body (THE HEAP TABLE of foundation/alloc/Root.h).
 [[nodiscard, gnu::cold, gnu::noinline]] HeapState& claim_thread_heap() noexcept;
+
+// The heap of the calling thread after its claim: one read of the cell, and
+// the cold claim only for a thread on the sentinel.  GCC compiles a function
+// that calls a cold function on each path as cold code, and each body that
+// it calls too, so a door that opens a scope reads its heap here.
+// Complexity: O(1).
+[[nodiscard, gnu::always_inline]] inline HeapState& thread_heap() noexcept {
+    HeapState& heap = current_heap();
+    if (is_sentinel(heap)) [[unlikely]] {
+        return claim_thread_heap();
+    }
+    return heap;
+}
 
 }  // namespace foundation::alloc

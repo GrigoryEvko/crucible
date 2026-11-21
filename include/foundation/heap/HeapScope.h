@@ -43,8 +43,10 @@
 //   A scope cannot copy or move.  The end of the body ends the scope, and the
 //   end of the scope ends the permission.
 //
-//   The mint claims the heap of the thread before it takes its Ref, so the
-//   scope never holds the sentinel.  Each door takes only a class with a
+//   The mint reads the cell of the thread, and it claims the heap only for a
+//   thread on the sentinel, on a cold branch, so the scope never holds the
+//   sentinel.  A call of the cold claim on each path would make GCC compile
+//   the mint and each body as cold code.  Each door takes only a class with a
 //   slab, by a concept on its template argument
 //   (neg_heap_scope_class_without_slab); the large runs extend it.  The scope
 //   handle of the allocator extends this door on the same handle: make<T>, a
@@ -219,7 +221,7 @@ template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRU
     requires(sizeof...(Refused) == 0 && CanMintHeapScope<Fresh, Body>)
 [[nodiscard]] auto mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) noexcept {
     static_cast<void>(capability);
-    HeapScope<Fresh> scope = detail::HeapScopeDoor::open<Fresh>(::foundation::alloc::claim_thread_heap());
+    HeapScope<Fresh> scope = detail::HeapScopeDoor::open<Fresh>(::foundation::alloc::thread_heap());
     return static_cast<Body&&>(body)(scope);
 }
 

@@ -28,10 +28,14 @@
 #include <fixy/Qtt.h>
 #include <foundation/AlignedBytes.h>
 #include <foundation/Quarantine.h>
+#include <foundation/alloc/HeapState.h>
+#include <foundation/alloc/Layout.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/core/Immortal.h>
 #include <foundation/core/WindowStack.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/heap/HeapScope.h>
 #include <foundation/permissions/Permission.h>
 
 #include <cmath>
@@ -811,6 +815,32 @@ public:
 // with a branch to a cold call, and the read.
 [[gnu::used]] std::uint32_t immortal_read(foundation::core::Immortal<Payload>& holder) noexcept {
     return holder.get()->value;
+}
+
+// The fast paths of a bin of the heap state of the allocator: the load of
+// head, one compare with a branch to the cold refill or flush, and the
+// load or store of the block and of head.
+[[gnu::used]] foundation::alloc::AddressWord heap_allocate(foundation::alloc::HeapState& heap) noexcept {
+    return heap.allocate(foundation::alloc::SizeClass{1});
+}
+
+[[gnu::used]] void heap_release(foundation::alloc::HeapState& heap, foundation::alloc::AddressWord block) noexcept {
+    heap.release(foundation::alloc::SizeClass{1}, block);
+}
+
+// A loop of pairs in the body of a scope of the heap of the thread: the read
+// of the cell, one compare with the sentinel and its branch to the cold
+// claim, then the two fast paths for each pair, with the heap in a register.
+[[gnu::used]] std::uint64_t heap_scope_pairs(std::uint32_t pairs) noexcept {
+    return foundation::heap::mint_heap_scope(foundation::effects::testing::test().alloc, [pairs](auto& scope) noexcept {
+        std::uint64_t sum = 0;
+        for (std::uint32_t index = 0; index < pairs; ++index) {
+            auto block = scope.template allocate<foundation::alloc::SizeClass{1}>();
+            sum += static_cast<std::uint64_t>(block.address());
+            scope.release(std::move(block));
+        }
+        return sum;
+    });
 }
 
 // A Box built in a Hole: one test of the storage of the Hole with a branch
@@ -2146,6 +2176,66 @@ struct ImmortalRaw final {
 };
 
 [[gnu::used]] std::uint32_t immortal_read_raw(ImmortalRaw& holder) noexcept { return holder.object->value; }
+
+// The raw form of the bins of a heap: three pointers into a stack of words,
+// at the offsets of the bins of a HeapState, and the cold bodies of an empty
+// and of a full bin.
+struct RawBinStack final {
+    std::uint64_t* head = nullptr;
+    std::uint64_t* empty_end = nullptr;
+    std::uint64_t* full_begin = nullptr;
+};
+
+struct RawHeapState final {
+    unsigned char header[64]{};
+    RawBinStack bins[65]{};
+};
+
+[[gnu::noipa, gnu::cold]] std::uint64_t raw_refill(RawHeapState& heap, std::uint32_t size_class) noexcept {
+    return heap.bins[size_class].head == nullptr ? 0 : 1;
+}
+
+[[gnu::noipa, gnu::cold]] void raw_flush(RawHeapState& heap, std::uint32_t size_class, std::uint64_t block) noexcept {
+    heap.bins[size_class].head = heap.bins[size_class].full_begin + (block & 1);
+}
+
+[[gnu::used]] std::uint64_t heap_allocate_raw(RawHeapState& heap) noexcept {
+    RawBinStack& bin = heap.bins[1];
+    std::uint64_t* const head = bin.head;
+    if (head == bin.empty_end) [[unlikely]]
+        return raw_refill(heap, 1);
+    bin.head = head + 1;
+    return *head;
+}
+
+[[gnu::used]] void heap_release_raw(RawHeapState& heap, std::uint64_t block) noexcept {
+    RawBinStack& bin = heap.bins[1];
+    std::uint64_t* head = bin.head;
+    if (head == bin.full_begin) [[unlikely]] {
+        raw_flush(heap, 1, block);
+        return;
+    }
+    --head;
+    *head = block;
+    bin.head = head;
+}
+
+// The raw form of a loop of pairs on the heap of the thread: the cell read by
+// hand, the cold claim for the sentinel, and the fast paths of the heap state
+// with no scope, no brand and no block type.
+[[gnu::used]] std::uint64_t heap_scope_pairs_raw(std::uint32_t pairs) noexcept {
+    foundation::alloc::HeapState* heap = foundation::alloc::tls_heap_;
+    if (heap == &foundation::alloc::sentinel_heap_) [[unlikely]] {
+        heap = &foundation::alloc::claim_thread_heap();
+    }
+    std::uint64_t sum = 0;
+    for (std::uint32_t index = 0; index < pairs; ++index) {
+        foundation::alloc::AddressWord const block = heap->allocate(foundation::alloc::SizeClass{1});
+        sum += static_cast<std::uint64_t>(block);
+        heap->release(foundation::alloc::SizeClass{1}, block);
+    }
+    return sum;
+}
 
 [[gnu::used]] Payload* box_in_hole_raw(void* storage, std::uint32_t value) noexcept {
     return ::new(storage) Payload{value};
