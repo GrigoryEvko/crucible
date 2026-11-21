@@ -11,16 +11,16 @@ reason src/ | each stage of the background pipeline drops its endpoint of a chan
 reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 6 | - | -
-include/crucible/cntp/ | unconsumed | 25 | - | -
+include/crucible/cntp/ | unconsumed | 22 | - | -
 include/fixy/ | unconsumed | 1 | - | -
 include/fixy/concurrent/ | unconsumed | 1 | - | -
 include/fixy/session/ | double-consume | 2 | - | -
 include/fixy/session/ | unconsumed | 14 | - | -
 src/ | unconsumed | 5 | - | -
-test/ | unconsumed | 36 | - | -
-test/fixy/ | assign-over-live | 1 | - | -
+test/ | unconsumed | 33 | - | -
+test/fixy/ | assign-over-live | 2 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
 test/fixy/ | discarded-temporary | 3 | - | -
-test/fixy/ | double-consume | 5 | - | -
+test/fixy/ | double-consume | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
 test/fixy/ | unconsumed | 184 | - | -
 test/foundation/ | unconsumed | 8 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -

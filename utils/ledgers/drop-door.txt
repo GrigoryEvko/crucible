@@ -11,7 +11,7 @@ reason test/ | the tests write a token back through a reference in a door body, 
 bench/ | untracked-assignment | 1 | - | -
 include/fixy/concurrent/ | untracked-assignment | 1 | - | -
 include/fixy/session/ | untracked-assignment | 2 | - | -
-include/foundation/core/ | destroy | 6 | - | -
+include/foundation/core/ | destroy | 8 | - | the alternatives of Option and Result end the lifetime of a payload, and in a test build the consume tracker gives the end of a Linear a destructor
 include/foundation/core/ | untracked-assignment | 1 | - | -
 include/foundation/permissions/ | untracked-assignment | 1 | - | -
 test/fixy/ | untracked-assignment | 1 | - | -
