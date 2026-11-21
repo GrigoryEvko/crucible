@@ -36,14 +36,12 @@
 #include <foundation/reflect/Enumerate.h>
 #include <foundation/reflect/ReflectionList.h>
 
-#include <array>
 #include <cstddef>
 #include <iterator>
 #include <meta>
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace {
 
@@ -214,50 +212,66 @@ using element_of_t = typename L::element_type;
     return std::meta::extract<bool>(std::meta::substitute(^^leq_accepts_v, {lattice, lhs, rhs}));
 }
 
-// Every pinned grade of L, one reflection for each tier.  E is a
-// parameter because the clock lattice pins an enum that is not its
-// element type.
+// The lattice of a family of pinned grades and the enum whose enumerators it
+// pins.  The clock lattice pins an enum that is not its element type.
+struct PinSource final {
+    std::meta::info lattice{};
+    std::meta::info pinned_enum{};
+};
+
 template <typename L, typename E = typename L::element_type>
-consteval void append_pins(std::vector<std::meta::info>& pins) {
-    static constexpr ::foundation::reflect::ReflectionList enumerators =
-        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^E));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        pins.push_back(std::meta::dealias(^^typename L::template At<([:en:])>));
-    }
-#pragma GCC diagnostic pop
+[[nodiscard]] consteval PinSource pin_source() noexcept {
+    return PinSource{^^L, ^^E};
+}
+
+template <typename L, auto V>
+using pin_at_t = typename L::template At<V>;
+
+// The pinned grade of the lattice at the value of the enumerator.
+[[nodiscard]] consteval std::meta::info pin_of(std::meta::info lattice, std::meta::info enumerator) {
+    return std::meta::dealias(std::meta::substitute(^^pin_at_t, {lattice, std::meta::constant_of(enumerator)}));
 }
 
 // Two pinned grades never meet, in one lattice or across two.  The
 // element of one does not convert to the element of the other, and the
 // leq of one does not take the element of the other.  Each grade takes
-// its own element, so the refusals are not vacuous.  O(n^2) in the
-// number of pins, at compile time only.
+// its own element, so the refusals are not vacuous.  The walk reads the
+// enumerators of each pair of sources through a list of static storage, so
+// it holds no growing list.  O(n^2) in the number of pins, at compile time
+// only.
 [[nodiscard]] consteval bool pins_stay_apart() {
-    std::vector<std::meta::info> pins;
-    append_pins<fl::DetSafeLattice>(pins);
-    append_pins<fl::AllocClassLattice>(pins);
-    append_pins<fl::HotPathLattice>(pins);
-    append_pins<fl::CipherTierLattice>(pins);
-    append_pins<fl::ResidencyHeatLattice>(pins);
-    append_pins<fl::ToleranceLattice>(pins);
-    append_pins<fl::WaitLattice>(pins);
-    append_pins<fl::LifetimeLattice>(pins);
-    append_pins<fl::BarrierStrengthLattice>(pins);
-    append_pins<fl::SuspendBehaviorLattice>(pins);
-    append_pins<fl::PinningRequirementLattice>(pins);
-    append_pins<fl::SchedulerPolicyLattice>(pins);
-    append_pins<fl::VendorLattice>(pins);
-    append_pins<fl::MemoryScopeLattice>(pins);
-    append_pins<fl::ClockSourceLattice, fl::ClockSource>(pins);
-    for (const std::meta::info held : pins) {
-        const std::meta::info held_element = element_of(held);
-        for (const std::meta::info other : pins) {
-            const std::meta::info other_element = element_of(other);
-            const bool is_same_pin = held == other;
-            if (std::meta::is_convertible_type(other_element, held_element) != is_same_pin) return false;
-            if (leq_accepts(held, held_element, other_element) != is_same_pin) return false;
+    ::fixy::FixedArray<PinSource, 15> const sources{pin_source<fl::DetSafeLattice>(),
+                                                    pin_source<fl::AllocClassLattice>(),
+                                                    pin_source<fl::HotPathLattice>(),
+                                                    pin_source<fl::CipherTierLattice>(),
+                                                    pin_source<fl::ResidencyHeatLattice>(),
+                                                    pin_source<fl::ToleranceLattice>(),
+                                                    pin_source<fl::WaitLattice>(),
+                                                    pin_source<fl::LifetimeLattice>(),
+                                                    pin_source<fl::BarrierStrengthLattice>(),
+                                                    pin_source<fl::SuspendBehaviorLattice>(),
+                                                    pin_source<fl::PinningRequirementLattice>(),
+                                                    pin_source<fl::SchedulerPolicyLattice>(),
+                                                    pin_source<fl::VendorLattice>(),
+                                                    pin_source<fl::MemoryScopeLattice>(),
+                                                    pin_source<fl::ClockSourceLattice, fl::ClockSource>()};
+    for (PinSource const& held_source : sources) {
+        fr::ReflectionList const held_enumerators =
+            fr::reflection_list(std::meta::enumerators_of(held_source.pinned_enum));
+        for (PinSource const& other_source : sources) {
+            fr::ReflectionList const other_enumerators =
+                fr::reflection_list(std::meta::enumerators_of(other_source.pinned_enum));
+            for (std::meta::info const held_enumerator : held_enumerators) {
+                std::meta::info const held = pin_of(held_source.lattice, held_enumerator);
+                std::meta::info const held_element = element_of(held);
+                for (std::meta::info const other_enumerator : other_enumerators) {
+                    std::meta::info const other = pin_of(other_source.lattice, other_enumerator);
+                    std::meta::info const other_element = element_of(other);
+                    bool const is_same_pin = held == other;
+                    if (std::meta::is_convertible_type(other_element, held_element) != is_same_pin) return false;
+                    if (leq_accepts(held, held_element, other_element) != is_same_pin) return false;
+                }
+            }
         }
     }
     return true;
@@ -269,7 +283,7 @@ static_assert(pins_stay_apart());
 // own, so the walk proves a refusal at every pair.
 template <typename... Lattices>
 [[nodiscard]] consteval bool leq_refuses_foreign_elements() {
-    constexpr std::array<std::meta::info, sizeof...(Lattices)> lattices{^^Lattices...};
+    constexpr ::fixy::FixedArray<std::meta::info, sizeof...(Lattices)> lattices{^^Lattices...};
     for (const std::meta::info held : lattices) {
         for (const std::meta::info other : lattices) {
             const bool is_same_lattice = held == other;
