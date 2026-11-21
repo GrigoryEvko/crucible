@@ -18,6 +18,7 @@
 #include <fixy/Core.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/WindowStack.h>
 
 #include <cstdint>
 
@@ -31,7 +32,7 @@ inline constexpr uint16_t kMaxOpOutputs = 64;
 inline constexpr uint32_t kMaxOpRecords = uint32_t{kMaxOpInputs} + uint32_t{kMaxOpOutputs};
 
 // The slots of an OpRecordStack.
-using OpRecordSlots = ::fixy::FixedArray<TensorMeta, kMaxOpRecords>;
+using OpRecordSlots = ::foundation::core::WindowStack<TensorMeta, kMaxOpRecords>;
 
 class OpRecordFrame;
 
@@ -62,7 +63,7 @@ public:
     OpRecordStack& operator=(OpRecordStack&&) = delete("each open frame holds a reference to its stack");
 
     // The count of the slots that the open frames hold.
-    [[nodiscard]] constexpr uint32_t held() const noexcept { return top_; }
+    [[nodiscard]] constexpr uint32_t held() const noexcept { return static_cast<uint32_t>(slots_.held()); }
 
     // The depth of an op that starts now: the count of the open nests.
     [[nodiscard]] constexpr OpDepth depth() const noexcept { return depth_; }
@@ -84,9 +85,9 @@ private:
     friend class OpRecordFrame;
     friend class OpNest;
 
+    // The slots and their top.  A frame takes its slots through a loan of the
+    // window stack, which opens only when its slots fit.
     OpRecordSlots slots_{};
-    // At most kMaxOpRecords.  A frame opens only when its slots fit.
-    uint32_t top_ = 0;
     OpDepth depth_{};
     // The depth of the last op that note_given saw.
     OpDepth last_given_depth_{};
@@ -149,19 +150,10 @@ private:
 // open and each close.
 class [[nodiscard]] OpRecordFrame {
 public:
+    // The loan of the window stack checks at its end that each frame that
+    // opened after this one closed before it.
     OpRecordFrame(OpRecordStack& stack, uint32_t count) noexcept
-        : stack_{::fixy::erase_brand(::fixy::to(stack))},
-          base_{stack.top_},
-          count_{count},
-          slots_{take_slots_(stack, count)} {}
-
-    ~OpRecordFrame() {
-        if (slots_.is_none()) return;
-        // Each frame that opened after this one closed before it, so the top
-        // is the end of the slots of this frame.
-        CRUCIBLE_FATAL_INVARIANT(stack_->top_ == base_ + count_);
-        stack_->top_ = base_;
-    }
+        : loan_{stack.slots_, ::foundation::core::WindowCount{count}} {}
 
     OpRecordFrame(const OpRecordFrame&) = delete("a frame closes at the end of the scope of its op");
     OpRecordFrame& operator=(const OpRecordFrame&) = delete("a frame closes at the end of the scope of its op");
@@ -169,31 +161,15 @@ public:
     OpRecordFrame& operator=(OpRecordFrame&&) = delete("a frame closes at the end of the scope of its op");
 
     // True when the frame holds its count slots.
-    [[nodiscard]] constexpr bool is_open() const noexcept { return slots_.is_some(); }
+    [[nodiscard]] constexpr bool is_open() const noexcept { return loan_.is_open(); }
 
     // The count slots of the frame, or no value when the frame holds no
     // slot.  A slot holds the record of an earlier op until the caller
     // writes it, so a reader reads only the slots that the caller wrote.
-    [[nodiscard]] constexpr ::fixy::Option<::fixy::View<TensorMeta>> slots() const noexcept { return slots_; }
+    [[nodiscard]] constexpr ::fixy::Option<::fixy::View<TensorMeta>> slots() const noexcept { return loan_.window(); }
 
 private:
-    // The count slots at the top of the stack, which the top then passes, or
-    // no value and no change of the top when they do not fit.  The window is
-    // the one fit test of the open.
-    [[nodiscard]] static ::fixy::Option<::fixy::View<TensorMeta>> take_slots_(OpRecordStack& stack,
-                                                                              uint32_t count) noexcept {
-        const uint32_t top = stack.top_;
-        // Only a frame moves the top, and only to the end of slots that fit.
-        [[assume(top <= kMaxOpRecords)]];
-        ::fixy::Option<::fixy::View<TensorMeta>> slots = stack.slots_.view().window(top, count);
-        if (slots.is_some()) stack.top_ = top + count;
-        return slots;
-    }
-
-    ::fixy::Ref<OpRecordStack> stack_;
-    uint32_t base_ = 0;
-    uint32_t count_ = 0;
-    ::fixy::Option<::fixy::View<TensorMeta>> slots_{::fixy::none};
+    ::foundation::core::WindowLoan<TensorMeta, kMaxOpRecords> loan_;
 };
 
 namespace detail {

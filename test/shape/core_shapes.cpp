@@ -30,6 +30,7 @@
 #include <foundation/Quarantine.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/core/Immortal.h>
+#include <foundation/core/WindowStack.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
@@ -308,6 +309,36 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 [[gnu::used]] void fixed_array_with_element(::foundation::core::FixedArray<std::uint64_t, 128>& words,
                                             fixy::Index<128> position, std::uint64_t bit) noexcept {
     words.with_element(position, [bit](std::uint64_t& word) noexcept { word |= bit; });
+}
+
+// Two arrays of a batch, as the batch of the drain stage holds them.
+struct ShapeBatch final {
+    ::foundation::core::FixedArray<std::uint64_t, 64> words{};
+    ::foundation::core::FixedArray<std::uint32_t, 64> halves{};
+};
+
+// The pop of a batch: a copy of a run into each array of the batch, each
+// through its member frame door in place, as the drain stage pops the ring.
+[[gnu::used]] void fixed_array_frame_pop(ShapeBatch& batch, fixy::View<std::uint64_t const, 64> words,
+                                         fixy::View<std::uint32_t const, 64> halves) noexcept {
+    batch.words.with_mut([&batch, words, halves](auto word_run) noexcept {
+        batch.halves.with_mut([&word_run, words, halves](auto half_run) noexcept {
+            fixy::copy(word_run.view(), words);
+            fixy::copy(half_run.view(), halves);
+        });
+    });
+}
+
+// The open of a loan of count elements, a write of its first element, and
+// its end, as the record of one op opens its frame of records.
+[[gnu::used]] std::uint64_t window_loan_open(::foundation::core::WindowStack<std::uint64_t, 64>& stack,
+                                             ::foundation::core::WindowCount count) noexcept {
+    ::foundation::core::WindowLoan<std::uint64_t, 64> const loan{stack, count};
+    std::uint64_t held = 0;
+    for (fixy::View<std::uint64_t> const window : loan.window()) {
+        held = window.size();
+    }
+    return held;
 }
 
 [[gnu::used]] fixy::Option<fixy::Index<16>> index_check(std::size_t position) noexcept {
@@ -1619,6 +1650,34 @@ struct RawColumn final {
 [[gnu::used]] void fixed_array_with_element_raw(std::uint64_t* first, std::uint32_t position,
                                                 std::uint64_t bit) noexcept {
     first[position] |= bit;
+}
+
+struct RawShapeBatch final {
+    std::uint64_t words[64];
+    std::uint32_t halves[64];
+};
+
+[[gnu::used]] void fixed_array_frame_pop_raw(RawShapeBatch& batch, std::uint64_t const* words,
+                                             std::uint32_t const* halves) noexcept {
+    std::memmove(batch.words, words, sizeof batch.words);
+    std::memmove(batch.halves, halves, sizeof batch.halves);
+}
+
+// The stack and the frame of the records of an op before the window stack:
+// the window test, the step of the top and its check at the end.
+struct RawWindowStack final {
+    std::uint64_t slots[64];
+    std::size_t top;
+};
+
+[[gnu::used]] std::uint64_t window_loan_open_raw(RawWindowStack& stack, std::uint32_t count) noexcept {
+    std::size_t const base = stack.top;
+    [[assume(base <= 64)]];
+    if (count > 64 - base) return 0;
+    stack.top = base + count;
+    if (stack.top != base + count) __builtin_trap();
+    stack.top = base;
+    return count;
 }
 
 // An Option of an Index has the niche of the count: 16 is the empty value.

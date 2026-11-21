@@ -531,6 +531,24 @@ PROBES: tuple[Probe, ...] = (
         "with_element of a FixedArray with an Index is the or of the raw subscript into its element, with no bounds "
         "test and no call of the body",
     ),
+    Probe(
+        "fixed_array_frame_pop",
+        "a copy into two FixedArrays through their member frame doors is the two copies of the raw form, with no copy "
+        "of an element into a frame: the doors lend the runs in place.  At -O2 and -O3 the family side moves its "
+        "three arguments into the registers of the call in two more movs",
+        calls=("memmove",),
+        longer=2,
+    ),
+    Probe(
+        "window_loan_open",
+        "the open and the end of a loan of a WindowStack are the window test and the step of the top of the raw "
+        "stack, with the assumption on the top kept, and the check of the end folds.  At -O3 the two sides are the "
+        "same.  At -O1 and -O2 the family side tests the fit with a branch where the raw side takes a cmov, in two "
+        "more instructions",
+        checks=("fatal",),
+        branches=True,
+        longer=2,
+    ),
     Probe("index_check", "the check of an Index is one compare, and the empty Option is the count of the Index"),
     Probe("text_window", "window of a TextView gives its Option with no test of the niche of the Option"),
     Probe(
