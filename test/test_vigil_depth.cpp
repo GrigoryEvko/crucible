@@ -394,7 +394,7 @@ void test_replay_diverges_at_the_close_of_a_nest() {
 
     constexpr uint32_t kReplayed = 3;
     loop.give_iteration(NestEnd::RECORDED);
-    const uint32_t replayed = loop.vigil.compiled_iterations();
+    const uint64_t replayed = loop.vigil.compiled_iterations();
     for (uint32_t step = 0; step < kReplayed; ++step)
         loop.give_iteration(NestEnd::RECORDED);
     CRUCIBLE_TEST_ASSERT(kTest,

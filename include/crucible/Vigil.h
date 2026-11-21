@@ -673,8 +673,8 @@ public:
         return kept;
     }
 
-    [[nodiscard]] uint32_t compiled_iterations() const { return replay_.context().compiled_iterations(); }
-    [[nodiscard]] uint32_t diverged_count() const { return replay_.context().diverged_count(); }
+    [[nodiscard]] uint64_t compiled_iterations() const { return replay_.context().compiled_iterations(); }
+    [[nodiscard]] uint64_t diverged_count() const { return replay_.context().diverged_count(); }
     [[nodiscard]] const CrucibleContext& context() const& { return replay_.context(); }
     const CrucibleContext& context() const&& =
         delete("a temporary Vigil releases its context at the end of the statement. Use a Vigil that has a name");

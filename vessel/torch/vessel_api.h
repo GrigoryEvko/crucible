@@ -243,11 +243,11 @@ CRUCIBLE_VESSEL_API int crucible_flush(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEP
 // aligned to yet reads 0.
 CRUCIBLE_VESSEL_API int crucible_is_compiled(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Number of complete iterations in COMPILED mode.
-CRUCIBLE_VESSEL_API uint32_t crucible_compiled_iterations(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// Number of complete iterations in COMPILED mode, as 64 bits.
+CRUCIBLE_VESSEL_API uint64_t crucible_compiled_iterations(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Number of divergences detected.
-CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// Number of divergences detected, as 64 bits.
+CRUCIBLE_VESSEL_API uint64_t crucible_diverged_count(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Give the eager word of the front end, in the layout of crucible_create.  The
 // caller reads the word when a dispatch result has enters_region, and gives it

@@ -304,7 +304,7 @@ static void test_eager_word_change_is_a_divergence() {
                          vigil.context().is_compiled() && "the foreground replays the region of the attach word");
     const crucible::ContentHash attach_hash =
         vigil.active_region().expect("the flush published a region")->content_hash;
-    const uint32_t diverged = vigil.diverged_count();
+    const uint64_t diverged = vigil.diverged_count();
 
     vigil.observe_eager_numerics(fg, crucible::EagerNumerics{});
     CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && vigil.diverged_count() == diverged

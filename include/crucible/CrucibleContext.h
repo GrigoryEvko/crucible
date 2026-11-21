@@ -339,8 +339,8 @@ struct CrucibleContext {
     void with_output_views(CompiledView const&, Body&&) && =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
-    [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
+    [[nodiscard]] uint64_t compiled_iterations() const { return compiled_iterations_.get(); }
+    [[nodiscard]] uint64_t diverged_count() const { return diverged_count_.get(); }
     // The Vigil owns the region, and this context only points at it.  The
     // reference does not point into this context, and it has no twin.  It
     // is empty while the context records.
@@ -513,18 +513,17 @@ private:
     }
 
     // The engine sits at offset zero, so its own hot cache line is this
-    // object's hot cache line. The View of the ops of the engine, the mode
-    // and the counters share the next one, and the pool follows. The check
-    // file of this header pins the size.
+    // object's hot cache line. The View of the ops of the engine, the mode,
+    // the count of iterations and the active region share the next one, and
+    // the pool follows. The count of divergences is cold, and it goes after
+    // the pool. The check file of this header pins the size.
     ReplayEngine engine_;  // 72 bytes, offset 0
     ContextMode mode_ = ContextMode::RECORD;  // offset 72
-    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 3> pad_{};
-    // Both counters only ever go up: one counts completed iterations, the
-    // other divergences, and neither is reset. The type enforces that, and
-    // catches the one way it could be broken, which is overflow.
-    ::fixy::Monotonic<uint32_t> compiled_iterations_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 76
-    ::fixy::Monotonic<uint32_t> diverged_count_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 80
-    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad2_{};
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 7> pad_{};
+    // The count of completed iterations only goes up, and it is never reset.
+    // Its type starts it at zero and steps it by one, so no bump can wrap it
+    // (THE WIDE COUNTER of fixy/Mutation.h).
+    ::fixy::WideMonotonic<1> compiled_iterations_ = ::fixy::mint_wide_monotonic<1>();  // offset 80
     // The tag records that the background worker of the owning foreground
     // published this region. A region allocated somewhere else has a
     // different lifetime regime, and without the tag the two would be
@@ -541,6 +540,8 @@ private:
 
     ActiveRegionLink active_region_{};  // offset 88
     PoolAllocator pool_;  // 80 bytes, offset 96
+    // The count of divergences, with the type of the count of iterations.
+    ::fixy::WideMonotonic<1> diverged_count_ = ::fixy::mint_wide_monotonic<1>();  // offset 176
     // The allocation capability that the constructor received.  The pool of
     // each activated region allocates only through it.  The tag is empty, so
     // it adds no storage.  It has no initializer, because the one

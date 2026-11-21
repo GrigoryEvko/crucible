@@ -127,7 +127,7 @@ void test_dispatch_binds_each_data_scalar() {
     CRUCIBLE_FATAL_INVARIANT(bound_value_of(vigil, OpIndex{kScaleOp})
                              == ::fixy::bit_cast<int64_t>(2.0 * scalars_of(aligned).step_size));
 
-    const uint32_t compiled_before = vigil.compiled_iterations();
+    const uint64_t compiled_before = vigil.compiled_iterations();
     for (uint32_t iteration = 4; iteration < 8; iteration++) {
         const Iteration iter{iteration};
         for (uint32_t i = 0; i < NUM_OPS; i++) {

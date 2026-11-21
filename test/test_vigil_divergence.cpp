@@ -120,7 +120,7 @@ void test_divergence_drops_the_unobserved_region() {
     // Phase 3: diverge.  The diverging op is not recorded, and the ring is
     // empty, so the background thread cannot publish anything between here
     // and the dispatch below.
-    const uint32_t diverged_before = vigil.diverged_count();
+    const uint64_t diverged_before = vigil.diverged_count();
     OpData foreign_op = op_at(7, 0);
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
     auto result_diverged =

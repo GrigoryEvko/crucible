@@ -1066,9 +1066,9 @@ class _VesselLib:
         # Queries
         L.crucible_is_compiled.restype = ctypes.c_int
         L.crucible_is_compiled.argtypes = [ctypes.c_void_p]
-        L.crucible_compiled_iterations.restype = ctypes.c_uint32
+        L.crucible_compiled_iterations.restype = ctypes.c_uint64
         L.crucible_compiled_iterations.argtypes = [ctypes.c_void_p]
-        L.crucible_diverged_count.restype = ctypes.c_uint32
+        L.crucible_diverged_count.restype = ctypes.c_uint64
         L.crucible_diverged_count.argtypes = [ctypes.c_void_p]
         L.crucible_bg_iterations.restype = ctypes.c_uint32
         L.crucible_bg_iterations.argtypes = [ctypes.c_void_p]

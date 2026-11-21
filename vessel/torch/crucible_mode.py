@@ -114,10 +114,10 @@ class _VesselLib:
         lib.crucible_is_compiled.restype = ctypes.c_int
         lib.crucible_is_compiled.argtypes = [ctypes.c_void_p]
 
-        lib.crucible_compiled_iterations.restype = ctypes.c_uint32
+        lib.crucible_compiled_iterations.restype = ctypes.c_uint64
         lib.crucible_compiled_iterations.argtypes = [ctypes.c_void_p]
 
-        lib.crucible_diverged_count.restype = ctypes.c_uint32
+        lib.crucible_diverged_count.restype = ctypes.c_uint64
         lib.crucible_diverged_count.argtypes = [ctypes.c_void_p]
 
         lib.crucible_export_crtrace.restype = ctypes.c_int

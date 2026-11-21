@@ -406,11 +406,11 @@ int crucible_is_compiled(CrucibleHandle h) noexcept {
     return crucible::vessel::as_vigil_typed(h).value()->is_compiled() ? 1 : 0;
 }
 
-uint32_t crucible_compiled_iterations(CrucibleHandle h) noexcept {
+uint64_t crucible_compiled_iterations(CrucibleHandle h) noexcept {
     return crucible::vessel::as_vigil_typed(h).value()->compiled_iterations();
 }
 
-uint32_t crucible_diverged_count(CrucibleHandle h) noexcept {
+uint64_t crucible_diverged_count(CrucibleHandle h) noexcept {
     return crucible::vessel::as_vigil_typed(h).value()->diverged_count();
 }
 
