@@ -85,7 +85,7 @@ struct Records {
                                   .expect("the kernel commits the records of the test"));
         }
     }
-    alloc::SlabRecords const records = alloc::SlabRecords::at(window.slab_records_at());
+    alloc::SlabRecords const records = alloc::SlabRecords::of(window.slab_records_at());
     return Records{std::move(window), records};
 }
 

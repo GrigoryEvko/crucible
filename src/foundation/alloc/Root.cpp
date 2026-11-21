@@ -41,7 +41,7 @@ struct HeapStateDoor {
         heap->self_ = owner_entry_of(id);
         heap->window_base_ = record.base();
         heap->window_bytes_ = record.length().raw();
-        heap->slab_records_ = SlabRecords::at(window.slab_records_at());
+        heap->slab_records_ = SlabRecords::of(window.slab_records_at());
         auto* const stacks = __builtin_bit_cast(AddressWord*, static_cast<std::uint64_t>(bin_stacks_at(slot)));
         for (std::uint32_t value = 1; value <= kSizeClassCount; ++value) {
             HeapState::Bin& bin = heap->bins_[value];

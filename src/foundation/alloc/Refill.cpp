@@ -108,7 +108,7 @@ AddressWord HeapState::refill_(SizeClass size_class) noexcept {
 
 core::ElementCount HeapState::take_slots_(SizeClass size_class, SlabLink slab, AddressWord* first,
                                           core::ElementCount wanted) noexcept {
-    SlabMeta& meta = slab_records_.meta(slab);
+    SlabMeta& meta = slab_records_.at(slab);
     std::uint64_t const base = slab_first_byte(window_base_, slab);
     std::uint64_t const slot = detail::kSlotFacts.rows[static_cast<std::uint8_t>(size_class)].slot_bytes;
     std::uint64_t summary = static_cast<std::uint64_t>(meta.summary());
@@ -137,11 +137,11 @@ core::ElementCount HeapState::take_slots_(SizeClass size_class, SlabLink slab, A
 }
 
 SlabLink HeapState::start_slab_(SizeClass size_class) noexcept {
-    bool const is_small = slab_kind_of(size_class) == SlabKind::small;
+    bool const is_small = static_cast<std::uint8_t>(size_class) <= kLastSmallClass;
     SlabHeap& empties = is_small ? empty_small_ : empty_medium_;
     SlabLink slab = empties.pop_min(slab_records_);
     if (slab == SlabLink::none) slab = is_small ? start_small_unit_() : start_medium_chunk_();
-    start_bitmap(slab_records_.meta(slab), size_class);
+    start_bitmap(slab_records_.at(slab), size_class);
     partial_[static_cast<std::uint8_t>(size_class)].insert(slab_records_, slab);
     return slab;
 }
@@ -184,9 +184,9 @@ HeapCensus HeapState::census() const noexcept {
         if (is_guard_chunk(chunk) || chunk_map_.owner_of(first_byte) != self_) continue;
         ++chunks;
         UnitIndex const first_unit{core::StaticIndex<0>{}};
-        SizeClass const first_class = slab_records_.meta(slab_number_of(chunk, first_unit)).size_class();
+        SizeClass const first_class = slab_records_.at(slab_number_of(chunk, first_unit)).size_class();
         std::uint32_t units = kUnitsPerChunk;
-        if (slab_kind_of(first_class) == SlabKind::medium) {
+        if (static_cast<std::uint8_t>(first_class) > kLastSmallClass) {
             units = 1;
         } else if (chunk == small_chunk_) {
             units = small_units_;
@@ -194,7 +194,7 @@ HeapCensus HeapState::census() const noexcept {
         bool has_taken = false;
         for (std::uint32_t raw_unit = 0; raw_unit < units; ++raw_unit) {
             UnitIndex const unit = UnitIndex::check(raw_unit).expect("a unit of a chunk lies below 32");
-            SlabMeta const& meta = slab_records_.meta(slab_number_of(chunk, unit));
+            SlabMeta const& meta = slab_records_.at(slab_number_of(chunk, unit));
             std::size_t const slots = detail::kSlotFacts.rows[static_cast<std::uint8_t>(meta.size_class())].slab_slots;
             std::size_t const free = meta.free_count().raw();
             ++slabs;

@@ -77,11 +77,11 @@ void HeapState::give_back_(SizeClass size_class, AddressWord block) noexcept {
                     class_value);
     }
     // A medium slab is the whole chunk: the record of its unit 0.
-    bool const is_small = slab_kind_of(size_class) == SlabKind::small;
+    bool const is_small = static_cast<std::uint8_t>(size_class) <= kLastSmallClass;
     std::uint32_t const unit_mask = is_small ? ~std::uint32_t{0} : ~(kUnitsPerChunk - 1);
     SlabNumber const number{static_cast<std::uint32_t>(offset >> kUnitShift) & unit_mask};
     SlabLink const slab = link_of(number);
-    SlabMeta& meta = slab_records_.meta(slab);
+    SlabMeta& meta = slab_records_.at(slab);
     if (meta.size_class() != size_class) {
         core::fatal("foundation: a release gave the block at {} with the class {}, and its slab holds the class {}",
                     address, class_value, std::uint32_t{static_cast<std::uint8_t>(meta.size_class())});

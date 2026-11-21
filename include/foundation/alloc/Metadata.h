@@ -326,11 +326,13 @@ inline constexpr SlotFactTable kSlotFacts = build_slot_facts_();
 
 // The slot whose first byte is OFFSET bytes after the first byte of a slab of
 // the class, or none for an offset that is not the first byte of a slot of
-// the slab (THE SLOT OF AN OFFSET).  Complexity: O(1), two multiplies, one
-// shift and three compares, with no division.
+// the slab (THE SLOT OF AN OFFSET).  The flush of a bin in the static library
+// foundation calls it, so the check of the class is a fatal invariant, as in
+// MetadataLayout.  Complexity: O(1), two multiplies, one shift and three
+// compares, with no division.
 [[nodiscard]] constexpr ::foundation::core::Option<SlabSlotIndex>
 slot_at(SizeClass size_class, ::foundation::core::ByteCount offset) noexcept {
-    CRUCIBLE_PRE(is_size_class(size_class));
+    CRUCIBLE_FATAL_INVARIANT(is_size_class(size_class));
     std::uint64_t const bytes = offset.raw();
     if (bytes >= kSlabChunkBytes) return ::foundation::core::none;
     detail::SlotFacts const& facts = detail::kSlotFacts.rows[static_cast<std::uint8_t>(size_class)];

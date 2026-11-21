@@ -47,6 +47,7 @@
 // foundation/alloc/Metadata.h.  src/foundation/alloc/SlabHeap.cpp holds the
 // bodies.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Metadata.h>
 #include <foundation/contracts/Pre.h>
@@ -56,52 +57,51 @@
 
 namespace foundation::alloc {
 
-class SlabHeap;
-
 // The slab records of one window: the address of the record of the slab 0.
 // The empty records name no window: the sentinel heap holds them, and no
-// path of the sentinel reads a record.  Only the engine reads a record in
-// place: the slab heap and the cold bodies of a HeapState.  Each other reader
-// reads the links of a slab by value.
+// path of the sentinel reads a record.  A record lives at its place in the
+// region (THE RECORDS of foundation/alloc/Metadata.h), so the engine reads
+// and writes it through the accessor at, and a test reads the links of a
+// slab by value.
 class SlabRecords final {
 public:
     constexpr SlabRecords() noexcept = default;
 
     // The records whose first record, the record of the slab 0, is at the
     // address.  The window door gives the address (Window::slab_records_at).
-    [[nodiscard]] static constexpr SlabRecords at(AddressWord first_record) noexcept {
+    [[nodiscard]] static constexpr SlabRecords of(AddressWord first_record) noexcept {
         return SlabRecords{static_cast<std::uint64_t>(first_record)};
     }
 
     [[nodiscard]] constexpr bool is_empty() const noexcept { return first_ == 0; }
 
-    // The three links of a linked slab, by value: its first child, its next
-    // sibling, and its last sibling or its parent.  A test of a slab heap
-    // walks them.
-    [[nodiscard]] SlabLink child_of(SlabLink slab) const noexcept { return meta(slab).heap_child(); }
-    [[nodiscard]] SlabLink next_of(SlabLink slab) const noexcept { return meta(slab).heap_next(); }
-    [[nodiscard]] SlabLink prev_of(SlabLink slab) const noexcept { return meta(slab).heap_prev(); }
-
-private:
-    friend class HeapState;
-    friend class SlabHeap;
-
     // The record of a linked slab.  The cold bodies of the static library
     // foundation call it, so the check is a fatal invariant in each build, as
     // in foundation/alloc/Metadata.h.  Complexity: O(1), one multiply and one
     // add.
-    [[nodiscard]] SlabMeta& meta(SlabLink slab) const noexcept {
+    [[nodiscard]] SlabMeta& at(SlabLink slab) const noexcept {
         CRUCIBLE_FATAL_INVARIANT(slab != SlabLink::none);
         std::uint64_t const index = static_cast<std::uint64_t>(slab) - 1;
         return *__builtin_bit_cast(SlabMeta*, first_ + index * kSlabMetaBytes);
     }
 
     // The record of a slab by its number.
-    [[nodiscard]] SlabMeta& meta(SlabNumber slab) const noexcept { return meta(link_of(slab)); }
+    [[nodiscard]] SlabMeta& at(SlabNumber slab) const noexcept { return at(link_of(slab)); }
 
+    // The three links of a linked slab, by value: its first child, its next
+    // sibling, and its last sibling or its parent.  A test of a slab heap
+    // walks them.
+    [[nodiscard]] SlabLink child_of(SlabLink slab) const noexcept { return at(slab).heap_child(); }
+    [[nodiscard]] SlabLink next_of(SlabLink slab) const noexcept { return at(slab).heap_next(); }
+    [[nodiscard]] SlabLink prev_of(SlabLink slab) const noexcept { return at(slab).heap_prev(); }
+
+private:
     constexpr explicit SlabRecords(std::uint64_t first) noexcept : first_{first} {}
 
     std::uint64_t first_ = 0;
+    // The assignments are user-provided, so std::bit_cast builds no records
+    // from bytes (foundation/ByteSeal.h), and a copy stays trivial.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
 // The root of one slab heap (THE SLAB HEAP).  A new heap is empty.

@@ -246,9 +246,11 @@ public:
 
     // One block of a class with a slab, from the bin of the class (THE FAST
     // PATHS).  Complexity: O(1), six instructions with a constant class.  An
-    // empty bin takes the cold refill.
+    // empty bin takes the cold refill.  The check of the class is a fatal
+    // invariant, because the cold bodies of the static library call the fast
+    // paths, and it folds away for a constant class.
     [[nodiscard, gnu::always_inline]] AddressWord allocate(SizeClass size_class) noexcept {
-        CRUCIBLE_PRE(is_size_class(size_class));
+        CRUCIBLE_FATAL_INVARIANT(is_size_class(size_class));
         Bin& bin = bins_[static_cast<std::uint8_t>(size_class)];
         AddressWord* const head = bin.head;
         if (head == bin.empty_end) [[unlikely]] {
@@ -263,7 +265,7 @@ public:
     // Complexity: O(1), six instructions with a constant class.  A full bin
     // takes the cold flush.
     [[gnu::always_inline]] void release(SizeClass size_class, AddressWord block) noexcept {
-        CRUCIBLE_PRE(is_size_class(size_class));
+        CRUCIBLE_FATAL_INVARIANT(is_size_class(size_class));
         Bin& bin = bins_[static_cast<std::uint8_t>(size_class)];
         AddressWord* head = bin.head;
         if (head == bin.full_begin) [[unlikely]] {

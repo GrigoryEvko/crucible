@@ -13,8 +13,11 @@ namespace foundation::alloc {
 static_assert(sizeof(SlabHeap) == 4);
 static_assert(SlabHeap{}.is_empty() && SlabHeap{}.min() == SlabLink::none);
 
-// The records of a window are one word, which a call passes in a register.
-static_assert(sizeof(SlabRecords) == 8 && std::is_trivially_copyable_v<SlabRecords>);
+// The records of a window are one word, which a call passes in a register:
+// the copy and the destructor are trivial.  The assignments are not, so
+// std::bit_cast builds no records from bytes.
+static_assert(sizeof(SlabRecords) == 8 && std::is_trivially_copy_constructible_v<SlabRecords>);
+static_assert(std::is_trivially_destructible_v<SlabRecords> && !std::is_trivially_copyable_v<SlabRecords>);
 static_assert(SlabRecords{}.is_empty());
 
 }  // namespace foundation::alloc

@@ -661,6 +661,10 @@ witness <foundation/alloc/Metadata.h> private | foundation::alloc::MetadataLayou
 # A window owns the reservation of a window and of its region, which the
 # ladder of the window door gave.
 witness <foundation/alloc/Window.h> private | foundation::alloc::Window | foundation::alloc::Window{forge::rvalue<foundation::os::Reservation>(), forge::rvalue<foundation::os::Reservation>(), forge::rvalue<foundation::alloc::MetadataLayout>(), forge::rvalue<foundation::alloc::WindowRecord>()}
+# The slab records of a window name the first record of the slab records of
+# the window door.  Only SlabRecords::of builds them, from the address that
+# the window door gives.
+witness <foundation/alloc/SlabHeap.h> private | foundation::alloc::SlabRecords | foundation::alloc::SlabRecords{forge::rvalue<std::uint64_t>()}
 # A block of a heap scope names one block that the heap of the scope gave.
 # Only allocate of the scope builds one.
 witness <foundation/heap/HeapScope.h> private | foundation::heap::LocalBlock<foundation::alloc::SizeClass{1}, forge::brand> | foundation::heap::LocalBlock<foundation::alloc::SizeClass{1}, forge::brand>{forge::rvalue<foundation::alloc::AddressWord>()}
