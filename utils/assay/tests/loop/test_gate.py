@@ -272,6 +272,11 @@ if mode == "both":
 if mode == "moves":
     ledger = pathlib.Path("utils/ledgers/home.txt").read_text()
     statuses["test_ledger"] = "fail" if "include/old.h" in ledger else "run"
+if mode in ("budget", "budget-plugin"):
+    ledger = pathlib.Path("utils/ledgers/header-alone.txt").read_text()
+    statuses["guard_header_alone"] = "fail" if "| 3.1 |" in ledger else "run"
+if mode == "budget-plugin":
+    statuses["guard_plugin"] = "fail"
 inventory = build / "inventory.txt"
 if inventory.is_file():
     held = pathlib.Path("misc/mint-inventory.md").read_text()
@@ -287,9 +292,10 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
 # of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
 # reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
-# gate does.  `write --admit --reason TEXT` adds a row of door-unit, or two rows of owners, with that reason.  Each
-# write writes its rule, the count of its build directories, and the word admit and the reason of the mode admit to
-# writes.txt of each of them.
+# gate does.  `write --rule header-alone --reason TEXT` raises the row of include/a.h from 3.1 to 3.3 with that reason,
+# as a raise of a budget does.  `write --admit --reason TEXT` adds a row of door-unit, or two rows of owners, with that
+# reason.  Each write writes its rule, the count of its build directories, and the word admit and the reason of the
+# mode admit to writes.txt of each of them.
 UTILS_MARK = "@UTILS@"
 GUARD_MASTER = """import os
 import pathlib
@@ -321,6 +327,10 @@ if words[0] == "write":
             ],
         }
         ledger.write_text(ledger.read_text() + "".join(f"{row}\\n" for row in rows.get(words[2], [])))
+    elif words[2] == "header-alone":
+        ledger = pathlib.Path("utils/ledgers/header-alone.txt")
+        raised = f"| 3.3 | - | {words[words.index('--reason') + 1]}"
+        ledger.write_text(ledger.read_text().replace("| 3.1 | - | a kept header", raised))
     elif words[2] == "door-unit":
         ledger = pathlib.Path("utils/ledgers/door-unit.txt")
         ledger.write_text(ledger.read_text().replace("| 2 |", "| 1 |"))
@@ -1583,6 +1593,93 @@ def ratchet_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
+BUDGET_PATH = "utils/ledgers/header-alone.txt"
+BUDGET_LEDGER = "format 1\nrule header-alone\ninclude/a.h | - | 3.1 | - | a kept header\n"
+BUDGET_REASON = "the owner decision of 2026-11-15: the header grows with a new door"
+
+
+def budget_cases(expect: testing.Expect) -> None:
+    """Hold THE RAISE OF A BUDGET: a crossed row of header-alone rises with the reason, and a different problem stays.
+
+    With no budget reason, the crossed row refuses the commit.  With a budget reason, the gate writes the row with the
+    reason, folds it into the commit, runs the round again with the checks of the red configuration, and gives the line
+    of the raise.  A red test of a rule of correctness next to the crossed row refuses the commit with the reason too.
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-budget-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root, {BUDGET_PATH: BUDGET_LEDGER})
+        commit = commit_change(root, "src/a.cpp", "int a;\n", "Grow a header")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "budget", OTHER_BUILDS)
+        build = tree / "build"
+        (build / "red.txt").write_text("guard_header_alone\n", encoding="utf-8")
+        finding = f"{tree}/include/a.h:0: error: [header-alone] include/a.h includes 3.3 MB, above its row\n"
+        (build / "guard_header_alone.out").write_text(finding, encoding="utf-8")
+        plain = gate.Candidate(head, commit, ("src/a.cpp",))
+        verdict, printed = testing.captured(lambda: planted.check(plain, False))
+        holds = (
+            not verdict.is_accepted
+            and any("red alone too: guard_header_alone" in problem for problem in verdict.problems)
+            and verdict.raised == ()
+            and git.show(root, verdict.final, BUDGET_PATH) == BUDGET_LEDGER.encode()
+        )
+        label = f"with no budget reason, a crossed row of header-alone refuses the commit: {verdict.problems}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        checks = build / "checks.txt"
+        checks.unlink(missing_ok=True)
+        reasoned = replace(plain, budget_reason=BUDGET_REASON)
+        verdict, printed = testing.captured(lambda: planted.check(reasoned, False))
+        line = f"{BUDGET_PATH}: include/a.h from 3.1 to 3.3"
+        landed_ledger = git.show(root, verdict.final, BUDGET_PATH) if verdict.final else None
+        holds = (
+            verdict.is_accepted
+            and verdict.raised == (line,)
+            and verdict.final not in ("", commit)
+            and git.parent(root, verdict.final) == head
+            and verdict.ledgers == (BUDGET_PATH,)
+            and landed_ledger
+            == BUDGET_LEDGER.replace("| 3.1 | - | a kept header", f"| 3.3 | - | {BUDGET_REASON}").encode()
+            and f"loop land: the gate raised the row {line}" in printed
+            and "reconfigure-noop" in (checks.read_text(encoding="utf-8") if checks.is_file() else "")
+        )
+        label = (
+            f"with a budget reason, the gate raises the crossed row with the reason, folds it into the commit, runs the "
+            f"checks of the red configuration in the round again, and gives the line of the raise: {verdict.raised}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        (build / "mode.txt").write_text("budget-plugin\n", encoding="utf-8")
+        (build / "red.txt").write_text("guard_header_alone guard_plugin\n", encoding="utf-8")
+        (build / "guard_plugin.out").write_text(f"{tree}/src/a.cpp:1: error: [quarantine] a raw pointer\n")
+        verdict, printed = testing.captured(lambda: planted.check(reasoned, False))
+        holds = (
+            not verdict.is_accepted
+            and any("guard_plugin" in problem for problem in verdict.problems)
+            and verdict.raised == ()
+            and git.show(root, verdict.final, BUDGET_PATH) == BUDGET_LEDGER.encode()
+            and (tree / BUDGET_PATH).read_text(encoding="utf-8") == BUDGET_LEDGER
+        )
+        label = (
+            f"a count of a rule of correctness next to a crossed row refuses the commit with the reason too: {verdict}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        outcome = gate.Outcome(
+            "default", ("default: red alone too: guard_step_cost",), ("guard_step_cost",), 1.0, False
+        )
+        items = ("default: guard_step_cost: test/a.cpp:0 [step-cost]",)
+        expect(
+            "an outcome of a budget needs a finding line of a budget rule for each item of each test of BUDGET_TESTS",
+            gate.is_budget_outcome(replace(outcome, items=items))
+            and not gate.is_budget_outcome(replace(outcome, items=("default: guard_step_cost",)))
+            and not gate.is_budget_outcome(
+                replace(outcome, items=(*items, "default: guard_step_cost: b:0 [quarantine]"))
+            )
+            and not gate.is_budget_outcome(replace(outcome, red=("test_vigil",), items=items))
+            and not gate.is_budget_round([replace(outcome, items=items), replace(outcome, is_stopped=True)]),
+        )
+
+
 def changed_tests_cases(expect: testing.Expect) -> None:
     """Hold a configuration of the tests of the changed inputs: no --all, and a red test rejects."""
     with tempfile.TemporaryDirectory(prefix="gate-changed-") as work_text:
@@ -2569,6 +2666,7 @@ def main(argv: list[str]) -> int:
             built_cases,
             built_fixture_cases,
             ratchet_cases,
+            budget_cases,
             changed_tests_cases,
             touched_cases,
             thread_cases,

@@ -338,12 +338,23 @@ def word_cases(expect: testing.Expect) -> None:
             ("--check with --dry-run", ["--check", "--dry-run", "-m", "s", "--patch", "p", "--"]),
             ("a word that is no option", ["--force", "-m", "s", "--patch", "p", "--"]),
             ("--jobs that is no number above 0", ["--jobs", "0", "-m", "s", "--patch", "p", "--"]),
+            ("a budget reason with a bar", ["--budget-reason", "a | b", "-m", "s", "--patch", "p", "--"]),
+            ("an empty budget reason", ["--budget-reason", " ", "-m", "s", "--patch", "p", "--"]),
+            ("two budget reasons", ["--budget-reason", "a", "--budget-reason", "b", "-m", "s", "--patch", "p", "--"]),
+            ("a budget reason with --dry-run", ["--budget-reason", "a", "--dry-run", "-m", "s", "--patch", "p", "--"]),
         ):
             try:
                 land.parse(words, scratch)
                 expect(f"the parse refuses {name}", False)
             except land.LandError:
                 expect(f"the parse refuses {name}", True)
+        _request, reasoned = land.parse(
+            ["--series", "wt/a", "--budget-reason", "the cause of the growth", "--"], scratch
+        )
+        expect(
+            "--budget-reason gives the reason of the raise of a budget, also for a series",
+            reasoned.budget_reason == "the cause of the growth" and reasoned.series == "wt/a",
+        )
 
 
 def edit_cases(expect: testing.Expect) -> None:
@@ -1256,6 +1267,56 @@ def count_sum_cases(expect: testing.Expect) -> None:
             f"a series with a commit whose subject a commit of HEAD after the merge base holds is refused: {said}",
             "'Add r1.txt' of the series has the subject of a commit of HEAD" in said and "git rebase main" in said,
         )
+
+
+def budget_reason_cases(expect: testing.Expect) -> None:
+    """Hold THE BUDGET REASON: the request file holds it, a chain gets it only from each request, and a verdict names
+    each raised row."""
+    with tempfile.TemporaryDirectory(prefix="land-budget-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        queue = work / "queue"
+        queue.mkdir()
+        first, second = (land.Options(False, False, jobs=1, budget_reason=text) for text in ("a cause", "b cause"))
+        queued = land.Queued(7, root, request_of(("Add r1",), own=("r1.txt",)), first, token="planted")
+        decoded = land.decoded_request(queue, 7, land.encoded_request(queued, []))
+        expect("the request file holds the budget reason", decoded.options.budget_reason == "a cause")
+        line = "utils/ledgers/header-alone.txt: include/a.h from 3.1 to 3.3"
+        seen: list[gate.Candidate] = []
+
+        def raising(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Accept each commit with one raised row, as a raise of a budget gives."""
+            seen.append(candidate)
+            return gate.Verdict(("debug",), (), 1.0, raised=(line,))
+
+        def reasons_of(chosen: Sequence[land.Options], label: str) -> tuple[str, list[str]]:
+            """Land one request with each option set, and give the reason of the candidate and the lines of request 1.
+
+            The label goes into each own file, so each request of each call changes its file.
+            """
+            seen.clear()
+            requests = own_requests(root, [f"{label} {index}\n" for index in range(len(chosen))])
+            batch = [land.Queued(index + 1, root, item, chosen[index]) for index, item in enumerate(requests)]
+            decisions: dict[int, land.Decision] = {}
+            landing = land.BatchLanding(
+                batch, raising, lambda item, made: decisions.__setitem__(item.number, made), no_pause
+            )
+            landing.land(batch)
+            numbers = [number for number, made in sorted(decisions.items()) if made.status == 0]
+            return (seen[0].budget_reason if numbers == [1, 2] else "both did not land"), [
+                item.content for item in decisions[1].lines
+            ]
+
+        reason, lines = reasons_of([first, second], "reasoned")
+        expect(
+            f"a chain of requests that each give a reason gets the reason of each, and the verdict names the raised "
+            f"row: {reason!r} {lines}",
+            reason == "a cause.  b cause"
+            and f"loop land: the gate raised the row {line} with the budget reason" in lines,
+        )
+        reason, _lines = reasons_of([first, land.Options(False, False, jobs=1)], "mixed")
+        expect("a chain with a request of no reason gets no reason, so it gets no raise", reason == "")
 
 
 def fall_cases(expect: testing.Expect, work: Path) -> None:
@@ -3609,6 +3670,7 @@ def main(argv: list[str]) -> int:
             falls_cases,
             merge_cases,
             count_sum_cases,
+            budget_reason_cases,
             built_cases,
             built_race_cases,
             ratchet_rows_cases,

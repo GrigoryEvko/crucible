@@ -328,7 +328,9 @@ THE THREADS
 
 THE STOP
     In the run of a commit, the first configuration with a problem stops
-    the others.  A run of the base has no such stop.  Each command
+    the others.  A run of the base has no such stop, and a crossed row of a
+    budget in the first round of a candidate with a budget reason does not
+    stop the others (THE RAISE OF A BUDGET).  Each command
     of the step looks at the stop event each STOP_POLL_S seconds.  At the
     stop, the process group of the command gets the stop of
     Running.stop() of assay.core.proc.  Its configuration then ends with no
@@ -506,6 +508,39 @@ THE RATCHET ROWS
     of one build are partial, and a different configuration can give a
     higher count (THE WRITE of assay.core.ledger).  The refusal of the
     landing gives the rows after the problems (assay.loop.land).
+
+THE RAISE OF A BUDGET
+    A row of a rule of BUDGET_RULES keeps a size or a cost: header-alone,
+    object-size, step-cost and instruction-total.  The owner decision of
+    2026-11-15 tells that a correct change that crosses such a row raises
+    the row with its measured value and a reason.  A candidate with a budget
+    reason (Candidate.budget_reason, `loop land --budget-reason TEXT`) lets
+    the gate make that raise in its own run, so no second queue is
+    necessary.  The rules of correctness are never in BUDGET_RULES, so no
+    count of the quarantine, of must-consume or of a different such rule
+    rises this way, and no red test or fixture passes this way.
+      * An outcome of a budget has one problem, and each test that is red
+        alone too is the test of a rule of BUDGET_RULES (BUDGET_TESTS).  Each
+        failing item is a finding line of such a rule (is_budget_outcome()).
+        In the first round of such a candidate, an outcome of a budget does
+        not set the stop (THE STOP).  Thus each configuration ends, and the
+        round shows each crossed row.
+      * When each outcome with a problem is an outcome of a budget, the gate
+        runs `guard write --rule RULE --build-dir BUILD --reason TEXT` of
+        the warm tree for each such rule and configuration (Step.
+        raise_budgets()).  The write of a measured rule writes each crossed
+        row with the measured value (THE WRITE of assay.core.budget).
+      * A write that fails, or writes that change no row, give the ledgers
+        their bytes back, and the problems of the round stay.
+      * Else the round has no problem.  THE REDUCE runs when the round built
+        each configuration, and the fold puts the raised ledgers and the
+        falls into the commit.  Each configuration then runs again, as after
+        THE REDUCE, and the round after the fold also runs `guard warnings`
+        and the rule reconfigure-noop for each configuration whose first
+        round was red (Step.unchecked).  A crossed row in that round is a
+        problem, so the candidate gets no second raise.
+    The verdict gives a line for each raised row, with its old and its new
+    value (Verdict.raised), and the record of the run holds the lines.
 
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
@@ -687,6 +722,12 @@ BUILD_PROBLEM = "the build or the test run gives an error"
 PLUGIN_TEST = "guard_plugin"
 RULE_TEST_PREFIX = "guard_"
 ROW_REASON = "REASON"
+# The rules of a budget, whose rows the gate raises for a candidate with a budget reason, and the test of the suite of
+# each rule (THE RAISE OF A BUDGET).  No rule of correctness is in the list.
+BUDGET_RULES = ("header-alone", "instruction-total", "object-size", "step-cost")
+BUDGET_TESTS = {f"{RULE_TEST_PREFIX}{rule.replace('-', '_')}": rule for rule in BUDGET_RULES}
+# The rule of a failing item of a finding line (THE FAILING ITEMS).
+ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
 # SELECTION).
 ALWAYS = "default"
@@ -886,7 +927,8 @@ class Candidate:
     run in the first line of the check, such as "the run of the base at COMMIT".  The landing gives it, because only
     the landing knows the kind of the run.  With no title, the line names the commit.  `on_fold` gets the new commit
     when the gate folds the built files into the commit, before the tests of each configuration (THE BUILT FILES).
-    The landing then writes that commit into its entry of the stack (THE STACK of assay.loop.land).
+    The landing then writes that commit into its entry of the stack (THE STACK of assay.loop.land).  `budget_reason`
+    is the reason of each row of a budget that the gate raises, or "" for no raise (THE RAISE OF A BUDGET).
     """
 
     head: str
@@ -897,6 +939,7 @@ class Candidate:
     built: tuple[str, ...] = ()
     title: str = ""
     on_fold: Callable[[str], None] | None = field(default=None, compare=False)
+    budget_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -911,7 +954,8 @@ class Verdict:
     VERDICT).  `flaky` gives each test that was red in the suite and green alone, as CONFIGURATION: TEST.  `built`
     holds each file that the gate wrote from the build of ALWAYS and folded into `final` (THE BUILT FILES).  `rows`
     holds the lines of THE RATCHET ROWS of a refused commit.  `items` holds the failing items of the problems (THE
-    FAILING ITEMS).  A verdict with problems and no items gets each problem as its own item.
+    FAILING ITEMS).  A verdict with problems and no items gets each problem as its own item.  `raised` holds a line for
+    each row of a budget that the gate raised, with the old and the new value (THE RAISE OF A BUDGET).
     """
 
     configurations: tuple[str, ...]
@@ -928,6 +972,7 @@ class Verdict:
     slot_seconds: tuple[float, ...] = ()
     rows: tuple[str, ...] = ()
     items: tuple[str, ...] = ()
+    raised: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Give each problem as its own item when the verdict has no items, so a problem always has an item."""
@@ -1246,6 +1291,59 @@ def row_kind(line: str) -> str:
     """Return the KIND cell of a row of a ledger, PATH | KIND | VALUE | ENTITY | REASON, or "" for a different line."""
     cells = line.split(" | ", 2)
     return cells[1] if len(cells) > 1 else ""
+
+
+def is_budget_outcome(outcome: Outcome) -> bool:
+    """Tell if each problem of an outcome is a crossed row of a budget (THE RAISE OF A BUDGET).
+
+    Such an outcome has one problem: the tests that are red alone too.  Each such test is a test of BUDGET_TESTS, and
+    each failing item is a finding line of a rule of BUDGET_RULES.  A test with no finding line, or with an output that
+    ctest cut, gives an item with no rule, and such an outcome is no outcome of a budget.  Complexity: linear in the
+    items.
+    """
+    if len(outcome.problems) != 1 or not outcome.red or not outcome.items:
+        return False
+    if not all(name in BUDGET_TESTS for name in outcome.red):
+        return False
+    found = [ITEM_RULE.search(item) for item in outcome.items]
+    return all(match is not None and match["rule"] in BUDGET_RULES for match in found)
+
+
+def is_budget_round(outcomes: Sequence[Outcome]) -> bool:
+    """Tell if a round has a problem, and each outcome with a problem is an outcome of a budget (THE RAISE OF A BUDGET).
+
+    A stopped outcome tells that a different problem set the stop, so a round with one is no round of a budget.
+    """
+    if any(item.is_stopped for item in outcomes):
+        return False
+    red = [item for item in outcomes if item.problems]
+    return bool(red) and all(is_budget_outcome(item) for item in red)
+
+
+def raised_lines(path: str, before: str, after: str) -> list[str]:
+    """Return a line for each row of a ledger that a raise wrote: its key, its old value or no row, and its new value.
+
+    A row is PATH | KIND | VALUE | ENTITY | REASON, and its key is PATH, KIND and ENTITY.  A row that the write did not
+    change gives no line.  Complexity: linear in the lines of the two texts.
+    """
+
+    def rows_of(text: str) -> dict[tuple[str, str, str], str]:
+        """Return the value of each row of a ledger text by its key."""
+        rows: dict[tuple[str, str, str], str] = {}
+        for line in text.splitlines():
+            cells = line.split(" | ", 4)
+            if len(cells) == 5 and not line.startswith("#"):
+                rows[(cells[0], cells[1], cells[3])] = cells[2]
+        return rows
+
+    old, new = rows_of(before), rows_of(after)
+    lines: list[str] = []
+    for key, value in sorted(new.items()):
+        if old.get(key) == value:
+            continue
+        shown = " ".join(cell for cell in key if cell != "-")
+        lines.append(f"{path}: {shown} from {old.get(key, 'no row')} to {value}")
+    return lines
 
 
 def is_checked(configuration: Configuration, rule_id: str) -> bool:
@@ -1774,6 +1872,14 @@ class Gate:
             if not outcomes:
                 outcomes = step.run_all(plan, first_plan if others else None, False, is_retry)
                 step.require_problem(outcomes)
+            raised: tuple[str, ...] = ()
+            if not candidate.focus and candidate.budget_reason and is_budget_round(outcomes):
+                raised = step.raise_budgets(outcomes)
+            if raised:
+                step.unchecked = frozenset(item.name for item in outcomes if item.problems or item.is_stopped)
+                outcomes = [replace(item, problems=(), red=(), items=()) for item in outcomes]
+                for line in raised:
+                    check_report.write_line(f"loop land: the gate raised the row {line}")
             rows: tuple[str, ...] = ()
             if not candidate.focus and counted and any(item.red for item in outcomes):
                 rows = self.ratchet(step.candidate, environment, outcomes, counted)
@@ -1828,6 +1934,7 @@ class Gate:
             tuple(round(item.slot_seconds, 1) for item in ended),
             rows,
             tuple(dict.fromkeys(found for item in outcomes for found in item.items or item.problems)),
+            raised,
         )
 
     def ratchet(
@@ -1870,7 +1977,9 @@ class Step:
     its configuration (THE JOBSERVER).  `always_ready` tells that the build of ALWAYS holds the configure of the change
     (THE THREADS).  `built_ready` tells that the write of THE BUILT FILES ended, and it is set from the start for a
     candidate with no built file.  `built` holds each written file that changed, and the run of ALWAYS or
-    write_built() is its one writer.
+    write_built() is its one writer.  `unchecked` names each configuration whose first round ended before its checks
+    after the tests, and the round after a raise runs those checks (THE RAISE OF A BUDGET).  The thread of the check
+    writes it before that round.
     """
 
     __slots__ = (
@@ -1882,6 +1991,7 @@ class Step:
         "environment",
         "gate",
         "stop",
+        "unchecked",
     )
 
     def __init__(self, gate: Gate, candidate: Candidate, environment: Mapping[str, str]) -> None:
@@ -1893,6 +2003,7 @@ class Step:
         self.always_ready = threading.Event()
         self.built_ready = threading.Event()
         self.built: tuple[str, ...] = ()
+        self.unchecked: frozenset[str] = frozenset()
         if not candidate.built:
             self.built_ready.set()
         self._said = threading.Lock()
@@ -2290,6 +2401,59 @@ class Step:
         move_tree(self.gate.root, tree, final)
         return final, ledgers
 
+    def raise_budgets(self, outcomes: Sequence[Outcome]) -> tuple[str, ...]:
+        """Write the crossed rows of each budget of a round with the budget reason, and give a line for each new row.
+
+        THE RAISE OF A BUDGET gives the rules.  Each rule gets one write on the build of each configuration whose test
+        of the rule is red alone too.  The writes of one rule run one after the other, and the rules run at the same
+        time.  A write that fails, or writes that change no row, give each ledger its bytes back and no line, so the
+        problems of the round stay.  Complexity: one write for each rule and each such configuration.
+        """
+        plan: dict[str, list[Configuration]] = {}
+        for item in outcomes:
+            configuration = BY_NAME.get(item.name)
+            if not item.problems or configuration is None:
+                continue
+            for name in item.red:
+                plan.setdefault(BUDGET_TESTS[name], []).append(configuration)
+        if not plan:
+            return ()
+        tree = self.gate.tree
+        paths = {rule: rule_ledger.shown_path(rule) for rule in plan}
+        before = {rule: (tree / path).read_bytes() if (tree / path).is_file() else None for rule, path in paths.items()}
+        self.say(f"loop land: the gate raises the crossed rows of {' '.join(sorted(plan))} with the budget reason")
+        with self.leased() as share:
+
+            def write_rule(rule: str) -> bool:
+                """Write the rows of one rule from the build of each of its configurations, and tell if each exits 0."""
+                for configuration in plan[rule]:
+                    build = build_directory(tree, configuration)
+                    log = log_name(configuration, f"raise-{rule}.log")
+                    command = [*self.gate.master("guard"), "write", "--rule", rule, "--build-dir", str(build)]
+                    command += ["--reason", self.candidate.budget_reason]
+                    status = self.run_logged(command, log, share, proc.TOOL_S)
+                    if status != ExitCode.OK:
+                        shown = self.gate.logs / log
+                        self.say(f"loop land: {configuration.name}: the raise of {rule} exits {status}, see {shown}")
+                        return False
+                return True
+
+            is_written = all(self.concurrently(sorted(plan), write_rule))
+        lines: list[str] = []
+        for rule, path in sorted(paths.items()):
+            after = (tree / path).read_bytes() if (tree / path).is_file() else None
+            lines += raised_lines(path, (before[rule] or b"").decode("utf-8"), (after or b"").decode("utf-8"))
+        if is_written and lines:
+            return tuple(lines)
+        for rule, path in paths.items():
+            kept = before[rule]
+            if kept is None:
+                (tree / path).unlink(missing_ok=True)
+            else:
+                (tree / path).write_bytes(kept)
+        self.say("loop land: the raise writes no row, so the crossed rows of the budgets stay problems")
+        return ()
+
     def ratchet_rows(self, outcomes: Sequence[Outcome], counted: Sequence[str]) -> tuple[str, ...]:
         """Return the lines of THE RATCHET ROWS of the red configurations of objects of a round.
 
@@ -2474,7 +2638,7 @@ class Step:
         warnings = [*self.gate.master("guard"), "warnings", str(build)]
         if self.run_logged(warnings, warnings_log, share, proc.TOOL_S):
             return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], (), flaky
-        if is_again:
+        if is_again and configuration.name not in self.unchecked:
             return [], (), flaky
         return self.checked(configuration, (RECONFIGURE_RULE,), share), (), flaky
 
@@ -2611,7 +2775,8 @@ class Step:
 
         THE THREADS, THE STOP and THE JOBSERVER give the rules.  The time of the outcome starts after the wait for the
         first slot of the lease.  A problem sets the stop event, other than in a run of the base (THE RUN OF THE
-        BASE).  An error of the run sets it too, and goes to the caller.
+        BASE), and other than a crossed row of a budget in the first round of a candidate with a budget reason (THE
+        RAISE OF A BUDGET).  An error of the run sets it too, and goes to the caller.
         """
         name = run.configuration.name
         self.say(f"loop land: {name}: {'test again' if is_again else run.mode.value}")
@@ -2648,10 +2813,12 @@ class Step:
         seconds = round(time.monotonic() - began, 1)
         slot_seconds = lease.slot_seconds if lease is not None else 0.0
         self.say(f"loop land: {name}: {seconds:.0f} s after a wait of {wait_s:.0f} s for its first slot")
-        if problems and not self.candidate.focus:
-            self.stop.set()
         items = self.red_items(run, red, is_again) if red else ()
-        return Outcome(name, tuple(problems), red, seconds, False, flaky, wait_s, slot_seconds, items)
+        outcome = Outcome(name, tuple(problems), red, seconds, False, flaky, wait_s, slot_seconds, items)
+        is_raisable = bool(self.candidate.budget_reason) and not is_again and is_budget_outcome(outcome)
+        if problems and not self.candidate.focus and not is_raisable:
+            self.stop.set()
+        return outcome
 
     def red_items(self, run: Run, red: Sequence[str], is_again: bool) -> tuple[str, ...]:
         """Return the failing items of the tests that are red alone too, from the report of the run alone.

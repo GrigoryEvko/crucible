@@ -10,6 +10,7 @@ THE REQUEST
       --series BRANCH           Each commit of BRANCH that HEAD does not hold, as one request (THE SERIES)
       --jobs N                 The slice of the lease of one configuration of the gate, with SLICE as the most
       --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
+      --budget-reason TEXT      The gate raises each crossed row of a budget with this reason (THE BUDGET REASON)
       --check                   Run the gate on the commit, and do not land it
       --here                    With --check: run this copy of the module (THE DRIVER)
       --dry-run                 Print the diff of the commit, and change nothing
@@ -395,6 +396,22 @@ THE GATE
     the rows of the ratchet ledgers that the build gives (THE RATCHET ROWS of
     assay.loop.gate).
 
+THE BUDGET REASON
+    A correct change that crosses a row of a budget raises the row with its
+    measured value and a reason (the owner decision of 2026-11-15).  With
+    --budget-reason TEXT, the gate makes that raise in the run of the
+    request, and it folds the raised ledgers into the last commit (THE RAISE
+    OF A BUDGET of assay.loop.gate).  The request file holds the reason
+    (encoded_request()).  The candidate of a chain gets a reason only when
+    each request of the chain gives one, and the reason of a chain of more
+    requests holds the reason of each (chain_budget_reason()).  A request
+    with no such reason then never gets a raise from the reason of a
+    different request.  The verdict of each request of the run names each
+    raised row with its old and its new value.  A row of a rule of
+    correctness never rises this way, so the gate refuses each other
+    problem as before.  The text cannot hold '|' or a new line, because it
+    goes into the reason cell of a row.
+
 THE COMPARE-AND-SWAP
     The branch moves to the commit only when the branch holds the commit that
     the batch started from (`git update-ref REF NEW OLD`).  A different
@@ -623,8 +640,10 @@ THE DRIVER
 
 Usage
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
-              [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] -- [PATH]...
-    loop land --series BRANCH [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] --
+              [--jobs N] [--all-configurations] [--budget-reason TEXT] [--check [--here] | --dry-run | --tree]
+              -- [PATH]...
+    loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT]
+              [--check [--here] | --dry-run | --tree] --
 
     Exit 0 when the request landed, when the gate accepts the commit of
     --check, or when --dry-run or --tree printed.  Exit 1 when the gate
@@ -683,7 +702,7 @@ STACK_ATTEMPTS = 8
 INSERT = "insert"
 REPLACE = "replace"
 # The count of the values of each option, for the division of the words (split_words()).
-VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--jobs": 1, "--series": 1}
+VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--jobs": 1, "--series": 1, "--budget-reason": 1}
 FLAG_DRY_RUN = "--dry-run"
 FLAG_TREE = "--tree"
 FLAG_CHECK = "--check"
@@ -695,8 +714,10 @@ HELP_WORDS = (["-h"], ["--help"])
 USAGE = (
     "usage: loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
     "[--block FILE AFTER BLOCK]...\n"
-    "                 [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] -- [PATH]...\n"
-    "       loop land --series BRANCH [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] --"
+    "                 [--jobs N] [--all-configurations] [--budget-reason TEXT] [--check [--here] | --dry-run | --tree] "
+    "-- [PATH]...\n"
+    "       loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT] "
+    "[--check [--here] | --dry-run | --tree] --"
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
@@ -870,6 +891,7 @@ class Options:
     is_every: bool = False
     jobs: int = proc.DEFAULT_JOBS
     series: str = ""
+    budget_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1067,17 +1089,39 @@ def read_text(path: Path) -> str:
         raise LandError(f"the file {path} of an edit cannot be read: {problem}") from None
 
 
-def checked_options(
-    flags: dict[str, bool], jobs_values: list[list[str]], request: Request, series_values: list[list[str]]
-) -> Options:
-    """Return the options of the flags, of --jobs and of --series, and refuse a combination that does not apply.
+def budget_reason_of(reason_values: Sequence[Sequence[str]]) -> str:
+    """Return the reason of --budget-reason, or "" when the words do not give the option (THE BUDGET REASON).
+
+    Raises:
+        LandError: If the option occurs more than one time, or its text cannot be the reason cell of a ledger row
+    """
+    if len(reason_values) > 1:
+        raise LandError("give --budget-reason one time")
+    if not reason_values:
+        return ""
+    reason = reason_values[0][0].strip()
+    if not reason or "|" in reason or "\n" in reason or reason.startswith("-"):
+        raise LandError(
+            f"--budget-reason takes the reason of each raised row of a budget, a text with no '|' and no new line "
+            f"that does not start with '-', not {reason_values[0][0]!r}.  Name the owner decision of 2026-11-15 and "
+            f"the measured cause of the growth"
+        )
+    return reason
+
+
+def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]], request: Request) -> Options:
+    """Return the options of the flags and of the options with values, and refuse a combination that does not apply.
 
     A series takes its messages and its changes from its commits, so it takes no -m, no patch, no edit and no own path
-    (THE SERIES).
+    (THE SERIES).  --dry-run and --tree run no gate, so they take no --budget-reason.
 
     Raises:
         LandError: If the options do not apply together
     """
+    jobs_values, series_values = values["--jobs"], values["--series"]
+    budget_reason = budget_reason_of(values["--budget-reason"])
+    if budget_reason and (flags[FLAG_DRY_RUN] or flags[FLAG_TREE]):
+        raise LandError("--budget-reason applies to a run of the gate, so give it no --dry-run and no --tree")
     if len(jobs_values) > 1:
         raise LandError("give --jobs one time")
     jobs_text = jobs_values[0][0] if jobs_values else None
@@ -1103,7 +1147,14 @@ def checked_options(
         raise LandError("the request holds nothing to commit")
     jobs = int(jobs_text) if jobs_text is not None else proc.DEFAULT_JOBS
     return Options(
-        flags[FLAG_DRY_RUN], flags[FLAG_TREE], flags[FLAG_CHECK], flags[FLAG_HERE], flags[FLAG_EVERY], jobs, series
+        flags[FLAG_DRY_RUN],
+        flags[FLAG_TREE],
+        flags[FLAG_CHECK],
+        flags[FLAG_HERE],
+        flags[FLAG_EVERY],
+        jobs,
+        series,
+        budget_reason,
     )
 
 
@@ -1147,7 +1198,7 @@ def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
         tuple(edits),
         tuple(own),
     )
-    return request, checked_options(flags, values["--jobs"], request, values["--series"])
+    return request, checked_options(flags, values, request)
 
 
 def series_request(root: Path, revision: str, directory: Path) -> Request:
@@ -1938,6 +1989,23 @@ def written_text(verdict: gate.Verdict) -> str:
     return f"{falls}{built}"
 
 
+def chain_budget_reason(chain: Sequence[Link]) -> str:
+    """Return the budget reason of a chain, or "" when a request of the chain gives none (THE BUDGET REASON).
+
+    The reason of a chain of more requests holds the reason of each of them, in the sequence of the chain.  Complexity:
+    linear in the links.
+    """
+    reasons = [link.queued.options.budget_reason for link in chain]
+    if not reasons or not all(reasons):
+        return ""
+    return functools.reduce(rule_ledger.joined_reason, dict.fromkeys(reasons))
+
+
+def raised_of(verdict: gate.Verdict) -> list[Line]:
+    """Return the line of each row of a budget that the gate raised for a verdict (THE BUDGET REASON)."""
+    return [Line(f"loop land: the gate raised the row {line} with the budget reason") for line in verdict.raised]
+
+
 def flaky_of(verdict: gate.Verdict) -> list[Line]:
     """Return the line of each flaky test of a verdict of the gate (THE FLAKY TESTS)."""
     shown = f" (logs in {verdict.logs})" if verdict.logs else ""
@@ -2299,6 +2367,7 @@ class BatchLanding:
             built=built,
             title=f"{kind} at {commit[:SHORT_HASH]}",
             on_fold=self.publish_fold if is_published else None,
+            budget_reason=chain_budget_reason(chain),
         )
         if is_published and self.stack is not None:
             self.is_publishing = False
@@ -2577,7 +2646,7 @@ class BatchLanding:
         folded = written_text(verdict)
         for link in accepted:
             line = Line(f"loop land: the gate accepts the commit {final[:SHORT_HASH]}{folded}")
-            lines = (line, *merge_lines(link), *self.flaky_lines(link.queued.number))
+            lines = (line, *merge_lines(link), *raised_of(verdict), *self.flaky_lines(link.queued.number))
             self.decide(link.queued, Decision(ExitCode.OK, final, lines))
 
     def landed_decisions(
@@ -2610,6 +2679,7 @@ class BatchLanding:
                 lines.append(Line("loop land: the series changes these files:"))
             lines += [Line(f"  {path}") for path in changed]
             lines += merge_lines(link)
+            lines += raised_of(verdict)
             if len(accepted) > 1:
                 lines.append(
                     Line(f"loop land: a batch of {len(accepted)} requests landed at {final[:SHORT_HASH]} with one swap")
@@ -3056,6 +3126,7 @@ def encoded_request(queued: Queued, patch_names: Sequence[str], part_names: Sequ
         ],
         "jobs": queued.options.jobs,
         "every": queued.options.is_every,
+        "budget_reason": queued.options.budget_reason,
         "claims": True,
     }
     return (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
@@ -3114,6 +3185,9 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
     entry_time = record.get("queued", "")
     if not isinstance(entry_time, str):
         raise TypeError("the field queued is not a text")
+    budget_reason = record.get("budget_reason", "")
+    if not isinstance(budget_reason, str):
+        raise TypeError("the field budget_reason is not a text")
     if jobs < 1:
         raise ValueError(f"the field jobs is {jobs}, and a request takes a number above 0")
     parts = tuple(
@@ -3127,7 +3201,7 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         text_list(record.get("paths"), "paths"),
         parts,
     )
-    options = Options(False, False, is_every=every, jobs=jobs)
+    options = Options(False, False, is_every=every, jobs=jobs, budget_reason=budget_reason)
     is_claiming = record.get("claims") is True
     return Queued(number, Path(root), request, options, branch, common, token, head, is_claiming, entry_time)
 
