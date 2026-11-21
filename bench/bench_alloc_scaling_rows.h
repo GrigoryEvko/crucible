@@ -526,7 +526,7 @@ struct BaseAdapter {
         auto first = block.view().get(0).expect("a Written block holds at least 16 bytes");
         for (std::uint32_t write = 0; write < kRewrites; ++write) {
             *first = byte_of(stamp);
-            bench::clobber();
+            bench::clobber_memory();
         }
     }
 
@@ -627,7 +627,7 @@ public:
     void write_first_byte(Stamp stamp) const noexcept {
         for (std::uint32_t write = 0; write < kRewrites; ++write) {
             first_[0] = byte_of(stamp);
-            bench::clobber();
+            bench::clobber_memory();
         }
     }
 

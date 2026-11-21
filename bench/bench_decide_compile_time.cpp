@@ -22,7 +22,7 @@
 //
 // Methodology — every input is volatile-seeded outside the lambda so
 // constant-folding can't elide the body.  Lambda body uses
-// `bench::do_not_optimize(result)` (the `[[gnu::noipa]]` shim) to
+// `bench::do_not_optimize(result)` (the asm sink of the harness) to
 // mark the bool return as observed.  Each procedure
 // covers the canonical instantiation it ships in production: integer
 // types for the overflow / range family, and a View of Interval<uint64_t>

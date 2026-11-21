@@ -4,7 +4,7 @@
 // Each operation of the Atomic family is one __atomic builtin, so its cost
 // is the cost of the instruction that the builtin gives.  The bench gives
 // the latency of each operation on a cell that one thread holds in its own
-// cache, with the call of bench::do_not_optimize in each sample.  A test of
+// cache, with the sink of bench::do_not_optimize in each sample.  A test of
 // the same operations under contention is in test/fixy/test_core_atomic.cpp.
 //
 // Each line gives the percentiles of one operation in picoseconds, and the

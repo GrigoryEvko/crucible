@@ -263,7 +263,7 @@ int main() {
     bench::add_report(reports, bench::run("destroy() (no-op, never init'd)", [&] {
                           PoolAllocator pool;
                           pool.destroy();
-                          bench::do_not_optimize(&pool);
+                          bench::do_not_optimize(pool);
                       }));
 
     bench::add_report(reports, [&] {

@@ -538,6 +538,94 @@ void test_clobber_array_source_container_diversity() {
     }
 }
 
+// The sink of a timed body (THE SINK of bench/bench_harness.h).  An integer,
+// an enumeration and a pointer take a general register, a float and a double
+// a vector register, a small class whose copy is a copy of its bytes a
+// general register or memory, and each other type memory.  Each form changes
+// no bit of its value, the const form and the form that is not const.  That
+// the optimizer keeps the computation of a value is the absence of an
+// elision, so a run cannot show it.  The commit of the sink gives the
+// disassembly of such a loop.
+enum class SinkProbe : std::uint8_t {
+    First = 3,
+    Second = 7,
+};
+
+struct ThreeBytes {
+    std::uint8_t first = 1;
+    std::uint8_t second = 2;
+    std::uint8_t third = 3;
+};
+
+struct TwoWords {
+    std::uint32_t low = 5;
+    std::uint32_t high = 9;
+};
+
+void test_sink_keeps_each_value() {
+    using bench::SinkOperand;
+    static_assert(bench::sink_operand_of<std::uint64_t> == SinkOperand::GeneralRegister);
+    static_assert(bench::sink_operand_of<bool> == SinkOperand::GeneralRegister);
+    static_assert(bench::sink_operand_of<SinkProbe> == SinkOperand::GeneralRegister);
+    static_assert(bench::sink_operand_of<int const*> == SinkOperand::GeneralRegister);
+    static_assert(bench::sink_operand_of<float> == SinkOperand::VectorRegister);
+    static_assert(bench::sink_operand_of<double> == SinkOperand::VectorRegister);
+    static_assert(bench::sink_operand_of<TwoWords> == SinkOperand::RegisterOrMemory);
+    static_assert(bench::sink_operand_of<long double> == SinkOperand::Memory);
+    static_assert(bench::sink_operand_of<ThreeBytes> == SinkOperand::Memory);
+    static_assert(bench::sink_operand_of<::fixy::FixedArray<std::uint64_t, 64>> == SinkOperand::Memory);
+
+    ::fixy::check::Tally checks{kTest, "test_sink_keeps_each_value"};
+    std::uint64_t word = 0x0123456789ABCDEFULL;
+    static_assert(noexcept(bench::do_not_optimize(word)));
+    static_assert(std::is_same_v<decltype(bench::do_not_optimize(word)), void>);
+    bench::do_not_optimize(word);
+    bench::do_not_optimize(word + 1);
+    CRUCIBLE_TEST_EXPECT(checks, word == 0x0123456789ABCDEFULL);
+
+    SinkProbe probe = SinkProbe::Second;
+    bench::do_not_optimize(probe);
+    CRUCIBLE_TEST_EXPECT(checks, probe == SinkProbe::Second);
+
+    TwoWords pair{};
+    bench::do_not_optimize(pair);
+    bench::do_not_optimize(TwoWords{});
+    CRUCIBLE_TEST_EXPECT(checks, pair.low == 5 && pair.high == 9);
+
+    // The bits of a float and of a double, so the compare is exact.
+    float ratio = 0.375f;
+    double scale = -2.25;
+    bench::do_not_optimize(ratio);
+    bench::do_not_optimize(scale);
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::bit_cast<std::uint32_t>(ratio) == ::fixy::bit_cast<std::uint32_t>(0.375f));
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::bit_cast<std::uint64_t>(scale) == ::fixy::bit_cast<std::uint64_t>(-2.25));
+
+    ThreeBytes three{};
+    bench::do_not_optimize(three);
+    bench::do_not_optimize(ThreeBytes{});
+    CRUCIBLE_TEST_EXPECT(checks, three.first == 1 && three.second == 2 && three.third == 3);
+
+    ::fixy::FixedArray<std::uint64_t, 64> words{};
+    for (::fixy::Index<64> const index : words.indices())
+        words.at(index) = index.raw() * 3;
+    bench::do_not_optimize(words);
+    ::fixy::FixedArray<std::uint64_t, 64> const& read = words;
+    bench::do_not_optimize(read);
+    for (::fixy::Index<64> const index : words.indices()) {
+        CRUCIBLE_TEST_EXPECT(checks, words.at(index) == index.raw() * 3);
+    }
+
+    // A loop that gives its sum to the form that is not const computes each
+    // sum, so the last sum is the sum of each step.
+    std::uint64_t sum = 0;
+    for (std::uint64_t step = 0; step < 1000; ++step) {
+        sum += step;
+        bench::do_not_optimize(sum);
+    }
+    CRUCIBLE_TEST_EXPECT(checks, sum == 499500u);
+    std::move(checks).close();
+}
+
 // The number of CPUs in the affinity of the calling thread, or zero when
 // the kernel refuses the query.
 std::size_t affinity_cpu_count() {
@@ -1363,6 +1451,7 @@ int main() {
     test_clobber_array_various_types();
     test_clobber_array_empty_and_single();
     test_clobber_array_source_container_diversity();
+    test_sink_keeps_each_value();
     test_run_pins_through_the_door_and_restores();
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
@@ -1386,7 +1475,7 @@ int main() {
     test_run_measures_in_windows();
     test_windows_judge_no_sleep();
 
-    constexpr int kNumGroups = 24;
+    constexpr int kNumGroups = 25;
     if (g_failures == 0) {
         ::fixy::check::pass(kTest, "test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;

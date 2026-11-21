@@ -389,7 +389,7 @@ int run_bench(::fixy::os::Args const& arguments) {
                     : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
             if (loaded_trace.is_err()) {
                 ::fixy::report(::fixy::Sink::Err, "[skip] could not load {}\n", path_view);
-                return bench::run("build_trace (skipped — load fail)", [] { bench::clobber(); });
+                return bench::run("build_trace (skipped — load fail)", [] { bench::clobber_memory(); });
             }
             const LoadedTrace trace =
                 std::move(loaded_trace).expect("the load holds a trace after the check of its error");

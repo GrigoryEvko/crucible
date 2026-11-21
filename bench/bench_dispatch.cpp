@@ -330,7 +330,7 @@ int main() {
         auto r = bench::run("TraceRing::try_append (raw, reset-on-full)", [&] {
             if (!ring.try_append(entry)) [[unlikely]]
                 ring.reset();
-            bench::do_not_optimize(&ring);
+            bench::do_not_optimize(ring);
         });
         return r;
     }());
@@ -343,7 +343,7 @@ int main() {
             make_meta(fake_ptr(0, 1)),
         };
         return bench::run("MetaLog::try_append (2 metas)", [&] {
-            bench::do_not_optimize(&meta_log);
+            bench::do_not_optimize(meta_log);
             bench::do_not_optimize(meta_log.try_append(metas.view()));
         });
     }());
@@ -389,7 +389,7 @@ int main() {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         return bench::run("Vigil::is_compiled() [true]", [&] {
-            bench::do_not_optimize(&vigil);
+            bench::do_not_optimize(vigil);
             bench::do_not_optimize(vigil.context().is_compiled());
         });
     }());
@@ -408,7 +408,7 @@ int main() {
         // At the end of the cycle the engine starts the region again.
         OpSlot slot = ::fixy::index<0>();
         auto r = bench::run("ReplayEngine::advance (cyclic, 8 ops)", [&] {
-            bench::do_not_optimize(&engine);
+            bench::do_not_optimize(engine);
             auto s = engine.advance(SCHEMA.at(slot), SHAPE.at(slot), av);
             bench::do_not_optimize(s);
             ::fixy::Option<OpSlot> next = OpSlot::check(slot.raw() + 1);
@@ -427,7 +427,7 @@ int main() {
         OpSlot slot = ::fixy::index<0>();
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 8 ops)", [&] {
-            bench::do_not_optimize(&ctx);
+            bench::do_not_optimize(ctx);
             auto s = ctx.advance(SCHEMA.at(slot), SHAPE.at(slot), cv);
             bench::do_not_optimize(s);
             slot = next_in_cycle(slot);
@@ -452,7 +452,7 @@ int main() {
         BigSlot slot = ::fixy::index<0>();
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 32 ops)", [&] {
-            bench::do_not_optimize(&ctx);
+            bench::do_not_optimize(ctx);
             auto s = ctx.advance(big_sch.at(slot), big_shp.at(slot), cv);
             bench::do_not_optimize(s);
             slot = next_in_cycle(slot);

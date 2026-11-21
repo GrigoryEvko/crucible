@@ -120,8 +120,8 @@ static_assert(sizeof(CpuId) == sizeof(int));
 // for short-region timing. Overhead ~15-30 cycles; Timer measures the
 // exact value and we subtract it.
 //
-// The two reads and clobber() below are the raw instructions that bracket
-// each sample, so they stay in a region of the class MEASURE.  The fence
+// The two reads and clobber_memory() below are the raw instructions that
+// bracket each sample, so they stay in a region of the class MEASURE.  The fence
 // before the start read is not in the TSC reader of fixy/os/Time.h, and the
 // timed loop must keep each instruction that it had.
 
@@ -148,8 +148,10 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the fenced reads of the TSC and the comp
 }
 
 // A compiler barrier: no load or store moves across it, and it emits no
-// instruction.
-[[gnu::always_inline]] inline void clobber() noexcept { asm volatile("" : : : "memory"); }
+// instruction.  After it, the optimizer reads each object in memory again.
+// A row calls it only where it must see the effects of its body on memory
+// (THE SINK).
+[[gnu::always_inline]] inline void clobber_memory() noexcept { asm volatile("" : : : "memory"); }
 
 // A compiler barrier that reads and writes value in memory, so the optimizer
 // keeps each store of value before it, also of a local that no other code
@@ -215,84 +217,123 @@ public:
 
 [[nodiscard, gnu::always_inline]] inline uint64_t rdtsc_end(RdtscPinned const&) noexcept { return rdtsc_end(); }
 
-// Defeat dead-code elimination of values we want the optimizer to treat
-// as consumed.
+// ── THE SINK ───────────────────────────────────────────────────────
 //
-// We do NOT use the canonical Google-Benchmark / folly / nanobench form
-//     asm volatile("" : "+m,r"(v) : : "memory")
-//     asm volatile("" : :  "r,m"(v) : "memory")
-// because both are subtly broken under modern GCC inlining + IPA:
+// do_not_optimize(value) gives value to an empty asm statement.  The
+// optimizer must compute value for the statement, and it cannot remove the
+// statement.  The statement makes no call and has no memory clobber.  So a
+// timed loop keeps each other value in its register, as the loop of a real
+// caller does, and the loop holds only its own instructions.
 //
-//   * "+m,r"(v) is shorthand for "=m,r" output paired with "m,0" matching
-//     input. When GCC selects the `r` alternative the matching `0` input
-//     ties the input register to the output register (a temp); the asm
-//     operates on the temp; nothing writes the temp back to v's storage.
-//     Under inlining this leaves v's slot whatever it was at function
-//     entry (uninitialized stack), and downstream lambda value-expr
-//     substitutions that look up v by stack offset read the wrong bytes.
-//     This form caused a SIGSEGV in the via-pointer workload of
-//     bench_pool_allocator. GCC PR124958 reports it, and Andrew Pinski
-//     closed the report as INVALID on 2026-04-21: the fault is in the
-//     inline asm, not in GCC. The do_not_optimize functions that follow
-//     are empty [[gnu::noipa]] functions with no inline asm.
+// The operand of the statement holds value in the place of its type
+// (SinkOperand):
+//   - An integer, an enumeration or a pointer of at most 8 bytes is in a
+//     general register.
+//   - A float or a double is in a vector register.
+//   - A class of 1, 2, 4 or 8 bytes whose copy is a copy of its bytes, such
+//     as an id, a hash or a step, is in a general register when GCC can put
+//     it in one, and else in memory.
+//   - A value of each other type is in memory, and the statement reads each
+//     byte of the object.
+// A const value is an input of the statement.  A value that is not const is
+// an input and an output.  After the statement, the optimizer then does not
+// know the value, so a timed loop cannot move a computation that reads the
+// value out of the loop.  Give each input of a timed operation that does not
+// change to the sink in this form, so that each call of the body computes
+// the operation again.  In this form a class is in memory, as the bytes of
+// the object.
 //
-//   * "r,m"(v) on a value: when GCC picks `r`, the asm sees a register
-//     copy and the original storage is invisible. Earlier writes to v's
-//     storage become DSE-eligible (PR109057, Jakub Jelinek).
+// A pointer is an address, and the sink holds the address only, not the
+// object.  To make an object opaque, give the object itself.
+// clobber_memory() makes each object in memory opaque.  A row calls it only
+// where it must see the effects of its body on memory, and it states the
+// reason beside the call.
 //
-//   * "+m,r" on objects > ~8 KB additionally forces a memcpy into a
-//     temporary that is then never read back (PR105519).
-//
-// Pinski's recommended replacement, PR105519 c#3:
-//     [[gnu::noipa]] void DoNotOptimize(T&) {}
-// Empty function, no inline asm. `noipa` blocks inter-procedural
-// analysis so the call cannot be deleted as dead, the argument is
-// passed through real ABI registers / stack, and from the optimizer's
-// point of view anything could happen inside. Cost is one real call
-// instruction per use. Acceptable for benchmark scaffolding — the
-// alternative is wrong-code at -O3.
-//
-// References:
-//   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124958  (our filing)
-//   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109057  (r,m DSE)
-//   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105519  (+m,r temp)
+// Each operand has one alternative.  The forms with two alternatives,
+// "+m,r" and "r,m", lose the value or its earlier stores when GCC picks the
+// register (GCC PR124958, PR109057 and PR105519).
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: an empty asm statement holds each value of a timed body, with no call")
+
+// The place of the operand of the sink for a type (THE SINK).
+enum class SinkOperand : std::uint8_t {
+    GeneralRegister,
+    VectorRegister,
+    RegisterOrMemory,
+    Memory,
+};
 
 template <typename T>
-[[gnu::noipa]] void do_not_optimize(T const& v) noexcept {
-    (void)v;
+inline constexpr SinkOperand sink_operand_of =
+    (std::is_integral_v<T> || std::is_enum_v<T> || std::is_pointer_v<T>) && sizeof(T) <= sizeof(std::uint64_t)
+        ? SinkOperand::GeneralRegister
+    : (std::is_same_v<T, float> || std::is_same_v<T, double>) ? SinkOperand::VectorRegister
+    : (std::is_class_v<T> && std::is_trivially_copyable_v<T>
+       && (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8))
+        ? SinkOperand::RegisterOrMemory
+        : SinkOperand::Memory;
+
+template <typename T>
+[[gnu::always_inline]] inline void do_not_optimize(T const& value) noexcept {
+    constexpr SinkOperand operand = sink_operand_of<std::remove_cv_t<T>>;
+    if constexpr (operand == SinkOperand::GeneralRegister) {
+        asm volatile("" : : "r"(value));
+    } else if constexpr (operand == SinkOperand::VectorRegister) {
+#if defined(__aarch64__)
+        asm volatile("" : : "w"(value));
+#else
+        asm volatile("" : : "x"(value));
+#endif
+    } else if constexpr (operand == SinkOperand::RegisterOrMemory) {
+        asm volatile("" : : "rm"(value));
+    } else {
+        asm volatile("" : : "m"(value));
+    }
 }
 
 template <typename T>
-[[gnu::noipa]] void do_not_optimize(T& v) noexcept {
-    (void)v;
+[[gnu::always_inline]] inline void do_not_optimize(T& value) noexcept {
+    constexpr SinkOperand operand = sink_operand_of<std::remove_cv_t<T>>;
+    if constexpr (operand == SinkOperand::GeneralRegister) {
+        asm volatile("" : "+r"(value));
+    } else if constexpr (operand == SinkOperand::VectorRegister) {
+#if defined(__aarch64__)
+        asm volatile("" : "+w"(value));
+#else
+        asm volatile("" : "+x"(value));
+#endif
+    } else {
+        // The bytes of the object.  GCC refuses an output of a class with a
+        // const member, such as Vigil.  A byte aliases each object, so after
+        // the statement the optimizer reads each member of the object again.
+        using ObjectBytes = unsigned char[sizeof(T)];
+        asm volatile("" : "+m"(*static_cast<ObjectBytes*>(static_cast<void*>(__builtin_addressof(value)))));
+    }
 }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ── clobber_array(View) — array-side DCE kill ─────────────────────
 //
 // Companion to `do_not_optimize()` (single-value DCE kill) and
-// `clobber()` (global memory barrier).  Use when the bench body
+// `clobber_memory()` (global memory barrier).  Use when the bench body
 // fills or scans an array and the array's memory is otherwise dead
 // at the timed region's exit — without this, the optimizer is free
 // to elide the fill / scan because nothing observably consumes the
 // result.
 //
-// Implementation: `[[gnu::noipa]]` empty function, same discipline
-// as `do_not_optimize`.  The View (its first element and its count) is
-// passed through real ABI registers; noipa blocks IPA so from the
-// optimizer's point of view the function could read or write any
-// memory reachable from those arguments — therefore the writes/
-// reads to the array's elements MUST be materialized.
-//
-// Why not the asm `"+m,r"` form: per the project memory
-// `feedback/project_gcc16_miscompile`, that idiom miscompiles on
-// some types under GCC 16.  noipa is the recommended replacement.
+// Implementation: an empty `[[gnu::noipa]]` function.  The View (its
+// first element and its count) goes in the registers of the ABI, and
+// noipa stops the analysis across the call.  So for the optimizer the
+// function can read or write each byte that the arguments reach, and the
+// writes and the reads of the elements stay.  An asm statement has no
+// operand for a run whose count only the run gives, so the call stays.
 //
 // One template takes a View of each element type and extent, so a View of
 // const elements serves a read-only scan.  A FixedArray, a HeapArray and
 // each other owner of the base gives its View through view().
 //
-// Cost: one real call instruction per use (same as do_not_optimize).
-// Acceptable for benchmark scaffolding.
+// Cost: one real call instruction per use.  No bench row calls it.
 //
 // Usage:
 //

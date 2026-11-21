@@ -71,27 +71,27 @@ int main() {
     bench::print("\n");
 
     ::fixy::FixedArray<bench::Report, 10> reports{
-        // ── HARNESS BASELINE: pure do_not_optimize cost ───────────────
-        // Measures the bench-loop overhead: ++i + a single noipa call
-        // to do_not_optimize.  Subtract this from any single-call ring
-        // bench below to recover the actual ring-op cost (the noipa
-        // attribute on do_not_optimize forces a real CALL+RET that
-        // contributes ~3-4 cycles ≈ 0.7-1ns at 4.6GHz).
+        // ── HARNESS BASELINE: the cost of one sink ────────────────────
+        // Measures the bench-loop overhead: ++i and one sink of i.  The
+        // sink is an empty asm statement with no call (THE SINK of
+        // bench_harness.h), so i stays in a register, and the row gives the
+        // cost of the loop and of the increment.  Subtract this from a
+        // single-call ring bench below to get the cost of the ring op.
         [&] {
             std::uint64_t i = 0;
             return bench::run("HARNESS BASELINE: do_not_optimize(++i)", [&] { bench::do_not_optimize(++i); });
         }(),
 
         // ── HARNESS BASELINE: clobber-only (no call, asm barrier) ─────
-        // Cheaper alternative: bench::clobber() is "asm volatile("":::
-        // memory")" — zero runtime cost, just a compiler memory fence.
-        // Difference between this and the do_not_optimize baseline is
-        // the pure CALL+RET cost.
+        // bench::clobber_memory() is asm volatile("" ::: "memory"), a
+        // compiler memory barrier with no instruction.  After the barrier
+        // the loop reads i from memory again, so the difference from the
+        // sink baseline is the store and the load of i.
         [&] {
             std::uint64_t i = 0;
             return bench::run("HARNESS BASELINE: clobber + ++i", [&] {
                 ++i;
-                bench::clobber();
+                bench::clobber_memory();
             });
         }(),
 
@@ -228,8 +228,7 @@ int main() {
     //   [9] trace_ring.try_append (reference, +reset-on-full)
 
     // Headline #1: actual ring cost = single-push p50 - harness overhead p50.
-    // (do_not_optimize is a [[gnu::noipa]] real CALL+RET ≈ 3-4 cycles ≈
-    // 0.7-1ns at 4.6GHz on Zen 3.)
+    // The sink makes no call, so the overhead is the loop and the increment.
     bench::print("\n[spsc_ring.try_push] vs [HARNESS BASELINE do_not_optimize]:\n");
     bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<0>())).print_text();
 
