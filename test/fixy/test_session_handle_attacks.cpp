@@ -590,19 +590,23 @@ using LeftProto = s::Recv<Ping, s::End>;
 
 // The right body gives its endpoint away through a slot, and then waits
 // for its End handle to come back.  The brand makes it wait: no other End
-// handle has its type.
+// handle has its type.  A forked side opens its endpoint pinned, so the body
+// first releases the endpoint to the tracked policy, as a handle that leaves
+// its thread must.  Each step of the endpoint on the other thread then notes
+// its holder for the watch.
 struct GiveAwayBody;
 using RightHead =
     s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, GiveAwayBody>;
-using RightDone = decltype(std::declval<RightHead>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
+using RightTracked = decltype(s::HandleFactory::release(std::declval<RightHead>()));
+using RightDone = decltype(std::declval<RightTracked>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
-Slot<RightHead> g_right_endpoint;
+Slot<RightTracked> g_right_endpoint;
 Slot<RightDone> g_right_done;
 
 struct GiveAwayBody {
     template <typename Brand>
     RightDone operator()(RightHead head, perm::WriteView<attack_tags::Right, Brand> const&, BgCtx const&) noexcept {
-        g_right_endpoint.put(std::move(head));
+        g_right_endpoint.put(s::HandleFactory::release(std::move(head)));
         return g_right_done.take("the right body, for its End handle");
     }
 };
@@ -633,7 +637,7 @@ template <Receive How>
 struct TakesBothBody {
     template <typename Head, typename Brand>
     auto operator()(Head head, perm::WriteView<attack_tags::Left, Brand> const&, BgCtx const&) noexcept {
-        RightHead other = g_right_endpoint.take("the left body, for the right endpoint");
+        RightTracked other = g_right_endpoint.take("the left body, for the right endpoint");
         auto [ping, done] = receive_ping<How>(std::move(head), "left recv");
         g_right_done.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
             put(pipe_of(e.pipe).to_left, p.value);
@@ -685,32 +689,35 @@ template <Receive How>
 // Two forked sessions, each run from its own thread.  Each right body
 // gives its endpoint to the left body of the OTHER session.  Each left
 // body then waits on its own session for the message that its partner's
-// thread would send only after its own wait ends.
+// thread would send only after its own wait ends.  Each right body releases
+// its endpoint to the tracked policy before it gives the endpoint away.
 struct CycleRightA;
 struct CycleRightB;
 using CycleHeadA =
     s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightA>;
 using CycleHeadB =
     s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, CycleRightB>;
-using CycleDoneA = decltype(std::declval<CycleHeadA>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
-using CycleDoneB = decltype(std::declval<CycleHeadB>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
+using CycleTrackedA = decltype(s::HandleFactory::release(std::declval<CycleHeadA>()));
+using CycleTrackedB = decltype(s::HandleFactory::release(std::declval<CycleHeadB>()));
+using CycleDoneA = decltype(std::declval<CycleTrackedA>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
+using CycleDoneB = decltype(std::declval<CycleTrackedB>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
-Slot<CycleHeadA> g_cycle_endpoint_a;
-Slot<CycleHeadB> g_cycle_endpoint_b;
+Slot<CycleTrackedA> g_cycle_endpoint_a;
+Slot<CycleTrackedB> g_cycle_endpoint_b;
 Slot<CycleDoneA> g_cycle_done_a;
 Slot<CycleDoneB> g_cycle_done_b;
 
 struct CycleRightA {
     template <typename Brand>
     CycleDoneA operator()(CycleHeadA head, perm::WriteView<attack_tags::Right, Brand> const&, BgCtx const&) noexcept {
-        g_cycle_endpoint_a.put(std::move(head));
+        g_cycle_endpoint_a.put(s::HandleFactory::release(std::move(head)));
         return g_cycle_done_a.take("session A's right body, for its End handle");
     }
 };
 struct CycleRightB {
     template <typename Brand>
     CycleDoneB operator()(CycleHeadB head, perm::WriteView<attack_tags::Right2, Brand> const&, BgCtx const&) noexcept {
-        g_cycle_endpoint_b.put(std::move(head));
+        g_cycle_endpoint_b.put(s::HandleFactory::release(std::move(head)));
         return g_cycle_done_b.take("session B's right body, for its End handle");
     }
 };
@@ -720,7 +727,7 @@ struct CycleRightB {
 struct CycleLeftA {
     template <typename Head, typename Brand>
     auto operator()(Head head, perm::WriteView<attack_tags::Left, Brand> const&, BgCtx const&) noexcept {
-        CycleHeadB other = g_cycle_endpoint_b.take("session A's left body, for session B's endpoint");
+        CycleTrackedB other = g_cycle_endpoint_b.take("session A's left body, for session B's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "A recv");
         g_cycle_done_b.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
             put(pipe_of(e.pipe).to_left, p.value);
@@ -732,7 +739,7 @@ struct CycleLeftA {
 struct CycleLeftB {
     template <typename Head, typename Brand>
     auto operator()(Head head, perm::WriteView<attack_tags::Left2, Brand> const&, BgCtx const&) noexcept {
-        CycleHeadA other = g_cycle_endpoint_a.take("session B's left body, for session A's endpoint");
+        CycleTrackedA other = g_cycle_endpoint_a.take("session B's left body, for session A's endpoint");
         auto [ping, done] = receive_ping<Receive::Polling>(std::move(head), "B recv");
         g_cycle_done_a.put(std::move(other).send(Ping{ping.value}, [](RightEnd& e, Ping& p) noexcept {
             put(pipe_of(e.pipe).to_left, p.value);

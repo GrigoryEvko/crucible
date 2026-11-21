@@ -25,6 +25,17 @@ static_assert(sizeof(Enforced) == 2 * sizeof(std::source_location),
               "the record index of fixy/session/Watch.h must sit in the padding after the flag, and the policy keeps "
               "no count of steps: a handle in a loop keeps that count (fixy/session/Handle.h).");
 
+// An owning entry point opens a tracked policy as the pinned policy of the
+// same action, and keeps each other policy.
+static_assert(std::is_same_v<detail::owned_policy_t<Enforced>, Pinned>,
+              "with_session and a forked side must open check::Enforced as check::Pinned.");
+static_assert(std::is_same_v<detail::owned_policy_t<Cancel>, PinnedCancel>,
+              "with_session and a forked side must open check::Cancel as check::PinnedCancel.");
+static_assert(std::is_same_v<detail::owned_policy_t<Pinned>, Pinned>
+                  && std::is_same_v<detail::owned_policy_t<PinnedCancel>, PinnedCancel>
+                  && std::is_same_v<detail::owned_policy_t<Off>, Off>,
+              "an owning entry point must keep a pinned policy and check::Off as they are.");
+
 }  // namespace check
 
 static_assert(AbandonmentPolicy<check::Enforced>);

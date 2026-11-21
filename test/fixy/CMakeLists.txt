@@ -3266,6 +3266,14 @@ fixy_neg_compile_test(neg_sess_send_a_bound_handle
 fixy_neg_compile_test(neg_sess_send_a_pinned_mint
   "run_joined: the body captures .moved."
   "its type is not Sendable")
+# with_session and each side of a forked channel open their sessions pinned,
+# so a handle of the body stays on the thread of the body.
+fixy_neg_compile_test(neg_sess_send_a_with_session_handle
+  "run_joined: the body captures .moved."
+  "its type is not Sendable")
+fixy_neg_compile_test(neg_sess_send_a_forked_head
+  "run_joined: the body captures .moved."
+  "its type is not Sendable")
 fixy_neg_compile_test(neg_sess_pin_body_captures_the_handle
   "use of deleted function"
   "Pin_Body_Holds_A_Handle. the body of a pin captures a session handle")

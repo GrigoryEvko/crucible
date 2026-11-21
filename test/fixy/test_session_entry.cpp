@@ -10,6 +10,7 @@
 #include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
+#include <foundation/Transfer.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -235,6 +236,15 @@ static_assert(
 [[nodiscard]] int callback_lends_the_resource() {
     const BgCtx ctx{eff::testing::bg()};
     const Counter back = s::with_session<Stream>(ctx, Counter{}, [](auto head) noexcept {
+        // The session opens under check::Pinned, so its handles stay on the
+        // thread of the body.
+        using Head = decltype(head);
+        static_assert(
+            std::is_same_v<Head, s::SessionHandle<typename Head::protocol, typename Head::resource_type,
+                                                  typename Head::loop_ctx, s::check::Pinned, typename Head::perm_set>>,
+            "with_session must open a session of the default policy as check::Pinned");
+        static_assert(!::foundation::transfer::Sendable<decltype(head)>,
+                      "a handle of with_session must not move to another thread");
         for (int value = 0; value < 3; ++value) {
             head = std::move(head).template select<0>(s::no_label).send(value, count_one);
         }

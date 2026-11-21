@@ -256,6 +256,25 @@ struct policy_turn<pinned_policy<Action>> {
     using type = tracked_policy<Action>;
 };
 
+// The policy of the handles of a session that an owning entry point opens
+// (with_session, and each side of mint_forked_channel).  Such an entry point
+// opens the session on the thread that runs the body, and it closes the End
+// handle that the body returns on that thread.  So each handle of the session
+// lives on one thread by construction, and the entry point opens the session
+// under the pinned policy of the same action.  Each other policy stays.
+template <typename Policy>
+struct owned_policy {
+    using type = Policy;
+};
+
+template <AbandonAction Action>
+struct owned_policy<tracked_policy<Action>> {
+    using type = pinned_policy<Action>;
+};
+
+template <typename Policy>
+using owned_policy_t = typename owned_policy<Policy>::type;
+
 }  // namespace detail
 
 using Enforced = detail::tracked_policy<AbandonAction::Abort>;

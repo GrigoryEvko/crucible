@@ -131,14 +131,20 @@ concept CtxFitsSessionBody = CtxFitsSession<Ctx, Proto, Resource> && SessionBody
 // and the entry point accepts back only a handle with that brand.  A body
 // cannot mint a new session, walk it to End and return it in its place,
 // because no public mint makes a branded handle.
+//
+// The calling thread runs the body and closes the session, so each handle
+// of the session lives on that thread.  The session opens under the owned
+// form of the policy (check::detail::owned_policy_t of
+// fixy/session/Stepping.h): check::Enforced gives check::Pinned, and
+// check::Cancel gives check::PinnedCancel.  A step then makes no holder
+// check, and no door of foundation/Transfer.h moves a handle of the body to
+// another thread.
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
           typename Body>
     requires CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>
 [[nodiscard]] constexpr Resource
 with_session(Ctx const& ctx, Resource resource, Body body, MintSite site = {}) noexcept(
-    std::is_nothrow_invocable_v<Body,
-                                detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                                       detail::brand_ctx_t<Body>>>) {
+    std::is_nothrow_invocable_v<Body, detail::owned_head_t<Proto, Resource, Policy, Body>>) {
     return detail::late_door_t<SessionMintDoor, Proto>::template run<Proto, Policy, Ctx, Resource>(
         ctx, std::forward<Resource>(resource), std::move(body), site);
 }

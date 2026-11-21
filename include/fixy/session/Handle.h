@@ -2824,22 +2824,28 @@ concept ClosesInSessionOf = std::is_same_v<std::remove_cvref_t<H>, H> && require
                                 { std::move(handle).close() } -> std::same_as<Resource>;
                             };
 
+namespace detail {
+
+// The first handle of a session that an owning entry point opens: the
+// session carries the brand of the body, under the owned form of the policy
+// (check::detail::owned_policy_t of fixy/session/Stepping.h).
+template <typename Proto, typename Resource, typename Policy, typename Body>
+using owned_head_t = first_handle_t<Proto, Resource, check::detail::owned_policy_t<Policy>,
+                                    ::foundation::permissions::EmptyPermSet, brand_ctx_t<Body>>;
+
+}  // namespace detail
+
 template <typename Body, typename Proto, typename Resource, typename Policy>
-concept SessionBody =
-    std::is_invocable_v<Body, detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                                     detail::brand_ctx_t<Body>>>
-    && ClosesInSessionOf<std::invoke_result_t<Body, detail::first_handle_t<Proto, Resource, Policy,
-                                                                           ::foundation::permissions::EmptyPermSet,
-                                                                           detail::brand_ctx_t<Body>>>,
-                         Resource, Body>;
+concept SessionBody = std::is_invocable_v<Body, detail::owned_head_t<Proto, Resource, Policy, Body>>
+                   && ClosesInSessionOf<std::invoke_result_t<Body, detail::owned_head_t<Proto, Resource, Policy, Body>>,
+                                        Resource, Body>;
 
 namespace detail {
 
 // The first handle of one side of a forked channel, branded with the
 // body of that side.
 template <typename Proto, typename Resource, typename Policy, typename Body>
-using forked_head_t =
-    first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet, brand_ctx_t<Body>>;
+using forked_head_t = owned_head_t<Proto, Resource, Policy, Body>;
 
 // The body borrows its side of the parent through the fork's view, of the
 // parent's brand.  It never holds the token, so it cannot keep the side
@@ -2921,7 +2927,10 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
     // permission to the body, and closes the handle that the body returns.
     // A struct and not a lambda, because a lambda capture cannot hold a
     // reference Resource by its declared type.  It is a private member, and
-    // only fork_channel builds one.
+    // only fork_channel builds one.  The thread of the side opens the
+    // endpoint, runs the body on it and closes the End handle that the body
+    // returns.  So each handle of the side lives on that thread, and the side
+    // opens its endpoint under the owned form of the policy.
     template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Resource, typename PeerResource,
               typename Body>
     struct forked_endpoint_ {
@@ -2934,9 +2943,9 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
 
         template <typename View, typename Ctx>
         void operator()(View const& view, Ctx const& ctx) noexcept {
-            auto head =
-                open_end_<Proto, PeerProto, Resource, PeerResource, Policy, ::foundation::permissions::EmptyPermSet,
-                          detail::brand_ctx_t<Body>>(std::forward<Resource>(resource), no_slots_{}, site, endpoint);
+            auto head = open_end_<Proto, PeerProto, Resource, PeerResource, check::detail::owned_policy_t<Policy>,
+                                  ::foundation::permissions::EmptyPermSet, detail::brand_ctx_t<Body>>(
+                std::forward<Resource>(resource), no_slots_{}, site, endpoint);
             auto at_end = std::invoke(std::move(body), std::move(head), view, ctx);
             static_cast<void>(std::move(at_end).close());
         }
@@ -2985,17 +2994,18 @@ public:
 
     // with_session: runs the body on the first handle of a session that
     // carries the brand of the body, and closes the End handle that the
-    // body returns.
+    // body returns.  The calling thread opens the session, runs the body and
+    // closes the End handle, so each handle of the session lives on that
+    // thread.  Thus the session opens under the owned form of the policy.
     template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource, typename Body>
         requires CtxFitsSessionFrom<Ctx, Proto, Resource> && SessionBody<Body, Proto, Resource, Policy>
     [[nodiscard]] static constexpr Resource run(Ctx const&, Resource r, Body body, MintSite site) noexcept(
-        std::is_nothrow_invocable_v<
-            Body, detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                         detail::brand_ctx_t<Body>>>) {
+        std::is_nothrow_invocable_v<Body, detail::owned_head_t<Proto, Resource, Policy, Body>>) {
         auto at_end = std::invoke(
             std::move(body),
-            open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                      detail::brand_ctx_t<Body>>(std::forward<Resource>(r), no_slots_{}, site));
+            open_end_<Proto, detail::one_end_peer, Resource, Resource, check::detail::owned_policy_t<Policy>,
+                      ::foundation::permissions::EmptyPermSet, detail::brand_ctx_t<Body>>(std::forward<Resource>(r),
+                                                                                          no_slots_{}, site));
         return std::move(at_end).close();
     }
 
