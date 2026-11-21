@@ -7048,6 +7048,11 @@ fixy_neg_compile_test(neg_linear_forged_by_bit_cast
 fixy_neg_compile_test(neg_core_option_reads_the_linear_marker
   "non-constant condition for static assertion"
   "call to non-.constexpr. function .void foundation::core::fatal")
+# The rule must-consume knows that a move empties the source Option, so it
+# refuses the expect() of the source at compile time.
+fixy_neg_compile_test(neg_core_option_expect_after_move
+  "a door that needs a full linear sum runs on a sum that each path shows empty"
+  "read_twice: source expect")
 fixy_neg_compile_test(neg_core_option_linear_cursor_moves_out
   "redundant move in initialization"
   "use of deleted function .fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\)")

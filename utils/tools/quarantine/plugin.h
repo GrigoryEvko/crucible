@@ -379,8 +379,13 @@
 //                           a linear sum, such as an Option of a linear
 //                           payload, that can end with its payload, and a
 //                           temporary of one that the code discards (THE SUMS
-//                           of linear.cpp).  Each finding of the two kinds is
-//                           an error in each mode (is_each_mode_kind)
+//                           of linear.cpp)
+//     option-known-full, option-known-empty
+//                           a door that needs an empty sum on a sum that each
+//                           path shows full, and a door that needs a full sum
+//                           on a sum that each path shows empty (THE SUMS of
+//                           linear.cpp).  Each finding of the four option
+//                           kinds is an error in each mode (is_each_mode_kind)
 //     The other rules of the family linear (linear.cpp, THE SHAPES):
 //     pinned-holder         linear-containment: a class that cannot move,
 //                           holds a linear part and has no door at the end of
@@ -1030,6 +1035,8 @@ enum class Kind : std::uint8_t {
     linear_door,
     linear_option_unconsumed,
     linear_option_discarded,
+    linear_option_known_full,
+    linear_option_known_empty,
     linear_pinned_holder,
     linear_copyable_holder,
     linear_library_holder,
@@ -1370,6 +1377,10 @@ inline const char* kind_name(Kind kind) {
             return "option-unconsumed";
         case Kind::linear_option_discarded:
             return "option-discarded";
+        case Kind::linear_option_known_full:
+            return "option-known-full";
+        case Kind::linear_option_known_empty:
+            return "option-known-empty";
         case Kind::linear_pinned_holder:
             return "pinned-holder";
         case Kind::linear_copyable_holder:
@@ -1557,6 +1568,8 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_door:
         case Kind::linear_option_unconsumed:
         case Kind::linear_option_discarded:
+        case Kind::linear_option_known_full:
+        case Kind::linear_option_known_empty:
             return Rule::must_consume;
         case Kind::linear_pinned_holder:
         case Kind::linear_copyable_holder:
@@ -1631,6 +1644,8 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::brand_scope_return:
         case Kind::linear_option_unconsumed:
         case Kind::linear_option_discarded:
+        case Kind::linear_option_known_full:
+        case Kind::linear_option_known_empty:
         case Kind::specialization_outside_home:
         case Kind::specialization_orphan:
         case Kind::specialization_forward_declaration:
@@ -1840,6 +1855,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "door"},
     {"must-consume", "option-unconsumed"},
     {"must-consume", "option-discarded"},
+    {"must-consume", "option-known-full"},
+    {"must-consume", "option-known-empty"},
     {"linear-containment", "pinned-holder"},
     {"linear-containment", "copyable-holder"},
     {"linear-containment", "library-holder"},
@@ -1901,6 +1918,8 @@ inline bool is_name_kind(Kind kind) {
         case Kind::brand_scope_return:
         case Kind::linear_option_unconsumed:
         case Kind::linear_option_discarded:
+        case Kind::linear_option_known_full:
+        case Kind::linear_option_known_empty:
         case Kind::fresh_deduced_brand:
         case Kind::fresh_named_brand:
             return true;

@@ -105,13 +105,20 @@ struct sum final {};
 // linear payload can end with no consume.  empties marks a constructor that
 // builds an empty sum, and a member after which the sum is empty, such as
 // take.  fills marks a member after which the sum holds a payload, such as
-// fill and replace.  tests_full marks a const member that gives true when
-// the sum holds a payload, and tests_empty a const member that gives true
-// when the sum is empty.
+// fill and replace, and a static member that builds a full sum, such as
+// some.  tests_full marks a const member that gives true when the sum holds
+// a payload, and tests_empty a const member that gives true when the sum is
+// empty.  needs_empty marks a member that ends the process on a full sum,
+// such as fill and expect_none, and needs_full a member that ends the
+// process on an empty sum, such as expect.  The rule refuses such a call on
+// a sum whose content it knows, so the run-time check stays only for a sum
+// whose content the rule does not know.
 struct empties final {};
 struct fills final {};
 struct tests_full final {};
 struct tests_empty final {};
+struct needs_empty final {};
+struct needs_full final {};
 
 // The annotation value of a class template whose instances are linear
 // only for some arguments.

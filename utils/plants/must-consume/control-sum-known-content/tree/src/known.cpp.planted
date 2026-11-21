@@ -1,0 +1,70 @@
+// Each door of an Option on a content that the door admits, or on a content
+// that the rule does not know.  The unit compiles in the mode error with no
+// line of the rule, and each unknown content keeps its run-time check.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] Option<Token> receive() noexcept;
+[[nodiscard]] bool is_ready() noexcept;
+
+void fills_an_empty() {
+    Option<Token> held{};
+    held.fill(Token{1});
+    sink(std::move(held).expect("fill gave the token"));
+}
+
+void fills_after_take() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    Option<Token> taken = held.take();
+    held.fill(Token{2});
+    sink(std::move(taken).expect("take gave the first token"));
+    sink(std::move(held).expect("fill gave the second token"));
+}
+
+void ends_an_empty() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    sink(held.take().expect("take gave the token"));
+    std::move(held).expect_none("take left the Option empty");
+}
+
+void reads_the_test(Option<Token> held) {
+    if (held.is_some()) {
+        sink(std::move(held).expect("the test found a token"));
+    } else {
+        std::move(held).expect_none("the test found no token");
+    }
+}
+
+// The content of a call, of a parameter and of a join of two contents is
+// not known, so each door keeps its run-time check.
+void reads_unknown_contents(Option<Token> parameter) {
+    sink(std::move(parameter).expect("the caller gives a token"));
+    Option<Token> received = receive();
+    std::move(received).expect_none("no token arrives here");
+    Option<Token> joined{};
+    if (is_ready()) {
+        joined.fill(Token{4});
+    }
+    joined.fill(Token{5});
+    sink(std::move(joined).expect("the second fill gave a token"));
+}
+
+}  // namespace planted

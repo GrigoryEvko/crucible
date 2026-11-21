@@ -114,6 +114,11 @@
 //                          each path or on some paths (THE SUMS)
 //     option-discarded     a temporary of a linear sum that the code discards
 //                          (THE SUMS)
+//     option-known-full    a door that needs an empty sum, such as fill or
+//                          expect_none, on a sum that each path shows full
+//                          (THE SUMS)
+//     option-known-empty   a door that needs a full sum, such as expect, on a
+//                          sum that each path shows empty (THE SUMS)
 //     The entity is FUNCTION: OBJECT.  FUNCTION has no template argument, so
 //     each instance of one template gives the same line, and the key of a
 //     ledger row holds no line of an exit.
@@ -154,13 +159,23 @@
 //         ! and through an arm that does not return, as the assert of
 //         fixy/check/Check.h does.
 //     A member with the annotation fills, such as fill, gives the sum a new
-//     value to consume.  A use that can fill the sum makes it one that can be
+//     value to consume, and shows it full.  A builder with fills, such as
+//     some, builds a full sum, and a test that says full shows it full too.
+//     A sum is full at a point only when each path shows it full.
+//     THE KNOWN CONTENT: a member with the annotation needs_empty, such as
+//     fill and expect_none, on a sum that the rule shows full gives the kind
+//     option-known-full, and a member with needs_full, such as expect, on a
+//     sum that the rule shows empty gives option-known-empty.  The run-time
+//     check of such a member would end the process on each path.  The check
+//     stays only where the rule does not know the content: a sum of a call, a
+//     parameter, a member, or a sum after an alias or a join of two contents.
+//     A use that can fill the sum makes it one that can be
 //     full: a member with an object parameter that is not const, and an
 //     argument of a reference or a pointer that is not const.  An alias of
 //     the sum can fill it at each later point: a capture by reference, an
 //     address that is not const in a pointer, and a reference member that is
-//     not const.  So after an alias, no test and no take shows the sum empty,
-//     and only a consume ends it.  A capture hides each later consume, so a
+//     not const.  So after an alias, no fact shows the sum empty or full, and
+//     only a consume ends it.  A capture hides each later consume, so a
 //     captured sum that can be full at its end gives the kind
 //     option-unconsumed.  An empty sum at an exit drops nothing.  A Result and a OneOf have no member with these annotations,
 //     so only a consume ends one.  The body of a door gives neither kind.
@@ -313,6 +328,8 @@ struct LinearNames {
     tree fills = NULL_TREE;
     tree tests_full = NULL_TREE;
     tree tests_empty = NULL_TREE;
+    tree needs_full = NULL_TREE;
+    tree needs_empty = NULL_TREE;
 };
 
 LinearNames linear_names;
@@ -628,11 +645,13 @@ enum class Status : std::uint8_t {
 };
 
 // The content of one tracked sum on the paths that reach a point (THE SUMS).
-// A sum is empty only when each path shows it empty.  Each other sum can hold
-// a payload, so the default is can_be_full.
+// A sum is empty only when each path shows it empty, and full only when each
+// path shows it full.  Each other sum can hold a payload, so the default is
+// can_be_full.
 enum class Content : std::uint8_t {
     can_be_full,
     empty,
+    full,
 };
 
 struct FlowState {
@@ -696,8 +715,7 @@ FlowState join(const FlowState& left, const FlowState& right) {
         } else if (one == Status::dead) {
             joined.content[slot] = other_content;
         } else {
-            bool is_each_empty = one_content == Content::empty && other_content == Content::empty;
-            joined.content[slot] = is_each_empty ? Content::empty : Content::can_be_full;
+            joined.content[slot] = one_content == other_content ? one_content : Content::can_be_full;
         }
     }
     return joined;
@@ -1082,15 +1100,17 @@ private:
         note_can_be_full(decl, field, state);
     }
 
-    // True when a fact of a test or of take can show the tracked sum of SLOT
-    // empty: the sum has no alias (THE SUMS).
-    bool can_show_empty(std::size_t slot) const { return slot != kNoParent && !slots_[slot].is_aliased; }
+    // True when a fact of a test, of take, of fill or of a builder can show
+    // the content of the tracked sum of SLOT: the sum has no alias (THE SUMS).
+    bool can_show_content(std::size_t slot) const { return slot != kNoParent && !slots_[slot].is_aliased; }
 
-    // True when VALUE, the initializer of a tracked sum, builds an empty sum:
-    // a call of a constructor that carries the annotation empties, through
-    // the temporaries and the casts of the initializer (THE SUMS).  The caller
-    // gives the initializer before its fold.  Each other value can be full.
-    static bool builds_empty_sum(tree value) {
+    // The content of the sum that VALUE, the initializer of a tracked sum,
+    // builds, through the temporaries and the casts of the initializer (THE
+    // SUMS): empty for a constructor that carries the annotation empties, and
+    // full for a constructor or a static member that carries fills, such as
+    // some.  The caller gives the initializer before its fold.  Each other
+    // value can be full.
+    static Content built_content(tree value) {
         for (int depth = 0; value != NULL_TREE && depth < kTypeDepth; ++depth) {
             value = tree_strip_any_location_wrapper(value);
             switch (TREE_CODE(value)) {
@@ -1106,30 +1126,57 @@ private:
                 case CALL_EXPR:
                 case AGGR_INIT_EXPR: {
                     tree callee = cp_get_callee_fndecl_nofold(value);
-                    return callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL && DECL_CONSTRUCTOR_P(callee)
-                        && carries_linear_annotation(callee, linear_names.empties);
+                    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL) {
+                        return Content::can_be_full;
+                    }
+                    bool is_builder = DECL_CONSTRUCTOR_P(callee) || DECL_STATIC_FUNCTION_P(callee);
+                    if (DECL_CONSTRUCTOR_P(callee) && carries_linear_annotation(callee, linear_names.empties)) {
+                        return Content::empty;
+                    }
+                    if (is_builder && carries_linear_annotation(callee, linear_names.fills)) {
+                        return Content::full;
+                    }
+                    return Content::can_be_full;
                 }
                 default:
-                    return false;
+                    return Content::can_be_full;
             }
         }
-        return false;
+        return Content::can_be_full;
     }
 
-    // The content of the tracked object DECL, which VALUE initializes: empty
-    // when DECL is a sum and VALUE builds an empty sum (THE SUMS).
+    // The content of the tracked object DECL, which VALUE initializes, when
+    // DECL is a sum and VALUE builds an empty or a full sum (THE SUMS).
     void note_initial_content(tree decl, tree value, FlowState& state) {
         std::size_t slot = sum_slot(decl, NULL_TREE);
-        if (can_show_empty(slot) && state.is_reachable && builds_empty_sum(value)) {
-            state.set_content(slot, Content::empty);
+        if (can_show_content(slot) && state.is_reachable) {
+            state.set_content(slot, built_content(value));
+        }
+    }
+
+    // THE KNOWN CONTENT: a member of a tracked sum that carries needs_empty,
+    // such as fill or expect_none, on a sum that each path shows full, and a
+    // member that carries needs_full, such as expect, on a sum that each path
+    // shows empty.  The run-time check of such a member ends the process on
+    // each path, so the rule refuses the call at compile time.
+    void check_known_content(tree decl, tree field, tree callee, location_t location, const FlowState& state) {
+        std::size_t slot = sum_slot(decl, field);
+        if (!can_show_content(slot) || callee == NULL_TREE || !state.is_reachable) {
+            return;
+        }
+        Content content = state.get_content(slot);
+        if (content == Content::full && carries_linear_annotation(callee, linear_names.needs_empty)) {
+            add_pending(Kind::linear_option_known_full, location,
+                        entity_of(decl) + " " + identifier_text(DECL_NAME(callee)));
+        } else if (content == Content::empty && carries_linear_annotation(callee, linear_names.needs_full)) {
+            add_pending(Kind::linear_option_known_empty, location,
+                        entity_of(decl) + " " + identifier_text(DECL_NAME(callee)));
         }
     }
 
     // THE TESTS: the branch BRANCH of the condition CONDITION finds a tracked
-    // sum empty when the condition is a test of its state, such as is_none()
-    // of an Option, and the test says empty on that branch.  The walk goes
-    // through the casts and through !.  A test of a full sum gives no fact,
-    // because a full sum is already one that can be full.
+    // sum empty or full when the condition is a test of its state, such as
+    // is_none() of an Option.  The walk goes through the casts and through !.
     void refine_by_test(tree condition, TestBranch branch, FlowState& state) const {
         if (!state.is_reachable) {
             return;
@@ -1160,16 +1207,16 @@ private:
             }
             bool is_empty_test = carries_linear_annotation(callee, linear_names.tests_empty);
             bool is_full_test = !is_empty_test && carries_linear_annotation(callee, linear_names.tests_full);
-            bool says_empty = (is_empty_test && is_true) || (is_full_test && !is_true);
-            if (!says_empty) {
+            if (!is_empty_test && !is_full_test) {
                 return;
             }
+            bool says_empty = is_empty_test == is_true;
             bool saw_rvalue = false;
             tree field = NULL_TREE;
             tree decl = strip_to_tracked(CALL_EXPR_ARG(condition, 0), saw_rvalue, &field);
             std::size_t slot = sum_slot(decl, field);
-            if (can_show_empty(slot)) {
-                state.set_content(slot, Content::empty);
+            if (can_show_content(slot)) {
+                state.set_content(slot, says_empty ? Content::empty : Content::full);
             }
             return;
         }
@@ -1186,13 +1233,16 @@ private:
             return;
         }
         if (callee != NULL_TREE && carries_linear_annotation(callee, linear_names.empties)) {
-            if (can_show_empty(slot)) {
+            if (can_show_content(slot)) {
                 state.set_content(slot, Content::empty);
             }
             return;
         }
         if (callee != NULL_TREE && carries_linear_annotation(callee, linear_names.fills)) {
             set_object(state, slot, Status::live);
+            if (can_show_content(slot)) {
+                state.set_content(slot, Content::full);
+            }
             return;
         }
         tree object_type = TYPE_ARG_TYPES(type) != NULL_TREE ? TREE_VALUE(TYPE_ARG_TYPES(type)) : NULL_TREE;
@@ -2046,6 +2096,7 @@ private:
             }
             return;
         }
+        check_known_content(decl, field, callee, location, state);
         if (is_assignment) {
             // The rule drop-door reads an assignment to a field (THE SHAPES).
             if (field == NULL_TREE) {
@@ -3621,10 +3672,10 @@ void report_scope_escape(const Finding& finding) {
            "%<foundation/Quarantine.h%>");
 }
 
-// The error of one finding of the kinds option-unconsumed and
-// option-discarded of the rule must-consume that no region opts out (THE
-// SUMS).  The message does not start with "quarantine: ", so a regex of a
-// negative fixture reads it.
+// The error of one finding of the kinds option-unconsumed, option-discarded,
+// option-known-full and option-known-empty of the rule must-consume that no
+// region opts out (THE SUMS).  The message does not start with
+// "quarantine: ", so a regex of a negative fixture reads it.
 void report_option_end(const Finding& finding) {
     if (finding.kind == Kind::linear_option_unconsumed) {
         error_at(finding.spelling, "a linear sum can end with a payload that no consumer took: %s",
@@ -3640,6 +3691,18 @@ void report_option_end(const Finding& finding) {
                  finding.entity.c_str());
         inform(finding.spelling, "give the temporary to a consumer, such as expect, the rvalue match, a combinator, or "
                                  "%<expect_none(reason)%> for an empty Option");
+    } else if (finding.kind == Kind::linear_option_known_full) {
+        error_at(finding.spelling, "a door that needs an empty linear sum runs on a sum that each path shows full: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "its run-time check ends the process on each path, because the sum holds a payload that the door "
+               "would drop: consume the payload first, or use replace, which gives the old payload back");
+    } else if (finding.kind == Kind::linear_option_known_empty) {
+        error_at(finding.spelling, "a door that needs a full linear sum runs on a sum that each path shows empty: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "its run-time check ends the process on each path, because the sum holds no payload: fill it first, or "
+               "end the empty sum with %<expect_none(reason)%>");
     } else {
         return;
     }
@@ -3677,6 +3740,8 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.fills = get_identifier("fills");
     linear_names.tests_full = get_identifier("tests_full");
     linear_names.tests_empty = get_identifier("tests_empty");
+    linear_names.needs_full = get_identifier("needs_full");
+    linear_names.needs_empty = get_identifier("needs_empty");
     if (checks_must_consume) {
         register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
         register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);

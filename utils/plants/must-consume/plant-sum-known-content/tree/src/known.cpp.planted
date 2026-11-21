@@ -1,0 +1,72 @@
+// Each door of an Option whose run-time check ends the process on each path,
+// because the rule knows the content of the Option.  Each one is a compile
+// error in each mode.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+
+void fills_a_full() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    held.fill(Token{2});
+    sink(std::move(held).expect("the second token is in the Option"));
+}
+
+void fills_twice() {
+    Option<Token> held{};
+    held.fill(Token{1});
+    held.fill(Token{2});
+    sink(std::move(held).expect("the second token is in the Option"));
+}
+
+void ends_a_full() {
+    Option<Token> held{};
+    held.fill(Token{1});
+    std::move(held).expect_none("the Option holds no token");
+}
+
+void expects_an_empty() {
+    Option<Token> held{};
+    sink(std::move(held).expect("the Option holds a token"));
+}
+
+void expects_after_take() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    Option<Token> taken = held.take();
+    sink(std::move(taken).expect("take gave the token"));
+    sink(std::move(held).expect("the Option holds a token"));
+}
+
+void reads_the_test(Option<Token> held) {
+    if (held.is_none()) {
+        sink(std::move(held).expect("the Option holds a token"));
+    } else {
+        std::move(held).expect_none("the Option holds no token");
+    }
+}
+
+void fills_after_a_test(Option<Token> held) {
+    if (held.is_some()) {
+        held.fill(Token{3});
+    }
+    sink(std::move(held).expect("the Option holds a token"));
+}
+
+}  // namespace planted

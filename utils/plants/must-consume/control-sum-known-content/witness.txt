@@ -1,0 +1,9 @@
+# Each door of an Option on a content that the door admits: a fill of an
+# empty Option and of an Option after take, an expect_none after take, and
+# the two doors after a test.  Each door on a content that the rule does not
+# know: a parameter, the value of a call, and a join of two contents.  The
+# unit compiles in the mode error, and the rule gives no line.
+
+compile known src/known.cpp must-consume=on mode=error
+flag known -freflection
+exit known pass

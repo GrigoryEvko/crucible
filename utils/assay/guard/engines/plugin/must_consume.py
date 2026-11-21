@@ -29,12 +29,16 @@ THE SUMS
     gives its alternative out only through a consumer (linear.cpp, THE SUMS).
     The plugin reads the empty state of an Option through the annotations of
     include/foundation/Linear.h, so an Option that is empty on each path to
-    its end needs no consume.  The two kinds:
+    its end needs no consume.  The four kinds:
       option-unconsumed     a linear sum that can end with its alternative,
                             on each path or on some paths
       option-discarded      a temporary of a linear sum that the code
                             discards
-    The plugin makes each line of the two kinds a compile error in each build
+      option-known-full     a door that needs an empty sum, such as fill or
+                            expect_none, on a sum that each path shows full
+      option-known-empty    a door that needs a full sum, such as expect, on a
+                            sum that each path shows empty
+    The plugin makes each line of the four kinds a compile error in each build
     and each mode, so no object holds one.  No ledger row admits such a line,
     and a write refuses a build that holds one.
 
@@ -104,9 +108,13 @@ ACTIONS = {
     "before its end, or end an empty Option with expect_none(reason)",
     "option-discarded": "the object is a temporary linear sum that the code discards.  Give it to a consumer, or end an "
     "empty Option with expect_none(reason)",
+    "option-known-full": "a door that needs an empty sum runs on a sum that each path shows full, so its check ends the "
+    "process.  Consume the payload first, or use replace",
+    "option-known-empty": "a door that needs a full sum runs on a sum that each path shows empty, so its check ends the "
+    "process.  Fill the sum first, or end it with expect_none(reason)",
 }
 # The kinds of THE SUMS.  Each line is a compile error, and no ledger row admits one.
-SUM_KINDS = ("option-unconsumed", "option-discarded")
+SUM_KINDS = ("option-unconsumed", "option-discarded", "option-known-full", "option-known-empty")
 
 
 def stale_doors(root: Path, records: set[str]) -> list[check_report.Finding]:

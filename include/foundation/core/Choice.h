@@ -1041,9 +1041,12 @@ public:
     template <class F>
     Option(Err<F>) = delete("a Result carries an error that an Option drops: write std::move(result).ok()");
 
+    // A full Option.  The annotation fills tells the rule must-consume that
+    // the Option that some builds is full.
     template <class U>
         requires std::constructible_from<T, U&&>
-    [[nodiscard]] static constexpr Option some(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+    [[= ::foundation::linear::fills{}]] [[nodiscard]] static constexpr Option
+        some(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
         return Option{detail::SomeTag{}, static_cast<U&&>(value)};
     }
 
@@ -1060,8 +1063,10 @@ public:
     // The fatal unwrap at a boundary.  The reason tells why the Option
     // holds a value there.  An empty Option gives the reason and the place
     // of the call to fatal(), and the process ends.  The Option is empty
-    // after the call.  A passing expect() costs one branch.
-    [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept {
+    // after the call.  A passing expect() costs one branch.  The rule
+    // must-consume refuses expect() on an Option that it shows empty
+    // (needs_full), so the branch stays only where the state is not known.
+    [[= ::foundation::linear::needs_full{}]] [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept {
         slot_.expect_value_(why);
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
@@ -1073,8 +1078,9 @@ public:
     // the call to fatal(), and the process ends, so no payload drops.  The
     // door takes the Option as an rvalue, so the rule must-consume counts it
     // as a consume, also of a temporary, such as a refused upgrade.  A
-    // passing expect_none() costs one branch.
-    constexpr void expect_none(Fmt<> why) && noexcept {
+    // passing expect_none() costs one branch.  The rule must-consume refuses
+    // expect_none() on an Option that it shows full (needs_empty).
+    [[= ::foundation::linear::needs_empty{}]] constexpr void expect_none(Fmt<> why) && noexcept {
         if (slot_.holds_()) [[unlikely]] {
             fatal(why);
         }
@@ -1134,9 +1140,11 @@ public:
     // check of the family and not a contract, so it holds in each build and
     // with each contract semantic, and this header needs no contracts header.
     // The cost is one test of the state and the construction of the payload.
+    // The rule must-consume refuses fill() on an Option that it shows full
+    // (needs_empty), so the test stays only where the state is not known.
     template <class U>
         requires std::constructible_from<T, U&&>
-    [[= ::foundation::linear::fills{}]] constexpr void
+    [[= ::foundation::linear::fills{}]][[= ::foundation::linear::needs_empty{}]] constexpr void
         fill(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
         if (slot_.holds_()) [[unlikely]] {
             detail::report_full_fill_();

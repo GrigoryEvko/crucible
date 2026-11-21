@@ -310,6 +310,8 @@ MUST_CONSUME_RULE = "must-consume"
 SUM_ERRORS = {
     "option-unconsumed": "a linear sum can end with a payload that no consumer took: {entity}",
     "option-discarded": "the code discards a temporary linear sum, so its payload can drop: {entity}",
+    "option-known-full": "a door that needs an empty linear sum runs on a sum that each path shows full: {entity}",
+    "option-known-empty": "a door that needs a full linear sum runs on a sum that each path shows empty: {entity}",
 }
 # The rule fresh-brand, and the start of the error of each of its kinds (THE ERRORS of
 # utils/tools/quarantine/fresh_brand.cpp).  Each finding of the rule is an error in each mode.
