@@ -588,8 +588,11 @@ decode_session_event(::foundation::core::View<std::byte const> bytes) noexcept {
     auto const record =
         bytes.template window<session_event_size>(0).expect("the test above found the bytes of one record");
     ::foundation::core::FixedArray<std::byte, session_event_size> block{};
-    for (auto const index : block.indices())
-        block.at(index) = record.at(index);
+    block.with_mut([record](auto run) noexcept {
+        for (auto const index : run.view().indices()) {
+            run.view().at(index) = record.at(index);
+        }
+    });
     const auto raw = std::bit_cast<detail::event_log::RawEvent>(block);
 
     if (!names_enumerator<SessionOp>(raw.op)) return std::unexpected(EventDecodeError::UnknownOperation);

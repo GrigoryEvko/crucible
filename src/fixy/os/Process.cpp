@@ -58,11 +58,13 @@ struct OutputRing {
     std::uint64_t total = 0;
 
     void put(core::View<char const> run) noexcept {
-        for (char const character : run) {
-            *bytes.get(total % kChildOutputCapacity).expect("a position modulo the capacity is in the ring") =
-                character;
-            ++total;
-        }
+        bytes.with_mut([this, run](auto slots) noexcept {
+            for (char const character : run) {
+                *slots.get(total % kChildOutputCapacity).expect("a position modulo the capacity is in the ring") =
+                    character;
+                ++total;
+            }
+        });
     }
 };
 
@@ -71,17 +73,20 @@ struct OutputRing {
 // The descriptor stays open.  Complexity: O(n) in the bytes of the output.
 [[nodiscard]] core::Option<os::Errno> read_output_to_end(std::int32_t error_output, OutputRing& ring) noexcept {
     core::FixedArray<char, kReadChunk> chunk{};
-    for (;;) {
-        core::Result<std::size_t, os::Errno> taken = os::detail::read_child_output_(error_output, chunk.view());
-        if (taken.is_err()) {
-            return taken.err();
+    return chunk.with_mut([error_output, &ring](auto run) noexcept -> core::Option<os::Errno> {
+        for (;;) {
+            core::Result<std::size_t, os::Errno> taken = os::detail::read_child_output_(error_output, run.view());
+            if (taken.is_err()) {
+                return taken.err();
+            }
+            std::size_t const count = std::move(taken).value_or(0);
+            if (count == 0) {
+                return core::none;
+            }
+            ring.put(
+                core::View<char>{run.view()}.window(0, count).expect("a read gives at most the size of its buffer"));
         }
-        std::size_t const count = std::move(taken).value_or(0);
-        if (count == 0) {
-            return core::none;
-        }
-        ring.put(core::View<char>{chunk.view()}.window(0, count).expect("a read gives at most the size of its buffer"));
-    }
+    });
 }
 
 // The report of a child that ended: its end, how the wait ended, and the last
@@ -192,9 +197,11 @@ struct OutputRing {
     }
     if (info.op == PTRACE_SYSCALL_INFO_ENTRY) {
         core::FixedArray<std::uint64_t, kSyscallArguments> arguments{};
-        for (std::size_t index = 0; index < kSyscallArguments; ++index) {
-            *arguments.get(index).expect("the entry has six arguments") = info.entry.args[index];
-        }
+        arguments.with_mut([&info](auto run) noexcept {
+            for (std::size_t index = 0; index < kSyscallArguments; ++index) {
+                *run.get(index).expect("the entry has six arguments") = info.entry.args[index];
+            }
+        });
         return Read{core::Option<SyscallStop>::some(
             ChildDoor::make_entry_stop(child, SyscallNumber{info.entry.nr}, arguments))};
     }

@@ -161,15 +161,17 @@ using HandshakeMessage = ::foundation::core::FixedArray<std::byte, handshake_mes
 
 [[nodiscard]] constexpr HandshakeMessage handshake_message(OrgId org_id, PeerKeyFingerprint peer_key_fingerprint,
                                                            Nonce nonce) noexcept {
-    HandshakeMessage message{};
     ::foundation::core::FixedArray<std::uint64_t, 4> const words{handshake_domain, org_id.raw(),
                                                                  peer_key_fingerprint.raw(), nonce.raw()};
-    std::size_t at = 0;
-    for (std::byte& byte : message) {
-        std::uint64_t const word = words.at(::foundation::core::Index<4>::check(at / 8).expect("four words"));
-        byte = static_cast<std::byte>(static_cast<std::uint8_t>(word >> (8 * (at % 8))));
-        ++at;
-    }
+    HandshakeMessage message{};
+    message.with_mut([&words](auto run) noexcept {
+        std::size_t at = 0;
+        for (std::byte& byte : run) {
+            std::uint64_t const word = words.at(::foundation::core::Index<4>::check(at / 8).expect("four words"));
+            byte = static_cast<std::byte>(static_cast<std::uint8_t>(word >> (8 * (at % 8))));
+            ++at;
+        }
+    });
     return message;
 }
 
@@ -186,11 +188,13 @@ using HandshakeMessage = ::foundation::core::FixedArray<std::byte, handshake_mes
 
 [[nodiscard]] constexpr ::foundation::core::SipTag tag_of(HandshakeMac mac) noexcept {
     ::foundation::core::SipTag tag{};
-    int shift = 0;
-    for (std::byte& byte : tag) {
-        byte = static_cast<std::byte>(static_cast<std::uint8_t>(mac.raw() >> shift));
-        shift += 8;
-    }
+    tag.with_mut([mac](auto run) noexcept {
+        int shift = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(static_cast<std::uint8_t>(mac.raw() >> shift));
+            shift += 8;
+        }
+    });
     return tag;
 }
 

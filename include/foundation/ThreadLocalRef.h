@@ -142,11 +142,13 @@ struct ThreadLocalTypeIds {
 [[nodiscard]] consteval ::foundation::core::SipKeyBytes thread_local_second_key_() noexcept {
     constexpr ::foundation::core::TextView text{"ThreadLocalRef 2"};
     ::foundation::core::SipKeyBytes key{};
-    auto letter = text.begin();
-    for (std::byte& byte : key) {
-        byte = static_cast<std::byte>(*letter);
-        ++letter;
-    }
+    key.with_mut([text](auto run) noexcept {
+        auto letter = text.begin();
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(*letter);
+            ++letter;
+        }
+    });
     return key;
 }
 

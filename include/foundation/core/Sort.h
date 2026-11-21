@@ -277,7 +277,8 @@ template <std::size_t N>
     requires NetworkCount<N>
 [[nodiscard]] consteval FixedArray<Comparator, sort_network_size<N>> plan_sort_network() noexcept {
     FixedArray<Comparator, sort_network_size<N>> steps{};
-    static_cast<void>(detail::write_network_(N, first_of_(detail::ViewDoor::key(), steps.view())));
+    static_cast<void>(
+        detail::write_network_(N, first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), steps))));
     return steps;
 }
 
@@ -678,8 +679,8 @@ private:
         }
         FixedArray<TreeRun, merge_tree_height> runs{};
         FixedArray<std::uint8_t, merge_tree_height> depths{};
-        TreeRun* const run_stack = first_of_(ViewDoor::key(), runs.view());
-        std::uint8_t* const depth_stack = first_of_(ViewDoor::key(), depths.view());
+        TreeRun* const run_stack = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), runs));
+        std::uint8_t* const depth_stack = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), depths));
         std::size_t height = 0;
         std::size_t scan = 0;
         TreeRun previous{};
@@ -773,7 +774,7 @@ private:
         if (length < scalar_end) return length;
         while (length + run_scan_block <= count) {
             FixedArray<std::uint8_t, run_scan_block> breaks{};
-            std::uint8_t* const is_broken = first_of_(ViewDoor::key(), breaks.view());
+            std::uint8_t* const is_broken = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), breaks));
             std::uint8_t is_any_broken = 0;
             for (std::size_t offset = 0; offset < run_scan_block; ++offset) {
                 is_broken[offset] = static_cast<std::uint8_t>(is_break(SortCount{length + offset}));
@@ -960,7 +961,7 @@ private:
         // lanes when less allows it.  The writes then read the bits.
         while (index + partition_block <= count) {
             FixedArray<std::uint8_t, partition_block> lefts{};
-            std::uint8_t* const is_left = first_of_(ViewDoor::key(), lefts.view());
+            std::uint8_t* const is_left = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), lefts));
             T const* const block = first + index;
             for (std::size_t offset = 0; offset < partition_block; ++offset) {
                 if constexpr (Pivot == PivotSide::right) {
@@ -1142,7 +1143,7 @@ constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& 
     std::size_t const count = run.size();
     T* const elements = first_of_(ViewDoor::key(), run);
     FixedArray<Tally, buckets * passes> counts{};
-    Tally* const tally = first_of_(ViewDoor::key(), counts.view());
+    Tally* const tally = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), counts));
     for (std::size_t index = 0; index < count; ++index) {
         auto const key = key_of(elements[index]);
         for (std::size_t pass = 0; pass < passes; ++pass) {

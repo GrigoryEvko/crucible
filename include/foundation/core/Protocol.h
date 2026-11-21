@@ -990,7 +990,11 @@ template <class T>
         constexpr std::size_t step = image_bytes_at(fixed_array_element_at(^^Bare));
         for (auto const index : Bare::indices()) {
             std::size_t const at = index.raw() * step;
-            if (!detail::decode_part_(part.at(index), first + at, offset + at, fault)) return false;
+            bool const is_decoded =
+                part.with_element(index, [first, offset, at, &fault](typename Bare::element_type& element) noexcept {
+                    return detail::decode_part_(element, first + at, offset + at, fault);
+                });
+            if (!is_decoded) return false;
         }
         return true;
     } else if constexpr (is_sum_at(^^Bare)) {
@@ -1184,7 +1188,8 @@ constexpr void hash_array_(HashState& state, Element const* first) noexcept {
         std::size_t position = Offset % hash_block_bytes;
         for (std::size_t index = 0; index < Count; ++index) {
             FixedArray<std::byte, step> image{};
-            detail::encode_part_(first[index], first_of_(detail::ViewDoor::key(), image.view()));
+            detail::encode_part_(first[index],
+                                 first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image)));
             for (std::byte const byte : image.view()) {
                 detail::put_byte_(state, position, byte);
             }
@@ -1207,7 +1212,7 @@ constexpr void hash_part_(HashState& state, T const& part) noexcept {
         // stack and folds it as an array of bytes at the same offset.
         constexpr std::size_t bytes = image_bytes_at(^^Bare);
         FixedArray<std::byte, bytes> image{};
-        std::byte* const first = first_of_(detail::ViewDoor::key(), image.view());
+        std::byte* const first = first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image));
         detail::encode_part_(part, first);
         detail::hash_array_<Offset, std::byte, bytes>(state, first);
     } else if constexpr (derives_protocol_at(^^Bare)) {
@@ -1244,7 +1249,8 @@ constexpr void hash_run_(HashState& state, T const* first, std::size_t count) no
         std::size_t position = 0;
         for (; index < count; ++index) {
             FixedArray<std::byte, step> image{};
-            detail::encode_part_(first[index], first_of_(detail::ViewDoor::key(), image.view()));
+            detail::encode_part_(first[index],
+                                 first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image)));
             for (std::byte const byte : image.view()) {
                 detail::put_byte_(state, position, byte);
             }
@@ -1544,7 +1550,7 @@ constexpr void fold_fixed_part_(HeapFold& fold, T const& part) noexcept {
     } else {
         constexpr std::size_t bytes = image_bytes_at(^^Bare);
         FixedArray<std::byte, bytes> image{};
-        detail::encode_part_(part, first_of_(detail::ViewDoor::key(), image.view()));
+        detail::encode_part_(part, first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image)));
         for (std::byte const byte : image.view()) {
             fold.put_byte(byte);
         }

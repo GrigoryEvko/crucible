@@ -190,9 +190,11 @@ template <class Value>
     return bytes.template window<sizeof(Value)>(offset).match(
         [](::foundation::core::View<std::byte const, sizeof(Value)> window) -> Decoded {
             ::foundation::core::FixedArray<std::byte, sizeof(Value)> word{};
-            for (::foundation::core::Index<sizeof(Value)> const index : word.indices()) {
-                word.at(index) = window.at(index);
-            }
+            word.with_mut([window](auto run) noexcept {
+                for (::foundation::core::Index<sizeof(Value)> const index : run.view().indices()) {
+                    run.view().at(index) = window.at(index);
+                }
+            });
             return ::foundation::core::decode<Value>(word);
         },
         []() -> Decoded { return ::foundation::core::none; });

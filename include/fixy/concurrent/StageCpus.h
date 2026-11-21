@@ -105,7 +105,7 @@ public:
     void add(int cpu) noexcept {
         if (!is_open(cpu)) return;
         for (Position const position : position_of_(cpu)) {
-            is_ordered_.at(position) = true;
+            is_ordered_.with_element(position, [](bool& is_ordered) noexcept { is_ordered = true; });
             static_cast<void>(order_.append(static_cast<std::uint16_t>(position.raw()))
                                   .expect("the order holds each CPU of the mask at most one time"));
         }

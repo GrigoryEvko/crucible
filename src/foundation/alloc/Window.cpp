@@ -177,9 +177,14 @@ core::Result<core::Unit, os::Errno> Window::commit_extent_of(WindowCommits& comm
     CRUCIBLE_TRY(committed, commit_part(window_, start_at(core::ByteCount{extent << kExtentShift}),
                                         core::ByteCount{kExtentBytes - kChunkBytes}));
     static_cast<void>(committed);
-    core::Atomic<std::uint64_t>& word =
-        *commits.committed_extents_.get(extent / 64).expect("a window holds at most 1 TiB of extents");
-    static_cast<void>(word.fetch_or_acq_rel(std::uint64_t{1} << (extent % 64)));
+    // Each word of the extent map is an Atomic, so the heaps of two threads
+    // set their bits in one word at the same time.  The element door writes
+    // no state of the array itself.
+    std::uint64_t const bit = std::uint64_t{1} << (extent % 64);
+    commits.committed_extents_.with_element(
+        core::Index<decltype(commits.committed_extents_)::size()>::check(extent / 64)
+            .expect("a window holds at most 1 TiB of extents"),
+        [bit](core::Atomic<std::uint64_t>& word) noexcept { static_cast<void>(word.fetch_or_acq_rel(bit)); });
     return core::Unit{};
 }
 

@@ -660,15 +660,21 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
     using Slot = ::foundation::core::Index<Bound>;
     ::foundation::core::FixedArray<detail::beside_each_frame_<Body>, Bound> frames{};
     ::foundation::core::FixedArray<detail::thread_task, Bound> tasks{};
+    // A task holds the address of its frame for the start door of a thread,
+    // so the two arrays give their runs through the keyed run of a frame.
+    ::foundation::core::View<detail::beside_each_frame_<Body>, Bound> const frame_run =
+        frame_run_(::foundation::core::detail::FrameDoor::key(), frames);
+    ::foundation::core::View<detail::thread_task, Bound> const task_run =
+        frame_run_(::foundation::core::detail::FrameDoor::key(), tasks);
     for (Slot const slot : ::foundation::core::IndexRange<Bound>{}) {
         if (slot.raw() >= count.raw()) break;
         BesideIndex const index{::foundation::core::narrow<std::uint32_t>(slot.raw())
                                     .expect("run_beside_each: the index of a thread fits in 32 bits")};
-        frames.at(slot) = detail::beside_each_frame_<Body>{&body, index};
-        tasks.at(slot) = detail::thread_task{&frames.at(slot), &detail::run_beside_each_body_<Body>};
+        frame_run.at(slot) = detail::beside_each_frame_<Body>{&body, index};
+        task_run.at(slot) = detail::thread_task{&frame_run.at(slot), &detail::run_beside_each_body_<Body>};
     }
     ::foundation::core::View<detail::thread_task> const started_tasks = ::foundation::core::detail::view_over_(
-        &tasks.at(Slot::check(0).expect("a bound holds the index 0")), count.raw());
+        &task_run.at(Slot::check(0).expect("a bound holds the index 0")), count.raw());
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
         detail::start_thread_tasks(started_tasks, options);
     if (started.is_err()) {

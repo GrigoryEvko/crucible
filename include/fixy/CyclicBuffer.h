@@ -46,6 +46,13 @@ private:
     Cyclic<std::size_t, N> cursor_{};
     BoundedMonotonic<std::size_t, N> count_ = mint_bounded_monotonic<std::size_t, N>(std::size_t{0});
 
+    // The slot at a proven index, for a write.  The ring gives its slots by
+    // reference, and a FixedArray gives a View that writes only through the
+    // keyed run of a frame, so the ring reaches its own storage through it.
+    [[nodiscard]] constexpr reference slot_at_(Index<N> slot) noexcept {
+        return frame_run_(::foundation::core::detail::FrameDoor::key(), storage_).at(slot);
+    }
+
 public:
     constexpr CyclicBuffer() = default;
 
@@ -70,7 +77,7 @@ public:
     // saturate: its precondition is that the count is below the bound, and
     // a full ring would break it.
     [[nodiscard]] constexpr reference claim() noexcept {
-        reference slot = storage_.at(prove_slot_(cursor_.index()));
+        reference slot = slot_at_(prove_slot_(cursor_.index()));
         cursor_.advance();
         if (count_.get() < N) count_.bump();
         return slot;
@@ -113,7 +120,7 @@ public:
     // slot.  The cursor mask keeps every index inside the storage, so the
     // bound on i is a logic bound and not a safety bound.
     [[nodiscard]] constexpr reference recent(size_type i) noexcept {
-        return storage_.at(prove_slot_(cursor_.index_back(i)));
+        return slot_at_(prove_slot_(cursor_.index_back(i)));
     }
     [[nodiscard]] constexpr const_reference recent(size_type i) const noexcept {
         return storage_.at(prove_slot_(cursor_.index_back(i)));

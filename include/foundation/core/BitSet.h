@@ -482,14 +482,17 @@ public:
 
     constexpr void set(Key key) & noexcept {
         std::size_t const position = position_of_(key);
-        Word& word = words_.at(word_of_(position));
-        word = detail::word_from_<Word>(std::uint64_t{word} | (std::uint64_t{1} << shift_in_word_(position)));
+        std::uint64_t const bit = std::uint64_t{1} << shift_in_word_(position);
+        words_.with_element(word_of_(position),
+                            [bit](Word& word) noexcept { word = detail::word_from_<Word>(std::uint64_t{word} | bit); });
     }
 
     constexpr void reset(Key key) & noexcept {
         std::size_t const position = position_of_(key);
-        Word& word = words_.at(word_of_(position));
-        word = detail::word_from_<Word>(std::uint64_t{word} & ~(std::uint64_t{1} << shift_in_word_(position)));
+        std::uint64_t const bit = std::uint64_t{1} << shift_in_word_(position);
+        words_.with_element(word_of_(position), [bit](Word& word) noexcept {
+            word = detail::word_from_<Word>(std::uint64_t{word} & ~bit);
+        });
     }
 
     [[nodiscard]] constexpr bool test(Key key) const noexcept {
@@ -525,11 +528,7 @@ public:
     }
 
     // Complexity: O(N / W).
-    constexpr void clear() & noexcept {
-        for (Word& word : words_) {
-            word = 0;
-        }
-    }
+    constexpr void clear() & noexcept { words_ = FixedArray<Word, word_count_>{}; }
 
     // The walk `for (Key key : set)`.  Complexity of a full walk:
     // O(N / W + size()).
@@ -544,29 +543,34 @@ public:
     // N zero.  Complexity: O(N / W).
     constexpr void unite(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) =
-                detail::word_from_<Word>(std::uint64_t{words_.at(word)} | std::uint64_t{other.words_.at(word)});
+            std::uint64_t const theirs = other.words_.at(word);
+            words_.with_element(
+                word, [theirs](Word& mine) noexcept { mine = detail::word_from_<Word>(std::uint64_t{mine} | theirs); });
         }
     }
 
     constexpr void intersect(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) =
-                detail::word_from_<Word>(std::uint64_t{words_.at(word)} & std::uint64_t{other.words_.at(word)});
+            std::uint64_t const theirs = other.words_.at(word);
+            words_.with_element(
+                word, [theirs](Word& mine) noexcept { mine = detail::word_from_<Word>(std::uint64_t{mine} & theirs); });
         }
     }
 
     constexpr void subtract(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) =
-                detail::word_from_<Word>(std::uint64_t{words_.at(word)} & ~std::uint64_t{other.words_.at(word)});
+            std::uint64_t const theirs = other.words_.at(word);
+            words_.with_element(word, [theirs](Word& mine) noexcept {
+                mine = detail::word_from_<Word>(std::uint64_t{mine} & ~theirs);
+            });
         }
     }
 
     constexpr void flip(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) =
-                detail::word_from_<Word>(std::uint64_t{words_.at(word)} ^ std::uint64_t{other.words_.at(word)});
+            std::uint64_t const theirs = other.words_.at(word);
+            words_.with_element(
+                word, [theirs](Word& mine) noexcept { mine = detail::word_from_<Word>(std::uint64_t{mine} ^ theirs); });
         }
     }
 
@@ -612,7 +616,7 @@ template <std::size_t N, class Key, class Word>
         return Option<BitSet<N, Key>>{none};
     }
     BitSet<N, Key> set{};
-    set.words_.at(index<0>()) = bits;
+    set.words_.with_element(index<0>(), [bits](Word& word) noexcept { word = bits; });
     return Option<BitSet<N, Key>>::some(set);
 }
 

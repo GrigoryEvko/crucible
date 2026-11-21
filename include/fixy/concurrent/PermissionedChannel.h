@@ -691,7 +691,11 @@ public:
     {
         auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(producer_pool_);
         if (lent.is_none()) return ::foundation::core::none;
-        lane_claims_.at(lane).take("two live producer handles of one lane of a lanes channel.");
+        // The claim of a lane is an atomic claim, so two threads can take the
+        // claims of two lanes through the element door at the same time.
+        lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
+            claim.take("two live producer handles of one lane of a lanes channel.");
+        });
         if (ring_.end_of_lane_(lane) == LaneEnd::ended) [[unlikely]] {
             ::foundation::core::fatal("a producer handle of a lane that ended. A lane ends one time in a stream, and "
                                       "the drain of the channel opens each lane again.");
@@ -904,7 +908,7 @@ private:
     CRUCIBLE_COLD void end_producer_(typename parts::lane lane) noexcept {
         if constexpr (Form == ChannelForm::lanes) {
             ring_.end_lane(lane);
-            lane_claims_.at(lane).release();
+            lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
         } else {
             static_cast<void>(lane);
             producers_.end_producer();

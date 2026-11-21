@@ -154,9 +154,11 @@ UnitResult set_hardware_timestamping_(int socket, core::TextView interface_name)
     // The name fills the front of the name field, and the zero of the empty
     // field ends it.
     InterfaceRequest request{};
-    core::copy(request.name.view().window(0, interface_name.size()).expect("the name is below the capacity"),
-               core::detail::view_over_(core::detail::text_first_(interface_name), interface_name.size()))
-        .expect("the window has the count of the name");
+    request.name.with_mut([interface_name](auto run) noexcept {
+        core::copy(run.view().window(0, interface_name.size()).expect("the name is below the capacity"),
+                   core::detail::view_over_(core::detail::text_first_(interface_name), interface_name.size()))
+            .expect("the window has the count of the name");
+    });
     request.data = os::Word{static_cast<void const*>(&config)}.bits();
     long word = 0;
     do {

@@ -98,7 +98,10 @@ public:
     // marks.
     void mark(Slot slot) & noexcept {
         require_owner_();
-        slots_.at(slot).count.store_release(::foundation::os::read_spin_counter());
+        // The count of a cell is an Atomic, and a reader on another thread
+        // loads it at the same time.
+        slots_.with_element(
+            slot, [](Cell& cell) noexcept { cell.count.store_release(::foundation::os::read_spin_counter()); });
     }
 
     void mark(Slot) && = delete("a temporary sink ends at the end of the full expression, and nobody reads it");
@@ -132,8 +135,9 @@ private:
     // between its read and its store.
     void add_(Slot slot, std::uint64_t ticks) noexcept {
         require_owner_();
-        ::foundation::core::Atomic<std::uint64_t>& count = slots_.at(slot).count;
-        count.store_release(::foundation::core::saturating_add(count.load_acquire(), ticks));
+        slots_.with_element(slot, [ticks](Cell& cell) noexcept {
+            cell.count.store_release(::foundation::core::saturating_add(cell.count.load_acquire(), ticks));
+        });
     }
 
     // One slot alone on its cache line.  The owner writes the count, and a

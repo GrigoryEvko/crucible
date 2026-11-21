@@ -80,19 +80,21 @@ struct StableIdentity final {
 
     static constexpr FixedArray<std::byte, count> image = [] consteval {
         FixedArray<std::byte, count> out{};
-        auto cursor = out.begin();
-        for (TextView const field : fields) {
-            // The compiler cannot hold a name of 4 GiB, so each count fits
-            // its four bytes.
-            for (std::size_t shift = 0; shift < 32; shift += 8) {
-                *cursor = static_cast<std::byte>(static_cast<std::uint8_t>(field.size() >> shift));
-                ++cursor;
+        out.with_mut([](auto run) noexcept {
+            auto cursor = run.begin();
+            for (TextView const field : fields) {
+                // The compiler cannot hold a name of 4 GiB, so each count fits
+                // its four bytes.
+                for (std::size_t shift = 0; shift < 32; shift += 8) {
+                    *cursor = static_cast<std::byte>(static_cast<std::uint8_t>(field.size() >> shift));
+                    ++cursor;
+                }
+                for (char const letter : field) {
+                    *cursor = static_cast<std::byte>(static_cast<unsigned char>(letter));
+                    ++cursor;
+                }
             }
-            for (char const letter : field) {
-                *cursor = static_cast<std::byte>(static_cast<unsigned char>(letter));
-                ++cursor;
-            }
-        }
+        });
         return out;
     }();
 };

@@ -100,13 +100,15 @@ public:
     // The 32 bytes of the output, in the byte order of the reference.
     [[nodiscard]] constexpr FixedArray<std::byte, 32> bytes() const noexcept {
         FixedArray<std::byte, 32> out{};
-        auto cursor = out.begin();
-        for (std::uint64_t const word : words_) {
-            for (int shift = 0; shift < 64; shift += 8) {
-                *cursor = static_cast<std::byte>(static_cast<std::uint8_t>(word >> shift));
-                ++cursor;
+        out.with_mut([this](auto run) noexcept {
+            auto cursor = run.begin();
+            for (std::uint64_t const word : words_) {
+                for (int shift = 0; shift < 64; shift += 8) {
+                    *cursor = static_cast<std::byte>(static_cast<std::uint8_t>(word >> shift));
+                    ++cursor;
+                }
             }
-        }
+        });
         return out;
     }
 

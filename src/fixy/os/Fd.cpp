@@ -61,8 +61,12 @@ bool is_descriptor_generation_(int descriptor, std::uint32_t generation) noexcep
 }
 
 void advance_descriptor_generation_(int descriptor) noexcept {
+    // Each generation is an Atomic, so two threads step the generations of
+    // their descriptors through the element door at the same time.
     for (GenerationIndex const slot : slot_of(descriptor)) {
-        static_cast<void>(descriptor_generations_.at(slot).fetch_add_acq_rel(1));
+        descriptor_generations_.with_element(slot, [](::foundation::core::Atomic<std::uint32_t>& generation) noexcept {
+            static_cast<void>(generation.fetch_add_acq_rel(1));
+        });
     }
 }
 

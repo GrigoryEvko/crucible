@@ -161,16 +161,23 @@ public:
     // The push of the one producer of LANE.  It gives false when the lane is
     // full.  A push from two threads into one lane corrupts the lane, and the
     // checked publish of the SPSC ring ends the process at the next publish.
+    // The element door writes no state of the array of lanes, so the producers
+    // of two lanes call it at the same time: each writes its own lane, and the
+    // SPSC ring of a lane takes its one producer and the one consumer at once.
     [[nodiscard, gnu::hot]] bool try_push(lane_index lane, T const& item) noexcept {
-        return lanes_.at(lane).ring.try_push(item);
+        return lanes_.with_element(
+            lane, [&item](detail::LaneOf<T, LaneCapacity>& held) noexcept { return held.ring.try_push(item); });
     }
 
     // The producer of LANE ends it after its last push (THE END OF A LANE).
-    // A second end of one lane in a stream ends the process.
+    // A second end of one lane in a stream ends the process.  The end of a
+    // lane is an Atomic, which the consumer reads at the same time.
     void end_lane(lane_index lane) noexcept {
-        ::foundation::core::Atomic<LaneEnd>& end = *lanes_.at(lane).end;
-        CRUCIBLE_FATAL_INVARIANT(end.load_acquire() == LaneEnd::open);
-        end.store_release(LaneEnd::ended);
+        lanes_.with_element(lane, [](detail::LaneOf<T, LaneCapacity>& held) noexcept {
+            ::foundation::core::Atomic<LaneEnd>& end = *held.end;
+            CRUCIBLE_FATAL_INVARIANT(end.load_acquire() == LaneEnd::open);
+            end.store_release(LaneEnd::ended);
+        });
     }
 
     // The next item of the merged stream (THE ORDER), NoItem::Empty while the
@@ -259,10 +266,15 @@ private:
         return lane_at_(turn_);
     }
 
-    // The lane at a position of the turn below live_count_.
+    // The lane at a position of the turn below live_count_.  Only the one
+    // consumer calls it, and the producers write only the SPSC ring and the
+    // end of their lanes, which are atomic.  The ring reaches its own lane
+    // through the keyed run of a frame, because a FixedArray gives no other
+    // reference that writes an element.
     [[nodiscard, gnu::always_inline]] detail::LaneOf<T, LaneCapacity>& lane_at_(std::uint32_t position) noexcept {
         std::uint32_t const lane = live_.at(position_(position));
-        return lanes_.at(lane_index{::foundation::core::detail::IndexDoor::key(), lane});
+        return frame_run_(::foundation::core::detail::FrameDoor::key(), lanes_)
+            .at(lane_index{::foundation::core::detail::IndexDoor::key(), lane});
     }
 
     [[nodiscard, gnu::always_inline]] static lane_index position_(std::uint32_t position) noexcept {
@@ -299,7 +311,8 @@ private:
     CRUCIBLE_COLD void leave_turn_() noexcept {
         lane_of_turn_().ring.publish_tail();
         for (std::uint32_t position = turn_ + 1; position < live_count_; ++position) {
-            live_.at(position_(position - 1)) = live_.at(position_(position));
+            std::uint32_t const next = live_.at(position_(position));
+            live_.with_element(position_(position - 1), [next](std::uint32_t& lane) noexcept { lane = next; });
         }
         --live_count_;
         if (turn_ == live_count_) turn_ = 0;
@@ -335,8 +348,10 @@ private:
     // turn is at lane 0.  A new ring and a drained ring hold no deferred pop.
     void open_each_lane_() noexcept {
         for (lane_index const lane : ::foundation::core::IndexRange<lane_count>{}) {
-            lanes_.at(lane).end->store_release(LaneEnd::open);
-            live_.at(lane) = static_cast<std::uint32_t>(lane.raw());
+            lanes_.with_element(
+                lane, [](detail::LaneOf<T, LaneCapacity>& held) noexcept { held.end->store_release(LaneEnd::open); });
+            live_.with_element(
+                lane, [lane](std::uint32_t& position) noexcept { position = static_cast<std::uint32_t>(lane.raw()); });
         }
         live_count_ = static_cast<std::uint32_t>(lane_count);
         turn_ = 0;

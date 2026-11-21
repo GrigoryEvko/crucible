@@ -769,8 +769,8 @@ template <std::size_t Leaves>
 [[nodiscard]] consteval FixedArray<TreeStep, Leaves - 1> plan_tree() noexcept {
     FixedArray<TreeStep, Leaves - 1> steps{};
     std::uint32_t next = 0;
-    static_cast<void>(
-        detail::write_tree_plan_(first_of_(detail::ViewDoor::key(), steps.view()), Leaves, 0, Leaves, next));
+    static_cast<void>(detail::write_tree_plan_(
+        first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), steps)), Leaves, 0, Leaves, next));
     return steps;
 }
 

@@ -777,9 +777,13 @@ private:
     template <class Ctx, std::size_t... Is>
     void run_threaded_(Ctx const& ctx, std::index_sequence<Is...>) && noexcept {
         ::foundation::core::FixedArray<int, sizeof...(Is)> affinity_cpus{};
-        claim_stage_cpus(*process_stage_cpu_claims(), caller_affinity_(ctx),
-                         ::fixy::topology::Topology::instance().cache_clusters(), affinity_cpus.view());
-        (give_back_unpinnable_stage_cpu_<Stages>(affinity_cpus.at(::foundation::core::index<Is>())), ...);
+        affinity_cpus.with_mut([&ctx](auto cpus) noexcept {
+            claim_stage_cpus(*process_stage_cpu_claims(), caller_affinity_(ctx),
+                             ::fixy::topology::Topology::instance().cache_clusters(), cpus.view());
+        });
+        (affinity_cpus.with_element(::foundation::core::index<Is>(),
+                                    [](int& cpu) noexcept { give_back_unpinnable_stage_cpu_<Stages>(cpu); }),
+         ...);
         std::tuple<stage_frame_<Stages>...> frames{
             stage_frame_<Stages>{&std::get<Is>(stages_), affinity_cpus.at(::foundation::core::index<Is>())}...};
         std::array<::fixy::thread::detail::thread_task, sizeof...(Is)> tasks{
@@ -788,7 +792,8 @@ private:
                                                  ::fixy::thread::ThreadOptions{})
             .expect("Pipeline: no stage thread started.  The stages wait on each other, so the pipeline cannot run "
                     "them on the calling thread");
-        give_back_stage_cpus(*process_stage_cpu_claims(), affinity_cpus.view());
+        affinity_cpus.with_mut(
+            [](auto cpus) noexcept { give_back_stage_cpus(*process_stage_cpu_claims(), cpus.view()); });
     }
 
     std::tuple<Stages...> stages_;

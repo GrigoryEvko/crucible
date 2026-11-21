@@ -38,16 +38,23 @@ using ::foundation::core::Index;
 // The bound of a CPU id is a fatal invariant, not a contract precondition.  A
 // precondition in a source file makes the object of libfixy call
 // std::terminate, and the rule artifact-symbols refuses that symbol in libfixy.
+// Each word of the table is an Atomic, so the runs of two threads claim and
+// give back CPUs through the element door at the same time.
 bool StageCpuClaims::try_claim(std::uint16_t cpu) noexcept {
     CRUCIBLE_FATAL_INVARIANT(cpu <= AffinityMask::kMaxCore);
     std::uint64_t const bit = bit_of(cpu);
-    return (words_.at(word_position_of(cpu)).fetch_or_acq_rel(bit) & bit) == 0;
+    return words_.with_element(word_position_of(cpu), [bit](::foundation::core::Atomic<std::uint64_t>& word) noexcept {
+        return (word.fetch_or_acq_rel(bit) & bit) == 0;
+    });
 }
 
 void StageCpuClaims::give_back(std::uint16_t cpu) noexcept {
     CRUCIBLE_FATAL_INVARIANT(cpu <= AffinityMask::kMaxCore);
     std::uint64_t const bit = bit_of(cpu);
-    std::uint64_t const before = words_.at(word_position_of(cpu)).fetch_and_acq_rel(~bit);
+    std::uint64_t const before =
+        words_.with_element(word_position_of(cpu), [bit](::foundation::core::Atomic<std::uint64_t>& word) noexcept {
+            return word.fetch_and_acq_rel(~bit);
+        });
     CRUCIBLE_FATAL_INVARIANT((before & bit) != 0);
 }
 

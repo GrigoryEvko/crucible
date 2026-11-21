@@ -171,7 +171,10 @@ split_by_shards_(::foundation::core::ViewMut<T, Brand, Extent> out, std::size_t 
         std::size_t const end = limit < count ? limit : count;
         auto [own, next] = ::foundation::core::split_at(std::move(rest), end - begin)
                                .expect("the cut of a shard lies inside the outputs that are left");
-        *parts.get(shard).expect("each shard has a part") = ::foundation::core::Option<Part>::some(std::move(own));
+        parts.with_element(::foundation::core::Index<Shards>::check(shard).expect("each shard has a part"),
+                           [&own](::foundation::core::Option<Part>& part) noexcept {
+                               part = ::foundation::core::Option<Part>::some(std::move(own));
+                           });
         rest = std::move(next);
         begin = end;
     }
@@ -270,8 +273,9 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, ::found
     ::foundation::core::View<T const> const all_carries{detail::region_view_(summed)};
     ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
         ctx, budget,
-        ::fixy::mint_owned_region(first_of_(::foundation::core::detail::ViewDoor::key(), parts.view()), Shards,
-                                  ::foundation::permissions::mint_permission_root<detail::ParallelScanParts>()),
+        ::fixy::mint_owned_region(first_of_(::foundation::core::detail::ViewDoor::key(),
+                                            frame_run_(::foundation::core::detail::FrameDoor::key(), parts)),
+                                  Shards, ::foundation::permissions::mint_permission_root<detail::ParallelScanParts>()),
         [in, all_carries, kind, grains](auto& shard) noexcept {
             constexpr std::size_t index = std::remove_cvref_t<decltype(shard)>::tag_type::index;
             CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);

@@ -158,14 +158,16 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
             std::size_t const first = ::fixy::detail::shard_start(positions, Shards, shard);
             std::size_t const count = ::fixy::detail::shard_start(positions, Shards, shard + 1) - first;
             if (count == 0) continue;
-            *parts.get(shard).expect("each shard has a part") = core::Option<Rows>::some(
+            core::Option<Rows> rows = core::Option<Rows>::some(
                 whole.slice(first_axis, first, count, 1).expect("the positions of a shard lie inside out"));
+            parts.with_element(core::Index<Shards>::check(shard).expect("each shard has a part"),
+                               [&rows](core::Option<Rows>& part) noexcept { part = std::move(rows); });
         }
         auto const ruled = core::detail::ruled_op_<T>(op);
         ::foundation::linear::drop(launch(
             budget,
             ::fixy::mint_owned_region(
-                first_of_(core::detail::ViewDoor::key(), parts.view()), Shards,
+                first_of_(core::detail::ViewDoor::key(), frame_run_(core::detail::FrameDoor::key(), parts)), Shards,
                 ::foundation::permissions::mint_permission_root<detail::ParallelPointwiseShards>()),
             [&ruled, &apart, ... reads = detail::read_only_(core::detail::plain_view_of_(inputs)), first_axis,
              positions](auto& shard) noexcept {
