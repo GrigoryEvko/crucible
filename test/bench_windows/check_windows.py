@@ -1,4 +1,4 @@
-"""Refuse a timed window of a bench whose loop holds no instruction of its body.
+"""Refuse a timed window of a bench whose loop holds no instruction of its body, or that runs cold code.
 
 THE WINDOW
     A timed window is the code that a path from an rdtsc reaches before it
@@ -47,6 +47,34 @@ THE REFUSAL
     it after the test, and the two versions compare the count of the calls
     in one register.  Neither case is a refusal.
 
+THE PLACEMENT
+    GCC compiles a function that it takes for unlikely executed as cold code:
+    it optimizes the function for size, puts it in a section .text.unlikely,
+    and does not split it into a hot part and a cold part.  A timed body there
+    calls code that the optimizer did not inline, and a row measures that code
+    and not the code of the hot path.  This occurs when each path to a row
+    calls a cold function first, such as a print of a body of only a cold
+    call (THE PRINT DOORS of bench/bench_harness.h).  So the check also
+    refuses a window in these cases:
+      - The window starts in cold code: the cold part of a function, a
+        section .text.unlikely, or a start of its part at an address that is
+        not a multiple of 16.
+      - A loop of the window in hot code calls a closure of the bench unit (a
+        lambda) whose start is in cold code, such as a timed body that GCC
+        did not inline.  A call of a slow path, such as the growth of a list
+        or a fatal report, goes to cold code by design, and the check does
+        not judge it.
+    The check judges the windows of the harness and of the bench unit.  A
+    window of a function of the product or the base (a qualified name in the
+    namespace crucible, fixy, foundation or std) is a read of the clock in
+    that code, such as in a cold path of the pipeline, and no row times it.
+    A linked binary keeps no section .text.unlikely, so the check reads the
+    start address there.  GCC aligns the start of each function that it
+    optimizes for speed to 16 bytes, and it does not align a function that
+    it optimizes for size.  A cold function starts at a multiple of 16 for
+    one in 16 functions, so the scan can miss one cold function.  A cold row
+    makes each function of the row cold, so the scan finds it.
+
 THE PROBE
     The mode probe reads the object of test/bench_windows/probe_windows.cpp.
     Its row run_kept_row reads a value through an input sink, and its row
@@ -61,7 +89,12 @@ THE PROBE
     run and through run_with.  The body loops of their windows are compared
     with each register as its class and its width: the loop through run_with
     must add no instruction to the loop through run, so a row through
-    run_with times no more code than through run.
+    run_with times no more code than through run.  Its row run_after_print_row
+    calls bench::print before the row, and each of its windows must be in hot
+    code.  Its row run_after_cold_door_row calls a door of the cold form
+    before the row: a function of only a call of report(), which GCC takes
+    for unlikely executed.  The check must find a window of that row in cold
+    code, so the control fails when the check of THE PLACEMENT sees nothing.
 
 Usage:
     check_windows.py probe ROOT OBJECT
@@ -130,7 +163,18 @@ KEPT_ROW = "run_kept_row"
 LOST_ROW = "run_lost_row"
 STATE_ROW = "run_state_row"
 WITH_ROW = "run_with_state_row"
+PRINT_ROW = "run_after_print_row"
+COLD_DOOR_ROW = "run_after_cold_door_row"
 SKIP = 77
+# THE PLACEMENT: the alignment of the start of a function that GCC optimizes for speed, and the section of cold code.
+HOT_ALIGNMENT = 16
+COLD_SECTION = ".text.unlikely"
+# The namespaces of the product and the base, whose windows THE PLACEMENT does not judge, and the marks after the
+# parameter list of a demangled name.
+CODE_NAMESPACES = ("crucible::", "fixy::", "foundation::", "std::")
+NAME_TRAILERS = (" const", " volatile", " &&", " &", " noexcept")
+CLONE_MARK = " [clone "
+LAMBDA_MARK = "{lambda"
 
 # The position of one instruction: the index of its part, and its index in the part.
 Place = tuple[int, int]
@@ -158,17 +202,34 @@ class Loop:
 
 @dataclass(frozen=True, slots=True)
 class Window:
-    """One timed window of a function: its number, its loops, and True when a loop with work goes to an empty loop."""
+    """One timed window of a function: its number, its loops, its placement and the cold callees of its loops.
+
+    `is_work_before_counter` is True when a loop with work goes to an empty loop.  `cold_start` is the reason that the
+    window starts in cold code, or None.  `cold_callees` holds each closure of the bench in cold code that a loop of
+    the window in hot code calls, with its reason (THE PLACEMENT).
+    """
 
     function: str
     number: int
     loops: tuple[Loop, ...]
     is_work_before_counter: bool
+    cold_start: str | None = None
+    cold_callees: tuple[str, ...] = ()
+
+    @property
+    def is_empty_refusal(self) -> bool:
+        """True when the window gives a case of THE REFUSAL."""
+        return all(not loop.work for loop in self.loops) or self.is_work_before_counter
+
+    @property
+    def is_cold(self) -> bool:
+        """True when the window or a function that its loops call is in cold code (THE PLACEMENT)."""
+        return self.cold_start is not None or bool(self.cold_callees)
 
     @property
     def is_refused(self) -> bool:
-        """True when the window gives a case of THE REFUSAL."""
-        return all(not loop.work for loop in self.loops) or self.is_work_before_counter
+        """True when the check refuses the window: a case of THE REFUSAL or of THE PLACEMENT."""
+        return self.is_empty_refusal or self.is_cold
 
 
 def load_readers(root: Path) -> None:
@@ -241,6 +302,52 @@ def reads_data(instruction: Instruction) -> bool:
     return False
 
 
+def qualified_name(name: str) -> str:
+    """Return the qualified name of a demangled function: no return type, no parameter list and no clone mark.
+
+    Complexity: linear in the length of the name.
+    """
+    text = name
+    while text.endswith("]") and CLONE_MARK in text:
+        text = text[: text.rindex(CLONE_MARK)]
+    trailer = next((item for item in NAME_TRAILERS if text.endswith(item)), None)
+    while trailer is not None:
+        text = text.removesuffix(trailer)
+        trailer = next((item for item in NAME_TRAILERS if text.endswith(item)), None)
+    text = shapes.strip_arguments(text)
+    depth = 0
+    for index in range(len(text) - 1, -1, -1):
+        character = text[index]
+        if character in ">)}":
+            depth += 1
+        elif character in "<({":
+            depth -= 1
+        elif character == " " and depth == 0:
+            return text[index + 1 :]
+    return text
+
+
+def is_bench_code(name: str) -> bool:
+    """True when a function is code of the harness or of the bench unit, and not of the product or the base."""
+    return not qualified_name(name).startswith(CODE_NAMESPACES)
+
+
+def is_timed_body(name: str) -> bool:
+    """True when a function is a closure of the bench unit, such as the body of a row (THE PLACEMENT)."""
+    return is_bench_code(name) and LAMBDA_MARK in name
+
+
+def cold_reason(part: Part) -> str | None:
+    """Return the reason that a part of a function is cold code, or None for a part in hot code (THE PLACEMENT)."""
+    if part.section.startswith(COLD_SECTION):
+        return f"it is in the section {part.section}"
+    if part.symbol.endswith(shapes.COLD_SUFFIX):
+        return "it is the cold part of its function"
+    if part.instructions and part.instructions[0].offset % HOT_ALIGNMENT:
+        return f"its start {part.instructions[0].offset:x} is not a multiple of {HOT_ALIGNMENT}"
+    return None
+
+
 def successors_of(owned: tuple[Part, ...]) -> Flow:
     """Return the edges between the positions of the parts of one function (THE WINDOW).
 
@@ -309,9 +416,34 @@ def window_places(flow: Flow, start: Place) -> set[Place]:
     return inside
 
 
-def windows_of(code: Code) -> list[Window]:
-    """Return each timed window of one function with a loop (THE WINDOW, THE COUNTER, THE REFUSAL)."""
-    flow = successors_of(code.parts())
+def cold_callees_of(owned: tuple[Part, ...], flow: Flow, body: set[Place], functions_at: dict[int, Code]) -> list[str]:
+    """Return each closure of the bench in cold code that a call of a loop body in hot code names, with its reason.
+
+    `functions_at` holds the code of each function of a linked binary by the address of its hot part (THE PLACEMENT).
+    Complexity: linear in the instructions of the body.
+    """
+    found: list[str] = []
+    for part, index in sorted(body):
+        instruction = flow.parts[part][index]
+        if instruction.mnemonic != "call" or cold_reason(owned[part]) is not None:
+            continue
+        callee = functions_at.get(shapes.target_address(instruction) or -1)
+        if callee is None or callee.hot is None or not is_timed_body(callee.name):
+            continue
+        reason = cold_reason(callee.hot)
+        if reason is not None:
+            found.append(f"{callee.name[:200]}: {reason}")
+    return found
+
+
+def windows_of(code: Code, functions_at: dict[int, Code]) -> list[Window]:
+    """Return each timed window of one function with a loop (THE WINDOW, THE COUNTER, THE REFUSAL, THE PLACEMENT).
+
+    `functions_at` holds the code of each function of a linked binary by the address of its hot part, and it is empty
+    for an object, whose calls name a relocation and not an address.
+    """
+    owned = code.parts()
+    flow = successors_of(owned)
     predecessors = shapes.predecessors_of(flow.successors)
     found: list[Window] = []
     starts = [
@@ -364,17 +496,41 @@ def windows_of(code: Code) -> list[Window]:
             for counter, counter_body in empty
             if not counter_body <= working_body and not working.compared & counter.compared
         )
-        found.append(Window(code.name, number, tuple(loops), is_work_before_counter))
+        is_judged = is_bench_code(code.name)
+        cold_callees = dict.fromkeys(
+            callee
+            for body in (bodies if is_judged else [])
+            for callee in cold_callees_of(owned, flow, body, functions_at)
+        )
+        found.append(
+            Window(
+                code.name,
+                number,
+                tuple(loops),
+                is_work_before_counter,
+                cold_reason(owned[start[0]]) if is_judged else None,
+                tuple(cold_callees),
+            )
+        )
     return found
 
 
-def timed_windows(path: str) -> list[Window]:
-    """Return each timed window with a loop of each function of one file."""
+def timed_windows(path: str, is_linked: bool) -> list[Window]:
+    """Return each timed window with a loop of each function of one file.
+
+    `is_linked` is True for a linked binary, whose calls name an address, so the check of THE PLACEMENT reads the
+    callees of each loop too.
+    """
     codes = shapes.codes_of(objdump.functions(path), keeps_arguments=True)
+    functions_at: dict[int, Code] = {}
+    if is_linked:
+        functions_at = {
+            code.hot.instructions[0].offset: code for code in codes.values() if code.hot and code.hot.instructions
+        }
     result: list[Window] = []
     for code in codes.values():
         if any(instruction.mnemonic == START for part in code.parts() for instruction in part.instructions):
-            result.extend(windows_of(code))
+            result.extend(windows_of(code, functions_at))
     return result
 
 
@@ -383,9 +539,14 @@ def shown_window(window: Window) -> str:
     lines = [f"  {window.function[:200]}: window {window.number}"]
     if window.is_work_before_counter:
         lines.append("    a loop with work goes to an empty loop, so the work runs one time before the calls")
-    for loop in window.loops:
-        if not loop.work:
-            lines.append("    a loop with no instruction of its body: " + "; ".join(loop.instructions))
+    if window.is_empty_refusal:
+        for loop in window.loops:
+            if not loop.work:
+                lines.append("    a loop with no instruction of its body: " + "; ".join(loop.instructions))
+    if window.cold_start is not None:
+        lines.append(f"    the window starts in cold code: {window.cold_start}")
+    for callee in window.cold_callees:
+        lines.append(f"    a loop of the window calls a function in cold code: {callee}")
     return "\n".join(lines)
 
 
@@ -421,14 +582,31 @@ def state_row_problems(windows: list[Window]) -> list[str]:
     return problems
 
 
+def placement_problems(windows: list[Window]) -> list[str]:
+    """Return the problems of the two rows of a print (THE PROBE, THE PLACEMENT).
+
+    A problem is a missing row, a window after bench::print in cold code, or a control with no window in cold code.
+    """
+    printed = [window for window in windows if PRINT_ROW in window.function]
+    control = [window for window in windows if COLD_DOOR_ROW in window.function]
+    if not printed or not control:
+        return [f"the probe has {len(printed)} windows of {PRINT_ROW} and {len(control)} of {COLD_DOOR_ROW}"]
+    problems = [
+        f"a window after bench::print is in cold code:\n{shown_window(window)}" for window in printed if window.is_cold
+    ]
+    if not any(window.is_cold for window in control):
+        problems.append(f"the check finds no window of {COLD_DOOR_ROW} in cold code, so the control shows no refusal")
+    return problems
+
+
 def check_probe(path: str) -> int:
     """Return 0 when the kept row holds its read and the check refuses the body of the lost row (THE PROBE)."""
-    windows = timed_windows(path)
+    windows = timed_windows(path, is_linked=False)
     kept = [window for window in windows if KEPT_ROW in window.function]
     lost = [window for window in windows if LOST_ROW in window.function]
     # The harness times other loops too, such as a wait for the next tick of the clock, and the check accepts them
     # in the two rows.  The windows of the body are the windows that the check refuses in the lost row.
-    body_windows = {window.number for window in lost if window.is_refused}
+    body_windows = {window.number for window in lost if window.is_empty_refusal}
     problems: list[str] = []
     if not kept or not lost:
         problems.append(f"the probe has {len(kept)} windows of {KEPT_ROW} and {len(lost)} of {LOST_ROW}")
@@ -447,13 +625,15 @@ def check_probe(path: str) -> int:
             f"{len(body_windows)} windows of its body"
         )
     problems.extend(state_row_problems(windows))
+    problems.extend(placement_problems(windows))
     for problem in problems:
         print(f"check_windows: {problem}")
     if problems:
         return 1
     print(
         f"check_windows: the probe passes: the check accepts the {len(kept)} windows of {KEPT_ROW}, and it refuses "
-        f"the {len(body_windows)} windows of the body of {LOST_ROW}"
+        f"the {len(body_windows)} windows of the body of {LOST_ROW}.  The windows of {PRINT_ROW} are in hot code, and "
+        f"the check finds the windows of {COLD_DOOR_ROW} in cold code"
     )
     return 0
 
@@ -462,20 +642,30 @@ def check_scan(paths: list[str]) -> int:
     """Return 0 when no window of the binaries gives a case of THE REFUSAL."""
     refused = 0
     judged = 0
+    is_empty_seen = False
+    is_cold_seen = False
     for path in paths:
-        windows = timed_windows(path)
+        windows = timed_windows(path, is_linked=True)
         judged += len(windows)
         bad = [window for window in windows if window.is_refused]
         refused += len(bad)
+        is_empty_seen = is_empty_seen or any(window.is_empty_refusal for window in bad)
+        is_cold_seen = is_cold_seen or any(window.is_cold for window in bad)
         if bad:
-            print(f"check_windows: {Path(path).name}: {len(bad)} windows time a loop with no instruction of its body")
+            print(f"check_windows: {Path(path).name}: {len(bad)} windows refused")
             for window in bad:
                 print(shown_window(window))
     print(f"check_windows: {judged} windows of {len(paths)} binaries, {refused} refused")
-    if refused:
+    if is_empty_seen:
         print(
-            "check_windows: give each input of such a body an input sink, such as bench::mark_changed(object) or "
-            "bench::make_opaque(value) of bench/bench_harness.h"
+            "check_windows: give each input of a body with an empty loop an input sink, such as "
+            "bench::mark_changed(object) or bench::make_opaque(value) of bench/bench_harness.h"
+        )
+    if is_cold_seen:
+        print(
+            "check_windows: a window in cold code follows a cold call on each path to its row.  Print through the "
+            "doors of the harness (THE PRINT DOORS of bench/bench_harness.h), and call no report() or other cold "
+            "function before the rows"
         )
     return 1 if refused else 0
 

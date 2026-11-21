@@ -180,8 +180,11 @@ crucible_script_test(NAME harness_output
 # bench_windows/probe_windows.cpp holds such a body and the same body with
 # its input sink.  The test reads the object of the probe with
 # bench_windows/check_windows.py, which must accept the first body and refuse
-# the second (THE PROBE).  The probe is the control of the scan of the
-# windows of each bench, which only a bench preset builds (bench/CMakeLists.txt).
+# the second (THE PROBE).  Two more rows come after a print: the row after
+# bench::print must be in hot code, and the control after a door of the cold
+# form must be in cold code (THE PLACEMENT).  The probe is the control of the
+# scan of the windows of each bench, which only a bench preset builds
+# (bench/CMakeLists.txt).
 # The test needs the code of a Release build of x86-64 with no profile
 # counters and no UBSan, such as the presets release and release-v3 of the
 # gate.  CRUCIBLE_SANITIZE and CRUCIBLE_TSAN change only a Debug build.

@@ -1556,9 +1556,10 @@ lost_between(::fixy::Side<side::ReadingBefore, WindowClock> const& before,
 // of several threads prints it after a row, while its threads live, to show
 // that no two of them share a core (THE CORES OF A RUN).  A thread that is
 // alone on its core makes an involuntary switch only for a kernel thread of
-// that core.  Complexity: one listing of /proc/self/task and two reads for
+// that core.  It is noipa, as each door that prints (THE PRINT DOORS of
+// print()).  Complexity: one listing of /proc/self/task and two reads for
 // each thread.
-inline void print_thread_cpus(::fixy::TextView label) noexcept {
+[[gnu::noipa]] inline void print_thread_cpus(::fixy::TextView label) noexcept {
     using ::fixy::Sink;
     ::fixy::report(Sink::Out, "     └─ threads of {} (cpu, involuntary switches):", label);
     static_cast<void>(::foundation::os::for_each_entry("/proc/self/task", [](::fixy::CText name) noexcept {
@@ -1623,8 +1624,9 @@ public:
     }
 
     // Prints each CPU with a note, and its count of notes, on one line after
-    // the label.  Call it after the threads that noted joined.
-    void print(::fixy::TextView label) const noexcept {
+    // the label.  Call it after the threads that noted joined.  It is noipa,
+    // as each door that prints (THE PRINT DOORS of print()).
+    [[gnu::noipa]] void print(::fixy::TextView label) const noexcept {
         using ::fixy::Sink;
         ::fixy::report(Sink::Out, "     └─ cpus of the threads of {} (cpu: notes):", label);
         std::size_t cpu = 0;
@@ -2093,14 +2095,24 @@ template <class... Args>
 // text and the arguments of the Report family.  A bench writes each of its
 // lines through print(), and an error line through report() to Sink::Err.
 //
-// report() is a cold function.  GCC takes each block after a call of a cold
-// function in main for code that runs rarely, so a report() before the rows
-// moves the rows to main.cold: GCC optimizes them for size, and it calls the
-// body of each row in place of an inline copy.  print() is not cold and not
-// inline, so a call of it keeps the rows after it in the hot code of main.
+// THE PRINT DOORS
+//   report() is a cold function.  GCC takes each block after a call of a cold
+//   function in main for code that runs rarely, so a report() before the rows
+//   moves the rows to cold code: GCC optimizes them for size, puts them in
+//   .text.unlikely, and calls the body of each row in place of an inline copy.
+//   A function whose body is only a call of report() is cold for GCC too: its
+//   blocks all call a cold function, so GCC marks it as unlikely executed, and
+//   a call of it is a cold call in its caller.  So print() and each other door
+//   of the harness that prints is noipa.  Its caller then knows nothing of its
+//   body, as of a function of a different unit, and a call of it can end its
+//   block, so GCC does not take the blocks after it for cold code.  The rows
+//   after such a call stay in the hot code of main.  The scan of the bench
+//   binaries refuses a timed body in cold code (test/bench_windows/
+//   check_windows.py, THE PLACEMENT), and its probe holds a door of the cold
+//   form as its control.
 template <class... Args>
     requires(::fixy::Formattable<Args> && ...)
-[[gnu::noinline]] void print(::fixy::Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
+[[gnu::noipa]] void print(::fixy::Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
     ::fixy::report(::fixy::Sink::Out, fmt, args...);
 }
 
@@ -2405,13 +2417,11 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
 
     // Writes the summary line of the report to standard output, then the
     // pause line when the pause is over its bound, then the BPF line.  The
-    // report of the base writes at once, and a bench can hold text of its
-    // own in the buffer of stdio, so a flush comes first.  The columns of
-    // the times are 9 bytes wide and the column of max 10 bytes, and µs is
-    // two bytes of UTF-8, so a column of µs holds one character less.  It is
-    // not inline, so its report() calls stay out of a caller that measures
-    // more rows after it, as for print().
-    [[gnu::noinline]] void print_text() const noexcept {
+    // columns of the times are 9 bytes wide and the column of max 10 bytes,
+    // and µs is two bytes of UTF-8, so a column of µs holds one character
+    // less.  It is noipa, so its report() calls stay out of a caller that
+    // measures more rows after it (THE PRINT DOORS of print()).
+    [[gnu::noipa]] void print_text() const noexcept {
         using ::fixy::Align;
         using ::fixy::Fixed;
         using ::fixy::Padded;
@@ -2466,9 +2476,8 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // a JSON string (detail::json_name_of), each percentile and time with
     // three decimals, the variation and the spread with five, the wall time
     // with none, each count and each flag as an integer, and the BPF counters
-    // when BPF is attached.  A flush of stdio comes first, and the function
-    // is not inline, as for print_text().
-    [[gnu::noinline]] void print_json() const noexcept {
+    // when BPF is attached.  It is noipa, as print_text() is.
+    [[gnu::noipa]] void print_json() const noexcept {
         using ::fixy::Fixed;
         using ::fixy::Sink;
         const detail::JsonName json_name = detail::json_name_of(name.view());
@@ -2504,8 +2513,7 @@ private:
     // each caller of print_text gives (THE WINDOWS): their count, the median of
     // their p50 with two decimals in the unit of the other columns, their
     // spread in percent with one decimal, and the count of the windows over the
-    // bound of the pause check.  The text before it goes through stdio, so a
-    // flush comes first.
+    // bound of the pause check.
     void print_windows_() const noexcept {
         using ::fixy::Sink;
         double scaled = windows.median;
@@ -2699,11 +2707,11 @@ struct Compare {
     [[nodiscard]] bool is_regression() const noexcept { return distinguishable && delta_p99_pct > kFlagDeltaP99Pct; }
     [[nodiscard]] bool is_improvement() const noexcept { return distinguishable && delta_p99_pct < -kFlagDeltaP99Pct; }
 
-    // Writes the one-line summary to standard output, after a flush of stdio
-    // as Report::print_text() does.  A pair that the test tells apart but
-    // whose p99 moves less than the threshold says so, and does not claim to
-    // be indistinguishable.  It is not inline, as Report::print_text().
-    [[gnu::noinline]] void print_text() const noexcept {
+    // Writes the one-line summary to standard output.  A pair that the test
+    // tells apart but whose p99 moves less than the threshold says so, and
+    // does not claim to be indistinguishable.  It is noipa, as
+    // Report::print_text() is.
+    [[gnu::noipa]] void print_text() const noexcept {
         using ::fixy::Fixed;
         using ::fixy::SignMark;
         using ::fixy::Sink;
@@ -3656,10 +3664,10 @@ private:
 
 // Prints the facts of the host and of the run: the processor, the governor,
 // the profile, the CPUs, the cores of the run, the TSC and the BPF senses.
-// Call it first in main, before a Run pins the thread.  It is not inline, so
-// its report() calls stay out of main, and the rows after it stay in the hot
-// code of main, as for print().
-[[gnu::noinline]] inline void print_system_info() {
+// Call it first in main, before a Run pins the thread.  It is noipa, so its
+// report() calls stay out of main, and the rows after it stay in the hot code
+// of main (THE PRINT DOORS of print()).
+[[gnu::noipa]] inline void print_system_info() {
     using ::fixy::Sink;
     using ::fixy::TextView;
     ::fixy::report(Sink::Out, "=== system ===\n");
@@ -3901,16 +3909,16 @@ template <typename State, typename Body>
 
 // Writes the text line of each report to standard output, in order.  A bench
 // holds its reports in an owner of the base and passes its view().  Each emit
-// function is not inline, so its report() calls stay out of a caller that
-// measures more rows after it, as for print().
-[[gnu::noinline]] inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
+// function is noipa, so its report() calls stay out of a caller that measures
+// more rows after it (THE PRINT DOORS of print()).
+[[gnu::noipa]] inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
     for (Report const& report : reports)
         report.print_text();
 }
 
 // Writes the one-line summary of each Compare to standard output, in the
 // order of the view.
-[[gnu::noinline]] inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
+[[gnu::noipa]] inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
     for (Compare const& compare : compares)
         compare.print_text();
 }
@@ -3920,9 +3928,8 @@ template <typename State, typename Body>
 // utils/assay/readers/bench.py reads the text after the last such line, so a
 // bench calls this last.  A bench that prints more between the text and the
 // JSON, such as a bench::compare block, calls emit_reports_text, then its
-// prints, then this.  The text that a bench holds in the buffer of stdio goes
-// out first, so no such text comes inside the array.
-[[gnu::noinline]] inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail) noexcept {
+// prints, then this.
+[[gnu::noipa]] inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail) noexcept {
     using ::fixy::Sink;
     if (tail == JsonTail::Off) return;
     ::fixy::report(Sink::Out, "\n=== json ===\n[\n");
@@ -3937,7 +3944,7 @@ template <typename State, typename Body>
 }
 
 // The usual end of main: the text of the reports, then their JSON tail.
-[[gnu::noinline]] inline void emit_reports(::fixy::View<const Report> reports, JsonTail tail) noexcept {
+[[gnu::noipa]] inline void emit_reports(::fixy::View<const Report> reports, JsonTail tail) noexcept {
     emit_reports_text(reports);
     emit_reports_json(reports, tail);
 }

@@ -491,7 +491,10 @@ endif()
 # The scan of the timed windows of each bench.  test/bench_windows/check_windows.py
 # reads each bench, and it refuses a timed window whose loops hold no
 # instruction of the body of the row: the optimizer moved the work of the
-# body out of the timed loop, and the row measures nothing (THE COUNTER).  The
+# body out of the timed loop, and the row measures nothing (THE COUNTER).  It
+# also refuses a timed window in cold code, or a loop of one that calls a
+# timed body in cold code: GCC took the row for unlikely executed and
+# optimized it for size (THE PLACEMENT).  The
 # gate does not build a bench preset, so `loop nightly` runs the scan, and
 # the probe of test/CMakeLists.txt is the control that the gate runs.  The
 # scan reads the code of a Release build, so each configuration that disables

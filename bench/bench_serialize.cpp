@@ -53,6 +53,17 @@ static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena& dag_arena, uint32
     return make_region(A, dag_arena, ops);
 }
 
+// The serialize of a region through a call that GCC cannot see into.  The
+// write of an image is cold code of the product by design (CRUCIBLE_COLD in
+// crucible/Serialize.h), so a direct call of serialize_region is a cold call.
+// After such a call in main, GCC takes the rows for cold code, and a timed
+// body of only such a call is cold code too (THE PRINT DOORS of
+// bench/bench_harness.h).  The call of a noipa function can end its block,
+// so the rows and the timed body around it stay in hot code.
+[[gnu::noipa]] static size_t serialize_through_call(::fixy::Ref<RegionNode> region, ::fixy::View<std::byte> image) {
+    return serialize_region(::fixy::to(*region), image);
+}
+
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
@@ -80,12 +91,12 @@ int main() {
         const bench::RunName label_des = bench::format_name("deserialize_region ({} ops)", ::fixy::Padded<4>{num_ops});
 
         bench::add_report(reports, bench::run(label_ser, [&] {
-                              size_t n = serialize_region(::fixy::to(*region), buf.view());
+                              size_t n = serialize_through_call(region, buf.view());
                               bench::do_not_optimize(n);
                           }));
 
         // Prime the buffer once — deserialize consumes stable bytes.
-        const size_t serial_len = serialize_region(::fixy::to(*region), buf.view());
+        const size_t serial_len = serialize_through_call(region, buf.view());
         if (serial_len == 0) {
             ::fixy::fatal("serialize_region wrote no byte for a region of {} ops", num_ops);
         }
