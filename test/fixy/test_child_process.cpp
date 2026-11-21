@@ -6,7 +6,13 @@
 // error.
 //
 // The wait with a limit: a child that ends before the limit, and a child
-// that blocks on its full pipe and ends at the limit with a report.
+// that blocks on its full pipe and ends at the limit with a report.  The
+// child at the limit writes lines that hold their own index, so the test
+// reads the count of its output from the output, and not from the size of a
+// pipe or from the time that the child got.  The limit of the child with no
+// tracer starts after the child sleeps on its full pipe, and the tracer of a
+// traced child sums the results of its writes, so the two cases also refuse
+// a report that lost the output.
 //
 // The traced child: the stops of its system calls, a text in its memory, a
 // signal that ends it, its limit, a TracedChild that no wait takes, and the
@@ -47,6 +53,23 @@ constexpr ::fixy::TextView kLongLine{
 // holds.
 constexpr int kLongLines = 400;
 
+// The first index of a counted line.  Each index from it to the last index of
+// write_counted_lines has eight digits, so each counted line has the same
+// length.
+constexpr std::uint32_t kFirstLineIndex = 10000000;
+
+// A counted line: kLongLine, a space, the eight digits of its index and a
+// newline.  The report of a text of at most 512 bytes is one write, and the
+// kernel puts a write of at most PIPE_BUF bytes into a pipe whole or not at
+// all.  So a pipe holds only whole counted lines.
+constexpr std::size_t kIndexDigits = 8;
+constexpr std::size_t kCountedLineBytes = kLongLine.size() + 1 + kIndexDigits + 1;
+
+// The count of the counted lines of a child: more than 2 MiB, which is more
+// than the largest pipe that the kernel makes, 16 pages of 64 KiB.  So the
+// child blocks on its full pipe, at each size of a pipe.
+constexpr std::uint32_t kCountedLines = (std::uint32_t{2} << 20) / kCountedLineBytes + 1;
+
 // The limit of a wait whose child never ends by itself, and the limit of a
 // wait whose child ends at once.
 constexpr fp::WaitLimit kShortLimit{200};
@@ -80,6 +103,7 @@ namespace {
 // The numbers of the system calls that the traced child makes.
 constexpr fp::SyscallNumber kGetpidNumber{SYS_getpid};
 constexpr fp::SyscallNumber kOpenatNumber{SYS_openat};
+constexpr fp::SyscallNumber kWriteNumber{SYS_write};
 
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -111,6 +135,111 @@ template <class Body>
 void write_more_than_a_pipe() noexcept {
     for (int line = 0; line < 2 * kLongLines; ++line) {
         ::fixy::report(::fixy::Sink::Err, "{}\n", kLongLine);
+    }
+}
+
+// Writes kCountedLines counted lines to the standard error.  The line k, from
+// 1, holds the index kFirstLineIndex + k.  Complexity: one write for each line.
+void write_counted_lines() noexcept {
+    for (std::uint32_t line = 1; line <= kCountedLines; ++line) {
+        ::fixy::report(::fixy::Sink::Err, "{} {}\n", kLongLine, kFirstLineIndex + line);
+    }
+}
+
+// The count of the bytes that a child of write_counted_lines wrote, from the
+// last line of its output: the index of that line less kFirstLineIndex, times
+// kCountedLineBytes.  An empty output gives zero.  An output that does not end
+// with a counted line gives no value.
+[[nodiscard]] ::fixy::Option<std::uint64_t> counted_bytes_of(::fixy::TextView output) noexcept {
+    if (output.size() == 0) return ::fixy::Option<std::uint64_t>::some(std::uint64_t{0});
+    if (output.size() < kCountedLineBytes || !::fixy::ends_with(output, ::fixy::TextView{"\n"})) return ::fixy::none;
+    ::fixy::TextView const last =
+        output.window(output.size() - kCountedLineBytes, kCountedLineBytes).value_or(::fixy::TextView{});
+    if (!::fixy::starts_with(last, kLongLine)) return ::fixy::none;
+    ::fixy::TextView const digits = last.window(kLongLine.size() + 1, kIndexDigits).value_or(::fixy::TextView{});
+    return ::fixy::parse<std::uint32_t>(digits).ok().match(
+        [](std::uint32_t index) noexcept -> ::fixy::Option<std::uint64_t> {
+            if (index <= kFirstLineIndex) return ::fixy::none;
+            return ::fixy::Option<std::uint64_t>::some(std::uint64_t{index - kFirstLineIndex} * kCountedLineBytes);
+        },
+        []() noexcept -> ::fixy::Option<std::uint64_t> { return ::fixy::none; });
+}
+
+// The count of a planted output: zero for no line, the bytes of the lines for
+// whole counted lines, and no value for an output that does not end with a
+// counted line.
+void counted_bytes_read_the_last_line(::fixy::TestRunnerCtx const& test) {
+    ::fixy::FixedText<4 * kCountedLineBytes> lines{};
+    CRUCIBLE_TEST_ASSERT(test, counted_bytes_of(lines.view()).value_or(std::uint64_t{1}) == 0);
+    ::fixy::FixedArray<::fixy::TextView, 2> const indices{::fixy::TextView{"10000001"}, ::fixy::TextView{"10000002"}};
+    for (::fixy::TextView const index : indices) {
+        lines.append(kLongLine).expect("a counted line fits the text");
+        lines.append(' ').expect("a counted line fits the text");
+        lines.append(index).expect("a counted line fits the text");
+        lines.append('\n').expect("a counted line fits the text");
+    }
+    CRUCIBLE_TEST_ASSERT(test, counted_bytes_of(lines.view()).value_or(std::uint64_t{0}) == 2 * kCountedLineBytes);
+    ::fixy::TextView const cut = lines.view().window(0, lines.view().size() - 1).value_or(::fixy::TextView{});
+    CRUCIBLE_TEST_ASSERT(test, counted_bytes_of(cut).is_none());
+    ::fixy::TextView const tail = lines.view().window(1, lines.view().size() - 1).value_or(::fixy::TextView{});
+    CRUCIBLE_TEST_ASSERT(test, counted_bytes_of(tail).value_or(std::uint64_t{0}) == 2 * kCountedLineBytes);
+    CRUCIBLE_TEST_ASSERT(test, counted_bytes_of(::fixy::TextView{"x 10000001\n"}).is_none());
+}
+
+// The report of a child of write_counted_lines that the limit ended.  The wait
+// read no byte while the child ran, so the pipe held each line that the child
+// wrote, and the report holds the last bytes of them.  The count of those
+// bytes is a fact of the run: a new pipe holds 64 KiB, or less than 16 KiB
+// when the user holds more pipe pages than pipe-user-pages-soft, and the child
+// writes only as many lines as the CPU time that it gets before the limit.  So
+// the count comes from the last line of the output, which the child wrote.
+// The check gives that count.
+std::uint64_t check_counted_report(::fixy::TestRunnerCtx const& test, fp::ChildReport const& report) {
+    CRUCIBLE_TEST_ASSERT(test, report.is_ended_at_limit());
+    CRUCIBLE_TEST_ASSERT(test, report.is_signaled_by(fp::kLimitSignal));
+    ::fixy::Option<std::uint64_t> const counted = counted_bytes_of(report.output());
+    if (counted.is_none()) {
+        ::fixy::report(::fixy::Sink::Err, "the report of {} bytes does not end with a counted line:\n{}\n",
+                       report.output().size(), report.output());
+    }
+    CRUCIBLE_TEST_ASSERT(test, counted.is_some());
+    std::uint64_t const written =
+        counted.match([](std::uint64_t bytes) noexcept { return bytes; }, []() noexcept { return std::uint64_t{0}; });
+    std::uint64_t const kept = written < fp::kChildOutputCapacity ? written : fp::kChildOutputCapacity;
+    CRUCIBLE_TEST_ASSERT(test, report.output().size() == kept);
+    CRUCIBLE_TEST_ASSERT(test, report.dropped_bytes() == written - kept);
+    return written;
+}
+
+// The state letter of a process in /proc/PID/stat: the letter after the
+// parenthesis that ends the name of its command.  A failed read gives 'X', the
+// letter of a process that is gone.  Complexity: linear in the bytes of the
+// file.
+[[nodiscard]] char process_state_of(fp::ProcessId process) noexcept {
+    ::foundation::os::PathText<::fixy::kPathBytes> path{};
+    path.append(::fixy::TextView{"/proc/"}).expect("the path of the process fits a path");
+    path.append_decimal(std::to_underlying(process)).expect("the path of the process fits a path");
+    path.append(::fixy::TextView{"/stat"}).expect("the path of the process fits a path");
+    ::fixy::FixedText<kPathCapacity> stat{};
+    if (::foundation::os::read_file(path.c_text(), stat).is_err()) return 'X';
+    // The letter is the second character after a ')', and the last ')' wins.
+    char state = 'X';
+    std::size_t since_parenthesis = 0;
+    for (char const character : stat.view()) {
+        ++since_parenthesis;
+        if (character == ')') since_parenthesis = 0;
+        if (since_parenthesis == 2) state = character;
+    }
+    return state;
+}
+
+// Waits until a child of write_counted_lines sleeps (S), which it does only in
+// the write that waits for room in its full pipe, or until it ends.  The wait
+// reads the state of the child again and again, and reads no clock.
+void wait_until_the_pipe_is_full(fp::ProcessId process) noexcept {
+    for (;;) {
+        char const state = process_state_of(process);
+        if (state == 'S' || state == 'Z' || state == 'X') return;
     }
 }
 
@@ -229,16 +358,15 @@ void child_ends_within_the_limit(::fixy::TestRunnerCtx const& test) {
 // The wait with a limit reads no output while the child runs, so a child that
 // writes more than a pipe holds blocks on the full pipe.  The wait ends it at
 // the limit, and then the report holds the last bytes of the pipe.
+// The limit starts after the child sleeps on its full pipe, so the report
+// holds at least one line.
 void child_on_a_full_pipe_ends_at_the_limit(::fixy::TestRunnerCtx const& test) {
-    fp::Child child =
-        fp::spawn_child(test, [] noexcept { write_more_than_a_pipe(); }).expect("the test starts a child");
+    fp::Child child = fp::spawn_child(test, [] noexcept { write_counted_lines(); }).expect("the test starts a child");
+    wait_until_the_pipe_is_full(child.id());
     fp::ChildReport const report =
         fp::wait_within(std::move(child), kShortLimit).expect("the test waits for its child");
-    CRUCIBLE_TEST_ASSERT(test, report.is_ended_at_limit());
-    CRUCIBLE_TEST_ASSERT(test, report.is_signaled_by(fp::kLimitSignal));
-    CRUCIBLE_TEST_ASSERT(test, report.output().size() == fp::kChildOutputCapacity);
-    CRUCIBLE_TEST_ASSERT(test, report.dropped_bytes() > 0);
-    CRUCIBLE_TEST_ASSERT(test, ::fixy::starts_with(report.output(), ::fixy::TextView{"x"}));
+    std::uint64_t const written = check_counted_report(test, report);
+    CRUCIBLE_TEST_ASSERT(test, written >= kCountedLineBytes);
 }
 
 // The visitor of a trace sees the entry of getpid and its exit, whose word is
@@ -334,13 +462,39 @@ void traced_child_ends_by_its_signal(::fixy::TestRunnerCtx const& test) {
 // A traced child that blocks on its full pipe ends at the limit of its wait.
 void traced_child_ends_at_the_limit(::fixy::TestRunnerCtx const& test) {
     ::fixy::Option<fp::TracedChild> started =
-        start_traced(test, fp::TracedMemory::sealed, [] noexcept { write_more_than_a_pipe(); });
+        start_traced(test, fp::TracedMemory::sealed, [] noexcept { write_counted_lines(); });
     if (started.is_none()) return;
     fp::ChildReport const report = fp::wait_within(std::move(started).expect("the host traces the child"), kShortLimit)
                                        .expect("the test waits for its traced child");
-    CRUCIBLE_TEST_ASSERT(test, report.is_ended_at_limit());
-    CRUCIBLE_TEST_ASSERT(test, report.is_signaled_by(fp::kLimitSignal));
-    CRUCIBLE_TEST_ASSERT(test, report.output().size() == fp::kChildOutputCapacity);
+    static_cast<void>(check_counted_report(test, report));
+}
+
+// The report of a traced child at the limit holds each byte that the writes of
+// the child put into its pipe.  The visitor sums the result of each write at
+// its exit stop: a count that the kernel gives the tracer, and not a byte of
+// the pipe.  A write can end in the kernel after the last stop that the
+// visitor saw, so the pipe can hold one line more than the sum.
+void traced_child_report_holds_each_write(::fixy::TestRunnerCtx const& test) {
+    ::fixy::Option<fp::TracedChild> started =
+        start_traced(test, fp::TracedMemory::sealed, [] noexcept { write_counted_lines(); });
+    if (started.is_none()) return;
+    bool is_in_write = false;
+    std::uint64_t written_at_exits = 0;
+    fp::ChildReport const report =
+        fp::trace_within(std::move(started).expect("the host traces the child"), kShortLimit,
+                         [&is_in_write, &written_at_exits](fp::SyscallStop const& stop) noexcept {
+                             if (stop.kind() == fp::SyscallStopKind::entry) {
+                                 is_in_write = stop.number() == kWriteNumber;
+                                 return;
+                             }
+                             if (is_in_write && stop.result() > 0) {
+                                 written_at_exits += static_cast<std::uint64_t>(stop.result());
+                             }
+                             is_in_write = false;
+                         })
+            .expect("the test traces its child");
+    std::uint64_t const written = check_counted_report(test, report);
+    CRUCIBLE_TEST_ASSERT(test, written == written_at_exits || written == written_at_exits + kCountedLineBytes);
 }
 
 // The destructor of a TracedChild that no wait took ends the child, so the
@@ -450,11 +604,13 @@ int main() {
     decode_tells_the_core_dump(test);
     empty_child_names_no_process(test);
     child_ends_within_the_limit(test);
+    counted_bytes_read_the_last_line(test);
     child_on_a_full_pipe_ends_at_the_limit(test);
     traced_child_stops_at_its_system_calls(test);
     traced_child_gives_a_text_of_its_memory(test);
     traced_child_ends_by_its_signal(test);
     traced_child_ends_at_the_limit(test);
+    traced_child_report_holds_each_write(test);
     traced_child_with_no_wait(test);
     empty_traced_child_names_no_process(test);
     probe_tells_the_state_of_a_process(test);
