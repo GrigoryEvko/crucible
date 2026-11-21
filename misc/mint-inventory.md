@@ -52,6 +52,7 @@ that the axis does not apply to the row.
 | `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 9 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 3 |
+| `mint_external_slot` | `include/crucible/CrucibleContext.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 8 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
@@ -305,14 +306,14 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_aligned_bytes` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 3 |
+| `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 5 |
 
 ## include/foundation/alloc/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_alignment` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_layout` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 3 |
+| `mint_layout` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 5 |
 
 ## include/foundation/core/
 
@@ -405,5 +406,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 10 |
+| crucible (`include/crucible/`) | 82 | 46 | 27 | 9 | 0 | 10 |
 | substrate (`include/foundation/`, `include/fixy/`) | 166 | 63 | 99 | 4 | 0 | 3 |
