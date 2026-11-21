@@ -44,8 +44,9 @@ struct RegionCache {
         }
 
         const Slot slot = prove_slot_(head_.index());
-        regions_.at(slot) = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
-        content_hashes_.at(slot) = hash;
+        const ConstRegionLink link = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
+        regions_.with_element(slot, [link](ConstRegionLink& held) noexcept { held = link; });
+        content_hashes_.with_element(slot, [hash](ContentHash& held) noexcept { held = hash; });
         head_.advance();
         // The counter does not saturate on its own. Its increment carries a
         // precondition that the value is below the bound, so this guard is

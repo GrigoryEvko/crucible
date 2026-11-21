@@ -83,9 +83,9 @@ struct CallSiteTable {
         }
         const uint32_t idx = static_cast<uint32_t>(hash.raw()) & SET_MASK;
         for (uint32_t p = 0; p < SET_CAP; p++) {
-            CallsiteHash& h = seen.at(slot_of_(idx + p));
-            if (h == CallsiteHash{}) {
-                h = hash;
+            const auto slot = slot_of_(idx + p);
+            if (seen.at(slot) == CallsiteHash{}) {
+                seen.with_element(slot, [hash](CallsiteHash& claimed) noexcept { claimed = hash; });
                 // This is where the line number is checked: the checked mint
                 // of the wrapper is the guard.
                 entries.emplace(

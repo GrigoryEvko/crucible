@@ -118,7 +118,8 @@ template <std::size_t Rank, class Out>
                                                             Out const& out) noexcept {
     ::fixy::FixedArray<std::size_t, Rank> sizes{};
     ::fixy::FixedArray<std::size_t, Rank> const strides{};
-    bool const is_copied = ::fixy::copy(::fixy::View<std::size_t>{sizes.view()}, out.sizes()).is_ok();
+    bool const is_copied = sizes.with_mut(
+        [&out](auto run) noexcept { return ::fixy::copy(::fixy::View<std::size_t>{run.view()}, out.sizes()).is_ok(); });
     CRUCIBLE_FATAL_INVARIANT(is_copied);
     return ::fixy::mint_strided_view(value, sizes.view(), strides.view(), 0)
         .expect("each stride is zero, so the one element holds each index");
@@ -291,7 +292,7 @@ struct SumAll final {
         ::fixy::FixedArray<float, 1> total{};
         ::fixy::FixedArray<std::size_t, 1> const sizes{1};
         ::fixy::FixedArray<std::size_t, 1> const strides{1};
-        total = ::fixy::with_mut(std::move(total), [&](auto run) noexcept {
+        total.with_mut([&](auto run) noexcept {
             auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
                               .expect("one element fits its array");
             if (::fixy::sum_strided_runs_by_tree(target, one_run).is_err()) [[unlikely]] {

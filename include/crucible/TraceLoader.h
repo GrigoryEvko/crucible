@@ -218,7 +218,8 @@ template <class Field, std::size_t Offset, std::size_t RecordBytes>
     requires(Offset <= RecordBytes && sizeof(Field) <= RecordBytes - Offset)
 [[nodiscard]] inline Field read_record_field_(::fixy::View<std::byte const, RecordBytes> record) noexcept {
     ::fixy::FixedArray<std::byte, sizeof(Field)> image{};
-    ::fixy::copy(image.view(), record_block_<Offset, sizeof(Field)>(record));
+    image.with_mut(
+        [record](auto run) noexcept { ::fixy::copy(run.view(), record_block_<Offset, sizeof(Field)>(record)); });
     return ::fixy::bit_cast<Field>(image);
 }
 
@@ -255,18 +256,21 @@ template <std::size_t RecordBytes, CtxFitsTraceLoad Ctx, class OnRecord>
 [[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
 read_records_(Ctx const& io, TraceFileRef file, uint32_t count, OnRecord&& on_record) noexcept {
     ::fixy::FixedArray<std::byte, RecordBytes * kTraceRecordsPerRead> batch{};
-    uint32_t index = 0;
-    while (index < count) {
-        const std::size_t batch_bytes = std::size_t{::fixy::min(count - index, kTraceRecordsPerRead)} * RecordBytes;
-        const ::fixy::View<std::byte> filled =
-            batch.view().window(0, batch_bytes).expect("a batch of at most kTraceRecordsPerRead records fits");
-        CRUCIBLE_TRY(_, read_exact_(io, file, filled));
-        for (::fixy::View<std::byte, RecordBytes> record : filled.template chunks<RecordBytes>()) {
-            CRUCIBLE_TRY(_, on_record(index, ::fixy::View<std::byte const, RecordBytes>{record}));
-            ++index;
+    return batch.with_mut([&io, file, count,
+                           &on_record](auto run) noexcept -> ::fixy::Result<::fixy::Unit, TraceLoadError> {
+        uint32_t index = 0;
+        while (index < count) {
+            const std::size_t batch_bytes = std::size_t{::fixy::min(count - index, kTraceRecordsPerRead)} * RecordBytes;
+            const ::fixy::View<std::byte> filled =
+                run.view().window(0, batch_bytes).expect("a batch of at most kTraceRecordsPerRead records fits");
+            CRUCIBLE_TRY(_, read_exact_(io, file, filled));
+            for (::fixy::View<std::byte, RecordBytes> record : filled.template chunks<RecordBytes>()) {
+                CRUCIBLE_TRY(_, on_record(index, ::fixy::View<std::byte const, RecordBytes>{record}));
+                ++index;
+            }
         }
-    }
-    return ::fixy::Unit{};
+        return ::fixy::Unit{};
+    });
 }
 
 // Fills the ring entry, the metadata start, the scope hash and the callsite
@@ -328,8 +332,10 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
     using ScalarLane = ::fixy::Index<decltype(entry.scalar_values)::size()>;
     for (::fixy::View<std::byte const, sizeof(int64_t)> scalar : scalar_block.template chunks<sizeof(int64_t)>()) {
         if (lane == num_scalars) break;
-        entry.scalar_values.at(ScalarLane::check(lane).expect("the scalar block holds one chunk for each lane")) =
-            read_record_field_<int64_t, 0>(scalar);
+        const int64_t value = read_record_field_<int64_t, 0>(scalar);
+        entry.scalar_values.with_element(
+            ScalarLane::check(lane).expect("the scalar block holds one chunk for each lane"),
+            [value](int64_t& held) noexcept { held = value; });
         ++lane;
     }
 
@@ -534,7 +540,7 @@ inline void write_record_field_(::fixy::View<std::byte, RecordBytes> record, Fie
 // The lanes of a block of sizes or strides, as the array that a record holds.
 [[nodiscard]] inline ::fixy::FixedArray<int64_t, kMaxTensorNDim> record_lanes_(TensorDimArray const& block) noexcept {
     ::fixy::FixedArray<int64_t, kMaxTensorNDim> lanes{};
-    ::fixy::copy(lanes.view(), block.lanes());
+    lanes.with_mut([&block](auto run) noexcept { ::fixy::copy(run.view(), block.lanes()); });
     return lanes;
 }
 
@@ -545,11 +551,13 @@ inline void write_record_field_(::fixy::View<std::byte, RecordBytes> record, Fie
 encode_trace_header(uint32_t num_ops, uint32_t num_metas) noexcept {
     using detail::write_record_field_;
     ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
-    const ::fixy::View<std::byte, TRACE_HEADER_BYTES> bytes = header.view();
-    write_record_field_<0>(bytes, TRACE_MAGIC);
-    write_record_field_<4>(bytes, TRACE_FORMAT_VERSION);
-    write_record_field_<8>(bytes, num_ops);
-    write_record_field_<12>(bytes, num_metas);
+    header.with_mut([num_ops, num_metas](auto run) noexcept {
+        const ::fixy::View<std::byte, TRACE_HEADER_BYTES> bytes = run.view();
+        write_record_field_<0>(bytes, TRACE_MAGIC);
+        write_record_field_<4>(bytes, TRACE_FORMAT_VERSION);
+        write_record_field_<8>(bytes, num_ops);
+        write_record_field_<12>(bytes, num_metas);
+    });
     return header;
 }
 
@@ -558,20 +566,22 @@ encode_trace_header(uint32_t num_ops, uint32_t num_metas) noexcept {
 encode_trace_op(TraceOpRecord const& record) noexcept {
     using detail::write_record_field_;
     ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> image{};
-    const ::fixy::View<std::byte, sizeof(TraceOpRecord)> bytes = image.view();
-    write_record_field_<offsetof(TraceOpRecord, schema_hash)>(bytes, record.schema_hash.raw());
-    write_record_field_<offsetof(TraceOpRecord, shape_hash)>(bytes, record.shape_hash.raw());
-    write_record_field_<offsetof(TraceOpRecord, scope_hash)>(bytes, record.scope_hash.raw());
-    write_record_field_<offsetof(TraceOpRecord, callsite_hash)>(bytes, record.callsite_hash.raw());
-    write_record_field_<offsetof(TraceOpRecord, scalar_values)>(bytes, record.scalar_values);
-    write_record_field_<offsetof(TraceOpRecord, num_inputs)>(bytes, record.num_inputs);
-    write_record_field_<offsetof(TraceOpRecord, num_outputs)>(bytes, record.num_outputs);
-    write_record_field_<offsetof(TraceOpRecord, num_scalars)>(bytes, record.num_scalars);
-    write_record_field_<offsetof(TraceOpRecord, grad_enabled)>(bytes, record.grad_enabled);
-    write_record_field_<offsetof(TraceOpRecord, inference_mode)>(bytes, record.inference_mode);
-    write_record_field_<offsetof(TraceOpRecord, depth)>(bytes, record.depth.raw());
-    write_record_field_<offsetof(TraceOpRecord, scalar_types)>(bytes, record.scalar_types);
-    write_record_field_<offsetof(TraceOpRecord, data_slots)>(bytes, record.data_slots);
+    image.with_mut([&record](auto run) noexcept {
+        const ::fixy::View<std::byte, sizeof(TraceOpRecord)> bytes = run.view();
+        write_record_field_<offsetof(TraceOpRecord, schema_hash)>(bytes, record.schema_hash.raw());
+        write_record_field_<offsetof(TraceOpRecord, shape_hash)>(bytes, record.shape_hash.raw());
+        write_record_field_<offsetof(TraceOpRecord, scope_hash)>(bytes, record.scope_hash.raw());
+        write_record_field_<offsetof(TraceOpRecord, callsite_hash)>(bytes, record.callsite_hash.raw());
+        write_record_field_<offsetof(TraceOpRecord, scalar_values)>(bytes, record.scalar_values);
+        write_record_field_<offsetof(TraceOpRecord, num_inputs)>(bytes, record.num_inputs);
+        write_record_field_<offsetof(TraceOpRecord, num_outputs)>(bytes, record.num_outputs);
+        write_record_field_<offsetof(TraceOpRecord, num_scalars)>(bytes, record.num_scalars);
+        write_record_field_<offsetof(TraceOpRecord, grad_enabled)>(bytes, record.grad_enabled);
+        write_record_field_<offsetof(TraceOpRecord, inference_mode)>(bytes, record.inference_mode);
+        write_record_field_<offsetof(TraceOpRecord, depth)>(bytes, record.depth.raw());
+        write_record_field_<offsetof(TraceOpRecord, scalar_types)>(bytes, record.scalar_types);
+        write_record_field_<offsetof(TraceOpRecord, data_slots)>(bytes, record.data_slots);
+    });
     return image;
 }
 
@@ -585,21 +595,24 @@ encode_trace_meta(TensorMeta const& meta) noexcept {
     using detail::record_lanes_;
     using detail::write_record_field_;
     ::fixy::FixedArray<std::byte, TRACE_META_BYTES> image{};
-    const ::fixy::View<std::byte, TRACE_META_BYTES> bytes = image.view();
-    write_record_field_<offsetof(TensorMeta, sizes)>(bytes, record_lanes_(meta.sizes));
-    write_record_field_<offsetof(TensorMeta, strides)>(bytes, record_lanes_(meta.strides));
-    write_record_field_<offsetof(TensorMeta, ndim)>(bytes, meta.ndim);
-    write_record_field_<offsetof(TensorMeta, dtype)>(bytes, std::to_underlying(meta.dtype));
-    write_record_field_<offsetof(TensorMeta, device_type)>(bytes, std::to_underlying(meta.device_type));
-    write_record_field_<offsetof(TensorMeta, device_idx)>(bytes, meta.device_idx);
-    write_record_field_<offsetof(TensorMeta, layout)>(bytes, std::to_underlying(meta.layout));
-    write_record_field_<offsetof(TensorMeta, requires_grad)>(bytes, static_cast<uint8_t>(meta.requires_grad ? 1 : 0));
-    write_record_field_<offsetof(TensorMeta, flags)>(bytes, meta.flags);
-    write_record_field_<offsetof(TensorMeta, output_nr)>(bytes, meta.output_nr);
-    write_record_field_<offsetof(TensorMeta, storage_offset)>(bytes, meta.storage_offset);
-    write_record_field_<offsetof(TensorMeta, version)>(bytes, meta.version);
-    write_record_field_<offsetof(TensorMeta, storage_nbytes)>(bytes, meta.storage_nbytes);
-    write_record_field_<offsetof(TensorMeta, grad_fn_hash)>(bytes, meta.grad_fn_hash.value());
+    image.with_mut([&meta](auto run) noexcept {
+        const ::fixy::View<std::byte, TRACE_META_BYTES> bytes = run.view();
+        write_record_field_<offsetof(TensorMeta, sizes)>(bytes, record_lanes_(meta.sizes));
+        write_record_field_<offsetof(TensorMeta, strides)>(bytes, record_lanes_(meta.strides));
+        write_record_field_<offsetof(TensorMeta, ndim)>(bytes, meta.ndim);
+        write_record_field_<offsetof(TensorMeta, dtype)>(bytes, std::to_underlying(meta.dtype));
+        write_record_field_<offsetof(TensorMeta, device_type)>(bytes, std::to_underlying(meta.device_type));
+        write_record_field_<offsetof(TensorMeta, device_idx)>(bytes, meta.device_idx);
+        write_record_field_<offsetof(TensorMeta, layout)>(bytes, std::to_underlying(meta.layout));
+        write_record_field_<offsetof(TensorMeta, requires_grad)>(bytes,
+                                                                 static_cast<uint8_t>(meta.requires_grad ? 1 : 0));
+        write_record_field_<offsetof(TensorMeta, flags)>(bytes, meta.flags);
+        write_record_field_<offsetof(TensorMeta, output_nr)>(bytes, meta.output_nr);
+        write_record_field_<offsetof(TensorMeta, storage_offset)>(bytes, meta.storage_offset);
+        write_record_field_<offsetof(TensorMeta, version)>(bytes, meta.version);
+        write_record_field_<offsetof(TensorMeta, storage_nbytes)>(bytes, meta.storage_nbytes);
+        write_record_field_<offsetof(TensorMeta, grad_fn_hash)>(bytes, meta.grad_fn_hash.value());
+    });
     return image;
 }
 
@@ -647,7 +660,8 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     }
 
     ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
-    CRUCIBLE_TRY(_, detail::read_exact_(io, source, header.view()));
+    CRUCIBLE_TRY(
+        _, header.with_mut([&io, &source](auto run) noexcept { return detail::read_exact_(io, source, run.view()); }));
     const ::fixy::View<std::byte const, TRACE_HEADER_BYTES> header_bytes{header.view()};
 
     if (!::fixy::equal(detail::record_block_<0, TRACE_MAGIC.size()>(header_bytes), TRACE_MAGIC.view())) {
@@ -713,7 +727,8 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // in the table ends the table, as a malformed tail does, and the trace
     // still loads.
     ::fixy::FixedArray<std::byte, sizeof(uint32_t)> count_bytes{};
-    const bool has_name_count = detail::read_exact_(io, source, count_bytes.view()).is_ok();
+    const bool has_name_count = count_bytes.with_mut(
+        [&io, &source](auto run) noexcept { return detail::read_exact_(io, source, run.view()).is_ok(); });
     const uint32_t raw_num_names =
         has_name_count
             ? read_record_field_<uint32_t, 0>(::fixy::View<std::byte const, sizeof(uint32_t)>{count_bytes.view()})
@@ -733,7 +748,9 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         }
         for (uint32_t i = 0; i < num_names; i++) {
             ::fixy::FixedArray<std::byte, sizeof(uint64_t) + sizeof(uint16_t)> entry_head{};
-            if (detail::read_exact_(io, source, entry_head.view()).is_err()) break;
+            const bool is_head_read = entry_head.with_mut(
+                [&io, &source](auto run) noexcept { return detail::read_exact_(io, source, run.view()).is_ok(); });
+            if (!is_head_read) break;
             const ::fixy::View<std::byte const, sizeof(uint64_t) + sizeof(uint16_t)> entry_head_bytes{
                 entry_head.view()};
             const auto schema_hash_raw = read_record_field_<uint64_t, 0>(entry_head_bytes);
@@ -744,9 +761,15 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             if (!kSchemaNameLenRange(raw_name_len)) break;
             const uint16_t name_len = ::fixy::mint_refined<kSchemaNameLenRange>(raw_name_len).value();
             ::fixy::FixedArray<std::byte, SCHEMA_NAME_LEN_MAX> name_bytes{};
-            const ::fixy::View<std::byte> name_read =
+            const bool is_name_read = name_bytes.with_mut([&io, &source, name_len](auto run) noexcept {
+                return detail::read_exact_(
+                           io, source,
+                           run.view().window(0, name_len).expect("a name of a bounded length fits in its buffer"))
+                    .is_ok();
+            });
+            if (!is_name_read) break;
+            const ::fixy::View<std::byte const> name_read =
                 name_bytes.view().window(0, name_len).expect("a name of a bounded length fits in its buffer");
-            if (detail::read_exact_(io, source, name_read).is_err()) break;
             ::fixy::FixedText<SCHEMA_NAME_LEN_MAX> name_text{};
             for (const std::byte name_byte : name_read) {
                 name_text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");

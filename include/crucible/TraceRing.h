@@ -616,11 +616,11 @@ private:
                                                      OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = reserved.head_;
         const RingSlot slot = mask_slot_(h);
-        entries.at(slot) = e;
-        meta_starts.at(slot) = meta_start;
-        scope_hashes.at(slot) = scope_hash;
-        callsite_hashes.at(slot) = callsite_hash;
-        depths.at(slot) = depth;
+        entries.with_element(slot, [&e](Entry& target) noexcept { target = e; });
+        meta_starts.with_element(slot, [meta_start](MetaIndex& target) noexcept { target = meta_start; });
+        scope_hashes.with_element(slot, [scope_hash](ScopeHash& target) noexcept { target = scope_hash; });
+        callsite_hashes.with_element(slot, [callsite_hash](CallsiteHash& target) noexcept { target = callsite_hash; });
+        depths.with_element(slot, [depth](OpDepth& target) noexcept { target = depth; });
 
         // Warm the destination of the following append while the caller is
         // still busy with its own post-append work.  One line of the depths

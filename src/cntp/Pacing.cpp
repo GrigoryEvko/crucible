@@ -36,7 +36,7 @@ template <class T>
 [[nodiscard]] ::fixy::Option<T> read_record(::fixy::View<std::byte const> bytes, std::size_t offset) noexcept {
     CRUCIBLE_TRY(part, bytes.window<sizeof(T)>(offset));
     ::fixy::FixedArray<std::byte, sizeof(T)> image{};
-    ::fixy::copy(image.view(), part);
+    image.with_mut([part](auto run) noexcept { ::fixy::copy(run.view(), part); });
     return ::fixy::some(::fixy::bit_cast<T>(image));
 }
 

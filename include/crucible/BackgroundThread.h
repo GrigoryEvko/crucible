@@ -710,8 +710,10 @@ public:
         // nothing.
         void hold(ConstRegionLink region) noexcept {
             if (region.is_none()) return;
-            held.at(::fixy::Index<CAP>::check(count).expect(
-                "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP")) = region;
+            held.with_element(
+                ::fixy::Index<CAP>::check(count).expect(
+                    "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP"),
+                [region](ConstRegionLink& slot) noexcept { slot = region; });
             ++count;
         }
     };

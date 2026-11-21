@@ -307,6 +307,28 @@ struct JobDoneChannel {
 };
 struct HeldRegionsLock {};
 
+namespace {
+
+// Pops at most BATCH_SIZE entries of the ring into the five arrays of a
+// batch, and gives the count.  Each array lends its run in place through its
+// frame door, so the pop writes the arrays with no copy.
+[[nodiscard]] uint32_t pop_trace_batch(TraceRing& ring, BackgroundThread::BgTraceBatch& batch) noexcept {
+    return batch.entries.with_mut([&](auto entries) noexcept {
+        return batch.meta_starts.with_mut([&](auto meta_starts) noexcept {
+            return batch.scope_hashes.with_mut([&](auto scope_hashes) noexcept {
+                return batch.callsite_hashes.with_mut([&](auto callsite_hashes) noexcept {
+                    return batch.depths.with_mut([&](auto depths) noexcept {
+                        return ring.try_pop_batch(entries.view(), meta_starts.view(), scope_hashes.view(),
+                                                  callsite_hashes.view(), depths.view());
+                    });
+                });
+            });
+        });
+    });
+}
+
+}  // namespace
+
 }  // namespace detail::bg_pipeline
 
 struct BackgroundThread::Pipeline {
@@ -799,9 +821,7 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
     while (true) {
         if (owner.stop_requested.peek()) break;
 
-        batch->count = owner.ring_.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
-                                                        batch->scope_hashes.view(), batch->callsite_hashes.view(),
-                                                        batch->depths.view());
+        batch->count = detail::bg_pipeline::pop_trace_batch(*owner.ring_.get(), *batch);
 
         if (batch->count == 0) {
             idle.pause_or_sleep(in.ctx());
@@ -813,9 +833,7 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
         batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     }
 
-    batch->count =
-        owner.ring_.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(), batch->scope_hashes.view(),
-                                         batch->callsite_hashes.view(), batch->depths.view());
+    batch->count = detail::bg_pipeline::pop_trace_batch(*owner.ring_.get(), *batch);
     if (batch->count > 0) {
         push_pipeline(in.ctx(), next, out, std::move(batch));
     }

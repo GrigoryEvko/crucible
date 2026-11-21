@@ -56,15 +56,22 @@ private:
     }
 
 public:
+    // The lane of a block that the subscript of a block that is not const
+    // names.  It holds the block and the index, and a write goes through the
+    // element door of the lanes, so no reference to a lane leaves the block.
     struct Slot {
-        ::fixy::Ref<int64_t> lane;
+        ::fixy::Ref<TensorDimArray> array;
+        LaneIndex lane;
 
-        constexpr void operator=(TensorDim dim) const noexcept { *lane = dim.value(); }
+        constexpr void operator=(TensorDim dim) const noexcept {
+            int64_t const written = dim.value();
+            array->lanes_.with_element(lane, [written](int64_t& held) noexcept { held = written; });
+        }
 
-        [[nodiscard]] constexpr int64_t value() const noexcept { return *lane; }
+        [[nodiscard]] constexpr int64_t value() const noexcept { return array->lanes_.at(lane); }
 
         [[nodiscard]] constexpr operator TensorDim() const noexcept {
-            return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(*lane);
+            return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(value());
         }
     };
 
@@ -79,7 +86,7 @@ public:
     };
 
     [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept {
-        return Slot{::fixy::erase_brand(::fixy::to(lanes_.at(lane_of_(index))))};
+        return Slot{::fixy::erase_brand(::fixy::to(*this)), lane_of_(index)};
     }
 
     [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept {
@@ -553,8 +560,11 @@ strided_view_of(const TensorMeta& meta, ::fixy::View<T> storage) noexcept {
         ::fixy::Option<std::size_t> stride = ::fixy::narrow<std::size_t>(raw_tensor_dim(meta.strides[lane.raw()]));
         if (size.is_none()) return ::fixy::err(TensorViewRefusal::NegativeSize);
         if (stride.is_none()) return ::fixy::err(TensorViewRefusal::NegativeStride);
-        sizes.at(lane) = static_cast<::fixy::Option<std::size_t>&&>(size).expect("the size has a value");
-        strides.at(lane) = static_cast<::fixy::Option<std::size_t>&&>(stride).expect("the stride has a value");
+        const std::size_t size_lane = static_cast<::fixy::Option<std::size_t>&&>(size).expect("the size has a value");
+        const std::size_t stride_lane =
+            static_cast<::fixy::Option<std::size_t>&&>(stride).expect("the stride has a value");
+        sizes.with_element(lane, [size_lane](std::size_t& held) noexcept { held = size_lane; });
+        strides.with_element(lane, [stride_lane](std::size_t& held) noexcept { held = stride_lane; });
     }
     const ::fixy::View<const std::size_t> size_lanes =
         sizes.view().window(0, meta.ndim).expect("the rank is at most kMaxTensorNDim");

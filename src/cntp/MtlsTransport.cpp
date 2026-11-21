@@ -59,8 +59,10 @@ namespace crucible::cntp {
     }
 
     MtlsCertificateBytes out{};
-    ::fixy::copy(out.bytes.view().window(0, pem.size()).expect("the certificate is at most max_bytes"), pem)
-        .expect("a window of the size of the certificate has that size");
+    out.bytes.with_mut([pem](auto run) noexcept {
+        ::fixy::copy(run.view().window(0, pem.size()).expect("the certificate is at most max_bytes"), pem)
+            .expect("a window of the size of the certificate has that size");
+    });
     out.size = static_cast<std::uint16_t>(pem.size());
     return ::fixy::mint_linear<MtlsCertificateBytes>(std::move(out));
 }

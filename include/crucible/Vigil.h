@@ -901,13 +901,18 @@ private:
     [[gnu::cold]] void publish_held_regions_() noexcept {
         const uint64_t before = held_regions_.sequence.load_acquire();
         held_regions_.sequence.store_release(before + 1);
-        held_regions_.cells.at(::fixy::index<0>()).store_release(pending_activation_);
-        held_regions_.cells.at(::fixy::index<1>()).store_release(replay_.context().active_region());
-        held_regions_.cells.at(::fixy::index<2>()).store_release(taken_region_.load_acquire());
+        // Each cell is an Atomic, and the publish stage reads the cells at the
+        // same time, so the writes go through the element door in place.
+        const auto store_cell = [this](::fixy::Index<HeldRegions::CAP> position, ConstRegionLink region) noexcept {
+            held_regions_.cells.with_element(
+                position, [region](::fixy::Atomic<ConstRegionLink>& cell) noexcept { cell.store_release(region); });
+        };
+        store_cell(::fixy::index<0>(), pending_activation_);
+        store_cell(::fixy::index<1>(), replay_.context().active_region());
+        store_cell(::fixy::index<2>(), taken_region_.load_acquire());
         for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
-            held_regions_.cells
-                .at(::fixy::Index<HeldRegions::CAP>::check(3 + age).expect("the cells hold each age of the cache"))
-                .store_release(region_cache_.region_at(age));
+            store_cell(::fixy::Index<HeldRegions::CAP>::check(3 + age).expect("the cells hold each age of the cache"),
+                       region_cache_.region_at(age));
         }
         held_regions_.sequence.store_release(before + 2);
     }
@@ -949,13 +954,15 @@ private:
     // names.  Runs on the producer thread before each load.  Complexity:
     // O(LOAD_SLOTS * HeldRegions::CAP).
     [[gnu::cold]] void release_unheld_loads_() noexcept {
-        for (::fixy::Option<LoadedRegion>& load : loads_) {
-            bool is_unheld = false;
-            for (const LoadedRegion& kept : load) {
-                is_unheld = !is_held_by_foreground_(kept.region);
+        loads_.with_mut([this](auto slots) noexcept {
+            for (::fixy::Option<LoadedRegion>& load : slots) {
+                bool is_unheld = false;
+                for (const LoadedRegion& kept : load) {
+                    is_unheld = !is_held_by_foreground_(kept.region);
+                }
+                if (is_unheld) load = ::fixy::none;
             }
-            if (is_unheld) load = ::fixy::none;
-        }
+        });
     }
 
     // Keeps the arena of a load beside its region, in a free slot.  The
@@ -963,11 +970,15 @@ private:
     // the load left a slot only for a region that a holder names.  So one
     // slot of LOAD_SLOTS is free for the new load.
     [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena>&& arena, ConstRegionLink region) noexcept {
-        for (::fixy::Option<LoadedRegion>& load : loads_) {
-            if (load.is_some()) continue;
-            load = ::fixy::some(LoadedRegion{.arena = std::move(arena), .region = region});
-            return;
-        }
+        const bool is_kept = loads_.with_mut([&arena, region](auto slots) noexcept {
+            for (::fixy::Option<LoadedRegion>& load : slots) {
+                if (load.is_some()) continue;
+                load = ::fixy::some(LoadedRegion{.arena = std::move(arena), .region = region});
+                return true;
+            }
+            return false;
+        });
+        if (is_kept) return;
         ::fixy::fatal(
             "a load of a Vigil found no free slot for its arena, although the holders name at most {} regions",
             HeldRegions::CAP);

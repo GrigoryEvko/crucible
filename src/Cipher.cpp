@@ -268,22 +268,24 @@ template <class Ctx, ::fixy::os::RightSet Rights>
 [[nodiscard]] ::fixy::Option<::fixy::fs::FileOffset> whole_lines_size_(Ctx const& ctx, ::fixy::fs::FileRef<Rights> file,
                                                                        ::fixy::fs::FileOffset size) noexcept {
     ::fixy::FixedArray<std::byte, kTailChunkBytes> chunk{};
-    std::int64_t end = size.raw();
-    while (end > 0) {
-        const std::int64_t start = ::fixy::max(end - static_cast<std::int64_t>(kTailChunkBytes), std::int64_t{0});
-        const std::size_t count = static_cast<std::size_t>(end - start);
-        const ::fixy::View<std::byte> part = chunk.view().window(0, count).expect("a read takes at most one chunk");
-        if (::fixy::fs::read_full_at(ctx, file, part, ::fixy::fs::FileOffset{start}).value_or(0) != count) {
-            return ::fixy::none;
-        }
-        for (std::size_t back = count; back > 0; --back) {
-            if (*part.get(back - 1).expect("the position is inside the chunk") == std::byte{'\n'}) {
-                return ::fixy::some(::fixy::fs::FileOffset{start + static_cast<std::int64_t>(back)});
+    return chunk.with_mut([&ctx, file, size](auto run) noexcept -> ::fixy::Option<::fixy::fs::FileOffset> {
+        std::int64_t end = size.raw();
+        while (end > 0) {
+            const std::int64_t start = ::fixy::max(end - static_cast<std::int64_t>(kTailChunkBytes), std::int64_t{0});
+            const std::size_t count = static_cast<std::size_t>(end - start);
+            const ::fixy::View<std::byte> part = run.view().window(0, count).expect("a read takes at most one chunk");
+            if (::fixy::fs::read_full_at(ctx, file, part, ::fixy::fs::FileOffset{start}).value_or(0) != count) {
+                return ::fixy::none;
             }
+            for (std::size_t back = count; back > 0; --back) {
+                if (*part.get(back - 1).expect("the position is inside the chunk") == std::byte{'\n'}) {
+                    return ::fixy::some(::fixy::fs::FileOffset{start + static_cast<std::int64_t>(back)});
+                }
+            }
+            end = start;
         }
-        end = start;
-    }
-    return ::fixy::some(::fixy::fs::FileOffset{0});
+        return ::fixy::some(::fixy::fs::FileOffset{0});
+    });
 }
 
 // Cuts a torn last record of the file at path under dir, which file holds

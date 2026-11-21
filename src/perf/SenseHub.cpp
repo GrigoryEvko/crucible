@@ -57,9 +57,11 @@ Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noe
             // counters.
             for (::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS> const counters :
                  mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0})) {
-                for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
-                    snapshot.counters.at(i) = counters.load_acquire(i);
-                }
+                snapshot.counters.with_mut([&counters](auto run) noexcept {
+                    for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
+                        run.view().at(i) = counters.load_acquire(i);
+                    }
+                });
             }
         }
     }

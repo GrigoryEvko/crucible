@@ -433,11 +433,13 @@ inline constexpr ::fixy::TextView kRegionChecksumKeyText{"crucible cdag region c
 [[nodiscard]] consteval ::foundation::core::KeyedHashKeyBytes key_of_text(::fixy::TextView text) noexcept {
     if (text.size() != 32) ::fixy::unreachable();
     ::fixy::FixedArray<std::byte, 32> bytes{};
-    auto cursor = bytes.begin();
-    for (char const letter : text) {
-        *cursor = static_cast<std::byte>(letter);
-        ++cursor;
-    }
+    bytes.with_mut([text](auto run) noexcept {
+        auto cursor = run.begin();
+        for (char const letter : text) {
+            *cursor = static_cast<std::byte>(letter);
+            ++cursor;
+        }
+    });
     return ::foundation::core::KeyedHashKeyBytes{bytes.view()};
 }
 

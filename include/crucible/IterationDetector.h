@@ -209,8 +209,7 @@ struct IterationDetector {
         restart_();
         refuted_count_ = 0;
         refuted_next_ = 0;
-        for (auto& entry : refuted_)
-            entry = RefutedPeriod{};
+        refuted_ = decltype(refuted_){};
         CRUCIBLE_POST(0, refuted_count_ == 0u);
     }
 
@@ -233,10 +232,12 @@ struct IterationDetector {
     void restart_after_divergence() {
         const bool diverged_at_this_period = period_ != 0 && current_period_reported_ && periods_reported_ == 1;
         if (diverged_at_this_period && phase_is_unique) break_(period_, period_body_sum_, BREAKS_TO_REFUTE);
-        for (RefutedPeriod& refuted : view_refuted_()) {
-            if (refuted.broke_since_restart) refuted.breaks = BREAKS_TO_REFUTE;
-            refuted.broke_since_restart = false;
-        }
+        refuted_.with_mut([this](auto run) noexcept {
+            for (RefutedPeriod& refuted : refuted_in_(run.view())) {
+                if (refuted.broke_since_restart) refuted.breaks = BREAKS_TO_REFUTE;
+                refuted.broke_since_restart = false;
+            }
+        });
         restart_();
     }
 
@@ -251,9 +252,10 @@ struct IterationDetector {
     [[nodiscard]] uint64_t history_capacity() const noexcept { return keys_.size(); }
 
 private:
-    // The refuted periods: the first refuted_count_ slots of the ring.
-    [[nodiscard]] ::fixy::View<RefutedPeriod> view_refuted_() noexcept {
-        return refuted_.view().window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
+    // The refuted periods: the first refuted_count_ slots of the ring, in the
+    // run of a frame of the ring.
+    [[nodiscard]] ::fixy::View<RefutedPeriod> refuted_in_(::fixy::View<RefutedPeriod> run) const noexcept {
+        return run.window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
     }
     [[nodiscard]] ::fixy::View<const RefutedPeriod> view_refuted_() const noexcept {
         return refuted_.view().window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
@@ -477,18 +479,23 @@ private:
     // Records breaks against a period. The ring evicts its oldest entry when
     // it is full.
     void break_(uint32_t period, uint64_t body_sum, uint32_t breaks) {
-        for (RefutedPeriod& refuted : view_refuted_()) {
-            if (refuted.period == period && refuted.body_sum == body_sum) {
-                refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + breaks);
-                return;
+        const bool is_counted = refuted_.with_mut([this, period, body_sum, breaks](auto run) noexcept {
+            for (RefutedPeriod& refuted : refuted_in_(run.view())) {
+                if (refuted.period == period && refuted.body_sum == body_sum) {
+                    refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + breaks);
+                    return true;
+                }
             }
-        }
-        refuted_.at(::fixy::Index<REFUTED_CAPACITY>::check(refuted_next_)
-                        .expect("the next refuted slot is below REFUTED_CAPACITY")) =
-            RefutedPeriod{.period = period,
-                          .body_sum = body_sum,
-                          .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
-                          .broke_since_restart = false};
+            return false;
+        });
+        if (is_counted) return;
+        const RefutedPeriod fresh{.period = period,
+                                  .body_sum = body_sum,
+                                  .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
+                                  .broke_since_restart = false};
+        refuted_.with_element(::fixy::Index<REFUTED_CAPACITY>::check(refuted_next_)
+                                  .expect("the next refuted slot is below REFUTED_CAPACITY"),
+                              [fresh](RefutedPeriod& slot) noexcept { slot = fresh; });
         refuted_next_ = (refuted_next_ + 1) % REFUTED_CAPACITY;
         if (refuted_count_ < REFUTED_CAPACITY) ++refuted_count_;
     }
@@ -598,9 +605,11 @@ private:
     }
 
     void mark_broke_since_restart_(uint32_t period, uint64_t body_sum) {
-        for (RefutedPeriod& refuted : view_refuted_()) {
-            if (refuted.period == period && refuted.body_sum == body_sum) refuted.broke_since_restart = true;
-        }
+        refuted_.with_mut([this, period, body_sum](auto run) noexcept {
+            for (RefutedPeriod& refuted : refuted_in_(run.view())) {
+                if (refuted.period == period && refuted.body_sum == body_sum) refuted.broke_since_restart = true;
+            }
+        });
     }
 
     [[nodiscard]] bool fire_() {
