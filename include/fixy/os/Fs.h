@@ -3,7 +3,8 @@
 // The file syscalls: open, the two syncs, the atomic commit, and the
 // directory descriptor that flushes an entry.  The removal of a tree under a
 // directory, the owner of a temporary directory that removes its tree at its
-// end, and the sweep of the temporary trees of ended processes.
+// end, and the sweep of the temporary trees of ended processes.  The durable
+// replace of a file through a temporary file, a sync and a rename.
 //
 // An atom pack says how a file is opened — its mode, its flags, and the
 // durability and commit it is opened FOR — and the pack is read twice.
@@ -1568,6 +1569,147 @@ read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::fou
             FileOf<read_only> const file = std::move(opened).consume();
             return detail::read_all_into_(::fixy::os::detail::HandleDoor::descriptor_of(file.ref()), allocation, text);
         });
+}
+
+// THE DURABLE REPLACE
+//   replace_file_at puts new bytes in place of the file name under dir in four
+//   steps.  It writes the bytes to a temporary file of its own under dir, it
+//   syncs the data of that file, it renames that file onto name, and it syncs
+//   dir.  So a reader of name sees the whole old file or the whole new file,
+//   also after a crash at each step.  A crash before the rename leaves the old
+//   file whole, and the temporary file stays.  A step that gives an error
+//   removes the temporary file and gives that error, and the old file stays
+//   whole.  An error of the last sync comes after the rename: the new file is
+//   at name, but its entry is not sure to be on the disk.
+//
+//   The temporary name is name, ".tmp-" and two hexadecimal digits.  The open
+//   of a temporary name is exclusive, so a name that another writer or a crash
+//   holds gives eexist, and the door tries the next name.  After
+//   kReplaceTries names in use, the door gives eexist.  So name and seven
+//   characters must fit in one entry of the file system.  name is one final
+//   name: a name that is empty, that holds a slash, or that is "." or ".."
+//   gives einval.  The new file has the permission bits
+//   owner_read_write_others_read.
+//
+//   replace_file takes the sanitized path of the file.  It opens the
+//   directory part of the path with the slash after it, so a symbolic link at
+//   the last part of the directory part opens as the directory of its target.
+//   A path with no directory part takes the current directory.  A path whose
+//   final name is a directory, such as "/", gives eisdir.
+//
+//   Complexity: one open for each temporary name in use, then one write, two
+//   syncs and one rename.
+
+// The count of the temporary names that a replace tries (THE DURABLE REPLACE).
+inline constexpr std::uint64_t kReplaceTries = 64;
+
+// The gate of a replace under a directory with the rights Held (THE DURABLE
+// REPLACE): the exclusive open of the temporary file under the directory, the
+// rename onto the name and the remove after an error, and the sync of the
+// directory.
+template <typename Ctx, ::fixy::os::RightSet Held>
+concept CtxFitsReplaceAt =
+    CtxFitsFileMintAt<Ctx, Held, ::fixy::atom::fs::mode<open_mode::WriteExclusive>>
+    && CtxFitsCommitAtomicAt<Ctx, atomicity::Rename, Held> && CtxFitsDirectorySync<Ctx, sync_op::FsyncParentDir, Held>;
+
+// The gate of a replace of a path: a replace under the directory of the path.
+template <typename Ctx>
+concept CtxFitsReplace = CtxFitsReplaceAt<Ctx, directory_rights>;
+
+namespace detail {
+
+// True when NAME is one final name: it is not empty, it holds no slash, and it
+// is not "." or "..".
+[[nodiscard]] constexpr bool is_one_final_name_(::foundation::core::TextView name) noexcept {
+    return name.size() != 0 && ::foundation::core::find(name, '/').is_none()
+        && name != ::foundation::core::TextView{"."} && name != ::foundation::core::TextView{".."};
+}
+
+// THE DURABLE REPLACE, with the write of the temporary file in WRITE.
+// WRITE(FILE) writes the bytes to FILE, the borrow of the temporary file, and
+// gives the Result of the write.  replace_file_at gives a WRITE that calls
+// write_full.  A test gives a WRITE of its own, such as one that stops after a
+// part of the bytes.
+template <class Ctx, ::fixy::os::RightSet Rights, class Write>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+replace_file_steps_(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core::CText name, Write&& write) noexcept {
+    namespace core = ::foundation::core;
+    using ::foundation::os::Errno;
+    using Exclusive = ::fixy::atom::fs::mode<open_mode::WriteExclusive>;
+    using Step = core::Result<core::Unit, Errno>;
+    if (!is_one_final_name_(name.view())) return core::err(Errno::einval);
+    for (std::uint64_t attempt = 0; attempt < kReplaceTries; ++attempt) {
+        ::foundation::os::PathText<kPathBytes> temporary{};
+        bool const is_named = temporary.append(name).is_ok() && temporary.append(core::TextView{".tmp-"}).is_ok()
+                           && temporary.append_hex<2>(attempt).is_ok();
+        if (!is_named) return core::err(Errno::enametoolong);
+        // No value: another writer or a crash holds the name, and the door tries the next one.
+        core::Option<Step> const ended =
+            mint_file_at<Exclusive>(ctx, dir, temporary.c_text())
+                .match(
+                    [&](Linear<FileOf<Exclusive>> opened) noexcept -> core::Option<Step> {
+                        Step done{core::Unit{}};
+                        {
+                            // The scope closes the temporary file before the rename.
+                            FileOf<Exclusive> const file = std::move(opened).consume();
+                            done = write(file.ref());
+                            if (done.is_ok()) {
+                                done = sync<sync_op::Fdatasync>(ctx, file.ref());
+                            }
+                        }
+                        if (done.is_ok()) {
+                            done = commit_atomic_at<atomicity::Rename>(ctx, dir, temporary.c_text(), name);
+                        }
+                        if (done.is_err()) {
+                            static_cast<void>(unlink_at(ctx, dir, temporary.c_text()).is_ok());
+                            return core::Option<Step>::some(std::move(done));
+                        }
+                        return core::Option<Step>::some(sync<sync_op::FsyncParentDir>(ctx, dir));
+                    },
+                    [](Errno error) noexcept -> core::Option<Step> {
+                        if (error == Errno::eexist) return core::none;
+                        return core::Option<Step>::some(Step{core::err(error)});
+                    });
+        for (Step const& result : ended) {
+            return result;
+        }
+    }
+    return core::err(Errno::eexist);
+}
+
+}  // namespace detail
+
+// Puts bytes in place of the file name under dir (THE DURABLE REPLACE).  Not
+// a mint: the door writes and renames files, and it gives no handle.
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsReplaceAt<Ctx, Rights>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+replace_file_at(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core::CText name,
+                ::foundation::core::View<std::byte const> bytes) noexcept {
+    return detail::replace_file_steps_(ctx, dir, name,
+                                       [&ctx, bytes](auto file) noexcept { return write_full(ctx, file, bytes); });
+}
+
+// Puts bytes in place of the file at path (THE DURABLE REPLACE).  The parts of
+// a sanitized path hold no ".." part and no zero, so the directory part passes
+// the check of sanitize_path.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsReplace<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+replace_file(Ctx const& ctx, Path<tags::source::Sanitized> const& path,
+             ::foundation::core::View<std::byte const> bytes) noexcept {
+    namespace core = ::foundation::core;
+    core::TextView const text = path.value().c_text().view();
+    detail::FinalSplit const split = detail::split_final_name_(text);
+    if (split.is_whole) return core::err(::foundation::os::Errno::eisdir);
+    core::TextView const parent = split.parent.size() == 0 ? core::TextView{"."} : split.parent;
+    ::foundation::os::PathText<kPathBytes> name{};
+    name.append(text.window(split.final_at, text.size() - split.final_at).expect("the final name is in the path"))
+        .expect("a part of a path fits a path");
+    CRUCIBLE_TRY(directory,
+                 open_directory(ctx, sanitize_path(mint_tagged<tags::source::External>(parent))
+                                         .expect("the directory part of a sanitized path passes the check")));
+    return replace_file_at(ctx, directory.ref(), name.c_text(), bytes);
 }
 
 // The durable and atomic_write atoms only declare intent.  The mint

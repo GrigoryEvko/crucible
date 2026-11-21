@@ -6314,6 +6314,23 @@ crucible_script_test(NAME test_os_remove_tree_setup
 set_tests_properties(test_os_remove_tree_setup PROPERTIES LABELS "fixy" FIXTURES_SETUP remove_tree_fixture)
 set_tests_properties(test_os_remove_tree PROPERTIES FIXTURES_REQUIRED remove_tree_fixture)
 
+# The durable replace of a file, with a symbolic link to a directory that
+# CMake makes in the directory of the test before each run.
+fixy_test(test_os_fs_replace)
+crucible_script_test(NAME test_os_fs_replace_setup
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/replace_fixture.cmake
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(test_os_fs_replace_setup PROPERTIES LABELS "fixy" FIXTURES_SETUP replace_fixture)
+set_tests_properties(test_os_fs_replace PROPERTIES FIXTURES_REQUIRED replace_fixture)
+
+fixy_neg_compile_test(neg_os_fs_replace_ctx_lacks_block
+  "no matching function for call"
+  "replace_file\\(\\{anonymous\\}::IoOnlyCtx&")
+
+fixy_neg_compile_test(neg_os_fs_replace_external_path
+  "no matching function for call"
+  "replace_file\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>")
+
 # The temporary directory door, with no TMPDIR and with TMPDIR set to the
 # directory of the test.
 fixy_test(test_os_temporary_directory)
