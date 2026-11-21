@@ -288,6 +288,22 @@ add_custom_command(TARGET bench_alloc_owner_lookup POST_BUILD
   COMMAND "${CMAKE_COMMAND}" "-DNM=${CMAKE_NM}" "-DBINARY=$<TARGET_FILE:bench_alloc_owner_lookup>"
           -P "${CMAKE_CURRENT_SOURCE_DIR}/check_no_interposition.cmake"
   VERBATIM)
+# The fast paths of the heap state of the allocator of the base on one core:
+# the pair, the rows with refills and flushes, the warm rows and the pair
+# through a call, against mimalloc and jemalloc, with the speed of light of
+# the core and the two measures of the heap table.
+crucible_bench(bench_alloc_fast_paths)
+foreach(_reference mimalloc jemalloc)
+  if(TARGET ${_reference}_reference)
+    string(TOUPPER "${_reference}" _reference_upper)
+    target_link_libraries(bench_alloc_fast_paths PRIVATE ${_reference}_reference)
+    target_compile_definitions(bench_alloc_fast_paths PRIVATE CRUCIBLE_BENCH_${_reference_upper}=1)
+  endif()
+endforeach()
+add_custom_command(TARGET bench_alloc_fast_paths POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" "-DNM=${CMAKE_NM}" "-DBINARY=$<TARGET_FILE:bench_alloc_fast_paths>"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/check_no_interposition.cmake"
+  VERBATIM)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
 crucible_bench(bench_fp_control)
