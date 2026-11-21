@@ -6,7 +6,6 @@
 // at depth 0 or 1 across the auto-batched harness.
 
 #include <cstdint>
-#include <optional>
 #include <utility>
 
 #include <crucible/MetaLog.h>
@@ -15,6 +14,7 @@
 
 #include <fixy/Core.h>
 
+#include <foundation/core/Seat.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -90,27 +90,41 @@ bench::Report bench_permissioned_append_drain(PermissionedLog::ProducerHandle& p
 }
 
 // Each session owns its handle for the run and gives it back at End.  A
-// MetaLog handle refuses move-assignment, so each step puts the next session
-// in place of the last one with emplace.
+// MetaLog handle refuses move-assignment, so each loop keeps its current
+// session in a Seat of foundation/core/Seat.h, which the harness holds for
+// the row (run_with).  Each step runs on the session in the storage of the
+// Seat and puts the next session there.  The steps take generic lambdas, so
+// the brand of each session stays in the template parameter of its lambda.
 bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
                                     PermissionedLog::ConsumerHandle&& consumer, ::crucible::MetaLog& log) {
     namespace ses = ::crucible::metalog_session;
     const auto ctx = ::foundation::effects::testing::foreground();
 
     reset_log(log);
-    std::optional prod{ses::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(producer))};
-    std::optional cons{ses::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer))};
     std::uint32_t i = 0;
-    auto report = bench::run("round-trip: typed session send + recv", [&] {
-        prod.emplace(std::move(*prod).select<0>(::fixy::session::no_label).send(ctx, make_meta(++i)));
-        auto [meta, next] = std::move(*cons).select<0>(::fixy::session::no_label).recv(ctx);
-        bench::do_not_optimize(meta.version);
-        cons.emplace(std::move(next));
-    });
-    static_cast<void>(std::move(*prod).select<1>(::fixy::session::no_label).close());
-    static_cast<void>(std::move(*cons).select<1>(::fixy::session::no_label).close());
+    auto [report, seats] = bench::run_with(
+        "round-trip: typed session send + recv",
+        ::fixy::Record{::foundation::core::mint_seat(
+                           ses::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(producer))),
+                       ::foundation::core::mint_seat(
+                           ses::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer)))},
+        [&i, &ctx](auto& held) noexcept {
+            auto& [prod, cons] = held;
+            const ::crucible::TensorMeta meta = make_meta(++i);
+            prod.step([&](auto&& session) noexcept {
+                return std::move(session).template select<0>(::fixy::session::no_label).send(ctx, meta);
+            });
+            cons.step([&](auto&& session) noexcept {
+                auto [received, next] = std::move(session).template select<0>(::fixy::session::no_label).recv(ctx);
+                bench::do_not_optimize(received.version);
+                return std::move(next);
+            });
+        });
+    auto [prod, cons] = std::move(seats);
+    static_cast<void>(std::move(prod).take().select<1>(::fixy::session::no_label).close());
+    static_cast<void>(std::move(cons).take().select<1>(::fixy::session::no_label).close());
     reset_log(log);
-    return report;
+    return std::move(report);
 }
 
 }  // namespace

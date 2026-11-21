@@ -9,19 +9,21 @@
 // The reader session reads through a polling read over try_load, so its
 // baseline is the bare try_load, and the handle's load is compared with the
 // bare load.  A handle cannot be reassigned, so each session arm keeps its
-// session in a std::optional and seats the next session with emplace.
+// session in a Seat of foundation/core/Seat.h, which the harness holds for
+// the row (measure_with).  Each step runs on the session in the storage of
+// the Seat and puts the next session there.
 
 #include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 
+#include <foundation/core/Seat.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
 #include <cstdint>
-#include <optional>
 #include <utility>
 
 namespace {
@@ -55,9 +57,16 @@ using Swmr = ses::SwmrSession<Payload, WriterTag, ReaderTag, ::foundation::brand
 
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
+// The Run of each row: its counts of samples and of warmup calls, and its cap.
+[[nodiscard]] bench::Run run_of(::fixy::TextView name) {
+    bench::Run run{name};
+    static_cast<void>(run.samples(50000).warmup(5000).max_wall_ms(3000));
+    return run;
+}
+
 template <typename Body>
 [[nodiscard]] bench::Report measure(::fixy::TextView name, Body&& body) {
-    return bench::Run{name}.samples(50000).warmup(5000).max_wall_ms(3000).measure(static_cast<Body&&>(body));
+    return run_of(name).measure(static_cast<Body&&>(body));
 }
 
 // A reader of the channel, which has a free share by construction.
@@ -88,15 +97,20 @@ template <typename Body>
 
 [[nodiscard]] bench::Report session_send() {
     Swmr swmr{reader_root(), payload_at(0)};
-    std::optional session{
-        ses::mint_writer_runtime_session<Swmr>(kForeground, ses::mint_swmr_writer<Swmr>(swmr, writer_root()))};
     std::uint64_t seq = 0;
-    auto report = measure("SwmrSession session send", [&] {
-        session.emplace(std::move(*session).send(kForeground, payload_at(++seq)));
-        bench::mark_changed(seq);
-    });
-    std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
-    return report;
+    // The step takes a generic lambda, so the brand of the session stays in the
+    // template parameter of the lambda.
+    auto [report, session] = bench::measure_with(
+        run_of("SwmrSession session send"),
+        ::foundation::core::mint_seat(
+            ses::mint_writer_runtime_session<Swmr>(kForeground, ses::mint_swmr_writer<Swmr>(swmr, writer_root()))),
+        [&seq](auto& seat) noexcept {
+            Payload const next = payload_at(++seq);
+            seat.step([&next](auto&& held) noexcept { return std::move(held).send(kForeground, next); });
+            bench::mark_changed(seq);
+        });
+    std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+    return std::move(report);
 }
 
 [[nodiscard]] bench::Report raw_load() {
@@ -128,14 +142,18 @@ template <typename Body>
 
 [[nodiscard]] bench::Report session_recv() {
     Swmr swmr{reader_root(), payload_at(123)};
-    std::optional session{ses::mint_reader_runtime_session<Swmr>(kForeground, take_reader(swmr))};
-    auto report = measure("SwmrSession session recv", [&] {
-        auto [observed, next] = std::move(*session).recv(kForeground);
-        bench::do_not_optimize(observed);
-        session.emplace(std::move(next));
-    });
-    std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
-    return report;
+    auto [report, session] = bench::measure_with(
+        run_of("SwmrSession session recv"),
+        ::foundation::core::mint_seat(ses::mint_reader_runtime_session<Swmr>(kForeground, take_reader(swmr))),
+        [](auto& seat) noexcept {
+            seat.step([](auto&& held) noexcept {
+                auto [observed, next] = std::move(held).recv(kForeground);
+                bench::do_not_optimize(observed);
+                return std::move(next);
+            });
+        });
+    std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+    return std::move(report);
 }
 
 }  // namespace

@@ -20,7 +20,8 @@
 // The deltas against the baseline give the cost of each side.  A session
 // owns its handle, so each arm has a channel of its own, with a tag of its
 // own.  A channel handle cannot be reassigned, so a typed arm keeps its
-// session in a std::optional and seats the next session with emplace.
+// session in a Seat of foundation/core/Seat.h.  Each step runs on the
+// session in the storage of the Seat and puts the next session there.
 //
 // Single-threaded: the ring's atomics are uncontended, which isolates the
 // cost of one operation.  test/fixy/test_concurrent_channels.cpp covers the
@@ -32,13 +33,13 @@
 #include <fixy/concurrent/PermissionedChannel.h>
 
 #include <foundation/Platform.h>
+#include <foundation/core/Seat.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
 #include <cstdint>
-#include <optional>
 #include <utility>
 
 namespace {
@@ -102,6 +103,28 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
     });
 }
 
+// One send of the session in a Seat: the step runs the send on the session in
+// the storage of the Seat.
+template <typename Session>
+[[gnu::always_inline]] inline void send_in_seat(::foundation::core::Seat<Session>& seat, Item item) noexcept {
+    seat.step([item](Session&& session) noexcept { return std::move(session).send(kForeground, item); });
+}
+
+// One receive of the session in a Seat.  It gives the received item.
+template <typename Session>
+[[nodiscard, gnu::always_inline]] inline Item recv_in_seat(::foundation::core::Seat<Session>& seat) noexcept {
+    Item received = 0;
+    seat.step([&received](Session&& session) noexcept {
+        auto [value, next] = std::move(session).recv(kForeground);
+        received = value;
+        return std::move(next);
+    });
+    return received;
+}
+
+// A typed arm gives the Seat of its session to run_with, which holds it for
+// the row and gives it back.  The arm then ends the session at its detach.
+
 [[nodiscard]] bench::Report typed_send_bare_pop() {
     constexpr ::fixy::TextView name = "round-trip: typed send + bare pop";
     ::fixy::Box<Channel<1>> channel = ::fixy::mint_box<Channel<1>>(kAlloc);
@@ -109,15 +132,17 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
         perm::mint_permission_split<Channel<1>::producer_tag, Channel<1>::consumer_tag>(arm_root<1>());
     auto producer = (*channel).producer(std::move(producer_perm));
     auto consumer = (*channel).consumer(std::move(consumer_perm));
-    std::optional session{
-        channels::mint_substrate_session<Channel<1>, channels::Direction::Producer>(kForeground, std::move(producer))};
     Item item = 0;
-    auto report = bench::run(name, [&] {
-        session.emplace(std::move(*session).send(kForeground, ++item));
-        bench::do_not_optimize(pop_value(consumer));
-    });
-    std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
-    return report;
+    auto [report, session] = bench::run_with(
+        name,
+        ::foundation::core::mint_seat(channels::mint_substrate_session<Channel<1>, channels::Direction::Producer>(
+            kForeground, std::move(producer))),
+        [&item, &consumer](auto& seat) noexcept {
+            send_in_seat(seat, ++item);
+            bench::do_not_optimize(pop_value(consumer));
+        });
+    std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+    return std::move(report);
 }
 
 [[nodiscard]] bench::Report bare_push_typed_recv() {
@@ -127,18 +152,18 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
         perm::mint_permission_split<Channel<2>::producer_tag, Channel<2>::consumer_tag>(arm_root<2>());
     auto producer = (*channel).producer(std::move(producer_perm));
     auto consumer = (*channel).consumer(std::move(consumer_perm));
-    std::optional session{
-        channels::mint_substrate_session<Channel<2>, channels::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
-    auto report = bench::run(name, [&] {
-        if (!producer.try_push(++item)) [[unlikely]]
-            stop_on_rejected_push(name);
-        auto [value, next] = std::move(*session).recv(kForeground);
-        bench::do_not_optimize(value);
-        session.emplace(std::move(next));
-    });
-    std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
-    return report;
+    auto [report, session] = bench::run_with(
+        name,
+        ::foundation::core::mint_seat(channels::mint_substrate_session<Channel<2>, channels::Direction::Consumer>(
+            kForeground, std::move(consumer))),
+        [&item, &producer](auto& seat) noexcept {
+            if (!producer.try_push(++item)) [[unlikely]]
+                stop_on_rejected_push(name);
+            bench::do_not_optimize(recv_in_seat(seat));
+        });
+    std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+    return std::move(report);
 }
 
 [[nodiscard]] bench::Report typed_send_typed_recv() {
@@ -148,20 +173,23 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
         perm::mint_permission_split<Channel<3>::producer_tag, Channel<3>::consumer_tag>(arm_root<3>());
     auto producer = (*channel).producer(std::move(producer_perm));
     auto consumer = (*channel).consumer(std::move(consumer_perm));
-    std::optional sender{
-        channels::mint_substrate_session<Channel<3>, channels::Direction::Producer>(kForeground, std::move(producer))};
-    std::optional receiver{
-        channels::mint_substrate_session<Channel<3>, channels::Direction::Consumer>(kForeground, std::move(consumer))};
     Item item = 0;
-    auto report = bench::run(name, [&] {
-        sender.emplace(std::move(*sender).send(kForeground, ++item));
-        auto [value, next] = std::move(*receiver).recv(kForeground);
-        bench::do_not_optimize(value);
-        receiver.emplace(std::move(next));
-    });
-    std::move(*sender).detach(s::detach_reason::InfiniteLoopProtocol{});
-    std::move(*receiver).detach(s::detach_reason::InfiniteLoopProtocol{});
-    return report;
+    auto [report, seats] = bench::run_with(
+        name,
+        ::fixy::Record{
+            ::foundation::core::mint_seat(channels::mint_substrate_session<Channel<3>, channels::Direction::Producer>(
+                kForeground, std::move(producer))),
+            ::foundation::core::mint_seat(channels::mint_substrate_session<Channel<3>, channels::Direction::Consumer>(
+                kForeground, std::move(consumer)))},
+        [&item](auto& held) noexcept {
+            auto& [sender, receiver] = held;
+            send_in_seat(sender, ++item);
+            bench::do_not_optimize(recv_in_seat(receiver));
+        });
+    auto [sender, receiver] = std::move(seats);
+    std::move(sender).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+    std::move(receiver).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+    return std::move(report);
 }
 
 }  // namespace
