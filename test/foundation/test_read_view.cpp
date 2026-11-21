@@ -249,10 +249,9 @@ void test_door_over_a_share_guard(::fixy::TestRunnerCtx const& test) {
         CRUCIBLE_TEST_ASSERT(test, counted == 1);
         CRUCIBLE_TEST_ASSERT(test, held.holds_share());
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
-        // The refused upgrade gives an empty Option.  The answer has a name,
-        // so the temporary ends in this file and not in the macro.
-        bool const is_refused = pool.try_upgrade(test).is_none();
-        CRUCIBLE_TEST_ASSERT(test, is_refused);
+        // The refused upgrade gives an empty Option, and expect_none ends
+        // it.  A granted upgrade would end the process, so the test fails.
+        pool.try_upgrade(test).expect_none("the live guard blocks the upgrade");
     }
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
     auto exclusive = pool.try_upgrade(test);

@@ -94,21 +94,23 @@ void test_multiple_guards_block_upgrade(::fixy::TestRunnerCtx const& test) {
         [[maybe_unused]] auto t2 = guard.token();
     }
 
-    // Each refused upgrade gives an empty Option.  The answer has a name, so
-    // the temporary ends in this file and not in the macro.
-    bool const is_refused_under_two_guards = pool.try_upgrade(test).is_none();
-    CRUCIBLE_TEST_ASSERT(test, is_refused_under_two_guards);
+    // Each refused upgrade gives an empty Option, and expect_none ends it.  A
+    // granted upgrade gives a full Option, and expect_none then ends the
+    // process, so the test fails.
+    pool.try_upgrade(test).expect_none("two live guards block the upgrade");
 
     g1 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
-    bool const is_refused_under_one_guard = pool.try_upgrade(test).is_none();
-    CRUCIBLE_TEST_ASSERT(test, is_refused_under_one_guard);
+    pool.try_upgrade(test).expect_none("one live guard blocks the upgrade");
 
     g2 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
+    // The exclusive permission goes back to the pool, so no path drops it.
     auto up = pool.try_upgrade(test);
     CRUCIBLE_TEST_ASSERT(test, up.is_some());
+    pool.deposit_exclusive(std::move(up).expect("the test above found the exclusive"));
+    CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 }
 
 }  // namespace
