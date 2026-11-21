@@ -3594,6 +3594,7 @@ foundation_neg_compile_test(neg_byte_view_drops_const
 # a predicate that can throw, a key with no total order and the bytes of a
 # padded or a temporary object.
 foundation_test(test_core_array)
+foundation_test(test_core_window_stack)
 foundation_test(test_core_algorithms)
 foundation_test(test_core_iteration)
 foundation_test(test_core_walk)
@@ -3713,6 +3714,17 @@ foundation_neg_compile_test(neg_core_fixed_array_at_wider_index
 foundation_neg_compile_test(neg_core_fixed_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+# A window loan and a window stack do not copy, and a loan does not move, so
+# the loans of one stack end in the reverse order of their opens.
+foundation_neg_compile_test(neg_core_window_loan_copied
+  "use of deleted function .foundation::core::WindowLoan<T, N>::WindowLoan\\(const foundation::core::WindowLoan<T, N>&\\)"
+  "a loan ends at the end of its scope, and a copy would end it two times")
+foundation_neg_compile_test(neg_core_window_loan_moved
+  "use of deleted function .foundation::core::WindowLoan<T, N>::WindowLoan\\(foundation::core::WindowLoan<T, N>&&\\)"
+  "a loan ends at the end of its scope, in the reverse order of its open")
+foundation_neg_compile_test(neg_core_window_stack_copied
+  "use of deleted function .foundation::core::WindowStack<T, N>::WindowStack\\(const foundation::core::WindowStack<T, N>&\\)"
+  "each open loan holds a Ref to its stack")
 foundation_neg_compile_test(neg_core_text_view_window_member_forged
   "no declaration matches .constexpr auto foundation::core::TextView::window\\(std::size_t, std::size_t\\) const."
   ".class foundation::core::TextView. defined here")
@@ -4468,6 +4480,7 @@ foreach(_death_test
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_link test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
     test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
-    test_singleton_root test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref)
+    test_singleton_root test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref
+    test_core_window_stack)
   target_link_libraries(${_death_test} PRIVATE fixy)
 endforeach()

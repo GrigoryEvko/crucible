@@ -1104,6 +1104,12 @@ inline constexpr StatedZero kZeros[] = {
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::GrowList,
      "a list of elements on the heap that grows: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::WindowStack,
+     "an inline stack of elements that lends windows: it holds storage and makes no claim about what the elements "
+     "hold"},
+    {^^::foundation::core::WindowLoan,
+     "the loan of one window of a window stack: it lives in the scope of its loan, and it is never a value in a "
+     "kernel signature"},
     {^^::foundation::core::BitSet,
      "an inline set of the indexes below a count: it holds bits and makes no claim about what the indexes name"},
     {^^::foundation::core::HeapBitSet,
