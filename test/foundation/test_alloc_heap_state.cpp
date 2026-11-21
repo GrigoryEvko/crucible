@@ -116,7 +116,8 @@ enum class ReleaseOrder : std::uint8_t {
         alloc::SizeClass const size_class = class_of(value);
         std::size_t const blocks = 3 * std::size_t{alloc::bin_capacity(size_class)} + 1;
         for (std::size_t step = 0; step < blocks; ++step) {
-            held.blocks.at(held_at(step)) = heap.allocate(size_class);
+            alloc::AddressWord const block = heap.allocate(size_class);
+            held.blocks.with_element(held_at(step), [block](alloc::AddressWord& slot) noexcept { slot = block; });
             is_sound = is_sound && is_census_sound(heap, core::ElementCount{step + 1});
         }
         for (std::size_t step = 0; step < blocks; ++step) {
@@ -153,8 +154,8 @@ struct Ordinals {
         for (std::size_t raw = 0; raw < count; ++raw) {
             if (chunks.at(ChunkOrdinal::check(raw).expect("an ordinal below the count")) == chunk.raw()) return raw;
         }
-        chunks.at(ChunkOrdinal::check(count).expect("a heap of the test takes at most kMostChunks chunks")) =
-            chunk.raw();
+        chunks.with_element(ChunkOrdinal::check(count).expect("a heap of the test takes at most kMostChunks chunks"),
+                            [chunk](std::uint32_t& ordinal) noexcept { ordinal = chunk.raw(); });
         return count++;
     }
 };
@@ -174,8 +175,9 @@ struct Ordinals {
             std::uint32_t const value = (word & 4) != 0 ? 1 + ((word >> 8) % 8) : 1 + ((word >> 8) % 52);
             alloc::SizeClass const size_class = class_of(value);
             alloc::AddressWord const block = heap.allocate(size_class);
-            held.blocks.at(held_at(held.count)) = block;
-            held.classes.at(held_at(held.count)) = size_class;
+            held.blocks.with_element(held_at(held.count), [block](alloc::AddressWord& slot) noexcept { slot = block; });
+            held.classes.with_element(held_at(held.count),
+                                      [size_class](alloc::SizeClass& slot) noexcept { slot = size_class; });
             ++held.count;
             std::uint64_t const offset = static_cast<std::uint64_t>(block) - base;
             std::size_t const ordinal =
@@ -188,8 +190,12 @@ struct Ordinals {
             std::size_t const position = (word >> 8) % held.count;
             HeldIndex const last = held_at(held.count - 1);
             heap.release(held.classes.at(held_at(position)), held.blocks.at(held_at(position)));
-            held.blocks.at(held_at(position)) = held.blocks.at(last);
-            held.classes.at(held_at(position)) = held.classes.at(last);
+            alloc::AddressWord const last_block = held.blocks.at(last);
+            alloc::SizeClass const last_class = held.classes.at(last);
+            held.blocks.with_element(held_at(position),
+                                     [last_block](alloc::AddressWord& slot) noexcept { slot = last_block; });
+            held.classes.with_element(held_at(position),
+                                      [last_class](alloc::SizeClass& slot) noexcept { slot = last_class; });
             --held.count;
         }
         trace.is_sound = trace.is_sound && is_census_sound(heap, core::ElementCount{held.count});
@@ -261,7 +267,8 @@ constexpr std::size_t kSlotsOfClassEight = 512;
 // blocks of the bins back to their slabs, so each bin is empty.
 void take_two_slabs(alloc::HeapState& heap, Held& held) noexcept {
     for (std::size_t position = 0; position < kTwoSlabBlocks; ++position) {
-        held.blocks.at(held_at(position)) = heap.allocate(class_of(8));
+        alloc::AddressWord const block = heap.allocate(class_of(8));
+        held.blocks.with_element(held_at(position), [block](alloc::AddressWord& slot) noexcept { slot = block; });
     }
     heap.flush_bins();
 }
@@ -293,7 +300,8 @@ void flush_takes_each_slab_and_each_word(TestRunnerCtx const& test) {
         // The class 1 has 64 slots in each word of its bitmap, so the blocks
         // 0 and 64 of a fresh slab lie in two words.
         for (std::size_t position = 0; position < 128; ++position) {
-            held->blocks.at(held_at(position)) = heap.allocate(class_of(1));
+            alloc::AddressWord const block = heap.allocate(class_of(1));
+            held->blocks.with_element(held_at(position), [block](alloc::AddressWord& slot) noexcept { slot = block; });
         }
         heap.flush_bins();
         live = 128;
@@ -325,7 +333,8 @@ void fill_and_flush(alloc::HeapState& heap, alloc::SizeClass size_class, Held co
 void take_blocks(alloc::HeapState& heap, alloc::SizeClass size_class, Held& held) noexcept {
     std::size_t const capacity = alloc::bin_capacity(size_class);
     for (std::size_t position = 0; position <= capacity; ++position) {
-        held.blocks.at(held_at(position)) = heap.allocate(size_class);
+        alloc::AddressWord const block = heap.allocate(size_class);
+        held.blocks.with_element(held_at(position), [block](alloc::AddressWord& slot) noexcept { slot = block; });
     }
     heap.flush_bins();
 }

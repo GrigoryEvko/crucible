@@ -63,8 +63,10 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
 [[nodiscard]] ::fixy::Option<crucible::BackgroundThread::PlanRefusal>
 refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
     auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
     crucible::BackgroundThread bt{test.alloc};
-    ::foundation::core::FixedArray<crucible::TensorSlot, 2> slots{};
+    ::fixy::View<crucible::TensorSlot, 2> const slots =
+        arena.array(test.alloc, 2, crucible::TensorSlot{}).window<2>(0).expect("the run holds two slots");
     crucible::TensorSlot& internal_slot = slots.at(::foundation::core::index<0>());
     internal_slot.nbytes = 1024;
     internal_slot.birth_op = crucible::OpIndex{0};
@@ -75,7 +77,7 @@ refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
     external_slot.slot_id = ids.at(::foundation::core::index<1>());
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    return bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view()).err();
+    return bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots).err();
 }
 
 // True when the planner gave the expected refusal.

@@ -557,39 +557,42 @@ static void test_slot_views() {
     using crucible::InputPosition;
     using crucible::OutputRefusal;
     using crucible::ViewRefusal;
-    ::foundation::core::FixedArray<SlotId, 1> in0{SlotId{2}};
-    ::foundation::core::FixedArray<SlotId, 2> out0{SlotId{0}, SlotId{1}};
-    ::foundation::core::FixedArray<SlotId, 3> in1{SlotId{0}, SlotId{4}, SlotId{1}};
-    ::foundation::core::FixedArray<SlotId, 1> out1{SlotId{1}};
-    ::foundation::core::FixedArray<SlotId, 1> out2{SlotId{3}};
-    ::foundation::core::FixedArray<SlotId, 1> out3{SlotId{2}};
-    ::foundation::core::FixedArray<SlotId, 2> out4{SlotId{0}, SlotId{0}};
-    ::foundation::core::FixedArray<SlotId, 1> out5{SlotId::none()};
-    ::foundation::core::FixedArray<SlotId, 9> out6{SlotId{0}, SlotId{0}, SlotId{0}, SlotId{0}, SlotId{0},
-                                                   SlotId{0}, SlotId{0}, SlotId{0}, SlotId{0}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
+    ::fixy::View<SlotId> const in0 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{2});
+    ::fixy::View<SlotId> const out0 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{1});
+    ::fixy::View<SlotId> const in1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{4}, SlotId{1});
+    ::fixy::View<SlotId> const out1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
+    ::fixy::View<SlotId> const out2 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{3});
+    ::fixy::View<SlotId> const out3 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{2});
+    ::fixy::View<SlotId> const out4 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{0});
+    ::fixy::View<SlotId> const out5 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId::none());
+    ::fixy::View<SlotId> const out6 = arena.array(test.alloc, 9, SlotId{0});
 
-    ::foundation::core::FixedArray<TraceEntry, 7> ops{};
+    ::fixy::View<TraceEntry, 7> const ops =
+        arena.array(test.alloc, 7, TraceEntry{}).window<7>(0).expect("the run holds seven ops");
     uint32_t position = 0;
     for (TraceEntry& op : ops) {
         op.schema_hash = SchemaHash{700 + position};
         op.shape_hash = ShapeHash{800 + position};
         ++position;
     }
-    set_input_slots(ops.at(::foundation::core::index<0>()), in0.view());
-    set_output_slots(ops.at(::foundation::core::index<0>()), out0.view());
-    set_input_slots(ops.at(::foundation::core::index<1>()), in1.view());
-    set_output_slots(ops.at(::foundation::core::index<1>()), out1.view());
-    set_output_slots(ops.at(::foundation::core::index<2>()), out2.view());
-    set_output_slots(ops.at(::foundation::core::index<3>()), out3.view());
-    set_output_slots(ops.at(::foundation::core::index<4>()), out4.view());
-    set_output_slots(ops.at(::foundation::core::index<5>()), out5.view());
-    set_output_slots(ops.at(::foundation::core::index<6>()), out6.view());
+    set_input_slots(ops.at(::foundation::core::index<0>()), in0);
+    set_output_slots(ops.at(::foundation::core::index<0>()), out0);
+    set_input_slots(ops.at(::foundation::core::index<1>()), in1);
+    set_output_slots(ops.at(::foundation::core::index<1>()), out1);
+    set_output_slots(ops.at(::foundation::core::index<2>()), out2);
+    set_output_slots(ops.at(::foundation::core::index<3>()), out3);
+    set_output_slots(ops.at(::foundation::core::index<4>()), out4);
+    set_output_slots(ops.at(::foundation::core::index<5>()), out5);
+    set_output_slots(ops.at(::foundation::core::index<6>()), out6);
 
     // Slots 0, 1 and 3 are pooled, at 0, 256 and 768.  Slot 3 holds 6
     // bytes, no whole count of floats.  Slots 2 and 4 are external, and
     // slot 2 holds 36 bytes, nine floats.
-    ::foundation::core::FixedArray<TensorSlot, 5> slots{};
-    auto plan = make_simple_plan(slots.view());
+    ::fixy::View<TensorSlot, 5> const slots =
+        arena.array(test.alloc, 5, TensorSlot{}).window<5>(0).expect("the run holds five slots");
+    auto plan = make_simple_plan(slots);
     slots.at(::foundation::core::index<2>()).is_external = true;
     slots.at(::foundation::core::index<2>()).nbytes = 36;
     slots.at(::foundation::core::index<3>()).nbytes = 6;
@@ -597,7 +600,7 @@ static void test_slot_views() {
     plan.num_external = 2;
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+    init_region(&region, ops, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));

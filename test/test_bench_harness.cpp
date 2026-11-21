@@ -615,7 +615,7 @@ void test_sink_keeps_each_value() {
 
     ::fixy::FixedArray<std::uint64_t, 64> words{};
     for (::fixy::Index<64> const index : words.indices())
-        words.at(index) = index.raw() * 3;
+        words.with_element(index, [index](std::uint64_t& element) noexcept { element = index.raw() * 3; });
     bench::do_not_optimize(words);
     ::fixy::FixedArray<std::uint64_t, 64> const& read = words;
     bench::do_not_optimize(read);

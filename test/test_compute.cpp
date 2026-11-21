@@ -335,12 +335,20 @@ int main() {
     const ::fixy::View<float const> w2_floats =
         ctx.pool().slot_view<float>(SlotId{SL_W2}, pv).expect("W2 is registered");
 
-    cpu::mm(kTest, make_input<LeftFactor>(x_floats), make_input<RightFactor>(w1_floats), ref_mm1.view(),
-            make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN), make_dim<roles::Inner>(IN_DIM));
-    cpu::relu(kTest, ref_mm1.view(), ref_relu.view(), make_dim<roles::Count>(BATCH * HIDDEN));
-    cpu::mm(kTest, make_input<LeftFactor>(ref_relu.view()), make_input<RightFactor>(w2_floats), ref_mm2.view(),
-            make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM), make_dim<roles::Inner>(HIDDEN));
-    cpu::softmax(kTest, ref_mm2.view(), ref_sm.view(), make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
+    ref_mm1.with_mut([&x_floats, &w1_floats](auto mm1) noexcept {
+        cpu::mm(kTest, make_input<LeftFactor>(x_floats), make_input<RightFactor>(w1_floats), mm1.view(),
+                make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN), make_dim<roles::Inner>(IN_DIM));
+    });
+    ref_relu.with_mut([&ref_mm1](auto relu) noexcept {
+        cpu::relu(kTest, ref_mm1.view(), relu.view(), make_dim<roles::Count>(BATCH * HIDDEN));
+    });
+    ref_mm2.with_mut([&ref_relu, &w2_floats](auto mm2) noexcept {
+        cpu::mm(kTest, make_input<LeftFactor>(ref_relu.view()), make_input<RightFactor>(w2_floats), mm2.view(),
+                make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM), make_dim<roles::Inner>(HIDDEN));
+    });
+    ref_sm.with_mut([&ref_mm2](auto sm) noexcept {
+        cpu::softmax(kTest, ref_mm2.view(), sm.view(), make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
+    });
 
     const ::fixy::View<float const> pool_sm =
         ctx.pool().slot_view<float>(SlotId{SL_SM}, pv).expect("the softmax output is a pooled slot of floats");

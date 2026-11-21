@@ -100,6 +100,11 @@ struct Oracle {
     core::FixedArray<bool, kSlabs> held{};
     std::size_t count = 0;
 
+    // Sets the slab at SLOT to the state STATE.
+    void mark(SlabSlot slot, Holding state) noexcept {
+        held.with_element(slot, [state](bool& is_held) noexcept { is_held = state == Holding::held; });
+    }
+
     // The lowest held slab, or none.
     [[nodiscard]] alloc::SlabLink lowest() const noexcept {
         for (SlabSlot const slot : core::IndexRange<kSlabs>{}) {
@@ -132,19 +137,19 @@ struct Oracle {
     core::FixedArray<bool, kSlabs> seen{};
     std::size_t depth = 0;
     std::size_t visited = 0;
-    pending.at(slot_of(depth++)) = root;
+    pending.with_element(slot_of(depth++), [root](alloc::SlabLink& link) noexcept { link = root; });
     while (depth != 0) {
         alloc::SlabLink const node = pending.at(slot_of(--depth));
         SlabSlot const node_slot = slot_of(raw_of(node));
         if (!oracle.held.at(node_slot) || seen.at(node_slot)) return false;
-        seen.at(node_slot) = true;
+        seen.with_element(node_slot, [](bool& is_seen) noexcept { is_seen = true; });
         ++visited;
         alloc::SlabLink expected_prev = node;
         for (alloc::SlabLink child = records.child_of(node); child != alloc::SlabLink::none;
              child = records.next_of(child)) {
             if (!(node < child) || records.prev_of(child) != expected_prev) return false;
             if (depth == kSlabs) return false;
-            pending.at(slot_of(depth++)) = child;
+            pending.with_element(slot_of(depth++), [child](alloc::SlabLink& link) noexcept { link = child; });
             expected_prev = child;
         }
     }
@@ -163,20 +168,20 @@ void sequence_follows_the_oracle(TestRunnerCtx const& test, Records const& state
         if (kind < 4 && oracle.count < kSlabs) {
             std::size_t const raw = oracle.find_from(slot_of(pick), Holding::not_held);
             heap.insert(state.records, link_at(raw));
-            oracle.held.at(slot_of(raw)) = true;
+            oracle.mark(slot_of(raw), Holding::held);
             ++oracle.count;
         } else if (kind < 6) {
             alloc::SlabLink const expected = oracle.lowest();
             alloc::SlabLink const popped = heap.pop_min(state.records);
             is_min_right = is_min_right && popped == expected;
             if (popped != alloc::SlabLink::none) {
-                oracle.held.at(slot_of(raw_of(popped))) = false;
+                oracle.mark(slot_of(raw_of(popped)), Holding::not_held);
                 --oracle.count;
             }
         } else if (oracle.count != 0) {
             std::size_t const raw = oracle.find_from(slot_of(pick), Holding::held);
             heap.remove(state.records, link_at(raw));
-            oracle.held.at(slot_of(raw)) = false;
+            oracle.mark(slot_of(raw), Holding::not_held);
             --oracle.count;
         }
         is_min_right = is_min_right && heap.min() == oracle.lowest();
@@ -210,7 +215,7 @@ void removal_of_each_place(TestRunnerCtx const& test, Records const& state) {
     Oracle oracle{};
     for (std::size_t raw = 0; raw < 6; ++raw) {
         heap.insert(state.records, link_at(raw));
-        oracle.held.at(slot_of(raw)) = true;
+        oracle.mark(slot_of(raw), Holding::held);
         ++oracle.count;
     }
     CRUCIBLE_TEST_ASSERT(test, state.records.child_of(link_at(0)) == link_at(5));
@@ -218,9 +223,9 @@ void removal_of_each_place(TestRunnerCtx const& test, Records const& state) {
     heap.remove(state.records, link_at(5));
     heap.remove(state.records, link_at(3));
     heap.remove(state.records, link_at(0));
-    oracle.held.at(slot_of(5)) = false;
-    oracle.held.at(slot_of(3)) = false;
-    oracle.held.at(slot_of(0)) = false;
+    oracle.mark(slot_of(5), Holding::not_held);
+    oracle.mark(slot_of(3), Holding::not_held);
+    oracle.mark(slot_of(0), Holding::not_held);
     oracle.count -= 3;
     CRUCIBLE_TEST_ASSERT(test, is_tree_sound(heap, state.records, oracle));
     CRUCIBLE_TEST_ASSERT(test, heap.count(state.records).raw() == 3);
