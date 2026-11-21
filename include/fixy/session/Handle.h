@@ -659,6 +659,15 @@ public:
     // the abandonment check stops firing for a handle that really was
     // leaked.  The guard is duplicated in the policy's move_from so the
     // invariant survives a caller reaching the tracker directly.
+    //
+    // The kind self-move of the rule must-consume refuses each self-move
+    // that one function names: a local, a local through a reference to it, a
+    // member, and an object behind one reference or one pointer.  The guard
+    // stays as the run-time backstop of an alias through two names, such as
+    // two reference parameters or two indices of one array, which the rule
+    // cannot see.  A step builds the next handle by move construction, and a
+    // caller assigns it to a different object, so the compiler folds the
+    // compare in each steady loop of a send (test/shape/session_send.cpp).
     constexpr SessionHandleBase(SessionHandleBase&& other) noexcept { tracker_.move_from(other.tracker_); }
 
     constexpr SessionHandleBase& operator=(SessionHandleBase&& other) noexcept {
@@ -1763,7 +1772,11 @@ public:
     // does it take the source's position and its slots.  A reference
     // Resource cannot be rebound, so a handle over one cannot be assigned.
     // A parked token cannot be assigned over, so a handle whose set holds a
-    // LentOut cannot be assigned either.
+    // LentOut cannot be assigned either.  A self-move keeps the handle as it
+    // is.  Without the guard, the cancellation of a Cancel policy would reach
+    // the peer, and the Resource would be moved into itself.  The guard is
+    // the run-time backstop of an alias through two names, as the guard of
+    // SessionHandleBase is.
     constexpr handle_core& operator=(handle_core&& other) noexcept
         requires(!std::is_reference_v<Resource> && std::is_nothrow_move_assignable_v<Resource>
                  && std::is_nothrow_move_assignable_v<HoldSlots<PS>>)

@@ -460,10 +460,17 @@ struct Holder {
     std::_Exit(kCorrectExit);
 }
 
-[[noreturn]] void self_move_assign() {
+// A move of a handle into itself through two names.  The kind self-move of the
+// rule must-consume refuses a self-move that one function names, as the
+// fixture neg_sess_self_move_assign shows, and it reads one function at a
+// time.  So it does not see that the two reference parameters of move_into
+// name one handle.  The guard of the move assignment is the run-time backstop:
+// the handle stays live and steps on.
+[[gnu::noinline]] void move_into(FreshHandle& target, FreshHandle& source) noexcept { target = std::move(source); }
+
+[[noreturn]] void self_move_through_two_names() {
     auto handle = fresh();
-    auto& same = handle;
-    handle = std::move(same);
+    move_into(handle, handle);
     auto after = std::move(handle).send(Ping{3}, [](Wire&, Ping&) noexcept { return true; });
     std::move(after).detach(s::detach_reason::TestInstrumentation{});
     std::_Exit(kCorrectExit);
@@ -904,7 +911,7 @@ constexpr attack_case kAttacks[] = {
     {"wait_low_while_holding_high", Outcome::Caught, wait_low_while_holding_high},
     {"wait_high_while_holding_low", Outcome::Correct, wait_high_while_holding_low},
     {"swap_two_live_handles", Outcome::Correct, swap_two_live_handles},
-    {"self_move_assign", Outcome::Correct, self_move_assign},
+    {"self_move_through_two_names", Outcome::Correct, self_move_through_two_names},
     {"cancellation_races_a_send", Outcome::Correct, cancellation_races_a_send},
     {"leak_then_skip_exit_hooks", Outcome::Silent, leak_then_skip_exit_hooks},
     {"detach_with_a_false_reason", Outcome::Silent, detach_with_a_false_reason},

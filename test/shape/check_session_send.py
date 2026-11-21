@@ -57,6 +57,15 @@ THE COUNT OF THE STEPS
     or a dec, or a lea with the displacement 1.  The check reads each
     instruction of the two functions, in the hot part and in the cold part.
 
+THE GUARD OF A SELF-MOVE
+    The move assignment of a handle compares the address of its target with the
+    address of its source (fixy/session/Handle.h).  A compare of an address of
+    a handle is a cmp or a test of two 64-bit registers, one of which is the
+    base of a store in the same instructions: the store writes a field of the
+    handle at that address.  Each steady loop of the three forms must hold no
+    such compare.  The control move_through_two_names assigns a handle through
+    two references, so its hot part must hold one.
+
 THE VERDICT
     send_on_a_local_handle must have at least one steady loop, and no refusal
     in it.  send_through_a_pin must have at least one steady loop, and no
@@ -66,10 +75,12 @@ THE VERDICT
     the control shows that the check sees a handle in memory.
     send_once_outside_a_loop must have no add of one, and send_once_in_a_loop
     must have at least one: the control shows that the check sees the count.
-    Exit 0 when the five hold, 1 when one does not hold or the probe does not
-    compile, 2 on a usage error, 77 for a skip.  Complexity: one compile, one
-    disassembly, and a walk linear in the edges of each loop and in the
-    instructions of the two functions of the count.
+    No steady loop holds a compare of an address of a handle, and
+    move_through_two_names holds one: the control shows that the check sees
+    the guard.  Exit 0 when the six hold, 1 when one does not hold or the probe
+    does not compile, 2 on a usage error, 77 for a skip.  Complexity: one
+    compile, one disassembly, and a walk linear in the edges of each loop and
+    in the instructions of the functions of the count and the guard.
 """
 
 from __future__ import annotations
@@ -86,6 +97,11 @@ PIN_FORM = "send_through_a_pin"
 CALLER_MEMORY_FORM = "send_in_caller_memory"
 OUTSIDE_A_LOOP_FORM = "send_once_outside_a_loop"
 IN_A_LOOP_FORM = "send_once_in_a_loop"
+GUARD_CONTROL = "move_through_two_names"
+# The 64-bit general registers, whose compare can be a compare of two addresses.
+ADDRESS_REGISTERS = frozenset(
+    {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"}
+)
 # The numbers that an add of one and a sub of minus one name, at each width of an operand.
 ONE_WORDS = frozenset({1})
 MINUS_ONE_WORDS = frozenset({-1, 0xFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF})
@@ -241,10 +257,50 @@ def adds_of_one(code) -> list[str]:
     return found
 
 
+def address_compares(instructions: Sequence) -> list[str]:
+    """Return each compare of an address of a handle in the instructions (THE GUARD OF A SELF-MOVE).
+
+    A compare of an address is a cmp or a test of two 64-bit registers, one of which is the base of a store in the
+    same instructions.  Complexity: linear in the instructions.
+    """
+    from assay.readers import objdump
+
+    bases = {
+        item.operands[0].base
+        for item in instructions
+        if item.mnemonic in STORE_MNEMONICS and item.operands and isinstance(item.operands[0], objdump.Memory)
+    }
+    found: list[str] = []
+    for item in instructions:
+        names = [operand.name for operand in item.operands if isinstance(operand, objdump.Register)]
+        is_compare = item.mnemonic in ("cmp", "test") and len(names) == 2 == len(item.operands)
+        if is_compare and all(name in ADDRESS_REGISTERS for name in names) and any(name in bases for name in names):
+            found.append(item.shown)
+    return found
+
+
+def loop_address_compares(code) -> list[str]:
+    """Return each compare of an address of a handle in the steady loops of a function."""
+    from assay.guard.engines.elf import codegen_shapes as shapes
+
+    flow = shapes.flow_of(code)
+    found: list[str] = []
+    for body in steady_loops(code):
+        found += address_compares([flow.parts[0][place[1]] for place in body])
+    return found
+
+
+def hot_address_compares(code) -> list[str]:
+    """Return each compare of an address of a handle in the hot part of a function."""
+    from assay.guard.engines.elf import codegen_shapes as shapes
+
+    return address_compares(list(shapes.flow_of(code).parts[0]))
+
+
 def verdict(codes: Mapping[str, object]) -> list[str]:
-    """Return the problems of the five functions of the probe (THE VERDICT)."""
+    """Return the problems of the six functions of the probe (THE VERDICT)."""
     problems: list[str] = []
-    for name in (LOCAL_FORM, PIN_FORM, CALLER_MEMORY_FORM, OUTSIDE_A_LOOP_FORM, IN_A_LOOP_FORM):
+    for name in (LOCAL_FORM, PIN_FORM, CALLER_MEMORY_FORM, OUTSIDE_A_LOOP_FORM, IN_A_LOOP_FORM, GUARD_CONTROL):
         if name not in codes:
             problems.append(f"the object of {PROBE_UNIT} holds no function {name}")
     if problems:
@@ -263,6 +319,11 @@ def verdict(codes: Mapping[str, object]) -> list[str]:
     problems += [f"{OUTSIDE_A_LOOP_FORM}: adds one to a count: {item}" for item in adds_of_one(codes[OUTSIDE_A_LOOP_FORM])]
     if not adds_of_one(codes[IN_A_LOOP_FORM]):
         problems.append(f"{IN_A_LOOP_FORM} adds one to nothing, so the check does not see the count of the steps")
+    for name in (LOCAL_FORM, PIN_FORM, CALLER_MEMORY_FORM):
+        problems += [f"{name}: the steady loop compares an address of a handle: {item}"
+                     for item in loop_address_compares(codes[name])]
+    if not hot_address_compares(codes[GUARD_CONTROL]):
+        problems.append(f"{GUARD_CONTROL} compares no address of a handle, so the check does not see the guard")
     return problems
 
 
@@ -298,7 +359,9 @@ def main(arguments: Sequence[str]) -> int:
     print(f"check_session_send: {LOCAL_FORM} has {loops} steady loop(s) with no call and no read of memory other "
           f"than the slot of the thread.  {PIN_FORM} has {pinned_loops} steady loop(s) with no call and no read "
           f"of memory.  The control {CALLER_MEMORY_FORM} holds {len(control)} refusal(s).  {OUTSIDE_A_LOOP_FORM} "
-          f"adds one to no count, and the control {IN_A_LOOP_FORM} adds one {len(counted)} time(s).")
+          f"adds one to no count, and the control {IN_A_LOOP_FORM} adds one {len(counted)} time(s).  No steady loop "
+          f"compares an address of a handle, and the control {GUARD_CONTROL} holds "
+          f"{len(hot_address_compares(codes[GUARD_CONTROL]))} such compare(s).")
     return 0
 
 

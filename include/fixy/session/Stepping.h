@@ -185,7 +185,11 @@ public:
 
     // A self-move must not change the tracker.  Without the guard,
     // `h = std::move(h)` copies flag_ onto itself and then sets it, and
-    // the live handle then reads as consumed.
+    // the live handle then reads as consumed.  The kind self-move of the rule
+    // must-consume refuses each move assignment of a handle from itself that
+    // one function names.  The guard is the run-time backstop of an alias
+    // through two names, such as two reference parameters, which no rule that
+    // reads one function at a time can see.
     //
     // A move of a live handle under the tracked policy tells the watch that
     // the calling thread holds it now, which is what the deadlock detector

@@ -90,6 +90,16 @@ using OnceMoreHandle = decltype(std::declval<TwiceHandle>().send(std::declval<It
     handle = std::move(handle).send(item, write_item);
 }
 
+// The guard of a self-move.  The move assignment of a handle compares the
+// address of its target with the address of its source.  A step builds the
+// next handle as a new object, so in each steady loop above the compiler knows
+// that the two addresses differ and folds the compare.  The control assigns a
+// handle through two references, so the compiler cannot fold the compare, and
+// the check must find it.
+[[gnu::used]] void move_through_two_names(LoopHandle& target, LoopHandle& source) noexcept {
+    target = std::move(source);
+}
+
 // The control of the check: the loop steps the handle and the item of the
 // caller in place.  The cold note can write each value that the caller can
 // reach through a pointer, so this loop keeps the handle in memory, and the
