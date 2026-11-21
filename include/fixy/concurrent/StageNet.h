@@ -54,12 +54,18 @@
 //   The capacity of a channel is the channel_capacity that the handle of
 //   the graph on that channel states (StatesHandleCapacity): the output
 //   handle of the stage before an edge or before an output end, and the input
-//   handle of the first stage for an input end.  A handle that states no
-//   capacity, such as the writer of a snapshot, reads as a rendezvous.  A
-//   system that is live on rendezvous channels is live on channels of each
-//   capacity, so the capacity 0 can refuse a live pipeline, and it never
-//   admits a pipeline that deadlocks.  A capacity above the range of a
-//   channel of the system reads as the top of the range, by the same rule.
+//   handle of the first stage for an input end.  The gate of the graph proves
+//   that the two handles of an edge state the same capacity, or none
+//   (HandlesAgreeOnCapacity of fixy/concurrent/HandleTraits.h).  The output
+//   ends are the sink: the push into a sink takes the message, so the sink
+//   holds none.  A handle of an output end can state no capacity, such as the
+//   writer of a snapshot, and then its channel reads as a rendezvous.  Each
+//   other handle states its capacity (StatesStageGraphCapacities), and a
+//   rendezvous states the capacity 0.  A system that is live on rendezvous
+//   channels is live on channels of each capacity, so the capacity 0 can
+//   refuse a live pipeline, and it never admits a pipeline that deadlocks.  A
+//   capacity above the range of a channel of the system reads as the top of
+//   the range, by the same rule.
 //
 //   The edges of a well-formed graph run forward.  With a capacity of one
 //   message or more on each channel, each wait of a period then goes forward
@@ -102,13 +108,15 @@
 //   type names another channel.  The type tells two channels apart, and the
 //   identity of an instance does not.  The channels stand in the order of
 //   their first ends, with the names 'channel 0' and on.  Each end of a
-//   channel can state the capacity of the channel: the channel_capacity of
-//   the type of SendsOn or ReceivesOn, or of the handle of an end of InputsOf,
-//   OutputsOf or StageEdges (StatesHandleCapacity).  The ends that state a
-//   capacity state the same capacity, and the door refuses two ends of one
-//   channel that state two capacities.  The capacity of the channel is the
-//   capacity that its ends state.  A channel whose ends state none reads as a
-//   rendezvous, by the rule of THE MARKED SYSTEM.  A lock is a type too,
+//   channel states the capacity of the channel: the channel_capacity of the
+//   type of SendsOn or ReceivesOn, or of the handle of an end of InputsOf,
+//   OutputsOf or StageEdges (StatesHandleCapacity).  A rendezvous states the
+//   capacity 0.  The door refuses an end that states no capacity, and two
+//   ends of one channel that state two capacities.  The capacity of the
+//   channel is the capacity that its ends state.  Only the sink of a stage
+//   graph can state no capacity (THE MARKED SYSTEM), and no end of a loop is
+//   a sink: a handle of a sink names no channel, so OutputsOf refuses it, and
+//   StageEdges reads no end of the graph.  A lock is a type too,
 //   and the locks stand in the order of their first ends, with the names
 //   'lock 0' and on.  pipeline_graph_t gives the graph of a minted pipeline,
 //   so StageEdges reads the stages of a pipeline as the gate of the pipeline
@@ -164,12 +172,11 @@
 //   arms compare a process by the type of its name, so each process of an
 //   arm has a name of its own.  They compare a channel and a lock by its type.
 //   The sends into a channel stand in one process, and so do its receives.
-//   The ends that state its capacity state one capacity.  An end that states
-//   none agrees with each capacity: an arm whose channel reads as a
-//   rendezvous is live with each capacity of that channel, because a slot
-//   more only adds a token to the marked graph.  The writes of a lock stand in
-//   one process, and so do its reads by a process that does not write it.  A
-//   channel or a lock of one arm only agrees with each other arm.
+//   The door of a loop admits each arm first, so each end of a channel states
+//   a capacity, and the ends of a channel in all the arms state one capacity.
+//   The writes of a lock stand in one process, and so do its reads by a
+//   process that does not write it.  A channel or a lock of one arm only
+//   agrees with each other arm.
 //
 //   The first condition is a condition of the run, and no door reads it, so
 //   the caller states it.  A poll can let two processes take two arms in one
@@ -200,11 +207,6 @@
 #include <meta>
 
 namespace fixy::concurrent {
-
-// True when a handle type states the capacity of its channel: the count of
-// the messages that the channel holds.
-template <class Handle>
-concept StatesHandleCapacity = requires { static_cast<std::size_t>(Handle::channel_capacity); };
 
 namespace detail {
 
@@ -314,7 +316,7 @@ template <class... Stages, class... Edges>
 
 // The capacity of the channel of a handle (THE MARKED SYSTEM): the capacity
 // that it states, cut at the top of the range of a channel of a system, or
-// 0 for a handle that states none.
+// 0 for a handle that states none, which only a sink can be.
 template <class Handle>
 [[nodiscard]] consteval std::uint32_t capacity_of_handle_() noexcept {
     if constexpr (StatesHandleCapacity<Handle>) {
@@ -491,7 +493,41 @@ template <class... Stages, class... Edges>
     return marked;
 }
 
+// True when the input handle of each port of the stage from Port on states
+// the capacity of its channel.  Complexity: one step for each port.
+template <class Stage, std::size_t Port>
+[[nodiscard]] consteval bool states_input_capacities_() noexcept {
+    if constexpr (Port < stage_input_count_v<Stage>) {
+        return StatesHandleCapacity<stage_input_handle_t<Stage, Port>> && states_input_capacities_<Stage, Port + 1>();
+    } else {
+        return true;
+    }
+}
+
+// True when each handle of an edge and of an input end of a graph whose gate
+// holds states the capacity of its channel (THE MARKED SYSTEM).  The gate
+// proves that the two handles of an edge agree, so the output handle of an
+// edge stands for the two.  Complexity: linear in the edges and the input
+// ends.
+template <class... Stages, class... Edges>
+[[nodiscard]] consteval bool states_stage_graph_capacities_(StagePack<Stages...>, EdgePack<Edges...>) noexcept {
+    return (StatesHandleCapacity<stage_output_handle_t<Stages...[Edges::from], Edges::from_output>> && ... && true)
+        && states_input_capacities_<Stages...[0], 0>();
+}
+
+// The answer of states_stage_graph_capacities_ for a graph whose gate holds.
+// The call has a qualifier, so no lookup by its arguments adds an overload.
+template <class Graph>
+inline constexpr bool states_stage_graph_capacities_v = detail::states_stage_graph_capacities_(
+    typename stage_graph_traits<Graph>::stage_pack_type{}, typename stage_graph_traits<Graph>::edge_pack_type{});
+
 }  // namespace detail
+
+// True when a stage graph has a marked system (THE MARKED SYSTEM): its gate
+// holds, and each handle of an edge and of an input end states the capacity
+// of its channel.  Only a handle of an output end, the sink, can state none.
+template <class Graph>
+concept StatesStageGraphCapacities = StageGraphWellFormed<Graph> && detail::states_stage_graph_capacities_v<Graph>;
 
 // The net of a stage graph (THE NET), for a graph whose gate holds and whose
 // stages each have at most eight ports.
@@ -503,9 +539,10 @@ template <class Graph>
 }
 
 // The marked system of a stage graph (THE MARKED SYSTEM), for a graph whose
-// gate holds and whose stages each have at most eight ports.
+// gate holds, whose handles state their capacities, and whose stages each
+// have at most eight ports.
 template <class Graph>
-    requires StageGraphWellFormed<Graph>
+    requires StatesStageGraphCapacities<Graph>
 [[nodiscard]] consteval auto marked_system_of_stage_graph() noexcept {
     using traits = detail::stage_graph_traits<Graph>;
     return detail::marked_system_of_stage_graph_(typename traits::stage_pack_type{}, typename traits::edge_pack_type{});
@@ -784,10 +821,14 @@ consteval void put_stage_outputs_(loop_scan<Count>& scan, ::foundation::algebra:
     }
 }
 
-// The marked system of a stage graph, one time in a unit.  Each reading of a
-// loop with a StageEdges end of the graph reads this one constant.
+// The marked system of a stage graph whose gate holds, one time in a unit.
+// Each reading of a loop with a StageEdges end of the graph reads this one
+// constant.  It reads no rule of the capacities: the reading takes the
+// statement of each handle, so the door of the loop refuses an end that
+// states no capacity with its own text.
 template <class Graph>
-inline constexpr auto stage_graph_system_v = marked_system_of_stage_graph<Graph>();
+inline constexpr auto stage_graph_system_v = detail::marked_system_of_stage_graph_(
+    typename stage_graph_traits<Graph>::stage_pack_type{}, typename stage_graph_traits<Graph>::edge_pack_type{});
 
 // Puts the action of stage Stage on each edge of a graph whose gate holds,
 // in the order of the marked system of the graph, inside the bracket.  The
@@ -932,7 +973,9 @@ struct loop_shape {
 
 // The shape of a reading.  The capacity of a channel is the capacity of the
 // first of its ends that states one, or 0 for a channel whose ends state
-// none (THE LOOP).  Complexity: linear in the ends.
+// none.  The door refuses an end that states none (find_capacity_fault_), so
+// the capacity of a channel of an admitted loop is the capacity of each of
+// its ends (THE LOOP).  Complexity: linear in the ends.
 template <std::size_t Count>
 [[nodiscard]] consteval loop_shape<Count> shape_of_loop_(loop_reading<Count> const& reading) noexcept {
     loop_shape<Count> shape{};
@@ -974,9 +1017,12 @@ enum class LoopFaultCode : std::uint8_t {
     // The fault names the process, the lock of the read, and the place of the
     // lock of the bracket of the writer inside the read.
     WriteInRead = 3,
+    // The fault names the process, the move and the channel of the first end
+    // that states no capacity.
+    CapacityUnstated = 4,
     // The fault names the channel, the capacity of the channel, and the other
     // capacity that an end of the channel states.
-    CapacityDisagrees = 4,
+    CapacityDisagrees = 5,
 };
 
 // The fault of the ends of a loop.
@@ -1080,8 +1126,9 @@ template <std::size_t Count>
     return LoopFault{};
 }
 
-// The first end of a channel that states another capacity than the capacity
-// of its channel, as the fault CapacityDisagrees, or NoFault (THE LOOP).  The
+// The first end of a channel that states no capacity, as the fault
+// CapacityUnstated, or that states another capacity than the capacity of its
+// channel, as the fault CapacityDisagrees, or NoFault (THE LOOP).  The
 // capacity of the channel is the capacity of its first end that states one.
 // Complexity: linear in the ends.
 template <std::size_t Count>
@@ -1089,8 +1136,12 @@ template <std::size_t Count>
                                                        loop_shape<Count> const& shape) noexcept {
     for (std::uint32_t index = 0; index < reading.count; ++index) {
         loop_end const& end = reading.ends[index];
-        if (!is_channel_move_(end.move) || end.statement != CapacityStatement::Stated) continue;
+        if (!is_channel_move_(end.move)) continue;
         std::uint32_t const channel = shape.place_of[index];
+        if (end.statement != CapacityStatement::Stated) {
+            return LoopFault{
+                .code = LoopFaultCode::CapacityUnstated, .inside = end.move, .process = end.process, .place = channel};
+        }
         if (end.capacity == shape.capacity_of[channel]) continue;
         return LoopFault{.code = LoopFaultCode::CapacityDisagrees,
                          .inside = end.move,
@@ -1103,8 +1154,8 @@ template <std::size_t Count>
 }
 
 // The first fault of the ends of a loop: the wiring of the locks, the ends
-// inside the brackets (THE LOCKS), and then the capacities that the ends of
-// each channel state (THE LOOP).  Complexity: O(N * K) for N ends and K lock
+// inside the brackets (THE LOCKS), and then the capacity that each end of a
+// channel states (THE LOOP).  Complexity: O(N * K) for N ends and K lock
 // ends.
 template <std::size_t Count>
 [[nodiscard]] consteval LoopFault find_loop_fault_(loop_reading<Count> const& reading,
@@ -1411,8 +1462,9 @@ template <class Loop>
 // process does not write or that one other process does not read, of its
 // first wait inside a bracket, or of its first bracket of a writer inside a
 // read (THE LOCKS).  Then the refusal of the first end of a channel that
-// states another capacity than an earlier end of that channel, the refusal of
-// a channel whose period does not give back its marking (THE ARMS), the
+// states no capacity or another capacity than an earlier end of that channel
+// (THE LOOP), the refusal of a channel whose period does not give back its
+// marking (THE ARMS), the
 // verdict of check_liveness on its marked system, or the admitted verdict for
 // a loop with no end of a channel.  The marked graph finds each channel whose
 // sends and receives differ in count before it looks for a cycle, so the
@@ -1453,6 +1505,14 @@ template <class Loop>
             .put("' inside its read of '")
             .put_name(net::NetName{detail::index_label_v<LabelKind::Lock, fault.lock>.text})
             .put("'.  A read of a sequence lock can run again, and then each write inside it runs two times.");
+    } else if constexpr (fault.code == LoopFaultCode::CapacityUnstated) {
+        constexpr bool is_send = fault.inside == detail::LoopMove::Send;
+        return net::NetVerdict::refuse("loop: '")
+            .put_name(detail::name_of_process_at_(Loop{}, fault.process))
+            .put(is_send ? "' sends into '" : "' receives from '")
+            .put_name(net::NetName{detail::index_label_v<LabelKind::Channel, fault.place>.text})
+            .put("' through an end that states no capacity.  Each end of a channel in a loop states its capacity, "
+                 "and a rendezvous states 0.");
     } else if constexpr (fault.code == LoopFaultCode::CapacityDisagrees) {
         return net::NetVerdict::refuse("loop: the ends of '")
             .put_name(net::NetName{detail::index_label_v<LabelKind::Channel, fault.place>.text})
@@ -1482,8 +1542,9 @@ template <class Loop>
 }
 
 // The door: a loop whose locks are not wired, whose process waits inside a
-// bracket, whose period changes the count of the messages in a channel, or
-// whose marked system holds a cycle of waits with no token, does not compile.
+// bracket, whose end of a channel states no capacity or another capacity,
+// whose period changes the count of the messages in a channel, or whose
+// marked system holds a cycle of waits with no token, does not compile.
 // One static_assert fires, with the text of the verdict.
 template <class Loop>
     requires IsStageLoop<Loop>

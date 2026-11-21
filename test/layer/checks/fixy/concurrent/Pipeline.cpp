@@ -194,6 +194,52 @@ static_assert(detail::stage_graph_check<NotAnEdgeGraph>() == StageGraphCheck{Sta
 static_assert(detail::stage_graph_check<NotAStageGraph>() == StageGraphCheck{StageGraphFault::NotAStage, 1});
 static_assert(detail::stage_graph_check<EmptyGraph>() == StageGraphCheck{StageGraphFault::NoStage});
 
+// The two handles of an edge agree on the capacity of its channel: the two
+// state one capacity, or none of them states one.  These handles name the
+// channel of S_int_to_int, whose handles state none.
+template <typename T, std::size_t Capacity>
+struct SizedConsumer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = Capacity;
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
+};
+
+template <typename T, std::size_t Capacity>
+struct SizedProducer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = Capacity;
+    [[nodiscard]] bool try_push(T const&) noexcept { return false; }
+};
+
+inline void stage_into_eight(FakeConsumer<int>&&, SizedProducer<int, 8>&&) noexcept {}
+inline void stage_from_eight(SizedConsumer<int, 8>&&, FakeProducer<int>&&) noexcept {}
+inline void stage_from_four(SizedConsumer<int, 4>&&, FakeProducer<int>&&) noexcept {}
+using S_into_eight = Stage<&stage_into_eight, HotFgCtx>;
+using S_from_eight = Stage<&stage_from_eight, HotFgCtx>;
+using S_from_four = Stage<&stage_from_four, HotFgCtx>;
+
+static_assert(HandlesAgreeOnCapacity<SizedProducer<int, 8>, SizedConsumer<int, 8>>);
+static_assert(HandlesAgreeOnCapacity<FakeProducer<int>, FakeConsumer<int>>);
+static_assert(!HandlesAgreeOnCapacity<SizedProducer<int, 8>, SizedConsumer<int, 4>>);
+static_assert(!HandlesAgreeOnCapacity<SizedProducer<int, 8>, FakeConsumer<int>>);
+static_assert(!HandlesAgreeOnCapacity<FakeProducer<int>, SizedConsumer<int, 8>>);
+static_assert(stages_chain<S_into_eight, S_from_eight>);
+static_assert(!stages_chain<S_into_eight, S_from_four>, "one channel, two capacities");
+static_assert(!stages_chain<S_into_eight, S_int_to_int>, "a capacity from one handle alone");
+static_assert(!stages_chain<S_int_to_int, S_from_eight>, "a capacity from one handle alone");
+static_assert(!pipeline_chain<S_into_eight, S_from_four>);
+
+using SizedGraph = StageGraph<StagePack<S_into_eight, S_from_eight>, EdgePack<StageEdge<0, 1>>>;
+using NarrowedGraph = StageGraph<StagePack<S_into_eight, S_from_four>, EdgePack<StageEdge<0, 1>>>;
+using HalfSizedGraph = StageGraph<StagePack<S_into_eight, S_int_to_int>, EdgePack<StageEdge<0, 1>>>;
+static_assert(StageGraphWellFormed<SizedGraph>);
+static_assert(detail::stage_graph_check<NarrowedGraph>()
+              == StageGraphCheck{StageGraphFault::EdgeCapacitiesDisagree, 0});
+static_assert(detail::stage_graph_check<HalfSizedGraph>()
+              == StageGraphCheck{StageGraphFault::EdgeCapacitiesDisagree, 0});
+
 static_assert(CtxFitsPipelineDag<BgDrainCtx, ChainGraph>);
 static_assert(CtxFitsPipelineDag<BgDrainCtx, DiamondGraph>);
 static_assert(!CtxFitsPipelineDag<HotFgCtx, DiamondGraph>);

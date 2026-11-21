@@ -229,7 +229,7 @@ that the axis does not apply to the row.
 | `mint_parallel_for_with_thread_options` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_permission_fork` | `include/fixy/concurrent/PermissionFork.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 11 |
-| `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_spawn` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_spawn_on_host` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 23 |

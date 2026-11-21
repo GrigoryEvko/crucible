@@ -35,6 +35,7 @@ namespace cc = fixy::concurrent;
 namespace pipeline_dag_test {
 
 // Each edge joins two handles, and the handles of an edge name one channel.
+// The fake handles state the capacity 0: each channel is a rendezvous.
 template <typename T>
 struct FakeChannel {};
 
@@ -42,6 +43,7 @@ template <typename T>
 struct FakeConsumer {
     using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] ::fixy::Option<T> try_pop() noexcept { return {}; }
 };
 
@@ -49,6 +51,7 @@ template <typename T>
 struct FakeProducer {
     using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 0;
     [[nodiscard]] bool try_push(T const&) noexcept { return true; }
 };
 
@@ -132,8 +135,8 @@ static_assert(net::check_forest(cc::net_of_stage_graph<OneStage>()).is_admitted(
 
 // The marked system of a stage graph (fixy/concurrent/StageNet.h).  The
 // diamond has four stages, a source and a sink, and four edges, an input end
-// and an output end.  The fake handles state no capacity, so each channel is
-// a rendezvous.  The upper path of the diamond enters input 0 of the fan-in,
+// and an output end.  The fake handles state the capacity 0, so each channel
+// is a rendezvous.  The upper path of the diamond enters input 0 of the fan-in,
 // and the fan-out sends on it first, so the system is live.
 inline constexpr net::ProcessSystem<6, 6, 12> diamond_system = cc::marked_system_of_stage_graph<Diamond<1>>();
 static_assert(diamond_system.process_names[0] == net::NetName{"stage 0"});
@@ -182,7 +185,6 @@ using SlottedStage = cc::Stage<&slotted_body, fixy::HotFgCtx>;
 using SlottedChain = cc::StageGraph<cc::StagePack<SlottedStage, SlottedStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
 
 static_assert(cc::StatesHandleCapacity<SlottedProducer<int>> && cc::StatesHandleCapacity<SlottedConsumer<int>>);
-static_assert(!cc::StatesHandleCapacity<FakeProducer<int>>);
 
 // Each channel of the chain takes the capacity of its handle: the edge and
 // the output end from the producer, and the input end from the consumer.
@@ -190,6 +192,47 @@ inline constexpr net::ProcessSystem<4, 3, 6> slotted_system = cc::marked_system_
 static_assert(slotted_system.channels[0].capacity == 4 && slotted_system.channels[1].capacity == 4
               && slotted_system.channels[2].capacity == 4);
 static_assert(net::check_liveness(slotted_system).is_admitted());
+
+// Handles that state no capacity.  Only a handle of an output end of a graph,
+// the sink, can state none (THE MARKED SYSTEM of fixy/concurrent/StageNet.h).
+template <typename T>
+struct UnstatedConsumer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    [[nodiscard]] ::fixy::Option<T> try_pop() noexcept { return {}; }
+};
+
+template <typename T>
+struct UnstatedProducer {
+    using channel_type = FakeChannel<T>;
+    static constexpr std::size_t per_call_working_set = 64;
+    [[nodiscard]] bool try_push(T const&) noexcept { return true; }
+};
+
+static_assert(!cc::StatesHandleCapacity<UnstatedProducer<int>> && !cc::StatesHandleCapacity<UnstatedConsumer<int>>);
+
+static void into_sink_body(SlottedConsumer<int>&&, UnstatedProducer<int>&&) noexcept { dag_calls.add(1); }
+static void from_unstated_body(UnstatedConsumer<int>&&, SlottedProducer<int>&&) noexcept { dag_calls.add(1); }
+
+using IntoSinkStage = cc::Stage<&into_sink_body, fixy::HotFgCtx>;
+using FromUnstatedStage = cc::Stage<&from_unstated_body, fixy::HotFgCtx>;
+
+// The output end of a graph is the sink, so its handle can state no capacity,
+// and its channel reads as a rendezvous.
+using SinkChain = cc::StageGraph<cc::StagePack<SlottedStage, IntoSinkStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
+static_assert(cc::StatesStageGraphCapacities<SinkChain>);
+static_assert(cc::marked_system_of_stage_graph<SinkChain>().channels[0].capacity == 4
+              && cc::marked_system_of_stage_graph<SinkChain>().channels[2].capacity == 0);
+
+// A graph whose edge or input end states no capacity has no marked system:
+// marked_system_of_stage_graph asks StatesStageGraphCapacities.  The two
+// handles of the edge state none, so the gate of the graph admits it.
+using UnstatedEdgeChain =
+    cc::StageGraph<cc::StagePack<IntoSinkStage, FromUnstatedStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
+using UnstatedInputChain = cc::StageGraph<cc::StagePack<FromUnstatedStage>, cc::EdgePack<>>;
+static_assert(cc::StageGraphWellFormed<UnstatedEdgeChain> && cc::StageGraphWellFormed<UnstatedInputChain>);
+static_assert(!cc::StatesStageGraphCapacities<UnstatedEdgeChain>
+              && !cc::StatesStageGraphCapacities<UnstatedInputChain>);
 
 static void slotted_fan_out_body(SlottedConsumer<int>&&, SlottedProducer<int>&&, SlottedProducer<int>&&) noexcept {
     dag_calls.add(1);
@@ -447,14 +490,26 @@ using NarrowReceive = cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, l
 static_assert(cc::check_loop<NarrowReceive>().says(
     "loop: the ends of 'channel 4' state two capacities: 8 and 4.  Each end that states the capacity of a channel "
     "states the same capacity."));
-// An end whose type states no capacity agrees with each capacity, so edge 3
-// takes the capacity of the handle of the build stage.
+// An end whose type states no capacity is refused, so no capacity of a
+// channel comes from one of its ends alone.  The last stage receives edge 3
+// through its type, which states none, and the build stage sends through a
+// handle of eight values.
 using UnstatedReceive =
     cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
                   cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::EdgeChannel<3>>, cc::ReadsLock<loop::Holders>,
                                   cc::SendsOn<loop::Count>>>;
-static_assert(cc::check_loop<UnstatedReceive>().is_admitted());
-static_assert(cc::marked_system_of_loop<UnstatedReceive>().channels[4].capacity == 8);
+static_assert(cc::check_loop<UnstatedReceive>().says(
+    "loop: 'publish' receives from 'channel 4' through an end that states no capacity.  Each end of a channel in a "
+    "loop states its capacity, and a rendezvous states 0."));
+// The build stage sends edge 3 through its type, and the last stage receives
+// through a handle of eight values (neg_stage_loop_send_states_no_capacity).
+using UnstatedSend =
+    cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess,
+                  cc::LoopProcess<loop::BuildName, cc::InputsOf<loop::BuildStage>, cc::SendsOn<loop::EdgeChannel<3>>>,
+                  loop::PublishFlush>;
+static_assert(cc::check_loop<UnstatedSend>().says(
+    "loop: 'build' sends into 'channel 4' through an end that states no capacity.  Each end of a channel in a loop "
+    "states its capacity, and a rendezvous states 0."));
 // A stage edge takes the capacity of the input handle for its receive.
 using NarrowReceiveOfGraph = cc::StageLoop<loop::ForegroundFlush, loop::DrainEdges, loop::DetectEdges, loop::BuildEdges,
                                            cc::LoopProcess<loop::PublishName, cc::InputsOf<loop::NarrowPublishStage>,
@@ -482,16 +537,16 @@ static_assert(cc::check_loop<loop::NarrowFlushArm>().is_admitted());
 static_assert(cc::check_arms<loop::FlushArm, loop::NarrowFlushArm>().says(
     "arms: in arm 0 an end of 'channel 4' states the capacity 8, and in arm 1 an end of it states 4.  The arms agree "
     "on the capacity of each channel."));
-// An arm whose edge 3 states no capacity agrees with each capacity.
+// An arm whose edge 3 states no capacity agrees with no capacity: the door of
+// a loop refuses the arm, and the door over the arms names it.
 using UnstatedEdgeArm =
     cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess,
                   cc::LoopProcess<loop::BuildName, cc::InputsOf<loop::BuildStage>, cc::SendsOn<loop::EdgeChannel<3>>>,
                   cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::EdgeChannel<3>>, cc::ReadsLock<loop::Holders>,
                                   cc::SendsOn<loop::Count>>>;
 static_assert(cc::check_arms<loop::FlushArm, UnstatedEdgeArm, loop::NarrowFlushArm>().says(
-    "arms: in arm 0 an end of 'channel 4' states the capacity 8, and in arm 2 an end of it states 4.  The arms agree "
-    "on the capacity of each channel."));
-static_assert(cc::check_arms<loop::FlushArm, UnstatedEdgeArm>().is_admitted());
+    "arms: arm 1: loop: 'build' sends into 'channel 4' through an end that states no capacity.  Each end of a channel "
+    "in a loop states its capacity, and a rendezvous states 0."));
 // Each arm alone is live, and the writer of the holders is the foreground in
 // the first arm and the last stage in the second
 // (neg_stage_loop_arms_disagree_on_writer).

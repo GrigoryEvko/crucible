@@ -220,14 +220,18 @@ template <class Stage, std::size_t I>
     requires IsStage<Stage>
 using stage_output_handle_t = typename detail::stage_ports<std::remove_cvref_t<Stage>>::template output_handle_type<I>;
 
-// An output feeds an input when the two carry one payload and their handles
-// name one channel.  The payload alone is not sufficient.  A stage that
-// writes channel A, before a stage that drains channel B, agrees in payload,
-// no value goes from one to the other, and the pipeline never ends.  The
-// caller checks the two port indices first.
+// An output feeds an input when the two carry one payload, their handles
+// name one channel, and their handles agree on the capacity of that channel
+// (HandlesAgreeOnCapacity).  The payload alone is not sufficient.  A stage
+// that writes channel A, before a stage that drains channel B, agrees in
+// payload, no value goes from one to the other, and the pipeline never ends.
+// The marked system of a stage graph (fixy/concurrent/StageNet.h) reads the
+// capacity of an edge from the output handle, so the input handle states the
+// same capacity.  The caller checks the two port indices first.
 template <class From, std::size_t Output, class To, std::size_t Input>
 concept stage_port_feeds = std::is_same_v<stage_output_value_t<From, Output>, stage_input_value_t<To, Input>>
-                        && HandlesShareChannel<stage_output_handle_t<From, Output>, stage_input_handle_t<To, Input>>;
+                        && HandlesShareChannel<stage_output_handle_t<From, Output>, stage_input_handle_t<To, Input>>
+                        && HandlesAgreeOnCapacity<stage_output_handle_t<From, Output>, stage_input_handle_t<To, Input>>;
 
 template <class S1, class S2>
 concept stages_chain = IsStage<S1> && IsStage<S2> && stage_output_count_v<S1> == 1 && stage_input_count_v<S2> == 1
@@ -322,6 +326,9 @@ struct StageGraph {};
 //
 // Each stage has at least one input and one output.  So when each port has
 // its edge, a path of edges connects each stage to the first stage.
+//
+// The two handles of an edge state the same capacity of its channel, or none
+// of them states one (HandlesAgreeOnCapacity).
 enum class StageGraphFault : std::uint8_t {
     None,
     NoStage,
@@ -330,6 +337,7 @@ enum class StageGraphFault : std::uint8_t {
     EdgeOutOfRange,
     EdgeRunsBackward,
     EdgeAcrossChannels,
+    EdgeCapacitiesDisagree,
     InputPortEdgeCount,
     OutputPortEdgeCount,
 };
@@ -370,7 +378,9 @@ struct stage_graph_traits<StageGraph<StagePack<Stages...>, EdgePack<Edges...>>> 
     using edge_pack_type = EdgePack<Edges...>;
 };
 
-// The fault of one edge, in a graph whose stages are each a stage.
+// The fault of one edge, in a graph whose stages are each a stage.  The edge
+// faults follow the three terms of stage_port_feeds in its order, so an edge
+// that stage_port_feeds admits has no fault.
 template <class Edge, class... Stages>
 consteval StageGraphFault stage_graph_edge_fault() noexcept {
     if constexpr (Edge::from >= sizeof...(Stages) || Edge::to >= sizeof...(Stages)) {
@@ -380,9 +390,14 @@ consteval StageGraphFault stage_graph_edge_fault() noexcept {
     } else if constexpr (Edge::from_output >= stage_output_count_v<Stages...[Edge::from]>
                          || Edge::to_input >= stage_input_count_v<Stages...[Edge::to]>) {
         return StageGraphFault::EdgeOutOfRange;
-    } else if constexpr (!stage_port_feeds<Stages...[Edge::from], Edge::from_output, Stages...[Edge::to],
-                                           Edge::to_input>) {
+    } else if constexpr (!std::is_same_v<stage_output_value_t<Stages...[Edge::from], Edge::from_output>,
+                                         stage_input_value_t<Stages...[Edge::to], Edge::to_input>>
+                         || !HandlesShareChannel<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>,
+                                                 stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
         return StageGraphFault::EdgeAcrossChannels;
+    } else if constexpr (!HandlesAgreeOnCapacity<stage_output_handle_t<Stages...[Edge::from], Edge::from_output>,
+                                                 stage_input_handle_t<Stages...[Edge::to], Edge::to_input>>) {
+        return StageGraphFault::EdgeCapacitiesDisagree;
     } else {
         return StageGraphFault::None;
     }

@@ -5229,6 +5229,12 @@ fixy_neg_compile_test(neg_pipeline_dag_edge_across_channels
   "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
   "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&"
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
+# The fourth refusal: the one edge joins one channel, and its producer states
+# a capacity of eight values and its consumer a capacity of four.
+fixy_neg_compile_test(neg_pipeline_dag_edge_capacities_disagree
+  "required for the satisfaction of .StageGraphWellFormed<Graph>."
+  "StagePack<fixy::concurrent::Stage<&build_body\\(stage_loop_fakes::EdgeConsumer<2>&&, stage_loop_fakes::EdgeProducer<3>&&\\)"
+  "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeCapacitiesDisagree, 0, 0, 0\\}")
 
 # The port check.  The first stage and the last stage are the ends of the
 # graph, and each other port has exactly one edge.  The four fixtures are
@@ -5262,10 +5268,11 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
 # of test/fixy/stage_loop_fakes.h with one wrong end: an end wired to the
 # wrong mailbox, a lock with a lost end, a foreground that waits before it
 # records, a done mark that no process takes, a wait inside a bracket of the
-# writer and inside a read, a write inside a read, and two ends of one channel
-# that state two capacities.  test_pipeline_dag.cpp admits each loop with the
-# right end.  The door over the arms (THE ARMS) refuses two arms that state two
-# capacities of one channel and two arms that name two writers of one lock.
+# writer and inside a read, a write inside a read, a send that states no
+# capacity, and two ends of one channel that state two capacities.
+# test_pipeline_dag.cpp admits each loop with the right end.  The door over the
+# arms (THE ARMS) refuses two arms that state two capacities of one channel and
+# two arms that name two writers of one lock.
 fixy_neg_compile_test(neg_stage_loop_wrong_mailbox
   "static assertion failed"
   "loop: one period changes the count of the messages in 'channel 1': 1 sends and 0 receives\\."
@@ -5300,6 +5307,11 @@ fixy_neg_compile_test(neg_stage_loop_writer_inside_read
   "static assertion failed"
   "loop: 'publish' writes 'lock 1' inside its read of 'lock 0'\\.  A read of a sequence lock can run again"
   "neg_stage_loop_writer_inside_read\\.cpp:[0-9]+:[0-9]+: +required from here")
+
+fixy_neg_compile_test(neg_stage_loop_send_states_no_capacity
+  "static assertion failed"
+  "loop: 'build' sends into 'channel 4' through an end that states no capacity\\.  Each end of a channel in a loop states its capacity"
+  "neg_stage_loop_send_states_no_capacity\\.cpp:[0-9]+:[0-9]+: +required from here")
 
 fixy_neg_compile_test(neg_stage_loop_capacity_disagrees
   "static assertion failed"

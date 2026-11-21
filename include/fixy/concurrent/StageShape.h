@@ -57,7 +57,9 @@ template <auto FnPtr, std::size_t... Is>
 consteval stage_arity_counts compute_stage_arity(std::index_sequence<Is...>) noexcept {
     stage_arity_counts counts{};
     bool seen_output = false;
-    (consume_stage_param<FnPtr, Is>(counts, seen_output), ...);
+    // The call has a qualifier, so no lookup by its arguments adds an overload
+    // of another file, and a gate that reads the arity of a stage stays closed.
+    (detail::consume_stage_param<FnPtr, Is>(counts, seen_output), ...);
     return counts;
 }
 
