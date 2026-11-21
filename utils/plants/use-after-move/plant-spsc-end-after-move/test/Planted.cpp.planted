@@ -1,0 +1,15 @@
+// A plant of use-after-move: the producer end of an SPSC owner moves into its holder, and the code then writes
+// through the moved end.  The end is the one holder of its side, so the rule must refuse the second use.
+#include <fixy/concurrent/SpscEnds.h>
+
+#include <utility>
+
+struct Holder {
+    ::fixy::concurrent::ProducerEnd<Owner> end;
+};
+
+void must_catch_end_after_move(::fixy::concurrent::SpscSplit<Owner> split) {
+    ::fixy::concurrent::ProducerEnd<Owner> producer = std::move(split.producer);
+    Holder holder{std::move(producer)};
+    (void)Owner::try_write(producer);
+}

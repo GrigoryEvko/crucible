@@ -4599,6 +4599,19 @@ fixy_test(test_channel_identity)
 # The SPSC channel of Box values moves each object one time and ends each
 # object that its ring holds at its end.  The tsan preset runs its threads.
 fixy_test(test_spsc_box_channel)
+# The ends of an SPSC owner: the mint builds the owner and its two ends, and
+# each side operation takes its end.  An end does not copy, an owner that
+# exists does not split again, and an owner that moves does not split.
+fixy_test(test_spsc_ends)
+fixy_neg_compile_test(neg_spsc_ends_copy_of_an_end
+  "use of deleted function .fixy::concurrent::SpscEnd<Owner, Side>::SpscEnd\\(const fixy::concurrent::SpscEnd<Owner, Side>&\\)"
+  "an end of an owner is the one holder of its side, so a copy would give a second writer of that side")
+fixy_neg_compile_test(neg_spsc_ends_split_of_an_owner_that_exists
+  "no matching function for call to .mint_spsc_split<.*Owner>\\("
+  "the expression .is_constructible_v<_Tp, _Args ...>")
+fixy_neg_compile_test(neg_spsc_ends_owner_that_moves
+  "no matching function for call to .mint_spsc_split<.*MovableOwner>\\("
+  "the expression .!\\(is_move_constructible_v<Owner>\\) \\[with Owner = <unnamed>::MovableOwner\\]. evaluated to .false.")
 # The end of the channel ends each object that its ring holds, so the channel
 # holds no linear payload.
 fixy_neg_compile_test(neg_spsc_box_channel_of_linear_payload

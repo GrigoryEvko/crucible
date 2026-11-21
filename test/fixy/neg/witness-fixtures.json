@@ -197,6 +197,11 @@
       "constructor": "\\bPipelineDag\\("
     },
     {
+      "name": "neg_witness_concurrent_spscend_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSpscEnd\\("
+    },
+    {
       "name": "neg_witness_concurrent_stage_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bStage\\("
@@ -2217,6 +2222,10 @@
     {
       "type": "fixy::perf::PerfEventDoor",
       "header": "fixy/os/PerfEvent.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscEnd<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::SpscSide::producer>",
+      "header": "fixy/concurrent/SpscEnds.h"
     },
     {
       "type": "fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>",

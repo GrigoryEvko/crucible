@@ -48,6 +48,7 @@
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/RingValue.h>
 #include <fixy/concurrent/Spawn.h>
+#include <fixy/concurrent/SpscEnds.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/concurrent/StageShape.h>
@@ -458,6 +459,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                                  "time, and none of them is a value"},
     {^^::foundation::core::side, "the roles of the arguments of a call: empty tags that a Side names at compile "
                                  "time, and none of them is a value"},
+    {^^::fixy::concurrent::spsc_ends_witness,
+     "the owner that the witness row of the ends of an SPSC owner names: no code builds one, and it is no carrier"},
     // The element ops are in the target namespace of their header, whose name
     // follows the target (THE TARGET NAMESPACE of foundation/Platform.h).
     {std::meta::parent_of(^^::foundation::core::elementwise::Sum),
@@ -1281,6 +1284,13 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::retag_policy, kMetafunction},
     {^^::fixy::Cyclic, kPayload},
     {^^::fixy::CyclicBuffer, kPayload},
+    {^^::fixy::concurrent::SpscEnd,
+     "an end of an SPSC owner: the Ref of the owner and the state of one side, a member of its holder and never a "
+     "kernel signature argument"},
+    {^^::fixy::concurrent::SpscSplitBrand,
+     "the brand of the Ref of an end: an empty class that is never a value, and the end folds it"},
+    {^^::fixy::concurrent::SpscSplit,
+     "the result of the split mint: the owner and its two ends, which the holder takes apart at once"},
     {^^::fixy::WideStart,
      "the start of a WideMonotonic: a value below the start limit that the count takes at its mint or reset, and the "
      "count folds its claim"},
