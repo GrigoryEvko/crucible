@@ -18,7 +18,9 @@ region, exports the region as a .crtrace file, and reads the file back:
     data pointers   each meta of the file holds zero in place of the address
                     of its tensor, so two runs export the same bytes
     path parts      the export refuses a path with a ".." part, and it takes
-                    a plain path in the same session
+                    a plain path in the same session.  A second export to that
+                    path writes the same bytes, and the two exports leave no
+                    temporary file in the directory
 
 Usage:
     python test_record_coverage.py
@@ -256,7 +258,11 @@ def check_data_pointers(ops: list[TraceOp]) -> list[str]:
 
 
 def check_path_parts(directory: Path) -> list[str]:
-    """Return one line when the export takes a path with a ".." part, or refuses a plain path."""
+    """Return one line when the export takes a path with a ".." part, or refuses a plain path.
+
+    The export writes a temporary file beside its path and renames it onto the path.  So two exports of one region
+    to one path give the same bytes, and they leave no temporary file.
+    """
     (directory / "sub").mkdir(exist_ok=True)
     with CrucibleNative() as ctx:
         for _ in range(MAX_ITERATIONS):
@@ -269,8 +275,17 @@ def check_path_parts(directory: Path) -> list[str]:
         problems = []
         if ctx.export_trace(str(directory / "sub" / ".." / "parts.crtrace")):
             problems.append('the export took a path with a ".." part')
-        if not ctx.export_trace(str(directory / "plain.crtrace")):
-            problems.append("the export refused a plain path")
+        plain = directory / "plain.crtrace"
+        if not ctx.export_trace(str(plain)):
+            return [*problems, "the export refused a plain path"]
+        first = plain.read_bytes()
+        if not ctx.export_trace(str(plain)):
+            problems.append("a second export to the same path failed")
+        elif plain.read_bytes() != first:
+            problems.append("two exports of one region to one path wrote different bytes")
+        left = sorted(path.name for path in directory.glob("plain.crtrace.tmp-*"))
+        if left:
+            problems.append(f"the exports left the temporary files {left}")
     return problems
 
 

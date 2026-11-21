@@ -642,19 +642,14 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         if (!is_in_global(entry.hash)) write_entry(entry);
     CRUCIBLE_FATAL_INVARIANT(cursor.is_full());
 
-    // An open that the kernel refuses, or a short write, gives 0.  The
-    // descriptor closes at the end of the match.
-    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    // The door writes a temporary file beside the target, syncs it, renames
+    // it onto the target and syncs the directory (THE DURABLE REPLACE of
+    // fixy/os/Fs.h).  So a crash or a full disk leaves the old trace whole, and
+    // each error of a step gives 0.
     const ::fixy::View<std::byte const> file_image = image.view();
     const bool is_written = sanitized.match(
         [&io, file_image](const Sanitized& checked) noexcept {
-            return ::fixy::fs::mint_file<WriteTruncate>(io, checked)
-                .match(
-                    [&io, file_image](::fixy::Linear<::fixy::fs::FileOf<WriteTruncate>> opened) noexcept {
-                        const ::fixy::fs::FileOf<WriteTruncate> file = std::move(opened).consume();
-                        return ::fixy::fs::write_full(io, file.ref(), file_image).is_ok();
-                    },
-                    [](::foundation::os::Errno) noexcept { return false; });
+            return ::fixy::fs::replace_file(io, checked, file_image).is_ok();
         },
         [] noexcept { return false; });
     return is_written ? 1 : 0;
