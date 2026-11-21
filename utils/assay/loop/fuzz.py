@@ -17,6 +17,9 @@ THE ARGUMENTS
                first argument of a line crucible_boundary_fuzzer(NAME ...)
                (harness_names()).  A header of the harness directory that no
                such line names, such as tensor_meta_claims.h, is no harness.
+               A header NAME.h that defines run_NAME is a harness, so a line
+               must name it.  Such a header with no line is an error of the
+               list, and the self-test fails on it (unlisted_harnesses()).
     CPU_LIST   The cores, such as 100-131 or 100-115,200-215.  One instance
                runs on each core.  The first one is the main instance.  The
                command refuses a list that names a reserved CPU of the host.
@@ -62,6 +65,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import sys
 import tempfile
 from collections.abc import Sequence
@@ -80,6 +84,8 @@ HARNESSES = Path("test/fuzz/boundary/harnesses")
 # its target fuzz_NAME.
 HARNESS_LIST = Path("test/fuzz/CMakeLists.txt")
 _HARNESS_LINE = re.compile(r"^crucible_boundary_fuzzer\(\s*([A-Za-z0-9_]+)\b")
+# The start of the definition of the run function of a harness in its header: run_NAME of the header NAME.h.
+_RUN_DEFINITION = re.compile(r"^inline void run_([A-Za-z0-9_]+)\(", re.MULTILINE)
 # The file that afl-fuzz writes in each crashes directory, which is no saved input.
 AFL_README = "README.txt"
 # The time after SECONDS that an instance gets before SIGINT stops it, and the time after a SIGINT of
@@ -141,6 +147,28 @@ def harness_names(root: Path) -> tuple[str, ...]:
         return ()
     names = (_HARNESS_LINE.match(line) for line in path.read_text(encoding="utf-8").splitlines())
     return tuple(match.group(1) for match in names if match is not None)
+
+
+def unlisted_harnesses(root: Path) -> tuple[str, ...]:
+    """Return each harness of HARNESSES that no line of HARNESS_LIST names, in the order of the names.
+
+    A header NAME.h that defines run_NAME is a harness.  No target builds a harness with no line, so no campaign and
+    no smoke test runs it.  Such a harness is an error of the list, and not a header to skip.  A helper header such
+    as tensor_meta_claims.h defines no run function of its own name.  Complexity: linear in the bytes of the headers.
+
+    Args:
+        root: The source tree
+    """
+    directory = root / HARNESSES
+    if not directory.is_dir():
+        return ()
+    listed = frozenset(harness_names(root))
+    found: list[str] = []
+    for header in sorted(directory.glob("*.h")):
+        defined = {match.group(1) for match in _RUN_DEFINITION.finditer(header.read_text(encoding="utf-8"))}
+        if header.stem in defined and header.stem not in listed:
+            found.append(header.stem)
+    return tuple(found)
 
 
 def harness_binary(build_dir: Path, harness: str) -> Path:
@@ -351,8 +379,50 @@ def instance_status(instance: proc.Running) -> int:
         return 1
 
 
+def run_instances(campaign: Campaign, afl_bin: Path, binary: Path,
+                  cmplog_binary: Path) -> tuple[list[int], Findings]:
+    """Write the seeds of a built harness, run one instance on each core, and read the inputs that they saved.
+
+    The build of the harness comes first (configure_and_build()).  The step removes OUT_DIR/tmp at its end, also
+    after an error.
+
+    Args:
+        campaign: The campaign
+        afl_bin: The directory of the AFL++ tools
+        binary: The instrumented harness
+        cmplog_binary: The harness with comparison logging
+
+    Returns:
+        The exit status of each instance, and the inputs that the instances saved (campaign_findings())
+
+    Raises:
+        proc.ToolFailed: If the harness does not write its seeds, or an instance does not start
+    """
+    environment = _afl_environment()
+    scratch = campaign.out_dir / "tmp"
+    scratch.mkdir(parents=True, exist_ok=True)
+    try:
+        proc.require(proc.run(proc.Command([str(binary), f"--write-seeds={campaign.out_dir / 'seeds'}"],
+                                           timeout_s=proc.TOOL_S, env=environment, stdout=proc.Output.INHERIT,
+                                           stderr=proc.Output.INHERIT)))
+        instances: list[proc.Running] = []
+        try:
+            for index in range(len(campaign.cpus)):
+                instances.append(proc.start(instance_run(campaign, index, afl_bin, binary, cmplog_binary, scratch)))
+            print(f"loop fuzz: {len(instances)} instances of {binary.name} for {campaign.seconds} "
+                  f"seconds, output in {campaign.out_dir}/afl", flush=True)
+            statuses = [instance_status(instance) for instance in instances]
+        finally:
+            # An instance that the loop did not wait for, after an error or an interrupt, stops with its group.
+            for instance in instances:
+                instance.stop()
+        return statuses, campaign_findings(campaign.out_dir)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def run_campaign(root: Path, campaign: Campaign) -> int:
-    """Build the two instrumented builds, write the seeds, and run one instance on each core.
+    """Build the two instrumented builds, run the instances, and print the verdict of the campaign.
 
     Args:
         root: The source tree
@@ -368,33 +438,83 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
     configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, environment)
     configure_and_build(root, cmplog_dir, campaign.harness, afl_bin, dict(environment, AFL_GCC_CMPLOG="1"))
     binary = harness_binary(campaign.build_dir, campaign.harness)
-    cmplog_binary = harness_binary(cmplog_dir, campaign.harness)
-    scratch = campaign.out_dir / "tmp"
-    scratch.mkdir(parents=True, exist_ok=True)
-    try:
-        proc.require(proc.run(proc.Command([str(binary), f"--write-seeds={campaign.out_dir / 'seeds'}"],
-                                           timeout_s=proc.TOOL_S, env=environment, stdout=proc.Output.INHERIT,
-                                           stderr=proc.Output.INHERIT)))
-        instances: list[proc.Running] = []
-        try:
-            for index in range(len(campaign.cpus)):
-                instances.append(proc.start(instance_run(campaign, index, afl_bin, binary, cmplog_binary, scratch)))
-            print(f"loop fuzz: {len(instances)} instances of fuzz_{campaign.harness} for {campaign.seconds} "
-                  f"seconds, output in {campaign.out_dir}/afl", flush=True)
-            statuses = [instance_status(instance) for instance in instances]
-        finally:
-            # An instance that the loop did not wait for, after an error or an interrupt, stops with its group.
-            for instance in instances:
-                instance.stop()
-        status, lines = campaign_verdict(statuses, campaign_findings(campaign.out_dir), binary)
-        for line in lines:
-            print(f"loop fuzz: {line}", flush=True)
-        return status
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+    statuses, findings = run_instances(campaign, afl_bin, binary, harness_binary(cmplog_dir, campaign.harness))
+    status, lines = campaign_verdict(statuses, findings, binary)
+    for line in lines:
+        print(f"loop fuzz: {line}", flush=True)
+    return status
 
 
 # ── The self-test ──────────────────────────────────────────────────────────
+
+# The input on which the planted harness of the self-test ends with SIGABRT.
+PLANTED_CRASH = b"CRASH"
+# A fake afl-fuzz for the self-test.  It runs the harness of its command on each seed, saves each seed whose run ends
+# by a signal in crashes/ with the README.txt of afl-fuzz, and ends with the status 0, as afl-fuzz ends after it saves
+# a crash.
+_FAKE_AFL_FUZZ = '''
+import os, shutil, subprocess, sys
+words = sys.argv[1:]
+seeds, out = words[words.index("-i") + 1], words[words.index("-o") + 1]
+name = words[words.index("-M" if "-M" in words else "-S") + 1]
+binary = words[words.index("--") + 1]
+crashes = os.path.join(out, name, "crashes")
+os.makedirs(crashes, exist_ok=True)
+with open(os.path.join(crashes, "README.txt"), "w", encoding="utf-8") as readme:
+    readme.write("the command of the campaign\\n")
+for count, seed in enumerate(sorted(os.listdir(seeds))):
+    path = os.path.join(seeds, seed)
+    ended = subprocess.run([binary, path], check=False).returncode
+    if ended < 0:
+        shutil.copyfile(path, os.path.join(crashes, f"id:{count:06d},sig:{-ended:02d},src:{seed}"))
+sys.exit(0)
+'''
+# A planted harness for the self-test.  --write-seeds=DIR writes a benign seed and the seed PLANTED_CRASH.  A run on a
+# file ends with SIGABRT when the file holds PLANTED_CRASH, and with no core file.
+_PLANTED_HARNESS = f'''
+import os, resource, sys
+argument = sys.argv[1]
+if argument.startswith("--write-seeds="):
+    seeds = argument.split("=", 1)[1]
+    os.makedirs(seeds, exist_ok=True)
+    for name, data in (("benign", b"seed"), ("known", {PLANTED_CRASH!r})):
+        with open(os.path.join(seeds, name), "wb") as seed:
+            seed.write(data)
+    sys.exit(0)
+with open(argument, "rb") as given:
+    if given.read() == {PLANTED_CRASH!r}:
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        os.abort()
+sys.exit(0)
+'''
+
+
+def _write_program(path: Path, body: str) -> Path:
+    """Write a Python program that runs with the interpreter of this process, and make it executable."""
+    path.write_text(f"#!{sys.executable} -I\n{body}", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def run_planted_campaign(work: Path) -> tuple[list[int], Findings, Path]:
+    """Run the step of the instances on a planted harness that crashes on PLANTED_CRASH, with a fake afl-fuzz.
+
+    The campaign has one instance on the first CPU of this process.  Complexity: one run of the harness for each of
+    its two seeds.
+
+    Args:
+        work: An empty directory for the fake tools and the output of the campaign
+
+    Returns:
+        The status of each instance, the inputs that the campaign saved, and the planted harness
+    """
+    afl_bin = work / "afl"
+    afl_bin.mkdir()
+    _write_program(afl_bin / "afl-fuzz", _FAKE_AFL_FUZZ)
+    binary = _write_program(work / "fuzz_planted", _PLANTED_HARNESS)
+    campaign = Campaign(work / "build", work / "out", "planted", (min(os.sched_getaffinity(0)),), 1)
+    statuses, findings = run_instances(campaign, afl_bin, binary, binary)
+    return statuses, findings, binary
 
 
 def self_test() -> int:
@@ -424,19 +544,27 @@ def self_test() -> int:
     expect("each harness of the list of the tree has its header, and the list holds protocol_image",
            bool(real_names) and "protocol_image" in real_names
            and all((REPO_ROOT / HARNESSES / f"{name}.h").is_file() for name in real_names))
+    expect("each harness header of the tree that defines its run function has its line in the list",
+           unlisted_harnesses(REPO_ROOT) == ())
     with tempfile.TemporaryDirectory(prefix="loop-fuzz-") as work:
         root = Path(work)
         (root / HARNESSES).mkdir(parents=True)
-        (root / HARNESSES / "region.h").write_text("", encoding="utf-8")
+        (root / HARNESSES / "region.h").write_text("inline void run_region(int bytes) noexcept {}\n", encoding="utf-8")
         (root / HARNESSES / "protocol_image.h").write_text("", encoding="utf-8")
-        (root / HARNESSES / "tensor_meta_claims.h").write_text("", encoding="utf-8")
+        (root / HARNESSES / "tensor_meta_claims.h").write_text("inline void run_region_claims(int) {}\n",
+                                                                 encoding="utf-8")
+        (root / HARNESSES / "unbuilt.h").write_text("inline void run_unbuilt(int bytes) noexcept {}\n",
+                                                    encoding="utf-8")
         (root / HARNESS_LIST).write_text(
             "function(crucible_boundary_fuzzer name mutations)\nendfunction()\n"
             "crucible_boundary_fuzzer(region 2000)\n# crucible_boundary_fuzzer(commented 1)\n"
             "crucible_boundary_fuzzer(protocol_image 20000 VIEW)\n", encoding="utf-8")
         expect("the harnesses are the names of the crucible_boundary_fuzzer lines, in the order of the list",
                harness_names(root) == ("region", "protocol_image"))
+        expect("a header that defines its run function and has no line is an error of the list, and a helper is not",
+               unlisted_harnesses(root) == ("unbuilt",))
         expect("a tree with no list has no harness", harness_names(root / "absent") == ())
+        expect("a tree with no harness directory has no unlisted harness", unlisted_harnesses(root / "absent") == ())
         cpu_root, cgroup_root = root / "cpu", root / "cgroup"
         cpu_root.mkdir()
         expect("a host with no reservation reserves no core", reserved_cpus(cpu_root, cgroup_root) == ())
@@ -516,6 +644,28 @@ def self_test() -> int:
         expect("the compiler wrappers call the compiler of the toolchain file: CRUCIBLE_CXX first, then the prefix",
                named == (Path("/opt/gcc/bin/gcc-16p"), Path("/opt/gcc/bin/g++-16p"))
                and prefixed == (Path("/elsewhere/usr/bin/gcc-16p"), Path("/elsewhere/usr/bin/g++-16p")))
+    # The step of the instances, on a planted harness that crashes on a known seed and a fake afl-fuzz that ends with
+    # the status 0 after it saves the crash.
+    with tempfile.TemporaryDirectory(prefix="loop-fuzz-planted-") as work:
+        try:
+            statuses, findings, binary = run_planted_campaign(Path(work))
+        except proc.ToolFailed as problem:
+            print(f"  the planted campaign did not run: {problem}")
+            statuses, findings, binary = [], Findings((), ()), Path(work) / "fuzz_planted"
+        expect("each instance of the planted campaign ends with 0, so a verdict of the statuses alone is green",
+               statuses == [0])
+        saved_input = findings.first()
+        expect("the planted campaign saves the known input as its one crash",
+               saved_input is not None and findings.crashes == (saved_input,) and findings.hangs == ()
+               and saved_input.read_bytes() == PLANTED_CRASH)
+        status, lines = campaign_verdict(statuses, findings, binary)
+        expect("the planted campaign fails, and its report names the command that replays the saved input",
+               status == 1 and saved_input is not None
+               and lines[-1] == f"replay the first input with: {replay_command(binary, saved_input)}")
+        replayed = None if saved_input is None else proc.run(
+            proc.Command([str(binary), str(saved_input)], timeout_s=proc.TOOL_S))
+        expect("the replay command ends with SIGABRT again", replayed is not None and replayed.exit == -signal.SIGABRT)
+        expect("the step of the instances removes its scratch directory", not (Path(work) / "out" / "tmp").exists())
 
     if failures:
         print(f"loop fuzz --self-test: FAILED, {len(failures)} case(s) did not hold")
