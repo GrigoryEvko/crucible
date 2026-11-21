@@ -67,6 +67,10 @@ enum class LoadError : std::uint8_t {
     // it: the checksum differs, or bytes come between the last field and the
     // checksum.
     checksum_mismatch,
+    // A slot of the memory plan has an id that is not its position in the
+    // slots.  The ops name a slot by its position, and the build of a region
+    // gives each slot its position as its id.
+    slot_out_of_place,
 };
 
 // The text of a reason, for a report to a person.  Each reason has its own
@@ -114,6 +118,8 @@ enum class LoadError : std::uint8_t {
                 "an event of the session-event batch has another session, a gap in its steps, or a loaded step"};
         case LoadError::checksum_mismatch:
             return ::fixy::TextView{"the region image does not end with the checksum of the bytes before it"};
+        case LoadError::slot_out_of_place:
+            return ::fixy::TextView{"a slot of the memory plan has an id that is not its position in the slots"};
         default:
             ::fixy::unreachable();
     }

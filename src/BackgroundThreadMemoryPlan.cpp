@@ -55,9 +55,19 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     // whose rounding does not fit in 64 bits has no slot of the pool, so the
     // plan refuses the region, and no rounding gives a slot that overlaps
     // another.  A span that saturated is such a span.
+    //
+    // The ops name a slot by its position, and the replay registers each
+    // external slot under its position.  So each slot, external or internal,
+    // must have its position as its id.  The caller gives the slots, so a
+    // slot with another id refuses the region.
     static constexpr uint32_t MAX_DEATH_OP = UINT32_MAX - 3;
     uint32_t max_op = 0;
+    uint32_t slot_position = 0;
     for (const TensorSlot& slot : slots) {
+        if (slot.slot_id != SlotId{slot_position}) [[unlikely]] {
+            return ::fixy::err(PlanRefusal::SlotOutOfPlace);
+        }
+        ++slot_position;
         if (slot.is_external) {
             plan.num_external++;
         } else {

@@ -54,21 +54,60 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     return bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view()).err();
 }
 
+// The refusal of the planner for an internal slot and an external slot with
+// the two ids, in that order, or no refusal.
+[[nodiscard]] ::fixy::Option<crucible::BackgroundThread::PlanRefusal>
+refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
+    auto test = ::foundation::effects::testing::test();
+    crucible::BackgroundThread bt{test.alloc};
+    ::foundation::core::FixedArray<crucible::TensorSlot, 2> slots{};
+    crucible::TensorSlot& internal_slot = slots.at(::foundation::core::index<0>());
+    internal_slot.nbytes = 1024;
+    internal_slot.birth_op = crucible::OpIndex{0};
+    internal_slot.death_op = crucible::OpIndex{2};
+    internal_slot.slot_id = ids.at(::foundation::core::index<0>());
+    crucible::TensorSlot& external_slot = slots.at(::foundation::core::index<1>());
+    external_slot.is_external = true;
+    external_slot.slot_id = ids.at(::foundation::core::index<1>());
+    crucible::MemoryPlan plan_storage{};
+    ::fixy::BumpArena sweep_arena{size_t{1} << 16};
+    return bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view()).err();
+}
+
+// True when the planner gave the expected refusal.
+[[nodiscard]] bool is_refusal(::fixy::Option<crucible::BackgroundThread::PlanRefusal> refusal,
+                              crucible::BackgroundThread::PlanRefusal expected) noexcept {
+    return refusal.match([expected](crucible::BackgroundThread::PlanRefusal got) noexcept { return got == expected; },
+                         []() noexcept { return false; });
+}
+
 // A span that saturated to 2^64 - 1 rounds past 64 bits, and two spans of
 // 2^63 that live at the same time end the pool at 2^64.  The planner refuses
 // each, so the region has no plan and stays on eager.
 void test_refuses_spans_past_64_bits(::fixy::TestRunnerCtx const& test) {
     using Refusal = crucible::BackgroundThread::PlanRefusal;
-    const auto is_refusal = [](::fixy::Option<Refusal> refusal, Refusal expected) noexcept {
-        return refusal.match([expected](Refusal got) noexcept { return got == expected; },
-                             []() noexcept { return false; });
-    };
     CRUCIBLE_TEST_ASSERT(test, is_refusal(refusal_of_spans(~std::uint64_t{0}, 1024), Refusal::SpanTooLarge));
     CRUCIBLE_TEST_ASSERT(test, is_refusal(refusal_of_spans(1024, ~std::uint64_t{0} - 100), Refusal::SpanTooLarge));
     CRUCIBLE_TEST_ASSERT(
         test, is_refusal(refusal_of_spans(std::uint64_t{1} << 63, std::uint64_t{1} << 63), Refusal::PoolEndOverflow));
     CRUCIBLE_TEST_ASSERT(test, refusal_of_spans(1024, 2048).is_none());
     ::fixy::check::pass(test, "  test_refuses_spans_past_64_bits: PASSED\n");
+}
+
+// The ops name a slot by its position, so the planner refuses each slot whose
+// id is not its position: an internal slot or an external slot, a swapped
+// pair, and the default id.  The slots in place give a plan.
+void test_refuses_slot_ids_out_of_place(::fixy::TestRunnerCtx const& test) {
+    using Refusal = crucible::BackgroundThread::PlanRefusal;
+    using Ids = ::foundation::core::FixedArray<crucible::SlotId, 2>;
+    CRUCIBLE_TEST_ASSERT(test, refusal_of_ids(Ids{crucible::SlotId{0}, crucible::SlotId{1}}).is_none());
+    CRUCIBLE_TEST_ASSERT(
+        test, is_refusal(refusal_of_ids(Ids{crucible::SlotId{1}, crucible::SlotId{0}}), Refusal::SlotOutOfPlace));
+    CRUCIBLE_TEST_ASSERT(
+        test, is_refusal(refusal_of_ids(Ids{crucible::SlotId{0}, crucible::SlotId{7}}), Refusal::SlotOutOfPlace));
+    CRUCIBLE_TEST_ASSERT(
+        test, is_refusal(refusal_of_ids(Ids{crucible::SlotId{0}, crucible::SlotId{}}), Refusal::SlotOutOfPlace));
+    ::fixy::check::pass(test, "  test_refuses_slot_ids_out_of_place: PASSED\n");
 }
 
 // The sizes of the sweep come from the largest death_op + 2.  A death_op of
@@ -100,6 +139,7 @@ int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_refuses_slot_lifetimes_outside_the_sweep(test);
     test_refuses_spans_past_64_bits(test);
+    test_refuses_slot_ids_out_of_place(test);
     auto source = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 

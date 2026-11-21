@@ -57,6 +57,22 @@ template <class Loaded>
     return loaded.err().expect("the loader refuses the image");
 }
 
+// Count slots of the default value in the arena, each with its position as
+// its id, as the build of a region gives them.  The loader refuses a slot
+// whose id is not its position.
+template <std::uint32_t Count>
+[[nodiscard]] static ::fixy::View<crucible::TensorSlot> make_slots_in_place(::foundation::effects::Alloc alloc,
+                                                                            ::fixy::BumpArena& arena) {
+    const ::fixy::View<crucible::TensorSlot> slots =
+        arena.array<crucible::TensorSlot>(alloc, Count, crucible::TensorSlot{});
+    std::uint32_t position = 0;
+    for (crucible::TensorSlot& slot : slots) {
+        slot.slot_id = crucible::SlotId{position};
+        ++position;
+    }
+    return slots;
+}
+
 // A copy of image in new storage, with the byte at at set to value.
 [[nodiscard]] static ::fixy::HeapArray<std::byte>
 with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> image, size_t at, std::byte value) {
@@ -449,7 +465,7 @@ static void check_descriptor_images_agree() {
     {
         ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan ok_plan{};
-        ok_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
+        ok_plan.slots = make_slots_in_place<21>(test.alloc, slot_arena);
         region->plan = crucible::make_plan_link(ok_plan);
 
         ::fixy::HeapArray<std::byte> pbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
@@ -461,7 +477,7 @@ static void check_descriptor_images_agree() {
         CRUCIBLE_TEST_ASSERT(kTest, ok_loaded.is_ok() && "plan-bearing region with in-range slot_ids must load");
 
         crucible::MemoryPlan bad_plan{};
-        bad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 3, crucible::TensorSlot{});
+        bad_plan.slots = make_slots_in_place<3>(test.alloc, slot_arena);
         region->plan = crucible::make_plan_link(bad_plan);
 
         ::fixy::HeapArray<std::byte> nbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
@@ -476,6 +492,38 @@ static void check_descriptor_images_agree() {
         region->plan = ::fixy::none;  // nothing later depends on this.
     }
 
+    // The ops name a slot by its position, and the replay registers each
+    // external slot under its position.  So the loader refuses a plan with a
+    // slot whose id is not its position: two slots with swapped ids, and a
+    // slot with the default id.  The plan has 21 slots, so the bound of the
+    // slot ids of the ops holds.
+    {
+        const auto reason_of_slots = [&](::fixy::View<crucible::TensorSlot> slots) {
+            crucible::MemoryPlan placed_plan{};
+            placed_plan.slots = slots;
+            region->plan = crucible::make_plan_link(placed_plan);
+            ::fixy::HeapArray<std::byte> placed_buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
+            const size_t placed_bytes = crucible::serialize_region(::fixy::to(*region), placed_buf.view());
+            CRUCIBLE_TEST_ASSERT(kTest, placed_bytes > 0 && "the serialize of a plan of 21 slots fits");
+            ::fixy::BumpArena placed_load{1 << 16};
+            const crucible::LoadError reason = reason_of(crucible::deserialize_region(
+                test.alloc, placed_buf.view().window(0, placed_bytes).expect("the writer writes inside its image"),
+                placed_load));
+            region->plan = ::fixy::none;
+            return reason;
+        };
+        ::fixy::BumpArena slot_arena{1 << 16};
+        const ::fixy::View<crucible::TensorSlot> swapped = make_slots_in_place<21>(test.alloc, slot_arena);
+        swapped.get(4).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{5};
+        swapped.get(5).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{4};
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of_slots(swapped) == crucible::LoadError::slot_out_of_place
+                                        && "deserialize_region must refuse two slots with swapped ids");
+        const ::fixy::View<crucible::TensorSlot> unnamed = make_slots_in_place<21>(test.alloc, slot_arena);
+        unnamed.get(7).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{};
+        CRUCIBLE_TEST_ASSERT(kTest, reason_of_slots(unnamed) == crucible::LoadError::slot_out_of_place
+                                        && "deserialize_region must refuse a slot with the default id");
+    }
+
     // An out-of-range pool_bytes becomes an [[assume]] under the release
     // contract semantic, so the load boundary must reject it against the
     // same constant the allocator checks.  num_slots is 21 so the
@@ -484,7 +532,7 @@ static void check_descriptor_images_agree() {
     {
         ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan over_plan{};
-        over_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
+        over_plan.slots = make_slots_in_place<21>(test.alloc, slot_arena);
         over_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes + 1;
         region->plan = crucible::make_plan_link(over_plan);
 
@@ -498,7 +546,7 @@ static void check_descriptor_images_agree() {
                                         && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
 
         crucible::MemoryPlan at_plan{};
-        at_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
+        at_plan.slots = make_slots_in_place<21>(test.alloc, slot_arena);
         at_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes;
         region->plan = crucible::make_plan_link(at_plan);
 
@@ -514,16 +562,18 @@ static void check_descriptor_images_agree() {
     }
 
     // A writer sets every pad byte of a slot to zero, so one non-zero byte
-    // in a pad refuses the whole image.  The last slot carries a slot id
-    // that occurs once in the image, which locates its pads: the 3-byte
-    // pad ends at the slot id, and the 4-byte pad2 starts after it.
+    // in a pad refuses the whole image.  The id of a slot is its position, so
+    // the last slot carries a death op that occurs once in the image, which
+    // locates its pads.  The death op is the four bytes at 20 of the slot,
+    // the 3-byte pad is at 29, the id at 32, and the 4-byte pad2 at 36.
     {
-        constexpr uint32_t kMarkerSlotId = 0x5A5A5A5Au;
+        constexpr uint32_t kMarkerDeathOp = 0x5A5A5A5Au;
+        constexpr size_t kPadAfterDeathOp = 29 - 20;
+        constexpr size_t kPad2AfterDeathOp = 36 - 20;
         ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan pad_plan{};
-        const ::fixy::View<crucible::TensorSlot> pad_slots =
-            slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
-        pad_slots.get(20).expect("the pad plan holds 21 slots")->slot_id = crucible::SlotId{kMarkerSlotId};
+        const ::fixy::View<crucible::TensorSlot> pad_slots = make_slots_in_place<21>(test.alloc, slot_arena);
+        pad_slots.get(20).expect("the pad plan holds 21 slots")->death_op = crucible::OpIndex{kMarkerDeathOp};
         pad_plan.slots = pad_slots;
         region->plan = crucible::make_plan_link(pad_plan);
 
@@ -533,30 +583,30 @@ static void check_descriptor_images_agree() {
         const ::fixy::View<const std::byte> image =
             image_buf.view().window(0, image_bytes).expect("the writer writes inside its image");
 
-        // The slot id at at, read as the writer writes a word: the low byte
+        // The death op at at, read as the writer writes a word: the low byte
         // first.
         const auto holds_marker_at = [&](size_t at) {
-            return image.window<sizeof(kMarkerSlotId)>(at).match(
-                [](::fixy::View<const std::byte, sizeof(kMarkerSlotId)> word) noexcept {
+            return image.window<sizeof(kMarkerDeathOp)>(at).match(
+                [](::fixy::View<const std::byte, sizeof(kMarkerDeathOp)> word) noexcept {
                     uint32_t value = 0;
                     for (const auto index : word.indices()) {
                         value |= static_cast<uint32_t>(word.at(index)) << (8 * index.raw());
                     }
-                    return value == kMarkerSlotId;
+                    return value == kMarkerDeathOp;
                 },
                 [] noexcept { return false; });
         };
         size_t marker_at = image_bytes;
         size_t marker_count = 0;
-        for (size_t at = 0; at + sizeof(kMarkerSlotId) <= image_bytes; ++at) {
+        for (size_t at = 0; at + sizeof(kMarkerDeathOp) <= image_bytes; ++at) {
             if (holds_marker_at(at)) {
                 marker_at = at;
                 ++marker_count;
             }
         }
-        CRUCIBLE_TEST_ASSERT(kTest, marker_count == 1 && "the marker slot id must occur once in the image");
-        const size_t pad_at = marker_at - 3;
-        const size_t pad2_at = marker_at + sizeof(kMarkerSlotId);
+        CRUCIBLE_TEST_ASSERT(kTest, marker_count == 1 && "the marker death op must occur once in the image");
+        const size_t pad_at = marker_at + kPadAfterDeathOp;
+        const size_t pad2_at = marker_at + kPad2AfterDeathOp;
 
         ::fixy::BumpArena clean_arena{1 << 16};
         auto clean = crucible::deserialize_region(test.alloc, image, clean_arena);

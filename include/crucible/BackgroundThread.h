@@ -1757,6 +1757,10 @@ public:
         SpanTooLarge,
         // The end of the pool does not fit in 64 bits.
         PoolEndOverflow,
+        // A slot has an id that is not its position in the slots.  The ops
+        // name a slot by its position, and the replay registers each
+        // external slot under its position.
+        SlotOutOfPlace,
     };
 
     // Orders birth and death events with an O(n + k) counting sort, then
@@ -1766,8 +1770,9 @@ public:
     // function stops the process when a slot breaks this rule, because the
     // sweep would index past its arrays.  The plan goes into plan_storage,
     // the arrays of the sweep go into scratch, and the result is a Ref of
-    // plan_storage, or the refusal of a span or of the end of the pool that
-    // does not fit in 64 bits.  The plan borrows the slots.
+    // plan_storage, or a PlanRefusal: a slot whose id is not its position,
+    // or a span or an end of the pool that does not fit in 64 bits.  The plan
+    // borrows the slots.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] ::fixy::Result<::fixy::Ref<MemoryPlan>, PlanRefusal>
     compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
                         ::fixy::View<TensorSlot> slots) noexcept CRUCIBLE_NO_THREAD_SAFETY;

@@ -679,6 +679,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         }
         const ::fixy::View<TensorSlot> slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
         loaded_plan->slots = slots;
+        uint32_t slot_position = 0;
         for (TensorSlot& slot : slots) {
             slot = r.read_image(TensorSlot{});
             // The pool allocator aborts on a slot it cannot serve, so a
@@ -686,6 +687,16 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             if (!::crucible::PoolAllocator::can_serve_slot(slot, loaded_plan->pool_bytes)) [[unlikely]] {
                 return ::fixy::err(r.reason_or(LoadError::plan_unservable));
             }
+            // The ops name a slot by its position, and the replay registers
+            // each external slot under its position.  The build of a region
+            // gives each slot its position as its id, the planner refuses
+            // another id, and the writer writes each slot as it is.  So the
+            // load refuses a slot with another id, in place of a replay that
+            // reads the slots under other ids.
+            if (slot.slot_id != SlotId{slot_position}) [[unlikely]] {
+                return ::fixy::err(r.reason_or(LoadError::slot_out_of_place));
+            }
+            ++slot_position;
         }
     }
 
