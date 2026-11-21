@@ -13,11 +13,20 @@
 //                                    THE LADDER)
 //   window.record()                  the WindowRecord of the window
 //   window.layout()                  the MetadataLayout of its region
-//   window.commit_extent_of(chunk)   commits the extent of the chunk, one
+//   WindowCommits                    the words of the commits of a window
+//                                    that many threads change: the bit of
+//                                    each committed extent, the front of
+//                                    each section of records, and the claim
+//                                    index of chunks (THE CHUNK SOURCE)
+//   window.claim_chunk(commits)      the next chunk that no thread claimed,
+//                                    or none past the last chunk
+//   window.commit_extent_of(commits, chunk)
+//                                    commits the extent of the chunk, one
 //                                    time (THE COMMITS)
-//   window.start_chunk_meta(chunk)   the ChunkMeta of the chunk, in zero
+//   window.start_chunk_meta(commits, chunk)
+//                                    the ChunkMeta of the chunk, in zero
 //                                    bytes, after the commit of its step
-//   window.start_slab_meta(chunk, unit)
+//   window.start_slab_meta(commits, chunk, unit)
 //                                    the SlabMeta of the unit, the same way
 //   publish_host_window(window, table)
 //                                    writes the record of the window into the
@@ -62,11 +71,32 @@
 //                     to the last commit of the section
 //   A record starts in zero bytes: start_chunk_meta and start_slab_meta
 //   construct the record over those bytes and give a Ref to it.  Each call
-//   constructs it again, so only the thread that takes the chunk or the unit
-//   calls it, one time.
+//   constructs it again, so only the thread that claimed the chunk calls it,
+//   one time for the chunk and one time for each unit.
 //
-// One thread owns a Window: the init of the root, or the test that reserves
-// it.  The door issues each call through the page source of
+// THE CHUNK SOURCE
+//   Many heaps take chunks of one window at the same time, so each word that
+//   a commit changes is an atomic word of WindowCommits, and no step takes a
+//   lock.  A claim moves the claim index past the next chunk that is not a
+//   guard with one compare-and-swap, so each chunk has one claim, and a claim
+//   past the last chunk gives none.  An extent commits with one mprotect and
+//   then sets its bit with fetch_or.  A section of records commits from the
+//   front that it reads up to the end of a step, and then raises the front
+//   with fetch_max.  Two threads can commit one range at the same time: the
+//   kernel gives it the same access two times, and the mappings stay merged.
+//   Each bit and each front rises only after its commit, with release, and a
+//   reader reads it with acquire, so each byte below a front that a thread
+//   reads is committed.  The node lists of the NUMA extents and of the purge
+//   replace the claim index: they give a chunk back to its node, and a later
+//   claim takes it again.
+//
+//   An atomic word does not move, and a Window moves out of the door that
+//   reserves it.  So the words are in WindowCommits, which the owner of the
+//   window keeps beside it: the root of the allocator for the host window,
+//   and the test for a window of a test.
+//
+// The thread that reserves a Window owns the reservations: the init of the
+// root, or a test.  The door issues each call through the page source of
 // foundation/os/PageSource.h.  This header is in the layer F0_doors of
 // utils/rule-table.txt, and src/foundation/alloc/Window.cpp holds the
 // bodies.
@@ -75,6 +105,7 @@
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Metadata.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
@@ -119,6 +150,28 @@ private:
     ::foundation::core::FixedText<kWindowDiagnosticBytes> text_{};
 };
 
+// The words of the commits of one window that many threads change (THE CHUNK
+// SOURCE).  It starts as zero words: no chunk claimed, no extent committed,
+// and each section of records at its first byte.  The owner of a window keeps
+// one beside it for the life of the window.
+class WindowCommits final {
+public:
+    constexpr WindowCommits() noexcept = default;
+    WindowCommits(WindowCommits const&) = delete("the commits of a window are the one record of its commits");
+    WindowCommits& operator=(WindowCommits const&) = delete("the commits of a window are one record");
+
+private:
+    friend class Window;
+
+    // One bit for each extent of a window of 1 TiB.
+    ::foundation::core::FixedArray<::foundation::core::Atomic<std::uint64_t>, kExtentMapWords> committed_extents_{};
+    // The committed bytes of each section of records, from its first byte.
+    ::foundation::core::Atomic<std::size_t> chunk_records_front_{0};
+    ::foundation::core::Atomic<std::size_t> slab_records_front_{0};
+    // The index of the first chunk that no claim took.
+    ::foundation::core::Atomic<std::uint32_t> next_chunk_{0};
+};
+
 // One window and its metadata region (THE WINDOW).  The window owns the two
 // reservations, and its end unmaps them.
 class [[nodiscard]] Window final {
@@ -132,14 +185,20 @@ public:
     [[nodiscard]] WindowRecord record() const noexcept { return record_; }
     [[nodiscard]] MetadataLayout layout() const noexcept { return layout_; }
 
-    // True when the extent of the chunk is committed.
-    [[nodiscard]] bool is_extent_committed(ChunkIndex chunk) const noexcept;
+    // The next chunk that no claim took, past each guard chunk, or none when
+    // each chunk of the window has a claim (THE CHUNK SOURCE).  Complexity:
+    // O(1) compare-and-swap steps for each thread that claims at the same
+    // time.
+    [[nodiscard]] ::foundation::core::Option<ChunkIndex> claim_chunk(WindowCommits& commits) const noexcept;
+
+    // True when the extent of the chunk is committed.  One acquire load.
+    [[nodiscard]] bool is_extent_committed(WindowCommits const& commits, ChunkIndex chunk) const noexcept;
 
     // Commits the extent of the chunk, less its guard chunk, when it is not
     // committed (THE COMMITS).  The chunk is not a guard chunk.  The error is
     // the refusal of the kernel, such as enomem under strict overcommit.
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-    commit_extent_of(ChunkIndex chunk) noexcept;
+    commit_extent_of(WindowCommits& commits, ChunkIndex chunk) noexcept;
 
     // Writes the entry of a chunk in the chunk map.  Only the thread that
     // takes or gives back the chunk calls it (THE MAP READ of
@@ -153,8 +212,8 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] ::foundation::core::Result<
         ::foundation::core::Ref<ChunkMeta, ::foundation::brand::undeducible_brand_t<Fresh>>, ::foundation::os::Errno>
-    start_chunk_meta(ChunkIndex chunk) noexcept {
-        CRUCIBLE_TRY(meta, start_chunk_meta_(chunk));
+    start_chunk_meta(WindowCommits& commits, ChunkIndex chunk) noexcept {
+        CRUCIBLE_TRY(meta, start_chunk_meta_(commits, chunk));
         return ::foundation::core::detail::RefDoor::lend<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
     }
 
@@ -163,8 +222,8 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] ::foundation::core::Result<
         ::foundation::core::Ref<SlabMeta, ::foundation::brand::undeducible_brand_t<Fresh>>, ::foundation::os::Errno>
-    start_slab_meta(ChunkIndex chunk, UnitIndex unit) noexcept {
-        CRUCIBLE_TRY(meta, start_slab_meta_(chunk, unit));
+    start_slab_meta(WindowCommits& commits, ChunkIndex chunk, UnitIndex unit) noexcept {
+        CRUCIBLE_TRY(meta, start_slab_meta_(commits, chunk, unit));
         return ::foundation::core::detail::RefDoor::lend<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
     }
 
@@ -174,9 +233,9 @@ private:
     // The cold bodies of the two starts: the commit of the step and the
     // construction of the record.  Each gives the address of the record.
     [[nodiscard]] ::foundation::core::Result<ChunkMeta*, ::foundation::os::Errno>
-    start_chunk_meta_(ChunkIndex chunk) noexcept;
+    start_chunk_meta_(WindowCommits& commits, ChunkIndex chunk) noexcept;
     [[nodiscard]] ::foundation::core::Result<SlabMeta*, ::foundation::os::Errno>
-    start_slab_meta_(ChunkIndex chunk, UnitIndex unit) noexcept;
+    start_slab_meta_(WindowCommits& commits, ChunkIndex chunk, UnitIndex unit) noexcept;
 
     Window(::foundation::os::Reservation&& window, ::foundation::os::Reservation&& region, MetadataLayout layout,
            WindowRecord record) noexcept;
@@ -188,17 +247,14 @@ private:
     };
 
     // Commits the bytes of a section from its front up to END, a count of
-    // bytes from the first byte of the section (THE COMMITS).
+    // bytes from the first byte of the section (THE CHUNK SOURCE).
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-    grow_section_(RecordSection section, ::foundation::core::ByteCount end) noexcept;
+    grow_section_(WindowCommits& commits, RecordSection section, ::foundation::core::ByteCount end) noexcept;
 
     ::foundation::os::Reservation window_;
     ::foundation::os::Reservation region_;
     MetadataLayout layout_;
     WindowRecord record_;
-    ::foundation::core::FixedArray<std::uint64_t, kExtentMapWords> committed_extents_{};
-    std::size_t chunk_records_front_ = 0;
-    std::size_t slab_records_front_ = 0;
 };
 
 namespace detail {

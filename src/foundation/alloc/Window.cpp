@@ -8,6 +8,7 @@
 #include <foundation/Platform.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Metadata.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Format.h>
@@ -146,23 +147,39 @@ core::Result<Window, WindowFull> reserve_window_(os::ReserveCap cap, WindowDiagn
 Window::Window(os::Reservation&& window, os::Reservation&& region, MetadataLayout layout, WindowRecord record) noexcept
     : window_{std::move(window)}, region_{std::move(region)}, layout_{layout}, record_{record} {}
 
-bool Window::is_extent_committed(ChunkIndex chunk) const noexcept {
+core::Option<ChunkIndex> Window::claim_chunk(WindowCommits& commits) const noexcept {
+    std::uint64_t const count = record_.chunk_count();
+    std::uint32_t seen = commits.next_chunk_.load_acquire();
+    for (;;) {
+        std::uint32_t chunk = seen;
+        if (is_guard_chunk(ChunkIndex{chunk})) ++chunk;
+        if (chunk >= count) return core::none;
+        core::Result<core::Unit, core::CasRefusal<std::uint32_t>> const moved =
+            commits.next_chunk_.cas_acq_rel(seen, chunk + 1);
+        if (moved.is_ok()) return core::Option<ChunkIndex>::some(ChunkIndex{chunk});
+        seen = moved.err().expect("a refused compare-and-swap holds the word that it read").observed;
+    }
+}
+
+bool Window::is_extent_committed(WindowCommits const& commits, ChunkIndex chunk) const noexcept {
     CRUCIBLE_FATAL_INVARIANT(chunk.raw() < record_.chunk_count());
     std::size_t const extent = chunk.raw() >> (kExtentShift - kChunkShift);
-    std::uint64_t const word = *committed_extents_.get(extent / 64).expect("a window holds at most 1 TiB of extents");
+    std::uint64_t const word =
+        commits.committed_extents_.get(extent / 64).expect("a window holds at most 1 TiB of extents")->load_acquire();
     return ((word >> (extent % 64)) & 1U) != 0;
 }
 
-core::Result<core::Unit, os::Errno> Window::commit_extent_of(ChunkIndex chunk) noexcept {
+core::Result<core::Unit, os::Errno> Window::commit_extent_of(WindowCommits& commits, ChunkIndex chunk) noexcept {
     CRUCIBLE_FATAL_INVARIANT(chunk.raw() < record_.chunk_count());
     CRUCIBLE_FATAL_INVARIANT(!is_guard_chunk(chunk));
-    if (is_extent_committed(chunk)) return core::Unit{};
+    if (is_extent_committed(commits, chunk)) return core::Unit{};
     std::size_t const extent = chunk.raw() >> (kExtentShift - kChunkShift);
     CRUCIBLE_TRY(committed, commit_part(window_, start_at(core::ByteCount{extent << kExtentShift}),
                                         core::ByteCount{kExtentBytes - kChunkBytes}));
     static_cast<void>(committed);
-    std::uint64_t& word = *committed_extents_.get(extent / 64).expect("a window holds at most 1 TiB of extents");
-    word |= std::uint64_t{1} << (extent % 64);
+    core::Atomic<std::uint64_t>& word =
+        *commits.committed_extents_.get(extent / 64).expect("a window holds at most 1 TiB of extents");
+    static_cast<void>(word.fetch_or_acq_rel(std::uint64_t{1} << (extent % 64)));
     return core::Unit{};
 }
 
@@ -173,33 +190,38 @@ void Window::set_owner(ChunkIndex chunk, ChunkOwner owner) noexcept {
     *__builtin_bit_cast(ChunkOwner*, entry) = owner;
 }
 
-core::Result<core::Unit, os::Errno> Window::grow_section_(RecordSection section, core::ByteCount end) noexcept {
+core::Result<core::Unit, os::Errno> Window::grow_section_(WindowCommits& commits, RecordSection section,
+                                                          core::ByteCount end) noexcept {
     bool const is_chunk_section = section == RecordSection::chunk_records;
-    std::size_t& front = is_chunk_section ? chunk_records_front_ : slab_records_front_;
-    if (end.raw() <= front) return core::Unit{};
+    core::Atomic<std::size_t>& front = is_chunk_section ? commits.chunk_records_front_ : commits.slab_records_front_;
+    std::size_t const seen = front.load_acquire();
+    if (end.raw() <= seen) return core::Unit{};
     std::size_t const section_offset =
         is_chunk_section ? layout_.chunk_records_offset().raw() : layout_.slab_records_offset().raw();
     std::size_t const step_end = (end.raw() + (kMetadataStepBytes - 1)) & ~(kMetadataStepBytes - 1);
-    CRUCIBLE_TRY(committed, commit_part(region_, start_at(core::ByteCount{section_offset + front}),
-                                        core::ByteCount{step_end - front}));
+    CRUCIBLE_TRY(committed, commit_part(region_, start_at(core::ByteCount{section_offset + seen}),
+                                        core::ByteCount{step_end - seen}));
     static_cast<void>(committed);
-    front = step_end;
+    static_cast<void>(front.fetch_max_acq_rel(step_end));
     return core::Unit{};
 }
 
-core::Result<ChunkMeta*, os::Errno> Window::start_chunk_meta_(ChunkIndex chunk) noexcept {
+core::Result<ChunkMeta*, os::Errno> Window::start_chunk_meta_(WindowCommits& commits, ChunkIndex chunk) noexcept {
     std::size_t const offset = layout_.chunk_meta_offset(chunk).raw();
     std::size_t const in_section = offset - layout_.chunk_records_offset().raw();
-    CRUCIBLE_TRY(grown, grow_section_(RecordSection::chunk_records, core::ByteCount{in_section + kChunkMetaBytes}));
+    CRUCIBLE_TRY(grown,
+                 grow_section_(commits, RecordSection::chunk_records, core::ByteCount{in_section + kChunkMetaBytes}));
     static_cast<void>(grown);
     void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(record_.region_base()) + offset);
     return ::new(place) ChunkMeta{};
 }
 
-core::Result<SlabMeta*, os::Errno> Window::start_slab_meta_(ChunkIndex chunk, UnitIndex unit) noexcept {
+core::Result<SlabMeta*, os::Errno> Window::start_slab_meta_(WindowCommits& commits, ChunkIndex chunk,
+                                                            UnitIndex unit) noexcept {
     std::size_t const offset = layout_.slab_meta_offset(chunk, unit).raw();
     std::size_t const in_section = offset - layout_.slab_records_offset().raw();
-    CRUCIBLE_TRY(grown, grow_section_(RecordSection::slab_records, core::ByteCount{in_section + kSlabMetaBytes}));
+    CRUCIBLE_TRY(grown,
+                 grow_section_(commits, RecordSection::slab_records, core::ByteCount{in_section + kSlabMetaBytes}));
     static_cast<void>(grown);
     void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(record_.region_base()) + offset);
     return ::new(place) SlabMeta{};

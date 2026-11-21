@@ -225,9 +225,11 @@ void records_inside_the_region(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, layout.chunk_meta_offset(last).raw() + alloc::kChunkMetaBytes <= region - guard);
     std::size_t const last_slab_end = layout.slab_meta_offset(last, last_unit).raw() + alloc::kSlabMetaBytes;
     CRUCIBLE_TEST_ASSERT(test, last_slab_end <= region - guard);
-    auto const first_meta = window.start_chunk_meta(first).expect("a commit of the step of the record");
-    auto const last_meta = window.start_chunk_meta(last).expect("a commit of the step of the record");
-    auto const last_slab = window.start_slab_meta(last, last_unit).expect("a commit of the step of the record");
+    alloc::WindowCommits commits{};
+    auto const first_meta = window.start_chunk_meta(commits, first).expect("a commit of the step of the record");
+    auto const last_meta = window.start_chunk_meta(commits, last).expect("a commit of the step of the record");
+    auto const last_slab =
+        window.start_slab_meta(commits, last, last_unit).expect("a commit of the step of the record");
     CRUCIBLE_TEST_ASSERT(test, first_meta->owner() == alloc::ChunkOwner::none);
     CRUCIBLE_TEST_ASSERT(test, last_meta->state() == alloc::ChunkState::clean);
     CRUCIBLE_TEST_ASSERT(test, last_meta->source_word() == alloc::SourceWord{});
@@ -242,8 +244,9 @@ void guard_chunk_faults(TestRunnerCtx const& test) {
     alloc::WindowRecord const record = window.record();
     alloc::ChunkIndex const below_guard{alloc::kChunksPerExtent - 2};
     alloc::ChunkIndex const guard{alloc::kChunksPerExtent - 1};
-    CRUCIBLE_TEST_ASSERT(test, window.commit_extent_of(below_guard).is_ok());
-    CRUCIBLE_TEST_ASSERT(test, window.is_extent_committed(guard));
+    alloc::WindowCommits commits{};
+    CRUCIBLE_TEST_ASSERT(test, window.commit_extent_of(commits, below_guard).is_ok());
+    CRUCIBLE_TEST_ASSERT(test, window.is_extent_committed(commits, guard));
     CRUCIBLE_TEST_ASSERT(test, read_first_byte(record, below_guard) == 0);
     expect_dies_by(
         test, [record, guard] noexcept { static_cast<void>(read_first_byte(record, guard)); },
@@ -258,16 +261,17 @@ void mappings_follow_extents(TestRunnerCtx const& test) {
     constexpr std::size_t kChunks = 4096;
     CRUCIBLE_TEST_ASSERT(test, record.chunk_count() >= kChunks + kChunks / alloc::kChunksPerExtent + 1);
     std::size_t const before = count_window_mappings(test, record);
+    alloc::WindowCommits commits{};
     std::size_t after_first = 0;
     std::size_t taken = 0;
     std::uint32_t extents = 0;
     for (std::uint32_t index = 0; taken < kChunks; ++index) {
         alloc::ChunkIndex const chunk{index};
         if (alloc::is_guard_chunk(chunk)) continue;
-        if (!window.is_extent_committed(chunk)) ++extents;
-        CRUCIBLE_TEST_ASSERT(test, window.commit_extent_of(chunk).is_ok());
-        CRUCIBLE_TEST_ASSERT(test, window.start_chunk_meta(chunk).is_ok());
-        CRUCIBLE_TEST_ASSERT(test, window.start_slab_meta(chunk, first_unit).is_ok());
+        if (!window.is_extent_committed(commits, chunk)) ++extents;
+        CRUCIBLE_TEST_ASSERT(test, window.commit_extent_of(commits, chunk).is_ok());
+        CRUCIBLE_TEST_ASSERT(test, window.start_chunk_meta(commits, chunk).is_ok());
+        CRUCIBLE_TEST_ASSERT(test, window.start_slab_meta(commits, chunk, first_unit).is_ok());
         window.set_owner(chunk, alloc::owner_entry_of(alloc::HeapId{1}));
         ++taken;
         if (taken == 1) after_first = count_window_mappings(test, record);

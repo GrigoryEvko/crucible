@@ -2855,6 +2855,11 @@ foundation_test(test_alloc_size_class)
 # the guard chunk runs through the Check family of fixy.
 foundation_test(test_alloc_chunk_map)
 target_link_libraries(test_alloc_chunk_map PRIVATE fixy)
+# The chunk source of foundation/alloc/Window.h: eight threads of the thread
+# door of fixy claim and commit the chunks of one window at the same time, and
+# each chunk has one claim.  The tsan preset runs it with no suppression.
+foundation_test(test_alloc_chunk_source)
+target_link_libraries(test_alloc_chunk_source PRIVATE fixy)
 # The root of foundation/alloc/Root.h in one process: the sentinel before the
 # init, the map that the init writes into it, the sentinel of a new thread,
 # and the claims of the heap table.  The threads come from the thread door of
