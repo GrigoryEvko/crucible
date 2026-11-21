@@ -564,7 +564,7 @@ test/foundation/ | opted-out | 18 | ORACLE: the differential test of Record and 
 test/foundation/ | opted-out | 88 | ORACLE: the differential test of the Scalar family against the std forms | the std forms that the differential test of the Scalar family compares with
 test/foundation/ | opted-out | 15 | ORACLE: the printf of the C library gives the fixed text and the padded text | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
-test/foundation/ | opted-out | 79 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
+test/foundation/ | opted-out | 78 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
 test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
@@ -721,8 +721,7 @@ test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 28 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-object | 3 | - | -
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -
-test/layer/checks/foundation/diag/ | std-entity | 36 | - | -
-test/layer/checks/foundation/diag/ | std-object | 1 | - | -
+test/layer/checks/foundation/diag/ | std-entity | 14 | - | -
 test/layer/checks/foundation/effects/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/effects/ | raw-function-pointer | 1 | - | -
 test/layer/checks/foundation/effects/ | std-entity | 32 | - | -
@@ -746,7 +745,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1382 | - | -
-test/shape/ | opted-out | 282 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 291 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
