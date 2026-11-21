@@ -63,14 +63,11 @@ struct SaturationCase {
             const std::size_t nc = ring->try_pop_batch(rx.view());
             bench::do_not_optimize(np);
             bench::do_not_optimize(nc);
-            // CRITICAL: clobber rx so the compiler can't elide the pop-side
-            // stores as dead code.  Without this, try_pop_batch's memcpy
-            // into rx is DCE'd because rx is otherwise unused.  Reading
-            // ANY element of rx via do_not_optimize forces every byte to
-            // be considered live.  rx[0] suffices; the compiler treats
-            // the whole array as observable through aliasing.
-            bench::do_not_optimize(rx.at(::fixy::index<0>()));
-            bench::do_not_optimize(rx.at(::fixy::index<N - 1>()));
+            // The sink reads and writes each byte of rx, so the copy of the
+            // pop into rx stays, and no other code reads rx.  A sink of one
+            // element would keep only the bytes of that element (THE SINK
+            // of bench_harness.h).
+            bench::mark_changed(rx);
         });
     }
 };
@@ -96,14 +93,11 @@ bench::Report raw_memcpy_roundtrip() {
     return bench::run(bench::format_name("raw_memcpy<{}> round-trip (tx→mid→rx)", N), [&] {
         std::memcpy(mid.data(), tx.data(), N * sizeof(Item));
         std::memcpy(rx.data(), mid.data(), N * sizeof(Item));
-        // Same anti-DCE pattern as the SPSC bench above — clobber an
-        // element of mid AND rx so the compiler can't elide either
-        // memcpy as dead.  Without this both memcpys are DCE'd
-        // (verified: prior measurement showed 76 TB/s, which is
-        // physically impossible).
-        bench::do_not_optimize(mid[0]);
-        bench::do_not_optimize(rx[0]);
-        bench::do_not_optimize(rx[N - 1]);
+        // The sink reads and writes each byte of mid and of rx, as for the
+        // ring above, so neither copy is dead.  With no sink, both copies
+        // went: a measure gave 76 TB/s, which no host moves.
+        bench::mark_changed(mid);
+        bench::mark_changed(rx);
     });
 }
 

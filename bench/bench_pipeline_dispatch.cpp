@@ -96,7 +96,7 @@ static void small_stage(Consumer<Ws>&&, Producer<Ws>&&) noexcept {
     small_sink ^= mix_words<4, 0x9E3779B97F4A7C15ULL, 0xD1B54A32D192ED03ULL, 27, 0x94D049BB133111EBULL>(
         ::fixy::View<const std::uint64_t>{
             data.view().template window<Count>(Begin).expect("a small stage reads its words")});
-    bench::do_not_optimize(small_sink);
+    bench::mark_changed(small_sink);
 }
 
 // Large stage Stage mixes its own 20 MiB slice of large_data.
@@ -107,7 +107,7 @@ static void large_stage(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
     const ::fixy::HeapArray<std::uint64_t>& data = large_data;
     sink.value ^= mix_words<8, 0x243F6A8885A308D3ULL, 0x9E3779B97F4A7C15ULL, 29, 0xD1B54A32D192ED03ULL>(
         data.view().window(Stage * kLargeStageWords, kLargeStageWords).expect("a large stage reads its own slice"));
-    bench::do_not_optimize(sink.value);
+    bench::mark_changed(sink.value);
 }
 
 using SmallStages = StageList<cc::Stage<&small_stage<1 * KiB, 0, 256>, fixy::HotFgCtx>,

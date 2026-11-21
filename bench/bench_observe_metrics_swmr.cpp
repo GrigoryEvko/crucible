@@ -47,7 +47,7 @@ int main() {
             metrics.meb_lambda_max = static_cast<double>(seq++);
             sample = observe::fresh_metrics_sample(metrics, steps);
             writer.publish(sample);
-            bench::do_not_optimize(seq);
+            bench::mark_changed(seq);
         })};
 
     const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};

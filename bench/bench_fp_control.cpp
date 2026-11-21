@@ -84,9 +84,12 @@ bench::Report write_toggle() {
 
 bench::Report chain_alone() {
     double value = 1.0;
+    // The value of the chain stays in memory between two calls, so its sink
+    // is the sink of an object in memory.  The form that is not const of
+    // do_not_optimize() would put a second load and store in the chain.
     return bench::run("mul chain", [&value] {
         value = multiply_chain(value, 1.0);
-        bench::do_not_optimize(value);
+        bench::mark_changed(value);
     });
 }
 
@@ -99,7 +102,7 @@ bench::Report toggle_and_chain() {
         is_flushed = !is_flushed;
         os::write_fp_control(is_flushed ? flush : ieee);
         value = multiply_chain(value, 1.0);
-        bench::do_not_optimize(value);
+        bench::mark_changed(value);
     });
     os::write_fp_control(ieee);
     return report;

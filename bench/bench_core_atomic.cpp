@@ -222,9 +222,12 @@ int main() {
                   bench::do_not_optimize(value);
               }));
 
+    // The operand is an object in memory, so a row that makes it opaque for
+    // the next call gives it to mark_changed(), which adds no load and no
+    // store to the loop (THE SINK of bench_harness.h).
     print_row("Atomic::store_release", bench::run("Atomic::store_release", [&] {
                   cell.store_release(operand);
-                  bench::do_not_optimize(operand);
+                  bench::mark_changed(operand);
               }));
 
     print_row("Atomic::exchange_acq_rel", bench::run("Atomic::exchange_acq_rel", [&] {
@@ -281,7 +284,7 @@ int main() {
 
     print_row("Tally::add", bench::run("Tally::add", [&] {
                   tally.add(operand);
-                  bench::do_not_optimize(operand);
+                  bench::mark_changed(operand);
               }));
 
     print_row("Tally::read", bench::run("Tally::read", [&] {
@@ -311,13 +314,13 @@ int main() {
 
     print_row("Atomic<SoleWriter>::store_release", bench::run("Atomic<SoleWriter>::store_release", [&, lent_writer] {
                   owned_cell.store_release(*lent_writer, operand);
-                  bench::do_not_optimize(operand);
+                  bench::mark_changed(operand);
               }));
 
     print_row("Atomic<SoleWriter>::load_owned and store_release",
               bench::run("Atomic<SoleWriter>::load_owned and store_release", [&, lent_writer] {
                   owned_cell.store_release(*lent_writer, owned_cell.load_owned(*lent_writer) + 1);
-                  bench::do_not_optimize(operand);
+                  bench::mark_changed(operand);
               }));
 
     ::foundation::linear::drop(std::move(writer));

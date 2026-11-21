@@ -74,7 +74,7 @@ template <typename Body>
     std::uint64_t seq = 0;
     return measure("raw AtomicSnapshot.publish", [&] {
         snapshot.publish(payload_at(++seq));
-        bench::do_not_optimize(seq);
+        bench::mark_changed(seq);
     });
 }
 
@@ -84,7 +84,7 @@ template <typename Body>
     std::uint64_t seq = 0;
     return measure("SwmrSession.WriterHandle.publish", [&] {
         writer.publish(payload_at(++seq));
-        bench::do_not_optimize(seq);
+        bench::mark_changed(seq);
     });
 }
 
@@ -95,7 +95,7 @@ template <typename Body>
     std::uint64_t seq = 0;
     auto report = measure("SwmrSession session send", [&] {
         session.emplace(std::move(*session).send(kForeground, payload_at(++seq)));
-        bench::do_not_optimize(seq);
+        bench::mark_changed(seq);
     });
     std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
     return report;

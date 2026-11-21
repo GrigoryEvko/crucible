@@ -98,7 +98,9 @@ int main() {
                            four.at(::fixy::index<3>()) = c.at(::fixy::index<3>());
                            word += 4;
                        }
-                       bench::do_not_optimize(scratch.at(::fixy::index<0>()));
+                       // The sink reads each byte of the buffer, so each store
+                       // of the fill stays.
+                       bench::mark_changed(scratch);
                    }),
 
         // ── SIMD-9: batched generator ─────────────────────────────
@@ -161,7 +163,7 @@ int main() {
                     foundation::simd::store(out.r3, call.window<8>(24).expect("a call fills 32 lanes"));
                     ++call_idx;
                 }
-                bench::do_not_optimize(scratch.at(::fixy::index<0>()));
+                bench::mark_changed(scratch);
             });
         }(),
     };

@@ -160,9 +160,9 @@ struct DrainWorker {
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
-            // Anti-DCE: keep the read alive.
-            bench::do_not_optimize(buf.at(::fixy::index<0>()));
-            bench::do_not_optimize(*buf.get(n - 1).expect("a pop gives at most the count of the buffer"));
+            // The sink reads each byte of the buffer, so the copy of the pop
+            // into it stays.
+            bench::mark_changed(buf);
             local += n;
         }
     }

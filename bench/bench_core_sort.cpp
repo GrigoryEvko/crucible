@@ -384,9 +384,12 @@ struct RawSortBody final {
         ++sample;
     }
 
+    // The first element of the sorted run stays in memory, so its sink is the
+    // sink of an object in memory, which adds no load and no store to the
+    // loop (THE SINK of bench_harness.h).
     void operator()() noexcept {
         sort(work, work + Count);
-        bench::do_not_optimize(work[0]);
+        bench::mark_changed(work[0]);
     }
 };
 
@@ -478,7 +481,7 @@ struct KeyValueSortBody final {
 
     void operator()() noexcept {
         bench_sort_references::sort_simd_avx2_keyvalue(keys, payloads, Count);
-        bench::do_not_optimize(keys[0]);
+        bench::mark_changed(keys[0]);
     }
 };
 

@@ -246,7 +246,7 @@ int main() {
             return bench::run("head.advance_sole_writer_from (release)", [&] {
                 log->head.advance_sole_writer_from(v, v + 1);
                 ++v;
-                bench::do_not_optimize(v);
+                bench::mark_changed(v);
             });
         }(),
 
