@@ -333,12 +333,12 @@ find_name_fault_(ProcessSystem<Processes, Channels, Actions> const& protocol) no
 
 // The process that holds each side of each channel, while the checks of the
 // form read the actions.  Side 0 of channel c is the slot 2c, and side 1 is
-// 2c + 1.  A slot holds the index of its process plus one, and 0 for a side
-// that no action holds yet, so the zero fill of the array is its first state.
+// 2c + 1.  A slot holds the index of its process, and no_index for a side
+// that no action holds yet: the check fills the array with no_index first.
 // The sealed form reads no side, so it holds no slot.
 template <std::size_t Channels, FormCheck Form>
 struct side_holders {
-    std::uint32_t process_after[2 * Channels]{};
+    std::uint32_t process_of[2 * Channels]{};
 };
 template <std::size_t Channels>
 struct side_holders<Channels, FormCheck::Sealed> {};
@@ -357,6 +357,8 @@ find_form_fault_(ProcessSystem<Processes, Channels, Actions> const& protocol) no
     LivenessFault const named = find_name_fault_(protocol);
     if (named.is_fault()) return named;
     side_holders<Channels, FormCheck::Run> holders{};
+    for (std::uint32_t& slot : holders.process_of)
+        slot = no_index;
     for (std::uint32_t index = 0; index < Actions; ++index) {
         Action const& act = protocol.actions[index];
         auto const process = static_cast<std::uint32_t>(act.process);
@@ -365,10 +367,10 @@ find_form_fault_(ProcessSystem<Processes, Channels, Actions> const& protocol) no
             return LivenessFault{.code = LivenessFaultCode::ActionPastSystem, .action = ActionId{index}};
         }
         std::uint32_t const slot = 2 * channel + (act.move == Move::Send ? 0u : 1u);
-        if (holders.process_after[slot] == 0u) holders.process_after[slot] = process + 1u;
-        if (holders.process_after[slot] != process + 1u) {
+        if (holders.process_of[slot] == no_index) holders.process_of[slot] = process;
+        if (holders.process_of[slot] != process) {
             return LivenessFault{.code = LivenessFaultCode::SideHeldTwice,
-                                 .process = ProcessId{holders.process_after[slot] - 1u},
+                                 .process = ProcessId{holders.process_of[slot]},
                                  .channel = act.channel,
                                  .action = ActionId{index}};
         }
@@ -393,23 +395,33 @@ find_liveness_fault_(ProcessSystem<Processes, Channels, Actions> const& protocol
     // the slot 2c, and side 1 is 2c + 1.  The plain form checks the form of
     // each action in the same loop, with the checks of find_form_fault_
     // inline: a code that a helper gives back costs one more hardened compare
-    // for each action under -fharden-compares, about 6% of the check.
+    // for each action under -fharden-compares, about 6% of the check.  The
+    // loop reads the move for the slot only after the checks of the form.  A
+    // read before them lets GCC make the check of the move a value, and
+    // -fharden-compares then hardens that value: 5 more instructions for each
+    // action.
     MarkedGraph<Channels, Actions> graph{};
     std::uint32_t step_count[2 * Channels]{};
     [[maybe_unused]] side_holders<Channels, Form> holders{};
+    if constexpr (Form == FormCheck::Run) {
+        for (std::uint32_t& slot : holders.process_of)
+            slot = none;
+    }
     for (std::uint32_t index = 0; index < Actions; ++index) {
         Action const& act = protocol.actions[index];
         auto const channel = static_cast<std::uint32_t>(act.channel);
-        std::uint32_t const slot = 2 * channel + (act.move == Move::Send ? 0u : 1u);
+        [[maybe_unused]] auto const process = static_cast<std::uint32_t>(act.process);
         if constexpr (Form == FormCheck::Run) {
-            auto const process = static_cast<std::uint32_t>(act.process);
             if (process >= Processes || channel >= Channels || (act.move != Move::Send && act.move != Move::Receive)) {
                 return LivenessFault{.code = LivenessFaultCode::ActionPastSystem, .action = ActionId{index}};
             }
-            if (holders.process_after[slot] == 0u) holders.process_after[slot] = process + 1u;
-            if (holders.process_after[slot] != process + 1u) {
+        }
+        std::uint32_t const slot = 2 * channel + (act.move == Move::Send ? 0u : 1u);
+        if constexpr (Form == FormCheck::Run) {
+            if (holders.process_of[slot] == none) holders.process_of[slot] = process;
+            if (holders.process_of[slot] != process) {
                 return LivenessFault{.code = LivenessFaultCode::SideHeldTwice,
-                                     .process = ProcessId{holders.process_after[slot] - 1u},
+                                     .process = ProcessId{holders.process_of[slot]},
                                      .channel = act.channel,
                                      .action = ActionId{index}};
             }
