@@ -32,6 +32,8 @@ using ::fixy::BoundedMonotonic;
 using ::fixy::MaxObserved;
 using ::fixy::Monotonic;
 using ::fixy::OrderedAppendOnly;
+using ::fixy::WideMonotonic;
+using ::fixy::WideStart;
 using ::fixy::WriteOnce;
 using ::fixy::WriteOnceNonNull;
 using ::fixy::check::expect_dies;
@@ -75,6 +77,15 @@ static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std:
 // BoundedMonotonic collapses onto its Monotonic.
 static_assert(sizeof(BoundedMonotonic<std::uint32_t, 1024U>) == sizeof(std::uint32_t));
 static_assert(sizeof(BoundedMonotonic<std::uint8_t, 7U>) == sizeof(std::uint8_t));
+
+// WideMonotonic and WideStart collapse onto their 64-bit value, and no copy
+// of bytes builds either one.
+static_assert(sizeof(WideMonotonic<1>) == sizeof(std::uint64_t));
+static_assert(sizeof(WideStart) == sizeof(std::uint64_t));
+static_assert(!std::is_trivially_copyable_v<WideMonotonic<1>> && !std::is_trivially_copyable_v<WideStart>);
+static_assert(!std::is_constructible_v<WideMonotonic<1>, std::uint64_t>);
+static_assert(!std::is_constructible_v<WideStart, std::uint64_t>);
+static_assert(!std::is_copy_assignable_v<WideMonotonic<1>> && !std::is_move_assignable_v<WideMonotonic<1>>);
 
 // WriteOnce pays the optional tag; WriteOnceNonNull pays nothing.
 static_assert(sizeof(WriteOnce<int>) == sizeof(std::optional<int>));
@@ -357,6 +368,46 @@ int check_bounded_monotonic() {
     if (counter.get() != 0U) return 49;
     counter.advance(10U);
     if (counter.get() != 10U) return 199;
+    return 0;
+}
+
+// A WideMonotonic starts at zero or at a checked start, steps by one, and
+// goes back only through its reset.
+int check_wide_monotonic() {
+    WideMonotonic<1> counter = ::fixy::mint_wide_monotonic<1>();
+    if (counter.get() != 0) return 220;
+    counter.bump();
+    counter.bump();
+    if (counter.get() != 2 || counter.current() != 2) return 221;
+
+    // The last start below the limit is admitted, and a bump steps past the
+    // limit with no check: the limit bounds the start, not the count.
+    constexpr std::uint64_t kLastStart = ::fixy::wide_start_limit - 1;
+    WideMonotonic<4> near_limit = ::fixy::mint_wide_monotonic<4>(WideStart::check_below_limit(kLastStart));
+    if (near_limit.get() != kLastStart) return 222;
+    near_limit.bump();
+    if (near_limit.get() != ::fixy::wide_start_limit) return 223;
+    if (WideMonotonic<4>::max_step() != 4) return 224;
+
+    // A copy keeps the count, and the two counts then step apart.
+    WideMonotonic<1> copy = counter;
+    copy.bump();
+    if (copy.get() != 3 || counter.get() != 2) return 225;
+
+    // The reset moves the count back to a start.
+    counter.reset_under_quiescence(WideStart::check_below_limit(7));
+    if (counter.get() != 7) return 226;
+    counter.reset_under_quiescence(WideStart::zero());
+    if (counter.get() != 0) return 227;
+
+    // The doors work in a constant evaluation too.
+    constexpr std::uint64_t kStepped = [] {
+        WideMonotonic<1> constant = ::fixy::mint_wide_monotonic<1>(WideStart::check_below_limit(40));
+        constant.bump();
+        constant.bump();
+        return constant.get();
+    }();
+    static_assert(kStepped == 42);
     return 0;
 }
 
@@ -760,6 +811,17 @@ int check_contracts_abort() {
         ::fixy::TextView{"foundation: contract violation: std::cmp_less_equal(value, Max)"});
     if (bounded.get() != 8U) return 201;
 
+    // A start at the limit of a WideMonotonic aborts in each build, because
+    // the unchecked bump is sound only from a start below the limit.
+    std::uint64_t at_limit = ::fixy::wide_start_limit;
+    constexpr ::fixy::TextView kStartAtLimit{"foundation: fatal invariant failed: value < wide_start_limit"};
+    expect_dies(test, [&at_limit] noexcept { (void)WideStart::check_below_limit(at_limit); }, kStartAtLimit);
+    WideMonotonic<1> wide = ::fixy::mint_wide_monotonic<1>();
+    expect_dies(
+        test, [&wide, &at_limit] noexcept { wide.reset_under_quiescence(WideStart::check_below_limit(at_limit)); },
+        kStartAtLimit);
+    if (wide.get() != 0) return 202;
+
     WriteOnce<int> once = ::fixy::mint_write_once<int>();
     expect_dies(
         test, [&once] noexcept { (void)once.get(); },
@@ -877,6 +939,7 @@ int main() {
     if (int rc = check_monotonic(); rc != 0) return rc;
     if (int rc = check_ordered_append_only(); rc != 0) return rc;
     if (int rc = check_bounded_monotonic(); rc != 0) return rc;
+    if (int rc = check_wide_monotonic(); rc != 0) return rc;
     if (int rc = check_write_once(); rc != 0) return rc;
     if (int rc = check_write_once_non_null(); rc != 0) return rc;
     if (int rc = check_atomic_monotonic(); rc != 0) return rc;

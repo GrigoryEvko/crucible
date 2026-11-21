@@ -757,6 +757,7 @@ witness <fixy/Mutation.h> private | fixy::AppendOnly<int> | fixy::AppendOnly<int
 witness <fixy/Mutation.h> private | fixy::OrderedAppendOnly<int> | fixy::OrderedAppendOnly<int>{}
 witness <fixy/Mutation.h> private | fixy::Monotonic<int> | fixy::Monotonic<int>{0}
 witness <fixy/Mutation.h> private | fixy::BoundedMonotonic<int, 10> | fixy::BoundedMonotonic<int, 10>{0}
+witness <fixy/Mutation.h> private | fixy::WideMonotonic<1> | fixy::WideMonotonic<1>{fixy::WideStart::zero()}
 witness <fixy/Mutation.h> private | fixy::AtomicMonotonic<int> | fixy::AtomicMonotonic<int>{0}
 witness <fixy/Mutation.h> private | fixy::WriteOnce<int> | fixy::WriteOnce<int>{}
 witness <fixy/Mutation.h> private | fixy::WriteOnceNonNull<int*> | fixy::WriteOnceNonNull<int*>{}

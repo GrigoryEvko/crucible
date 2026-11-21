@@ -62,6 +62,8 @@ template <typename KeyFn, typename Cmp>
 struct ordered_append_only;
 template <auto Max>
 struct bounded_monotonic;
+template <std::uint64_t MaxStep>
+struct wide_monotonic;
 struct write_once;
 struct write_once_non_null;
 template <typename Cmp>
@@ -359,6 +361,22 @@ mint_ordered_append_only() noexcept(std::is_nothrow_default_constructible_v<Stor
     return OrderedAppendOnly<T, KeyFn, Cmp, Storage>{};
 }
 
+// The limits of a WideMonotonic (THE WIDE COUNTER below): its start is below
+// 2^62, and its bound of one step is at most 2^32.
+inline constexpr std::uint64_t wide_start_limit = std::uint64_t{1} << 62;
+inline constexpr std::uint64_t wide_step_limit = std::uint64_t{1} << 32;
+
+// The bound of one step of a WideMonotonic: at least one, so that each step
+// moves the count, and at most wide_step_limit.
+template <std::uint64_t MaxStep>
+concept WideStepBound = MaxStep >= 1 && MaxStep <= wide_step_limit;
+
+// Monotonic names WideMonotonic as a friend, for the step that its type
+// proves.
+template <std::uint64_t MaxStep>
+    requires WideStepBound<MaxStep>
+class WideMonotonic;
+
 // Cmp fixes the direction of travel. With the default std::less,
 // advance accepts a value that is not less than the current one.
 // std::greater gives decreasing-only semantics.
@@ -398,6 +416,11 @@ private:
     template <typename U, CounterWriters W, typename C>
         requires std::is_trivially_copyable_v<U>
     friend class AtomicMonotonic;
+
+    // A WideMonotonic writes the value of its step with no order check.
+    template <std::uint64_t MaxStep>
+        requires WideStepBound<MaxStep>
+    friend class WideMonotonic;
 
     // The step of a copy of a counter after the checked publish of
     // AtomicMonotonic proved that the copy holds current.  The order check
@@ -560,6 +583,103 @@ template <typename T, auto Max, typename Cmp>
 [[nodiscard]] constexpr BoundedMonotonic<T, Max, Cmp>
 mint_bounded_monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return BoundedMonotonic<T, Max, Cmp>{std::move(initial)};
+}
+
+// THE WIDE COUNTER
+//   A WideMonotonic is a count of 64 bits that only goes up, and its step
+//   holds no check.  Two facts carry the order of the step:
+//     - The count starts below wide_start_limit (2^62).  A start is a
+//       WideStart, and its one door from a value checks the limit, one time
+//       for each mint or reset.
+//     - A step adds at least one and at most MaxStep (WideStepBound).  bump
+//       adds one.  A step of a plain integer does not compile, because its
+//       size has no bound.
+//   Each unit of the count stands for one item of work of the caller, such as
+//   an iteration of a region or a slot of a ring.  Each item takes at least
+//   one store, and a core does at most a few stores each nanosecond.  From a
+//   start below 2^62, the count gets to the end of 64 bits only after more
+//   than 3 * 2^62 items, which is more than 100 years of such work.  Thus no
+//   step wraps the count, and a bump is one add.
+
+// The start of a WideMonotonic: a value below wide_start_limit.  Each door
+// gives a value below the limit, and no copy of bytes makes a start.
+class [[nodiscard]] WideStart {
+    std::uint64_t value_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr explicit WideStart(std::uint64_t value) noexcept : value_{value} {}
+
+public:
+    // The start of a new count.
+    [[nodiscard]] static constexpr WideStart zero() noexcept { return WideStart{0}; }
+
+    // The start at a value that the caller computed, such as the position of
+    // a reset.  The check runs one time for each start, in each build and
+    // under each contract semantic, because the unchecked step of the count
+    // is sound only below the limit.
+    [[nodiscard]] static constexpr WideStart check_below_limit(std::uint64_t value) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(value < wide_start_limit);
+        return WideStart{value};
+    }
+
+    [[nodiscard]] constexpr std::uint64_t value() const noexcept { return value_; }
+};
+
+template <std::uint64_t MaxStep>
+    requires WideStepBound<MaxStep>
+[[nodiscard]] constexpr WideMonotonic<MaxStep> mint_wide_monotonic(WideStart start = WideStart::zero()) noexcept;
+
+template <std::uint64_t MaxStep>
+    requires WideStepBound<MaxStep>
+class [[nodiscard]] WideMonotonic {
+    Monotonic<std::uint64_t> inner_;
+    // No byte route builds a count, so no count holds a value that no door
+    // gave.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr explicit WideMonotonic(WideStart start) noexcept : inner_{mint_monotonic<std::uint64_t>(start.value())} {}
+
+    template <std::uint64_t S>
+        requires WideStepBound<S>
+    friend constexpr WideMonotonic<S> mint_wide_monotonic(WideStart start) noexcept;
+
+public:
+    using value_type = std::uint64_t;
+    using row_discipline = ::fixy::row_discipline::wide_monotonic<MaxStep>;
+    using row_payload = Monotonic<std::uint64_t>;
+    static constexpr std::uint64_t max_step() noexcept { return MaxStep; }
+
+    constexpr WideMonotonic(WideMonotonic const&) = default;
+    constexpr WideMonotonic(WideMonotonic&&) = default;
+    WideMonotonic& operator=(WideMonotonic const&) = delete(
+        "WideMonotonic only goes up. An assignment would move it backward. Use reset_under_quiescence to go back");
+    WideMonotonic& operator=(WideMonotonic&&) = delete(
+        "WideMonotonic only goes up. An assignment would move it backward. Use reset_under_quiescence to go back");
+
+    [[nodiscard]] constexpr const std::uint64_t& get() const noexcept { return inner_.get(); }
+    [[nodiscard]] constexpr const std::uint64_t& current() const noexcept { return inner_.current(); }
+
+    // A step of one.  THE WIDE COUNTER proves that the step does not wrap,
+    // so the step is one add, with no compare.
+    CRUCIBLE_INLINE constexpr void bump() noexcept {
+        inner_.impl_ = Monotonic<std::uint64_t>::graded_type{inner_.get() + std::uint64_t{1}};
+    }
+
+    template <class Count>
+        requires std::integral<Count>
+    void step(Count) =
+        delete("WideMonotonic: a step of a plain integer has no bound in its type, so it can wrap the count. Use bump");
+
+    // The only way to move the count backward.  No other thread reads or
+    // steps the count during the call.  The type system cannot prove that.
+    // The start is below the limit, as at the mint.
+    constexpr void reset_under_quiescence(WideStart start) noexcept { inner_.reset_under_quiescence(start.value()); }
+};
+
+template <std::uint64_t MaxStep>
+    requires WideStepBound<MaxStep>
+[[nodiscard]] constexpr WideMonotonic<MaxStep> mint_wide_monotonic(WideStart start) noexcept {
+    return WideMonotonic<MaxStep>{start};
 }
 
 template <typename T>

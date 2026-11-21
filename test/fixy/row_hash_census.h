@@ -817,6 +817,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::OrderedAppendOnly, ^^::fixy::OrderedAppendOnly<int>},
     {^^::fixy::Monotonic, ^^::fixy::Monotonic<std::uint64_t>},
     {^^::fixy::BoundedMonotonic, ^^::fixy::BoundedMonotonic<std::uint32_t, 1024U>},
+    {^^::fixy::WideMonotonic, ^^::fixy::WideMonotonic<1>},
     {^^::fixy::AtomicMonotonic, ^^::fixy::AtomicMonotonic<std::uint64_t>},
     {^^::fixy::Qtt, ^^::fixy::Linear<int>},
     {^^::fixy::Refinement, ^^::fixy::Refined<::fixy::positive, int>},
@@ -1280,6 +1281,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::retag_policy, kMetafunction},
     {^^::fixy::Cyclic, kPayload},
     {^^::fixy::CyclicBuffer, kPayload},
+    {^^::fixy::WideStart,
+     "the start of a WideMonotonic: a value below the start limit that the count takes at its mint or reset, and the "
+     "count folds its claim"},
     {^^::fixy::duplicate_atom_on, kMetafunction},
     {^^::fixy::malformed_atom, kMetafunction},
     {^^::fixy::unholdable_payload, kMetafunction},

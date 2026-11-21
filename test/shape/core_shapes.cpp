@@ -3,7 +3,8 @@
 //
 // The rule codegen-shapes (utils/assay/guard/engines/elf/codegen_shapes.py) reads the disassembly of this unit.  Each
 // probe is a pair of functions.  The first function does one hot operation of a
-// family of include/foundation/core, of fixy::Linear or of a permission token.
+// family of include/foundation/core, of fixy::Linear, of a counter of
+// fixy/Mutation.h or of a permission token.
 // The second function does the same work in the raw form that the family
 // replaces: a std::atomic operation, a raw pointer loop, memcpy or memset, a
 // std::unique_ptr or std::optional access, std::unreachable, a plain value,
@@ -24,6 +25,7 @@
 // hand match that it replaces, beside it, and the match has its own pair.
 
 #include <fixy/Core.h>
+#include <fixy/Mutation.h>
 #include <fixy/Protocol.h>
 #include <fixy/Qtt.h>
 #include <foundation/AlignedBytes.h>
@@ -186,6 +188,10 @@ struct NetError8 final {
 [[gnu::used]] void tally_add(fixy::Tally& tally, std::uint64_t amount) noexcept { tally.add(amount); }
 
 [[gnu::used]] std::uint64_t tally_read(fixy::Tally const& tally) noexcept { return tally.read(); }
+
+// The bump of a WideMonotonic holds no compare: its type bounds the start and
+// the step, so the bump cannot wrap the count.
+[[gnu::used]] void wide_monotonic_bump(fixy::WideMonotonic<1>& counter) noexcept { counter.bump(); }
 
 [[gnu::used]] std::uint64_t cache_line_load(fixy::CacheLine<fixy::Atomic<std::uint64_t>> const& line) noexcept {
     return line->load_acquire();
@@ -1629,6 +1635,10 @@ struct RawColumn final {
 [[gnu::used]] std::uint64_t tally_read_raw(std::atomic<std::uint64_t> const& counter) noexcept {
     return counter.load(std::memory_order_relaxed);
 }
+
+// The count that a WideMonotonic replaces is a plain 64-bit integer that the
+// code adds one to.
+[[gnu::used]] void wide_monotonic_bump_raw(std::uint64_t& counter) noexcept { ++counter; }
 
 // A CacheLine replaces a cell that the code aligns by hand, so the raw form
 // reads the cell with no CacheLine around it.

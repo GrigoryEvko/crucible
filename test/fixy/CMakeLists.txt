@@ -331,6 +331,18 @@ fixy_neg_compile_test(neg_mutation_bounded_monotonic_bump_past_max
   "in .constexpr. expansion of .counter\\.fixy::BoundedMonotonic<unsigned int, 2, std::less<unsigned int> >::bump\\(\\)."
   ".__builtin_trap\\(\\). is not a constant expression")
 
+# A WideMonotonic starts only from a WideStart, steps only by a step that its
+# type bounds, and has a step bound of at least one.
+fixy_neg_compile_test(neg_mutation_wide_monotonic_start_from_integer
+  "could not convert .5. from .uint64_t. .aka .long unsigned int.. to .fixy::WideStart."
+  "neg_mutation_wide_monotonic_start_from_integer\\.cpp")
+fixy_neg_compile_test(neg_mutation_wide_monotonic_step_of_integer
+  "use of deleted function .void fixy::WideMonotonic<MaxStep>::step\\(Count\\)"
+  "WideMonotonic: a step of a plain integer has no bound in its type, so it can wrap the count\\. Use bump")
+fixy_neg_compile_test(neg_mutation_wide_monotonic_zero_step_bound
+  "required for the satisfaction of .WideStepBound<MaxStep>. \\[with MaxStep = 0\\]"
+  "the expression .MaxStep >= 1 \\[with MaxStep = 0\\]. evaluated to .false.")
+
 # The door of each mutation wrapper refuses a type argument its concept
 # does not admit.
 fixy_neg_compile_test(neg_mutation_append_only_storage_without_index
