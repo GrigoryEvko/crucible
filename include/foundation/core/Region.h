@@ -857,9 +857,9 @@ namespace detail {
 // door, and run is the run of held.  The body runs before the Record moves
 // held, because a braced list runs its parts in order.
 template <class Brand, class Owner, class T, std::size_t Extent, class Body>
-[[nodiscard]] constexpr frame_return_t<std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>, Owner>
+[[nodiscard]] constexpr frame_return_t<body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Owner>
 give_run_back_(Owner& held, View<T, Extent> run, Body&& body) noexcept {
-    using Given = std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>;
+    using Given = body_result_t<Body&&, ViewMut<T, Brand, Extent>>;
     if constexpr (std::is_void_v<Given>) {
         static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{FrameDoor::key(), run});
         return static_cast<Owner&&>(held);
@@ -877,13 +877,13 @@ give_run_back_(Owner& held, View<T, Extent> run, Body&& body) noexcept {
 // owner.
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
 concept FrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
-                 && FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
+                 && FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
 
 // A body whose result does not leave the frame: the refused twin of each
 // door binds to it.
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
 concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
-                        && (!FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>);
+                        && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>);
 
 // ── The position of a run inside a run ─────────────────────────────────
 

@@ -263,17 +263,19 @@ public:
     // The frame door of one element (THE ELEMENT DOOR): body gets the
     // element at a proven index in place, for the time of the call, and the
     // door gives the result of body.  The result holds no borrow, so no
-    // reference to the element leaves the door.  A const array gives a const
-    // element.  Complexity: O(1), and the cost of body.
+    // reference to the element leaves the door.  The door gives that result
+    // by value: a deduced auto type is never a reference, and it reads the
+    // call of body with no trait.  A const array gives a const element.
+    // Complexity: O(1), and the cost of body.
     template <class Body>
-        requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<std::invoke_result_t<Body, T&>>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T&>
+        requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
     }
     template <class Body>
-        requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<std::invoke_result_t<Body, T const&>>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T const&>
+        requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<detail::body_result_t<Body, T const&>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
     }
@@ -288,13 +290,13 @@ public:
     // ViewMut<T, Fresh, N> of the elements, with the scope brand of the
     // frame, and the door gives the result of body.  The array stays in
     // place, and the door writes no byte of it, so it copies no element.  The
-    // result of body leaves the frame (FrameResult of Choice.h).  The pack
-    // refuses each explicit argument, so no caller names the brand.
-    // Complexity: O(1), and the cost of body.
+    // result of body leaves the frame (FrameResult of Choice.h), by value, as
+    // the result of the element door does.  The pack refuses each explicit
+    // argument, so no caller names the brand.  Complexity: O(1), and the cost
+    // of body.
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && FrameBody<Body, T, Fresh, N>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body&&, ViewMut<T, Fresh, N>>
-        with_mut(Body&& body) & noexcept {
+    [[= ::foundation::linear::borrow_match{}]] constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
             ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), elements_}});
     }
@@ -1114,7 +1116,7 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
          && ArrayFrameOwner<Owner>
          && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
 [[nodiscard]] constexpr detail::frame_return_t<
-    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
+    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     View<typename Owner::element_type, detail::frame_extent_v<Owner>> const run = held.view();

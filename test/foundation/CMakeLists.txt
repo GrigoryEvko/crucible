@@ -3774,6 +3774,15 @@ foundation_neg_compile_test(neg_core_fixed_array_at_wider_index
 foundation_neg_compile_test(neg_core_fixed_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+# The result of a body of the member frame door leaves the frame, so it holds
+# no borrow and names no brand of the frame.  The refused twin of the door
+# gives the reason.
+foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_view_mut
+  "use of deleted function .void foundation::core::FixedArray<T, N>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_brand
+  "use of deleted function .void foundation::core::FixedArray<T, N>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
+  "and it names no brand of the frame: give a plain value")
 # A window loan and a window stack do not copy, and a loan does not move, so
 # the loans of one stack end in the reverse order of their opens.
 foundation_neg_compile_test(neg_core_window_loan_copied

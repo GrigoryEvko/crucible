@@ -130,6 +130,14 @@ struct FrameDoor {
     [[nodiscard]] static constexpr FrameKey key() noexcept { return FrameKey{}; }
 };
 
+// The type that the call static_cast<Body&&>(body)(argument) of a door gives
+// for an argument of type Argument.  Each door calls its body with the call
+// operator, so the alias reads that call alone.  It instantiates none of the
+// classes of std::invoke_result, which the body of each call of a door would
+// instantiate again.
+template <class Body, class Argument>
+using body_result_t = decltype(::std::declval<Body>()(::std::declval<Argument>()));
+
 }  // namespace detail
 
 // The object of a unique borrow: an object type that is not an array, not

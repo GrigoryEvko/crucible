@@ -403,7 +403,7 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
          && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
          && FrameBody<Body, typename Owner::element_type, Fresh>
 [[nodiscard]] constexpr detail::frame_return_t<
-    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     View<typename Owner::element_type> const run = held.view();

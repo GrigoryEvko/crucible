@@ -540,10 +540,10 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
          && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
          && FrameBody<Body, typename Owner::element_type, Fresh>
 [[nodiscard]] constexpr detail::frame_return_t<
-    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
     using T = typename Owner::element_type;
-    using Given = std::invoke_result_t<Body&&, ViewMut<T, Fresh>>;
+    using Given = detail::body_result_t<Body&&, ViewMut<T, Fresh>>;
     Owner held{static_cast<Owner&&>(owner)};
     if constexpr (std::is_void_v<Given>) {
         lend_elements_(detail::FrameDoor::key(), held, [&body](View<T> run) noexcept {
