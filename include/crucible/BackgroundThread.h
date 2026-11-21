@@ -12,7 +12,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 #include <type_traits>
 
 #include <crucible/IterationDetector.h>
