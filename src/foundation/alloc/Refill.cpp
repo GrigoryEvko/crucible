@@ -83,14 +83,21 @@ void start_bitmap(SlabMeta& meta, SizeClass size_class) noexcept {
     return is_sound && free == meta.free_count().raw();
 }
 
+// The fatal text of a refill of a class with no slab, out of the refill.
+[[noreturn]] CRUCIBLE_COLD void die_refill_without_slab(SizeClass size_class) noexcept {
+    core::fatal("foundation: a refill of the class {} of the allocator needs the large runs, which no heap has.  The "
+                "typed door takes only a class with a slab, 1 to 52",
+                std::uint32_t{static_cast<std::uint8_t>(size_class)});
+}
+
 }  // namespace
 
 AddressWord HeapState::refill_(SizeClass size_class) noexcept {
-    if (is_sentinel(*this)) return claim_thread_heap().allocate(size_class);
-    if (!is_slab_class(size_class)) {
-        core::fatal("foundation: a refill of the class {} of the allocator needs the large runs, which no heap has.  "
-                    "The typed door takes only a class with a slab, 1 to 52",
-                    std::uint32_t{static_cast<std::uint8_t>(size_class)});
+    if (is_sentinel(*this)) [[unlikely]] {
+        return claim_thread_heap().allocate(size_class);
+    }
+    if (!is_slab_class(size_class)) [[unlikely]] {
+        die_refill_without_slab(size_class);
     }
     Bin& bin = bins_[static_cast<std::uint8_t>(size_class)];
     // A bin holds at least two addresses, so the half is at least one.
@@ -108,24 +115,36 @@ AddressWord HeapState::refill_(SizeClass size_class) noexcept {
 
 core::ElementCount HeapState::take_slots_(SizeClass size_class, SlabLink slab, AddressWord* first,
                                           core::ElementCount wanted) noexcept {
+    CRUCIBLE_FATAL_INVARIANT(wanted.raw() != 0);
     SlabMeta& meta = slab_records_.at(slab);
     std::uint64_t const base = slab_first_byte(window_base_, slab);
     std::uint64_t const slot = detail::kSlotFacts.rows[static_cast<std::uint8_t>(size_class)].slot_bytes;
     std::uint64_t summary = static_cast<std::uint64_t>(meta.summary());
     std::size_t const count = wanted.raw();
     std::size_t taken = 0;
-    while (taken < count && summary != 0) {
+    // Each loop has one compare for each branch, because -fharden-compares
+    // doubles a compound condition (design 6, PF2).  A set bit of the summary
+    // names a word with a free slot, and the caller wants at least one block,
+    // so each turn of a loop takes one block before its tests.
+    while (summary != 0) {
         auto const word = static_cast<std::uint32_t>(core::countr_zero(summary));
         BitmapWordIndex const index = BitmapWordIndex::check(word).expect("a bit of a summary names a word below 64");
         std::uint64_t bits = static_cast<std::uint64_t>(meta.bitmap_word(index));
-        while (taken < count && bits != 0) {
+        // The summary and the words are metadata in memory, so no type holds
+        // their agreement.  The check runs one time for each word.
+        CRUCIBLE_FATAL_INVARIANT(bits != 0);
+        std::uint64_t const word_first_byte = base + std::uint64_t{word} * 64 * slot;
+        for (;;) {
             auto const bit = static_cast<std::uint64_t>(core::countr_zero(bits));
             bits &= bits - 1;
-            first[taken] = AddressWord{base + (std::uint64_t{word} * 64 + bit) * slot};
+            first[taken] = AddressWord{word_first_byte + bit * slot};
             ++taken;
+            if (bits == 0) break;
+            if (taken == count) break;
         }
         meta.set_bitmap_word(index, SlotBits{bits});
         if (bits == 0) summary &= summary - 1;
+        if (taken == count) break;
     }
     std::uint16_t const free_before = meta.free_count().raw();
     CRUCIBLE_FATAL_INVARIANT(taken <= free_before);
