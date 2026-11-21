@@ -30,7 +30,7 @@ int main() {
     ::fixy::FixedArray<SchemaHash, N> hashes{};
     for (::fixy::Index<N> const i : hashes.indices()) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
-        hashes.at(i) = SchemaHash{h};
+        hashes.with_element(i, [h](SchemaHash& hash) noexcept { hash = SchemaHash{h}; });
         ::fixy::FixedText<16> name{};
         const ::fixy::TextView name_view =
             ::fixy::format(name, "aten::op{}", i.raw()).expect("aten::op and a number below 250 fit in 16 characters");

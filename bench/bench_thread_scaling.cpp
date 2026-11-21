@@ -438,7 +438,7 @@ struct RowState : RowControl {
 
 [[nodiscard]] Phase read_phase(RowControl const& control) noexcept { return control.phase.phase.load_acquire(); }
 
-[[nodiscard]] ThreadLine& line_of(RowControl& control, bench::ThreadSlot slot) noexcept {
+[[nodiscard]] ThreadLine const& line_of(RowControl const& control, bench::ThreadSlot slot) noexcept {
     return *control.lines.get(slot.raw()).expect("a slot of a row is below kMaxThreads");
 }
 
@@ -546,10 +546,14 @@ void run_producer_loop(RowControl& control, Op const& op, ThreadLine& line) noex
         for (std::uint64_t count = 0; count < kOpsPerCheck; ++count)
             op();
         for (WindowIndex const index : window)
-            ops.at(index) += kOpsPerCheck * kItemsPerOp<Kind>;
+            ops.with_element(index, [](std::uint64_t& count) noexcept { count += kOpsPerCheck * kItemsPerOp<Kind>; });
     }
-    for (WindowIndex const index : ops.indices())
-        line.window_ops.at(index).store_release(ops.at(index));
+    for (WindowIndex const index : ops.indices()) {
+        std::uint64_t const value = ops.at(index);
+        // The main thread reads this Atomic only after is_published, and no other thread writes it.
+        line.window_ops.with_element(
+            index, [value](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(value); });
+    }
     line.is_published.store_release(true);
     while (read_phase(control) != Phase::Stop) {
         for (std::uint64_t count = 0; count < kOpsPerCheck; ++count)
@@ -617,33 +621,39 @@ template <OpKind Kind>
 }
 
 // The loop of the consumer of an op: it pops until the stop, and it counts
-// no item of the window.  It stores the sum of its items into its line at
-// the end, so no read of a cell is dead code.
+// no item of the window.  It gives the sum of its items, and the caller
+// stores the sum into its line, so no read of a cell is dead code.  The
+// caller publishes its line before the loop, so the publish comes before the
+// count of the ready threads.
 // The pop is a call of the thread, as the op of run_producer_loop is.  The
 // loop gives the pop its source on each call, so a pop of the end of a channel
 // holds no borrow of the end.
 template <class Pop, class Source>
-void run_consumer_loop(RowControl& control, Pop const& pop, Source& source, ThreadLine& line) noexcept {
-    ::fixy::FixedArray<Item, kPopBatch> out{};
+[[nodiscard]] std::uint64_t run_consumer_loop(RowControl& control, Pop const& pop, Source& source,
+                                              ::fixy::View<Item> items) noexcept {
     std::uint64_t sum = 0;
-    line.is_published.store_release(true);
     static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
     while (read_phase(control) != Phase::Stop) {
         for (std::uint64_t count = 0; count < kOpsPerCheck; ++count) {
-            if (!pop(source, out.view(), sum)) CRUCIBLE_SPIN_PAUSE;
+            if (!pop(source, items, sum)) CRUCIBLE_SPIN_PAUSE;
         }
     }
-    line.cell.store_release(sum);
+    return sum;
 }
 
 template <OpKind Kind>
 void run_consumer(RowState& state, ThreadLine& line) noexcept {
-    run_consumer_loop(
-        state,
-        [] [[gnu::always_inline]] (RowState & from, ::fixy::View<Item> out, std::uint64_t& sum) noexcept {
-            return pop_once<Kind>(from, out, sum);
-        },
-        state, line);
+    ::fixy::FixedArray<Item, kPopBatch> out{};
+    line.is_published.store_release(true);
+    std::uint64_t const item_sum = out.with_mut([&state](auto run) noexcept {
+        return run_consumer_loop(
+            state,
+            [] [[gnu::always_inline]] (RowState & from, ::fixy::View<Item> items, std::uint64_t& sum) noexcept {
+                return pop_once<Kind>(from, items, sum);
+            },
+            state, run.view());
+    });
+    line.cell.store_release(item_sum);
 }
 
 // What the window of the main thread measured: its items, its wall time and
@@ -685,11 +695,13 @@ template <OpKind Kind, class Op>
             end = now();
         }
         bench::WindowClock const window_end = bench::detail::read_window_clock();
-        window.ops.at(index) = ops;
-        window.wall_ns.at(index) = end - start;
-        window.lost_ns.at(index) =
+        std::uint64_t const wall_ns = end - start;
+        std::uint64_t const lost_ns =
             bench::detail::lost_between(::fixy::side_as<bench::side::ReadingBefore>(window_clock),
                                         ::fixy::side_as<bench::side::ReadingAfter>(window_end));
+        window.ops.with_element(index, [ops](std::uint64_t& value) noexcept { value = ops; });
+        window.wall_ns.with_element(index, [wall_ns](std::uint64_t& value) noexcept { value = wall_ns; });
+        window.lost_ns.with_element(index, [lost_ns](std::uint64_t& value) noexcept { value = lost_ns; });
         window_clock = window_end;
         start = end;
     }
@@ -796,16 +808,20 @@ public:
         std::uint32_t const consumer_slot = kHasConsumer<Kind> ? threads.raw() - 1 : threads.raw();
         for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
             Role const role = slot == consumer_slot ? Role::Consumer : Role::Producer;
-            ThreadLine& line = line_of(state, bench::ThreadSlot{slot});
+            ::fixy::Index<kMaxThreads> const line_index =
+                ::fixy::Index<kMaxThreads>::check(slot).expect("a slot of a row is below kMaxThreads");
             bench::CpuId const cpu = cpu_of_slot(spread, bench::ThreadSlot{slot}, role, place);
             Seat const seat = role == Role::Producer ? seat_of<Kind>(bench::ThreadSlot{slot}, threads) : Seat{};
-            threads_[slot] = std::jthread{[&state, &line, role, cpu, seat]() noexcept {
+            threads_[slot] = std::jthread{[&state, line_index, role, cpu, seat]() noexcept {
                 bench::pin_calling_thread_to(cpu).expect("the pin of a worker to the CPU of its slot");
-                if (role == Role::Consumer) {
-                    run_consumer<Kind>(state, line);
-                } else {
-                    run_producer<Kind>(state, line, seat);
-                }
+                // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
+                state.lines.with_element(line_index, [&state, role, &seat](ThreadLine& line) noexcept {
+                    if (role == Role::Consumer) {
+                        run_consumer<Kind>(state, line);
+                    } else {
+                        run_producer<Kind>(state, line, seat);
+                    }
+                });
             }};
         }
     }
@@ -842,8 +858,10 @@ template <OpKind Kind, class Op>
         ThreadLine const& line = line_of(control, bench::ThreadSlot{slot});
         while (!line.is_published.load_acquire())
             op();
-        for (WindowIndex const index : ops.indices())
-            ops.at(index) += line.window_ops.at(index).load_acquire();
+        for (WindowIndex const index : ops.indices()) {
+            std::uint64_t const added = line.window_ops.at(index).load_acquire();
+            ops.with_element(index, [added](std::uint64_t& count) noexcept { count += added; });
+        }
     }
 
     std::uint64_t all_ops = 0;
@@ -853,8 +871,9 @@ template <OpKind Kind, class Op>
         std::uint64_t const wall_ns = window.wall_ns.at(index);
         all_ops += ops.at(index);
         all_wall_ns += wall_ns;
-        window_mops.at(index) =
+        double const mops =
             wall_ns == 0 ? 0.0 : static_cast<double>(ops.at(index)) * 1000.0 / static_cast<double>(wall_ns);
+        window_mops.with_element(index, [mops](double& value) noexcept { value = mops; });
     }
 
     RowResult result{.threads = threads,
@@ -897,19 +916,22 @@ template <OpKind Kind>
     ::fixy::Box<RowState> boxed = ::fixy::mint_box<RowState>(eff::testing::test().alloc);
     RowState& state = *boxed;
     for (::fixy::Index<kBatch> const index : state.batch.indices())
-        state.batch.at(index) = Item{index.raw() + 1};
+        state.batch.with_element(index, [index](Item& item) noexcept { item = Item{index.raw() + 1}; });
     end_lanes_past_the_producers<Kind>(state, threads);
     RawWorkers workers{};
     workers.start<Kind>(state, spread, threads, place);
     while (state.ready.value.load_acquire() + 1 < threads.raw())
         CRUCIBLE_SPIN_PAUSE;
 
-    ThreadLine& own = line_of(state, bench::kMeasuringSlot);
     Seat const own_seat = seat_of<Kind>(bench::kMeasuringSlot, threads);
     bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
     RowResult result =
-        finish_row<Kind>(state, threads, place, main_cpu, [&state, &own, &own_seat] [[gnu::always_inline]] () noexcept {
-            run_op<Kind>(state, own, own_seat);
+        finish_row<Kind>(state, threads, place, main_cpu, [&state, &own_seat] [[gnu::always_inline]] () noexcept {
+            // The main thread writes only the line of its own slot, and each field of a line is an Atomic.
+            state.lines.with_element(::fixy::index<bench::kMeasuringSlot.raw()>(),
+                                     [&state, &own_seat] [[gnu::always_inline]] (ThreadLine & own) noexcept {
+                                         run_op<Kind>(state, own, own_seat);
+                                     });
         });
     workers.join();
     return result;
@@ -990,15 +1012,19 @@ template <class Measure, class Body, class... Rest>
 // the pool of the channel when the body ends, and the end of a lane ends the
 // lane.
 template <OpKind Kind, class Producer>
-[[nodiscard]] auto make_beside_pusher(RowControl& control, ThreadLine& line, Producer&& producer) noexcept {
-    return [&control, &line, owned = std::move(producer)]() mutable noexcept {
+[[nodiscard]] auto make_beside_pusher(RowControl& control, ::fixy::Index<kMaxThreads> line_index,
+                                      Producer&& producer) noexcept {
+    return [&control, line_index, owned = std::move(producer)]() mutable noexcept {
         auto end = std::move(owned);
-        run_producer_loop<Kind>(
-            control,
-            [&control, &end] [[gnu::always_inline]] () noexcept {
-                push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
-            },
-            line);
+        // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
+        control.lines.with_element(line_index, [&control, &end](ThreadLine& line) noexcept {
+            run_producer_loop<Kind>(
+                control,
+                [&control, &end] [[gnu::always_inline]] () noexcept {
+                    push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
+                },
+                line);
+        });
     };
 }
 
@@ -1052,22 +1078,26 @@ template <OpKind Kind, std::uint32_t Threads, std::size_t... Producers>
     // until the row stops.
     auto popper = [&control, owned = channel.consumer(std::move(consumer_perm))]() mutable noexcept {
         auto end = std::move(owned);
-        run_consumer_loop(
+        // The consumer writes only the line of its own slot, and each field of a line is an Atomic.
+        // The loop borrows the end as its source, so no body holds the end, and the end drops after the loop.
+        control.lines.with_element(::fixy::index<Threads - 1>(),
+                                   [](ThreadLine& line) noexcept { line.is_published.store_release(true); });
+        std::uint64_t const item_sum = run_consumer_loop(
             control,
             [] [[gnu::always_inline]] (auto& from, ::fixy::View<Item> /*out*/, std::uint64_t& sum) noexcept {
                 return pop_permissioned<Kind>(from, sum);
             },
-            end, line_of(control, bench::ThreadSlot{Threads - 1}));
+            end, ::fixy::View<Item>{});
+        control.lines.with_element(::fixy::index<Threads - 1>(),
+                                   [item_sum](ThreadLine& line) noexcept { line.cell.store_release(item_sum); });
         ::foundation::linear::drop(std::move(end));
     };
     // The producer of the main thread goes back to the pool of the channel at
     // the end of its scope.
-    return run_beside_workers(
-        spread, bench::ThreadSlot{1}, measure,
-        make_beside_pusher<Kind>(control,
-                                 line_of(control, bench::ThreadSlot{static_cast<std::uint32_t>(Producers) + 1}),
-                                 lend_producer<Kind, Producers + 1>(channel))...,
-        std::move(popper));
+    return run_beside_workers(spread, bench::ThreadSlot{1}, measure,
+                              make_beside_pusher<Kind>(control, ::fixy::index<Producers + 1>(),
+                                                       lend_producer<Kind, Producers + 1>(channel))...,
+                              std::move(popper));
 }
 
 // The permissioned row of a count of threads, or no row for a count that the
@@ -1201,13 +1231,17 @@ enum class OpGroup : std::uint8_t {
     bool is_named = false;
     for (::fixy::CText const argument : arguments) {
         for (OpGroup const group : group_of(argument.view())) {
-            *groups.get(static_cast<std::size_t>(group)).expect("a group is below three") = true;
+            groups.with_element(
+                ::fixy::Index<3>::check(static_cast<std::size_t>(group)).expect("a group is below three"),
+                [](bool& is_set) noexcept { is_set = true; });
             is_named = true;
         }
     }
     if (!is_named) {
-        for (bool& group : groups)
-            group = true;
+        groups.with_mut([](auto run) noexcept {
+            for (bool& group : run)
+                group = true;
+        });
     }
     return groups;
 }

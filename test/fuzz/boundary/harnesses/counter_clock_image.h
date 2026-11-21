@@ -42,11 +42,13 @@ using Seeds = ::fixy::FixedList<Seed, 6>;
 template <class Image>
 [[nodiscard]] Seed seed_of(Image const& image) noexcept {
     Seed seed{};
-    std::size_t position = 0;
-    for (std::byte const byte : image) {
-        *seed.get(position).expect("an image fits a seed") = byte;
-        ++position;
-    }
+    seed.with_mut([&image](auto run) noexcept {
+        std::size_t position = 0;
+        for (std::byte const byte : image) {
+            *run.get(position).expect("an image fits a seed") = byte;
+            ++position;
+        }
+    });
     return seed;
 }
 

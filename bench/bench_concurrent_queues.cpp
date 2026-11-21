@@ -127,10 +127,11 @@ int main() {
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> tx{};
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> rx{};
             for (::fixy::Index<64> const index : tx.indices())
-                tx.at(index) = index.raw();
+                tx.with_element(index, [index](std::uint64_t& element) noexcept { element = index.raw(); });
             return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&] {
                 const std::size_t np = ring->try_push_batch(tx.view());
-                const std::size_t nc = ring->try_pop_batch(rx.view());
+                const std::size_t nc =
+                    rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(run.view()); });
                 bench::do_not_optimize(np);
                 bench::do_not_optimize(nc);
             });

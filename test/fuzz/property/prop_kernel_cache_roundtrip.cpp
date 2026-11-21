@@ -44,7 +44,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 // Avoid the zero hash (KernelCache may reserve it
                 // as a slot-empty sentinel).  Add 1 to guarantee
                 // non-zero.
-                b.hashes.at(i) = ContentHash{rng.next64() | 1ULL};
+                b.hashes.with_element(i,
+                                      [&rng](ContentHash& hash) noexcept { hash = ContentHash{rng.next64() | 1ULL}; });
             }
             return b;
         },
@@ -58,7 +59,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             struct FakeKernel {
                 unsigned tag = 0;
             };
-            ::foundation::core::FixedArray<FakeKernel, N> fakes{};
+            ::fixy::BumpArena arena{4096};
+            ::fixy::View<FakeKernel, N> const fakes =
+                arena.array(::foundation::effects::testing::test().alloc, N, FakeKernel{})
+                    .template window<N>(0)
+                    .expect("the run holds N fakes");
             const auto kernel_of = [&fakes](::fixy::Index<N> index) noexcept -> KernelCache::KernelRef {
                 return ::fixy::erase_brand(
                     ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fakes.at(index)))));

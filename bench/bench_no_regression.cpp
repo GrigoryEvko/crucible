@@ -168,7 +168,8 @@ using PieceTable = ::fixy::FixedArray<std::uint32_t, kPieces>;
 [[nodiscard]] PieceTable make_piece_table() noexcept {
     PieceTable table{};
     for (::fixy::Index<kPieces> const piece : table.indices()) {
-        table.at(piece) = static_cast<std::uint32_t>(piece.raw());
+        table.with_element(
+            piece, [piece](std::uint32_t& element) noexcept { element = static_cast<std::uint32_t>(piece.raw()); });
     }
     return table;
 }
@@ -197,15 +198,17 @@ void run_l2_rows(WorkloadInputs const& inputs, Range rows, Sink& sink, ProductRo
     std::size_t const n = inputs.matrix_n;
     double acc = 0.0;
     for (std::size_t i = rows.begin; i < rows.end; ++i) {
-        double* const row_out = ::foundation::core::foreign_first(out[i - rows.begin].view());
-        for (std::size_t j = 0; j < n; ++j) {
-            double sum = 0.0;
-            for (std::size_t k = 0; k < n; ++k) {
-                sum += matrix_a[i * n + k] * matrix_b[k * n + j];
+        out[i - rows.begin].with_mut([matrix_a, matrix_b, n, i, &acc] [[gnu::always_inline]] (auto run) noexcept {
+            double* const row_out = ::foundation::core::foreign_first(run.view());
+            for (std::size_t j = 0; j < n; ++j) {
+                double sum = 0.0;
+                for (std::size_t k = 0; k < n; ++k) {
+                    sum += matrix_a[i * n + k] * matrix_b[k * n + j];
+                }
+                row_out[j] = sum;
+                acc += sum;
             }
-            row_out[j] = sum;
-            acc += sum;
-        }
+        });
     }
     bench::do_not_optimize(acc);
     static_cast<void>(sink.fetch_add_relaxed(static_cast<std::uint64_t>(acc)));
@@ -612,11 +615,12 @@ int main() {
     bench::print("=== measuring ===\n");
     for (::fixy::Index<kWorkloads> const workload : workloads.indices()) {
         const std::size_t i = workload.raw();
-        Workload& w = workloads.at(workload);
-        Trio trio = run_workload(w, pieces, samples, cores);
-        *reports.get(i * 3 + 0).expect("the sequential row of a workload") = std::move(trio.sequential);
-        *reports.get(i * 3 + 1).expect("the rule row of a workload") = std::move(trio.rule);
-        *reports.get(i * 3 + 2).expect("the forced row of a workload") = std::move(trio.forced);
+        workloads.with_element(workload, [&reports, &pieces, samples, &cores, i](Workload& w) noexcept {
+            Trio trio = run_workload(w, pieces, samples, cores);
+            *reports.get(i * 3 + 0).expect("the sequential row of a workload") = std::move(trio.sequential);
+            *reports.get(i * 3 + 1).expect("the rule row of a workload") = std::move(trio.rule);
+            *reports.get(i * 3 + 2).expect("the forced row of a workload") = std::move(trio.forced);
+        });
     }
 
     bench::emit_reports_text(reports.view());

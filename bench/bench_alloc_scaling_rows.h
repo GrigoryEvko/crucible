@@ -919,22 +919,33 @@ public:
     // Puts the item into the next cell, or gives it back when that cell is
     // full.
     [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_push(Item&& item) noexcept {
-        Cell& cell = cell_at(head_);
-        if (cell.is_full.load_acquire()) return ::fixy::Option<Item>::some(std::move(item));
-        cell.item = ::fixy::Option<Item>::some(std::move(item));
-        cell.is_full.store_release(true);
+        // The producer writes only an empty cell, and the release store gives the cell to the consumer.
+        bool const is_pushed =
+            cells_.with_element(cell_index_of(head_), [&item] [[gnu::always_inline]] (Cell & cell) noexcept {
+                if (cell.is_full.load_acquire()) return false;
+                cell.item = ::fixy::Option<Item>::some(std::move(item));
+                cell.is_full.store_release(true);
+                return true;
+            });
+        if (!is_pushed) return ::fixy::Option<Item>::some(std::move(item));
         ++head_;
         return ::fixy::none;
     }
 
     // The oldest item, or none when the ring is empty.
     [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_pop() noexcept {
-        Cell& cell = cell_at(tail_);
-        if (!cell.is_full.load_acquire()) return ::fixy::none;
-        Item item = std::move(cell.item).expect("a full cell of a Mailbox holds an item");
-        cell.is_full.store_release(false);
-        ++tail_;
-        return ::fixy::Option<Item>::some(std::move(item));
+        ::fixy::Option<Item> taken{};
+        // The consumer writes only a full cell, and the release store gives the cell back to the producer.
+        bool const is_taken =
+            cells_.with_element(cell_index_of(tail_), [&taken] [[gnu::always_inline]] (Cell & cell) noexcept {
+                if (!cell.is_full.load_acquire()) return false;
+                taken =
+                    ::fixy::Option<Item>::some(std::move(cell.item).expect("a full cell of a Mailbox holds an item"));
+                cell.is_full.store_release(false);
+                return true;
+            });
+        if (is_taken) ++tail_;
+        return taken;
     }
 
 private:
@@ -943,9 +954,10 @@ private:
         ::fixy::Option<Item> item{};
     };
 
-    [[nodiscard, gnu::always_inline]] Cell& cell_at(std::uint64_t position) noexcept {
-        return cells_.at(::fixy::Index<kMailboxCells>::check(position & (kMailboxCells - 1))
-                             .expect("a masked position lies below the cells"));
+    [[nodiscard, gnu::always_inline]] static ::fixy::Index<kMailboxCells>
+    cell_index_of(std::uint64_t position) noexcept {
+        return ::fixy::Index<kMailboxCells>::check(position & (kMailboxCells - 1))
+            .expect("a masked position lies below the cells");
     }
 
     ::fixy::FixedArray<Cell, kMailboxCells> cells_{};
@@ -1092,21 +1104,24 @@ template <AllocatorAdapter A, std::size_t Slots, std::uint32_t HandOff, class By
                                                        Bytes const& bytes_of_draw) noexcept {
     using Block = BlockOf<A, BlockAlignment::natural>;
     std::uint32_t const draw = state.draws.next();
-    ::fixy::Option<Block>& slot =
-        state.slots.at(::fixy::Index<Slots>::check(draw & (Slots - 1)).expect("a masked draw lies below the slots"));
-    if (slot.is_some()) {
-        Block block = std::move(slot).expect("the test above found a block");
-        bool const is_handed =
-            HandOff != 0 && state.threads.raw() > 1 && (draw >> 20) % (HandOff == 0 ? 1 : HandOff) == 0;
-        if (is_handed) {
-            Mailbox<Block>& next = mailbox_of(inboxes, next_slot(state.slot, state.threads));
-            ::fixy::Option<Block> rest = next.try_push(std::move(block));
-            if (rest.is_some()) give_block<A>(state.tally, std::move(rest).expect("the test above found a block"));
-        } else {
-            give_block<A>(state.tally, std::move(block));
-        }
-    }
-    slot = ::fixy::Option<Block>::some(take_block<A>(state.tally, bytes_of_draw(draw >> 8)));
+    state.slots.with_element(
+        ::fixy::Index<Slots>::check(draw & (Slots - 1)).expect("a masked draw lies below the slots"),
+        [&inboxes, &state, &bytes_of_draw, draw] [[gnu::always_inline]] (::fixy::Option<Block> & slot) noexcept {
+            if (slot.is_some()) {
+                Block block = std::move(slot).expect("the test above found a block");
+                bool const is_handed =
+                    HandOff != 0 && state.threads.raw() > 1 && (draw >> 20) % (HandOff == 0 ? 1 : HandOff) == 0;
+                if (is_handed) {
+                    Mailbox<Block>& next = mailbox_of(inboxes, next_slot(state.slot, state.threads));
+                    ::fixy::Option<Block> rest = next.try_push(std::move(block));
+                    if (rest.is_some())
+                        give_block<A>(state.tally, std::move(rest).expect("the test above found a block"));
+                } else {
+                    give_block<A>(state.tally, std::move(block));
+                }
+            }
+            slot = ::fixy::Option<Block>::some(take_block<A>(state.tally, bytes_of_draw(draw >> 8)));
+        });
     if constexpr (HandOff != 0) {
         Mailbox<Block>& own = mailbox_of(inboxes, state.slot);
         for (std::uint32_t taken = 0; taken < 4; ++taken) {
@@ -1122,10 +1137,12 @@ template <AllocatorAdapter A, std::size_t Slots>
 void release_slots(Mailboxes<BlockOf<A, BlockAlignment::natural>>& inboxes,
                    SlotState<BlockOf<A, BlockAlignment::natural>, Slots>& state) noexcept {
     using Block = BlockOf<A, BlockAlignment::natural>;
-    for (::fixy::Option<Block>& slot : state.slots) {
-        if (slot.is_none()) continue;
-        give_block<A>(state.tally, std::move(slot).expect("the test above found a block"));
-    }
+    state.slots.with_mut([&tally = state.tally](auto run) noexcept {
+        for (::fixy::Option<Block>& slot : run) {
+            if (slot.is_none()) continue;
+            give_block<A>(tally, std::move(slot).expect("the test above found a block"));
+        }
+    });
     Mailbox<Block>& own = mailbox_of(inboxes, state.slot);
     for (::fixy::Option<Block> received = own.try_pop(); received.is_some(); received = own.try_pop())
         give_block<A>(state.tally, std::move(received).expect("the loop test found a block"));
@@ -1235,21 +1252,24 @@ struct Sh6bench {
     // The sizes cycle over 16 to 2048 bytes: 16 times the position plus 16.
     [[gnu::always_inline]] static void fill(Local& local) noexcept {
         for (::fixy::Index<kBlocks> const position : local.blocks.indices()) {
-            local.blocks.at(position) =
-                ::fixy::Option<Block>::some(take_block<A>(local.tally, ByteCount{16 * position.raw() + 16}));
+            local.blocks.with_element(
+                position, [&local, position] [[gnu::always_inline]] (::fixy::Option<Block> & held) noexcept {
+                    held = ::fixy::Option<Block>::some(take_block<A>(local.tally, ByteCount{16 * position.raw() + 16}));
+                });
         }
     }
 
     [[gnu::always_inline]] static void op(Shared& /*shared*/, Local& local, RowControl const& /*control*/) noexcept {
         fill(local);
-        for (std::size_t position = kBlocks; position > 0; --position) {
-            ::fixy::Option<Block>& held = local.blocks.at(
-                ::fixy::Index<kBlocks>::check(position - 1).expect("a position of the stack lies below kBlocks"));
-            give_block<A>(local.tally, std::move(held).expect("the fill above gave each position a block"));
-        }
+        local.blocks.with_mut([&local] [[gnu::always_inline]] (auto run) noexcept {
+            for (::fixy::Option<Block>& held : run.view().reverse())
+                give_block<A>(local.tally, std::move(held).expect("the fill above gave each position a block"));
+        });
         fill(local);
-        for (::fixy::Option<Block>& held : local.blocks)
-            give_block<A>(local.tally, std::move(held).expect("the fill above gave each position a block"));
+        local.blocks.with_mut([&local] [[gnu::always_inline]] (auto run) noexcept {
+            for (::fixy::Option<Block>& held : run)
+                give_block<A>(local.tally, std::move(held).expect("the fill above gave each position a block"));
+        });
     }
 
     static void finish(Shared& /*shared*/, Local& /*local*/) noexcept {}

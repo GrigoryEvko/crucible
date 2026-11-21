@@ -28,14 +28,18 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
     for (const ::fixy::TextView payload : payloads) {
         ::foundation::core::FixedArray<std::byte, 16> body{};
         std::size_t count = 0;
-        for (const char character : payload) {
-            *body.get(count).expect("a seed payload fits 16 bytes") = static_cast<std::byte>(character);
-            ++count;
-        }
+        body.with_mut([payload, &count](auto run) noexcept {
+            for (const char character : payload) {
+                *run.get(count).expect("a seed payload fits 16 bytes") = static_cast<std::byte>(character);
+                ++count;
+            }
+        });
         ::foundation::core::FixedArray<std::byte, fed::FEDERATION_HEADER_BYTES + 16> entry{};
-        auto written = fed::serialize_federation_entry(
-            entry.view(), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
-            ::fixy::View<std::byte const>{body.view()}.window(0, count).expect("the payload is inside its buffer"));
+        auto written = entry.with_mut([&body, count](auto run) noexcept {
+            return fed::serialize_federation_entry(
+                run.view(), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
+                ::fixy::View<std::byte const>{body.view()}.window(0, count).expect("the payload is inside its buffer"));
+        });
         const std::size_t written_bytes = std::move(written).expect("the seed entry fits its buffer");
         SeedWriter seed{};
         seed.append_raw(kReceiverAtomCount);

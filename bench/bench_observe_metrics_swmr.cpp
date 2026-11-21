@@ -26,7 +26,7 @@ using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<d
 int main() {
     observe::RuntimeMetrics metrics{};
     metrics.delta_g_count = 1;
-    metrics.delta_g.at(::fixy::index<0>()) = 1.0;
+    metrics.delta_g.with_element(::fixy::index<0>(), [](double& element) noexcept { element = 1.0; });
 
     // Each sample of the loop is at the current step of the producer.
     ::fixy::SequenceSource const steps =

@@ -124,9 +124,11 @@ struct BatchedPushWorker {
         while (pushed < kPerProducer) {
             const std::size_t remaining = kPerProducer - pushed;
             const std::size_t n = (remaining < BATCH) ? remaining : BATCH;
-            for (std::size_t i = 0; i < n; ++i) {
-                *buf.get(i).expect("a position of a batch is below BATCH") = base + (pushed + i);
-            }
+            buf.with_mut([this, pushed, n](auto run) noexcept {
+                for (std::size_t i = 0; i < n; ++i) {
+                    *run.get(i).expect("a position of a batch is below BATCH") = base + (pushed + i);
+                }
+            });
             std::size_t in_batch = 0;
             while (in_batch < n) {
                 const std::size_t r = ring.try_push_batch(
@@ -155,7 +157,8 @@ struct DrainWorker {
         // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
         const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
         while (local < total) {
-            const std::size_t n = ring.try_pop_batch(merge, buf.view());
+            const std::size_t n =
+                buf.with_mut([this, merge](auto run) noexcept { return ring.try_pop_batch(merge, run.view()); });
             if (n == 0) {
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
@@ -188,10 +191,13 @@ void run_cycle(::fixy::thread::ThreadOptions const& options, std::index_sequence
     ::fixy::FixedArray<Worker, Producers> producers{Worker{*ring_box, gate, Producer * kPerProducer}...};
     DrainWorker drain{*ring_box, gate, Producers * kPerProducer};
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
-    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-                                         "the bare MPSC ring is the state under test", options,
-                                         producers.at(::fixy::index<Producer>())..., drain)
-        .expect("the thread door starts the producers and the consumer of a cycle");
+    // Each thread runs only its own worker, and the door joins each thread before the body returns.
+    producers.with_mut([&ctx, &options, &drain](auto run) noexcept {
+        ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                             "the bare MPSC ring is the state under test", options,
+                                             run.view().at(::fixy::index<Producer>())..., drain)
+            .expect("the thread door starts the producers and the consumer of a cycle");
+    });
 }
 
 // Prints the cores of the threads of a row, or that the threads keep the

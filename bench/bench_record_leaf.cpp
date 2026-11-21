@@ -216,10 +216,14 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
 
     uint16_t idx = 0;
     if (op_idx > 0)
-        d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
-            make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx - 1}));
-    d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
-        make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx}));
+        d.metas.with_element(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
+                             [iter, op_idx](TensorMeta& meta) noexcept {
+                                 meta = make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx - 1}));
+                             });
+    d.metas.with_element(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
+                         [iter, op_idx](TensorMeta& meta) noexcept {
+                             meta = make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx}));
+                         });
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -597,7 +601,8 @@ int main() {
         setup_compiled_vigil(vigil);
         ::fixy::FixedArray<OpData, NUM_OPS> ops{};
         for (OpSlot const slot : ::fixy::IndexRange<NUM_OPS>{})
-            ops.at(slot) = make_op(10, static_cast<uint32_t>(slot.raw()));
+            ops.with_element(slot,
+                             [slot](OpData& op) noexcept { op = make_op(10, static_cast<uint32_t>(slot.raw())); });
 
         OpSlot slot = ::fixy::index<0>();
         bench::Report report =

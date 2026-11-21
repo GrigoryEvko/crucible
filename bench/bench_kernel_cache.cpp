@@ -165,8 +165,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 namespace {
 
 template <typename Cache>
-void seed_cache(Cache& cache, ::fixy::FixedArray<FakeKernel, kSeedKernels>& kernels) {
-    for (auto [index, kernel] : kernels.view().enumerate()) {
+void seed_cache(Cache& cache, ::fixy::View<FakeKernel, kSeedKernels> kernels) {
+    for (auto [index, kernel] : kernels.enumerate()) {
         kernel->id = index.raw() + 1;
         auto inserted = cache.insert(kNondet, ContentHash{0x1000 + static_cast<std::uint64_t>(index.raw())}, RowHash{0},
                                      kernel_ref(*kernel));
@@ -175,7 +175,7 @@ void seed_cache(Cache& cache, ::fixy::FixedArray<FakeKernel, kSeedKernels>& kern
 }
 
 template <typename Cache>
-void seed_row_siblings(Cache& cache, ::fixy::FixedArray<FakeKernel, kSeedKernels>& kernels) {
+void seed_row_siblings(Cache& cache, ::fixy::View<FakeKernel, kSeedKernels> kernels) {
     const std::size_t required = kRowClusterSlotBases.size() * static_cast<std::size_t>(kRowsPerCluster);
     CRUCIBLE_BENCH_CHECK(kernels.size() >= required);
 
@@ -242,13 +242,20 @@ int main() {
     RawKernelCache raw{4096};
     KernelCache typed{::foundation::effects::testing::test().alloc, 4096};
 
-    ::fixy::FixedArray<FakeKernel, kSeedKernels> raw_hot{};
-    ::fixy::FixedArray<FakeKernel, kSeedKernels> typed_hot{};
+    // The caches keep the address of each kernel, so each seed takes its kernels from a run of the arena.
+    ::fixy::BumpArena arena{1 << 16};
+    auto const take_kernels = [&arena]() noexcept {
+        return arena.array(::foundation::effects::testing::test().alloc, kSeedKernels, FakeKernel{})
+            .window<kSeedKernels>(0)
+            .expect("the run holds the kernels of a seed");
+    };
+    ::fixy::View<FakeKernel, kSeedKernels> const raw_hot = take_kernels();
+    ::fixy::View<FakeKernel, kSeedKernels> const typed_hot = take_kernels();
     seed_cache(raw, raw_hot);
     seed_cache(typed, typed_hot);
 
-    ::fixy::FixedArray<FakeKernel, kSeedKernels> raw_rows{};
-    ::fixy::FixedArray<FakeKernel, kSeedKernels> typed_rows{};
+    ::fixy::View<FakeKernel, kSeedKernels> const raw_rows = take_kernels();
+    ::fixy::View<FakeKernel, kSeedKernels> const typed_rows = take_kernels();
     seed_row_siblings(raw, raw_rows);
     seed_row_siblings(typed, typed_rows);
 

@@ -401,12 +401,12 @@ template <class Form, class Notify>
                                          Form const& form, Notify const& after_store,
                                          DelayWindow window = DelayWindow::spin) noexcept {
     RowMedians row{.name = name};
-    for (std::size_t repeat = 0; repeat < kRepeats; ++repeat) {
+    for (auto const repeat : row.medians.indices()) {
         HeapArray<std::uint64_t> const ascending = sorted(measure_wake(ctx, cores, form, after_store, window));
         std::uint64_t const median = sample_at(ascending, Permille{500});
         std::uint64_t const trimmed_mean = trimmed_mean_picoseconds(ascending);
-        *row.medians.view().get(repeat).expect("the repeat is in the row") = median;
-        *row.trimmed_means.view().get(repeat).expect("the repeat is in the row") = trimmed_mean;
+        row.medians.with_element(repeat, [median](std::uint64_t& value) noexcept { value = median; });
+        row.trimmed_means.with_element(repeat, [trimmed_mean](std::uint64_t& value) noexcept { value = trimmed_mean; });
         bench::print("{}  wake p50={} ns  p99={} ns  max={} ns  mean p1-p99={} ps\n", name,
                      nanoseconds_of(spin::CounterTicks{median}),
                      nanoseconds_of(spin::CounterTicks{sample_at(ascending, Permille{990})}),

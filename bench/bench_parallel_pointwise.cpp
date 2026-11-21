@@ -254,7 +254,9 @@ void print_shard_cores(Placement const& placement) noexcept {
             ::fixy::FixedText<1024> stat{};
             bool const is_read = ::foundation::os::read_file("/proc/thread-self/stat", stat).is_ok();
             std::uint64_t const cpu = is_read ? bench::detail::processor_of_stat(stat.view()).value_or(kNoCpu) : kNoCpu;
-            cpus.at(::fixy::index<index>()).store_release(cpu);
+            // Each shard writes only the Atomic of its own index, and the main thread reads it after the join.
+            cpus.with_element(::fixy::index<index>(),
+                              [cpu](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(cpu); });
         },
         options_of<Shards>(placement));
     ::foundation::linear::drop(std::move(whole));

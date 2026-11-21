@@ -90,14 +90,17 @@ int main() {
         bench::run("fill 4096 u32 (16 KB batch)",
                    [&] {
                        std::uint64_t word = 0;
-                       for (::fixy::View<std::uint32_t, 4> const four : scratch.view().chunks<4>()) {
-                           auto c = Philox4x32::generate(word, key);
-                           four.at(::fixy::index<0>()) = c.at(::fixy::index<0>());
-                           four.at(::fixy::index<1>()) = c.at(::fixy::index<1>());
-                           four.at(::fixy::index<2>()) = c.at(::fixy::index<2>());
-                           four.at(::fixy::index<3>()) = c.at(::fixy::index<3>());
-                           word += 4;
-                       }
+                       // The capture by reference keeps the volatile read of the key in each call.
+                       scratch.with_mut([&word, &key](auto run) noexcept {
+                           for (::fixy::View<std::uint32_t, 4> const four : run.view().template chunks<4>()) {
+                               auto c = Philox4x32::generate(word, key);
+                               four.at(::fixy::index<0>()) = c.at(::fixy::index<0>());
+                               four.at(::fixy::index<1>()) = c.at(::fixy::index<1>());
+                               four.at(::fixy::index<2>()) = c.at(::fixy::index<2>());
+                               four.at(::fixy::index<3>()) = c.at(::fixy::index<3>());
+                               word += 4;
+                           }
+                       });
                        // The sink reads each byte of the buffer, so each store
                        // of the fill stays.
                        bench::mark_changed(scratch);
@@ -146,23 +149,25 @@ int main() {
                 // base = (call_idx * 8 + i) on ctr0; ctr1..3 stay 0.
                 const u32x8 lane_offsets = foundation::simd::iota_v<u32x8>();
                 std::uint32_t call_idx = 0;
-                for (::fixy::View<std::uint32_t, 32> const call : scratch.view().chunks<32>()) {
-                    const u32x8 base(call_idx * 8u);
-                    const u32x8 ctr0 = base + lane_offsets;
-                    const u32x8 ctr1(0u);
-                    const u32x8 ctr2(0u);
-                    const u32x8 ctr3(0u);
-                    auto out = crucible::detail::philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
-                    // Four vector stores — 32 u32 per call in 4
-                    // instructions instead of 32.  The window offsets are
-                    // constants inside a run of 32 lanes, so the checks of
-                    // the windows fold away.
-                    foundation::simd::store(out.r0, call.window<8>(0).expect("a call fills 32 lanes"));
-                    foundation::simd::store(out.r1, call.window<8>(8).expect("a call fills 32 lanes"));
-                    foundation::simd::store(out.r2, call.window<8>(16).expect("a call fills 32 lanes"));
-                    foundation::simd::store(out.r3, call.window<8>(24).expect("a call fills 32 lanes"));
-                    ++call_idx;
-                }
+                scratch.with_mut([&call_idx, &lane_offsets, &key0, &key1](auto run) noexcept {
+                    for (::fixy::View<std::uint32_t, 32> const call : run.view().template chunks<32>()) {
+                        const u32x8 base(call_idx * 8u);
+                        const u32x8 ctr0 = base + lane_offsets;
+                        const u32x8 ctr1(0u);
+                        const u32x8 ctr2(0u);
+                        const u32x8 ctr3(0u);
+                        auto out = crucible::detail::philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
+                        // Four vector stores — 32 u32 per call in 4
+                        // instructions instead of 32.  The window offsets are
+                        // constants inside a run of 32 lanes, so the checks of
+                        // the windows fold away.
+                        foundation::simd::store(out.r0, call.window<8>(0).expect("a call fills 32 lanes"));
+                        foundation::simd::store(out.r1, call.window<8>(8).expect("a call fills 32 lanes"));
+                        foundation::simd::store(out.r2, call.window<8>(16).expect("a call fills 32 lanes"));
+                        foundation::simd::store(out.r3, call.window<8>(24).expect("a call fills 32 lanes"));
+                        ++call_idx;
+                    }
+                });
                 bench::mark_changed(scratch);
             });
         }(),

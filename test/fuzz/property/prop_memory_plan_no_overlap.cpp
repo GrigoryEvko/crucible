@@ -91,9 +91,6 @@ struct SlotSet {
 
 // The spec at position of a set.  Each position that the test reads is
 // below the count, which is at most kMaxSlots.
-[[nodiscard]] SlotSpec& spec_at(SlotSet& set, uint32_t position) noexcept {
-    return set.specs.at(::fixy::Index<kMaxSlots>::check(position).expect("a position of a set is below kMaxSlots"));
-}
 [[nodiscard]] SlotSpec const& spec_at(SlotSet const& set, uint32_t position) noexcept {
     return set.specs.at(::fixy::Index<kMaxSlots>::check(position).expect("a position of a set is below kMaxSlots"));
 }
@@ -150,11 +147,14 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             for (uint32_t i = 0; i < set.count; ++i) {
                 const uint32_t a = rng.next_below(kMaxOp);
                 const uint32_t b = rng.next_below(kMaxOp);
-                SlotSpec& spec = spec_at(set, i);
-                spec.birth = a < b ? a : b;
-                spec.death = a < b ? b : a;
-                spec.nbytes = 1ull + rng.next_below(static_cast<uint32_t>(kMaxSlotBytes));
-                spec.is_external = (rng.next_below(4) == 0);
+                set.specs.with_element(
+                    ::fixy::Index<kMaxSlots>::check(i).expect("a position of a set is below kMaxSlots"),
+                    [&rng, a, b](SlotSpec& spec) noexcept {
+                        spec.birth = a < b ? a : b;
+                        spec.death = a < b ? b : a;
+                        spec.nbytes = 1ull + rng.next_below(static_cast<uint32_t>(kMaxSlotBytes));
+                        spec.is_external = (rng.next_below(4) == 0);
+                    });
             }
             return set;
         },
@@ -162,10 +162,12 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         [](const SlotSet& set) noexcept -> bool {
             const uint32_t num_slots = set.count;
 
-            ::foundation::core::FixedArray<TensorSlot, kMaxSlots> slots1{};
-            const uint32_t max_death = materialize(set, slots1.view());
+            ::fixy::BumpArena slot_arena{size_t{1} << 16};
+            const ::fixy::View<TensorSlot> slots1 =
+                slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
+            const uint32_t max_death = materialize(set, slots1);
             const ::fixy::View<TensorSlot> set_slots1 =
-                slots1.view().window(0, num_slots).expect("a set holds at most kMaxSlots slots");
+                slots1.window(0, num_slots).expect("a set holds at most kMaxSlots slots");
 
             auto test = ::foundation::effects::testing::test();
             BackgroundThread bt1{::foundation::effects::testing::test().alloc};
@@ -207,10 +209,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
             // (D) Determinism: replan the same set on a fresh arena;
             //     offsets and pool_bytes must be byte-identical.
-            ::foundation::core::FixedArray<TensorSlot, kMaxSlots> slots2{};
-            (void)materialize(set, slots2.view());
+            const ::fixy::View<TensorSlot> slots2 =
+                slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
+            (void)materialize(set, slots2);
             const ::fixy::View<TensorSlot> set_slots2 =
-                slots2.view().window(0, num_slots).expect("a set holds at most kMaxSlots slots");
+                slots2.window(0, num_slots).expect("a set holds at most kMaxSlots slots");
             BackgroundThread bt2{::foundation::effects::testing::test().alloc};
             crucible::MemoryPlan plan_storage2{};
             ::fixy::BumpArena sweep_arena2{size_t{1} << 16};

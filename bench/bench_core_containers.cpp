@@ -156,7 +156,9 @@ struct ListReports final {
         kAlloc, fixy::Quantity<fixy::unit::Element, std::uint32_t>{static_cast<std::uint32_t>(kOperations)});
     fixy::FixedArray<std::uint64_t, kOperations> keys{};
     for (fixy::Index<kOperations> const index : keys.indices()) {
-        keys.at(index) = map.insert(static_cast<std::uint32_t>(index.raw())).expect("the map has a free slot").raw();
+        std::uint64_t const key =
+            map.insert(static_cast<std::uint32_t>(index.raw())).expect("the map has a free slot").raw();
+        keys.with_element(index, [key](std::uint64_t& element) noexcept { element = key; });
     }
     return SlotReports{
         .get = bench::run("SlotMap get",
@@ -172,11 +174,12 @@ struct ListReports final {
         .remove_insert = bench::run("SlotMap remove and insert",
                                     [&] {
                                         for (fixy::Index<kOperations> const position : positions) {
-                                            fixy::SlotKey<BenchHandleTag> const key{keys.at(position)};
-                                            for (std::uint32_t const value : map.remove(key)) {
-                                                keys.at(position) =
-                                                    map.insert(value).expect("the remove freed a slot").raw();
-                                            }
+                                            keys.with_element(position, [&map](std::uint64_t& element) noexcept {
+                                                fixy::SlotKey<BenchHandleTag> const key{element};
+                                                for (std::uint32_t const value : map.remove(key)) {
+                                                    element = map.insert(value).expect("the remove freed a slot").raw();
+                                                }
+                                            });
                                         }
                                         bench::do_not_optimize(map);
                                     }),

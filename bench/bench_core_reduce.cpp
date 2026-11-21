@@ -223,10 +223,12 @@ void bench_runs_and_segments(View<float const> all) {
     constexpr std::size_t kCount = 65536;
     ::fixy::FixedArray<View<float const>, 8> runs{};
     std::size_t offset = 0;
-    for (View<float const>& run : runs) {
-        run = all.window(offset, kCount).expect("the run fits");
-        offset += kCount;
-    }
+    runs.with_mut([&all, &offset](auto slots) noexcept {
+        for (View<float const>& run : slots) {
+            run = all.window(offset, kCount).expect("the run fits");
+            offset += kCount;
+        }
+    });
     HeapArray<float> sums = ::foundation::core::mint_heap_array(kAlloc, kCount, 0.0f);
     View<View<float const> const> const run_view{runs.view()};
     print_row("sum_runs_by_tree float, 8 runs of 65536", 8 * kCount,

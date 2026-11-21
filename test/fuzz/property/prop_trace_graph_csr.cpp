@@ -64,16 +64,20 @@ struct GraphSpec {
 
 // The edge spec at position e of a spec.  Each position that the test
 // reads is below the edge count, which is at most kMaxEdges.
-[[nodiscard]] EdgeSpec& edge_spec_at(GraphSpec& spec, uint32_t e) noexcept {
-    return spec.edges.at(::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"));
-}
 [[nodiscard]] const EdgeSpec& edge_spec_at(const GraphSpec& spec, uint32_t e) noexcept {
     return spec.edges.at(::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"));
 }
 
 // The count at op v of a per-op count array.  Each op is below kMaxOps.
-[[nodiscard]] uint32_t& count_at(::fixy::FixedArray<uint32_t, kMaxOps>& counts, uint32_t v) noexcept {
+[[nodiscard]] uint32_t count_at(const ::fixy::FixedArray<uint32_t, kMaxOps>& counts, uint32_t v) noexcept {
     return counts.at(::fixy::Index<kMaxOps>::check(v).expect("an op of a spec is below kMaxOps"));
+}
+
+// Adds one to the count at op v of a per-op count array.  Each op is below
+// kMaxOps.
+void increment_count_at(::fixy::FixedArray<uint32_t, kMaxOps>& counts, uint32_t v) noexcept {
+    counts.with_element(::fixy::Index<kMaxOps>::check(v).expect("an op of a spec is below kMaxOps"),
+                        [](uint32_t& count) noexcept { ++count; });
 }
 
 using EdgeOrder = ::fixy::FixedArray<uint32_t, kMaxEdges>;
@@ -91,7 +95,8 @@ template <class KeyOf>
     for (uint32_t key = 0; key < spec.num_ops; ++key) {
         for (uint32_t e = 0; e < spec.num_edges; ++e) {
             if (key_of(edge_spec_at(spec, e)) != key) continue;
-            order.at(::fixy::Index<kMaxEdges>::check(filled).expect("the order holds each edge one time")) = e;
+            order.with_element(::fixy::Index<kMaxEdges>::check(filled).expect("the order holds each edge one time"),
+                               [e](uint32_t& position) noexcept { position = e; });
             ++filled;
         }
     }
@@ -159,11 +164,14 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             spec.num_ops = 1u + rng.next_below(kMaxOps);  // [1, kMaxOps]
             spec.num_edges = rng.next_below(kMaxEdges + 1u);  // [0, kMaxEdges]
             for (uint32_t e = 0; e < spec.num_edges; ++e) {
-                EdgeSpec& edge_spec = edge_spec_at(spec, e);
-                edge_spec.src = rng.next_below(spec.num_ops);
-                edge_spec.dst = rng.next_below(spec.num_ops);
-                edge_spec.src_port = static_cast<uint8_t>(rng.next_below(64));
-                edge_spec.dst_port = static_cast<uint8_t>(rng.next_below(64));
+                spec.edges.with_element(
+                    ::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"),
+                    [&rng, num_ops = spec.num_ops](EdgeSpec& edge_spec) noexcept {
+                        edge_spec.src = rng.next_below(num_ops);
+                        edge_spec.dst = rng.next_below(num_ops);
+                        edge_spec.src_port = static_cast<uint8_t>(rng.next_below(64));
+                        edge_spec.dst_port = static_cast<uint8_t>(rng.next_below(64));
+                    });
             }
             return spec;
         },
@@ -173,7 +181,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             const uint32_t num_edges = spec.num_edges;
 
             ::fixy::FixedArray<Edge, kMaxEdges> in_edges{};
-            const ::fixy::View<const Edge> in_run = materialize(spec, in_edges.view());
+            in_edges.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, run.view())); });
+            const ::fixy::View<const Edge> in_run =
+                in_edges.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
 
             auto test = ::foundation::effects::testing::test();
             BumpArena arena{1 << 16};
@@ -195,8 +205,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             ::fixy::FixedArray<uint32_t, kMaxOps> src_count{};
             ::fixy::FixedArray<uint32_t, kMaxOps> dst_count{};
             for (uint32_t e = 0; e < num_edges; ++e) {
-                ++count_at(src_count, edge_spec_at(spec, e).src);
-                ++count_at(dst_count, edge_spec_at(spec, e).dst);
+                increment_count_at(src_count, edge_spec_at(spec, e).src);
+                increment_count_at(dst_count, edge_spec_at(spec, e).dst);
             }
             for (uint32_t v = 0; v < num_ops; ++v) {
                 if (offset_at(fwd, v + 1) - offset_at(fwd, v) != count_at(src_count, v)) return false;
@@ -222,7 +232,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
             // (D) Determinism — rebuild on a fresh arena, compare bytes.
             ::fixy::FixedArray<Edge, kMaxEdges> in_edges2{};
-            const ::fixy::View<const Edge> in_run2 = materialize(spec, in_edges2.view());
+            in_edges2.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, run.view())); });
+            const ::fixy::View<const Edge> in_run2 =
+                in_edges2.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
             BumpArena arena2{1 << 16};
             TraceGraph graph2{};
             build_csr(test.alloc, arena2, graph2, in_run2, num_ops);

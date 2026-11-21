@@ -292,16 +292,17 @@ public:
     void before_sample() noexcept {
         View<float const> const window = windows_.next();
         std::size_t position = 0;
-        for (float& value : work_) {
-            value = *window.get(position).expect("the element fits the window");
-            ++position;
-        }
+        work_.with_mut([&window, &position](auto run) noexcept {
+            for (float& value : run) {
+                value = *window.get(position).expect("the element fits the window");
+                ++position;
+            }
+        });
     }
 
     void operator()() noexcept {
-        work_ = with_mut(std::move(work_), [](auto out) noexcept {
-            ::foundation::core::sort_by_network(std::move(out), FloatTotalOrder{});
-        });
+        work_.with_mut(
+            [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out), FloatTotalOrder{}); });
         bench::do_not_optimize(work_);
     }
 

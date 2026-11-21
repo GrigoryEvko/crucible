@@ -109,10 +109,12 @@ template <uint64_t Seed>
 template <std::size_t Count>
 void fill_random_indices(::fixy::FixedArray<uint32_t, Count>& indices, SlotCount num_slots) noexcept {
     uint64_t draw = 0;
-    for (uint32_t& index : indices) {
-        index = random_slot<42>(DrawIndex{draw}, num_slots);
-        ++draw;
-    }
+    indices.with_mut([&draw, num_slots](auto run) noexcept {
+        for (uint32_t& index : run) {
+            index = random_slot<42>(DrawIndex{draw}, num_slots);
+            ++draw;
+        }
+    });
 }
 
 }  // namespace
@@ -137,7 +139,7 @@ int main() {
 
     // ── slot_ptr sequential access ────────────────────────────────────
     bench::add_report(reports, [&] {
-        ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, std::size_t{1}, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -313,14 +315,16 @@ int main() {
         auto pv = pool.mint_initialized_view(kVigilForeground);
 
         // The external buffers: one run of bytes, 256 bytes for each slot.
-        struct alignas(256) ExternalBuffers {
-            ::fixy::FixedArray<unsigned char, size_t{N_EXT} * 256> bytes{};
-        };
-        static ExternalBuffers ext_bufs{};
+        // The pool keeps the address of each buffer, so the run lives on the
+        // heap at the alignment of 256 bytes.
+        ::fixy::HeapArray<unsigned char, 256> ext_bytes =
+            ::fixy::mint_heap_array<unsigned char, 256>(test.alloc, size_t{N_EXT} * 256, static_cast<unsigned char>(0));
+        ::fixy::View<unsigned char, size_t{N_EXT} * 256> const ext_run =
+            ext_bytes.view().window<size_t{N_EXT} * 256>(0).expect("the heap run holds each external buffer");
 
         auto r = bench::run("register_external(20 slots)", [&] {
             for (uint32_t i = 0; i < N_EXT; i++) {
-                const ::fixy::RunAddress address = ::fixy::mint_run_address(ext_bufs.bytes.view(), size_t{i} * 256)
+                const ::fixy::RunAddress address = ::fixy::mint_run_address(ext_run, size_t{i} * 256)
                                                        .expect("the run holds 256 bytes for each external slot");
                 pool.register_external(SlotId{N_INT + i}, crucible::TensorData{address, crucible::kHostDevice}, pv);
             }
@@ -348,12 +352,14 @@ int main() {
         // The three slots of each op, from the Philox stream of the key 123.
         ::fixy::FixedArray<OpSlots, NUM_OPS> op_slots{};
         uint64_t draw = 0;
-        for (OpSlots& op : op_slots) {
-            op.in0 = SlotId{random_slot<123>(DrawIndex{draw}, SlotCount{NUM_SLOTS})};
-            op.in1 = SlotId{random_slot<123>(DrawIndex{draw + 1}, SlotCount{NUM_SLOTS})};
-            op.out = SlotId{random_slot<123>(DrawIndex{draw + 2}, SlotCount{NUM_SLOTS})};
-            draw += 3;
-        }
+        op_slots.with_mut([&draw](auto run) noexcept {
+            for (OpSlots& op : run) {
+                op.in0 = SlotId{random_slot<123>(DrawIndex{draw}, SlotCount{NUM_SLOTS})};
+                op.in1 = SlotId{random_slot<123>(DrawIndex{draw + 1}, SlotCount{NUM_SLOTS})};
+                op.out = SlotId{random_slot<123>(DrawIndex{draw + 2}, SlotCount{NUM_SLOTS})};
+                draw += 3;
+            }
+        });
 
         auto r = bench::run("replay(200 ops, 3 slots each)", [&] {
             for (OpSlots const& op : op_slots) {

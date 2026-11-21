@@ -133,9 +133,6 @@ struct Batch {
 
 // The record at position of a batch.  Each position that the test reads
 // is below the count, which is at most kRecords.
-[[nodiscard]] Record& record_at(Batch& batch, unsigned position) noexcept {
-    return batch.recs.at(::fixy::Index<kRecords>::check(position).expect("a position of a batch is below kRecords"));
-}
 [[nodiscard]] Record const& record_at(Batch const& batch, unsigned position) noexcept {
     return batch.recs.at(::fixy::Index<kRecords>::check(position).expect("a position of a batch is below kRecords"));
 }
@@ -176,12 +173,16 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 }
                 if (duplicate) continue;
 
-                record_at(b, b.count) = Record{
-                    .hash_raw = h,
-                    .filename = random_ident(rng, 4, 24),
-                    .funcname = random_ident(rng, 4, 16),
-                    .lineno = static_cast<int32_t>(rng.next_below(100000)),
-                };
+                b.recs.with_element(
+                    ::fixy::Index<kRecords>::check(b.count).expect("a position of a batch is below kRecords"),
+                    [&rng, h](Record& record) noexcept {
+                        record = Record{
+                            .hash_raw = h,
+                            .filename = random_ident(rng, 4, 24),
+                            .funcname = random_ident(rng, 4, 16),
+                            .lineno = static_cast<int32_t>(rng.next_below(100000)),
+                        };
+                    });
                 ++b.count;
             }
             return b;

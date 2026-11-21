@@ -56,11 +56,11 @@ struct SaturationCase {
         alignas(64) static ::fixy::FixedArray<Item, N> tx{};
         alignas(64) static ::fixy::FixedArray<Item, N> rx{};
         for (::fixy::Index<N> const index : tx.indices())
-            tx.at(index) = index.raw();
+            tx.with_element(index, [index](Item& element) noexcept { element = index.raw(); });
 
         return bench::run(bench::format_name("spsc_ring batch<{}> round-trip (push+pop)", N), [&] {
             const std::size_t np = ring->try_push_batch(tx.view());
-            const std::size_t nc = ring->try_pop_batch(rx.view());
+            const std::size_t nc = rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(run.view()); });
             bench::do_not_optimize(np);
             bench::do_not_optimize(nc);
             // The sink reads and writes each byte of rx, so the copy of the

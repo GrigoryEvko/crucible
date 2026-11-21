@@ -142,7 +142,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             spec.len = gen_len(rng, spec.mode);
             for (auto index : spec.bytes.indices()) {
                 if (index.raw() >= spec.len) break;
-                spec.bytes.at(index) = static_cast<std::byte>(rng.next32() & 0xFFu);
+                spec.bytes.with_element(
+                    index, [&rng](std::byte& byte) noexcept { byte = static_cast<std::byte>(rng.next32() & 0xFFu); });
             }
             spec.hash_seed = (rng.next_below(2u) == 0u) ? 0u : rng.next64();
             spec.chunk_seed = rng.next64();

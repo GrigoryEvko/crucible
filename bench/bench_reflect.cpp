@@ -128,29 +128,35 @@ uint64_t next_word(uint64_t& state) noexcept {
 
 SmallBatch make_small_batch(uint64_t seed) noexcept {
     SmallBatch batch{};
-    for (Small& s : batch) {
-        s.id = static_cast<uint32_t>(next_word(seed));
-        s.kind = static_cast<uint16_t>(next_word(seed));
-        s.flags = static_cast<uint16_t>(next_word(seed));
-        s.payload = static_cast<int64_t>(next_word(seed));
-    }
+    batch.with_mut([&seed](auto run) noexcept {
+        for (Small& s : run) {
+            s.id = static_cast<uint32_t>(next_word(seed));
+            s.kind = static_cast<uint16_t>(next_word(seed));
+            s.flags = static_cast<uint16_t>(next_word(seed));
+            s.payload = static_cast<int64_t>(next_word(seed));
+        }
+    });
     return batch;
 }
 
 WideBatch make_wide_batch(uint64_t seed) noexcept {
     WideBatch batch{};
-    for (Wide& w : batch) {
-        w.schema = next_word(seed);
-        w.shape = next_word(seed);
-        w.scope = next_word(seed);
-        w.callsite = next_word(seed);
-        w.num_inputs = static_cast<uint32_t>(next_word(seed) & 0xF);
-        w.num_outputs = static_cast<uint32_t>(next_word(seed) & 0xF);
-        w.op_flags = static_cast<uint8_t>(next_word(seed));
-        for (int64_t& scalar : w.scalars) {
-            scalar = static_cast<int64_t>(next_word(seed));
+    batch.with_mut([&seed](auto run) noexcept {
+        for (Wide& w : run) {
+            w.schema = next_word(seed);
+            w.shape = next_word(seed);
+            w.scope = next_word(seed);
+            w.callsite = next_word(seed);
+            w.num_inputs = static_cast<uint32_t>(next_word(seed) & 0xF);
+            w.num_outputs = static_cast<uint32_t>(next_word(seed) & 0xF);
+            w.op_flags = static_cast<uint8_t>(next_word(seed));
+            w.scalars.with_mut([&seed](auto scalars) noexcept {
+                for (int64_t& scalar : scalars) {
+                    scalar = static_cast<int64_t>(next_word(seed));
+                }
+            });
         }
-    }
+    });
     return batch;
 }
 
@@ -364,8 +370,8 @@ int main() {
         w.num_inputs = 2;
         w.num_outputs = 1;
         w.op_flags = 0x1;
-        w.scalars.at(::fixy::index<0>()) = 1;
-        w.scalars.at(::fixy::index<1>()) = 2;
+        w.scalars.with_element(::fixy::index<0>(), [](int64_t& scalar) noexcept { scalar = 1; });
+        w.scalars.with_element(::fixy::index<1>(), [](int64_t& scalar) noexcept { scalar = 2; });
         return w;
     };
 
@@ -474,7 +480,7 @@ int main() {
     slot.nbytes = 64;
     slot.dtype = crucible::ScalarType::Float;
     slot.slot_id = crucible::SlotId{3};
-    ::fixy::encode(slot, image.view());
+    image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, run.view()); });
 
     // Tiny FeedbackEdge (2 × u16 = 4 B); span of 8 edges per call.
     ::foundation::core::FixedArray<crucible::FeedbackEdge, 8> edges_buf{{0, 1}, {1, 2}, {2, 3}, {3, 4},
@@ -484,13 +490,17 @@ int main() {
     ::fixy::FixedArray<bench::Report, 9> refactor_reports{
         bench::run("feedback_signature  (family, 8 edges)",
                    [&] {
-                       edges_buf.at(::fixy::index<0>()).output_idx = bump;  // perturb each iter
+                       edges_buf.with_element(::fixy::index<0>(), [&bump](crucible::FeedbackEdge& edge) noexcept {
+                           edge.output_idx = bump;
+                       });  // perturb each iter
                        auto h = crucible::feedback_signature(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
         bench::run("feedback_signature  (packed, 8 edges)",
                    [&] {
-                       edges_buf.at(::fixy::index<0>()).output_idx = bump;
+                       edges_buf.with_element(::fixy::index<0>(), [&bump](crucible::FeedbackEdge& edge) noexcept {
+                           edge.output_idx = bump;
+                       });
                        auto h = feedback_signature_packed(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
@@ -529,7 +539,7 @@ int main() {
         bench::run("encode<TensorSlot>   (40 bytes)",
                    [&] {
                        slot.offset_bytes = vbytes;
-                       ::fixy::encode(slot, image.view());
+                       image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, run.view()); });
                        bench::do_not_optimize(image);
                    }),
         bench::run("copy of 40 bytes     (reference)",
@@ -575,7 +585,8 @@ int main() {
         kAlloc, kHeapWords, [](std::size_t position) noexcept { return static_cast<std::uint32_t>(position * 5); });
     HeapBytes heap_bytes{};
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<HeapBytes>> heap_image{};
-    ::fixy::encode(heap_record, ::fixy::View<std::byte>{heap_image.view()});
+    heap_image.with_mut(
+        [&heap_record](auto run) noexcept { ::fixy::encode(heap_record, ::fixy::View<std::byte>{run.view()}); });
 
     ::fixy::FixedArray<bench::Report, 8> part_reports{
         bench::run("hash<SumRecord>      (3 sums, 23 bytes)",
@@ -586,7 +597,9 @@ int main() {
                    }),
         bench::run("hash<SumBytes>       (23 plain bytes)",
                    [&] {
-                       sum_bytes.image.at(::fixy::index<1>()) = static_cast<std::byte>(vword);
+                       sum_bytes.image.with_element(::fixy::index<1>(), [&vword](std::byte& element) noexcept {
+                           element = static_cast<std::byte>(vword);
+                       });
                        auto h = ::fixy::hash(sum_bytes).raw();
                        bench::do_not_optimize(h);
                    }),
@@ -599,7 +612,9 @@ int main() {
                    }),
         bench::run("hash<ListBytes>      (65 plain bytes)",
                    [&] {
-                       list_bytes.image.at(::fixy::index<1>()) = static_cast<std::byte>(vword);
+                       list_bytes.image.with_element(::fixy::index<1>(), [&vword](std::byte& element) noexcept {
+                           element = static_cast<std::byte>(vword);
+                       });
                        auto h = ::fixy::hash(list_bytes).raw();
                        bench::do_not_optimize(h);
                    }),
@@ -612,7 +627,9 @@ int main() {
                    }),
         bench::run("hash<HeapBytes>      (the same 264 bytes)",
                    [&] {
-                       heap_bytes.words.at(::fixy::index<0>()) = static_cast<std::uint32_t>(vword);
+                       heap_bytes.words.with_element(::fixy::index<0>(), [&vword](std::uint32_t& element) noexcept {
+                           element = static_cast<std::uint32_t>(vword);
+                       });
                        auto h = ::fixy::hash(heap_bytes).raw();
                        bench::do_not_optimize(h);
                    }),
@@ -644,17 +661,25 @@ int main() {
     // One JSON tail holds the rows of the three groups, because the reader
     // reads only the last tail of the output.
     ::fixy::FixedList<bench::Report, 27> all_reports{};
-    for (bench::Report& report : reports)
-        bench::add_report(all_reports, std::move(report));
+    reports.with_mut([&all_reports](auto run) noexcept {
+        for (bench::Report& report : run)
+            bench::add_report(all_reports, std::move(report));
+    });
 #if defined(CRUCIBLE_BENCH_RAPIDHASH)
-    for (bench::Report& report : rapidhash_reports)
-        bench::add_report(all_reports, std::move(report));
+    rapidhash_reports.with_mut([&all_reports](auto run) noexcept {
+        for (bench::Report& report : run)
+            bench::add_report(all_reports, std::move(report));
+    });
 #endif
-    for (bench::Report& report : refactor_reports)
-        bench::add_report(all_reports, std::move(report));
-    for (bench::Report& report : part_reports) {
-        bench::add_report(all_reports, static_cast<bench::Report&&>(report));
-    }
+    refactor_reports.with_mut([&all_reports](auto run) noexcept {
+        for (bench::Report& report : run)
+            bench::add_report(all_reports, std::move(report));
+    });
+    part_reports.with_mut([&all_reports](auto run) noexcept {
+        for (bench::Report& report : run) {
+            bench::add_report(all_reports, static_cast<bench::Report&&>(report));
+        }
+    });
     bench::emit_reports_json(all_reports.view(), json);
     return 0;
 }

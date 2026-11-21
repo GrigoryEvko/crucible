@@ -117,9 +117,6 @@ struct BatchSpec {
 
 // The value at position of a batch.  Each position that the test reads is
 // below the count, which is below kMaxBatch.
-[[nodiscard]] std::uint64_t& value_at(BatchSpec& spec, std::uint32_t position) noexcept {
-    return spec.values.at(::fixy::Index<kMaxBatch>::check(position).expect("a position of a batch is below kMaxBatch"));
-}
 [[nodiscard]] std::uint64_t value_at(BatchSpec const& spec, std::uint32_t position) noexcept {
     return spec.values.at(::fixy::Index<kMaxBatch>::check(position).expect("a position of a batch is below kMaxBatch"));
 }
@@ -156,7 +153,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             BatchSpec spec{};
             spec.count = 1u + rng.next_below(static_cast<std::uint32_t>(kMaxBatch - 1));
             for (std::uint32_t i = 0; i < spec.count; ++i) {
-                value_at(spec, i) = log_uniform_below_or_eq(rng, kMax);
+                spec.values.with_element(
+                    ::fixy::Index<kMaxBatch>::check(i).expect("a position of a batch is below kMaxBatch"),
+                    [&rng](std::uint64_t& value) noexcept { value = log_uniform_below_or_eq(rng, kMax); });
             }
             return spec;
         },

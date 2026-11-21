@@ -98,9 +98,11 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 [[nodiscard]] Guard random_guard(crucible::fuzz::prop::Rng& rng) noexcept {
     Guard g{};
     g.kind = rng.pick<Guard::Kind>();
-    for (uint8_t& byte : g.pad) {
-        byte = static_cast<uint8_t>(rng.next32() & 0xFFu);
-    }
+    g.pad.with_mut([&rng](auto run) noexcept {
+        for (uint8_t& byte : run) {
+            byte = static_cast<uint8_t>(rng.next32() & 0xFFu);
+        }
+    });
     // op_index: exercise both valid indices and the none() sentinel.
     // Bias toward typical op indices (0..4095) with a 10% escape
     // for none().
@@ -142,7 +144,8 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
     // process for another index.  XOR with 1 guarantees the byte changes
     // without overflowing uint8_t.
     const uint8_t before = *base.pad.view().get(byte_idx).expect("the index of a pad byte is below 3");
-    *out.pad.view().get(byte_idx).expect("the index of a pad byte is below 3") = static_cast<uint8_t>(before ^ 1u);
+    out.pad.with_element(::fixy::Index<3>::check(byte_idx).expect("the index of a pad byte is below 3"),
+                         [before](uint8_t& byte) noexcept { byte = static_cast<uint8_t>(before ^ 1u); });
     return out;
 }
 

@@ -61,12 +61,16 @@ using Stream = ::fixy::FixedArray<T, kMaxLen>;
 // The element at position of a stream.  Each position that the test reads
 // is below the length of the stream, which is at most kMaxLen.
 template <class T>
-[[nodiscard]] T& at_position(Stream<T>& stream, uint32_t position) noexcept {
-    return stream.at(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"));
-}
-template <class T>
 [[nodiscard]] T const& at_position(Stream<T> const& stream, uint32_t position) noexcept {
     return stream.at(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"));
+}
+
+// Writes value at position of a stream.  Each position that the test writes
+// is below the length of the stream, which is at most kMaxLen.
+template <class T>
+void write_at_position(Stream<T>& stream, uint32_t position, T const value) noexcept {
+    stream.with_element(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"),
+                        [value](T& element) noexcept { element = value; });
 }
 
 struct StreamSpec {
@@ -80,8 +84,9 @@ struct StreamSpec {
 void feed(const StreamSpec& spec, Stream<bool>& out) noexcept {
     crucible::IterationDetector det{};
     for (uint32_t i = 0; i < spec.len; ++i) {
-        at_position(out, i) =
-            det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{at_position(spec.hashes, i)});
+        write_at_position(
+            out, i,
+            det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{at_position(spec.hashes, i)}));
     }
 }
 
@@ -105,7 +110,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     spec.len = kK + rng.next_below(kMaxLen - kK);
                     const uint64_t base = 1u + rng.next_below(1000u);
                     for (uint32_t i = 0; i < spec.len; ++i)
-                        at_position(spec.hashes, i) = base + i;
+                        write_at_position(spec.hashes, i, base + i);
                     break;
                 }
                 case Mode::Periodic: {
@@ -116,13 +121,13 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     const uint64_t base = 1u + rng.next_below(1000u);
                     spec.len = period * reps;  // <= 13*7=91
                     for (uint32_t i = 0; i < spec.len; ++i)
-                        at_position(spec.hashes, i) = base + (i % period);
+                        write_at_position(spec.hashes, i, base + (i % period));
                     break;
                 }
                 case Mode::Random: {
                     spec.len = rng.next_below(kMaxLen + 1u);  // [0, kMaxLen]
                     for (uint32_t i = 0; i < spec.len; ++i)
-                        at_position(spec.hashes, i) = rng.next64();
+                        write_at_position(spec.hashes, i, rng.next64());
                     break;
                 }
                 default:

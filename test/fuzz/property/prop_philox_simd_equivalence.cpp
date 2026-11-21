@@ -71,8 +71,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             };
             Inputs inputs{};
             for (const ::fixy::Index<8> i : ::fixy::IndexRange<8>{}) {
-                inputs.counters.at(i) = {rng.next32(), rng.next32(), rng.next32(), rng.next32()};
-                inputs.keys.at(i) = {rng.next32(), rng.next32()};
+                inputs.counters.with_element(i, [&rng](::fixy::Philox4x32::Counter& counter) noexcept {
+                    counter = {rng.next32(), rng.next32(), rng.next32(), rng.next32()};
+                });
+                inputs.keys.with_element(
+                    i, [&rng](::fixy::Philox4x32::Key& key) noexcept { key = {rng.next32(), rng.next32()}; });
             }
             return inputs;
         },

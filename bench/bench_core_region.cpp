@@ -47,12 +47,14 @@ int main() {
     std::uint32_t pattern = 0x9E3779B9u;
     for (fixy::Index<kElements> index : values.indices()) {
         pattern = pattern * 1664525u + 1013904223u;
-        values.at(index) = pattern;
-        same_values.at(index) = pattern;
-        positions.at(index) = pattern >> 28;
+        values.with_element(index, [pattern](std::uint32_t& element) noexcept { element = pattern; });
+        same_values.with_element(index, [pattern](std::uint32_t& element) noexcept { element = pattern; });
+        positions.with_element(index, [pattern](std::uint32_t& element) noexcept { element = pattern >> 28; });
     }
     for (fixy::Index<16> index : table.indices()) {
-        table.at(index) = static_cast<std::uint32_t>(index.raw()) * 7u;
+        table.with_element(index, [index](std::uint32_t& element) noexcept {
+            element = static_cast<std::uint32_t>(index.raw()) * 7u;
+        });
     }
 
     fixy::View<std::uint32_t const> const run = values.view();

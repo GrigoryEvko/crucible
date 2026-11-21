@@ -40,7 +40,7 @@ inline void run_fec(::fixy::View<std::byte const> bytes) noexcept {
     ::foundation::core::FixedArray<bool, Codec::total_shards> mask{};
     const auto bit_is_set = [mask_bits](std::size_t i) noexcept { return ((unsigned{mask_bits} >> i) & 1U) != 0; };
     for (auto shard : mask.indices())
-        mask.at(shard) = bit_is_set(shard.raw());
+        mask.with_element(shard, [bit_is_set, shard](bool& element) noexcept { element = bit_is_set(shard.raw()); });
     auto output = ::fixy::mint_heap_array(test_alloc(), output_size, std::byte{0});
     (void)codec.decode(received.view(), mask.view(), output.view());
 
@@ -55,7 +55,7 @@ inline void run_fec(::fixy::View<std::byte const> bytes) noexcept {
     for (auto index : erased.indices()) {
         if (erased_count >= Codec::parity_shards) break;
         if (!bit_is_set(index.raw())) continue;
-        erased.at(index) = true;
+        erased.with_element(index, [](bool& element) noexcept { element = true; });
         ++erased_count;
         ::fixy::fill(encoded.view().window(index.raw() * shard, shard).expect("the shard lies inside the block"),
                      std::byte{0xA5});

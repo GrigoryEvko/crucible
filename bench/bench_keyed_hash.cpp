@@ -38,10 +38,12 @@ struct Input final {
 
     Input() noexcept {
         std::size_t at = 0;
-        for (std::byte& byte : bytes) {
-            byte = static_cast<std::byte>(at % 251);
-            ++at;
-        }
+        bytes.with_mut([&at](auto run) noexcept {
+            for (std::byte& byte : run) {
+                byte = static_cast<std::byte>(at % 251);
+                ++at;
+            }
+        });
     }
 };
 
@@ -56,10 +58,12 @@ struct Input final {
     constexpr fc::TextView text{"whats the Elvish word for friend"};
     fc::FixedArray<std::byte, 32> bytes{};
     auto letter = text.begin();
-    for (std::byte& byte : bytes) {
-        byte = static_cast<std::byte>(*letter);
-        ++letter;
-    }
+    bytes.with_mut([&letter](auto run) noexcept {
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(*letter);
+            ++letter;
+        }
+    });
     return bytes;
 }
 
@@ -74,8 +78,10 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the bytes of a row go to the door of the
 [[nodiscard]] fc::FixedArray<std::byte, 32> official_keyed_hash(fc::FixedArray<std::byte, 32> const& key,
                                                                 Input const& input, std::size_t size) noexcept {
     fc::FixedArray<std::byte, 32> out{};
-    bench_keyed_hash_references::blake3_keyed(&key.at(fc::index<0>()), &input.bytes.at(fc::index<0>()), size,
-                                              &out.at(fc::index<0>()));
+    out.with_mut([&key, &input, size](auto run) noexcept {
+        bench_keyed_hash_references::blake3_keyed(&key.at(fc::index<0>()), &input.bytes.at(fc::index<0>()), size,
+                                                  &run.view().at(fc::index<0>()));
+    });
     return out;
 }
 
@@ -179,11 +185,15 @@ int main() {
     // One JSON tail holds the rows of the two groups, because the reader
     // reads only the last tail of the output.
     ::fixy::FixedList<bench::Report, 2 * kRows> all_reports{};
-    for (bench::Report& report : base_reports)
-        bench::add_report(all_reports, std::move(report));
+    base_reports.with_mut([&all_reports](auto run) noexcept {
+        for (bench::Report& report : run)
+            bench::add_report(all_reports, std::move(report));
+    });
 #if defined(CRUCIBLE_BENCH_BLAKE3)
-    for (bench::Report& report : official_reports)
-        bench::add_report(all_reports, std::move(report));
+    official_reports.with_mut([&all_reports](auto run) noexcept {
+        for (bench::Report& report : run)
+            bench::add_report(all_reports, std::move(report));
+    });
 #endif
     bench::emit_reports_json(all_reports.view(), json);
     return 0;

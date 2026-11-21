@@ -527,19 +527,22 @@ void print_light(fixy::TextView name, bench::Report const& measured, double cycl
 // A random cycle over LINES positions (Sattolo): the order of the positions
 // that the cycle visits.  Complexity: linear in the lines.
 void build_cycle(core::FixedArray<std::uint32_t, kChainLines>& order, std::size_t lines) noexcept {
-    for (std::size_t position = 0; position < lines; ++position) {
-        order.at(core::Index<kChainLines>::check(position).expect("a position below kChainLines")) =
-            static_cast<std::uint32_t>(position);
-    }
-    for (std::size_t last = lines - 1; last > 0; --last) {
-        std::size_t const other = draw_of(last + kPicks) % last;
-        auto const at = [&order](std::size_t position) noexcept -> std::uint32_t& {
-            return order.at(core::Index<kChainLines>::check(position).expect("a position below kChainLines"));
-        };
-        std::uint32_t const held = at(last);
-        at(last) = at(other);
-        at(other) = held;
-    }
+    order.with_mut([lines](auto run) noexcept {
+        core::View<std::uint32_t, kChainLines> const slots = run.view();
+        for (std::size_t position = 0; position < lines; ++position) {
+            slots.at(core::Index<kChainLines>::check(position).expect("a position below kChainLines")) =
+                static_cast<std::uint32_t>(position);
+        }
+        for (std::size_t last = lines - 1; last > 0; --last) {
+            std::size_t const other = draw_of(last + kPicks) % last;
+            auto const at = [&slots](std::size_t position) noexcept -> std::uint32_t& {
+                return slots.at(core::Index<kChainLines>::check(position).expect("a position below kChainLines"));
+            };
+            std::uint32_t const held = at(last);
+            at(last) = at(other);
+            at(other) = held;
+        }
+    });
 }
 
 // The rows of the speed of light (THE SPEED OF LIGHT): the clock, the floor
@@ -590,8 +593,9 @@ void run_light_rows(bench::Report const& inline_read, bench::Report const& call_
                 order->at(core::Index<kChainLines>::check((step + 1) % lines).expect("a step below the lines"));
             window.set_owner(alloc::ChunkIndex{static_cast<std::uint32_t>(here * kChainStride)},
                              alloc::owner_entry_of(alloc::HeapId{static_cast<std::uint16_t>(next + 1)}));
-            chase->next.at(core::Index<kChaseWords>::check(std::size_t{here} * 16).expect("a word of the chase")) =
-                next * 16;
+            chase->next.with_element(
+                core::Index<kChaseWords>::check(std::size_t{here} * 16).expect("a word of the chase"),
+                [next](std::uint32_t& element) noexcept { element = next * 16; });
         }
         OwnerChain owner_chain{record.chunk_map(), static_cast<std::uint64_t>(record.base())};
         bench::Report const owner_read =

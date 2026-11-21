@@ -106,8 +106,10 @@ void fill_random_entry(crucible::fuzz::prop::Rng& rng, TraceRing::Entry& e) noex
                          .expect("five bits name only the inline slots"));
     e.scalar_types = static_cast<uint8_t>(rng.next32() & 0xFFu);
     e.op_flags = static_cast<uint8_t>(rng.next32() & 0xFFu);
-    for (auto& v : e.scalar_values)
-        v = static_cast<int64_t>(rng.next64());
+    e.scalar_values.with_mut([&rng](auto run) noexcept {
+        for (auto& v : run)
+            v = static_cast<int64_t>(rng.next64());
+    });
 }
 
 // Compare two Entries byte-by-byte.  Entry has no padding (8+8+2+2+1+1
@@ -134,9 +136,6 @@ struct Schedule {
 // The slot at position of a mirror or a payload.  The mirror masks its
 // cursor with MIRROR_CAPACITY - 1, and a payload index stays below
 // MIRROR_CAPACITY, so each position is below the capacity.
-[[nodiscard]] MirrorSlot& slot_at(Mirror& slots, uint32_t position) noexcept {
-    return slots.at(::fixy::Index<MIRROR_CAPACITY>::check(position).expect("a slot position is below the capacity"));
-}
 [[nodiscard]] const MirrorSlot& slot_at(const Mirror& slots, uint32_t position) noexcept {
     return slots.at(::fixy::Index<MIRROR_CAPACITY>::check(position).expect("a slot position is below the capacity"));
 }
@@ -176,7 +175,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             CRUCIBLE_FATAL_INVARIANT(is_appended);
         }
         ::fixy::FixedArray<TraceRing::Entry, PREFILL> discard{};
-        const uint32_t discarded = ring->drain(discard.view());
+        const uint32_t discarded = discard.with_mut([&ring](auto run) noexcept { return ring->drain(run.view()); });
         CRUCIBLE_FATAL_INVARIANT(discarded == PREFILL);
 
         // Fill to exactly CAPACITY.
@@ -210,7 +209,18 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         ::fixy::FixedArray<OpDepth, CHUNK> out_d{};
         uint32_t delivered = 0;
         while (delivered < CAP) {
-            const uint32_t got = ring->drain(out_e.view(), out_m.view(), out_s.view(), out_c.view(), out_d.view());
+            const uint32_t got = out_e.with_mut([&](auto run_e) noexcept {
+                return out_m.with_mut([&](auto run_m) noexcept {
+                    return out_s.with_mut([&](auto run_s) noexcept {
+                        return out_c.with_mut([&](auto run_c) noexcept {
+                            return out_d.with_mut([&](auto run_d) noexcept {
+                                return ring->drain(run_e.view(), run_m.view(), run_s.view(), run_c.view(),
+                                                   run_d.view());
+                            });
+                        });
+                    });
+                });
+            });
             CRUCIBLE_FATAL_INVARIANT(got != 0);  // ring has CAP entries, must deliver
             for (uint32_t k = 0; k < got; ++k) {
                 const uint32_t i = delivered + k;
@@ -240,18 +250,23 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         [](Rng& rng) {
             Schedule s{};
             for (const ::fixy::Index<K_PHASES> p : ::fixy::IndexRange<K_PHASES>{}) {
-                s.is_append.at(p) = (rng.next32() & 1u) != 0u;
-                s.count.at(p) = static_cast<uint16_t>(rng.next_below(MAX_OPS_PER_PHASE + 1));
+                s.is_append.with_element(p,
+                                         [&rng](bool& is_append) noexcept { is_append = (rng.next32() & 1u) != 0u; });
+                s.count.with_element(p, [&rng](uint16_t& count) noexcept {
+                    count = static_cast<uint16_t>(rng.next_below(MAX_OPS_PER_PHASE + 1));
+                });
             }
-            for (auto& slot : s.payload) {
-                fill_random_entry(rng, slot.entry);
-                // MetaIndex: occasionally use the none() sentinel,
-                // otherwise a random valid index.
-                slot.meta_start = (rng.next32() & 0xFu) == 0u ? MetaIndex{} : MetaIndex{rng.next32() & 0x00FFFFFFu};
-                slot.scope_hash = ScopeHash{rng.next64()};
-                slot.callsite_hash = CallsiteHash{rng.next64()};
-                slot.depth = OpDepth{static_cast<uint16_t>(rng.next32() & 0xFFFFu)};
-            }
+            s.payload.with_mut([&rng](auto run) noexcept {
+                for (auto& slot : run) {
+                    fill_random_entry(rng, slot.entry);
+                    // MetaIndex: occasionally use the none() sentinel,
+                    // otherwise a random valid index.
+                    slot.meta_start = (rng.next32() & 0xFu) == 0u ? MetaIndex{} : MetaIndex{rng.next32() & 0x00FFFFFFu};
+                    slot.scope_hash = ScopeHash{rng.next64()};
+                    slot.callsite_hash = CallsiteHash{rng.next64()};
+                    slot.depth = OpDepth{static_cast<uint16_t>(rng.next32() & 0xFFFFu)};
+                }
+            });
             return s;
         },
         [&ring](const Schedule& s) -> bool {
@@ -297,7 +312,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                         if (ring->size().peek() != size_before + 1u) return false;
 
                         // Record on the mirror for later FIFO comparison.
-                        slot_at(mirror, mirror_head & (MIRROR_CAPACITY - 1u)) = src;
+                        mirror.with_element(::fixy::Index<MIRROR_CAPACITY>::check(mirror_head & (MIRROR_CAPACITY - 1u))
+                                                .expect("a slot position is below the capacity"),
+                                            [&src](MirrorSlot& slot) noexcept { slot = src; });
                         ++mirror_head;
 
                         // (C) producer cursor strictly advanced by 1.
@@ -307,11 +324,22 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     }
                 } else {
                     const uint32_t want = static_cast<uint32_t>(n);
-                    const uint32_t got = ring->drain(out_e.view().window(0, want).expect("a phase fits the buffer"),
-                                                     out_m.view().window(0, want).expect("a phase fits the buffer"),
-                                                     out_s.view().window(0, want).expect("a phase fits the buffer"),
-                                                     out_c.view().window(0, want).expect("a phase fits the buffer"),
-                                                     out_d.view().window(0, want).expect("a phase fits the buffer"));
+                    const uint32_t got = out_e.with_mut([&](auto run_e) noexcept {
+                        return out_m.with_mut([&](auto run_m) noexcept {
+                            return out_s.with_mut([&](auto run_s) noexcept {
+                                return out_c.with_mut([&](auto run_c) noexcept {
+                                    return out_d.with_mut([&](auto run_d) noexcept {
+                                        return ring->drain(
+                                            run_e.view().window(0, want).expect("a phase fits the buffer"),
+                                            run_m.view().window(0, want).expect("a phase fits the buffer"),
+                                            run_s.view().window(0, want).expect("a phase fits the buffer"),
+                                            run_c.view().window(0, want).expect("a phase fits the buffer"),
+                                            run_d.view().window(0, want).expect("a phase fits the buffer"));
+                                    });
+                                });
+                            });
+                        });
+                    });
 
                     // Consumer cannot receive more than was enqueued.
                     const uint32_t mirror_live = mirror_head - mirror_tail;
