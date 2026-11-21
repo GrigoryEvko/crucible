@@ -1,5 +1,4 @@
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -289,8 +288,9 @@ void test_empty_drain() {
 // callback session that names its own protocol admits it.
 //
 // A MetaLog handle refuses move-assignment, so a session over it refuses
-// move-assignment too.  Each loop keeps its current session in an optional
-// and puts the next one in its place with emplace.
+// move-assignment too.  Each loop keeps its current session in an Option:
+// take gives the session to the step, and fill puts the next session in its
+// place.
 //
 // Each body owns its handle, and it writes its results into Atomics of the
 // test.  The thread door joins both threads before it returns, and the test
@@ -308,11 +308,17 @@ void test_typed_session_round_trip() {
 
     auto produce = [handle = std::move(producer), &producer_done, &producer_handle_back]() mutable noexcept {
         const FgCtx ctx = ::foundation::effects::testing::foreground();
-        std::optional head{ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle))};
+        auto head = ::fixy::some(ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle)));
         for (int i = 0; i < kCount; ++i) {
-            head.emplace(std::move(*head).select<0>(::fixy::session::no_label).send(ctx, make_meta(i + 10)));
+            head.fill(head.take()
+                          .expect("the loop keeps the producer session in the Option")
+                          .select<0>(::fixy::session::no_label)
+                          .send(ctx, make_meta(i + 10)));
         }
-        auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
+        auto back = std::move(head)
+                        .expect("the loop leaves the producer session in the Option")
+                        .select<1>(::fixy::session::no_label)
+                        .close();
         producer_handle_back.store_release(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount));
         producer_done.store_release(true);
     };
@@ -320,13 +326,19 @@ void test_typed_session_round_trip() {
     auto consume = [handle = std::move(consumer), &matched_count, &consumer_handle_back]() mutable noexcept {
         const BgCtx ctx{::foundation::effects::testing::bg()};
         int matched = 0;
-        std::optional head{ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(handle))};
+        auto head = ::fixy::some(ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(handle)));
         for (int i = 0; i < kCount; ++i) {
-            auto [meta, next] = std::move(*head).select<0>(::fixy::session::no_label).recv(ctx);
+            auto [meta, next] = head.take()
+                                    .expect("the loop keeps the consumer session in the Option")
+                                    .select<0>(::fixy::session::no_label)
+                                    .recv(ctx);
             matched += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
-            head.emplace(std::move(next));
+            head.fill(std::move(next));
         }
-        auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
+        auto back = std::move(head)
+                        .expect("the loop leaves the consumer session in the Option")
+                        .select<1>(::fixy::session::no_label)
+                        .close();
         matched_count.store_release(matched);
         consumer_handle_back.store_release(back.tail_index() == static_cast<std::uint32_t>(kCount));
     };
