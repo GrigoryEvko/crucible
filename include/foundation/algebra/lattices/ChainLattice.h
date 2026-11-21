@@ -38,6 +38,7 @@
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -184,9 +185,8 @@ private:
 template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^EnumT)));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^EnumT));
     // `template for` unrolls into successive scopes that each declare the
     // induction variable, so -Wshadow fires on the body.
 #pragma GCC diagnostic push
@@ -207,9 +207,8 @@ template <typename ChainLattice>
 template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_distributive_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^EnumT)));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^EnumT));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -233,9 +232,8 @@ template <typename L>
     requires std::is_scoped_enum_v<typename L::element_type>
 [[nodiscard]] consteval bool verify_enum_lattice_exhaustive() noexcept {
     using EnumT = typename L::element_type;
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^EnumT)));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^EnumT));
     if (!verify_chain_lattice_exhaustive<L>()) {
         return false;
     }
@@ -267,9 +265,8 @@ template <typename L>
 template <typename L, typename E = typename L::element_type>
     requires std::is_scoped_enum_v<E>
 [[nodiscard]] consteval bool verify_pinned_at() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^E, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^E)));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^E));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -308,16 +305,15 @@ template <typename L>
     requires std::is_scoped_enum_v<typename L::element_type>
 [[nodiscard]] consteval bool verify_chain_lattice() noexcept {
     using EnumT = typename L::element_type;
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^EnumT, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^EnumT)));
-    if constexpr (enumerators.empty()) {
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^EnumT));
+    if constexpr (enumerators.is_empty()) {
         return false;
     } else {
         if (!BoundedLattice<L>) return false;
         if (L::name().size() == 0) return false;
-        if (L::bottom() != [:enumerators.front():]) return false;
-        if (L::top() != [:enumerators.back():]) return false;
+        if (L::bottom() != [:enumerators[0]:]) return false;
+        if (L::top() != [:enumerators[enumerators.size() - 1]:]) return false;
         if (!verify_chain_lattice_exhaustive<L>()) return false;
         if (!verify_chain_lattice_distributive_exhaustive<L>()) return false;
         std::size_t position_a = 0;

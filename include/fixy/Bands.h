@@ -61,7 +61,7 @@
 #include <foundation/algebra/lattices/WaitLattice.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <array>
 #include <concepts>
@@ -69,7 +69,6 @@
 #include <meta>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace fixy {
 
@@ -452,12 +451,10 @@ struct alias_probe {};
 template <std::meta::info Ns, std::meta::info EnumInfo>
 [[nodiscard]] consteval bool every_tier_has_an_alias() noexcept {
     using Enum = [:EnumInfo:];
-    static constexpr auto tiers =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<EnumInfo, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(EnumInfo)));
-    static constexpr auto members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<Ns, std::vector<std::meta::info>>>(
-            std::meta::members_of(Ns, std::meta::access_context::unchecked())));
+    static constexpr ::foundation::reflect::ReflectionList tiers =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(EnumInfo));
+    static constexpr ::foundation::reflect::ReflectionList members =
+        ::foundation::reflect::reflection_list(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
     std::array<bool, tiers.size()> is_named{};
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

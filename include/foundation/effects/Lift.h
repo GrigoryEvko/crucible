@@ -16,11 +16,10 @@
 // missing arm nobody noticed.
 
 #include <foundation/effects/Row.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <meta>
 #include <type_traits>
-#include <vector>
 
 namespace foundation::effects {
 
@@ -53,9 +52,8 @@ using lift_row_t = typename detail::lift_row<Atom>::type;
 template <class Enum, template <Enum> class Map>
     requires std::is_scoped_enum_v<Enum>
 [[nodiscard]] consteval bool every_enumerator_lifted() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Enum, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^Enum)));
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^Enum));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {

@@ -48,6 +48,7 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <concepts>
 #include <cstddef>
@@ -383,9 +384,8 @@ template <class Site, std::meta::info Scope, bool InDetail>
 consteval void append_corpus_offenders_(std::string& offenders, bool& found) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : std::define_static_array(
-                      static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
-                          std::meta::members_of(Scope, std::meta::access_context::current())))) {
+    template for (constexpr auto member : ::foundation::reflect::reflection_list(
+                      std::meta::members_of(Scope, std::meta::access_context::current()))) {
         bool is_offender = false;
         if constexpr (std::meta::is_namespace(member) && !std::meta::is_namespace_alias(member)) {
             append_corpus_offenders_<Site, member, InDetail || member == ^^::fixy::corpus::detail>(offenders, found);

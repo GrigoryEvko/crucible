@@ -21,14 +21,13 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
-#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <cstdint>
 #include <meta>
 #include <tuple>
 #include <type_traits>
-#include <vector>
 
 namespace fixy::io {
 
@@ -349,9 +348,8 @@ template <std::meta::info Ns>
     static_assert(std::meta::is_namespace(Ns),
                   "fixy/atoms/Os.h: every_class_in_is_tag_<Ns> takes a reflection of a namespace, "
                   "written ^^name.");
-    static constexpr auto members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<Ns, std::vector<std::meta::info>>>(
-            std::meta::members_of(Ns, std::meta::access_context::unchecked())));
+    static constexpr ::foundation::reflect::ReflectionList members =
+        ::foundation::reflect::reflection_list(std::meta::members_of(Ns, std::meta::access_context::unchecked()));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {

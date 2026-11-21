@@ -9,13 +9,11 @@
 // parameters.
 
 #include <foundation/Platform.h>
-#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/ReflectionList.h>
 
 #include <cstddef>
 #include <meta>
 #include <type_traits>
-#include <vector>
 
 namespace foundation::reflect {
 
@@ -30,9 +28,8 @@ struct signature_traits {
     // in static storage first is what makes the elements spliceable.
     // The call names its namespace, so argument-dependent lookup adds no
     // overload of another file.
-    static constexpr ReflectionList params = ::foundation::reflect::reflection_list(
-        static_cast<anchored_t<function_reflection, std::vector<std::meta::info>>>(
-            std::meta::parameters_of(function_reflection)));
+    static constexpr ReflectionList params =
+        ::foundation::reflect::reflection_list(std::meta::parameters_of(function_reflection));
 
     static constexpr std::size_t arity = params.size();
 

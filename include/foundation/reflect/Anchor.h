@@ -3,15 +3,13 @@
 // A type that depends on a template parameter, for a list or a text that a
 // header gives to std::define_static_array or std::define_static_string.
 //
-// GCC resolves a call where its template stands when no argument has a type
-// that depends on a template parameter.  At that point it instantiates the
-// function template that the call names, in each translation unit that
-// includes the header, also in a unit that never instantiates the enclosing
-// template.  The first instantiation of std::define_static_array costs about
-// 68 M instructions in a unit, because GCC deduces its return type.  The
-// first instantiation of std::define_static_string costs about 19 M.  A reflection
-// query returns a std::vector<std::meta::info>, and a text builder holds a
-// std::string, so their types never depend on a template parameter.
+// GCC evaluates a call where its template stands when no argument depends on
+// a template parameter, by its type or by its value.  Then it instantiates
+// the function template that the call names in each translation unit that
+// includes the header.  The first instantiation of std::define_static_array
+// costs about 68 M instructions in a unit, and of std::define_static_string
+// about 19 M.  A query of ^^T depends on T by its value, so its call needs no
+// anchor.  A query of a fixed entity and a text builder depend on nothing.
 //
 // anchored_t<Owner, Value> is Value.  Its spelling depends on the reflection
 // Owner, so a list or a text of this type makes the call depend on Owner.

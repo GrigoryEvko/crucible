@@ -55,7 +55,7 @@
 
 #include <foundation/core/Array.h>
 #include <foundation/core/Equatable.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 // <optional> of C++26 gives the range concepts and the range access of
 // std::ranges (bits/ranges_base.h of libstdc++), with no view of <ranges>.
@@ -144,9 +144,8 @@ template <typename T>
                     if (found != std::meta::info{}) return found;
                     // The comparator, the hasher and the allocator are part
                     // of the container, and a template argument names each.
-                    static constexpr auto arguments = std::define_static_array(
-                        static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
-                            type_arguments_of(bare)));
+                    static constexpr ::foundation::reflect::ReflectionList arguments =
+                        ::foundation::reflect::reflection_list(type_arguments_of(bare));
                     template for (constexpr std::meta::info argument : arguments) {
                         std::meta::info const reached = first_outside_reach<typename[:argument:]>(visiting);
                         if (reached != std::meta::info{}) return reached;
@@ -154,12 +153,10 @@ template <typename T>
                     return std::meta::info{};
                 }
             } else {
-                static constexpr auto bases = std::define_static_array(
-                    static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
-                        std::meta::bases_of(bare, std::meta::access_context::unchecked())));
-                static constexpr auto members = std::define_static_array(
-                    static_cast<::foundation::reflect::anchored_t<bare, std::vector<std::meta::info>>>(
-                        std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked())));
+                static constexpr ::foundation::reflect::ReflectionList bases = ::foundation::reflect::reflection_list(
+                    std::meta::bases_of(bare, std::meta::access_context::unchecked()));
+                static constexpr ::foundation::reflect::ReflectionList members = ::foundation::reflect::reflection_list(
+                    std::meta::nonstatic_data_members_of(bare, std::meta::access_context::unchecked()));
                 // Storage the walk cannot account for.  A member-less union
                 // or a one-byte closure holds no address, so only a larger
                 // one is refused.

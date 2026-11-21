@@ -22,13 +22,12 @@
 #include <foundation/core/Text.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/RowMismatch.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <vector>
 
 namespace foundation::diag {
 
@@ -97,9 +96,8 @@ inline constexpr core::View<core::TextView const, 8> json_record_fields{core::de
 // walk reads the roster through its cursor, one name for each member.
 template <typename Record, std::size_t N>
 [[nodiscard]] consteval bool record_fields_are(core::View<core::TextView const, N> expected) noexcept {
-    static constexpr auto members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Record, std::vector<std::meta::info>>>(
-            std::meta::nonstatic_data_members_of(^^Record, std::meta::access_context::current())));
+    static constexpr ::foundation::reflect::ReflectionList members = ::foundation::reflect::reflection_list(
+        std::meta::nonstatic_data_members_of(^^Record, std::meta::access_context::current()));
     if (members.size() != N) return false;
     auto roster = expected.begin();
     bool matched = true;

@@ -14,7 +14,6 @@
 
 #pragma once
 
-#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/ReflectionList.h>
 
@@ -24,7 +23,6 @@
 #include <meta>
 #include <string_view>
 #include <type_traits>
-#include <vector>
 
 namespace foundation::reflect {
 
@@ -54,8 +52,8 @@ template <ScopedEnum E, std::size_t N>
     using Underlying = std::underlying_type_t<E>;
     // The call names its namespace, so argument-dependent lookup adds no
     // overload of another file.
-    static constexpr ReflectionList enumerators = ::foundation::reflect::reflection_list(
-        static_cast<anchored_t<^^E, std::vector<std::meta::info>>>(std::meta::enumerators_of(^^E)));
+    static constexpr ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^E));
     if (enumerators.size() != N) return false;
 
     for (std::size_t i = 0; i < N; ++i) {
