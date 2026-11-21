@@ -26,4 +26,22 @@ void extended_temporary(Token&& parent) {
     take(static_cast<Pair&&>(pair));
 }
 
+// A self-move through a reference that a dereference or an index initializes,
+// with no write of the pointer or the index between: the reference and the
+// target name one object, and the kind self-move gives no line.  The rule
+// takes such a reference as no alias, because a later write of the pointer or
+// the index can change the object of the same expression.  A flow-sensitive
+// form can close the gap.  The guards of a session handle stay as its run-time
+// backstop.
+void self_move_through_a_dereference(Token& held) noexcept {
+    Token* const place = &held;
+    Token& same = *place;
+    *place = static_cast<Token&&>(same);
+}
+
+void self_move_through_an_index(Token (&row)[2], int index) noexcept {
+    Token& same = row[index];
+    row[index] = static_cast<Token&&>(same);
+}
+
 }  // namespace planted

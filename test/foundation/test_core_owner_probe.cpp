@@ -107,6 +107,15 @@ template <class Owner>
     return owner;
 }
 
+// Moves the source into the target through two names.  The kind self-move of
+// the rule must-consume refuses a self-move that one function names, so each
+// probe reaches the self-move of an owner through this function, as an alias
+// of two references reaches it in a program.
+template <class Owner>
+[[gnu::noinline]] void move_into(Owner& target, Owner& source) noexcept {
+    target = static_cast<Owner&&>(source);
+}
+
 using ::fixy::check::expect_dies;
 
 // ── The chain of Boxes ──────────────────────────────────────────────────
@@ -167,8 +176,7 @@ struct BoxProbe {
     static void self_move() {
         {
             Box<BoxNode> head = make_chain(1, 3);
-            Box<BoxNode>& alias = head;
-            head = static_cast<Box<BoxNode>&&>(alias);
+            move_into(head, head);
             CRUCIBLE_FATAL_INVARIANT(live_nodes == 3);
             CRUCIBLE_FATAL_INVARIANT(head->label == 1);
         }
@@ -331,8 +339,7 @@ struct ElementArms {
         using Owner = Probe::Owner;
         {
             Owner held = Probe::make(2);
-            Owner& alias = held;
-            held = static_cast<Owner&&>(alias);
+            move_into(held, held);
             CRUCIBLE_FATAL_INVARIANT(held.size() == 2);
             CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
         }
@@ -618,8 +625,7 @@ struct GrowTextProbe {
 
     static void self_move() {
         Owner held = make('a');
-        Owner& alias = held;
-        held = static_cast<Owner&&>(alias);
+        move_into(held, held);
         CRUCIBLE_FATAL_INVARIANT(held.size() == 1);
     }
 
@@ -674,8 +680,7 @@ struct HeapTextProbe {
 
     static void self_move() {
         Owner held = make('a');
-        Owner& alias = held;
-        held = static_cast<Owner&&>(alias);
+        move_into(held, held);
         CRUCIBLE_FATAL_INVARIANT(held.size() == 1);
     }
 
@@ -719,8 +724,7 @@ struct AlignedBytesProbe {
 
     static void self_move() {
         Owner held = zeroed(::foundation::core::ByteCount{64}, ::foundation::alloc::Alignment{64});
-        Owner& alias = held;
-        held = static_cast<Owner&&>(alias);
+        move_into(held, held);
         CRUCIBLE_FATAL_INVARIANT(held.size() == 64);
         CRUCIBLE_FATAL_INVARIANT(held.alignment() == 64);
     }
@@ -783,12 +787,10 @@ struct SmallListProbe {
 
     static void self_move() {
         Owner inline_held = make(1, 2);
-        Owner& inline_alias = inline_held;
-        inline_held = static_cast<Owner&&>(inline_alias);
+        move_into(inline_held, inline_held);
         CRUCIBLE_FATAL_INVARIANT(inline_held.size() == 2 && sum_of(inline_held) == 3);
         Owner heap_held = make(1, 5);
-        Owner& heap_alias = heap_held;
-        heap_held = static_cast<Owner&&>(heap_alias);
+        move_into(heap_held, heap_held);
         CRUCIBLE_FATAL_INVARIANT(heap_held.size() == 5 && sum_of(heap_held) == 15);
     }
 
@@ -839,8 +841,7 @@ struct HeapBitSetProbe {
 
     static void self_move() {
         Owner held = make(70);
-        Owner& alias = held;
-        held = static_cast<Owner&&>(alias);
+        move_into(held, held);
         CRUCIBLE_FATAL_INVARIANT(held.extent().raw() == 70 && held.test(SlotId{69}));
     }
 
@@ -881,8 +882,7 @@ struct SwissTableBufferProbe {
 
     static void self_move() {
         Owner held = Owner::allocate(16);
-        Owner& alias = held;
-        held = static_cast<Owner&&>(alias);
+        move_into(held, held);
         CRUCIBLE_FATAL_INVARIANT(held.capacity() == 16);
     }
 
@@ -931,8 +931,7 @@ struct OwnedMmapProbe {
 
     static void self_move() {
         Owner held{};
-        Owner& alias = held;
-        held = static_cast<Owner&&>(alias);
+        move_into(held, held);
         CRUCIBLE_FATAL_INVARIANT(!held.is_mapped() && held.size() == 0);
     }
 

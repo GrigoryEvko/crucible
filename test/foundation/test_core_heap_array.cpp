@@ -135,6 +135,13 @@ void test_sealed_element() {
     }
 }
 
+// Moves the source into the target through two names, as an alias of two
+// references does in a program.  The kind self-move of the rule must-consume
+// refuses a self-move that one function names.
+[[gnu::noinline]] void move_into(HeapArray<CountedCopy>& target, HeapArray<CountedCopy>& source) noexcept {
+    target = std::move(source);
+}
+
 void test_destruction_counts() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
@@ -155,8 +162,7 @@ void test_destruction_counts() {
             CRUCIBLE_FATAL_INVARIANT(element.label() == 4);
         }
 
-        HeapArray<CountedCopy>& alias = third;
-        third = std::move(alias);
+        move_into(third, third);
         CRUCIBLE_FATAL_INVARIANT(live_copies == 6);
         CRUCIBLE_FATAL_INVARIANT(third.size() == 5);
     }

@@ -15,6 +15,12 @@ THE RULE
       double-consume        a consume of an object that a path consumed
       assign-over-live      an assignment over a value that a path did not
                             consume, which drops that value
+      self-move             a move assignment of an object from itself: the
+                            target and the source name one object.  It reads
+                            the operator= of each class, as a session handle
+                            over a Resource that is no linear class is no
+                            linear class.  No ledger row admits it
+                            (REFUSED_KINDS)
       discarded-temporary   a linear temporary that the code discards
       unanalyzed            a function with a goto or a label
     A linear sum gives the kinds of THE SUMS in place of unconsumed,
@@ -91,7 +97,10 @@ RULE = "must-consume"
 DOOR_RECORD = "door"
 # The kind of a stale linear-door row.  No ledger row admits it, nor a count row with no reason.
 STALE_DOOR_KIND = "stale-door"
-REFUSED_KINDS = linear_family.REFUSED_KINDS | {STALE_DOOR_KIND}
+# The kind of a move assignment of an object from itself.  No ledger row admits it, and the plugin gives it as an
+# error in each mode.  The guards of the session handles stay as the run-time backstop of an alias through two names.
+SELF_MOVE_KIND = "self-move"
+REFUSED_KINDS = linear_family.REFUSED_KINDS | {STALE_DOOR_KIND, SELF_MOVE_KIND}
 # The rule table of a tree, relative to its root.
 TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 ACTIONS = {
@@ -101,6 +110,8 @@ ACTIONS = {
     "double-consume": "the object is consumed a second time on a path.  Consume it one time",
     "assign-over-live": "the object is an assignment over a value that no path consumed, so the value drops.  Consume "
     "the value first",
+    SELF_MOVE_KIND: "the object is moved into itself: the target and the source of the move assignment are one object.  "
+    "Remove the assignment, or move the value into a different object",
     "discarded-temporary": "the object is a linear temporary that the code discards.  Give it to its consumer",
     "unanalyzed": "the object has a goto or a label, and the rule does not read it.  Use the statements of structured "
     "control",

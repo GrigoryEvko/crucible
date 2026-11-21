@@ -105,6 +105,8 @@
 //     double-consume       a consume of an object that a path consumed
 //     assign-over-live     an assignment to an object that holds a value that
 //                          a path did not consume: the old value drops
+//     self-move            a move assignment of an object from itself (THE
+//                          SELF-MOVES)
 //     discarded-temporary  a linear temporary that the code discards, or binds
 //                          to an lvalue reference and then destroys
 //     unanalyzed           a function with a goto or a label, which the rule
@@ -211,6 +213,29 @@
 //     A lambda initializes a capture by reference with the address of the
 //     object.  The closure hides each later consume, so the object gives no
 //     finding, and the rule linear-capture reports the capture.
+//
+// THE SELF-MOVES
+//     A move assignment whose target and source are one object is the kind
+//     self-move, at the assignment: an operator= that takes an rvalue
+//     reference to a class, of each class, and an assignment of a linear class
+//     that the front end keeps as a MODIFY_EXPR.  A move keeps nothing that
+//     its target owes when the target is its source.  A session handle over a
+//     Resource that is no linear class is no linear class either, so the
+//     operator= form reads each class, as -Wself-move of GCC does for the
+//     direct form x = std::move(x).  The two sides name one
+//     object when they are equal after the casts, the addresses, the
+//     dereferences, std::move and std::forward, and after a local lvalue
+//     reference to a plain local or parameter that its initializer names
+//     (cp_tree_equal).  A reference through a dereference or an index is no
+//     alias, because a later write of the pointer or the index can change the
+//     object of the same expression.  A side with a side
+//     effect names no object.  So a local, a local through a reference to it,
+//     a member, an element at one index and an object behind one pointer or
+//     one reference count, also when the rule tracks no object of them.  A
+//     self-move moves no value, so the states of the walk stay.  An alias
+//     through two names, such as two reference parameters or two indices of
+//     one value, is no finding: the rule reads one function at a time, and the
+//     move assignment of the class is the run-time backstop.
 //
 // THE LIMITS
 //     The rule reads one function at a time.  A consume through a reference or
@@ -594,6 +619,27 @@ bool carries_linear_annotation(tree function, tree name) {
     return function_carries_base_annotation(function, name, linear_names.linear);
 }
 
+// True when CALL calls a move assignment of a class: an operator= whose
+// parameter after the object is an rvalue reference to a class (THE
+// SELF-MOVES).  A session handle over a Resource that is no linear class is
+// no linear class either, and its move assignment counts too.  A body with
+// such a call is read, also when each object of the body is behind a
+// reference or a pointer.
+bool is_move_assignment_call(tree call) {
+    if (call == NULL_TREE || TREE_CODE(call) != CALL_EXPR) {
+        return false;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(call);
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || !DECL_ASSIGNMENT_OPERATOR_P(callee)) {
+        return false;
+    }
+    tree parameters = TYPE_ARG_TYPES(TREE_TYPE(callee));
+    tree source = parameters != NULL_TREE ? TREE_CHAIN(parameters) : NULL_TREE;
+    tree source_type = source != NULL_TREE ? TREE_VALUE(source) : NULL_TREE;
+    return source_type != NULL_TREE && TYPE_REF_P(source_type) && TYPE_REF_IS_RVALUE(source_type)
+        && CLASS_TYPE_P(TREE_TYPE(source_type));
+}
+
 // True for an accessor: a member function with an implicit object parameter
 // and no qualifier &&, that gives an lvalue reference to a linear value, such
 // as operator* or value() of std::optional (THE ACCESSORS).  A member function
@@ -883,6 +929,10 @@ private:
     // Each lvalue reference local that borrows a tracked object, and that
     // object.  A move through the reference consumes the object.
     std::unordered_map<tree, tree> referent_of_;
+    // Each lvalue reference local, and the object that its initializer names
+    // (self_move_place), also when the rule tracks no object of it (THE
+    // SELF-MOVES).
+    std::unordered_map<tree, tree> alias_place_of_;
     std::vector<std::vector<std::size_t>> scopes_;
     std::vector<Target*> targets_;
     std::vector<SwitchContext*> switches_;
@@ -1455,6 +1505,73 @@ private:
         return NULL_TREE;
     }
 
+    // The object that NODE names, for the test of a self-move (THE SELF-MOVES):
+    // NODE through the casts, the addresses, the dereferences, std::move and
+    // std::forward, and a local lvalue reference to the object of its
+    // initializer.
+    tree self_move_place(tree node) const {
+        for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+            node = tree_strip_any_location_wrapper(node);
+            switch (TREE_CODE(node)) {
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case VIEW_CONVERT_EXPR:
+                case IMPLICIT_CONV_EXPR:
+                case STATIC_CAST_EXPR:
+                case ADDR_EXPR:
+                case INDIRECT_REF:
+                case PAREN_EXPR:
+                    node = TREE_OPERAND(node, 0);
+                    continue;
+                case CALL_EXPR: {
+                    tree callee = cp_get_callee_fndecl_nofold(node);
+                    if (is_std_move_cast(callee) && call_expr_nargs(node) >= 1) {
+                        node = CALL_EXPR_ARG(node, 0);
+                        continue;
+                    }
+                    return node;
+                }
+                case VAR_DECL: {
+                    auto referent = referent_of_.find(node);
+                    if (referent != referent_of_.end()) {
+                        return referent->second;
+                    }
+                    auto alias = alias_place_of_.find(node);
+                    return alias != alias_place_of_.end() ? alias->second : node;
+                }
+                default:
+                    return node;
+            }
+        }
+        return node;
+    }
+
+    // True when TARGET and SOURCE name one object (THE SELF-MOVES).  A side
+    // with a side effect names no object, so two calls or two increments that
+    // look alike are no self-move.
+    bool is_self_move(tree target, tree source) const {
+        tree target_place = self_move_place(target);
+        tree source_place = self_move_place(source);
+        if (target_place == NULL_TREE || source_place == NULL_TREE || target_place == error_mark_node
+            || source_place == error_mark_node || TREE_SIDE_EFFECTS(target_place) || TREE_SIDE_EFFECTS(source_place)) {
+            return false;
+        }
+        return target_place == source_place || cp_tree_equal(target_place, source_place);
+    }
+
+    // FUNCTION: OBJECT for a self-move of TARGET.  The object is the field of
+    // a member, the variable of an element or of a local, or "object".
+    std::string self_move_entity(tree target) const {
+        tree place = self_move_place(target);
+        while (place != NULL_TREE && TREE_CODE(place) == ARRAY_REF) {
+            place = tree_strip_any_location_wrapper(TREE_OPERAND(place, 0));
+        }
+        tree named = place != NULL_TREE && TREE_CODE(place) == COMPONENT_REF ? TREE_OPERAND(place, 1) : place;
+        std::string name = named != NULL_TREE && DECL_P(named) ? simple_name(named) : std::string{"object"};
+        return function_text(function_) + ": " + name;
+    }
+
     std::string entity_of(tree decl) const { return function_text(function_) + ": " + simple_name(decl); }
 
     void add_pending(Kind kind, location_t location, const std::string& entity) {
@@ -1769,6 +1886,20 @@ private:
             // fill the sum (THE SUMS).
             bool is_mutable_address =
                 decl_type != NULL_TREE && TYPE_PTR_P(decl_type) && !TYPE_READONLY(TREE_TYPE(decl_type));
+            // A reference to a plain local or parameter names that object for
+            // the life of the reference.  A reference through a dereference or
+            // an index names the object of the pointer or the index of that
+            // time, and a later write of either can change the object that the
+            // same expression names, so it names no alias (THE SELF-MOVES).
+            if (is_borrow) {
+                tree place = self_move_place(initial);
+                bool is_plain_object = place != NULL_TREE && place != decl
+                                    && (TREE_CODE(place) == VAR_DECL || TREE_CODE(place) == PARM_DECL)
+                                    && TREE_TYPE(place) != NULL_TREE && !POINTER_TYPE_P(TREE_TYPE(place));
+                if (is_plain_object) {
+                    alias_place_of_[decl] = place;
+                }
+            }
             if (source != NULL_TREE && source != decl && is_borrow && field == NULL_TREE) {
                 referent_of_[decl] = source;
             } else if (source != NULL_TREE && source != decl && is_mutable_address) {
@@ -2049,6 +2180,15 @@ private:
         bool is_method = type != NULL_TREE && TREE_CODE(type) == METHOD_TYPE;
         bool is_constructor = callee != NULL_TREE && DECL_CONSTRUCTOR_P(callee);
         bool is_assignment = callee != NULL_TREE && DECL_ASSIGNMENT_OPERATOR_P(callee);
+        // A move assignment of a linear object from itself moves no value, so
+        // the states stay (THE SELF-MOVES).
+        if (is_method && count == 2 && is_move_assignment_call(call)
+            && is_self_move(argument_at(call, 0), argument_at(call, 1))) {
+            if (state.is_reachable) {
+                add_pending(Kind::linear_self_move, location, self_move_entity(argument_at(call, 0)));
+            }
+            return;
+        }
         for (int index = 0; index < count; ++index) {
             tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
             if (parameter != NULL_TREE) {
@@ -2141,6 +2281,16 @@ private:
         open_originals_.pop_back();
         bool is_linear_target =
             target != NULL_TREE && TREE_TYPE(target) != NULL_TREE && is_linear_or_reference(TREE_TYPE(target));
+        // A move assignment of a linear object from itself moves no value, so
+        // the states stay (THE SELF-MOVES).
+        bool is_linear_class_target =
+            target != NULL_TREE && TREE_TYPE(target) != NULL_TREE && is_linear_type(TREE_TYPE(target));
+        if (!is_init && is_linear_class_target && is_self_move(target, value)) {
+            if (state.is_reachable) {
+                add_pending(Kind::linear_self_move, location, self_move_entity(target));
+            }
+            return;
+        }
         // THE CAPTURES: a lambda initializes a capture by reference with the
         // address of the object, and the closure hides each later consume.
         bool is_reference_capture = target != NULL_TREE && TREE_CODE(target) == COMPONENT_REF
@@ -3271,6 +3421,9 @@ tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
         && is_linear_type(TREE_TYPE(node))) {
         walk.has_linear = true;
     }
+    if (is_move_assignment_call(node)) {
+        walk.has_linear = true;
+    }
     return NULL_TREE;
 }
 
@@ -3334,6 +3487,9 @@ tree find_linear(tree* node_pointer, int* walk_subtrees, void*) {
     }
     if ((EXPR_P(node) || TREE_CODE(node) == CONSTRUCTOR) && TREE_TYPE(node) != NULL_TREE
         && is_linear_type(TREE_TYPE(node))) {
+        return node;
+    }
+    if (is_move_assignment_call(node)) {
         return node;
     }
     return NULL_TREE;
@@ -3721,6 +3877,21 @@ void report_option_end(const Finding& finding) {
     inform(finding.spelling,
            "a test of the drop itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
            "%<foundation/Quarantine.h%>");
+}
+
+// The error of one finding of the kind self-move that no region opts out (THE
+// SELF-MOVES).
+void report_self_move(const Finding& finding) {
+    if (finding.kind != Kind::linear_self_move) {
+        return;
+    }
+    error_at(finding.spelling,
+             "a move assignment moves an object into itself, so the move keeps nothing that the target owes: %s",
+             finding.entity.c_str());
+    inform(finding.spelling,
+           "the target and the source of the assignment name one object after the casts, the dereferences, "
+           "%<std::move%>, %<std::forward%> and a local reference");
+    inform(finding.spelling, "remove the assignment, or move the value into a different object");
 }
 
 // The rule brand-reentry at the end of the unit (plugin.cpp, walk_unit): each

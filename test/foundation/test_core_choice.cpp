@@ -198,10 +198,18 @@ void test_owning_payload() {
     return holder.match([](CountedOwner const& owner) noexcept { return owner.handle(); }, [] noexcept { return 0; });
 }
 
+// Moves the source into the target through two names, as an alias of two
+// references does in a program.  The kind self-move of the rule must-consume
+// refuses a self-move that one function names.
+template <typename Value>
+[[gnu::noinline]] void move_into(Value& target, Value& source) noexcept {
+    target = static_cast<Value&&>(source);
+}
+
 // The move assignment of an owning Option drops the owner of the target one
 // time and takes the owner of the source, and the source is empty after it.
-// A self assignment through a second reference keeps the owner.  The probe
-// reads each source after its move on purpose.
+// A self assignment through two names keeps the owner.  The probe reads each
+// source after its move on purpose.
 void test_owning_assignment() {
     {
         Option<CountedOwner> target = Option<CountedOwner>::some(CountedOwner{21});
@@ -209,8 +217,7 @@ void test_owning_assignment() {
         CRUCIBLE_FATAL_INVARIANT(live_owners == 2);
         target = static_cast<Option<CountedOwner>&&>(source);
         CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && source.is_none() && handle_of(target) == 22);
-        Option<CountedOwner>& alias = target;
-        target = static_cast<Option<CountedOwner>&&>(alias);
+        move_into(target, target);
         CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && handle_of(target) == 22);
         Option<CountedOwner> empty{};
         target = static_cast<Option<CountedOwner>&&>(empty);

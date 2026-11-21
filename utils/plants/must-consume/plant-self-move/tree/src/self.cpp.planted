@@ -1,0 +1,73 @@
+// A move assignment of a linear object from itself, in five forms: a local, a
+// local through a reference to it, a member through this, an object behind
+// one reference parameter, and an object behind one pointer.  Handle has a
+// user-provided move assignment, so the front end keeps each assignment as a
+// call of operator=.  Trivial has a trivial move assignment and a member, so
+// the front end keeps its assignment as a MODIFY_EXPR.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Handle {
+    constexpr Handle() noexcept = default;
+    constexpr Handle(Handle&&) noexcept {}
+    constexpr Handle& operator=(Handle&&) noexcept { return *this; }
+    Handle(const Handle&) = delete;
+};
+
+struct [[= ::foundation::linear::linear{}]] Trivial {
+    int value = 0;
+    constexpr Trivial() noexcept = default;
+    constexpr Trivial(Trivial&&) noexcept = default;
+    Trivial& operator=(Trivial&&) noexcept = default;
+    Trivial(const Trivial&) = delete;
+};
+
+void take(Handle&& value) noexcept;
+void take_trivial(Trivial&& value) noexcept;
+
+void the_same_local() {
+    Handle held;
+    held = static_cast<Handle&&>(held);
+    take(static_cast<Handle&&>(held));
+}
+
+void through_a_reference() {
+    Handle held;
+    Handle& same = held;
+    held = static_cast<Handle&&>(same);
+    take(static_cast<Handle&&>(held));
+}
+
+struct Holder {
+    Handle member;
+
+    void move_into_itself() noexcept { member = static_cast<Handle&&>(member); }
+};
+
+void behind_a_reference(Handle& held) noexcept { held = static_cast<Handle&&>(held); }
+
+void behind_a_pointer(Handle* held) noexcept { *held = static_cast<Handle&&>(*held); }
+
+void a_trivial_local() {
+    Trivial held;
+    held = static_cast<Trivial&&>(held);
+    take_trivial(static_cast<Trivial&&>(held));
+}
+
+// A move-only class with no linear annotation, as a session handle over a
+// Resource that is no linear class.
+struct MoveOnly {
+    constexpr MoveOnly() noexcept = default;
+    constexpr MoveOnly(MoveOnly&&) noexcept {}
+    constexpr MoveOnly& operator=(MoveOnly&&) noexcept { return *this; }
+    MoveOnly(const MoveOnly&) = delete;
+};
+
+void a_class_that_is_not_linear() {
+    MoveOnly held;
+    MoveOnly& same = held;
+    held = static_cast<MoveOnly&&>(same);
+}
+
+}  // namespace planted

@@ -99,12 +99,19 @@ void test_destruction_counts() {
     CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
 }
 
+// Moves the source into the target through two names.  The kind self-move of
+// the rule must-consume refuses a self-move that one function names, so the
+// test reaches the self-move of a Box through this function, as an alias of
+// two references reaches it in a program.
+[[gnu::noinline]] void move_into(Box<CountedObject>& target, Box<CountedObject>& source) noexcept {
+    target = std::move(source);
+}
+
 void test_self_move_assignment_keeps_the_object() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         Box<CountedObject> held = mint_box<CountedObject>(alloc, 7);
-        Box<CountedObject>& alias = held;
-        held = std::move(alias);
+        move_into(held, held);
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
         CRUCIBLE_FATAL_INVARIANT(held->label() == 7);
     }

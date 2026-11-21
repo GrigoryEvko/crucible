@@ -3072,6 +3072,12 @@ fixy_neg_compile_test(neg_sess_handle_make_unique
   "use of deleted function .static void\\* fixy::session::SessionHandleBase<"
   "\\[Session_Handle_On_Heap\\]")
 
+# A move assignment of a handle from itself keeps nothing that the handle
+# owes.  The kind self-move of the rule must-consume refuses it in each mode.
+fixy_neg_compile_test(neg_sess_self_move_assign
+  "a move assignment moves an object into itself"
+  "so the move keeps nothing that the target owes: main: handle")
+
 # No public mint gives the two endpoints of one channel to one caller.
 # The resource-only form is deleted, and the test hatch refuses the
 # background and the foreground contexts, which hold no Test capability.

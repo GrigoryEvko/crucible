@@ -1,0 +1,69 @@
+// Each move assignment here moves a value between two objects, or gives a
+// value back to its object through a call, so none is a self-move.  The last
+// two functions are the KNOWN MISS of the rule: an alias through two names.
+// The rule reads one function at a time, so it cannot know that two reference
+// parameters, or two indices of one array, name one object.  The move
+// assignment of the class is the run-time backstop of that alias.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Handle {
+    constexpr Handle() noexcept = default;
+    constexpr Handle(Handle&&) noexcept {}
+    constexpr Handle& operator=(Handle&&) noexcept { return *this; }
+    Handle(const Handle&) = delete;
+};
+
+void take(Handle&& value) noexcept;
+Handle pass(Handle&& value) noexcept;
+
+void two_locals() {
+    Handle first;
+    Handle second;
+    take(static_cast<Handle&&>(first));
+    first = static_cast<Handle&&>(second);
+    take(static_cast<Handle&&>(first));
+}
+
+void handed_back() {
+    Handle held;
+    held = pass(static_cast<Handle&&>(held));
+    take(static_cast<Handle&&>(held));
+}
+
+struct Pair {
+    Handle left;
+    Handle right;
+
+    void move_right_into_left() noexcept { left = static_cast<Handle&&>(right); }
+};
+
+void two_elements(Handle (&row)[2]) noexcept { row[0] = static_cast<Handle&&>(row[1]); }
+
+void two_names(Handle& target, Handle& source) noexcept { target = static_cast<Handle&&>(source); }
+
+void two_indices(Handle (&row)[2], int first, int second) noexcept { row[first] = static_cast<Handle&&>(row[second]); }
+
+// A move from the object of a pointer that the function does not know can
+// name the target or a different object, so it is no self-move.
+void through_an_unknown_pointer(Handle& target, Handle* source) noexcept {
+    target = static_cast<Handle&&>(*source);
+}
+
+// A reference that a dereference or an index initializes names the object of
+// that time.  The pointer and the index change before the move, so the target
+// and the reference can name two objects.
+void a_reference_before_the_pointer_moves(Handle* first, Handle* second) noexcept {
+    Handle& kept = *first;
+    first = second;
+    *first = static_cast<Handle&&>(kept);
+}
+
+void a_reference_before_the_index_moves(Handle (&row)[2], int index) noexcept {
+    Handle& kept = row[index];
+    index = 1 - index;
+    row[index] = static_cast<Handle&&>(kept);
+}
+
+}  // namespace planted

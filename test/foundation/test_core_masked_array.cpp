@@ -153,6 +153,13 @@ void test_pinned_slots() {
     CRUCIBLE_FATAL_INVARIANT(table.at_masked(6).key.load_acquire() == 0);
 }
 
+// Moves the source into the target through two names, as an alias of two
+// references does in a program.  The kind self-move of the rule must-consume
+// refuses a self-move that one function names.
+[[gnu::noinline]] void move_into(MaskedArray<Counted>& target, MaskedArray<Counted>& source) noexcept {
+    target = std::move(source);
+}
+
 void test_move_and_destruction_counts() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
@@ -174,8 +181,7 @@ void test_move_and_destruction_counts() {
         CRUCIBLE_FATAL_INVARIANT(third.size() == 8);
         CRUCIBLE_FATAL_INVARIANT(third.at_masked(3).label == 30);
 
-        MaskedArray<Counted>& alias = third;
-        third = std::move(alias);
+        move_into(third, third);
         CRUCIBLE_FATAL_INVARIANT(live_elements == 8);
         CRUCIBLE_FATAL_INVARIANT(third.size() == 8);
     }

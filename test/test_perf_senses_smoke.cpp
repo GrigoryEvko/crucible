@@ -233,10 +233,12 @@ int main() {
     // a temporary and back into the same address.  A body written the
     // other way round, clearing first and moving second, would destroy
     // the state before the move could rescue it, which is the
-    // regression this check exists to catch.
+    // regression this check exists to catch.  The kind self-move of the
+    // rule must-consume refuses a self-move that one function names, so the
+    // check moves the object into itself through two names.
     const auto pre_self_move_count = assigned_into.coverage().attached_count();
-    auto& self_ref = assigned_into;
-    self_ref = std::move(assigned_into);
+    const auto move_into = [] [[gnu::noinline]] (auto& target, auto& source) noexcept { target = std::move(source); };
+    move_into(assigned_into, assigned_into);
     const auto post_self_move_count = assigned_into.coverage().attached_count();
     if (pre_self_move_count != post_self_move_count) {
         ::fixy::report(::fixy::Sink::Err,

@@ -5,11 +5,17 @@
 # gaps.cpp:24  the front end folds the initializer of a temporary that a
 #              reference extends, and it gives no event of that fold.  So the
 #              rule does not see the move of the parameter into the call.
+# gaps.cpp:39  a self-move through a reference that a dereference initializes,
+# gaps.cpp:44  and through one that an index initializes, gives no line of the
+#              kind self-move: the rule takes such a reference as no alias.  A
+#              change that closes this gap makes the two lines appear here.
 
 compile gaps src/gaps.cpp must-consume=on
 flag gaps -freflection
 exit gaps pass
 finding gaps must-consume unconsumed src/gaps.cpp:24:33 | planted::extended_temporary: parent
+finding gaps quarantine raw-pointer-object src/gaps.cpp:37:18 | place
+finding gaps quarantine c-array-object src/gaps.cpp:42:41 | row
 
 # The ends of a linear sum that the rule does not see, and that the end of a
 # full Option of a linear payload catches at run time (missed.cpp): a capture

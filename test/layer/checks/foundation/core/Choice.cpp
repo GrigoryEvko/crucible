@@ -1013,12 +1013,17 @@ static_assert(std::is_trivially_copy_assignable_v<Option<SlotNumber>>);
 static_assert(assigned_owner(true, true) == 2 && assigned_owner(false, true) == 2);
 static_assert(assigned_owner(true, false) == 0 && assigned_owner(false, false) == 0);
 
-// A self assignment keeps the payload.  The source goes through a second
-// reference, as an alias in a program does.
+// Moves the source into the target through two names, as an alias of two
+// references does in a program.  The kind self-move of the rule must-consume
+// refuses a self-move that one function names.
+constexpr void move_into(Option<Owner>& target, Option<Owner>& source) noexcept {
+    target = static_cast<Option<Owner>&&>(source);
+}
+
+// A self assignment keeps the payload.  The move goes through two names.
 [[nodiscard]] consteval int self_assigned_owner() noexcept {
     Option<Owner> held = Option<Owner>::some(Owner{3});
-    Option<Owner>& alias = held;
-    held = static_cast<Option<Owner>&&>(alias);
+    move_into(held, held);
     return held.match([](Owner const& owner) noexcept { return owner.handle; }, [] noexcept { return 0; });
 }
 static_assert(self_assigned_owner() == 3);

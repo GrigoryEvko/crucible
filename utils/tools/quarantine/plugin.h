@@ -370,6 +370,9 @@
 //     double-consume        a consume of a linear object that a path consumed
 //     assign-over-live      an assignment to a linear object that holds a value
 //                           that a path did not consume
+//     self-move             a move assignment of an object from itself: the
+//                           target and the source name one object.  It is an
+//                           error in each mode (is_each_mode_kind)
 //     discarded-temporary   a linear temporary that the code discards
 //     unanalyzed            a function with a goto or a label
 //     door                  no finding: one record of each linear-door row of
@@ -1030,6 +1033,7 @@ enum class Kind : std::uint8_t {
     linear_unconsumed_on_path,
     linear_double_consume,
     linear_assign_over_live,
+    linear_self_move,
     linear_discarded_temporary,
     linear_unanalyzed,
     linear_door,
@@ -1367,6 +1371,8 @@ inline const char* kind_name(Kind kind) {
             return "double-consume";
         case Kind::linear_assign_over_live:
             return "assign-over-live";
+        case Kind::linear_self_move:
+            return "self-move";
         case Kind::linear_discarded_temporary:
             return "discarded-temporary";
         case Kind::linear_unanalyzed:
@@ -1563,6 +1569,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_unconsumed_on_path:
         case Kind::linear_double_consume:
         case Kind::linear_assign_over_live:
+        case Kind::linear_self_move:
         case Kind::linear_discarded_temporary:
         case Kind::linear_unanalyzed:
         case Kind::linear_door:
@@ -1653,6 +1660,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::base_namespace_using_directive:
         case Kind::fresh_deduced_brand:
         case Kind::fresh_named_brand:
+        case Kind::linear_self_move:
             return true;
         default:
             return false;
@@ -1850,6 +1858,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "unconsumed-on-path"},
     {"must-consume", "double-consume"},
     {"must-consume", "assign-over-live"},
+    {"must-consume", "self-move"},
     {"must-consume", "discarded-temporary"},
     {"must-consume", "unanalyzed"},
     {"must-consume", "door"},
@@ -2926,6 +2935,10 @@ void check_linear_alias(tree decl);
 // linear.cpp: the rule brand-reentry at the end of the unit, from the walks of
 // plugin.cpp after the parse.
 void finish_linear_rules();
+// linear.cpp: the error of one finding of the kind self-move of the rule
+// must-consume, in each mode (THE SELF-MOVES).  Its text names the move, so a
+// fixture reads it as an error of the compile and not as a finding.
+void report_self_move(const Finding& finding);
 // linear.cpp: the error of one finding of the kinds scope-static and
 // scope-return of the rule brand-escape that no region opts out (THE SCOPE
 // BRANDS of linear.cpp).
