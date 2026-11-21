@@ -376,7 +376,7 @@ that the axis does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_heap_scope` | `include/foundation/heap/HeapScope.h` | Y | - | Y | Y | token | · | HS14: 4 |
+| `mint_heap_scope` | `include/foundation/heap/HeapScope.h` | Y | - | Y | Y | token | · | HS14: 6 |
 
 ## include/foundation/os/
 
@@ -392,11 +392,12 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 237 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 233 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 52 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 8 |
+| `mint_scope_permission` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_singleton_root` | `include/foundation/permissions/Permission.h` | Y | - | Y | Y | token | · | HS14: 12 |
 
 ## Summary
@@ -404,4 +405,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 164 | 63 | 97 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 165 | 63 | 98 | 4 | 0 | 3 |
