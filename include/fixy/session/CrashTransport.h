@@ -1088,8 +1088,13 @@ public:
         auto [value, next] =
             std::move(watched.inner_)
                 .recv([&payload](Resource&) noexcept(std::is_nothrow_move_constructible_v<T>) -> ::fixy::Option<T> {
-                    return std::move(payload);
+                    return payload.take();
                 });
+        // await_payload gives a full Option, and the first read of the inner
+        // recv takes the payload out and ends the read, so the Option is empty
+        // here, in each form of the Option.  A move of a plain Option would
+        // keep its value, so the read takes it.
+        std::move(payload).expect_none("the inner recv takes the payload through its first read");
         // A bare reception is a new message.  The payload of a label is part
         // of the label's message, which the branch counted.
         constexpr bool is_new_message = std::is_same_v<Position, detail::crash_transport::between_messages>;
