@@ -24,10 +24,7 @@
 
 #include <fixy/check/Check.h>
 #include <cinttypes>
-#include <span>
-#include <string_view>
 #include <type_traits>
-#include <unordered_set>
 #include <utility>
 
 namespace {
@@ -136,13 +133,18 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
-        std::unordered_set<const NumericalRecipe*> entry_ptrs;
-        for (const auto& e : entries_view(reg)) {
-            entry_ptrs.insert(&*e.recipe);
-        }
-        CRUCIBLE_TEST_ASSERT(kTest, entry_ptrs.size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
 
-        const ::fixy::TextView known_names[] = {
+        // True when exactly one entry of the registry holds the recipe.
+        const auto is_held_once = [&reg](RecipeRegistry::RecipeRef const& recipe) noexcept {
+            std::size_t holders = 0;
+            for (const auto& e : entries_view(reg)) {
+                if (::fixy::same_object(e.recipe, recipe)) ++holders;
+            }
+            return holders == 1;
+        };
+
+        const ::fixy::FixedArray<::fixy::TextView, 8> known_names{
             names::kF32Strict,
             names::kF32Ordered,
             names::kF16F32AccumTc,
@@ -157,7 +159,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             RecipeRegistry::RecipeRef const r = reg.by_name(kPure, n).expect("a starter recipe lookup hits");
             // Lookup by name must land on a pointer the pool already owns,
             // not on a fresh copy of the same recipe.
-            CRUCIBLE_TEST_ASSERT(kTest, entry_ptrs.contains(&*r));
+            CRUCIBLE_TEST_ASSERT(kTest, is_held_once(r));
         }
 
         RecipeRegistry::RecipeRef const first =
@@ -174,16 +176,16 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
-        const ::fixy::TextView missing[] = {
-            "F32_STRICT",  // wrong case
-            "f32_Strict",  // mixed case
-            "f32-strict",  // dash instead of underscore
-            "f32_strict ",  // trailing whitespace
-            " f32_strict",  // leading whitespace
-            "",  // empty
-            "this_recipe_does_not_exist",  // bogus
-            "f32",  // truncated
-            "f32_strict_unknown_suffix",  // extended
+        const ::fixy::FixedArray<::fixy::TextView, 9> missing{
+            ::fixy::TextView{"F32_STRICT"},  // wrong case
+            ::fixy::TextView{"f32_Strict"},  // mixed case
+            ::fixy::TextView{"f32-strict"},  // dash instead of underscore
+            ::fixy::TextView{"f32_strict "},  // trailing whitespace
+            ::fixy::TextView{" f32_strict"},  // leading whitespace
+            ::fixy::TextView{""},  // empty
+            ::fixy::TextView{"this_recipe_does_not_exist"},  // bogus
+            ::fixy::TextView{"f32"},  // truncated
+            ::fixy::TextView{"f32_strict_unknown_suffix"},  // extended
         };
 
         for (auto n : missing) {
@@ -289,18 +291,20 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
-        std::unordered_set<const NumericalRecipe*> ptrs;
-        std::unordered_set<uint64_t> hashes;
-
+        // Each entry matches only itself, by its pooled object and by its
+        // hash.  The entries are few, so each pair is compared.
         for (const auto& e : entries_view(reg)) {
-            const auto [it_p, inserted_p] = ptrs.insert(&*e.recipe);
-            CRUCIBLE_TEST_ASSERT(kTest, inserted_p && "two starter recipes intern to the same pointer");
-            const auto [it_h, inserted_h] = hashes.insert(e.recipe->hash.raw());
-            CRUCIBLE_TEST_ASSERT(kTest, inserted_h && "two starter recipes share a Family-A hash");
+            std::size_t same_objects = 0;
+            std::size_t same_hashes = 0;
+            for (const auto& other : entries_view(reg)) {
+                if (::fixy::same_object(e.recipe, other.recipe)) ++same_objects;
+                if (e.recipe->hash.raw() == other.recipe->hash.raw()) ++same_hashes;
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, same_objects == 1 && "two starter recipes intern to the same pointer");
+            CRUCIBLE_TEST_ASSERT(kTest, same_hashes == 1 && "two starter recipes share a Family-A hash");
         }
 
-        CRUCIBLE_TEST_ASSERT(kTest, ptrs.size() == RecipeRegistry::STARTER_COUNT);
-        CRUCIBLE_TEST_ASSERT(kTest, hashes.size() == RecipeRegistry::STARTER_COUNT);
+        CRUCIBLE_TEST_ASSERT(kTest, entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
     }
 
     // Persisted entries refer to a recipe by its hash, so these values
@@ -319,15 +323,15 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
             ::fixy::TextView name{};
             uint64_t expected = 0;
         };
-        const Golden goldens[] = {
-            {names::kF32Strict, 0xce0eb0cd5c376b79ULL},
-            {names::kF32Ordered, 0x493a001a4ad235a7ULL},
-            {names::kF16F32AccumTc, 0x8f46706bfc750adbULL},
-            {names::kF16F32AccumOrdered, 0xcc51530cf248c3e3ULL},
-            {names::kBf16F32AccumTc, 0x96517ac8a65db41fULL},
-            {names::kBf16F32AccumOrdered, 0xc674007dc8716618ULL},
-            {names::kFp8E4m3F32AccumMxOrd, 0x5ba4c6b1bdefc89dULL},
-            {names::kFp8E5m2F32AccumMxOrd, 0xb8e80f767e9cfb21ULL},
+        const ::fixy::FixedArray<Golden, 8> goldens{
+            Golden{names::kF32Strict, 0xce0eb0cd5c376b79ULL},
+            Golden{names::kF32Ordered, 0x493a001a4ad235a7ULL},
+            Golden{names::kF16F32AccumTc, 0x8f46706bfc750adbULL},
+            Golden{names::kF16F32AccumOrdered, 0xcc51530cf248c3e3ULL},
+            Golden{names::kBf16F32AccumTc, 0x96517ac8a65db41fULL},
+            Golden{names::kBf16F32AccumOrdered, 0xc674007dc8716618ULL},
+            Golden{names::kFp8E4m3F32AccumMxOrd, 0x5ba4c6b1bdefc89dULL},
+            Golden{names::kFp8E5m2F32AccumMxOrd, 0xb8e80f767e9cfb21ULL},
         };
 
         bool any_drift = false;
@@ -386,7 +390,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
         // is a caller's typo; a hash miss is a stored entry referring to a
         // recipe this build does not have, and the two want different
         // handling.
-        const crucible::RecipeHash bogus_hashes[] = {
+        const ::fixy::FixedArray<crucible::RecipeHash, 4> bogus_hashes{
             crucible::RecipeHash{0xDEADBEEFCAFEBABEULL},
             crucible::RecipeHash{0x0000000000000000ULL},
             crucible::RecipeHash{0x0000000000000001ULL},
