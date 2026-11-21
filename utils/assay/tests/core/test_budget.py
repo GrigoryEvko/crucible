@@ -72,9 +72,10 @@ def verdict_cases(expect: testing.Expect) -> None:
         and cost_budget.verdict(2.5, 4.0, 6.0, 1.0) == cost_budget.NO_FINDING,
     )
     expect(
-        "the noise of a time, a memory, an instruction count and a size is that of NOISE, and a byte count has none",
+        "the noise of a time, a memory, an instruction count, the machine code of an object and the bytes of a header "
+        "is that of NOISE, and a byte count has none",
         [cost_budget.noise_of(unit) for unit in ("s", "GB", "G", "KB", "MB", "bytes")]
-        == [1.0, 0.1, 0.02, 0.02, 0.02, 0.0],
+        == [1.0, 0.1, 0.05, 0.04, 0.05, 0.0],
     )
     sized = check_report.Budget("object-size", 768.0, "KB", "a planted quantity", "object")
     size_rows = cost_budget.Rows(
@@ -82,11 +83,11 @@ def verdict_cases(expect: testing.Expect) -> None:
     )
     shared, grown_object = (
         cost_budget.judge("object-size", sized, cost_budget.Measure("unit.o", "u", value, "said", "object"), size_rows)
-        for value in (839.303, 856.1)
+        for value in (872.79, 873.0)
     )
     expect(
-        "a row of the unit KB keeps its object up to the margin of a shared header.  The measure of 2026-11-17, "
-        "0.01 % over a row that a write gave one request before, gives no finding, and a growth of 2.01 % is an error",
+        "a row of the unit KB keeps its object up to the margin of 4 % of the shared headers: a growth of 3.99 % "
+        "gives no finding, and a growth of 4.02 % is an error",
         level_of(shared) == "none" and level_of(grown_object) == "error",
     )
     header = check_report.Budget("header-alone", 6.5, "MB", "a planted quantity", "fixy")
@@ -97,11 +98,11 @@ def verdict_cases(expect: testing.Expect) -> None:
         cost_budget.judge(
             "header-alone", header, cost_budget.Measure("include/fixy/A.h", "a", value, "said", "fixy"), header_rows
         )
-        for value in (7.1, 7.15)
+        for value in (7.35, 7.36)
     )
     expect(
-        "a row of the unit MB keeps its header up to the same margin: a header 1.4 % over its row gives no finding, "
-        "and a header 2.1 % over its row is an error",
+        "a row of the unit MB keeps its header up to the margin of 5 %: a header 5 % over its row gives no finding, "
+        "and a header 5.1 % over its row is an error",
         level_of(kept_header) == "none" and level_of(grown_header) == "error",
     )
     with tempfile.TemporaryDirectory(prefix="test-budget-noise-") as scratch:
@@ -118,11 +119,11 @@ def verdict_cases(expect: testing.Expect) -> None:
     )
     grown, drifted = (
         cost_budget.judge("planted-cost", counted, cost_budget.Measure("u", "u", value, "said", "compile"), count_rows)
-        for value in (165.8, 170.0)
+        for value in (173.9, 174.1)
     )
     expect(
-        "the limit of a kind with the unit G has the noise of an instruction count.  A count 0.05 % over its row "
-        "gives no finding, and a count 2.6 % over it is an error",
+        "the limit of a kind with the unit G has the noise of an instruction count.  A count 4.9 % over its row "
+        "gives no finding, and a count 5.1 % over it is an error",
         counted.unit == cost_budget.UNIT_TEXTS["G"]
         and counted.limit == 110.0
         and cost_budget.noise_of(counted.unit) == cost_budget.NOISE["G"]
@@ -132,6 +133,54 @@ def verdict_cases(expect: testing.Expect) -> None:
     expect(
         "check_report.classify() agrees with verdict() for each value with no row",
         [check_report.classify(value, BUDGET) for value in (2.0, 4.0, 4.5)] == [None, None, "error"],
+    )
+
+
+# The rows that a correct change crossed on 2026-11-21 and then raised, from the history of the ledgers: the rule, its
+# unit, the item, the kept value of the row and the measured value of the raise.  The last row is the cost of a door
+# that a cut lowered later, a real rise that the margin must not keep.
+CROSSINGS_2026_11_21: tuple[tuple[str, str, str, float, float, bool], ...] = (
+    ("step-cost", "G", "layer_sentinel_foundation Scan.cpp.o", 120.284, 123.912, True),
+    ("header-alone", "MB", "include/foundation/Transfer.h", 3.504, 3.579, True),
+    ("header-alone", "MB", "include/crucible/Vigil.h", 7.351, 7.511, True),
+    ("header-alone", "MB", "include/foundation/permissions/SharedPermission.h", 3.511, 3.582, True),
+    ("object-size", "KB", "test_vigil_divergence.cpp.o", 770.189, 795.114, True),
+    ("object-size", "KB", "parallel_pointwise_unit_double.cpp.o", 790.274, 806.396, True),
+    ("object-size", "KB", "test_vigil.cpp.o", 833.269, 864.401, True),
+    ("object-size", "KB", "test_bench_harness.cpp.o", 1169.705, 1206.571, True),
+    ("object-size", "KB", "test_trace_loader.cpp.o", 793.791, 852.123, False),
+)
+
+
+def crossing_cases(expect: testing.Expect) -> None:
+    """Replay the crossed rows of 2026-11-21 against the margins of NOISE (THE NOISE)."""
+    for rule_id, unit, item, kept, measured, is_kept in CROSSINGS_2026_11_21:
+        found = cost_budget.verdict(measured, 0.0, kept, cost_budget.noise_of(unit))
+        wanted = cost_budget.ADMITTED if is_kept else cost_budget.RISEN
+        rise = measured / kept - 1.0
+        expect(
+            f"the row of {item} of {rule_id} at {kept:g} {unit} {'keeps' if is_kept else 'does not keep'} the measure "
+            f"{measured:g} {unit} of 2026-11-21, {rise:.2%} over the row, with the margin "
+            f"{cost_budget.noise_of(unit):.0%} of the unit {unit}",
+            found == wanted,
+        )
+    kept_count = sum(
+        1
+        for _, unit, _, kept, measured, _ in CROSSINGS_2026_11_21
+        if cost_budget.verdict(measured, 0.0, kept, cost_budget.noise_of(unit)) == cost_budget.ADMITTED
+    )
+    expect(
+        "the margins keep 8 of the 9 rows that a correct change crossed on 2026-11-21, where 2 % kept none",
+        kept_count == 8 and not any(measured <= kept * 1.02 for _, _, _, kept, measured, _ in CROSSINGS_2026_11_21),
+    )
+    endpoint = check_report.Budget("header-alone", 6.5, "MB", "a planted quantity", "fixy")
+    expect(
+        "the header EndpointMint.h at 6.361 MB, the measure at which the prune of 2026-11-21 removed its row, is "
+        "within the margin of the limit of fixy, so its row stays, and the measure 6.502 MB of the next change then "
+        "gives no finding",
+        6.361 * (1.0 + cost_budget.noise_of(endpoint.unit)) > endpoint.limit
+        and cost_budget.verdict(6.502, endpoint.limit, 6.361, cost_budget.noise_of(endpoint.unit))
+        == cost_budget.ADMITTED,
     )
 
 
@@ -432,5 +481,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (verdict_cases, row_cases, judge_cases, rows_cases, write_cases, memo_cases, scope_cases),
+        (verdict_cases, crossing_cases, row_cases, judge_cases, rows_cases, write_cases, memo_cases, scope_cases),
     )

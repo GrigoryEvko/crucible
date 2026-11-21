@@ -128,11 +128,16 @@ THE PRUNE
       * A row of header-alone of a header that the tree does not hold.
       * A row of header-alone of a header whose measure in the build, with
         the noise of the unit MB (THE NOISE of assay.core.budget), is at or
-        below the limit of its layer.  The bytes of a header are the same in
-        each build that runs the rule (the rule header-alone of the
-        registry), and the margin covers a small difference of a different
-        toolchain.  For the same reason, a row above the measure of its
-        header with that margin gets that value.
+        below the limit of its layer.  A header within that margin of the
+        limit keeps its row, so the next small growth of a shared header
+        does not make it an item with no row above the limit.  On
+        2026-11-21, the write removed the row of EndpointMint.h at 6.361 MB
+        with the margin of 2 %, and a change of 0.08 % then crossed the limit
+        6.5 MB with no row.  The bytes of a header are the same in each build
+        that runs the rule (the rule header-alone of the registry), so a row
+        above the measure of its header gets that measure.  The judge then
+        keeps the header up to its measure with the margin, which also
+        covers a small difference of a different toolchain.
     The write keeps each other row: a link, a test and a fixture, an object
     that the build names, and a header that the build does not measure.  A
     measure of an object, a compile or a test changes with the build, so no
@@ -803,7 +808,7 @@ def pruned_ledger(
     measured: Measured,
     budgets: Mapping[str, check_report.Budget],
 ) -> rule_ledger.Ledger:
-    """Return the ledger with no row that keeps nothing in each build, and each row of header-alone at most at its measure.
+    """Return the ledger with no row that keeps nothing in each build, and each row of header-alone at most its measure.
 
     THE PRUNE gives the rows.  Complexity: linear in the rows, the measures and the compile jobs, with at most two stats
     for each row.
@@ -832,8 +837,8 @@ def pruned_ledger(
             bound = None if measure is None else measure * (1.0 + cost_budget.noise_of(budget.unit))
             if not (context.root / item).is_file() or (bound is not None and bound <= budget.limit):
                 continue
-            if bound is not None and cost_budget.kept_value(bound) < float(entry.value):
-                entry = replace(entry, value=cost_budget.kept_value(bound))
+            if measure is not None and cost_budget.kept_value(measure) < float(entry.value):
+                entry = replace(entry, value=cost_budget.kept_value(measure))
         elif is_object_kind(rule_id, key.kind) and item not in configured:
             places = object_sources(item, context.root, build)
             if places and not any(place.exists() for place in places) and is_deleted_source(context.root, places[0]):

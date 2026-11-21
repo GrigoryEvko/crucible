@@ -1,5 +1,5 @@
 # The record of one test of the build gives 700 G user instructions.  A ledger row keeps the test up to 620 G, and
-# 632.4 G with the noise of the unit G.  The test is over that value and above the limit 600 G of the kind test, so
+# 651 G with the noise of the unit G.  The test is over that value and above the limit 600 G of the kind test, so
 # judge() of `loop test-step` gives one error.  A light compile gives the kind compile an input.
 format 1
 kind x86_64-debug-asan

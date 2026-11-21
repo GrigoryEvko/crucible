@@ -81,8 +81,9 @@ DELETED_OBJECT = "test/foundation/CMakeFiles/test_gone.dir/test_gone.cpp.o"
 GENERATED_OBJECT = "gen/CMakeFiles/gen.dir/made.cpp.o"
 UNGENERATED_OBJECT = "CMakeFiles/perf.dir/sense_hub_bpf_bytecode.c.o"
 ODD_OBJECT = "odd.o"
-# A build with the sentinels of three headers of fixy: one over the limit 6.5 MB, one under it, and one under it by
-# less than the margin of the unit MB.  Two more headers of the tree have no sentinel (THE PRUNE of cost_budgets).
+# A build with the sentinels of four headers of fixy: one over the limit 6.5 MB, one under it, and two under it by less
+# than the margin of the unit MB.  Mint.h includes 6.361 MB, the measure at which the prune of 2026-11-21 removed the
+# row of EndpointMint.h with a margin of 2 %.  Two more headers of the tree have no sentinel (THE PRUNE of cost_budgets).
 HEADER_PRUNE_ROWS = f"""\
 format 1
 kind {KIND}
@@ -90,6 +91,7 @@ file system.h size=1000
 file include/fixy/Huge.h size=7340032
 file include/fixy/Light.h size=1048576
 file include/fixy/Near.h size=6763315
+file include/fixy/Mint.h size=6668991
 file include/fixy/Unbuilt.h size=10
 compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o test/layer/checks/fixy/Huge.cpp cpu=3
 deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o | test/layer/checks/fixy/Huge.cpp system.h \
@@ -100,6 +102,9 @@ include/fixy/Light.h
 compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Near.cpp.o test/layer/checks/fixy/Near.cpp cpu=1
 deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Near.cpp.o | test/layer/checks/fixy/Near.cpp system.h \
 include/fixy/Near.h
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Mint.cpp.o test/layer/checks/fixy/Mint.cpp cpu=1
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Mint.cpp.o | test/layer/checks/fixy/Mint.cpp system.h \
+include/fixy/Mint.h
 """
 
 
@@ -307,21 +312,37 @@ def header_prune_cases(expect: testing.Expect) -> None:
     """Prune the rows of header-alone with the measure of one build (THE PRUNE of cost_budgets)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), HEADER_PRUNE_ROWS)
-        headers = ("Huge.h", "Light.h", "Near.h", "Gone.h", "Unbuilt.h")
+        headers = ("Huge.h", "Light.h", "Near.h", "Mint.h", "Gone.h", "Unbuilt.h")
         keys = {name: rule_ledger.Key(f"include/fixy/{name}", "fixy", "") for name in headers}
         rows = planted_ledger(
             "header-alone",
-            {keys["Huge.h"]: 7.5, keys["Light.h"]: 7.0, keys["Near.h"]: 7.0, keys["Gone.h"]: 7.0},
+            {
+                keys["Huge.h"]: 7.5,
+                keys["Light.h"]: 7.0,
+                keys["Near.h"]: 7.0,
+                keys["Mint.h"]: 6.501,
+                keys["Gone.h"]: 7.0,
+            },
         )
         rows = replace(rows, base={**rows.base, keys["Unbuilt.h"]: rule_ledger.Entry(keys["Unbuilt.h"], 7.0, "kept")})
         written = cost_budgets.budget_written("header-alone", context, rows, None)
         expect(
-            "the write of header-alone lowers the row of a header over the limit to its measure with the margin of "
-            "2 %, removes the row of a header under the limit by more than the margin and of a header that the tree "
-            "does not hold, keeps the row of a header under the limit by less than the margin at its measure with "
-            "the margin, and keeps the row of a header with no sentinel in the build",
+            "the write of header-alone lowers the row of a header over the limit to its measure, removes the row of "
+            "a header under the limit by more than the margin of 5 % and of a header that the tree does not hold, "
+            "keeps the row of a header under the limit by less than the margin at its measure, and keeps the row of "
+            "a header with no sentinel in the build",
             {key.path: entry.value for key, entry in written.base.items()}
-            == {"include/fixy/Huge.h": 7.141, "include/fixy/Near.h": 6.58, "include/fixy/Unbuilt.h": 7.0},
+            == {
+                "include/fixy/Huge.h": 7.001,
+                "include/fixy/Near.h": 6.451,
+                "include/fixy/Mint.h": 6.361,
+                "include/fixy/Unbuilt.h": 7.0,
+            },
+        )
+        expect(
+            "the row of a header at 6.361 MB, the measure at which the margin of 2 % removed the row of "
+            "EndpointMint.h on 2026-11-21, stays, so the next small growth over the limit 6.5 MB has a row",
+            keys["Mint.h"] in written.base,
         )
         expect(
             "a lowered row keeps its reason",
