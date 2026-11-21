@@ -516,6 +516,19 @@ THE STACK
         right of way before a batch with none, then the smaller number.
       * When the stack holds STACK_DEPTH entries, the batch waits before its
         run.  A run on a different base would lose its swap.
+      * THE LINE.  The batches that wait for a place of the stack go in the
+        sequence of their entry into the queue: the smaller number first.
+        Before its run, a batch that can stack writes its mark into the file
+        NUMBER.line of the queue, with its branch, under the lock of the
+        file NUMBER.stacked (Stack.join_line()).  It waits while the live
+        marks of older batches on its branch are as many as the free places
+        of the stack, or more.  The mark stays until the first run of the
+        round writes the entry (Stack.publish()), or the round ends with no
+        entry (Stack.withdraw()).  Thus no younger batch takes the place
+        that an older batch takes.  A batch that waits for the verdicts of
+        THE RULE OF ONE LOST RUN, or whose wait gets to STACK_WAIT_S, has no
+        mark.  On 2026-11-21 the first look after a landing took the free
+        place, also when an older batch waited for it.
       * The round composes on the top of the stack.  The first run of a
         round writes the entry with the commit of that run.  A red first run
         removes the entry, because the search then lands a different commit.
@@ -563,21 +576,27 @@ THE STACK
     composes on the branch too.
       * THE RULE OF ONE LOST RUN.  The first round of a batch can compose on
         an entry with no verdict, so its run overlaps the run below it.  A
-        batch whose run on the stack is red, or whose base leaves the stack,
-        stacks from then on only on entries that the gate accepted.  Before
-        such a round, the batch waits until each entry of the stack with no
-        verdict at the first look of the wait has the mark accepted or has
-        left.  The batch has no entry while it waits, so an entry that comes
-        into the stack during the wait composed after it, and it does not
-        hold the wait.  On 2026-11-21, a batch waited 2400 s for five
-        entries in turn, and four of them came into the stack during its
-        wait, because each new first run of a different lane went in front
-        of it.  The round then
-        composes on the accepted part of the stack (accepted_part()).  An
+        run is lost when it is red on the stack, or when its base leaves the
+        stack (StackRule).  After the first lost run, the batch can stack at
+        once one more time on an entry with no verdict, but only on an entry
+        of an older batch.  The round composes on the stack up to the first
+        entry with no verdict of a younger batch.  On 2026-11-21 a batch
+        that lost its run landed at 17:48, and a run at once on the open
+        entry of the older batch below it would have landed it at about
+        17:16.  After the second lost run, the batch stacks only on
+        entries that the gate accepted.  Before such a round, the batch
+        waits until each entry of the stack with no verdict at the first
+        look of the wait has the mark accepted or has left.  The batch has
+        no entry while it waits, so an entry that comes into the stack
+        during the wait composed after it, and it does not hold the wait.
+        On 2026-11-21, a batch waited 2400 s for five entries in turn, and
+        four of them came into the stack during its wait, because each new
+        first run of a different lane went in front of it.  The round then
+        composes on the accepted part of the stack (settled_part()).  An
         accepted entry changes its commit only when its swap is refused, or
         when the batch below it lands a different commit.  Thus a run that
-        a recomposition below can waste is the first run of a batch, and
-        not one run for each new commit of a batch below.  The rule only
+        a recomposition below can waste is the first two runs of a batch,
+        and not one run for each new commit of a batch below.  The rule only
         selects a base: the swap is the same compare-and-swap, so no landing
         reverts a different commit.
     A batch that holds a right of way composes only on the branch.  Thus it
@@ -801,10 +820,11 @@ VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
 CLAIM_SUFFIX = ".claim"
 RIGHT_SUFFIX = ".right"
-# The entry of a batch in the stack, and its lock file (THE STACK).  No suffix ends with LOCK_SUFFIX, because each such
-# file is the lock of a request.
+# The entry of a batch in the stack, its lock file, and the mark of a batch in the line of the full stack (THE STACK).
+# No suffix ends with LOCK_SUFFIX, because each such file is the lock of a request.
 STACK_SUFFIX = ".stack"
 STACK_LOCK_SUFFIX = ".stacked"
+LINE_SUFFIX = ".line"
 # The age in seconds of a file of the right of way or of the stack with no lock, after which the sweep removes it
 # (removed_dead_holders()).  A holder makes the file before it takes the lock, also on a stalled host, so a young file
 # with no lock can be the file of a live holder.  On 2026-11-19 the queue held such files of dead holders from
@@ -2391,11 +2411,29 @@ class StackEntry:
     is_accepted: bool
 
 
+class StackRule(enum.Enum):
+    """The entries of the stack that a round of a batch composes on, after its lost runs (THE RULE OF ONE LOST RUN).
+
+    ANY is the rule of a batch that lost no run: each entry, also an entry with no verdict.  OLDER is the rule after the
+    first lost run: each accepted entry and each entry of an older batch, with no wait.  ACCEPTED is the rule after the
+    second lost run: only the accepted entries, after a wait for the verdicts of the first look.
+    """
+
+    ANY = "any"
+    OLDER = "older"
+    ACCEPTED = "accepted"
+
+    @property
+    def after_loss(self) -> StackRule:
+        """Return the rule of the batch after one more lost run."""
+        return StackRule.OLDER if self is StackRule.ANY else StackRule.ACCEPTED
+
+
 class Stack:
     """The entry of one batch in the stack of its queue, with the number of the first request of the batch (THE STACK).
 
-    The object holds the descriptor of the lock of the entry from the first entry of the batch to free(), and -1
-    before.  The holder of the batch is the one writer of its entry.
+    The object holds the descriptor of the lock of the entry from the first entry or the first mark in the line of the
+    batch to free(), and -1 before.  The holder of the batch is the one writer of its entry and of its mark.
     """
 
     __slots__ = ("descriptor", "number", "queue")
@@ -2406,32 +2444,82 @@ class Stack:
         self.number = number
         self.descriptor = -1
 
-    def publish(self, branch: str, base: str, commit: str, is_accepted: bool) -> None:
-        """Write the entry of the batch on a branch in place of its last entry, and hold the lock of the entry.
+    def hold(self) -> None:
+        """Hold the lock of the entry of the batch until free().  A second call changes nothing.
 
-        One queue holds the batches of each branch of the repository, so the entry names its branch.
+        Raises:
+            OSError: If the lock file cannot be opened or locked
+        """
+        if self.descriptor >= 0:
+            return
+        lock = queue_file(self.queue, self.number, STACK_LOCK_SUFFIX)
+        descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        except OSError:
+            os.close(descriptor)
+            raise
+        self.descriptor = descriptor
+
+    def publish(self, branch: str, base: str, commit: str, is_accepted: bool) -> None:
+        """Write the entry of the batch on a branch in place of its last entry, hold its lock, and leave the line.
+
+        One queue holds the batches of each branch of the repository, so the entry names its branch.  The mark in the
+        line goes after the write of the entry, so a batch behind the mark never sees a free place that this batch takes.
 
         Raises:
             OSError: If the lock file cannot be opened or locked, or the entry cannot be written
         """
-        if self.descriptor < 0:
-            lock = queue_file(self.queue, self.number, STACK_LOCK_SUFFIX)
-            descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX)
-            except OSError:
-                os.close(descriptor)
-                raise
-            self.descriptor = descriptor
+        self.hold()
         record = {"branch": branch, "base": base, "commit": commit, "accepted": is_accepted}
         cache.write_atomic(queue_file(self.queue, self.number, STACK_SUFFIX), (json.dumps(record) + "\n").encode())
+        self.leave_line()
+
+    def join_line(self, branch: str) -> None:
+        """Write the mark of the batch in the line of the full stack of a branch, and hold the lock of the entry.
+
+        A mark that the batch holds already stays as it is (THE STACK).
+
+        Raises:
+            OSError: If the lock file cannot be opened or locked, or the mark cannot be written
+        """
+        self.hold()
+        mark = queue_file(self.queue, self.number, LINE_SUFFIX)
+        if not mark.is_file():
+            cache.write_atomic(mark, (json.dumps({"branch": branch}) + "\n").encode())
+
+    def leave_line(self) -> None:
+        """Remove the mark of the batch in the line.  The lock stays until free()."""
+        queue_file(self.queue, self.number, LINE_SUFFIX).unlink(missing_ok=True)
+
+    def ahead(self, branch: str) -> list[int]:
+        """Return the number of each live mark in the line of a branch of an older batch: a smaller number.
+
+        A mark is live while a process holds the lock of its lock file.  A mark that does not read, and a mark of a
+        different branch, is no mark.  Complexity: linear in the files of the marks in the queue.
+        """
+        found: list[int] = []
+        for path in paths.listing(self.queue, f"*{LINE_SUFFIX}"):
+            number = number_of(path)
+            if number is None or number >= self.number:
+                continue
+            if not heavy.is_held(queue_file(self.queue, number, STACK_LOCK_SUFFIX)):
+                continue
+            try:
+                if json.loads(path.read_text(encoding="utf-8"))["branch"] != branch:
+                    continue
+            except OSError, ValueError, KeyError, TypeError:
+                continue
+            found.append(number)
+        return sorted(found)
 
     def withdraw(self) -> None:
-        """Remove the entry of the batch.  The lock stays until free()."""
+        """Remove the entry of the batch and its mark in the line.  The lock stays until free()."""
         queue_file(self.queue, self.number, STACK_SUFFIX).unlink(missing_ok=True)
+        self.leave_line()
 
     def free(self) -> None:
-        """Remove the entry, then the lock file, and then free the lock.  With no lock, only remove the entry."""
+        """Remove the entry and the mark, then the lock file, and then free the lock.  With no lock, only remove them."""
         self.withdraw()
         if self.descriptor < 0:
             return
@@ -2483,19 +2571,6 @@ class Stack:
         return heavy.is_held(queue_file(self.queue, number, RIGHT_SUFFIX))
 
 
-def accepted_part(below: Sequence[StackEntry]) -> list[StackEntry]:
-    """Return the entries of a stack from the branch up to the first entry that the gate did not accept (THE STACK).
-
-    Complexity: linear in the entries.
-    """
-    kept: list[StackEntry] = []
-    for item in below:
-        if not item.is_accepted:
-            break
-        kept.append(item)
-    return kept
-
-
 def stack_path(tip: str, base: str, entries: Sequence[StackEntry]) -> list[StackEntry] | None:
     """Return the entries of a path from the branch to a base, each on the commit of the one before, or None.
 
@@ -2539,7 +2614,6 @@ class BatchLanding:
         "is_check",
         "is_cut",
         "is_entry_freed",
-        "is_on_accepted",
         "is_publishing",
         "is_stack_stuck",
         "journal",
@@ -2554,6 +2628,7 @@ class BatchLanding:
         "runs",
         "stack",
         "stack_lock",
+        "stack_rule",
     )
 
     def __init__(
@@ -2591,7 +2666,7 @@ class BatchLanding:
         self.is_entry_freed = False
         self.stack_lock = threading.Lock()
         self.is_stack_stuck = False
-        self.is_on_accepted = False
+        self.stack_rule = StackRule.ANY
         self.is_cut = False
         self.base = ""
         self.base_run = -1
@@ -2614,6 +2689,29 @@ class BatchLanding:
         if commit is None:
             raise LandError(f"the branch {self.branch} holds no commit")
         return commit
+
+    def is_settled(self, item: StackEntry) -> bool:
+        """Tell if the rule of the batch lets a round compose on an entry of the stack with no wait for its verdict.
+
+        An accepted entry is settled with each rule.  With StackRule.ANY each entry is settled, and with StackRule.OLDER
+        also each entry of an older batch: a smaller number (THE RULE OF ONE LOST RUN).
+        """
+        if item.is_accepted or self.stack_rule is StackRule.ANY:
+            return True
+        is_older = self.stack is not None and item.number < self.stack.number
+        return self.stack_rule is StackRule.OLDER and is_older
+
+    def settled_part(self, below: Sequence[StackEntry]) -> list[StackEntry]:
+        """Return the entries of a stack from the branch up to the first entry that is not settled (is_settled()).
+
+        Complexity: linear in the entries.
+        """
+        kept: list[StackEntry] = []
+        for item in below:
+            if not self.is_settled(item):
+                break
+            kept.append(item)
+        return kept
 
     def gate_run(
         self,
@@ -3079,22 +3177,21 @@ class BatchLanding:
             is_on_branch = False
             self.is_stack_stuck = False
             if not self.is_check:
-                self.wait_turn(RUN_STEP, is_stacking)
+                self.wait_turn(RUN_STEP, is_stacking, pending)
             if self.is_stack_stuck:
                 is_stacking = False
                 self.is_stack_stuck = False
             entries = stack.entries(self.branch) if is_stacking and stack is not None else []
             tip = self.tip()
             below = stack.top(tip, entries)[: STACK_DEPTH - 1] if is_stacking and stack is not None else []
-            if self.is_on_accepted:
-                below = accepted_part(below)
+            below = self.settled_part(below)
             self.base = below[-1].commit if below else tip
             self.base_run = -1
             if below:
                 pending, accepted, run, is_on_branch = self.stacked_round(pending, below)
                 if not accepted:
                     restacks += 1
-                    self.is_on_accepted = True
+                    self.stack_rule = self.stack_rule.after_loss
                     continue
             else:
                 self.is_publishing = stack is not None
@@ -3127,7 +3224,7 @@ class BatchLanding:
             pending = [link.queued for link in accepted]
             if below:
                 restacks += 1
-                self.is_on_accepted = True
+                self.stack_rule = self.stack_rule.after_loss
                 check_report.write_line(
                     f"loop land: the base of the batch left the stack, and the batch composes its {len(pending)} "
                     "accepted requests again"
@@ -3213,13 +3310,16 @@ class BatchLanding:
         self.is_stack_stuck = True
         return False
 
-    def wait_turn(self, step: str, is_stacking: bool = False) -> bool:
+    def wait_turn(self, step: str, is_stacking: bool = False, pending: Sequence[Queued] = ()) -> bool:
         """Wait before a step of a round for the batches that go first, and tell if the base can never be the branch.
 
         Before a run, the batch waits while a right of way goes first, or while the stack holds STACK_DEPTH entries.
-        `is_stacking` tells that the round can compose on the stack.  A batch on THE RULE OF ONE LOST RUN also waits
-        while an entry of the stack that had no verdict at the first look of the wait has none.  An entry that comes
-        into the stack during the wait does not hold it (THE STACK).  Before a swap, the batch waits while a right of way
+        `is_stacking` tells that the round can compose on the stack.  Such a batch holds a mark in THE LINE, and it also
+        waits while the older marks in the line are as many as the free places of the stack.  A batch whose `pending`
+        requests each left the queue holds no mark, so it holds no younger batch until its wait ends.  A batch with
+        StackRule.ACCEPTED also waits while an entry of the stack that had no verdict at the first look of the wait has
+        none, and it holds no mark in the line during that wait.  An entry that comes into the stack during the wait
+        does not hold it (THE STACK, THE RULE OF ONE LOST RUN).  Before a swap, the batch waits while a right of way
         goes first, or while batches of the stack are below its base.  A right of way does not go first when its holder
         is below the batch in the stack, or when the entry of its holder is not on the branch, because such a holder
         cannot swap first (THE RIGHT OF WAY, THE STACK).  The wait looks again each POLL_S seconds.  A right of way holds
@@ -3233,18 +3333,32 @@ class BatchLanding:
         rights_shown: set[int] = set()
         stack_shown: set[int] = set()
         first_open: frozenset[int] | None = None
+        where = "the batches below it in the stack"
         while True:
             entries = self.stack.entries(self.branch) if self.stack is not None else []
             tip = self.tip()
             if step == RUN_STEP:
                 below = self.stack.top(tip, entries) if is_stacking and self.stack is not None else []
-                open_numbers = {item.number for item in below if not item.is_accepted}
+                open_numbers = {item.number for item in below if not self.is_settled(item)}
                 if first_open is None:
                     first_open = frozenset(open_numbers)
-                is_top_open = self.is_on_accepted and bool(open_numbers & first_open)
+                is_top_open = self.stack_rule is StackRule.ACCEPTED and bool(open_numbers & first_open)
+                ahead: list[int] = []
+                is_live = not pending or any(self.is_alive(item) for item in pending)
+                if self.stack is not None and is_stacking and not is_top_open and is_live:
+                    self.stack.join_line(self.branch)
+                    ahead = self.stack.ahead(self.branch)
+                elif self.stack is not None:
+                    self.stack.leave_line()
                 is_full = len(below) >= STACK_DEPTH
-                is_held_by_stack = is_full or is_top_open
-                holding = {item.number for item in below} if is_full else open_numbers & first_open
+                is_behind = bool(ahead) and len(ahead) >= STACK_DEPTH - len(below)
+                is_held_by_stack = is_full or is_top_open or is_behind
+                if is_full:
+                    holding, where = {item.number for item in below}, "the full stack"
+                elif is_top_open:
+                    holding, where = set(open_numbers & first_open), "the verdicts of the stack"
+                else:
+                    holding, where = set(ahead), "the older batches in the line of the stack"
             else:
                 path = stack_path(tip, self.base, entries)
                 if path is None:
@@ -3270,6 +3384,8 @@ class BatchLanding:
                     f"loop land: the batch waited {bound:.0f} seconds, and it goes on to its {step}", is_error=True
                 )
                 self.is_stack_stuck = is_held_by_stack
+                if is_held_by_stack and self.stack is not None:
+                    self.stack.leave_line()
                 return False
             new_rights = [number for number in first if number not in rights_shown]
             if new_rights:
@@ -3279,9 +3395,6 @@ class BatchLanding:
             new_below = sorted(holding - stack_shown) if is_held_by_stack else []
             if new_below:
                 names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new_below)
-                where = "the batches below it in the stack"
-                if step == RUN_STEP:
-                    where = "the full stack" if len(below) >= STACK_DEPTH else "the verdicts of the stack"
                 check_report.write_line(f"loop land: the batch waits before its {step} for {where}: {names}")
                 stack_shown.update(new_below)
             self.pause(POLL_S)
@@ -3804,9 +3917,9 @@ def removed_dead_holders(queue: Path, now: float | None = None) -> list[str]:
 
     A holder frees its files at the end of its batch (Right.free(), Stack.free()).  A holder that a signal or a stop of
     the host ended leaves them, and each reader skips a file with no lock (THE RIGHT OF WAY, THE STACK).  The function
-    removes a file NUMBER.right or NUMBER.stacked whose lock no process holds, and a file NUMBER.stack whose file
-    NUMBER.stacked no process holds.  It keeps a file younger than DEAD_HOLDER_AGE_S, because a holder makes its file
-    before it takes the lock.  Complexity: linear in the files of the queue.
+    removes a file NUMBER.right or NUMBER.stacked whose lock no process holds, and a file NUMBER.stack or NUMBER.line
+    whose file NUMBER.stacked no process holds.  It keeps a file younger than DEAD_HOLDER_AGE_S, because a holder makes
+    its file before it takes the lock.  Complexity: linear in the files of the queue.
 
     Args:
         queue: The directory of the queue
@@ -3818,12 +3931,14 @@ def removed_dead_holders(queue: Path, now: float | None = None) -> list[str]:
         *paths.listing(queue, f"*{RIGHT_SUFFIX}"),
         *paths.listing(queue, f"*{STACK_LOCK_SUFFIX}"),
         *paths.listing(queue, f"*{STACK_SUFFIX}"),
+        *paths.listing(queue, f"*{LINE_SUFFIX}"),
     )
     for path in paths_of:
         number = number_of(path)
         if number is None:
             continue
-        lock = queue_file(queue, number, STACK_LOCK_SUFFIX) if path.name.endswith(STACK_SUFFIX) else path
+        is_entry_file = path.name.endswith((STACK_SUFFIX, LINE_SUFFIX))
+        lock = queue_file(queue, number, STACK_LOCK_SUFFIX) if is_entry_file else path
         try:
             age_s = moment - path.stat().st_mtime
         except FileNotFoundError:

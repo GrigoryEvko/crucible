@@ -2036,15 +2036,17 @@ def dead_holder_cases(expect: testing.Expect) -> None:
             (1, land.RIGHT_SUFFIX): old,
             (1, land.STACK_SUFFIX): old,
             (1, land.STACK_LOCK_SUFFIX): old,
+            (1, land.LINE_SUFFIX): old,
             (2, land.RIGHT_SUFFIX): old,
             (2, land.STACK_SUFFIX): old,
             (2, land.STACK_LOCK_SUFFIX): old,
+            (2, land.LINE_SUFFIX): old,
             (3, land.RIGHT_SUFFIX): young,
             (3, land.STACK_LOCK_SUFFIX): young,
         }
         for (number, suffix), moment in files.items():
             path = land.queue_file(queue, number, suffix)
-            path.write_text("{}\n" if suffix == land.STACK_SUFFIX else "", encoding="utf-8")
+            path.write_text("{}\n" if suffix in (land.STACK_SUFFIX, land.LINE_SUFFIX) else "", encoding="utf-8")
             os.utime(path, (moment, moment))
         with (
             open(land.queue_file(queue, 2, land.RIGHT_SUFFIX), encoding="utf-8") as right,
@@ -2057,8 +2059,16 @@ def dead_holder_cases(expect: testing.Expect) -> None:
         expect(
             f"the sweep removes the old files of a dead holder, and keeps the files of a live holder and the young files "
             f"of a holder that has no lock yet: removed {removed}, kept {kept}",
-            removed == ["00000001.right", "00000001.stack", "00000001.stacked"]
-            and kept == ["00000002.right", "00000002.stack", "00000002.stacked", "00000003.right", "00000003.stacked"],
+            removed == ["00000001.line", "00000001.right", "00000001.stack", "00000001.stacked"]
+            and kept
+            == [
+                "00000002.line",
+                "00000002.right",
+                "00000002.stack",
+                "00000002.stacked",
+                "00000003.right",
+                "00000003.stacked",
+            ],
         )
 
 
@@ -2608,10 +2618,12 @@ def stack_cases(expect: testing.Expect) -> None:
 
 
 def lost_run_cases(expect: testing.Expect) -> None:
-    """Hold THE RULE OF ONE LOST RUN of THE STACK: a batch whose base left the stack waits for an accepted base.
+    """Hold THE RULE OF ONE LOST RUN of THE STACK: one run at once on an older open entry, then a wait for a verdict.
 
-    The batch below composes again two times, each time on a new commit with no verdict, and then the gate accepts its
-    last commit.  The batch on the top loses its first run, waits for that verdict, and runs one more time.
+    The batch 1 below composes again two times, each time on a new commit with no verdict, and then the gate accepts
+    its last commit.  The batch 3 on the top loses its first run, and it stacks at once on the open entry of the older
+    batch 1.  It loses that run too, waits for the verdict of the batch 1, and runs one more time.  Then the batch 8
+    loses its run, the younger batch 9 holds an open entry on the branch, and the batch 8 composes below it at once.
     """
     with tempfile.TemporaryDirectory(prefix="land-lost-run-") as work_text:
         root, queue = Path(work_text) / "repo", Path(work_text) / "queue"
@@ -2645,22 +2657,50 @@ def lost_run_cases(expect: testing.Expect) -> None:
 
         decisions, printed = right_batch(root, queue, 3, passing(seen), below_composes_again)
         expect(
-            "a batch whose base left the stack runs again only on a base with a verdict: it waits while the batch below "
-            "composes again on a commit with no verdict, runs one time on the accepted commit, and lands on it",
+            f"a batch whose base left the stack runs again at once on the open entry of the older batch below it.  After "
+            f"its second lost run it runs only on a base with a verdict: it waits while the batch below has no verdict, "
+            f"runs one time on the accepted commit, and lands on it: {[candidate.head for candidate, _ in seen]}",
             decisions[3].status == 0
-            and [candidate.head for candidate, _ in seen] == [first, third]
+            and [candidate.head for candidate, _ in seen] == [first, second, third]
             and git.parent(root, "HEAD") == third
-            and "the base of the batch left the stack" in printed
+            and printed.count("the base of the batch left the stack") == 2
             and "waits before its run for the verdicts of the stack: 00000001" in printed,
+        )
+        tip = git.head(root)
+        older = side_commit(root, tip, "c.txt", "c\n")
+        younger_commit = side_commit(root, tip, "d.txt", "d\n")
+        refused = OtherEntry(queue, branch, 1, tip, older)
+        younger: list[OtherEntry] = []
+        seen = []
+
+        def younger_stacks(seconds: float) -> None:
+            """Refuse the older batch below, and let the younger batch 9 write an open entry on the branch."""
+            if seconds == land.POLL_S and refused.is_live:
+                refused.leave()
+                younger.append(OtherEntry(queue, branch, 9, tip, younger_commit))
+
+        with mock.patch.object(land, "STACK_WAIT_S", 5 * land.POLL_S):
+            decisions, printed = right_batch(root, queue, 8, passing(seen), younger_stacks)
+        for entry in younger:
+            entry.leave()
+        expect(
+            f"after its first lost run, a batch does not stack on the open entry of a younger batch, and it does not "
+            f"wait for its verdict: it composes on the branch below that entry at once, and lands: "
+            f"{[candidate.head for candidate, _ in seen]}",
+            decisions[8].status == 0
+            and [candidate.head for candidate, _ in seen] == [older, tip]
+            and git.parent(root, "HEAD") == tip
+            and "the verdicts of the stack" not in printed
+            and "it goes on to its run" not in printed,
         )
 
 
 def newer_entry_cases(expect: testing.Expect) -> None:
     """Hold the wait of THE RULE OF ONE LOST RUN to the entries of its first look (THE STACK).
 
-    The batch 3 loses its first run, because the batch 1 below it composes again.  While the batch 3 waits for the
-    verdict of the batch 1, the batch 4 stacks on the batch 1, and its run never ends.  The batch 1 then lands.  The
-    entry of the batch 4 came into the stack during the wait, so it does not hold the batch 3.
+    The batch 3 loses its first two runs, because the batch 1 below it composes again two times.  While the batch 3
+    waits for the verdict of the batch 1, the batch 4 stacks on the batch 1, and its run never ends.  The batch 1 then
+    lands.  The entry of the batch 4 came into the stack during the wait, so it does not hold the batch 3.
     """
     with tempfile.TemporaryDirectory(prefix="land-newer-entry-") as work_text:
         root, queue = Path(work_text) / "repo", Path(work_text) / "queue"
@@ -2669,27 +2709,31 @@ def newer_entry_cases(expect: testing.Expect) -> None:
         branch = land.branch_of(root)
         first = side_commit(root, tip, "a.txt", "a\n")
         second = side_commit(root, tip, "a.txt", "a2\n")
-        above = side_commit(root, second, "b.txt", "b\n")
+        third = side_commit(root, tip, "a.txt", "a3\n")
+        above = side_commit(root, third, "b.txt", "b\n")
         below = OtherEntry(queue, branch, 1, tip, first)
         newer: list[OtherEntry] = []
         seen: list[tuple[gate.Candidate, bool]] = []
         steps: list[str] = []
 
         def newer_batch_stacks(seconds: float) -> None:
-            """Move the batch 1, stack the batch 4 on it, accept the batch 1, then land it."""
+            """Move the batch 1 two times, stack the batch 4 on it, accept the batch 1, then land it."""
             if seconds != land.POLL_S:
                 return
             if not steps:
                 below.move(tip, second)
                 steps.append("moved")
             elif steps[-1] == "moved":
-                newer.append(OtherEntry(queue, branch, 4, second, above))
+                below.move(tip, third)
+                steps.append("moved again")
+            elif steps[-1] == "moved again":
+                newer.append(OtherEntry(queue, branch, 4, third, above))
                 steps.append("stacked")
             elif steps[-1] == "stacked":
-                below.move(tip, second, is_accepted=True)
+                below.move(tip, third, is_accepted=True)
                 steps.append("accepted")
             elif steps[-1] == "accepted":
-                land.swap(root, branch, second, tip, "Below")
+                land.swap(root, branch, third, tip, "Below")
                 below.leave()
                 steps.append("landed")
 
@@ -2698,14 +2742,92 @@ def newer_entry_cases(expect: testing.Expect) -> None:
         for entry in newer:
             entry.leave()
         expect(
-            "a batch whose base left the stack waits for the verdict of the entry of its first look, and not for an "
-            "entry that stacks on it during the wait: it runs on the accepted commit of that entry, and lands",
+            "a batch whose base left the stack two times waits for the verdict of the entry of its first look, and not "
+            "for an entry that stacks on it during the wait: it runs on the accepted commit of that entry, and lands",
             decisions[3].status == 0
-            and [candidate.head for candidate, _ in seen] == [first, second]
-            and git.parent(root, "HEAD") == second
+            and [candidate.head for candidate, _ in seen] == [first, second, third]
+            and git.parent(root, "HEAD") == third
             and "waits before its run for the verdicts of the stack: 00000001" in printed
             and "00000004" not in printed
             and "it goes on to its run" not in printed,
+        )
+
+
+def line_cases(expect: testing.Expect) -> None:
+    """Hold THE LINE of THE STACK: the batches that wait for a place of a full stack go in the sequence of the queue.
+
+    The stack holds the batches 1, 2 and 4.  The older batch 3 of a different lane waits in the line, and the batch 6
+    waits too.  The batch 1 lands, and the batch 6 looks at the stack before the batch 3 does.  The free place goes to
+    the batch 3, and the batch 6 takes the next free place, on the commit of the batch 3.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-line-") as work_text:
+        root, queue = Path(work_text) / "repo", Path(work_text) / "queue"
+        queue.mkdir(parents=True)
+        tip = planted_repository(root)
+        branch = land.branch_of(root)
+        first = side_commit(root, tip, "a.txt", "a\n")
+        second = side_commit(root, first, "b.txt", "b\n")
+        third = side_commit(root, second, "c.txt", "c\n")
+        fourth = side_commit(root, third, "d.txt", "d\n")
+        chain = [
+            OtherEntry(queue, branch, 1, tip, first),
+            OtherEntry(queue, branch, 2, first, second),
+            OtherEntry(queue, branch, 4, second, third),
+        ]
+        older = land.Stack(queue, 3)
+        older.join_line(branch)
+        steps = [(tip, first, 0), (first, second, 1), (second, third, 2), (third, fourth, -1)]
+        runs_at_take: list[int] = []
+        seen: list[tuple[gate.Candidate, bool]] = []
+
+        def older_takes_the_place(seconds: float) -> None:
+            """Land the bottom batch, let the batch 3 take the free place, and then land one batch on each poll."""
+            if seconds != land.POLL_S or not steps:
+                return
+            if len(steps) == 3 and older.descriptor >= 0 and not runs_at_take:
+                runs_at_take.append(len(seen))
+                older.publish(branch, third, fourth, False)
+                return
+            old, new, index = steps.pop(0)
+            land.swap(root, branch, new, old, "Below")
+            if index >= 0:
+                chain[index].leave()
+            else:
+                older.free()
+
+        decisions, printed = right_batch(root, queue, 6, passing(seen), older_takes_the_place)
+        older.free()
+        for entry in chain:
+            entry.leave()
+        expect(
+            f"a free place of a full stack goes to the older batch in the line, also when the younger batch looks "
+            f"first.  The younger batch then runs one time on the commit of the older batch, and lands after it: "
+            f"{[candidate.head for candidate, _ in seen]}",
+            decisions[6].status == 0
+            and runs_at_take == [0]
+            and [candidate.head for candidate, _ in seen] == [fourth]
+            and git.parent(root, "HEAD") == fourth
+            and "waits before its run for the full stack: 00000001 00000002 00000004" in printed
+            and "waits before its run for the older batches in the line of the stack: 00000003" in printed
+            and not land.queue_file(queue, 6, land.LINE_SUFFIX).exists(),
+        )
+        marks = {number: land.Stack(queue, number) for number in (2, 5, 7)}
+        marks[2].join_line(branch)
+        marks[5].join_line("refs/heads/elsewhere")
+        marks[7].join_line(branch)
+        dead = land.queue_file(queue, 3, land.LINE_SUFFIX)
+        dead.write_text(json.dumps({"branch": branch}) + "\n", encoding="utf-8")
+        waiting = land.Stack(queue, 6)
+        ahead = waiting.ahead(branch)
+        marks[2].publish(branch, tip, first, False)
+        is_left = not land.queue_file(queue, 2, land.LINE_SUFFIX).exists()
+        for mark in marks.values():
+            mark.free()
+        dead.unlink()
+        expect(
+            f"the line ahead of a batch holds only the live marks of older batches on its branch, and the entry of a "
+            f"batch replaces its mark: {ahead}",
+            ahead == [2] and is_left,
         )
 
 
@@ -3932,6 +4054,7 @@ def main(argv: list[str]) -> int:
             stack_cases,
             lost_run_cases,
             newer_entry_cases,
+            line_cases,
             stack_thread_cases,
             series_cases,
             series_words_cases,
