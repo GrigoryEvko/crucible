@@ -4268,6 +4268,20 @@ crucible_neg_compile_test(neg_crucible_context_compiled_view_unbranded_ctx
 crucible_neg_compile_test(neg_crucible_context_compiled_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_crucible_context_compiled_view_other_brand.cpp:15")
+
+# mint_external_slot gives the ExternalSlotId of a slot that the plan marks
+# external, and the address form of register_external takes only that type.
+# Two fixtures cover its two gates:
+#   * neg_crucible_context_register_external_plain_slot — a plain SlotId does
+#     not convert to an ExternalSlotId.
+#   * neg_crucible_context_external_slot_from_slot_id — the constructor from a
+#     SlotId is private to the mint.
+crucible_neg_compile_test(neg_crucible_context_register_external_plain_slot
+  "cannot convert .crucible::SlotId. to .crucible::ExternalSlotId."
+  "neg_crucible_context_register_external_plain_slot.cpp:14")
+crucible_neg_compile_test(neg_crucible_context_external_slot_from_slot_id
+  "is private within this context"
+  "neg_crucible_context_external_slot_from_slot_id.cpp:12")
 crucible_neg_compile_test(neg_replay_engine_active_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_replay_engine_active_view_unbranded_ctx.cpp:11")

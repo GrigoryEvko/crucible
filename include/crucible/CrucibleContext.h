@@ -94,6 +94,51 @@ enum class OutputRefusal : uint8_t {
     Overlap,  // two outputs share a byte
 };
 
+// The slots of a memory plan, and no other type, so the mint reads the flag
+// of a slot of a plan.
+template <class Slots>
+concept PlanSlotsView = std::is_same_v<Slots, ::fixy::View<TensorSlot const>>;
+
+// A slot id that the plan of a region marks external.  mint_external_slot
+// is the one door, so a register door that takes one writes no pooled slot,
+// and the window of each pooled slot stays the window of the plan.  No
+// constructor takes a SlotId outside the mint, and the class has no default.
+// The id names a slot of the plan that the mint read: the Vigil mints the
+// ids of each activation from the plan of that activation.  The class holds
+// one SlotId, so it costs what a SlotId costs.
+class ExternalSlotId final {
+public:
+    [[nodiscard]] constexpr SlotId slot() const noexcept { return slot_; }
+
+private:
+    // The return type is deduced, so the declaration names no Option of
+    // this class before the class is complete.
+    template <PlanSlotsView Slots>
+    friend constexpr auto mint_external_slot(Slots slots, SlotId sid) noexcept;
+
+    constexpr explicit ExternalSlotId(SlotId slot) noexcept : slot_{slot} {}
+
+    SlotId slot_{};
+};
+
+// The id sid, when the slot at sid of the plan slots is external, or no
+// value for an id outside the plan and for a pooled slot: an
+// Option<ExternalSlotId>.  The Vigil mints one at each test of an external
+// slot, and the address form of register_external takes only this type.
+// Complexity: O(1).
+template <PlanSlotsView Slots>
+[[nodiscard]] constexpr auto mint_external_slot(Slots slots, SlotId sid) noexcept {
+    using Minted = ::fixy::Option<ExternalSlotId>;
+    // The window of one slot holds the one bound test, which a loop over the
+    // positions of the plan folds into its own test.
+    const bool is_external =
+        slots.template window<1>(sid.raw()).is_some_and([](::fixy::View<TensorSlot const, 1> const& planned) noexcept {
+            return planned.at(::fixy::index<0>()).is_external;
+        });
+    if (!is_external) return Minted{::fixy::none};
+    return Minted::some(ExternalSlotId{sid});
+}
+
 struct CrucibleContext {
     // The caller gives the allocation capability of its context.  The pool
     // of each region that the context activates allocates through it.
@@ -274,9 +319,14 @@ struct CrucibleContext {
     ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t, CompiledView const&) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    CRUCIBLE_INLINE void register_external(SlotId sid, TensorData data, CompiledView const&) {
+    // The address of an external slot and the device of its owner
+    // (PoolAllocator::register_external).  The id comes from
+    // mint_external_slot, so the plan marks the slot external, and the door
+    // writes no pooled slot.  The door runs for each external read of the
+    // replay, and the type carries the proof, so it reads no plan.
+    CRUCIBLE_INLINE void register_external(ExternalSlotId external, TensorData data, CompiledView const&) {
         auto pv = pool_.initialized_view_();
-        pool_.register_external(sid, data, pv);
+        pool_.register_external(external.slot(), data, pv);
     }
 
     // The bytes of an external slot as a View of the host

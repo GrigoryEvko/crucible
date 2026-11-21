@@ -337,7 +337,8 @@ static void test_external_slots() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
-    ctx.register_external(SlotId{1}, crucible::test::host_data(fake_param), cv);
+    ctx.register_external(crucible::mint_external_slot(plan.slots, SlotId{1}).expect("the plan marks slot 1 external"),
+                          crucible::test::host_data(fake_param), cv);
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, cv).status() == ReplayStatus::COMPLETE);
     // The registration is checked through the pool, which is where an
@@ -426,7 +427,9 @@ static void test_integration_sweep_line() {
 
     alignas(256) char fake_param[128];
     std::memset(fake_param, 0xEE, 128);
-    ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), cv);
+    ctx.register_external(
+        crucible::mint_external_slot(plan_storage.slots, SlotId{2}).expect("the plan marks slot 2 external"),
+        crucible::test::host_data(fake_param), cv);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv).status() == ReplayStatus::MATCH);
@@ -577,7 +580,7 @@ static void test_slot_views() {
     ::foundation::AlignedBytes address_only =
         ::foundation::mint_aligned_bytes_zeroed(g_test.alloc, make_external_layout());
     ctx.register_external(
-        SlotId{4},
+        crucible::mint_external_slot(plan.slots, SlotId{4}).expect("the plan marks slot 4 external"),
         crucible::TensorData{::fixy::mint_run_address(address_only.view(), 0).expect("the block holds 32 bytes"),
                              crucible::kHostDevice},
         cv);
