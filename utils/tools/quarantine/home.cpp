@@ -415,8 +415,10 @@ bool is_function_template(tree template_decl) {
 
 // The explicit specializations of each function template that the hooks read
 // (THE SEALED TEMPLATES).  GCC keeps them on no list that a plugin can read.
-// A template and its specializations stay to the end of the unit, so no
-// collection frees a kept tree, and the map is not cleared.
+// The bindings of its scope keep a template, and the table decl_specializations
+// of pt.cc keeps each explicit specialization, to the end of the parse, and
+// each reader of the map runs in the parse.  So no collection frees a kept
+// tree, and the map is not cleared (THE COLLECTIONS of plugin.h).
 std::unordered_map<tree, std::vector<tree>> function_specializations;
 
 // The home of a class template or a variable template: its row, or no home
@@ -925,8 +927,10 @@ struct GateReads {
 //     the fold.  The event walks it and keeps each template and each class
 //     that it reads, for the object: an explicit specialization of a variable
 //     template, or a static data member of an explicit specialization of a
-//     class template.  Such an object, a template and a class instance stay
-//     to the end of the unit, so no collection frees a kept tree.
+//     class template.  The specialization tables of pt.cc keep such an object
+//     and each class instance, and the bindings of its scope keep a template,
+//     to the end of the parse.  Each reader of the map runs in the parse, so
+//     no collection frees a kept tree (THE COLLECTIONS of plugin.h).
 std::unordered_map<tree, std::vector<tree>> folded_reads;
 
 // The bound of a chain of sealed templates.  A longer chain is open, so the

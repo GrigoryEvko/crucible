@@ -226,8 +226,10 @@ Caches caches;
 // The facts of THE PROOF ROUTES that the end of the unit reads: each class
 // template that a class of include/ befriends with a template friend, and
 // each class template with a parameter that is no type, whose explicit
-// specializations can hold a pointer to a member.  A template decl of a
-// namespace or a class stays to the end of the unit.
+// specializations can hold a pointer to a member.  The bindings of its scope
+// keep a template decl of a namespace or a class to the end of the parse, and
+// the walk of the end of the parse reads the lists (THE COLLECTIONS of
+// plugin.h).
 struct RouteTemplates {
     std::vector<tree> befriended;
     std::unordered_set<tree> befriended_seen;
@@ -934,7 +936,10 @@ struct BodyFacts {
 
 // The facts of a grant file in this unit, and of each function of a door
 // file that is not a template, by its DECL_UID.  A function of a door file is
-// a decl of a namespace or a class, which no collection frees.
+// a decl of a namespace or a class: the bindings of its scope keep it, or the
+// body of the function that declares the class keeps it, to the end of the
+// parse.  Each reader of the facts runs in the parse (THE COLLECTIONS of
+// plugin.h).
 struct GrantUnit {
     bool is_seen = false;
     BodyFacts facts;

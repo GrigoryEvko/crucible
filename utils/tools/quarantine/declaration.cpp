@@ -2654,7 +2654,11 @@ void check_marked_function(tree function) {
 
 // ── The rule lifetime-twin ──────────────────────────────────────────────
 
-// One parameter that CRUCIBLE_LIFETIMEBOUND marks, with its function.
+// One parameter that CRUCIBLE_LIFETIMEBOUND marks, with its function.  The
+// function is no instance of a template: the bindings of its scope keep it, or
+// the body of the function that declares its class keeps it, to the end of the
+// parse, and its type keeps the type of the parameter.  The walk of the end of
+// the parse reads each claim (THE COLLECTIONS of plugin.h).
 struct LifetimeClaim {
     tree function = NULL_TREE;
     int index = 0;

@@ -566,6 +566,40 @@
 //     type, and one declaration then gives one line in each unit
 //     (declaration.cpp, THE ENTITY OF AN OBJECT).
 //
+// THE COLLECTIONS
+//     GCC collects garbage only in ggc_collect: at the end of each function and
+//     each function template at the top level, in c_parse_final_cleanups, and
+//     in the middle end.  A nested function, a constant evaluation and a nested
+//     instantiation raise function_depth, so they collect nothing.  No callback
+//     of the plugin calls an instantiation, a constant evaluation or
+//     ggc_collect.  So no collection runs inside a callback or a walk, and a
+//     container of one call or one walk holds no freed tree.  A collection
+//     frees each tree that no root reaches, and a later tree can take its
+//     address.  So each record that lives from one callback to a later one
+//     holds a tree only in one of these forms:
+//       * a cache, which PLUGIN_GGC_START clears before the sweep.  A clear
+//         costs only a second computation, and a finding counts one time for
+//         each place
+//       * a record that PLUGIN_GGC_MARKING drops when its tree has no mark
+//         (definition.cpp, THE READS)
+//       * a key that no collection reuses: a DECL_UID, a TYPE_UID, a location,
+//         a text, a FileEntry, or the file name of a line map, which libcpp
+//         keeps to the end of the compile
+//       * an identifier, which is a root to the end of the parse
+//         (ggc_protect_identifiers of toplev.cc), with each reader in the parse
+//       * a tree that a root keeps to the end of the parse, with each reader in
+//         the parse: a namespace is in the bindings of its parent, a template
+//         and a member are in the bindings of their scope, an explicit
+//         specialization and an instance are in the specialization tables of
+//         pt.cc, a function body keeps the classes and the lambdas that it
+//         declares, and the cgraph keeps each function that the unit defines.
+//         The comment of each such record names its root
+//     The walks of the end of the parse are the last readers of such records
+//     (plugin.cpp, parse_and_walk).  The middle end frees the bodies that it
+//     emits, and each collection after the parse frees each identifier that no
+//     tree names.  Only the pass of body.cpp reads trees there, and it reads the
+//     instructions and the declarations of the function that it compiles.
+//
 // Each source includes this header before any other header, because the
 // headers of GCC rename some functions of the C library: the standard headers
 // and the system headers that the plugin uses come first, here.
@@ -2189,6 +2223,10 @@ struct State {
     // each function pattern (declaration.cpp, placeholder_locals_of).
     std::unordered_map<tree, std::unordered_set<location_t>> placeholder_locals;
     std::unordered_map<tree, bool> default_argument_of;
+    // The declarations that a walk read.  After a clear, a later walk reads a
+    // declaration again and gives the same findings.  Only the event of a body
+    // keeps the facts of a door (expression.cpp, THE GRANTS), and each body
+    // has one such event, so a second walk adds no fact.
     std::unordered_set<tree> walked;
     // The trees that the walk of the contract rule visited.
     std::unordered_set<tree> contract_walked;
@@ -2779,7 +2817,8 @@ void register_owner(const char* plugin_name);
 void walk_owner();
 // THE FOLDED NAMES (owner.cpp): a library name that a walk reads at LOCATION,
 // the library names that TYPE spells, and the judgment of each name of the
-// parser that no walked name claims, before the report.  IS_DECLARATION is
+// parser that no walked name claims, at the end of the walks of the parse
+// (THE COLLECTIONS).  IS_DECLARATION is
 // true for the declared type of a declaration.
 void note_walked_decl(tree named, location_t location);
 void note_walked_type(tree type, location_t location, bool is_declaration);

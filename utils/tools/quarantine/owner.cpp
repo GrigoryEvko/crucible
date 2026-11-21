@@ -655,8 +655,9 @@ constexpr char kMacroHolder[] = "macro ";
 constexpr char kSyscallMacroPrefix[] = "SYS_";
 constexpr std::size_t kSyscallMacroPrefixLength = sizeof kSyscallMacroPrefix - 1;
 
-// The names that the owner rules compare, as identifiers, made one time.  An
-// identifier is never collected, so the sets stay valid in the unit.
+// The names that the owner rules compare, as identifiers, made one time.  Each
+// identifier is a root to the end of the parse, and the rules read the sets
+// only in the parse, so the sets stay valid (THE COLLECTIONS of plugin.h).
 struct OwnerIndex {
     bool is_ready = false;
     std::unordered_set<tree> last_names;  // the last name of each entity of an owner row
@@ -1193,9 +1194,10 @@ struct FileRange {
 };
 
 // The rows of the name rules, and the facts that the events read, made one
-// time when the plugin loads.  An identifier is never collected, and a
-// namespace is never collected, so these lists and the cache of the
-// namespaces stay valid in the unit.
+// time when the plugin loads.  Each identifier is a root to the end of the
+// parse, and a namespace is in the bindings of its parent, and the rules read
+// these lists and the cache of the namespaces only in the parse.  So they stay
+// valid (THE COLLECTIONS of plugin.h).
 struct NameRules {
     bool has_rows = false;  // the table has a row of a kind that reads_spelled_names
     bool is_ready = false;  // build_name_rules made the lists
@@ -1230,9 +1232,9 @@ struct NameRules {
     tree last_scope_head = NULL_TREE;
     // Each function whose body uses the unchecked function (THE WALKED
     // RETURN) and whose DECL_UID has no slot in FirstTest::marks, and each
-    // pattern of a counted file, which the end of the unit reads.  The
-    // template of a pattern keeps the pattern, so a collection does not free
-    // it.
+    // pattern of a counted file, which the walk at the end of the parse reads.
+    // The template of a pattern keeps the pattern, and the bindings of its
+    // scope keep the template, so a collection does not free it.
     std::unordered_set<unsigned> unchecked_users_without_slot;
     bool has_unchecked_users = false;
     std::vector<tree> patterns;
@@ -2058,8 +2060,8 @@ inline void judge_decl_event(tree decl, location_t location) {
 //     name an event at its first name too, and only the event where the
 //     source spells the identifier of the declaration is a parsed name.  The
 //     plugin also keeps each library name that a walk reads (a walked name).
-//     At the end of the unit, a walked name claims parsed names of its
-//     identifier in its file (Claim).  A parsed typedef also has the
+//     At the end of the walks of the parse, a walked name claims parsed names
+//     of its identifier in its file (Claim).  A parsed typedef also has the
 //     identifier of its class:
 //       * A declared type claims each parsed name of each of its library
 //         names on the line of the declaration and on the kSpanLines lines
@@ -2100,8 +2102,10 @@ constexpr unsigned char kLibrary = 2;
 
 // One name of the parser: its place, its identifier, the declaration or the
 // candidates of an overload set, and whether the parser read it in an
-// unevaluated operand.  A declaration of the library is never collected, so
-// the trees stay valid to the end of the unit.
+// unevaluated operand.  A declaration of the library is in the bindings of its
+// namespace, in the members of its class or in the specialization tables of
+// the front end, and its identifier names it.  The judge reads the record at
+// the end of the parse (THE COLLECTIONS of plugin.h).
 struct ParsedName {
     const FileEntry* file = nullptr;
     int line = 0;
@@ -2145,7 +2149,10 @@ struct WalkedName {
 
 // The parameters of a function declaration that the parser finished: the type
 // and the location of each.  The walk reads them at the definition of the
-// function, when the unit defines it.
+// function, when the unit defines it.  The judge reads only the parameters of
+// a function that the unit defines, and the type of the function keeps them:
+// the cgraph keeps such a function, and the bindings of its scope keep a
+// template (THE COLLECTIONS of plugin.h).
 struct DeclaredParameters {
     unsigned uid = 0;
     std::vector<std::pair<tree, location_t>> parameters;
@@ -2163,8 +2170,8 @@ struct FoldedNames {
     std::unordered_set<std::string> parsed_keys;
     std::unordered_set<std::string> walked_keys;
     // The library names of each type that a walk read, by its TYPE_UID.  A
-    // TYPE_UID is never used again, and an identifier is never collected, so
-    // the map stays valid after a collection.
+    // TYPE_UID is never used again, and each identifier is a root to the end
+    // of the parse, so the map stays valid after a collection of the parse.
     std::unordered_map<unsigned, std::vector<tree>> type_names;
 };
 
@@ -3529,7 +3536,16 @@ void note_walked_identifier(tree identifier, location_t location) {
     add_walked(place_of(location, Scope::quarantine), location, identifier, Claim::nearest);
 }
 
-void judge_folded_names() { judge_folded(); }
+// The judge of THE FOLDED NAMES at the end of the parse (plugin.cpp,
+// walk_unit), and then the release of the records, so no record of a tree
+// lives into the middle end (THE COLLECTIONS of plugin.h).
+void judge_folded_names() {
+    judge_folded();
+    folded_names.parsed = {};
+    folded_names.walked = {};
+    folded_names.declared = {};
+    folded_names.type_names = {};
+}
 
 // The front end calls the callback of a direct event with the facts of the
 // event as arguments (plugin.h), so register_callback takes it cast to

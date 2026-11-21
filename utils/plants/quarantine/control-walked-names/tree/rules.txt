@@ -23,3 +23,4 @@ admit std::source_location until Report | the place of a call
 admit std::unreachable until Report | a hint to the optimizer
 
 quarantine walked_names.cpp
+quarantine folded_collected.cpp

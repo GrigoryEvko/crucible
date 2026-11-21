@@ -17,6 +17,5 @@
 # A row gives no output, with a reason or with none.
 format 1
 rule heavy-include
-include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof
 include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source gets the unbounded grade again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
 include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | a moved-from source gets the genesis version again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object

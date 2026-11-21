@@ -7,9 +7,27 @@
 # 44 follows its call on line 43.  The walk gives the call in the macro argument
 # on line 63 the place of the ! of the macro body on line 57, and that walked
 # name claims the parsed name at the expansion point on line 63.
+# The unit folded_collected.cpp folds library names, with a definition of a
+# function between them.  The compile collected runs a garbage collection at
+# each opportunity of the parse and of the middle end, and it gives the
+# findings of the compile folded: the judge of the folded names reads its
+# records at the end of the parse (THE COLLECTIONS of
+# utils/tools/quarantine/plugin.h).  The unit includes only <cstring>, so each
+# collection is short.
 
 compile report walked_names.cpp
 exit report pass
+compile folded folded_collected.cpp
+exit folded pass
+finding folded quarantine c-library-call folded_collected.cpp:9:46 | strlen
+finding folded quarantine raw-pointer-object folded_collected.cpp:11:38 | text
+finding folded quarantine c-library-call folded_collected.cpp:11:81 | strlen
+finding folded quarantine c-library-call folded_collected.cpp:13:29 | strlen
+finding folded quarantine raw-pointer-object folded_collected.cpp:15:39 | text
+finding folded quarantine c-library-call folded_collected.cpp:17:39 | strlen
+compile collected folded_collected.cpp findings=folded
+flag collected --param=ggc-min-expand=0 --param=ggc-min-heapsize=0
+exit collected pass
 finding report quarantine std-object walked_names.cpp:17:17 | std::basic_string
 finding report quarantine std-entity walked_names.cpp:22:7 | std::array
 finding report quarantine raw-pointer-object walked_names.cpp:24:49 | text

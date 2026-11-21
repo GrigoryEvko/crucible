@@ -47,7 +47,7 @@
 //     PLUGIN_FINISH          the report, if the unit did not reach
 //                            PLUGIN_FINISH_UNIT.
 //     PLUGIN_GGC_START       each garbage collection clears the caches that a
-//                            tree keys.
+//                            tree keys (THE COLLECTIONS of plugin.h).
 //     The other sources register the hooks of their rules.
 //
 // THE ARGUMENTS (-fplugin-arg-crucible_quarantine-NAME=VALUE)
@@ -431,6 +431,7 @@ void walk_unit() {
     finish_base_namespace();
     walk_fresh_brands();
     finish_definition_home();
+    judge_folded_names();
 }
 
 // The parse of the unit, and then the walks of its end.  When the parse
@@ -442,6 +443,11 @@ void walk_unit() {
 // error gets the walks too, so a negative fixture that stops on its expected
 // error gives its findings.  The walks skip a declaration that the error left
 // with no type (is_erroneous_decl of plugin.h).
+// The walks are the last readers of the trees that the records of the
+// families hold (THE COLLECTIONS of plugin.h).  After the parse, GCC no longer
+// keeps each identifier as a root (toplev.cc, ggc_protect_identifiers), and
+// the middle end frees the bodies that it emits.  So the judge of the folded
+// names (owner.cpp) runs here, and the report reads only findings.
 void parse_and_walk() {
     front_end_parse_file();
     walk_unit();
@@ -560,7 +566,6 @@ void report(bool can_add_dependencies) {
     }
     state.was_reported = true;
     finish_pending_include(nullptr);
-    judge_folded_names();
     // Each use of a symbol of C language linkage that the unit did not define.
     for (const ForeignUse& use : state.foreign_uses) {
         if (state.defined_c_symbols.count(use.uid) == 0) {

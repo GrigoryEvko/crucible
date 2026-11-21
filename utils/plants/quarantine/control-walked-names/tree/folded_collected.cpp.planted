@@ -1,0 +1,21 @@
+// Library names that the front end folds, with a definition of a function
+// between them.  The end of each function at namespace scope is an
+// opportunity of a garbage collection, and the parsed names and the walked
+// names live from their events to the end of the parse.
+#include <cstring>
+
+namespace planted {
+
+constexpr unsigned long kFirst = sizeof(std::strlen("one"));
+
+inline int measure_first(const char* text) { return static_cast<int>(std::strlen(text)); }
+
+static_assert(noexcept(std::strlen("two")));
+
+inline int measure_second(const char* text) { return measure_first(text) + 1; }
+
+constexpr bool kThird = noexcept(std::strlen("three"));
+
+}  // namespace planted
+
+int main() { return planted::measure_second("a") + static_cast<int>(planted::kFirst) + (planted::kThird ? 1 : 0); }

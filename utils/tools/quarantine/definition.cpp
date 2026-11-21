@@ -189,7 +189,10 @@ std::unordered_map<tree, location_t> definition_places;
 // The entities that the rule judged, so that each one gives one finding.
 std::unordered_set<tree> judged;
 
-// The classes whose members and friends the rule read.
+// The classes whose members and friends the rule read.  Only read_header
+// fills and reads judged, read_classes, header_classes and declared_classes,
+// in one walk of the end of the parse, and no collection runs in a walk (THE
+// COLLECTIONS of plugin.h).
 std::unordered_set<tree> read_classes;
 
 // True when FILE stands where the header of the argument sentinel stands: the
