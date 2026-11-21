@@ -66,6 +66,18 @@ struct Payload final {
 // The brand of the Ref of a probe.  A brand is an empty class.
 struct RefProbeBrand final {};
 
+// A word that only moves.  An Option of it takes the owning form, and it has
+// no linear marker, so the end of an Option of it drops it.
+struct MovedWord final {
+    std::uint64_t value = 0;
+
+    constexpr explicit MovedWord(std::uint64_t word) noexcept : value{word} {}
+    MovedWord(MovedWord&&) noexcept = default;
+    MovedWord(MovedWord const&) = delete("a moved word only moves, so an Option of it takes the owning form");
+    MovedWord& operator=(MovedWord&&) noexcept = default;
+    MovedWord& operator=(MovedWord const&) = delete("a moved word only moves");
+};
+
 // A payload of 64 bytes.  An Option of it goes through memory.
 struct Block64 final {
     std::uint64_t first = 0;
@@ -865,6 +877,18 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
 // std::optional has.
 [[gnu::used]] void option_fill_linear(fixy::Option<fixy::Linear<std::uint64_t>>& held, std::uint64_t value) noexcept {
     held.fill(fixy::mint_linear<std::uint64_t>(value));
+}
+
+// The drop door ends an Option of a linear word.  The move leaves the source
+// empty, and then the moved Option ends.
+[[gnu::used]] void option_end_linear(fixy::Option<fixy::Linear<std::uint64_t>>&& held) noexcept {
+    ::foundation::linear::drop(std::move(held));
+}
+
+// The twin of option_end_linear with a droppable payload: a word that only
+// moves takes the owning form too, and its end drops it.
+[[gnu::used]] void option_end_owned(fixy::Option<MovedWord>&& held) noexcept {
+    fixy::Option<MovedWord> const ended{std::move(held)};
 }
 
 // An empty Option of a word, and an Option that an inlined function gives,
@@ -2162,6 +2186,20 @@ struct ImmortalRaw final {
 
 [[gnu::used]] void option_fill_linear_raw(std::optional<std::uint64_t>& held, std::uint64_t value) noexcept {
     held.emplace(value);
+}
+
+// The raw end moves the optional out and empties the source, as the move of
+// an owning Option does, and drops the payload with no test.
+[[gnu::used]] void option_end_linear_raw(std::optional<std::uint64_t>&& held) noexcept {
+    std::optional<std::uint64_t> const ended{std::move(held)};
+    held.reset();
+    static_cast<void>(ended);
+}
+
+[[gnu::used]] void option_end_owned_raw(std::optional<std::uint64_t>&& held) noexcept {
+    std::optional<std::uint64_t> const ended{std::move(held)};
+    held.reset();
+    static_cast<void>(ended);
 }
 
 // The raw form of an Option of a word is a size and a flag word, which come

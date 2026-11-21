@@ -885,6 +885,20 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
+        "option_end_linear",
+        "the drop door of an Option of a linear word moves the word out and empties the source, as the raw form does.  "
+        "It adds the test of the lend count of the source and one branch to a call of the fatal exit, because a write "
+        "must not end a payload that a borrow match lends",
+        checks=("fatal",),
+    ),
+    Probe(
+        "option_end_owned",
+        "the end of an Option of a word that only moves moves the word out and empties the source, as the raw form "
+        "does.  It adds the test of the lend count of the source and one branch to a call of the fatal exit, because a "
+        "write must not end a payload that a borrow match lends",
+        checks=("fatal",),
+    ),
+    Probe(
         "option_empty_word",
         "an empty Option of a word comes back in two registers that hold zero, as a raw pair of a size and a flag "
         "word does",
