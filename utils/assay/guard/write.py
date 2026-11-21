@@ -1,6 +1,7 @@
 """guard write — write the ledger of one rule through assay.core.ledger, with the checks of its policy.
 
 usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR]... [--path PATH]...
+       guard write --rule ID --row ITEM... [--kind KIND] --reason TEXT [--root DIR]
        guard write --rule ID [ARG]...      a rule with a legacy module
 
 A rule with a module of its own: the command runs the rule and writes its
@@ -33,6 +34,15 @@ plugin with the policy count or admit.  A plugin rule whose module writes its
 ledger itself refuses it.  With --reason and no mode, each row of those paths
 that the write keeps gets the reason, and its count does not change.  A row
 that must stay then tells why, and a stale reason gets a correct one.
+
+--row names rows of the ledger by their path or their entity, and --kind
+narrows them to one kind.  The command then writes the reason of --reason
+into each named row, and it changes no value and no other row (THE REASON
+OF A ROW of assay.core.ledger).  It reads no build, so it takes no
+--build-dir, no mode and no --path, and it applies to each rule with a
+ledger, also of the policy max.  An item that names no row is refused.  This
+write corrects the reason of a row whose value holds, so no change of a
+ledger needs a hand edit.
 
 A rule of the policy none has no ledger.  Its module can write a data file
 from a build.  Then the function refresh(context) of the module writes the
@@ -108,6 +118,28 @@ def reduce_refusal(rule_id: str, root: Path, builds: Sequence[Path]) -> str:
     return ""
 
 
+def write_reasons(rule: rule_registry.Rule, root: Path, request: rule_ledger.RowReason) -> int:
+    """Write the reason of each row that the request names into the ledger of a rule (THE REASON OF A ROW).
+
+    Returns:
+        0 when the ledger is written, 1 when the request names no row or gives no reason, 2 for a rule with no ledger
+    """
+    if rule.policy == rule_registry.Policy.NONE:
+        check_report.write_line(f"guard write: the rule {rule.id} has no ledger", is_error=True)
+        return 2
+    try:
+        written = rule_ledger.reasoned(rule_ledger.read(rule, root), request)
+    except (rule_ledger.LedgerError, rows_grammar.RowsError) as problem:
+        print(f"guard write: the ledger of {rule.id} is not written: {problem}", file=sys.stderr)
+        return 1
+    changed = rule_ledger.store(written, root)
+    print(
+        f"guard write: {rule_ledger.shown_path(rule.id)} holds {len(written.base)} rows"
+        + ("" if changed else ", with no change")
+    )
+    return 0
+
+
 def main(argv: list[str]) -> int:
     """Write the ledger of the rule that the command line names.
 
@@ -133,6 +165,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--build-dir", dest="build_dirs", type=Path, action="append", default=[], metavar="DIR")
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
+    parser.add_argument("--row", dest="rows", action="append", default=[], metavar="ITEM")
+    parser.add_argument("--kind", default="", metavar="KIND")
     options = parser.parse_args(argv)
     requested = registry.rules.get(options.rule)
     is_held_write = requested is not None and requested.held_by is not None and requested.policy in JUDGED_POLICIES
@@ -141,6 +175,16 @@ def main(argv: list[str]) -> int:
         print(f"guard write: {chosen}", file=sys.stderr)
         return 2
     rule = chosen[0]
+    if options.rows or options.kind:
+        if not options.rows or options.mode is not None or options.paths or options.build_dirs:
+            check_report.write_line(
+                "guard write: --row writes only the reason of the rows that it names: give one --row ITEM or more, "
+                "--reason TEXT and at most --kind KIND, with no mode, no --path and no --build-dir",
+                is_error=True,
+            )
+            return 2
+        named_rows = rule_ledger.RowReason(tuple(options.rows), options.kind, options.reason or "")
+        return write_reasons(rule, options.root.resolve(), named_rows)
     if options.paths and (rule.engine == rule_registry.Engine.ELF or rule.policy not in PARTIAL_POLICIES):
         check_report.write_line(
             "guard write: --path applies only to a rule of the engine build, meta, tsast or plugin with "

@@ -85,7 +85,8 @@ THE WRITE
               with no row.
       raise   it also writes a count above its row.  Use it only when the
               checker changed what it reports, and give the reason in the
-              commit.
+              commit.  A call with a reason gives each row that it raises
+              that reason, and each other row keeps its reason.
       admit   it also writes a count above its row, and a row for a finding
               with no row, each with the reason of the call.
     The counts of a write are complete or partial.  The counts of a rule that
@@ -110,8 +111,17 @@ THE PATHS
     is: rows_of_paths() gives the rows that the write reads, and
     merged_paths() puts each other row back.  A write of the mode lower with
     a reason gives each row of the paths that it keeps that reason, and the
-    count of the row does not change.  This write is the one way to correct
-    the reason of a row that stays.
+    count of the row does not change.
+
+THE REASON OF A ROW
+    reasoned() gives the named rows of a ledger a new reason, and it changes
+    no value and no other row (`guard write --row ITEM --reason TEXT`).  An
+    item names each row whose path or entity is the item, and a kind narrows
+    the rows to that kind.  A row of a max ledger of a test has no path, so
+    its item is its entity.  The write reads no build and no finding, so it
+    applies to each policy with a ledger, also to a row whose value holds.
+    An item that names no row is an error, so a typing error changes nothing
+    and does not pass in silence.
 
 THE REDUCE
     The count of a key of a ledger that a build gives is the largest count of
@@ -213,6 +223,19 @@ class Entry:
     value: int | float | str
     reason: str
     line: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class RowReason:
+    """A write of the reason of named rows (THE REASON OF A ROW).
+
+    `items` names the rows by their path or their entity, `kind` narrows them to one kind or is "" for each kind, and
+    `reason` is the new reason of each named row.
+    """
+
+    items: tuple[str, ...]
+    kind: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -655,8 +678,10 @@ def write_counts(
             f"checker changed what it reports or a change moved a finding to a key with no row, or --admit with a "
             f"reason"
         )
+    raised_keys = frozenset(rises)
     written = {
-        key: Entry(key, count, base[key].reason if key in base else (reason or "")) for key, count in counts.items()
+        key: Entry(key, count, reason if reason and key in raised_keys else base[key].reason if key in base else "")
+        for key, count in counts.items()
     }
     if is_partial:
         for key, entry in base.items():
@@ -699,6 +724,35 @@ def merged_paths(
     if reason and mode == WriteMode.LOWER:
         own = {key: replace(entry, reason=reason) for key, entry in own.items()}
     return replace(written, base={**kept, **own})
+
+
+def reasoned(ledger: Ledger, request: RowReason) -> Ledger:
+    """Return the ledger with the reason of the request in each row that it names (THE REASON OF A ROW).
+
+    Raises:
+        LedgerError: If the request gives no reason, or an item names no row of the kind of the request
+
+    Complexity: linear in the rows times the items.
+    """
+    if not request.reason:
+        raise LedgerError("a write of the reason of a row gives the reason with --reason TEXT")
+
+    def is_named(key: Key, item: str) -> bool:
+        """Tell if an item names the row of a key: its path or its entity, of the kind of the request."""
+        return item in (key.path, key.entity) and (not request.kind or key.kind == request.kind)
+
+    unnamed = [item for item in request.items if not item or not any(is_named(key, item) for key in ledger.base)]
+    if unnamed:
+        of_kind = f" of the kind {request.kind}" if request.kind else ""
+        raise LedgerError(
+            f"the ledger of {ledger.rule} has no row{of_kind} whose path or entity is '{unnamed[0]}'.  Give the path "
+            f"or the entity of the row as the ledger holds it"
+        )
+    base = {
+        key: replace(entry, reason=request.reason) if any(is_named(key, item) for item in request.items) else entry
+        for key, entry in ledger.base.items()
+    }
+    return replace(ledger, base=base)
 
 
 def needed_reasons(ledger: Ledger) -> Ledger:

@@ -168,6 +168,28 @@ def record_cases(expect: testing.Expect) -> None:
             "a second write keeps the reason of a row that keeps its test",
             ledger_values(context, "step-memory")[("test", "big_test")] == (2.0, "a planted reason"),
         )
+        reason_words = ["--rule", "step-memory", "--root", str(context.root), "--row", "big_test", "--kind", "test"]
+        status, said = testing.captured(lambda: guard_write.main([*reason_words, "--reason", "a corrected reason"]))
+        expect(
+            "guard write --row writes the reason of a kept row of a max ledger with no build, and changes no value "
+            "and no other row",
+            status == 0
+            and ledger_values(context, "step-memory")
+            == {
+                ("test", "big_test"): (2.0, "a corrected reason"),
+                ("test", "gone_test"): (3.5, "a row of a test of a different build"),
+            },
+        )
+        unknown_words = ["--rule", "step-memory", "--root", str(context.root), "--row", "no_such_test"]
+        status, said = testing.captured(lambda: guard_write.main([*unknown_words, "--reason", "a reason"]))
+        expect(
+            "guard write --row refuses an item that names no row, with status 1, and the ledger stays",
+            status == 1
+            and "no_such_test" in said
+            and ledger_values(context, "step-memory")[("test", "big_test")] == (2.0, "a corrected reason"),
+        )
+        status, said = testing.captured(lambda: guard_write.main([*reason_words, "--raise", "--reason", "a reason"]))
+        expect("guard write --row refuses a mode, with status 2", status == 2)
         held_rule = rule_registry.planted_rules([rule_registry.measured_rule("planted-held", 2, "s")])["planted-held"]
         expect(
             "written() of held refuses each held rule, because no function writes its ledger",

@@ -319,6 +319,74 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     )
 
 
+def reason_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check the reason of a raised row, and the write of the reason of named rows (THE REASON OF A ROW)."""
+    count = table["count-rule"]
+    two = [finding("a.py"), finding("a.py"), finding("b.py"), finding("b.py")]
+    ledger = rule_ledger.write(count, rule_ledger.empty(count), two, mode=rule_ledger.WriteMode.ADMIT, reason="first")
+    a_key = rule_ledger.Key("a.py", "kind", "")
+    b_key = rule_ledger.Key("b.py", "kind", "")
+    raised = rule_ledger.write(
+        count, ledger, two + [finding("a.py")], mode=rule_ledger.WriteMode.RAISE, reason="a moved finding"
+    )
+    expect(
+        "a raise with a reason gives the raised row that reason, and the row that holds keeps its own",
+        raised.base[a_key].value == 3
+        and raised.base[a_key].reason == "a moved finding"
+        and raised.base[b_key].reason == "first",
+    )
+    unexplained = rule_ledger.write(count, ledger, two + [finding("a.py")], mode=rule_ledger.WriteMode.RAISE)
+    expect("a raise with no reason keeps the reason of the raised row", unexplained.base[a_key].reason == "first")
+    per_row = rule_ledger.write(
+        count,
+        raised,
+        two + [finding("a.py")] + [finding("b.py")] * 2,
+        mode=rule_ledger.WriteMode.RAISE,
+        reason="a second moved finding",
+    )
+    expect(
+        "two raises with two reasons keep the reason of each row",
+        per_row.base[a_key].reason == "a moved finding" and per_row.base[b_key].reason == "a second moved finding",
+    )
+    renamed = rule_ledger.reasoned(ledger, rule_ledger.RowReason(("b.py",), "", "a corrected reason"))
+    expect(
+        "a write of the reason of a count row changes its reason and not its count, and keeps each other row",
+        renamed.base[b_key].reason == "a corrected reason"
+        and renamed.expected() == ledger.expected()
+        and renamed.base[a_key] == ledger.base[a_key],
+    )
+    expect(
+        "an item that names no row, a kind that no named row has, and a request with no reason are refused",
+        refuses(
+            lambda: rule_ledger.reasoned(ledger, rule_ledger.RowReason(("c.py",), "", "x")), rule_ledger.LedgerError
+        )
+        and refuses(
+            lambda: rule_ledger.reasoned(ledger, rule_ledger.RowReason(("b.py",), "other", "x")),
+            rule_ledger.LedgerError,
+        )
+        and refuses(
+            lambda: rule_ledger.reasoned(ledger, rule_ledger.RowReason(("b.py",), "", "")), rule_ledger.LedgerError
+        ),
+    )
+    maximum = table["max-rule"]
+    test_key = rule_ledger.Key("", "test", "slow_test")
+    output_key = rule_ledger.Key("@build/test/slow_test", "test", "")
+    kept = replace(
+        rule_ledger.empty(maximum),
+        base={
+            test_key: rule_ledger.Entry(test_key, 3.5, "a stale reason"),
+            output_key: rule_ledger.Entry(output_key, 2.5, "a reason of an output"),
+        },
+    )
+    corrected = rule_ledger.reasoned(kept, rule_ledger.RowReason(("slow_test",), "test", "the measured cause"))
+    expect(
+        "a write of the reason of a kept row of a max ledger names a row with no path by its entity, and changes the "
+        "reason and not the value",
+        corrected.base[test_key] == rule_ledger.Entry(test_key, 3.5, "the measured cause")
+        and corrected.base[output_key] == kept.base[output_key],
+    )
+
+
 def partial_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
     """Check the write of the counts of one build: it lowers no row and removes no row (THE WRITE)."""
     count, admit = table["count-rule"], table["admit-rule"]
@@ -674,6 +742,7 @@ def main(argv: list[str]) -> int:
     policy_cases(expect, table)
     prefix_cases(expect, table)
     write_cases(expect, table)
+    reason_cases(expect, table)
     partial_cases(expect, table)
     reduce_cases(expect, table)
     admit_row_cases(expect, table)
