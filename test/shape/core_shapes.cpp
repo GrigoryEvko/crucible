@@ -33,6 +33,7 @@
 #include <foundation/alloc/HeapState.h>
 #include <foundation/alloc/Layout.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/core/CyclicCursor.h>
 #include <foundation/core/Immortal.h>
 #include <foundation/core/Seat.h>
 #include <foundation/core/WindowStack.h>
@@ -193,6 +194,15 @@ struct NetError8 final {
 // The bump of a WideMonotonic holds no compare: its type bounds the start and
 // the step, so the bump cannot wrap the count.
 [[gnu::used]] void wide_monotonic_bump(fixy::WideMonotonic<1>& counter) noexcept { counter.bump(); }
+
+// A read of a cyclic cursor holds no test of the end, and its step holds one
+// compare: the test of the wrap.
+[[gnu::used]] std::uint64_t
+cyclic_cursor_read_step(foundation::core::CyclicCursor<std::uint64_t const>& cursor) noexcept {
+    std::uint64_t const value = *cursor;
+    static_cast<void>(cursor.step());
+    return value;
+}
 
 [[gnu::used]] std::uint64_t cache_line_load(fixy::CacheLine<fixy::Atomic<std::uint64_t>> const& line) noexcept {
     return line->load_acquire();
@@ -1685,6 +1695,21 @@ struct RawColumn final {
 // The count that a WideMonotonic replaces is a plain 64-bit integer that the
 // code adds one to.
 [[gnu::used]] void wide_monotonic_bump_raw(std::uint64_t& counter) noexcept { ++counter; }
+
+// The loop that a cyclic cursor replaces: three pointers, a read, a step and
+// the wrap to the first element at the end.
+struct RawCycle {
+    std::uint64_t const* first;
+    std::uint64_t const* at;
+    std::uint64_t const* end;
+};
+
+[[gnu::used]] std::uint64_t cyclic_cursor_read_step_raw(RawCycle& cursor) noexcept {
+    std::uint64_t const value = *cursor.at;
+    ++cursor.at;
+    if (cursor.at == cursor.end) cursor.at = cursor.first;
+    return value;
+}
 
 // A CacheLine replaces a cell that the code aligns by hand, so the raw form
 // reads the cell with no CacheLine around it.

@@ -3797,6 +3797,14 @@ foundation_neg_compile_test(neg_core_window_stack_copied
 foundation_neg_compile_test(neg_core_text_view_window_member_forged
   "no declaration matches .constexpr auto foundation::core::TextView::window\\(std::size_t, std::size_t\\) const."
   ".class foundation::core::TextView. defined here")
+# A cyclic cursor comes only from its door, which refuses a cursor at the end
+# of its run, and it has no state with no run.
+foundation_neg_compile_test(neg_core_cyclic_cursor_from_an_end
+  "constexpr foundation::core::CyclicCursor<Element>::CyclicCursor\\(Element\\*, std::size_t\\) \\[with Element = long unsigned int.*\\]. is private within this context"
+  "neg_core_cyclic_cursor_from_an_end\\.cpp")
+foundation_neg_compile_test(neg_core_cyclic_cursor_default
+  "no matching function for call to .foundation::core::CyclicCursor<long unsigned int>::CyclicCursor\\(\\)."
+  "neg_core_cyclic_cursor_default\\.cpp")
 foundation_neg_compile_test(neg_core_text_view_cursor_member_forged
   "redefinition of .constexpr foundation::core::ViewCursor<const char> foundation::core::TextView::begin\\(\\) const."
   "foundation::core::TextView::begin\\(\\) const. previously defined here")

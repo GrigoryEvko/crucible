@@ -121,7 +121,6 @@ static void test_linear_match() {
     CRUCIBLE_TEST_ASSERT(kTest, engine.is_initialized());
     CRUCIBLE_TEST_ASSERT(kTest, engine.num_ops() == 3);
     CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, !engine.is_complete());
 
     // Every op but the last reports MATCH and the last reports COMPLETE,
     // which is why the final step is unrolled out of the loop.
@@ -140,12 +139,15 @@ static void test_linear_match() {
         const ReplayStep step = engine.advance(SchemaHash{102}, ShapeHash{202}, av);
         CRUCIBLE_TEST_ASSERT(kTest, step.status() == ReplayStatus::COMPLETE);
         CRUCIBLE_TEST_ASSERT(kTest, step.matched_op_index().value() == OpIndex{2});
-        CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 3);
+        // The advance that completes the region takes the cursor back to the
+        // first op, and the matched op stays the last op.
+        CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op_index().value() == OpIndex{2});
         const ::fixy::Option<::fixy::RunAddress> ptr = engine.output_ptr(0, av);
         CRUCIBLE_TEST_ASSERT(kTest, ptr == pool.slot_ptr(SlotId{2}, pv));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
+    // The next iteration starts at the first op with no reset.
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{100}, ShapeHash{200}, av).status() == ReplayStatus::MATCH);
 
     ::fixy::check::pass(kTest, "  test_linear_match: PASSED\n");
 }
@@ -242,15 +244,21 @@ static void test_reset() {
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{10}, ShapeHash{20}, av).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{11}, ShapeHash{21}, av).status() == ReplayStatus::COMPLETE);
-    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
 
+    // A reset at the first op keeps the matched op, the last op of the region.
     engine.reset(av);
-    CRUCIBLE_TEST_ASSERT(kTest, !engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op_index().value() == OpIndex{1});
+
+    // A reset in the middle of the region abandons the iteration.
+    CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{10}, ShapeHash{20}, av).status() == ReplayStatus::MATCH);
+    engine.reset(av);
     CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
 
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{10}, ShapeHash{20}, av).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{11}, ShapeHash{21}, av).status() == ReplayStatus::COMPLETE);
-    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
 
     ::fixy::check::pass(kTest, "  test_reset: PASSED\n");
 }
@@ -378,9 +386,9 @@ static void test_matched_index_after_reset() {
     for (uint32_t i = 0; i < 3; i++) {
         static_cast<void>(engine.advance(SchemaHash{500 + i}, ShapeHash{600 + i}, av));
     }
-    CRUCIBLE_FATAL_INVARIANT(engine.is_complete() && engine.ops_matched() == 3);
+    CRUCIBLE_FATAL_INVARIANT(engine.ops_matched() == 0);
     engine.reset(av);
-    CRUCIBLE_FATAL_INVARIANT(!engine.is_complete() && engine.ops_matched() == 0);
+    CRUCIBLE_FATAL_INVARIANT(engine.ops_matched() == 0);
     CRUCIBLE_FATAL_INVARIANT(engine.matched_op_index().value() == OpIndex{2});
     CRUCIBLE_FATAL_INVARIANT(engine.current_entry().schema_hash == SchemaHash{502});
     CRUCIBLE_FATAL_INVARIANT(engine.diverged_op_index_tagged().value() == OpIndex{0});
@@ -503,9 +511,10 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
     ::fixy::check::pass(kTest, "  test_diverged_step_has_no_matched_position: PASSED\n");
 }
 
-// The cursor never leaves the region: an advance after the last op, with no
-// reset, ends the process in each build before the guard compares a hash.
-static void test_advance_past_the_end_aborts(::fixy::TestRunnerCtx const& test) {
+// The cursor never leaves the region: the advance that completes the region
+// takes the cursor back to the first op, so an advance after it, with no
+// reset, guards the first op of the next iteration.
+static void test_advance_after_the_end_guards_the_first_op() {
     ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
     ::foundation::core::FixedArray<TraceEntry, 1> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{70};
@@ -521,13 +530,15 @@ static void test_advance_past_the_end_aborts(::fixy::TestRunnerCtx const& test) 
     engine.init(region, ::fixy::to(pool));
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{70}, ShapeHash{71}, av).status() == ReplayStatus::COMPLETE);
-    // A hash that differs from each op: the read of the cursor ends the
-    // process before a divergence can hide the step past the end.
-    ::fixy::check::expect_dies(
-        test, [&engine, &av] noexcept { static_cast<void>(engine.advance(SchemaHash{999}, ShapeHash{999}, av)); },
-        ::fixy::TextView{"a read through the end cursor of a View"});
+    // A hash that differs from the first op diverges at the first op.
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{999}, ShapeHash{999}, av).status() == ReplayStatus::DIVERGED);
+    CRUCIBLE_FATAL_INVARIANT(engine.diverged_op_index_tagged().value() == OpIndex{0});
+    // The hashes of the first op match it, and complete the region of one op
+    // again.
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{70}, ShapeHash{71}, av).status() == ReplayStatus::COMPLETE);
+    CRUCIBLE_FATAL_INVARIANT(engine.ops_matched() == 0);
 
-    ::fixy::check::pass(kTest, "  test_advance_past_the_end_aborts: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_advance_after_the_end_guards_the_first_op: PASSED\n");
 }
 
 // A slot id of the region past the count of the plan is a defect of the
@@ -657,15 +668,15 @@ static void test_integration_with_pool() {
     for (uint32_t i = 0; i < 512; i++)
         CRUCIBLE_TEST_ASSERT(kTest, p[i] == 0x11);
 
-    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
 
     engine.reset(av);
-    CRUCIBLE_TEST_ASSERT(kTest, !engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
     CRUCIBLE_TEST_ASSERT(kTest,
                          engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest,
                          engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av).status() == ReplayStatus::COMPLETE);
-    CRUCIBLE_TEST_ASSERT(kTest, engine.is_complete());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
 
     ::fixy::check::pass(kTest, "  test_integration_with_pool: PASSED\n");
 }
@@ -686,7 +697,7 @@ int main() {
     test_matched_index_follows_the_cursor();
     test_rewind_in_the_middle_drops_the_matched_op(test);
     test_diverged_step_has_no_matched_position(test);
-    test_advance_past_the_end_aborts(test);
+    test_advance_after_the_end_guards_the_first_op();
     test_slot_id_past_the_table_aborts_init(test);
     test_integration_with_pool();
     ::fixy::check::pass(kTest, "test_replay_engine: all tests passed\n");

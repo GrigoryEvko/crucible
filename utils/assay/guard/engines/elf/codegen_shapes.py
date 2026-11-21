@@ -473,6 +473,11 @@ PROBES: tuple[Probe, ...] = (
         "wide_monotonic_bump",
         "the bump of a WideMonotonic is the add of one to a plain 64-bit integer, with no compare",
     ),
+    Probe(
+        "cyclic_cursor_read_step",
+        "a read and a step of a CyclicCursor are the raw read, the step and the one compare of the wrap, with no test "
+        "of the end",
+    ),
     Probe("cache_line_load", "the dereference of a CacheLine gives its cell, with no instruction"),
     Probe(
         "sole_load_owned",

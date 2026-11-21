@@ -8,6 +8,7 @@
 #include <fixy/Core.h>
 #include <fixy/os/Mmap.h>
 #include <foundation/Platform.h>
+#include <foundation/core/CyclicCursor.h>
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -481,6 +482,44 @@ void test_cursor_position() {
     CRUCIBLE_FATAL_INVARIANT(empty.begin().is_at_end() && empty.begin().remaining() == 0);
 }
 
+// A cyclic cursor goes around its run: each step moves to the next element,
+// and the step from the last element goes back to the first and tells that it
+// did.  The run of a cursor in the middle of a View starts at that cursor.  A
+// run with no element ends the process at the door, in a child.
+void test_cyclic_cursor() {
+    fixy::FixedArray<std::uint64_t, 4> storage{10, 11, 12, 13};
+    fixy::View<std::uint64_t const> const words = storage.view();
+    auto cursor = ::foundation::core::CyclicCursor<std::uint64_t const>::cycle_from(words.begin());
+    CRUCIBLE_FATAL_INVARIANT(cursor.count() == 4 && cursor.position() == 0 && *cursor == 10);
+    for (std::uint64_t lap = 0; lap < 3; ++lap) {
+        for (std::uint64_t index = 0; index < 4; ++index) {
+            CRUCIBLE_FATAL_INVARIANT(*cursor == 10 + index && cursor.position() == index);
+            auto const expected =
+                index == 3 ? ::foundation::core::CycleStep::wrapped : ::foundation::core::CycleStep::inside;
+            CRUCIBLE_FATAL_INVARIANT(cursor.step() == expected);
+        }
+    }
+    CRUCIBLE_FATAL_INVARIANT(cursor.step() == ::foundation::core::CycleStep::inside && *cursor == 11);
+    cursor.rewind();
+    CRUCIBLE_FATAL_INVARIANT(cursor.position() == 0 && *cursor == 10);
+
+    auto middle = words.begin();
+    ++middle;
+    ++middle;
+    auto tail = ::foundation::core::CyclicCursor<std::uint64_t const>::cycle_from(middle);
+    CRUCIBLE_FATAL_INVARIANT(tail.count() == 2 && *tail == 12);
+    CRUCIBLE_FATAL_INVARIANT(tail.step() == ::foundation::core::CycleStep::inside && *tail == 13);
+    CRUCIBLE_FATAL_INVARIANT(tail.step() == ::foundation::core::CycleStep::wrapped && *tail == 12);
+
+    ::fixy::TestRunnerCtx const test{eff::testing::test()};
+    ::fixy::check::expect_dies(
+        test,
+        [&words] noexcept {
+            static_cast<void>(::foundation::core::CyclicCursor<std::uint64_t const>::cycle_from(words.end()));
+        },
+        ::fixy::TextView{"foundation: fatal: a cycle of a run with no element"});
+}
+
 // The position of an element of a View is the inverse of get.  An element
 // before the first one, after the last one or in a different run is not an
 // element of the View.  Two FixedArrays own the two runs.
@@ -573,6 +612,7 @@ int main() {
     test_copy_of_unequal_counts_is_an_error();
     test_cursor_at_the_end_aborts();
     test_cursor_position();
+    test_cyclic_cursor();
     test_offset_of_an_element();
     test_agrees_with_plain_model();
     return 0;

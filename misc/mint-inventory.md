@@ -234,6 +234,7 @@ that the axis does not apply to the row.
 | `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_spawn` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_spawn_on_host` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_spsc_split` | `include/fixy/concurrent/SpscEnds.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 23 |
 | `mint_swmr_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
@@ -407,4 +408,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 82 | 46 | 27 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 166 | 63 | 99 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 167 | 63 | 100 | 4 | 0 | 3 |

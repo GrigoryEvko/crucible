@@ -155,6 +155,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/CallRef.h>
+#include <foundation/core/CyclicCursor.h>
 #include <foundation/core/Immortal.h>
 #include <foundation/core/Seat.h>
 #include <foundation/diag/Catalog.h>
@@ -1048,6 +1049,9 @@ inline constexpr StatedZero kZeros[] = {
      "a borrow of a run of elements: it owns nothing and makes no claim about what the elements hold"},
     {^^::foundation::core::ViewCursor,
      "the position of a loop over a View: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::CyclicCursor,
+     "the position of a loop that goes around a run, such as the cursor of a replay: a member of its holder, and it "
+     "is never a value in a kernel signature"},
     {^^::foundation::core::Walk,
      "a lazy chain of steps over a borrowed run: it owns nothing, it lives in the expression of its chain, and it "
      "is never a value in a kernel signature"},

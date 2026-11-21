@@ -532,12 +532,10 @@ private:
             case ReplayStatus::MATCH:
                 return step;
             case ReplayStatus::COMPLETE:
+                // The advance that completes the region took the cursor back
+                // to the first op and kept the current operation, so the
+                // output and input pointers stay valid until the next advance.
                 compiled_iterations_.bump();
-                // The rewind keeps the current operation, so the output and
-                // input pointers stay valid until the next advance.  The
-                // status COMPLETE proves the cursor at the end of the region,
-                // so the rewind needs no test of the end.
-                engine_.rewind_after_complete_();
                 return step;
             case ReplayStatus::DIVERGED:
                 diverged_count_.bump();

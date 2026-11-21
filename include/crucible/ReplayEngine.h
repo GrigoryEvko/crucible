@@ -27,6 +27,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Cursor.h>
+#include <foundation/core/CyclicCursor.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -111,57 +112,16 @@ struct ReplayEngine {
     }
 
     // Rewinds to the first operation for the next iteration. A rewind at the
-    // end of the region keeps the last matched entry, so the pointers into it
-    // stay valid after the caller is told the region is complete and resets
-    // on its way out. A rewind from a different position abandons the
+    // first op keeps the last matched entry: the advance that completes the
+    // region goes back to the first op itself, so the pointers into the last
+    // op stay valid after the caller is told the region is complete and
+    // resets on its way out. A rewind from a different position abandons the
     // iteration, and no op stays matched. So the matched op is always the op
     // before the cursor, or the last op when the cursor is at the first op,
     // which is the position that matched_op_index reads.
     CRUCIBLE_INLINE void reset() {
-        if (!cursor_.is_at_end()) current_ = ::fixy::none;
+        if (cursor_.position() != 0) current_ = ::fixy::none;
         rewind_();
-    }
-
-    // The completion of the last operation is reported by this call itself.
-    // The caller resets before advancing again: the read of the cursor ends
-    // the process at the end of the region, in each build, before the guard
-    // compares a hash.  The step holds the position of the matched op, which
-    // this call computes from the cursor that it read (ReplayStep).
-    [[nodiscard]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
-        const TraceEntry& entry = *cursor_;
-
-        if (schema_hash != expected_schema_) [[unlikely]]
-            return ReplayStep{ReplayStatus::DIVERGED, OpIndex{}};
-
-        if (shape_hash != expected_shape_) [[unlikely]]
-            return ReplayStep{ReplayStatus::DIVERGED, OpIndex{}};
-
-        current_ = ::fixy::some(::fixy::erase_brand(::fixy::to(entry)));
-        // The position of the entry, before the step of the cursor.
-        const OpIndex matched{ops_matched()};
-
-        // The pointers of the slot ids and their counts end on the line after
-        // the hashes of this entry, and the caller asks for them almost
-        // immediately. Byte 64 of the entry is on that line.
-        ::fixy::prefetch_byte<::fixy::PrefetchAccess::read, 3, 64>(entry);
-
-        // The read above proved the cursor before its end, so the check of
-        // the step folds into it.
-        ++cursor_;
-
-        if (cursor_.is_at_end()) [[unlikely]]
-            return ReplayStep{ReplayStatus::COMPLETE, matched};
-
-        // The next operation's guard values, loaded here so the comparison
-        // that opens the next call reads them from this object. The load can
-        // miss, but it sits after the comparisons and overlaps whatever the
-        // caller does with the pointers it is about to ask for.  The test
-        // above proved the cursor before its end, so the check of the read
-        // folds into it.
-        const TraceEntry& next = *cursor_;
-        expected_schema_ = next.schema_hash;
-        expected_shape_ = next.shape_hash;
-        return ReplayStep{ReplayStatus::MATCH, matched};
     }
 
     // The address of the slot of one of the last matched operation's
@@ -219,16 +179,16 @@ struct ReplayEngine {
         return ::fixy::mint_tagged<op_role::Diverged>(OpIndex{ops_matched()});
     }
 
-    // The cursor and ops_ end at one place, the end of the region, so the
-    // count of ops minus the ops after the cursor is the position of the
-    // cursor.  Init bounds the count of ops by 32 bits.
-    [[nodiscard]] uint32_t ops_matched() const { return static_cast<uint32_t>(ops_.size() - cursor_.remaining()); }
+    // The position of the cursor in the region: the count of the ops of this
+    // iteration that matched.  The advance that completes the region takes
+    // the cursor back to the first op, so the position is then 0.  Init
+    // bounds the count of ops by 32 bits.
+    [[nodiscard]] uint32_t ops_matched() const { return static_cast<uint32_t>(cursor_.position()); }
 
-    [[nodiscard]] uint32_t num_ops() const { return static_cast<uint32_t>(ops_.size()); }
+    [[nodiscard]] uint32_t num_ops() const { return num_ops_; }
 
-    [[nodiscard]] bool is_complete() const { return cursor_.is_at_end(); }
     // True after an init with a region of at least one op.
-    [[nodiscard]] constexpr bool is_initialized() const { return ops_.size() > 0; }
+    [[nodiscard]] constexpr bool is_initialized() const { return num_ops_ > 0; }
 
     using ActiveView = ::fixy::ScopedView<ReplayEngine, engine_state::Active>;
 
@@ -268,8 +228,47 @@ struct ReplayEngine {
 
 private:
     // The context mints the view on paths that the gate of its Vigil
-    // already passed, so it reaches the view without a context.
+    // already passed, so it reaches the view without a context.  It also
+    // calls the advance with no view, only in its compiled mode, so the
+    // engine is initialized there.
     friend struct CrucibleContext;
+
+    // The match of the op at the cursor.  The cursor goes around the ops of
+    // the region (CyclicCursor), so the read needs no test, and the step that
+    // passes the last op takes the cursor back to the first op and tells the
+    // completion of the region.  The step holds the position of the matched
+    // op, which this call computes from the cursor that it read (ReplayStep).
+    // Only an initialized engine advances: the public advance takes the view
+    // of an active engine, and the context calls this one in its compiled
+    // mode only.
+    [[nodiscard]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
+        const TraceEntry& entry = *cursor_;
+
+        if (schema_hash != expected_schema_) [[unlikely]]
+            return ReplayStep{ReplayStatus::DIVERGED, OpIndex{}};
+
+        if (shape_hash != expected_shape_) [[unlikely]]
+            return ReplayStep{ReplayStatus::DIVERGED, OpIndex{}};
+
+        current_ = ::fixy::some(::fixy::erase_brand(::fixy::to(entry)));
+        // The position of the entry, before the step of the cursor.
+        const OpIndex matched{ops_matched()};
+
+        // The pointers of the slot ids and their counts end on the line after
+        // the hashes of this entry, and the caller asks for them almost
+        // immediately. Byte 64 of the entry is on that line.
+        ::fixy::prefetch_byte<::fixy::PrefetchAccess::read, 3, 64>(entry);
+
+        // The guard values of the next op, or of the first op after the last
+        // one, loaded here so the comparison that opens the next call reads
+        // them from this object.  The load can miss, but it sits after the
+        // comparisons and overlaps whatever the caller does with the pointers
+        // it is about to ask for.
+        const ::foundation::core::CycleStep stepped = cursor_.step();
+        load_guard_();
+        return ReplayStep{
+            stepped == ::foundation::core::CycleStep::wrapped ? ReplayStatus::COMPLETE : ReplayStatus::MATCH, matched};
+    }
 
     // The body of init.  It is no template, so the callers of each brand
     // share one copy of it.
@@ -278,26 +277,26 @@ private:
         // A region counts its ops in 32 bits, so each position below fits the
         // word of an OpIndex.  num_ops() of the region checks that bound.
         const uint32_t op_count = region.num_ops();
-        ops_ = region.ops;
-        cursor_ = ops_.begin();
+        num_ops_ = op_count;
+        // The cursor goes around the ops of the region.  An empty region keeps
+        // the run of no region, and the engine then stays uninitialized.  The
+        // door of the cyclic cursor refuses an empty run, and the test of the
+        // count above it folds that check.
+        cursor_ = op_count == 0 ? no_region_cursor_()
+                                : ::foundation::core::CyclicCursor<const TraceEntry>::cycle_from(region.ops.begin());
         current_ = ::fixy::none;
         // The precondition above already established what minting this view
         // checks.  An initialized pool holds at least one slot.
         const auto pool_view = pool.initialized_view_();
         slot_table_ = pool.table(pool_view);
-        check_slot_ids_(ops_, pool.num_slots());
+        check_slot_ids_(region.ops, pool.num_slots());
         // Load the first operation's guard values, so the first advance finds
         // them here like every later one does.
-        expected_schema_ = SchemaHash{};
-        expected_shape_ = ShapeHash{};
-        load_first_guard_();
+        load_guard_();
 
         // A contract predicate that reads a member through `this` is skipped
         // when the compiler folds the body at compile time, so every such
-        // check in this file runs from the body rather than a clause. These
-        // fold trivially true, which is exactly why they need that.
-        CRUCIBLE_POST(0, cursor_ == ops_.begin());
-        CRUCIBLE_POST(0, num_ops() == op_count);
+        // check in this file runs from the body rather than a clause.
         CRUCIBLE_POST(0, slot_table_.size() == pool.num_slots());
     }
 
@@ -312,12 +311,6 @@ private:
         CRUCIBLE_PRE(is_initialized());
         return ::fixy::erase_brand(::fixy::mint_view<engine_state::Active>(*this));
     }
-
-    // The rewind of the context after an advance that gave COMPLETE.  That
-    // advance left the cursor at the end of the region, so the rewind keeps
-    // the last matched op, as reset does there, with no test of the end.
-    // CrucibleContext::advance_ calls it only in its case of COMPLETE.
-    CRUCIBLE_INLINE void rewind_after_complete_() { rewind_(); }
 
     // The last matched op.  The engine has none only before the first advance
     // returns MATCH, which is a mistake of the order of the calls of the
@@ -338,19 +331,26 @@ private:
     // position after the rewinds (ops_matched), so no check of the
     // assignment runs here.
     CRUCIBLE_INLINE void rewind_() {
-        cursor_ = ops_.begin();
-        load_first_guard_();
+        cursor_.rewind();
+        load_guard_();
     }
 
-    // The guard values of the op at the cursor, or no change at the end of
-    // the region.  The test proves the cursor before its end, so the check
-    // of the read folds into it.
-    CRUCIBLE_INLINE void load_first_guard_() {
-        if (cursor_.is_at_end()) [[unlikely]]
-            return;
-        const TraceEntry& first = *cursor_;
-        expected_schema_ = first.schema_hash;
-        expected_shape_ = first.shape_hash;
+    // The guard values of the op at the cursor.  The cursor is never at the
+    // end of its run, so the read has no test.
+    CRUCIBLE_INLINE void load_guard_() {
+        const TraceEntry& at = *cursor_;
+        expected_schema_ = at.schema_hash;
+        expected_shape_ = at.shape_hash;
+    }
+
+    // The run of an engine with no region: one entry that no advance reads,
+    // because only an initialized engine advances.  Its cursor stands in for
+    // the cursor of a region before an init and after an init of an empty
+    // region.
+    static constexpr ::fixy::FixedArray<TraceEntry, 1> kNoRegionRun{};
+
+    [[nodiscard]] static constexpr ::foundation::core::CyclicCursor<const TraceEntry> no_region_cursor_() noexcept {
+        return ::foundation::core::CyclicCursor<const TraceEntry>::cycle_from(kNoRegionRun.view().begin());
     }
 
     // The address of the slot sid, or no address for the id with no slot and
@@ -393,20 +393,20 @@ private:
     using SlotTable = ::fixy::View<const ::fixy::Option<::fixy::RunAddress>>;
 
     // Ordered so that an advance reads and writes them front to back.  The
-    // members that each operation reads take bytes 0 to 56: the guard
+    // members that each operation reads take bytes 0 to 63: the guard
     // values, the cursor, the matched op and the slot table.  The context
     // puts the engine at the start of a cache line, so they share one line.
-    // The View of the ops, which only the rewind and the position queries
-    // read, comes last and ends on the next line, beside the mode of the
-    // context that each dispatch reads too.  The check file of this header
-    // pins the size.
+    // The count of the ops, which only the position queries read, comes last
+    // on the next line, beside the mode of the context that each dispatch
+    // reads too.  The check file of this header pins the size.
     SchemaHash expected_schema_{};
     ShapeHash expected_shape_{};
-    // Where the next operation is read, and the end of the region.
-    ::foundation::core::ViewCursor<const TraceEntry> cursor_ = ::fixy::View<const TraceEntry>{}.begin();
+    // Where the next operation is read: its first op, its position and its end.
+    ::foundation::core::CyclicCursor<const TraceEntry> cursor_ = no_region_cursor_();
     ::fixy::Option<::fixy::Ref<const TraceEntry>> current_{};  // the last operation that matched
     SlotTable slot_table_{};
-    ::fixy::View<const TraceEntry> ops_{};  // the region, for rewinding and for the positions
+    uint32_t num_ops_ = 0;  // the count of the ops of the region, 0 before an init
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad_{};
 };
 
 }  // namespace crucible
