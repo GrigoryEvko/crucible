@@ -234,7 +234,7 @@ void test_agrees_with_plain_model() {
     for (int trial = 0; trial < 64; ++trial) {
         arena.with_epoch([&]() noexcept {
             ::foundation::core::FixedArray<View<Wide>, 32> arrays{};
-            for (auto [position, slot] : arrays.enumerate()) {
+            for (auto const position : arrays.indices()) {
                 std::size_t const count = 1 + stream.below(40);
                 std::uint64_t const fill = position.raw() + 1;
                 if (stream.below(2) == 0) {
@@ -242,8 +242,10 @@ void test_agrees_with_plain_model() {
                         arena.array<std::uint32_t>(::foundation::effects::testing::test().alloc, 1, 0);
                     CRUCIBLE_FATAL_INVARIANT(first_address(odd).is_aligned<alignof(std::uint32_t)>());
                 }
-                *slot = arena.array(::foundation::effects::testing::test().alloc, count, Wide{.first = fill});
-                CRUCIBLE_FATAL_INVARIANT(first_address(*slot).is_aligned<64>());
+                View<Wide> const lines =
+                    arena.array(::foundation::effects::testing::test().alloc, count, Wide{.first = fill});
+                arrays.with_element(position, [lines](View<Wide>& slot) noexcept { slot = lines; });
+                CRUCIBLE_FATAL_INVARIANT(first_address(arrays.at(position)).is_aligned<64>());
             }
             for (auto [position, slot] : arrays.enumerate()) {
                 for (Wide const& line : *slot) {

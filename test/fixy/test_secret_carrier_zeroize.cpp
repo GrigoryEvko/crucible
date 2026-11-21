@@ -50,11 +50,13 @@ struct[[= ::fixy::session::constant_time_value{}]] AuthTag {
 template <class Bytes>
 [[nodiscard]] Bytes pattern() noexcept {
     Bytes value{};
-    std::size_t position = 0;
-    for (std::byte& byte : value.bytes) {
-        byte = static_cast<std::byte>(0xA0u + position);
-        ++position;
-    }
+    value.bytes.with_mut([](auto run) noexcept {
+        std::size_t position = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(0xA0u + position);
+            ++position;
+        }
+    });
     return value;
 }
 

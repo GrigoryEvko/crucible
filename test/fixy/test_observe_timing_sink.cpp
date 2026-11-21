@@ -73,11 +73,11 @@ void test_a_kernel_writes_and_a_test_reads(TestRunnerCtx const& test) {
     os::FpScope<core::kFpModeIeee> const scope = os::mint_fp_scope<core::kFpModeIeee>();
     ::fixy::Kernel<KernelBrand, core::kFpModeIeee> const ctx = ::fixy::mint_kernel_context<KernelBrand>(scope);
     ::fixy::FixedArray<std::uint64_t, 4> out{};
-    ::fixy::run_kernel(ctx, timed_kernel, sink, out.view());
+    out.with_mut([&ctx, &sink](auto run) noexcept { ::fixy::run_kernel(ctx, timed_kernel, sink, run.view()); });
     CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kMarkSlot) != 0);
     CRUCIBLE_TEST_ASSERT(test, out.at(::fixy::index<3>()) == 121u);
     std::uint64_t const first_span = sink.read(nondet, kSpanSlot);
-    ::fixy::run_kernel(ctx, timed_kernel, sink, out.view());
+    out.with_mut([&ctx, &sink](auto run) noexcept { ::fixy::run_kernel(ctx, timed_kernel, sink, run.view()); });
     CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kSpanSlot) >= first_span);
     ::fixy::check::pass(test, "a kernel marks and spans a sink, and a test context reads it with its tag\n");
 }

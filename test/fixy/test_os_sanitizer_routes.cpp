@@ -155,7 +155,10 @@ constexpr std::size_t kOpenTries = 64;
             NullFile const null = open_null(thread_ctx, devices);
             first_number = number_of(null);
             foundation::core::FixedArray<std::byte, 8> bytes{};
-            has_read.store_release(fs::read_full(thread_ctx, null.ref(), bytes.view()).is_ok());
+            bool const is_read = bytes.with_mut([&thread_ctx, &null](auto run) noexcept {
+                return fs::read_full(thread_ctx, null.ref(), run.view()).is_ok();
+            });
+            has_read.store_release(is_read);
         }
         closed.publish_relaxed(static_cast<std::uint64_t>(first_number) + 1U);
     };

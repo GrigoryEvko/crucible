@@ -155,7 +155,7 @@ struct Lane {
     FixedArray<Sum, kSlots> sums;
     std::array<Oracle, kSlots> oracles;
 
-    [[nodiscard]] Sum& sum(std::size_t raw) noexcept { return sums.at(slot_at(raw)); }
+    [[nodiscard]] Sum const& sum(std::size_t raw) const noexcept { return sums.at(slot_at(raw)); }
 
     // The state of each pair agrees after each step.
     void expect_agree() noexcept {
@@ -170,67 +170,73 @@ void run_option_sequence(std::uint64_t seed) {
     Lane<Maybe, MaybeOracle> lane{};
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 9);
-        Maybe& target = lane.sum(draw.target);
-        MaybeOracle& oracle = lane.oracles.at(draw.target);
-        std::uint64_t const fallback = 100 + draw.value;
-        switch (draw.operation) {
-            case 0:
-                target = make_maybe(draw.flag, draw.value);
-                oracle = draw.flag ? MaybeOracle{draw.value} : MaybeOracle{};
-                break;
-            case 1:
-                target = lane.sum(draw.source);
-                oracle = lane.oracles.at(draw.source);
-                break;
-            case 2:
-                target = std::move(lane.sum(draw.source));
-                oracle = std::move(lane.oracles.at(draw.source));
-                break;
-            case 3:
-                target = none;
-                oracle = std::nullopt;
-                break;
-            case 4:
-                CRUCIBLE_FATAL_INVARIANT((target == lane.sum(draw.source)) == (oracle == lane.oracles.at(draw.source)));
-                CRUCIBLE_FATAL_INVARIANT((target != lane.sum(draw.source)) == (oracle != lane.oracles.at(draw.source)));
-                break;
-            case 5: {
-                Maybe taken = target;
-                CRUCIBLE_FATAL_INVARIANT(std::move(taken).value_or(fallback) == oracle.value_or(fallback));
-                CRUCIBLE_FATAL_INVARIANT(taken.is_none());
-                break;
-            }
-            case 6: {
-                int turns = 0;
-                for (std::uint64_t const& value : target) {
-                    CRUCIBLE_FATAL_INVARIANT(oracle.has_value() && value == *oracle);
-                    ++turns;
-                }
-                CRUCIBLE_FATAL_INVARIANT(turns == (oracle.has_value() ? 1 : 0));
-                break;
-            }
-            case 7: {
-                Maybe taken = target;
-                Outcome const converted =
-                    std::move(taken)
-                        .ok_or(Refusal::gone)
-                        .match(
-                            [](std::uint64_t value) noexcept -> Outcome { return static_cast<std::uint32_t>(value); },
-                            [](Refusal refusal) noexcept -> Outcome { return err(refusal); });
-                OutcomeOracle const expected_outcome = oracle.has_value()
-                                                         ? OutcomeOracle{static_cast<std::uint32_t>(*oracle)}
-                                                         : OutcomeOracle{std::unexpect, Refusal::gone};
-                CRUCIBLE_FATAL_INVARIANT(state_of(converted) == oracle_state(expected_outcome));
-                CRUCIBLE_FATAL_INVARIANT(taken.is_none());
-                break;
-            }
-            default:
-                if (oracle.has_value()) {
+        lane.sums.with_mut([&lane, draw](auto run) noexcept {
+            auto const sums = run.view();
+            Maybe& target = sums.at(slot_at(draw.target));
+            MaybeOracle& oracle = lane.oracles.at(draw.target);
+            std::uint64_t const fallback = 100 + draw.value;
+            switch (draw.operation) {
+                case 0:
+                    target = make_maybe(draw.flag, draw.value);
+                    oracle = draw.flag ? MaybeOracle{draw.value} : MaybeOracle{};
+                    break;
+                case 1:
+                    target = sums.at(slot_at(draw.source));
+                    oracle = lane.oracles.at(draw.source);
+                    break;
+                case 2:
+                    target = std::move(sums.at(slot_at(draw.source)));
+                    oracle = std::move(lane.oracles.at(draw.source));
+                    break;
+                case 3:
+                    target = none;
+                    oracle = std::nullopt;
+                    break;
+                case 4:
+                    CRUCIBLE_FATAL_INVARIANT((target == sums.at(slot_at(draw.source)))
+                                             == (oracle == lane.oracles.at(draw.source)));
+                    CRUCIBLE_FATAL_INVARIANT((target != sums.at(slot_at(draw.source)))
+                                             == (oracle != lane.oracles.at(draw.source)));
+                    break;
+                case 5: {
                     Maybe taken = target;
-                    CRUCIBLE_FATAL_INVARIANT(std::move(taken).expect("the oracle holds a value") == *oracle);
+                    CRUCIBLE_FATAL_INVARIANT(std::move(taken).value_or(fallback) == oracle.value_or(fallback));
+                    CRUCIBLE_FATAL_INVARIANT(taken.is_none());
+                    break;
                 }
-                break;
-        }
+                case 6: {
+                    int turns = 0;
+                    for (std::uint64_t const& value : target) {
+                        CRUCIBLE_FATAL_INVARIANT(oracle.has_value() && value == *oracle);
+                        ++turns;
+                    }
+                    CRUCIBLE_FATAL_INVARIANT(turns == (oracle.has_value() ? 1 : 0));
+                    break;
+                }
+                case 7: {
+                    Maybe taken = target;
+                    Outcome const converted = std::move(taken)
+                                                  .ok_or(Refusal::gone)
+                                                  .match(
+                                                      [](std::uint64_t value) noexcept -> Outcome {
+                                                          return static_cast<std::uint32_t>(value);
+                                                      },
+                                                      [](Refusal refusal) noexcept -> Outcome { return err(refusal); });
+                    OutcomeOracle const expected_outcome = oracle.has_value()
+                                                             ? OutcomeOracle{static_cast<std::uint32_t>(*oracle)}
+                                                             : OutcomeOracle{std::unexpect, Refusal::gone};
+                    CRUCIBLE_FATAL_INVARIANT(state_of(converted) == oracle_state(expected_outcome));
+                    CRUCIBLE_FATAL_INVARIANT(taken.is_none());
+                    break;
+                }
+                default:
+                    if (oracle.has_value()) {
+                        Maybe taken = target;
+                        CRUCIBLE_FATAL_INVARIANT(std::move(taken).expect("the oracle holds a value") == *oracle);
+                    }
+                    break;
+            }
+        });
         lane.expect_agree();
     }
 }
@@ -243,49 +249,53 @@ void run_result_sequence(std::uint64_t seed) {
     };
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 7);
-        Outcome& target = lane.sum(draw.target);
-        OutcomeOracle& oracle = lane.oracles.at(draw.target);
-        Refusal const refusal = static_cast<Refusal>(draw.which);
-        std::uint32_t const fallback = 100 + draw.value;
-        switch (draw.operation) {
-            case 0:
-                target = make_outcome(draw.flag, draw.value, refusal);
-                oracle = draw.flag ? OutcomeOracle{draw.value} : OutcomeOracle{std::unexpect, refusal};
-                break;
-            case 1:
-                target = lane.sum(draw.source);
-                oracle = lane.oracles.at(draw.source);
-                break;
-            case 2:
-                target = std::move(lane.sum(draw.source));
-                oracle = std::move(lane.oracles.at(draw.source));
-                break;
-            case 3:
-                CRUCIBLE_FATAL_INVARIANT((target == lane.sum(draw.source)) == (oracle == lane.oracles.at(draw.source)));
-                break;
-            case 4: {
-                Outcome taken = target;
-                MaybeOracle const value_oracle = oracle.has_value() ? MaybeOracle{*oracle} : MaybeOracle{};
-                Option<std::uint32_t> const value = std::move(taken).ok();
-                CRUCIBLE_FATAL_INVARIANT(value.is_some() == value_oracle.has_value());
-                CRUCIBLE_FATAL_INVARIANT(std::move(Option<std::uint32_t>{value}).value_or(fallback)
-                                         == value_oracle.value_or(fallback));
-                break;
-            }
-            case 5: {
-                Option<Refusal> const error = target.err();
-                CRUCIBLE_FATAL_INVARIANT(error.is_some() == !oracle.has_value());
-                for (Refusal const& seen : error) {
-                    CRUCIBLE_FATAL_INVARIANT(seen == oracle.error());
+        lane.sums.with_mut([&lane, draw](auto run) noexcept {
+            auto const sums = run.view();
+            Outcome& target = sums.at(slot_at(draw.target));
+            OutcomeOracle& oracle = lane.oracles.at(draw.target);
+            Refusal const refusal = static_cast<Refusal>(draw.which);
+            std::uint32_t const fallback = 100 + draw.value;
+            switch (draw.operation) {
+                case 0:
+                    target = make_outcome(draw.flag, draw.value, refusal);
+                    oracle = draw.flag ? OutcomeOracle{draw.value} : OutcomeOracle{std::unexpect, refusal};
+                    break;
+                case 1:
+                    target = sums.at(slot_at(draw.source));
+                    oracle = lane.oracles.at(draw.source);
+                    break;
+                case 2:
+                    target = std::move(sums.at(slot_at(draw.source)));
+                    oracle = std::move(lane.oracles.at(draw.source));
+                    break;
+                case 3:
+                    CRUCIBLE_FATAL_INVARIANT((target == sums.at(slot_at(draw.source)))
+                                             == (oracle == lane.oracles.at(draw.source)));
+                    break;
+                case 4: {
+                    Outcome taken = target;
+                    MaybeOracle const value_oracle = oracle.has_value() ? MaybeOracle{*oracle} : MaybeOracle{};
+                    Option<std::uint32_t> const value = std::move(taken).ok();
+                    CRUCIBLE_FATAL_INVARIANT(value.is_some() == value_oracle.has_value());
+                    CRUCIBLE_FATAL_INVARIANT(std::move(Option<std::uint32_t>{value}).value_or(fallback)
+                                             == value_oracle.value_or(fallback));
+                    break;
                 }
-                break;
+                case 5: {
+                    Option<Refusal> const error = target.err();
+                    CRUCIBLE_FATAL_INVARIANT(error.is_some() == !oracle.has_value());
+                    for (Refusal const& seen : error) {
+                        CRUCIBLE_FATAL_INVARIANT(seen == oracle.error());
+                    }
+                    break;
+                }
+                default: {
+                    Outcome taken = target;
+                    CRUCIBLE_FATAL_INVARIANT(std::move(taken).value_or(fallback) == oracle.value_or(fallback));
+                    break;
+                }
             }
-            default: {
-                Outcome taken = target;
-                CRUCIBLE_FATAL_INVARIANT(std::move(taken).value_or(fallback) == oracle.value_or(fallback));
-                break;
-            }
-        }
+        });
         lane.expect_agree();
     }
 }
@@ -298,43 +308,49 @@ void run_one_of_sequence(std::uint64_t seed) {
     };
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 6);
-        Reading& target = lane.sum(draw.target);
-        ReadingOracle& oracle = lane.oracles.at(draw.target);
-        switch (draw.operation) {
-            case 0:
-                target = make_reading(draw.which, draw.value);
-                if (draw.which == 0) {
-                    oracle = draw.value;
-                } else if (draw.which == 1) {
-                    oracle = static_cast<Refusal>(draw.value % 3u);
-                } else {
-                    oracle = static_cast<std::uint16_t>(draw.value);
+        lane.sums.with_mut([&lane, draw](auto run) noexcept {
+            auto const sums = run.view();
+            Reading& target = sums.at(slot_at(draw.target));
+            ReadingOracle& oracle = lane.oracles.at(draw.target);
+            switch (draw.operation) {
+                case 0:
+                    target = make_reading(draw.which, draw.value);
+                    if (draw.which == 0) {
+                        oracle = draw.value;
+                    } else if (draw.which == 1) {
+                        oracle = static_cast<Refusal>(draw.value % 3u);
+                    } else {
+                        oracle = static_cast<std::uint16_t>(draw.value);
+                    }
+                    break;
+                case 1:
+                    target = sums.at(slot_at(draw.source));
+                    oracle = lane.oracles.at(draw.source);
+                    break;
+                case 2:
+                    target = std::move(sums.at(slot_at(draw.source)));
+                    oracle = std::move(lane.oracles.at(draw.source));
+                    break;
+                case 3:
+                    CRUCIBLE_FATAL_INVARIANT((target == sums.at(slot_at(draw.source)))
+                                             == (oracle == lane.oracles.at(draw.source)));
+                    break;
+                case 4:
+                    CRUCIBLE_FATAL_INVARIANT(target.is<std::uint32_t>()
+                                             == std::holds_alternative<std::uint32_t>(oracle));
+                    CRUCIBLE_FATAL_INVARIANT(target.is<Refusal>() == std::holds_alternative<Refusal>(oracle));
+                    CRUCIBLE_FATAL_INVARIANT(target.is<std::uint16_t>()
+                                             == std::holds_alternative<std::uint16_t>(oracle));
+                    break;
+                default: {
+                    std::uint32_t const* const oracle_word = std::get_if<std::uint32_t>(&oracle);
+                    std::uint32_t const word = target.get<std::uint32_t>().match(
+                        [](auto held) noexcept { return *held; }, [] noexcept { return std::uint32_t{0xFFFFFFFFu}; });
+                    CRUCIBLE_FATAL_INVARIANT(word == (oracle_word != nullptr ? *oracle_word : 0xFFFFFFFFu));
+                    break;
                 }
-                break;
-            case 1:
-                target = lane.sum(draw.source);
-                oracle = lane.oracles.at(draw.source);
-                break;
-            case 2:
-                target = std::move(lane.sum(draw.source));
-                oracle = std::move(lane.oracles.at(draw.source));
-                break;
-            case 3:
-                CRUCIBLE_FATAL_INVARIANT((target == lane.sum(draw.source)) == (oracle == lane.oracles.at(draw.source)));
-                break;
-            case 4:
-                CRUCIBLE_FATAL_INVARIANT(target.is<std::uint32_t>() == std::holds_alternative<std::uint32_t>(oracle));
-                CRUCIBLE_FATAL_INVARIANT(target.is<Refusal>() == std::holds_alternative<Refusal>(oracle));
-                CRUCIBLE_FATAL_INVARIANT(target.is<std::uint16_t>() == std::holds_alternative<std::uint16_t>(oracle));
-                break;
-            default: {
-                std::uint32_t const* const oracle_word = std::get_if<std::uint32_t>(&oracle);
-                std::uint32_t const word = target.get<std::uint32_t>().match(
-                    [](auto held) noexcept { return *held; }, [] noexcept { return std::uint32_t{0xFFFFFFFFu}; });
-                CRUCIBLE_FATAL_INVARIANT(word == (oracle_word != nullptr ? *oracle_word : 0xFFFFFFFFu));
-                break;
             }
-        }
+        });
         lane.expect_agree();
     }
 }

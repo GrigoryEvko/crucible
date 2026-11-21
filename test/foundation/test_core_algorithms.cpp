@@ -235,9 +235,11 @@ void test_view_scans_agree_with_std() {
     FixedArray<std::uint32_t, 64> run;
     auto const is_small = [](std::uint32_t value) noexcept { return value < 2; };
     for (int trial = 0; trial < 2048; ++trial) {
-        for (std::uint32_t& value : run) {
-            value = static_cast<std::uint32_t>(stream.below(8));
-        }
+        run.with_mut([&stream](auto elements) noexcept {
+            for (std::uint32_t& value : elements) {
+                value = static_cast<std::uint32_t>(stream.below(8));
+            }
+        });
         std::size_t const size = stream.below(65);
         auto const window = run.view().window(0, size).expect("the size is at most 64");
         CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the std algorithms are the model of the scans")

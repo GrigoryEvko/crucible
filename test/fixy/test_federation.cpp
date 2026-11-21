@@ -37,11 +37,13 @@ using TestPolicy = fed::policy::admit_orgs<FederationTestOrg>;
 
 [[nodiscard]] constexpr SipKeyBytes test_key(std::uint8_t first) noexcept {
     SipKeyBytes key{};
-    std::uint8_t next = first;
-    for (std::byte& byte : key) {
-        byte = static_cast<std::byte>(next);
-        ++next;
-    }
+    key.with_mut([first](auto run) noexcept {
+        std::uint8_t next = first;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(next);
+            ++next;
+        }
+    });
     return key;
 }
 

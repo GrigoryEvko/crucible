@@ -74,11 +74,13 @@ template <class Owner>
 // relocation in a segment with no write access.
 [[nodiscard]] consteval core::FixedArray<std::uint64_t, 4096> make_read_only_words() noexcept {
     core::FixedArray<std::uint64_t, 4096> words{};
-    std::uint64_t value = 1;
-    for (std::uint64_t& word : words) {
-        word = value;
-        ++value;
-    }
+    words.with_mut([](auto run) noexcept {
+        std::uint64_t value = 1;
+        for (std::uint64_t& word : run) {
+            word = value;
+            ++value;
+        }
+    });
     return words;
 }
 

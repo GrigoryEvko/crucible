@@ -104,7 +104,10 @@ template <typename T>
         return answered(name, "Fdatasync");
     }
     if (!refuses_with(fs::sync<fs::sync_op::Fsync>(ctx, source.ref()), Errno::ebadf)) return answered(name, "Fsync");
-    if (!refuses_with(fs::read_full(ctx, source.ref(), bytes.view()), Errno::ebadf)) {
+    bool const refuses_read = bytes.with_mut([&ctx, &source](auto run) noexcept {
+        return refuses_with(fs::read_full(ctx, source.ref(), run.view()), Errno::ebadf);
+    });
+    if (!refuses_read) {
         return answered(name, "read_full");
     }
     if (!refuses_with(fs::write_full(ctx, source.ref(), sent), Errno::ebadf)) return answered(name, "write_full");
@@ -140,7 +143,10 @@ template <typename T>
     if (!refuses_with(fixy::net::send_bytes(ctx, source.ref(), sent), Errno::ebadf)) {
         return answered(name, "send_bytes");
     }
-    if (!refuses_with(fixy::net::receive_bytes(ctx, source.ref(), bytes.view()), Errno::ebadf)) {
+    bool const refuses_receive = bytes.with_mut([&ctx, &source](auto run) noexcept {
+        return refuses_with(fixy::net::receive_bytes(ctx, source.ref(), run.view()), Errno::ebadf);
+    });
+    if (!refuses_receive) {
         return answered(name, "receive_bytes");
     }
     if (!refuses_with(fixy::net::bind_netlink(ctx, source.ref()), Errno::ebadf)) {

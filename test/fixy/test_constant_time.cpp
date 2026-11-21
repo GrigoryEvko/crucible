@@ -98,8 +98,9 @@ int check_eq_finds_every_difference_position() {
     ::fixy::FixedArray<std::byte, len> a{};
     ::fixy::FixedArray<std::byte, len> b{};
     for (::fixy::Index<len> const i : a.indices()) {
-        a.at(i) = static_cast<std::byte>(i.raw());
-        b.at(i) = static_cast<std::byte>(i.raw());
+        std::byte const value = static_cast<std::byte>(i.raw());
+        a.with_element(i, [value](std::byte& held) noexcept { held = value; });
+        b.with_element(i, [value](std::byte& held) noexcept { held = value; });
     }
     ::fixy::FixedArray<std::byte, len> const& left = a;
     ::fixy::FixedArray<std::byte, len> const& right = b;
@@ -109,10 +110,11 @@ int check_eq_finds_every_difference_position() {
 
     for (::fixy::Index<len> const pos : b.indices()) {
         const std::byte saved = b.at(pos);
-        b.at(pos) = static_cast<std::byte>(std::to_integer<unsigned>(saved) ^ 0xFFu);
+        std::byte const flipped = static_cast<std::byte>(std::to_integer<unsigned>(saved) ^ 0xFFu);
+        b.with_element(pos, [flipped](std::byte& held) noexcept { held = flipped; });
         if (ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 11;
         if (ct::eq(left.view(), right.view())) return 14;
-        b.at(pos) = saved;
+        b.with_element(pos, [saved](std::byte& held) noexcept { held = saved; });
         if (!ct::eq(ViewAny{left.view()}, ViewAny{right.view()})) return 12;
         if (!ct::eq(left.view(), right.view())) return 15;
     }

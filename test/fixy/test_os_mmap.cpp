@@ -222,7 +222,8 @@ template <class Brand>
     constexpr std::size_t kWords = kPageBytes / sizeof(std::uint64_t);
     fixy::FixedArray<std::uint64_t, kWords> words{};
     for (fixy::Index<kWords> const index : words.indices()) {
-        words.at(index) = (index.raw() + 1) * 0x9E3779B97F4A7C15ULL;
+        std::uint64_t const word = (index.raw() + 1) * 0x9E3779B97F4A7C15ULL;
+        words.with_element(index, [word](std::uint64_t& held) noexcept { held = word; });
     }
     if (fixy::fs::write_full(ctx, file.ref(), fixy::bytes(words)).is_err()) {
         fixy::report(fixy::Sink::Err, "the write of the words into the file failed\n");

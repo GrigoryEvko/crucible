@@ -40,16 +40,18 @@ using Run = FixedArray<std::uint64_t, run_size>;
 
 void test_scope_reads_each_element() {
     FixedArray<int, 6> values{1, 2, 3, 4, 5, 6};
-    View<int> const tail = values.view().window(2, 4).expect("four elements fit");
-    int const total = mint_branded_scope(tail, [](auto view) noexcept {
-        int sum = 0;
-        for (auto const index : view.indices()) {
-            sum += view.at(index);
-        }
-        for (auto const [index, element] : view.enumerate()) {
-            *element *= static_cast<int>(index.raw()) + 1;
-        }
-        return view.index(4).is_none() ? sum : -1;
+    int const total = values.with_mut([](auto run) noexcept {
+        View<int> const tail = run.view().window(2, 4).expect("four elements fit");
+        return mint_branded_scope(tail, [](auto view) noexcept {
+            int sum = 0;
+            for (auto const index : view.indices()) {
+                sum += view.at(index);
+            }
+            for (auto const [index, element] : view.enumerate()) {
+                *element *= static_cast<int>(index.raw()) + 1;
+            }
+            return view.index(4).is_none() ? sum : -1;
+        });
     });
     CRUCIBLE_TEST_ASSERT(kTest, total == 3 + 4 + 5 + 6);
     CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<int, 6>{1, 2, 3, 8, 15, 24}));
@@ -74,17 +76,19 @@ void test_parallel_view_shares_the_index() {
     FixedArray<int, 4> keys{1, 2, 3, 4};
     FixedArray<std::uint64_t, 4> values{10, 20, 30, 40};
     FixedArray<std::uint64_t, 3> short_values{7, 8, 9};
-    std::uint64_t const total = mint_branded_scope(keys.view(), [&values, &short_values](auto view) noexcept {
-        if (view.parallel(short_values.view()).is_some()) {
-            return std::uint64_t{0};
-        }
-        auto const column = view.parallel(values.view()).expect("the two arrays have the same count");
-        std::uint64_t sum = 0;
-        for (auto const index : view.indices()) {
-            sum += static_cast<std::uint64_t>(view.at(index)) * column.at(index);
-            column.at(index) += 1;
-        }
-        return sum;
+    std::uint64_t const total = values.with_mut([&keys, &short_values](auto run) noexcept {
+        return mint_branded_scope(keys.view(), [column_run = run.view(), &short_values](auto view) noexcept {
+            if (view.parallel(short_values.view()).is_some()) {
+                return std::uint64_t{0};
+            }
+            auto const column = view.parallel(column_run).expect("the two arrays have the same count");
+            std::uint64_t sum = 0;
+            for (auto const index : view.indices()) {
+                sum += static_cast<std::uint64_t>(view.at(index)) * column.at(index);
+                column.at(index) += 1;
+            }
+            return sum;
+        });
     });
     CRUCIBLE_TEST_ASSERT(kTest, total == 1 * 10 + 2 * 20 + 3 * 30 + 4 * 40);
     CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<std::uint64_t, 4>{11, 21, 31, 41}));
@@ -103,9 +107,11 @@ void test_scope_agrees_with_the_index_model() {
     ::crucible::test::PhiloxStream stream{0x6B7A8C9D0E1F2031u};
     Run run;
     for (int trial = 0; trial < 512; ++trial) {
-        for (std::uint64_t& value : run) {
-            value = stream.next_wide();
-        }
+        run.with_mut([&stream](auto elements) noexcept {
+            for (std::uint64_t& value : elements) {
+                value = stream.next_wide();
+            }
+        });
         std::size_t const offset = stream.below(run_size + 1);
         std::size_t const size = stream.below(run_size - offset + 1);
         View<std::uint64_t const> const window = run.view().window(offset, size).expect("the window fits");

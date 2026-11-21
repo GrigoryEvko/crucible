@@ -115,15 +115,13 @@ template <std::size_t Count, core::ScanKind Kind>
     core::FixedArray<Symbol, Count> out{};
     auto const combine = [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); };
     constexpr auto empty_node = static_cast<std::uint32_t>(Count + steps);
-    bool is_written = false;
-    out = core::with_mut(std::move(out), [&](auto written) noexcept {
+    bool const is_written = out.with_mut([&leaves, &combine, empty_node](auto written) noexcept {
         if constexpr (Kind == core::ScanKind::Inclusive) {
-            is_written =
-                core::scan_inclusive(core::View<Symbol const>{leaves.view()}, std::move(written), combine).is_ok();
+            return core::scan_inclusive(core::View<Symbol const>{leaves.view()}, std::move(written), combine).is_ok();
         } else {
-            is_written = core::scan_exclusive(core::View<Symbol const>{leaves.view()}, std::move(written),
-                                              Symbol{empty_node}, combine)
-                             .is_ok();
+            return core::scan_exclusive(core::View<Symbol const>{leaves.view()}, std::move(written), Symbol{empty_node},
+                                        combine)
+                .is_ok();
         }
     });
     bool is_each_output = is_written;
@@ -150,13 +148,12 @@ template <std::size_t Leaves>
     auto matcher = matcher_of<Leaves, Leaves - 1>(graph);
     auto const leaves = symbols_of_leaves<Leaves>();
     core::FixedArray<Symbol, Leaves - 1> scratch{};
-    Symbol root{};
-    scratch = core::with_mut(std::move(scratch), [&](auto values) noexcept {
-        root =
-            core::evaluate_tree_plan(core::View<core::TreeStep const>{tree_plan_of<Leaves, false>.steps.view()},
-                                     core::View<Symbol const>{leaves.view()}, std::move(values),
-                                     [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
-                .expect("a plan of the count of its leaves");
+    Symbol const root = scratch.with_mut([&leaves, &matcher](auto values) noexcept {
+        return core::evaluate_tree_plan(
+                   core::View<core::TreeStep const>{tree_plan_of<Leaves, false>.steps.view()},
+                   core::View<Symbol const>{leaves.view()}, std::move(values),
+                   [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
+            .expect("a plan of the count of its leaves");
     });
     std::uint32_t const result = source_of(graph, port_of(static_cast<std::uint32_t>(2 * Leaves), 0));
     return matcher.is_each_add_fired() && root.node == result;
@@ -178,16 +175,14 @@ template <std::size_t Count, core::ScanKind Kind>
     constexpr auto empty_node = static_cast<std::uint32_t>(Count + steps);
     core::FixedArray<Symbol, steps> scratch{};
     core::FixedArray<Symbol, Count> out{};
-    bool is_evaluated = false;
-    scratch = core::with_mut(std::move(scratch), [&](auto values) noexcept {
-        out = core::with_mut(std::move(out), [&](auto written) noexcept {
-            is_evaluated =
-                core::evaluate_scan_plan(
-                    core::View<core::TreeStep const>{plan.steps.view()},
-                    core::View<core::PlanNode const>{plan.outputs.view()}, core::View<Symbol const>{leaves.view()},
-                    std::move(values), std::move(written), Symbol{empty_node},
-                    [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
-                    .is_ok();
+    bool const is_evaluated = scratch.with_mut([&out, &plan, &leaves, &matcher, empty_node](auto values) noexcept {
+        return out.with_mut([&values, &plan, &leaves, &matcher, empty_node](auto written) noexcept {
+            return core::evaluate_scan_plan(
+                       core::View<core::TreeStep const>{plan.steps.view()},
+                       core::View<core::PlanNode const>{plan.outputs.view()}, core::View<Symbol const>{leaves.view()},
+                       std::move(values), std::move(written), Symbol{empty_node},
+                       [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
+                .is_ok();
         });
     });
     bool is_each_output = is_evaluated;
@@ -219,16 +214,17 @@ template <std::size_t Leaves, std::size_t Grain>
     auto const combine = [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); };
     core::FixedArray<Symbol, 1> head{};
     core::FixedArray<Symbol, grains - 1> tail{};
-    head = core::with_mut(std::move(head), [&](auto out) noexcept {
-        core::reduce_grains_by_tree<Grain>(run, 0, std::move(out), combine);
-    });
-    tail = core::with_mut(std::move(tail), [&](auto out) noexcept {
-        core::reduce_grains_by_tree<Grain>(run, 1, std::move(out), combine);
-    });
+    head.with_mut(
+        [run, &combine](auto out) noexcept { core::reduce_grains_by_tree<Grain>(run, 0, std::move(out), combine); });
+    tail.with_mut(
+        [run, &combine](auto out) noexcept { core::reduce_grains_by_tree<Grain>(run, 1, std::move(out), combine); });
     core::FixedArray<Symbol, grains> partials{};
-    slot_at(partials, 0) = slot_at(head, 0);
-    for (std::size_t grain = 1; grain < grains; ++grain)
-        slot_at(partials, grain) = slot_at(tail, grain - 1);
+    Symbol const first = slot_at(head, 0);
+    partials.with_element(slot_index(partials, 0), [first](Symbol& held) noexcept { held = first; });
+    for (std::size_t grain = 1; grain < grains; ++grain) {
+        Symbol const element = slot_at(tail, grain - 1);
+        partials.with_element(slot_index(partials, grain), [element](Symbol& held) noexcept { held = element; });
+    }
     Symbol const root = core::reduce_by_tree(partials.view(), combine).expect("a run of grains");
     std::uint32_t const result = source_of(graph, port_of(static_cast<std::uint32_t>(2 * Leaves), 0));
     return matcher.is_each_add_fired() && root.node == result;
@@ -254,22 +250,21 @@ template <std::size_t Count, std::size_t Grain, core::ScanKind Kind>
     auto const combine = [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine_or_repeat(a, b); };
     constexpr auto empty_node = static_cast<std::uint32_t>(Count + steps);
     core::FixedArray<Symbol, grains - 1> heads{};
-    heads = core::with_mut(std::move(heads), [&](auto out) noexcept {
-        core::reduce_grains_by_tree<Grain>(run, 0, std::move(out), combine);
-    });
+    heads.with_mut(
+        [run, &combine](auto out) noexcept { core::reduce_grains_by_tree<Grain>(run, 0, std::move(out), combine); });
     core::FixedArray<Symbol, grains> sums{};
-    for (std::size_t grain = 0; grain + 1 < grains; ++grain)
-        slot_at(sums, grain) = slot_at(heads, grain);
-    slot_at(sums, grains - 1) = Symbol{no_add};
+    for (std::size_t grain = 0; grain + 1 < grains; ++grain) {
+        Symbol const element = slot_at(heads, grain);
+        sums.with_element(slot_index(sums, grain), [element](Symbol& held) noexcept { held = element; });
+    }
+    sums.with_element(slot_index(sums, grains - 1), [](Symbol& held) noexcept { held = Symbol{no_add}; });
     core::FixedArray<Symbol, grains> carries{};
-    bool is_scanned = false;
-    carries = core::with_mut(std::move(carries), [&](auto out) noexcept {
-        is_scanned =
-            core::scan_exclusive(core::View<Symbol const>{sums.view()}, std::move(out), Symbol{empty_node}, combine)
-                .is_ok();
+    bool const is_scanned = carries.with_mut([&sums, &combine, empty_node](auto out) noexcept {
+        return core::scan_exclusive(core::View<Symbol const>{sums.view()}, std::move(out), Symbol{empty_node}, combine)
+            .is_ok();
     });
     core::FixedArray<Symbol, Count> out{};
-    out = core::with_mut(std::move(out), [&](auto written) noexcept {
+    out.with_mut([run, &carries, &combine, empty_node](auto written) noexcept {
         core::View<Symbol const> const carried{carries.view()};
         if constexpr (Kind == core::ScanKind::Inclusive) {
             core::scan_inclusive_grains<Grain>(run, 0, carried, std::move(written), combine);
@@ -314,7 +309,9 @@ inline constexpr core::FixedArray<std::size_t, 5> segment_offsets{0, 3, 3, 9, 13
         };
         std::uint32_t step = 0;
         for (core::TreeStep const& one : core::plan_tree<Count>()) {
-            slot_at(plan.steps, base + step) = core::TreeStep{moved(one.left), moved(one.right)};
+            core::TreeStep const moved_step{moved(one.left), moved(one.right)};
+            plan.steps.with_element(slot_index(plan.steps, base + step),
+                                    [moved_step](core::TreeStep& held) noexcept { held = moved_step; });
             ++step;
         }
         core::PlanNode const root{static_cast<std::uint32_t>(segment_leaves) + base + step - 1};
@@ -341,13 +338,12 @@ static_assert(is_tree_net<segment_net>);
     auto const leaves = symbols_of_leaves<segment_leaves>();
     constexpr auto empty_node = static_cast<std::uint32_t>(segment_leaves + segment_steps);
     core::FixedArray<Symbol, 4> results{};
-    bool is_reduced = false;
-    results = core::with_mut(std::move(results), [&](auto out) noexcept {
-        is_reduced = core::reduce_segments_by_tree(
-                         core::View<Symbol const>{leaves.view()}, core::View<std::size_t const>{segment_offsets.view()},
-                         std::move(out), Symbol{empty_node},
-                         [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
-                         .is_ok();
+    bool const is_reduced = results.with_mut([&leaves, &matcher, empty_node](auto out) noexcept {
+        return core::reduce_segments_by_tree(
+                   core::View<Symbol const>{leaves.view()}, core::View<std::size_t const>{segment_offsets.view()},
+                   std::move(out), Symbol{empty_node},
+                   [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
+            .is_ok();
     });
     bool is_each_result = is_reduced;
     std::uint32_t segment = 0;
@@ -382,7 +378,8 @@ build_sort_net() noexcept {
     core::FixedArray<net::PortRef, Count> giver{};
     for (std::uint32_t position = 0; position < count; ++position) {
         graph.agents[position] = num_kind;
-        slot_at(giver, position) = port_of(position, 0);
+        net::PortRef const port = port_of(position, 0);
+        giver.with_element(slot_index(giver, position), [port](net::PortRef& held) noexcept { held = port; });
     }
     std::uint32_t agent = count;
     std::uint32_t wire = 0;
@@ -391,8 +388,11 @@ build_sort_net() noexcept {
         graph.agents[agent] = cmp_kind;
         graph.wires[wire] = net::Wire{slot_at(giver, is_crossed ? step.high : step.low), port_of(agent, 0)};
         graph.wires[wire + 1] = net::Wire{slot_at(giver, is_crossed ? step.low : step.high), port_of(agent, 1)};
-        slot_at(giver, step.low) = port_of(agent, 2);
-        slot_at(giver, step.high) = port_of(agent, 3);
+        net::PortRef const low_port = port_of(agent, 2);
+        net::PortRef const high_port = port_of(agent, 3);
+        giver.with_element(slot_index(giver, step.low), [low_port](net::PortRef& held) noexcept { held = low_port; });
+        giver.with_element(slot_index(giver, step.high),
+                           [high_port](net::PortRef& held) noexcept { held = high_port; });
         ++agent;
         wire += 2;
     }
@@ -508,11 +508,13 @@ template <std::size_t Count>
 [[nodiscard]] constexpr core::FixedArray<Ticket, Count> draw_tickets(std::uint64_t seed) noexcept {
     ::crucible::test::PhiloxStream stream{seed};
     core::FixedArray<Ticket, Count> tickets{};
-    std::uint32_t tag = 0;
-    for (Ticket& ticket : tickets) {
-        ticket = Ticket{static_cast<std::uint32_t>(stream.below(3)), tag};
-        ++tag;
-    }
+    tickets.with_mut([&stream](auto run) noexcept {
+        std::uint32_t tag = 0;
+        for (Ticket& ticket : run) {
+            ticket = Ticket{static_cast<std::uint32_t>(stream.below(3)), tag};
+            ++tag;
+        }
+    });
     return tickets;
 }
 
@@ -527,8 +529,7 @@ template <std::size_t Count, bool IsCrossed>
 [[nodiscard]] constexpr bool does_sort_follow(core::FixedArray<Ticket, Count> const& tickets) noexcept {
     auto const from_net = sort_by_net<Count, IsCrossed>(tickets);
     core::FixedArray<Ticket, Count> sorted = tickets;
-    sorted = core::with_mut(std::move(sorted),
-                            [](auto elements) noexcept { core::sort_by_network(std::move(elements), ByKey{}); });
+    sorted.with_mut([](auto elements) noexcept { core::sort_by_network(std::move(elements), ByKey{}); });
     std::size_t position = 0;
     for (Ticket const& ticket : sorted) {
         if (!(ticket == slot_at(from_net, position))) return false;
@@ -590,10 +591,11 @@ template <class T, std::size_t Count, class Less>
         T const moved = slot_at(elements, next);
         std::size_t place = next;
         while (place > 0 && less(moved, slot_at(elements, place - 1))) {
-            slot_at(elements, place) = slot_at(elements, place - 1);
+            T const shifted = slot_at(elements, place - 1);
+            elements.with_element(slot_index(elements, place), [shifted](T& held) noexcept { held = shifted; });
             --place;
         }
-        slot_at(elements, place) = moved;
+        elements.with_element(slot_index(elements, place), [moved](T& held) noexcept { held = moved; });
     }
     return elements;
 }
@@ -602,10 +604,9 @@ template <class T, std::size_t Count, class Less>
 [[nodiscard]] constexpr core::FixedArray<T, Count> sort_by_either_arm(core::FixedArray<T, Count> elements,
                                                                       Less less) noexcept {
     core::FixedArray<T, Count> scratch{};
-    bool is_sorted = false;
-    elements = core::with_mut(std::move(elements), [&](auto run) noexcept {
-        scratch = core::with_mut(std::move(scratch), [&](auto spare) noexcept {
-            is_sorted = core::sort_stably(std::move(run), std::move(spare), less).is_ok();
+    bool const is_sorted = elements.with_mut([&scratch, &less](auto run) noexcept {
+        return scratch.with_mut([&run, &less](auto spare) noexcept {
+            return core::sort_stably(std::move(run), std::move(spare), less).is_ok();
         });
     });
     if (!is_sorted) core::fatal("the scratch of the sort has the count of the run");
@@ -663,13 +664,16 @@ template <class T, std::size_t Count>
                                               Bits{0}};
     std::size_t position = 0;
     for (Bits const bits : specials) {
-        slot_at(values, 3 * position + 1) = core::bit_cast<T>(bits);
+        T const special = core::bit_cast<T>(bits);
+        values.with_element(slot_index(values, 3 * position + 1), [special](T& held) noexcept { held = special; });
         ++position;
     }
     // Repeated values: each element of the last part copies an element of
     // the first part.
-    for (std::size_t copy = Count - 20; copy < Count; ++copy)
-        slot_at(values, copy) = slot_at(values, copy - (Count - 20));
+    for (std::size_t copy = Count - 20; copy < Count; ++copy) {
+        T const repeated = slot_at(values, copy - (Count - 20));
+        values.with_element(slot_index(values, copy), [repeated](T& held) noexcept { held = repeated; });
+    }
     return values;
 }
 

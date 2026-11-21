@@ -90,11 +90,14 @@ template <core::FpMode Mode>
             .broadcast_to(square_sizes.view())
             .expect("a row broadcasts to a square");
     ::fixy::FixedArray<float, kElements> output{};
-    ::fixy::run_kernel(ctx, scale_and_add<Mode>, ::fixy::View<float const, kElements>{input.view()}, output.view(),
-                       bias, 1e-10F);
+    output.with_mut([&ctx, &input, &bias](auto run) noexcept {
+        ::fixy::run_kernel(ctx, scale_and_add<Mode>, ::fixy::View<float const, kElements>{input.view()}, run.view(),
+                           bias, 1e-10F);
+    });
     ::fixy::FixedArray<std::uint32_t, kElements> bits{};
     for (::fixy::Index<kElements> const index : output.indices()) {
-        bits.at(index) = ::fixy::bit_cast<std::uint32_t>(output.at(index));
+        std::uint32_t const word = ::fixy::bit_cast<std::uint32_t>(output.at(index));
+        bits.with_element(index, [word](std::uint32_t& held) noexcept { held = word; });
     }
     return bits;
 }

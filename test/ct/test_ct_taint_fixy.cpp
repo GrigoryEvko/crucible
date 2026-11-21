@@ -70,10 +70,16 @@ using FlippedByte = ::fixy::Option<::fixy::Index<16>>;
 void check_one_payload(Tally& tally, FlippedByte const flip) noexcept {
     using enum ::fixy::check::CheckOutcome;
     AuthTag left{};
-    for (::fixy::Index<16> const index : left.bytes.indices())
-        left.bytes.at(index) = opaque(static_cast<std::uint8_t>(index.raw() * 7));
+    for (::fixy::Index<16> const index : left.bytes.indices()) {
+        std::uint8_t const value = opaque(static_cast<std::uint8_t>(index.raw() * 7));
+        left.bytes.with_element(index, [value](std::uint8_t& byte) noexcept { byte = value; });
+    }
     AuthTag right = left;
-    flip.match([&right](::fixy::Index<16> const at) noexcept { right.bytes.at(at) ^= 0x01; }, [] noexcept {});
+    flip.match(
+        [&right](::fixy::Index<16> const at) noexcept {
+            right.bytes.with_element(at, [](std::uint8_t& byte) noexcept { byte ^= 0x01; });
+        },
+        [] noexcept {});
     make_secret(left);
     make_secret(right);
     ::fixy::session::CTPayload<AuthTag> const lhs{left};
@@ -114,8 +120,10 @@ void check_mtls_private_key(Tally& tally) noexcept {
     using ::crucible::cntp::MtlsKeyAlgorithm;
     ::fixy::FixedArray<std::byte, 64> pem{};
     static_assert(sizeof(pem) == 64, "make_secret of the key marks the bytes of the key and no other byte");
-    for (::fixy::Index<64> const index : pem.indices())
-        pem.at(index) = static_cast<std::byte>(opaque(static_cast<unsigned>(index.raw() * 13u + 5u)));
+    for (::fixy::Index<64> const index : pem.indices()) {
+        std::byte const value = static_cast<std::byte>(opaque(static_cast<unsigned>(index.raw() * 13u + 5u)));
+        pem.with_element(index, [value](std::byte& byte) noexcept { byte = value; });
+    }
     make_secret(pem);
     {
         auto admitted = ::crucible::cntp::admit_private_key_pem<MtlsKeyAlgorithm::Ed25519>(::fixy::bytes(pem));

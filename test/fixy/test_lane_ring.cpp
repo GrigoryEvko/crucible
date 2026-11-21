@@ -255,7 +255,9 @@ using Stream = ::fixy::FixedArray<Item, kTotal>;
     for (std::uint64_t round = 0; round < rounds; ++round) {
         for (LaneIndex const lane : ::fixy::IndexRange<4>{}) {
             if (round >= kLengths.at(lane)) continue;
-            *stream.get(count).expect("the lanes hold kTotal items") = item_at(lane, round);
+            Item const item = item_at(lane, round);
+            stream.with_element(::fixy::Index<kTotal>::check(count).expect("the lanes hold kTotal items"),
+                                [item](Item& held) noexcept { held = item; });
             ++count;
         }
     }
@@ -319,8 +321,8 @@ struct Run {
     // The consumer keeps an item.  A ring that gives more than kTotal items
     // is wrong, and the run records that.
     void keep(Item item) noexcept {
-        for (auto slot : got.get(count)) {
-            *slot = item;
+        for (auto const slot : ::fixy::Index<kTotal>::check(count)) {
+            got.with_element(slot, [item](Item& held) noexcept { held = item; });
             ++count;
             return;
         }
@@ -427,7 +429,7 @@ void run_threads(::fixy::BgLoadCtx const& ctx, Run<Ring>& run, Schedule schedule
     for (Item const item : stream) {
         for (LaneIndex const lane : LaneIndex::check(item >> 32)) {
             if ((item & 0xFFFFFFFFu) != next.at(lane)) return false;
-            ++next.at(lane);
+            next.with_element(lane, [](std::uint64_t& held) noexcept { ++held; });
         }
     }
     for (LaneIndex const lane : ::fixy::IndexRange<4>{}) {
@@ -451,8 +453,9 @@ void threaded_streams_equal_the_oracle(::fixy::TestRunnerCtx const& test, ::fixy
     // The control of the compare: a planted swap of two items of two lanes.
     Stream swapped = oracle;
     Item const kept = swapped.at(::fixy::index<100>());
-    swapped.at(::fixy::index<100>()) = swapped.at(::fixy::index<101>());
-    swapped.at(::fixy::index<101>()) = kept;
+    Item const moved = swapped.at(::fixy::index<101>());
+    swapped.with_element(::fixy::index<100>(), [moved](Item& held) noexcept { held = moved; });
+    swapped.with_element(::fixy::index<101>(), [kept](Item& held) noexcept { held = kept; });
     CRUCIBLE_TEST_ASSERT(test, first_difference(swapped, oracle).value_or(kTotal) == 100);
 
     ::fixy::FixedArray<std::uint64_t, 5> merge_folds{};
@@ -473,7 +476,8 @@ void threaded_streams_equal_the_oracle(::fixy::TestRunnerCtx const& test, ::fixy
             run_threads(ctx, run, schedule);
             CRUCIBLE_TEST_ASSERT(test, !run.has_overflow && run.count == kTotal);
             CRUCIBLE_TEST_ASSERT(test, keeps_each_lane_in_order(run.got));
-            merge_folds.at(index) = fold_of(run.got);
+            std::uint64_t const fold = fold_of(run.got);
+            merge_folds.with_element(index, [fold](std::uint64_t& held) noexcept { held = fold; });
         }
     }
     std::size_t distinct = 0;

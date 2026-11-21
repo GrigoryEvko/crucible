@@ -231,11 +231,18 @@ private:
         ::fixy::FixedArray<std::uint64_t, 3> part{};
         auto const low = static_cast<std::uint64_t>(term.significand);
         auto const high = static_cast<std::uint64_t>(term.significand >> 64);
-        *part.get(0).expect("a test reads an element at or past the count of its array") = low << shift;
-        *part.get(1).expect("a test reads an element at or past the count of its array") =
-            shift == 0 ? high : (high << shift) | (low >> (64 - shift));
-        *part.get(2).expect("a test reads an element at or past the count of its array") =
-            shift == 0 ? 0 : high >> (64 - shift);
+        std::uint64_t const low_part = low << shift;
+        std::uint64_t const middle_part = shift == 0 ? high : (high << shift) | (low >> (64 - shift));
+        std::uint64_t const high_part = shift == 0 ? 0 : high >> (64 - shift);
+        part.with_element(
+            ::fixy::Index<3>::check(0).expect("a test reads an element at or past the count of its array"),
+            [low_part](std::uint64_t& held) noexcept { held = low_part; });
+        part.with_element(
+            ::fixy::Index<3>::check(1).expect("a test reads an element at or past the count of its array"),
+            [middle_part](std::uint64_t& held) noexcept { held = middle_part; });
+        part.with_element(
+            ::fixy::Index<3>::check(2).expect("a test reads an element at or past the count of its array"),
+            [high_part](std::uint64_t& held) noexcept { held = high_part; });
         std::uint64_t carry = 0;
         for (std::size_t word = first; word < words; ++word) {
             std::size_t const offset = word - first;
@@ -248,23 +255,29 @@ private:
                 std::uint64_t const partial = current - value;
                 std::uint64_t const total = partial - carry;
                 carry = (current < value ? 1u : 0u) + (partial < carry ? 1u : 0u);
-                *words_.get(word).expect("a test reads an element at or past the count of its array") = total;
+                words_.with_element(::fixy::Index<words>::check(word).expect(
+                                        "a test reads an element at or past the count of its array"),
+                                    [total](std::uint64_t& held) noexcept { held = total; });
             } else {
                 std::uint64_t const partial = current + value;
                 std::uint64_t const total = partial + carry;
                 carry = (partial < current ? 1u : 0u) + (total < partial ? 1u : 0u);
-                *words_.get(word).expect("a test reads an element at or past the count of its array") = total;
+                words_.with_element(::fixy::Index<words>::check(word).expect(
+                                        "a test reads an element at or past the count of its array"),
+                                    [total](std::uint64_t& held) noexcept { held = total; });
             }
         }
     }
 
     static void negate(Words& value) noexcept {
-        std::uint64_t carry = 1;
-        for (std::uint64_t& word : value) {
-            std::uint64_t const flipped = ~word;
-            word = flipped + carry;
-            carry = (carry != 0 && word == 0) ? 1u : 0u;
-        }
+        value.with_mut([](auto run) noexcept {
+            std::uint64_t carry = 1;
+            for (std::uint64_t& word : run) {
+                std::uint64_t const flipped = ~word;
+                word = flipped + carry;
+                carry = (carry != 0 && word == 0) ? 1u : 0u;
+            }
+        });
     }
 
     [[nodiscard]] static bool bit_at(Words const& value, int bit) noexcept {

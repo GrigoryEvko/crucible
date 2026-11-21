@@ -31,7 +31,8 @@ struct VectorInput final {
 
     constexpr VectorInput() noexcept {
         for (auto const index : decltype(bytes)::indices()) {
-            bytes.at(index) = static_cast<std::byte>(index.raw() % 251);
+            bytes.with_element(
+                index, [value = static_cast<std::byte>(index.raw() % 251)](std::byte& held) noexcept { held = value; });
         }
     }
 };
@@ -44,7 +45,8 @@ constexpr KeyedHashKeyBytes vector_key() noexcept {
     FixedArray<std::byte, 32> bytes{};
     std::size_t index = 0;
     for (char const letter : text) {
-        bytes.at(Index<32>::check(index).expect("the key has 32 letters")) = static_cast<std::byte>(letter);
+        bytes.with_element(Index<32>::check(index).expect("the key has 32 letters"),
+                           [byte = static_cast<std::byte>(letter)](std::byte& held) noexcept { held = byte; });
         ++index;
     }
     return KeyedHashKeyBytes{bytes.view()};
@@ -64,7 +66,8 @@ constexpr KeyedHashKeyBytes vector_key() noexcept {
         std::size_t const byte = at / 2;
         std::uint64_t const nibble = digit_of(letter);
         std::uint64_t const shift = 8 * (byte % 8) + (at % 2 == 0 ? 4 : 0);
-        words.at(Index<4>::check(byte / 8).expect("64 digits")) |= nibble << shift;
+        words.with_element(Index<4>::check(byte / 8).expect("64 digits"),
+                           [bits = nibble << shift](std::uint64_t& word) noexcept { word |= bits; });
         ++at;
     }
     return Hash256{words.at(::foundation::core::index<0>()), words.at(::foundation::core::index<1>()),
@@ -173,15 +176,17 @@ void test_key_and_message_take_part() {
     constexpr std::size_t length = 200;
     static VectorInput<length> input{};
     FixedArray<std::byte, 32> other_key_bytes{};
-    other_key_bytes.at(::foundation::core::index<0>()) = std::byte{1};
+    other_key_bytes.with_element(::foundation::core::index<0>(), [](std::byte& held) noexcept { held = std::byte{1}; });
     KeyedHashKeyBytes const other_key{other_key_bytes.view()};
     View<std::byte const> const message = input.bytes.view().window(0, length).expect("200 bytes");
     CRUCIBLE_FATAL_INVARIANT(keyed_hash(vector_key(), message) != keyed_hash(other_key, message));
     Hash256 const before = keyed_hash(vector_key(), message);
     // The byte at 150 holds 150, and the change puts 7 in its place.
-    input.bytes.at(Index<length>::check(150).expect("a byte of the message")) = std::byte{7};
+    input.bytes.with_element(Index<length>::check(150).expect("a byte of the message"),
+                             [](std::byte& held) noexcept { held = std::byte{7}; });
     CRUCIBLE_FATAL_INVARIANT(keyed_hash(vector_key(), message) != before);
-    input.bytes.at(Index<length>::check(150).expect("a byte of the message")) = std::byte{150};
+    input.bytes.with_element(Index<length>::check(150).expect("a byte of the message"),
+                             [](std::byte& held) noexcept { held = std::byte{150}; });
 }
 
 }  // namespace

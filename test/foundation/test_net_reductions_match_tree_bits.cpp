@@ -76,8 +76,10 @@ template <std::size_t Count, std::size_t First, class T, std::size_t Leaves>
     requires(First + Count <= Leaves)
 [[nodiscard]] T tree_of_part(core::FixedArray<T, Leaves> const& leaves) noexcept {
     core::FixedArray<T, Count> part{};
-    for (std::size_t index = 0; index < Count; ++index)
-        slot_at(part, index) = slot_at(leaves, First + index);
+    for (std::size_t index = 0; index < Count; ++index) {
+        T const element = slot_at(leaves, First + index);
+        part.with_element(slot_index(part, index), [element](T& held) noexcept { held = element; });
+    }
     return slot_at(evaluate_net<1>(tree_net_of<Count, false>, part, T{}, AddValues{}, core::Ascending{}), 0);
 }
 
@@ -92,7 +94,7 @@ template <class T>
     for (std::uint32_t round = 0; round < 16; ++round) {
         auto const leaves = draw_values<T, 37>(seeds.next_wide());
         core::FixedArray<T, 5> partials{};
-        partials = core::with_mut(std::move(partials), [&](auto out) noexcept {
+        partials.with_mut([&leaves](auto out) noexcept {
             core::sum_grains_by_tree<8>(core::View<T const>{leaves.view()}, 0, std::move(out));
         });
         is_each = is_each && has_same_bits(slot_at(partials, 0), tree_of_part<8, 0>(leaves))
@@ -115,25 +117,29 @@ template <class T, std::size_t Runs>
     bool is_each = true;
     for (std::uint32_t round = 0; round < 16; ++round) {
         core::FixedArray<core::FixedArray<T, 37>, Runs> runs{};
-        for (core::FixedArray<T, 37>& run : runs)
-            run = draw_values<T, 37>(seeds.next_wide());
+        runs.with_mut([&seeds](auto each_run) noexcept {
+            for (core::FixedArray<T, 37>& run : each_run)
+                run = draw_values<T, 37>(seeds.next_wide());
+        });
         core::FixedArray<core::View<T const>, Runs> views{};
         std::size_t index = 0;
         for (core::FixedArray<T, 37> const& run : runs) {
-            slot_at(views, index) = core::View<T const>{run.view()};
+            core::View<T const> const run_view{run.view()};
+            views.with_element(slot_index(views, index),
+                               [run_view](core::View<T const>& held) noexcept { held = run_view; });
             ++index;
         }
         core::FixedArray<T, 37> sums{};
-        bool is_summed = false;
-        sums = core::with_mut(std::move(sums), [&](auto out) noexcept {
-            is_summed =
-                core::sum_runs_by_tree(core::View<core::View<T const> const>{views.view()}, std::move(out)).is_ok();
+        bool const is_summed = sums.with_mut([&views](auto out) noexcept {
+            return core::sum_runs_by_tree(core::View<core::View<T const> const>{views.view()}, std::move(out)).is_ok();
         });
         is_each = is_each && is_summed;
         for (std::size_t position = 0; position < 37; ++position) {
             core::FixedArray<T, Runs> column{};
-            for (std::size_t run = 0; run < Runs; ++run)
-                slot_at(column, run) = slot_at(slot_at(runs, run), position);
+            for (std::size_t run = 0; run < Runs; ++run) {
+                T const element = slot_at(slot_at(runs, run), position);
+                column.with_element(slot_index(column, run), [element](T& held) noexcept { held = element; });
+            }
             T const from_net =
                 slot_at(evaluate_net<1>(tree_net_of<Runs, false>, column, T{}, AddValues{}, core::Ascending{}), 0);
             is_each = is_each && has_same_bits(slot_at(sums, position), from_net);
@@ -153,11 +159,10 @@ template <class T>
     for (std::uint32_t round = 0; round < 16; ++round) {
         auto const elements = draw_values<T, 50>(seeds.next_wide());
         core::FixedArray<T, 4> sums{};
-        bool is_summed = false;
-        sums = core::with_mut(std::move(sums), [&](auto out) noexcept {
-            is_summed = core::sum_segments_by_tree(core::View<T const>{elements.view()},
-                                                   core::View<std::size_t const>{offsets.view()}, std::move(out))
-                            .is_ok();
+        bool const is_summed = sums.with_mut([&elements, &offsets](auto out) noexcept {
+            return core::sum_segments_by_tree(core::View<T const>{elements.view()},
+                                              core::View<std::size_t const>{offsets.view()}, std::move(out))
+                .is_ok();
         });
         is_each = is_each && is_summed && has_same_bits(slot_at(sums, 0), tree_of_part<6, 0>(elements))
                && has_same_bits(slot_at(sums, 1), T{}) && has_same_bits(slot_at(sums, 2), tree_of_part<37, 6>(elements))

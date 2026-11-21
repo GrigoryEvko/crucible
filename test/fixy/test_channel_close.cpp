@@ -286,9 +286,9 @@ struct RoundDrain {
             } else {
                 int const producer = code / kItemsOfProducer;
                 if (producer >= producers) ++failures;
-                for (auto const& slot : next_of_producer.view().get(static_cast<std::size_t>(producer))) {
-                    if (*slot != code % kItemsOfProducer) ++failures;
-                    ++*slot;
+                for (auto const slot : ::fixy::Index<kMpscProducers>::check(static_cast<std::size_t>(producer))) {
+                    if (next_of_producer.at(slot) != code % kItemsOfProducer) ++failures;
+                    next_of_producer.with_element(slot, [](int& next) noexcept { ++next; });
                 }
                 ++received;
             }

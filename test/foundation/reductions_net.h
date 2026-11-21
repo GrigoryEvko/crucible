@@ -80,15 +80,17 @@ struct CombinePlan {
     core::FixedArray<core::PlanNode, Outputs> outputs{};
 };
 
-// The element at a position that the plan bounds.
+// The index of a position of the array that the plan bounds.
 template <class T, std::size_t N>
-[[nodiscard]] constexpr T& slot_at(core::FixedArray<T, N>& array, std::size_t position) noexcept {
-    return array.at(core::Index<N>::check(position).expect("a position that the plan bounds"));
+[[nodiscard]] constexpr core::Index<N> slot_index(core::FixedArray<T, N> const& /*array*/,
+                                                  std::size_t position) noexcept {
+    return core::Index<N>::check(position).expect("a position that the plan bounds");
 }
 
+// The element at a position that the plan bounds, for a read.
 template <class T, std::size_t N>
 [[nodiscard]] constexpr T const& slot_at(core::FixedArray<T, N> const& array, std::size_t position) noexcept {
-    return array.at(core::Index<N>::check(position).expect("a position that the plan bounds"));
+    return array.at(slot_index(array, position));
 }
 
 // The uses of each node: one for each step that reads it and one for each
@@ -98,12 +100,14 @@ template <std::size_t Leaves, std::size_t Steps, std::size_t Outputs>
 count_uses(CombinePlan<Leaves, Steps, Outputs> const& plan) noexcept {
     core::FixedArray<std::uint32_t, Leaves + Steps + 1> uses{};
     for (core::TreeStep const& step : plan.steps) {
-        ++slot_at(uses, static_cast<std::size_t>(step.left));
-        ++slot_at(uses, static_cast<std::size_t>(step.right));
+        uses.with_element(slot_index(uses, static_cast<std::size_t>(step.left)),
+                          [](std::uint32_t& count) noexcept { ++count; });
+        uses.with_element(slot_index(uses, static_cast<std::size_t>(step.right)),
+                          [](std::uint32_t& count) noexcept { ++count; });
     }
     for (core::PlanNode const output : plan.outputs) {
         std::size_t const node = output == core::empty_plan_node ? Leaves + Steps : static_cast<std::size_t>(output);
-        ++slot_at(uses, node);
+        uses.with_element(slot_index(uses, node), [](std::uint32_t& count) noexcept { ++count; });
     }
     return uses;
 }
@@ -242,16 +246,18 @@ struct Matcher {
     // b.  A combine that no add takes, or that an add took before, marks the
     // run as stray.
     [[nodiscard]] constexpr Symbol combine(Symbol a, Symbol b) noexcept {
-        std::uint32_t step = 0;
-        for (std::uint32_t& count : fired) {
-            if (slot_at(left, step) == a.node && slot_at(right, step) == b.node && count == 0) {
-                count = 1;
-                return Symbol{leaves + step};
+        return fired.with_mut([this, a, b](auto run) noexcept {
+            std::uint32_t step = 0;
+            for (std::uint32_t& count : run) {
+                if (slot_at(left, step) == a.node && slot_at(right, step) == b.node && count == 0) {
+                    count = 1;
+                    return Symbol{leaves + step};
+                }
+                ++step;
             }
-            ++step;
-        }
-        is_stray = true;
-        return Symbol{no_add};
+            is_stray = true;
+            return Symbol{no_add};
+        });
     }
 
     // The combine of an add that took a combine before, with the same
@@ -263,16 +269,18 @@ struct Matcher {
         Symbol const first = combine(a, b);
         if (first.node != no_add) return first;
         is_stray = was_stray;
-        std::uint32_t step = 0;
-        for (std::uint32_t& count : fired) {
-            if (slot_at(left, step) == a.node && slot_at(right, step) == b.node) {
-                ++count;
-                return Symbol{leaves + step};
+        return fired.with_mut([this, a, b](auto run) noexcept {
+            std::uint32_t step = 0;
+            for (std::uint32_t& count : run) {
+                if (slot_at(left, step) == a.node && slot_at(right, step) == b.node) {
+                    ++count;
+                    return Symbol{leaves + step};
+                }
+                ++step;
             }
-            ++step;
-        }
-        is_stray = true;
-        return Symbol{no_add};
+            is_stray = true;
+            return Symbol{no_add};
+        });
     }
 
     // Each add took one combine.
@@ -297,8 +305,12 @@ template <std::size_t Leaves, std::size_t Steps, std::size_t Agents, std::size_t
     Matcher<Steps> matcher{};
     matcher.leaves = static_cast<std::uint32_t>(Leaves);
     for (std::uint32_t step = 0; step < Steps; ++step) {
-        slot_at(matcher.left, step) = source_of(graph, port_of(static_cast<std::uint32_t>(Leaves) + step, 0));
-        slot_at(matcher.right, step) = source_of(graph, port_of(static_cast<std::uint32_t>(Leaves) + step, 1));
+        std::uint32_t const left_node = source_of(graph, port_of(static_cast<std::uint32_t>(Leaves) + step, 0));
+        std::uint32_t const right_node = source_of(graph, port_of(static_cast<std::uint32_t>(Leaves) + step, 1));
+        matcher.left.with_element(slot_index(matcher.left, step),
+                                  [left_node](std::uint32_t& node) noexcept { node = left_node; });
+        matcher.right.with_element(slot_index(matcher.right, step),
+                                   [right_node](std::uint32_t& node) noexcept { node = right_node; });
     }
     return matcher;
 }
@@ -306,11 +318,13 @@ template <std::size_t Leaves, std::size_t Steps, std::size_t Agents, std::size_t
 template <std::size_t Leaves>
 [[nodiscard]] consteval core::FixedArray<Symbol, Leaves> symbols_of_leaves() noexcept {
     core::FixedArray<Symbol, Leaves> symbols{};
-    std::uint32_t node = 0;
-    for (Symbol& symbol : symbols) {
-        symbol.node = node;
-        ++node;
-    }
+    symbols.with_mut([](auto run) noexcept {
+        std::uint32_t node = 0;
+        for (Symbol& symbol : run) {
+            symbol.node = node;
+            ++node;
+        }
+    });
     return symbols;
 }
 
@@ -328,11 +342,13 @@ template <std::size_t Leaves>
 template <std::size_t Leaves>
 [[nodiscard]] consteval CombinePlan<Leaves, Leaves - 1, 1> swapped_tree_combine_plan() noexcept {
     CombinePlan<Leaves, Leaves - 1, 1> plan = tree_combine_plan<Leaves>();
-    for (core::TreeStep& step : plan.steps) {
-        core::TreeStep const swapped{step.right, step.left};
-        step = swapped;
-        break;
-    }
+    plan.steps.with_mut([](auto run) noexcept {
+        for (core::TreeStep& step : run) {
+            core::TreeStep const swapped{step.right, step.left};
+            step = swapped;
+            break;
+        }
+    });
     return plan;
 }
 
@@ -344,12 +360,14 @@ template <std::size_t Leaves>
     auto previous = static_cast<std::uint32_t>(0);
     auto next_node = static_cast<std::uint32_t>(Leaves);
     std::uint32_t leaf = 1;
-    for (core::TreeStep& step : plan.steps) {
-        step = core::TreeStep{core::PlanNode{previous}, core::PlanNode{leaf}};
-        previous = next_node;
-        ++next_node;
-        ++leaf;
-    }
+    plan.steps.with_mut([&previous, &next_node, &leaf](auto run) noexcept {
+        for (core::TreeStep& step : run) {
+            step = core::TreeStep{core::PlanNode{previous}, core::PlanNode{leaf}};
+            previous = next_node;
+            ++next_node;
+            ++leaf;
+        }
+    });
     plan.outputs = core::FixedArray<core::PlanNode, 1>{core::PlanNode{previous}};
     return plan;
 }
@@ -373,10 +391,9 @@ inline constexpr std::size_t scan_steps_of = core::count_scan_plan_steps(Count, 
 template <std::size_t Count, core::ScanKind Kind>
 [[nodiscard]] consteval CombinePlan<Count, scan_steps_of<Count, Kind>, Count> scan_combine_plan() noexcept {
     CombinePlan<Count, scan_steps_of<Count, Kind>, Count> plan{};
-    bool is_written = false;
-    plan.steps = core::with_mut(std::move(plan.steps), [&](auto steps) noexcept {
-        plan.outputs = core::with_mut(std::move(plan.outputs), [&](auto outputs) noexcept {
-            is_written = core::write_scan_plan(Kind, std::move(steps), std::move(outputs)).is_ok();
+    bool const is_written = plan.steps.with_mut([&plan](auto steps) noexcept {
+        return plan.outputs.with_mut([&steps](auto outputs) noexcept {
+            return core::write_scan_plan(Kind, std::move(steps), std::move(outputs)).is_ok();
         });
     });
     if (!is_written) core::fatal("the counts of the scan plan agree");
@@ -438,8 +455,8 @@ template <class T, std::size_t Agents, std::size_t Wires, std::size_t Leaves, cl
             computed = is_swapped ? left : right;
         }
     }
-    slot_at(values.value, slot) = computed;
-    slot_at(values.is_known, slot) = true;
+    values.value.with_element(slot_index(values.value, slot), [computed](T& held) noexcept { held = computed; });
+    values.is_known.with_element(slot_index(values.is_known, slot), [](bool& is_known) noexcept { is_known = true; });
     return computed;
 }
 
@@ -455,13 +472,16 @@ evaluate_net(net::Net<1, 6, Agents, Wires> const& graph, core::FixedArray<T, Lea
         net::AgentKind const& left_kind =
             graph.signature.kinds[net::index_of(graph.agents[net::index_of(wire.left.agent)])];
         bool const is_left_giver = left_kind.port_types[wire.left.port].polarity == net::Polarity::Give;
-        slot_at(values.giver, slot_of(is_left_giver ? wire.right : wire.left)) = is_left_giver ? wire.left : wire.right;
+        net::PortRef const giver = is_left_giver ? wire.left : wire.right;
+        values.giver.with_element(slot_index(values.giver, slot_of(is_left_giver ? wire.right : wire.left)),
+                                  [giver](net::PortRef& held) noexcept { held = giver; });
     }
     core::FixedArray<T, Outputs> outputs{};
     std::size_t output = 0;
     for (std::uint32_t agent = 0; agent < Agents; ++agent) {
         if (graph.agents[agent] != result_kind) continue;
-        slot_at(outputs, output) = value_at(graph, leaves, empty, combine, less, values, port_of(agent, 0));
+        T const result = value_at(graph, leaves, empty, combine, less, values, port_of(agent, 0));
+        outputs.with_element(slot_index(outputs, output), [result](T& held) noexcept { held = result; });
         ++output;
     }
     return outputs;
@@ -500,9 +520,11 @@ template <class T, std::size_t Count>
 [[nodiscard]] core::FixedArray<T, Count> draw_values(std::uint64_t seed) noexcept {
     PhiloxStream stream{seed};
     core::FixedArray<T, Count> values{};
-    for (T& drawn : values) {
-        drawn = draw_value<T>(stream);
-    }
+    values.with_mut([&stream](auto run) noexcept {
+        for (T& drawn : run) {
+            drawn = draw_value<T>(stream);
+        }
+    });
     return values;
 }
 

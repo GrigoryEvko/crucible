@@ -44,21 +44,25 @@ inline constexpr fc::FixedArray<std::uint64_t, kVectorCount> kReferenceTags{
 
 [[nodiscard]] constexpr SipKeyBytes reference_key() noexcept {
     SipKeyBytes key{};
-    std::uint8_t next = 0;
-    for (std::byte& byte : key) {
-        byte = static_cast<std::byte>(next);
-        ++next;
-    }
+    key.with_mut([](auto run) noexcept {
+        std::uint8_t next = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(next);
+            ++next;
+        }
+    });
     return key;
 }
 
 [[nodiscard]] constexpr fc::FixedArray<std::byte, kVectorCount> reference_message() noexcept {
     fc::FixedArray<std::byte, kVectorCount> message{};
-    std::uint8_t next = 0;
-    for (std::byte& byte : message) {
-        byte = static_cast<std::byte>(next);
-        ++next;
-    }
+    message.with_mut([](auto run) noexcept {
+        std::uint8_t next = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(next);
+            ++next;
+        }
+    });
     return message;
 }
 
@@ -66,11 +70,13 @@ inline constexpr fc::FixedArray<std::uint64_t, kVectorCount> kReferenceTags{
 [[nodiscard]] constexpr SipTag expected_tag(std::size_t length) noexcept {
     std::uint64_t const word = kReferenceTags.at(fc::Index<kVectorCount>::check(length).expect("a vector length"));
     SipTag tag{};
-    int shift = 0;
-    for (std::byte& byte : tag) {
-        byte = static_cast<std::byte>(static_cast<std::uint8_t>(word >> shift));
-        shift += 8;
-    }
+    tag.with_mut([word](auto run) noexcept {
+        int shift = 0;
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(static_cast<std::uint8_t>(word >> shift));
+            shift += 8;
+        }
+    });
     return tag;
 }
 
@@ -106,11 +112,13 @@ static_assert(same_tag(signed_tag_of(15), expected_tag(15)));
 constexpr bool text_gives_the_bytes_tag() noexcept {
     constexpr fc::TextView text{"a text of nineteen."};
     fc::FixedArray<std::byte, 19> bytes{};
-    auto cursor = bytes.begin();
-    for (char const letter : text) {
-        *cursor = static_cast<std::byte>(letter);
-        ++cursor;
-    }
+    bytes.with_mut([text](auto run) noexcept {
+        auto cursor = run.begin();
+        for (char const letter : text) {
+            *cursor = static_cast<std::byte>(letter);
+            ++cursor;
+        }
+    });
     return text.size() == 19
         && same_tag(fc::sip_hash(reference_key(), text),
                     fc::sip_hash(reference_key(), fc::View<std::byte const>{bytes.view()}));
@@ -150,8 +158,9 @@ int check_each_forged_bit() {
     Secret<SipKeyBytes> key = mint_secret<SipKeyBytes>(reference_key());
     for (std::size_t bit = 0; bit < fc::sip_tag_bytes * 8; ++bit) {
         SipTag forged = good;
-        forged.at(fc::Index<fc::sip_tag_bytes>::check(bit / 8).expect("a byte of the tag")) ^=
-            static_cast<std::byte>(1U << (bit % 8));
+        std::byte const flip = static_cast<std::byte>(1U << (bit % 8));
+        forged.with_element(fc::Index<fc::sip_tag_bytes>::check(bit / 8).expect("a byte of the tag"),
+                            [flip](std::byte& held) noexcept { held ^= flip; });
         auto [kept, accepted] = sh::verify(std::move(key), longest, forged);
         if (accepted) return 20;
         key = std::move(kept);
@@ -163,7 +172,7 @@ int check_each_forged_bit() {
 // authenticate the message under a different key.
 int check_other_message_and_key() {
     fc::FixedArray<std::byte, kVectorCount> changed = reference_message();
-    changed.at(fc::index<0>()) ^= std::byte{1};
+    changed.with_element(fc::index<0>(), [](std::byte& held) noexcept { held ^= std::byte{1}; });
     SipTag const good = expected_tag(kVectorCount - 1);
 
     auto [kept, accepted_changed] =
@@ -172,7 +181,7 @@ int check_other_message_and_key() {
 
     fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
     SipKeyBytes other = reference_key();
-    other.at(fc::index<0>()) ^= std::byte{1};
+    other.with_element(fc::index<0>(), [](std::byte& held) noexcept { held ^= std::byte{1}; });
     auto [other_kept, accepted_other_key] =
         sh::verify(mint_secret<SipKeyBytes>(other), prefix(message, kVectorCount - 1), good);
     if (accepted_other_key) return 31;

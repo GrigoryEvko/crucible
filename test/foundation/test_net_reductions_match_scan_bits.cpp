@@ -51,9 +51,8 @@ template <int Lanes, class T, std::size_t Count, core::ScanKind Kind>
     auto const leaves = draw_values<T, Count>(seed);
     auto const from_net = evaluate_net<Count>(scan_net_of<Count, Kind>, leaves, T{}, AddValues{}, core::Ascending{});
     core::FixedArray<T, Count> scanned{};
-    bool is_written = false;
-    scanned = core::with_mut(std::move(scanned), [&](auto out) noexcept {
-        is_written = scan_sums_in<Lanes, Kind>(core::View<T const>{leaves.view()}, std::move(out));
+    bool is_written = scanned.with_mut([&leaves](auto out) noexcept {
+        return scan_sums_in<Lanes, Kind>(core::View<T const>{leaves.view()}, std::move(out));
     });
     std::size_t position = 0;
     for (T const sum : scanned) {
@@ -89,18 +88,18 @@ template <class T, core::ScanKind Kind>
         core::View<T const> const run{leaves.view()};
         auto const from_net = evaluate_net<37>(scan_net_of<37, Kind>, leaves, T{}, AddValues{}, core::Ascending{});
         core::FixedArray<T, 4> heads{};
-        heads = core::with_mut(std::move(heads),
-                               [&](auto out) noexcept { core::sum_grains_by_tree<8>(run, 0, std::move(out)); });
+        heads.with_mut([run](auto out) noexcept { core::sum_grains_by_tree<8>(run, 0, std::move(out)); });
         core::FixedArray<T, 5> sums{};
-        for (std::size_t grain = 0; grain < 4; ++grain)
-            slot_at(sums, grain) = slot_at(heads, grain);
+        for (std::size_t grain = 0; grain < 4; ++grain) {
+            T const element = slot_at(heads, grain);
+            sums.with_element(slot_index(sums, grain), [element](T& held) noexcept { held = element; });
+        }
         core::FixedArray<T, 5> carries{};
-        bool is_written = false;
-        carries = core::with_mut(std::move(carries), [&](auto out) noexcept {
-            is_written = core::scan_exclusive_sums(core::View<T const>{sums.view()}, std::move(out)).is_ok();
+        bool is_written = carries.with_mut([&sums](auto out) noexcept {
+            return core::scan_exclusive_sums(core::View<T const>{sums.view()}, std::move(out)).is_ok();
         });
         core::FixedArray<T, 37> scanned{};
-        scanned = core::with_mut(std::move(scanned), [&](auto out) noexcept {
+        scanned.with_mut([run, &carries](auto out) noexcept {
             core::View<T const> const carried{carries.view()};
             if constexpr (Kind == core::ScanKind::Inclusive) {
                 core::scan_inclusive_sum_grains<8>(run, 0, carried, std::move(out));

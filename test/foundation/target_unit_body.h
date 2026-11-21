@@ -36,13 +36,15 @@ inline constexpr std::size_t target_unit_run = 1000;
 // unit calls no helper of a test header.
 [[nodiscard]] std::uint32_t sum_bits_of_this_unit() noexcept {
     ::foundation::core::FixedArray<float, target_unit_run> run{};
-    std::uint32_t state = 0x2545F491u;
-    for (float& value : run) {
-        state = state * 1664525u + 1013904223u;
-        std::uint32_t const exponent = 115u + (state >> 27) % 24u;
-        std::uint32_t const sign = (state >> 26) & 1u;
-        value = ::foundation::core::bit_cast<float>((sign << 31) | (exponent << 23) | (state & 0x7FFFFFu));
-    }
+    run.with_mut([](auto elements) noexcept {
+        std::uint32_t state = 0x2545F491u;
+        for (float& value : elements) {
+            state = state * 1664525u + 1013904223u;
+            std::uint32_t const exponent = 115u + (state >> 27) % 24u;
+            std::uint32_t const sign = (state >> 26) & 1u;
+            value = ::foundation::core::bit_cast<float>((sign << 31) | (exponent << 23) | (state & 0x7FFFFFu));
+        }
+    });
     float const sum = ::foundation::core::sum_by_tree(::foundation::core::View<float const>{run.view()});
     return ::foundation::core::bit_cast<std::uint32_t>(sum);
 }

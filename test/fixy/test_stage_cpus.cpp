@@ -85,7 +85,9 @@ template <std::size_t First, std::size_t Second>
     Topology const topology = planted_topology();
     cc::StageCpuClaims claims{};
     FixedArray<int, 6> plan{};
-    cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), plan.view());
+    plan.with_mut([&claims, &topology](auto run) noexcept {
+        cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), run.view());
+    });
     return expect_plan("six stages on two clusters of four CPUs", plan, FixedArray<int, 6>{0, 1, 2, 3, 4, 5});
 }
 
@@ -95,7 +97,9 @@ template <std::size_t First, std::size_t Second>
     Topology const topology = planted_topology();
     cc::StageCpuClaims claims{};
     FixedArray<int, 10> plan{};
-    cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), plan.view());
+    plan.with_mut([&claims, &topology](auto run) noexcept {
+        cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), run.view());
+    });
     return expect_plan("ten stages on eight CPUs", plan, FixedArray<int, 10>{0, 1, 2, 3, 4, 5, 6, 7, -1, -1});
 }
 
@@ -106,18 +110,24 @@ template <std::size_t First, std::size_t Second>
     cc::StageCpuClaims claims{};
     FixedArray<int, 3> first{};
     FixedArray<int, 3> second{};
-    cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), first.view());
-    cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), second.view());
+    first.with_mut([&claims, &topology](auto run) noexcept {
+        cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), run.view());
+    });
+    second.with_mut([&claims, &topology](auto run) noexcept {
+        cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), run.view());
+    });
     int failures = expect_disjoint("two runs of three stages at the same time", first, second);
     failures += expect_plan("the first run", first, FixedArray<int, 3>{0, 1, 2});
     failures += expect_plan("the second run", second, FixedArray<int, 3>{3, 4, 5});
 
-    cc::give_back_stage_cpus(claims, first.view());
+    first.with_mut([&claims](auto run) noexcept { cc::give_back_stage_cpus(claims, run.view()); });
     FixedArray<int, 3> third{};
-    cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), third.view());
+    third.with_mut([&claims, &topology](auto run) noexcept {
+        cc::claim_stage_cpus(claims, AffinityMask::range(0, 7), topology.cache_clusters(), run.view());
+    });
     failures += expect_plan("a run after the first run gave its CPUs back", third, FixedArray<int, 3>{0, 1, 2});
-    cc::give_back_stage_cpus(claims, second.view());
-    cc::give_back_stage_cpus(claims, third.view());
+    second.with_mut([&claims](auto run) noexcept { cc::give_back_stage_cpus(claims, run.view()); });
+    third.with_mut([&claims](auto run) noexcept { cc::give_back_stage_cpus(claims, run.view()); });
     for (std::uint16_t cpu = 0; cpu < 8; ++cpu) {
         if (!claims.is_claimed(cpu)) continue;
         ::fixy::report(::fixy::Sink::Err, "CPU {} stays claimed after each run gave its CPUs back\n", cpu);
@@ -132,13 +142,17 @@ template <std::size_t First, std::size_t Second>
     Topology const topology = planted_topology();
     cc::StageCpuClaims claims{};
     FixedArray<int, 4> plan{};
-    cc::claim_stage_cpus(claims, mask_of(FixedArray<std::uint16_t, 4>{1, 4, 5, 6}), topology.cache_clusters(),
-                         plan.view());
+    plan.with_mut([&claims, &topology](auto run) noexcept {
+        cc::claim_stage_cpus(claims, mask_of(FixedArray<std::uint16_t, 4>{1, 4, 5, 6}), topology.cache_clusters(),
+                             run.view());
+    });
     int failures = expect_plan("a mask with three CPUs of the second cluster", plan, FixedArray<int, 4>{4, 5, 6, 1});
-    cc::give_back_stage_cpus(claims, plan.view());
+    plan.with_mut([&claims](auto run) noexcept { cc::give_back_stage_cpus(claims, run.view()); });
 
     FixedArray<int, 2> empty_plan{};
-    cc::claim_stage_cpus(claims, AffinityMask{}, topology.cache_clusters(), empty_plan.view());
+    empty_plan.with_mut([&claims, &topology](auto run) noexcept {
+        cc::claim_stage_cpus(claims, AffinityMask{}, topology.cache_clusters(), run.view());
+    });
     failures += expect_plan("an empty mask", empty_plan, FixedArray<int, 2>{-1, -1});
     return failures == 0 ? 0 : 1;
 }
@@ -189,7 +203,9 @@ void pinned_stage(PinConsumer&&, PinProducer&&) noexcept {
     }
     const ::fixy::BgDrainCtx bg{eff::testing::bg()};
     AffinityMask const mask = ::fixy::sched::read_affinity(bg).expect("a thread reads its own affinity mask");
-    stage_masks.at(Index<kStagesOfTwoRuns>::check(arrival).expect("each stage arrives one time")) = mask;
+    // Each stage has its own arrival, so no other thread writes this element at the same time.
+    stage_masks.with_element(Index<kStagesOfTwoRuns>::check(arrival).expect("each stage arrives one time"),
+                             [&mask](AffinityMask& held) noexcept { held = mask; });
 }
 
 // One run of twelve pinned stages.

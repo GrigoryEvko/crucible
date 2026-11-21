@@ -71,7 +71,7 @@ static_assert(std::is_move_assignable_v<Option<Box<int>>>);
 // by reference, and the view dangles when the arm returns.  The fix needs a
 // lifetime that the type carries, as the first entry tells.
 using Numbers = ::foundation::core::FixedArray<int, 4>;
-[[maybe_unused]] void arm_stores_a_borrow(View<int, 4>& out) {
+[[maybe_unused]] void arm_stores_a_borrow(View<int const, 4>& out) {
     auto const stores = [&out](Numbers numbers) noexcept {
         out = numbers.view();
         return 0;

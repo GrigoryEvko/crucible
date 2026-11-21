@@ -46,17 +46,21 @@ using SharedView = ::fixy::StridedView<std::uint32_t const>;
 [[nodiscard]] Run make_run() noexcept {
     Run run{};
     for (::fixy::Index<kRun> const position : run.indices()) {
-        run.at(position) = static_cast<std::uint32_t>(position.raw());
+        std::uint32_t const value = static_cast<std::uint32_t>(position.raw());
+        run.with_element(position, [value](std::uint32_t& held) noexcept { held = value; });
     }
     return run;
 }
 
 // The lane of an axis below the lane count.
-[[nodiscard]] std::size_t& lane(Lanes& lanes, std::size_t axis) noexcept {
-    return *lanes.get(axis).expect("an axis is below the lane count");
-}
 [[nodiscard]] std::size_t lane(Lanes const& lanes, std::size_t axis) noexcept {
     return *lanes.get(axis).expect("an axis is below the lane count");
+}
+
+// Writes value into the lane of an axis below the lane count.
+void set_lane(Lanes& lanes, std::size_t axis, std::size_t value) noexcept {
+    lanes.with_element(::fixy::Index<kLanes>::check(axis).expect("an axis is below the lane count"),
+                       [value](std::size_t& held) noexcept { held = value; });
 }
 
 // The offsets of the visits of a walk, in order.
@@ -66,8 +70,10 @@ struct Sequence {
 };
 
 void push(Sequence& sequence, std::size_t offset) noexcept {
-    *sequence.offsets.get(sequence.count).expect("a sequence holds at most kMaxCount offsets") =
-        static_cast<std::uint32_t>(offset);
+    std::uint32_t const value = static_cast<std::uint32_t>(offset);
+    sequence.offsets.with_element(
+        ::fixy::Index<kMaxCount>::check(sequence.count).expect("a sequence holds at most kMaxCount offsets"),
+        [value](std::uint32_t& held) noexcept { held = value; });
     ++sequence.count;
 }
 
@@ -124,8 +130,9 @@ struct Layout {
         while (true) {
             if (axis == 0) return sequence;
             --axis;
-            if (++lane(index, axis) < lane(layout.sizes, axis)) break;
-            lane(index, axis) = 0;
+            set_lane(index, axis, lane(index, axis) + 1);
+            if (lane(index, axis) < lane(layout.sizes, axis)) break;
+            set_lane(index, axis, 0);
         }
     }
 }
@@ -184,13 +191,13 @@ struct Layout {
         std::size_t size = draw.integer<std::size_t>(0, 4);
         if (count * size > kMaxCount) size = 1;
         count *= size;
-        lane(layout.sizes, axis) = size;
-        lane(layout.strides, axis) = draw.integer<std::size_t>(0, kMaxStride);
+        set_lane(layout.sizes, axis, size);
+        set_lane(layout.strides, axis, draw.integer<std::size_t>(0, kMaxStride));
     }
     if (draw.integer<std::size_t>(0, 2) == 0) {
         std::size_t stride = 1;
         for (std::size_t axis = layout.rank; axis-- > 0;) {
-            lane(layout.strides, axis) = stride;
+            set_lane(layout.strides, axis, stride);
             stride *= lane(layout.sizes, axis) == 0 ? 1 : lane(layout.sizes, axis);
         }
     }
@@ -219,18 +226,19 @@ void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
     ::fixy::FixedArray<std::size_t, 2> const strides{4, 1};
-    ::fixy::StridedView<int, 2> const matrix =
+    ::fixy::StridedView<int const, 2> const matrix =
         ::fixy::mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
     CRUCIBLE_TEST_ASSERT(test, matrix.count() == 12 && matrix.rank() == 2 && matrix.is_dense());
     CRUCIBLE_TEST_ASSERT(test, matrix.size(::fixy::index<0>()) == 3 && matrix.stride(::fixy::index<1>()) == 1);
 
-    ::fixy::StridedView<int, 2> const columns = matrix.transpose(::fixy::index<0>(), ::fixy::index<1>());
+    ::fixy::StridedView<int const, 2> const columns = matrix.transpose(::fixy::index<0>(), ::fixy::index<1>());
     CRUCIBLE_TEST_ASSERT(test, !columns.is_dense() && columns.size(::fixy::index<0>()) == 4);
     ::fixy::FixedArray<int, 12> order{};
     std::size_t visits = 0;
     bool const is_walked = ::fixy::walk(
                                [&order, &visits](int const& element) noexcept {
-                                   *order.get(visits).expect("twelve elements") = element;
+                                   order.with_element(::fixy::Index<12>::check(visits).expect("twelve elements"),
+                                                      [element](int& held) noexcept { held = element; });
                                    ++visits;
                                },
                                ::fixy::StridedView<int const, 2>{columns})
@@ -240,8 +248,14 @@ void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
 
     // A write through the walk reaches the run, and the second view of the
     // pair reads each element at the same index.
-    bool const is_added =
-        ::fixy::walk([](int& target, int& source) noexcept { target += source * 100; }, columns, columns).is_ok();
+    bool const is_added = values.with_mut([&sizes, &strides](auto run) noexcept {
+        ::fixy::StridedView<int, 2> const writer =
+            ::fixy::mint_strided_view(run.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        ::fixy::StridedView<int, 2> const writer_columns = writer.transpose(::fixy::index<0>(), ::fixy::index<1>());
+        return ::fixy::walk([](int& target, int& source) noexcept { target += source * 100; }, writer_columns,
+                            writer_columns)
+            .is_ok();
+    });
     CRUCIBLE_TEST_ASSERT(
         test,
         is_added
@@ -258,11 +272,15 @@ void walk_reads_of_each_mix(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<int, 16> left{};
     ::fixy::FixedArray<int, 16> right{};
     for (std::size_t position = 0; position < 16; ++position) {
-        *left.get(position).expect("sixteen elements") = static_cast<int>(position);
-        *right.get(position).expect("sixteen elements") = static_cast<int>(100 * position);
+        int const left_value = static_cast<int>(position);
+        int const right_value = static_cast<int>(100 * position);
+        left.with_element(::fixy::Index<16>::check(position).expect("sixteen elements"),
+                          [left_value](int& held) noexcept { held = left_value; });
+        right.with_element(::fixy::Index<16>::check(position).expect("sixteen elements"),
+                           [right_value](int& held) noexcept { held = right_value; });
     }
     ::fixy::FixedArray<std::size_t, 2> const sizes{2, 4};
-    auto const view_of = [&sizes](::fixy::View<int> run, std::size_t step) noexcept {
+    auto const view_of = [&sizes](auto run, std::size_t step) noexcept {
         ::fixy::FixedArray<std::size_t, 2> const strides{4 * step, step};
         return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("the view fits");
     };
@@ -272,12 +290,13 @@ void walk_reads_of_each_mix(::fixy::TestRunnerCtx const& test) noexcept {
         std::size_t const left_step = 1 + ((mix >> 1) & 1);
         std::size_t const right_step = 1 + ((mix >> 2) & 1);
         ::fixy::FixedArray<int, 16> out{};
-        bool const is_walked =
-            ::fixy::walk([](int& sum, int const& first, int const& second) noexcept { sum = first + second; },
-                         view_of(out.view(), out_step),
-                         ::fixy::StridedView<int const, 2>{view_of(left.view(), left_step)},
-                         ::fixy::StridedView<int const, 2>{view_of(right.view(), right_step)})
+        bool const is_walked = out.with_mut([&](auto run) noexcept {
+            return ::fixy::walk([](int& sum, int const& first, int const& second) noexcept { sum = first + second; },
+                                view_of(run.view(), out_step),
+                                ::fixy::StridedView<int const, 2>{view_of(left.view(), left_step)},
+                                ::fixy::StridedView<int const, 2>{view_of(right.view(), right_step)})
                 .is_ok();
+        });
         bool is_summed = is_walked;
         for (std::size_t row = 0; row < 2; ++row) {
             for (std::size_t column = 0; column < 4; ++column) {
@@ -340,18 +359,19 @@ void reshape_cases(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<std::size_t, 1> const eleven{11};
     ::fixy::FixedArray<std::size_t, 9> const nine{12, 1, 1, 1, 1, 1, 1, 1, 1};
     ::fixy::View<std::size_t const> const dynamic_nine = nine.view();
-    ::fixy::StridedView<int, 2> const matrix =
+    ::fixy::StridedView<int const, 2> const matrix =
         ::fixy::mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
 
-    ::fixy::StridedView<int, 1> const line =
+    ::fixy::StridedView<int const, 1> const line =
         matrix.reshape(flat.view()).value_or(matrix.select(::fixy::index<0>(), 0).expect("row 0 exists"));
     CRUCIBLE_TEST_ASSERT(test, line.count() == 12 && line.stride(::fixy::index<0>()) == 1);
 
-    ::fixy::StridedView<int, 3> const blocks = matrix.reshape(split.view()).ok().expect("a split of a dense axis");
+    ::fixy::StridedView<int const, 3> const blocks =
+        matrix.reshape(split.view()).ok().expect("a split of a dense axis");
     CRUCIBLE_TEST_ASSERT(test, blocks.stride(::fixy::index<0>()) == 4 && blocks.stride(::fixy::index<1>()) == 2
                                    && blocks.stride(::fixy::index<2>()) == 1);
 
-    ::fixy::StridedView<int, 2> const columns = matrix.transpose(::fixy::index<0>(), ::fixy::index<1>());
+    ::fixy::StridedView<int const, 2> const columns = matrix.transpose(::fixy::index<0>(), ::fixy::index<1>());
     CRUCIBLE_TEST_ASSERT(test, columns.reshape(flat.view()).err().expect("a transpose is no run")
                                    == ::fixy::ReshapeError::NotAView);
     CRUCIBLE_TEST_ASSERT(test, matrix.reshape(eleven.view()).err().expect("eleven is not twelve")
@@ -379,7 +399,7 @@ void reshape_cases(::fixy::TestRunnerCtx const& test) noexcept {
     // A view with no element takes the strides of the row-major order.
     ::fixy::FixedArray<std::size_t, 2> const empty_sizes{0, 4};
     ::fixy::FixedArray<std::size_t, 3> const empty_target{2, 0, 3};
-    ::fixy::StridedView<int, 3> const empty =
+    ::fixy::StridedView<int const, 3> const empty =
         ::fixy::mint_strided_view(values.view(), empty_sizes.view(), strides.view(), 0)
             .expect("no element")
             .reshape(empty_target.view())
@@ -395,21 +415,22 @@ void reshape_cases(::fixy::TestRunnerCtx const& test) noexcept {
 void rank_zero_and_empty(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<int, 4> values{7, 8, 9, 10};
     ::fixy::View<std::size_t const> const no_axes{};
-    ::fixy::StridedView<int> const scalar =
+    ::fixy::StridedView<int const> const scalar =
         ::fixy::mint_strided_view(values.view(), no_axes, no_axes, 2).expect("one element fits");
     int total = 0;
-    bool const is_walked = ::fixy::walk([&total](int& element) noexcept { total += element; }, scalar).is_ok();
+    bool const is_walked = ::fixy::walk([&total](int const& element) noexcept { total += element; }, scalar).is_ok();
     CRUCIBLE_TEST_ASSERT(test, is_walked && total == 9 && scalar.count() == 1 && scalar.rank() == 0);
-    ::fixy::StridedView<int, 0> const fixed = scalar.ranked<0>().expect("the rank is zero");
+    ::fixy::StridedView<int const, 0> const fixed = scalar.ranked<0>().expect("the rank is zero");
     CRUCIBLE_TEST_ASSERT(test, fixed.count() == 1 && scalar.ranked<1>().is_none());
 
     ::fixy::FixedArray<std::size_t, 1> const four{4};
     ::fixy::FixedArray<std::size_t, 1> const unit{1};
-    ::fixy::StridedView<int, 1> const line =
+    ::fixy::StridedView<int const, 1> const line =
         ::fixy::mint_strided_view(values.view(), four.view(), unit.view(), 0).expect("four elements fit");
-    ::fixy::StridedView<int, 0> const third = line.select(::fixy::index<0>(), 3).expect("position 3 exists");
+    ::fixy::StridedView<int const, 0> const third = line.select(::fixy::index<0>(), 3).expect("position 3 exists");
     total = 0;
-    CRUCIBLE_TEST_ASSERT(test, ::fixy::walk([&total](int& element) noexcept { total += element; }, third).is_ok());
+    CRUCIBLE_TEST_ASSERT(test,
+                         ::fixy::walk([&total](int const& element) noexcept { total += element; }, third).is_ok());
     CRUCIBLE_TEST_ASSERT(test, total == 10 && line.select(::fixy::index<0>(), 4).is_none());
 
     std::size_t const turns = ::fixy::mint_strided_scope(fixed, [](auto branded) noexcept {
@@ -425,11 +446,13 @@ void rank_zero_and_empty(::fixy::TestRunnerCtx const& test) noexcept {
     // axis.
     ::fixy::FixedArray<std::size_t, 2> const empty_sizes{2, 0};
     ::fixy::FixedArray<std::size_t, 2> const strides{1, 1};
-    ::fixy::StridedView<int, 2> const empty =
+    ::fixy::StridedView<int const, 2> const empty =
         ::fixy::mint_strided_view(values.view(), empty_sizes.view(), strides.view(), 0).expect("no element");
     std::size_t visits = 0;
-    CRUCIBLE_TEST_ASSERT(test, ::fixy::walk([&visits](int&) noexcept { ++visits; }, empty).is_ok() && visits == 0);
-    ::fixy::StridedView<int, 2> const slice = empty.slice(::fixy::index<0>(), 1, 1).expect("one position of two fits");
+    CRUCIBLE_TEST_ASSERT(test,
+                         ::fixy::walk([&visits](int const&) noexcept { ++visits; }, empty).is_ok() && visits == 0);
+    ::fixy::StridedView<int const, 2> const slice =
+        empty.slice(::fixy::index<0>(), 1, 1).expect("one position of two fits");
     CRUCIBLE_TEST_ASSERT(test, slice.count() == 0 && slice.is_dense());
     pass(test, "  rank_zero_and_empty: PASSED\n");
 }
@@ -446,13 +469,13 @@ void mismatch_and_dynamic_axes(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<std::size_t, 2> const swapped{1, 0};
     ::fixy::View<std::size_t const> const dynamic_sizes = sizes.view();
     ::fixy::View<std::size_t const> const dynamic_strides = strides.view();
-    ::fixy::StridedView<int> const matrix =
+    ::fixy::StridedView<int const> const matrix =
         ::fixy::mint_strided_view(values.view(), dynamic_sizes, dynamic_strides, 0).expect("the matrix fits");
-    ::fixy::StridedView<int> const other =
+    ::fixy::StridedView<int const> const other =
         ::fixy::mint_strided_view(values.view(), other_sizes.view(), other_strides.view(), 0).expect("it fits");
     std::size_t visits = 0;
     bool const is_refused =
-        ::fixy::walk([&visits](int&, int&) noexcept { ++visits; }, matrix, other).is_err() && visits == 0;
+        ::fixy::walk([&visits](int const&, int const&) noexcept { ++visits; }, matrix, other).is_err() && visits == 0;
     CRUCIBLE_TEST_ASSERT(test, is_refused);
 
     CRUCIBLE_TEST_ASSERT(test, matrix.transpose(0, 2).is_none() && matrix.transpose(1, 0).is_some());
@@ -474,26 +497,28 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<std::size_t, 2> const row_major{3, 1};
     ::fixy::FixedArray<std::size_t, 2> const column_major{1, 2};
     ::fixy::FixedArray<std::size_t, 2> const wrong_sizes{3, 2};
-    ::fixy::StridedView<int, 2> const left_view =
+    ::fixy::StridedView<int const, 2> const left_view =
         ::fixy::mint_strided_view(left.view(), sizes.view(), row_major.view(), 0).expect("fits");
-    ::fixy::StridedView<int, 2> const right_view =
+    ::fixy::StridedView<int const, 2> const right_view =
         ::fixy::mint_strided_view(right.view(), sizes.view(), column_major.view(), 0).expect("fits");
-    ::fixy::StridedView<int, 2> const output_view =
-        ::fixy::mint_strided_view(output.view(), sizes.view(), row_major.view(), 0).expect("fits");
-    ::fixy::StridedView<int, 2> const wrong_view =
+    ::fixy::StridedView<int const, 2> const wrong_view =
         ::fixy::mint_strided_view(output.view(), wrong_sizes.view(), column_major.view(), 0).expect("fits");
 
-    bool const is_summed = ::fixy::mint_strided_scope(left_view, [&](auto branded) noexcept {
-        if (branded.parallel(wrong_view).is_some()) return false;
-        if (branded.index(std::size_t{2}, std::size_t{0}).is_some()) return false;
-        if (branded.index(std::size_t{1}, std::size_t{3}).is_some()) return false;
-        auto const others = branded.parallel(right_view).expect("the sizes are the same");
-        auto const target = branded.parallel(output_view).expect("the sizes are the same");
-        for (auto const index : branded.indices()) {
-            target.at(index) = branded.at(index) + others.at(index);
-        }
-        auto const corner = branded.index(std::size_t{1}, std::size_t{2}).expect("the corner is inside");
-        return branded.at(corner) == 6 && others.at(corner) == 60;
+    bool const is_summed = output.with_mut([&](auto run) noexcept {
+        ::fixy::StridedView<int, 2> const output_view =
+            ::fixy::mint_strided_view(run.view(), sizes.view(), row_major.view(), 0).expect("fits");
+        return ::fixy::mint_strided_scope(left_view, [&](auto branded) noexcept {
+            if (branded.parallel(wrong_view).is_some()) return false;
+            if (branded.index(std::size_t{2}, std::size_t{0}).is_some()) return false;
+            if (branded.index(std::size_t{1}, std::size_t{3}).is_some()) return false;
+            auto const others = branded.parallel(right_view).expect("the sizes are the same");
+            auto const target = branded.parallel(output_view).expect("the sizes are the same");
+            for (auto const index : branded.indices()) {
+                target.at(index) = branded.at(index) + others.at(index);
+            }
+            auto const corner = branded.index(std::size_t{1}, std::size_t{2}).expect("the corner is inside");
+            return branded.at(corner) == 6 && others.at(corner) == 60;
+        });
     });
     // The right view reads the run in column-major order, so its element at
     // (i, j) is the element at the position i + 2 * j.
@@ -502,21 +527,24 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     // The walk over the branded views of the scope visits the indices in
     // row-major order and writes the same sums, with no compare of the sizes.
     ::fixy::FixedArray<int, 6> walked{};
-    ::fixy::StridedView<int, 2> const walked_view =
-        ::fixy::mint_strided_view(walked.view(), sizes.view(), column_major.view(), 0).expect("fits");
     ::fixy::FixedArray<int, 6> order{};
-    std::size_t const visits = ::fixy::mint_strided_scope(left_view, [&](auto branded) noexcept {
-        auto const others = branded.parallel(right_view).expect("the sizes are the same");
-        auto const target = branded.parallel(walked_view).expect("the sizes are the same");
-        std::size_t visited = 0;
-        ::fixy::walk(
-            [&order, &visited](int& sum, int const& first, int const& second) noexcept {
-                sum = first + second;
-                *order.get(visited).expect("six elements") = first;
-                ++visited;
-            },
-            target, branded, others);
-        return visited;
+    std::size_t const visits = walked.with_mut([&](auto run) noexcept {
+        ::fixy::StridedView<int, 2> const walked_view =
+            ::fixy::mint_strided_view(run.view(), sizes.view(), column_major.view(), 0).expect("fits");
+        return ::fixy::mint_strided_scope(left_view, [&](auto branded) noexcept {
+            auto const others = branded.parallel(right_view).expect("the sizes are the same");
+            auto const target = branded.parallel(walked_view).expect("the sizes are the same");
+            std::size_t visited = 0;
+            ::fixy::walk(
+                [&order, &visited](int& sum, int const& first, int const& second) noexcept {
+                    sum = first + second;
+                    order.with_element(::fixy::Index<6>::check(visited).expect("six elements"),
+                                       [first](int& held) noexcept { held = first; });
+                    ++visited;
+                },
+                target, branded, others);
+            return visited;
+        });
     });
     // The output is column-major, so its element at (i, j) is at the
     // position i + 2 * j.
@@ -530,10 +558,9 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
 [[nodiscard]] bool mints_unique(::fixy::View<std::size_t const> sizes, ::fixy::View<std::size_t const> strides,
                                 std::size_t offset) noexcept {
     ::fixy::FixedArray<int, 12> values{};
-    auto [is_minted, kept] = ::fixy::with_mut(std::move(values), [sizes, strides, offset](auto run) noexcept {
+    bool const is_minted = values.with_mut([sizes, strides, offset](auto run) noexcept {
         return ::fixy::mint_strided_view_mut(std::move(run), sizes, strides, offset).is_some();
     });
-    static_cast<void>(kept);
     return is_minted;
 }
 
@@ -571,7 +598,7 @@ void unique_view_writes(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
     ::fixy::FixedArray<std::size_t, 2> const strides{4, 1};
-    auto [is_written, written] = ::fixy::with_mut(std::move(values), [&sizes, &strides](auto run) noexcept {
+    bool const is_written = values.with_mut([&sizes, &strides](auto run) noexcept {
         auto unique = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
                           .expect("a dense matrix has no overlap");
         bool const is_shaped = unique.count() == 12 && unique.rank() == 2 && unique.is_dense()
@@ -584,7 +611,7 @@ void unique_view_writes(::fixy::TestRunnerCtx const& test) noexcept {
         return is_shaped && is_scaled && is_added && !columns.is_dense() && columns.stride(::fixy::index<1>()) == 4;
     });
     CRUCIBLE_TEST_ASSERT(
-        test, is_written && written == (::fixy::FixedArray<int, 12>{0, 11, 20, 31, 40, 51, 60, 71, 80, 91, 100, 111}));
+        test, is_written && values == (::fixy::FixedArray<int, 12>{0, 11, 20, 31, 40, 51, 60, 71, 80, 91, 100, 111}));
     pass(test, "  unique_view_writes: PASSED\n");
 }
 
@@ -594,7 +621,7 @@ void read_past_the_end() noexcept {
     ::fixy::FixedArray<int, 2> values{1, 2};
     ::fixy::FixedArray<std::size_t, 1> const sizes{2};
     ::fixy::FixedArray<std::size_t, 1> const strides{1};
-    ::fixy::StridedView<int, 1> const line =
+    ::fixy::StridedView<int const, 1> const line =
         ::fixy::mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("fits");
     std::size_t const total = ::fixy::mint_strided_scope(line, [](auto branded) noexcept {
         auto cursor = branded.indices().begin();
@@ -609,7 +636,7 @@ void step_past_the_end() noexcept {
     ::fixy::FixedArray<int, 2> values{1, 2};
     ::fixy::FixedArray<std::size_t, 2> const sizes{2, 0};
     ::fixy::FixedArray<std::size_t, 2> const strides{1, 1};
-    ::fixy::StridedView<int, 2> const empty =
+    ::fixy::StridedView<int const, 2> const empty =
         ::fixy::mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("no element");
     std::size_t const total = ::fixy::mint_strided_scope(empty, [](auto branded) noexcept {
         auto cursor = branded.indices().begin();
@@ -677,7 +704,7 @@ void two_view_walk_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept
         Layout const first = draw_fitting_layout(draw);
         Layout second = first;
         for (std::size_t axis = 0; axis < second.rank; ++axis) {
-            lane(second.strides, axis) = draw.integer<std::size_t>(0, kMaxStride);
+            set_lane(second.strides, axis, draw.integer<std::size_t>(0, kMaxStride));
         }
         second.offset = draw.integer<std::size_t>(0, kRun - 1 - span_of(second));
         SharedView const first_view = view_of(run, first).expect("the layout fits");
@@ -705,18 +732,18 @@ void permute_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
         SharedView const view = view_of(run, layout).expect("the layout fits");
         Lanes order{};
         for (std::size_t axis = 0; axis < layout.rank; ++axis) {
-            lane(order, axis) = axis;
+            set_lane(order, axis, axis);
         }
         for (std::size_t axis = layout.rank; axis > 1; --axis) {
             std::size_t const other = draw.integer<std::size_t>(0, axis - 1);
             std::size_t const kept = lane(order, axis - 1);
-            lane(order, axis - 1) = lane(order, other);
-            lane(order, other) = kept;
+            set_lane(order, axis - 1, lane(order, other));
+            set_lane(order, other, kept);
         }
         Layout permuted = layout;
         for (std::size_t axis = 0; axis < layout.rank; ++axis) {
-            lane(permuted.sizes, axis) = lane(layout.sizes, lane(order, axis));
-            lane(permuted.strides, axis) = lane(layout.strides, lane(order, axis));
+            set_lane(permuted.sizes, axis, lane(layout.sizes, lane(order, axis)));
+            set_lane(permuted.strides, axis, lane(layout.strides, lane(order, axis)));
         }
         ::fixy::View<std::size_t const> const order_view =
             order.view().window(0, layout.rank).expect("the rank is at most the lane count");
@@ -728,10 +755,10 @@ void permute_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
         std::size_t const first = draw.integer<std::size_t>(0, layout.rank - 1);
         std::size_t const second = draw.integer<std::size_t>(0, layout.rank - 1);
         Layout transposed = layout;
-        lane(transposed.sizes, first) = lane(layout.sizes, second);
-        lane(transposed.strides, first) = lane(layout.strides, second);
-        lane(transposed.sizes, second) = lane(layout.sizes, first);
-        lane(transposed.strides, second) = lane(layout.strides, first);
+        set_lane(transposed.sizes, first, lane(layout.sizes, second));
+        set_lane(transposed.strides, first, lane(layout.strides, second));
+        set_lane(transposed.sizes, second, lane(layout.sizes, first));
+        set_lane(transposed.strides, second, lane(layout.strides, first));
         return is_permuted
             && agrees_with_model(view.transpose(first, second).expect("two axes below the rank"), transposed);
     });
@@ -755,8 +782,8 @@ void slice_and_select_agree_with_model(::fixy::TestRunnerCtx const& test) noexce
         std::size_t const step = draw.integer<std::size_t>(0, 3);
         bool const fits = step != 0 && (count == 0 ? start <= size : start < size && start + (count - 1) * step < size);
         Layout sliced = layout;
-        lane(sliced.sizes, axis) = count;
-        lane(sliced.strides, axis) = stride * step;
+        set_lane(sliced.sizes, axis, count);
+        set_lane(sliced.strides, axis, stride * step);
         sliced.offset = layout.offset + start * stride;
         bool const is_sliced = view.slice(axis, start, count, step)
                                    .match(
@@ -776,8 +803,8 @@ void slice_and_select_agree_with_model(::fixy::TestRunnerCtx const& test) noexce
         std::size_t target = 0;
         for (std::size_t source = 0; source < layout.rank; ++source) {
             if (source == axis) continue;
-            lane(selected.sizes, target) = lane(layout.sizes, source);
-            lane(selected.strides, target) = lane(layout.strides, source);
+            set_lane(selected.sizes, target, lane(layout.sizes, source));
+            set_lane(selected.strides, target, lane(layout.strides, source));
             ++target;
         }
         bool const is_selected = view.select(axis, position)
@@ -830,8 +857,8 @@ void broadcast_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
                 fits = fits && (axis < lead || lane(layout.sizes, axis - lead) == 1);
             }
             count *= size;
-            lane(target.sizes, axis) = size;
-            lane(target.strides, axis) = stride;
+            set_lane(target.sizes, axis, size);
+            set_lane(target.strides, axis, stride);
         }
         return view.broadcast_to(sizes_of(target))
             .match(
@@ -857,7 +884,7 @@ void broadcast_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
     std::size_t inner = 1;
     for (std::size_t axis = target.rank; axis-- > 0;) {
         std::size_t const size = lane(target.sizes, axis);
-        if (size > 1) lane(steps, axis) = offset_at(sequence, inner) - offset_at(sequence, 0);
+        if (size > 1) set_lane(steps, axis, offset_at(sequence, inner) - offset_at(sequence, 0));
         inner *= size;
     }
     Lanes index{};
@@ -868,8 +895,9 @@ void broadcast_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
         }
         if (offset != offset_at(sequence, position)) return false;
         for (std::size_t axis = target.rank; axis-- > 0;) {
-            if (++lane(index, axis) < lane(target.sizes, axis)) break;
-            lane(index, axis) = 0;
+            set_lane(index, axis, lane(index, axis) + 1);
+            if (lane(index, axis) < lane(target.sizes, axis)) break;
+            set_lane(index, axis, 0);
         }
     }
     return true;
@@ -889,7 +917,7 @@ void reshape_agrees_with_oracle(::fixy::TestRunnerCtx const& test) noexcept {
             std::size_t stride = draw.integer<std::size_t>(1, 2);
             std::size_t const changed = draw.integer<std::size_t>(0, kLanes);
             for (std::size_t axis = layout.rank; axis-- > 0;) {
-                lane(layout.strides, axis) = axis == changed ? lane(layout.strides, axis) : stride;
+                set_lane(layout.strides, axis, axis == changed ? lane(layout.strides, axis) : stride);
                 stride *= lane(layout.sizes, axis) == 0 ? 1 : lane(layout.sizes, axis);
             }
         }
@@ -911,10 +939,10 @@ void reshape_agrees_with_oracle(::fixy::TestRunnerCtx const& test) noexcept {
                 }
                 remaining = size == 0 ? remaining : remaining / size;
             }
-            lane(target.sizes, axis) = size;
+            set_lane(target.sizes, axis, size);
         }
         if (draw.integer<std::size_t>(0, 9) == 0 && target.rank > 0) {
-            lane(target.sizes, 0) = lane(target.sizes, 0) + 1;
+            set_lane(target.sizes, 0, lane(target.sizes, 0) + 1);
         }
         bool const is_same_count = count_of(target) == count;
         Sequence const source = model_sequence(layout);
@@ -965,7 +993,7 @@ void reshape_agrees_with_oracle(::fixy::TestRunnerCtx const& test) noexcept {
             if (best == layout.rank || lane(layout.strides, axis) < lane(layout.strides, best)) best = axis;
         }
         if (best == layout.rank) return true;
-        lane(taken, best) = 1;
+        set_lane(taken, best, 1);
         if (lane(layout.strides, best) <= span) return false;
         span += (lane(layout.sizes, best) - 1) * lane(layout.strides, best);
     }
@@ -984,7 +1012,8 @@ void unique_door_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
         Sequence const model = model_sequence(layout);
         bool const is_distinct = has_distinct_offsets(model);
         bool const passes = passes_sorted_strides(layout);
-        auto [is_agreed, kept] = ::fixy::with_mut(make_run(), [&](auto run) noexcept {
+        Run fresh = make_run();
+        bool const is_agreed = fresh.with_mut([&](auto run) noexcept {
             return ::fixy::mint_strided_view_mut(std::move(run), sizes_of(layout), strides_of(layout), layout.offset)
                 .match(
                     [&](auto unique) noexcept {
@@ -996,7 +1025,6 @@ void unique_door_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
                         return !passes;
                     });
         });
-        static_cast<void>(kept);
         return is_agreed;
     });
     pass(test, "  unique_door_agrees_with_model: {} views, {} refusals of an overlap, {} refusals of no overlap\n",

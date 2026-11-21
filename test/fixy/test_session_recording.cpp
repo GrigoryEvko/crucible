@@ -144,7 +144,10 @@ constexpr std::size_t kEpochOffset = 48;
 using Record = ::foundation::core::FixedArray<std::byte, s::session_event_size>;
 
 constexpr Record with_byte(Record bytes, std::size_t offset, std::uint8_t value) {
-    *bytes.get(offset).expect("the offset lies inside the record") = static_cast<std::byte>(value);
+    std::byte const written = static_cast<std::byte>(value);
+    bytes.with_element(
+        ::foundation::core::Index<s::session_event_size>::check(offset).expect("the offset lies inside the record"),
+        [written](std::byte& held) noexcept { held = written; });
     return bytes;
 }
 
@@ -202,11 +205,13 @@ static_assert(truncated_decode().error() == s::EventDecodeError::Truncated);
 namespace {
 
 int check_log_decode() {
+    using BlockIndex = ::foundation::core::Index<3 * s::session_event_size>;
     ::foundation::core::FixedArray<std::byte, 3 * s::session_event_size> block{};
     std::size_t position = 0;
     for (const auto& bytes : {kSendBytes, kCloseBytes, kStopBytes}) {
         for (const std::byte byte : bytes) {
-            *block.get(position).expect("the block holds three records") = byte;
+            block.with_element(BlockIndex::check(position).expect("the block holds three records"),
+                               [byte](std::byte& held) noexcept { held = byte; });
             ++position;
         }
     }
@@ -222,7 +227,8 @@ int check_log_decode() {
     if (short_block.is_ok() || short_block.err().expect("the block is short").index != 2)
         return fail("a truncated block did not name its last record");
 
-    *block.get(72 + kOpOffset).expect("the offset is inside the block") = std::byte{0};
+    block.with_element(BlockIndex::check(72 + kOpOffset).expect("the offset is inside the block"),
+                       [](std::byte& held) noexcept { held = std::byte{0}; });
     const auto corrupt = s::decode_session_log(alloc, block.view());
     if (corrupt.is_ok() || corrupt.err().expect("the block is corrupt").index != 1
         || corrupt.err().expect("the block is corrupt").error != s::EventDecodeError::UnknownOperation)

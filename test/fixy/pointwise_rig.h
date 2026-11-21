@@ -66,8 +66,9 @@ struct Outcomes {
     std::size_t shared = 0;
 };
 
-[[nodiscard]] inline std::size_t& lane(Lanes& lanes, std::size_t axis) noexcept {
-    return *lanes.get(axis).expect("an axis is below the lane count");
+inline void set_lane(Lanes& lanes, std::size_t axis, std::size_t value) noexcept {
+    lanes.with_element(::fixy::Index<kRank>::check(axis).expect("an axis is below the lane count"),
+                       [value](std::size_t& held) noexcept { held = value; });
 }
 [[nodiscard]] inline std::size_t lane(Lanes const& lanes, std::size_t axis) noexcept {
     return *lanes.get(axis).expect("an axis is below the lane count");
@@ -110,10 +111,10 @@ struct Outcomes {
         std::size_t size = *sizes.get(draw.integer<std::size_t>(0, 11)).expect("twelve sizes");
         if (count * size > kMaxCount) size = 1;
         count *= size;
-        lane(layout.sizes, axis) = size;
+        set_lane(layout.sizes, axis, size);
     }
     if (layout.rank > 0 && draw.integer<std::size_t>(0, 15) == 0) {
-        lane(layout.sizes, draw.integer<std::size_t>(0, layout.rank - 1)) = 0;
+        set_lane(layout.sizes, draw.integer<std::size_t>(0, layout.rank - 1), 0);
     }
     return layout;
 }
@@ -122,13 +123,13 @@ struct Outcomes {
 [[nodiscard]] inline Lanes draw_order(Draw& draw, std::size_t rank) noexcept {
     Lanes order{};
     for (std::size_t axis = 0; axis < rank; ++axis) {
-        lane(order, axis) = axis;
+        set_lane(order, axis, axis);
     }
     for (std::size_t axis = rank; axis > 1; --axis) {
         std::size_t const other = draw.integer<std::size_t>(0, axis - 1);
         std::size_t const kept = lane(order, axis - 1);
-        lane(order, axis - 1) = lane(order, other);
-        lane(order, other) = kept;
+        set_lane(order, axis - 1, lane(order, other));
+        set_lane(order, other, kept);
     }
     return order;
 }
@@ -141,7 +142,7 @@ inline void draw_unique_strides(Draw& draw, Layout& layout) noexcept {
     std::size_t stride = draw.integer<std::size_t>(0, 3) == 0 ? 2 : 1;
     for (std::size_t position = layout.rank; position-- > 0;) {
         std::size_t const axis = lane(order, position);
-        lane(layout.strides, axis) = stride;
+        set_lane(layout.strides, axis, stride);
         std::size_t const size = lane(layout.sizes, axis);
         stride = stride * (size == 0 ? 1 : size) + (draw.integer<std::size_t>(0, 3) == 0 ? 1 : 0);
     }
@@ -160,7 +161,7 @@ inline void draw_input_strides(Draw& draw, Layout& layout) noexcept {
     if (kind == 4) {
         std::size_t stride = 1;
         for (std::size_t axis = 0; axis < layout.rank; ++axis) {
-            lane(layout.strides, axis) = stride;
+            set_lane(layout.strides, axis, stride);
             std::size_t const size = lane(layout.sizes, axis);
             stride *= size == 0 ? 1 : size;
         }
@@ -169,19 +170,19 @@ inline void draw_input_strides(Draw& draw, Layout& layout) noexcept {
     if (kind == 3) {
         ::fixy::FixedArray<std::size_t, 6> const steps{0, 1, 2, 3, 4, 9};
         for (std::size_t axis = 0; axis < layout.rank; ++axis) {
-            lane(layout.strides, axis) = *steps.get(draw.integer<std::size_t>(0, 5)).expect("six steps");
+            set_lane(layout.strides, axis, *steps.get(draw.integer<std::size_t>(0, 5)).expect("six steps"));
         }
         return;
     }
     std::size_t stride = 1;
     for (std::size_t axis = layout.rank; axis-- > 0;) {
-        lane(layout.strides, axis) = stride;
+        set_lane(layout.strides, axis, stride);
         std::size_t const size = lane(layout.sizes, axis);
         stride *= size == 0 ? 1 : size;
     }
     if (kind == 2) {
         for (std::size_t axis = 0; axis < layout.rank; ++axis) {
-            if (draw.boolean()) lane(layout.strides, axis) = 0;
+            if (draw.boolean()) set_lane(layout.strides, axis, 0);
         }
     }
 }
@@ -370,16 +371,17 @@ template <std::size_t Inputs>
     draw_unique_strides(draw, drawn.out);
     ::fixy::FixedArray<Place, Inputs> places{};
     for (std::size_t input = 0; input < Inputs; ++input) {
-        Layout& layout = *drawn.inputs.get(input).expect("an input is below the count");
-        layout = shape;
+        auto const slot = ::fixy::Index<Inputs>::check(input).expect("an input is below the count");
+        Layout layout = shape;
         std::size_t const place = draw.integer<std::size_t>(0, 7);
         Place const chosen = place == 0 ? Place::InPlace : place == 1 ? Place::Shared : Place::Apart;
-        *places.get(input).expect("an input is below the count") = chosen;
+        places.with_element(slot, [chosen](Place& held) noexcept { held = chosen; });
         if (chosen == Place::InPlace) {
             layout.strides = drawn.out.strides;
         } else {
             draw_input_strides(draw, layout);
         }
+        drawn.inputs.with_element(slot, [&layout](Layout& held) noexcept { held = layout; });
     }
     // The regions of the output and of the inputs apart, in a drawn order.
     Lanes const order = draw_order(draw, Inputs + 1);
@@ -391,16 +393,19 @@ template <std::size_t Inputs>
             position += reach_of(drawn.out);
             continue;
         }
-        Layout& layout = *drawn.inputs.get(view - 1).expect("an input is below the count");
+        auto const input = ::fixy::Index<Inputs>::check(view - 1).expect("an input is below the count");
         if (*places.get(view - 1).expect("an input is below the count") != Place::Apart) continue;
-        layout.offset = position;
-        position += reach_of(layout);
+        position += drawn.inputs.with_element(input, [position](Layout& layout) noexcept {
+            layout.offset = position;
+            return reach_of(layout);
+        });
     }
     drawn.total = position;
     bool has_shared = false;
     bool has_in_place = false;
     for (std::size_t input = 0; input < Inputs; ++input) {
-        Layout& layout = *drawn.inputs.get(input).expect("an input is below the count");
+        auto const slot = ::fixy::Index<Inputs>::check(input).expect("an input is below the count");
+        Layout layout = drawn.inputs.at(slot);
         Place const chosen = *places.get(input).expect("an input is below the count");
         if (chosen == Place::InPlace) {
             layout.offset = drawn.out.offset;
@@ -412,6 +417,7 @@ template <std::size_t Inputs>
             drawn.total = end > drawn.total ? end : drawn.total;
             has_shared = has_shared || (reach != 0 && reach_of(layout) != 0);
         }
+        drawn.inputs.with_element(slot, [&layout](Layout& held) noexcept { held = layout; });
     }
     ++(has_shared ? outcomes.shared : has_in_place ? outcomes.in_place : outcomes.apart);
     return drawn;
@@ -523,8 +529,8 @@ void pointwise_agrees_with_walk(::fixy::TestRunnerCtx const& test, ::fixy::TextV
 [[nodiscard]] inline Layout line_of(std::size_t count, std::size_t stride, std::size_t offset) noexcept {
     Layout layout{};
     layout.rank = 1;
-    lane(layout.sizes, 0) = count;
-    lane(layout.strides, 0) = stride;
+    set_lane(layout.sizes, 0, count);
+    set_lane(layout.strides, 0, stride);
     layout.offset = offset;
     return layout;
 }
@@ -534,10 +540,10 @@ void pointwise_agrees_with_walk(::fixy::TestRunnerCtx const& test, ::fixy::TextV
                                      std::size_t column_stride, std::size_t offset) noexcept {
     Layout layout{};
     layout.rank = 2;
-    lane(layout.sizes, 0) = rows;
-    lane(layout.sizes, 1) = columns;
-    lane(layout.strides, 0) = row_stride;
-    lane(layout.strides, 1) = column_stride;
+    set_lane(layout.sizes, 0, rows);
+    set_lane(layout.sizes, 1, columns);
+    set_lane(layout.strides, 0, row_stride);
+    set_lane(layout.strides, 1, column_stride);
     layout.offset = offset;
     return layout;
 }
@@ -730,14 +736,19 @@ void lane_loop_mixes(::fixy::TestRunnerCtx const& test, ::fixy::TextView name, O
         for (std::size_t input = 0; input < Inputs; ++input) {
             std::size_t const step = *steps.get(loops % kLaneLoops).expect("a loop below the count of the loops");
             loops /= kLaneLoops;
-            Layout& layout = *directed.inputs.get(input).expect("an input is below the count");
-            layout = step == 0 ? plane_of(rows, columns, 1, 0, 0) : plane_of(rows, columns, columns * step, step, 0);
+            Layout const layout =
+                step == 0 ? plane_of(rows, columns, 1, 0, 0) : plane_of(rows, columns, columns * step, step, 0);
+            directed.inputs.with_element(::fixy::Index<Inputs>::check(input).expect("an input is below the count"),
+                                         [&layout](Layout& held) noexcept { held = layout; });
         }
         std::size_t position = reach_of(directed.out);
         for (std::size_t input = 0; input < Inputs; ++input) {
-            Layout& layout = *directed.inputs.get(input).expect("an input is below the count");
-            layout.offset = position;
-            position += reach_of(layout);
+            position +=
+                directed.inputs.with_element(::fixy::Index<Inputs>::check(input).expect("an input is below the count"),
+                                             [position](Layout& layout) noexcept {
+                                                 layout.offset = position;
+                                                 return reach_of(layout);
+                                             });
         }
         directed.total = position;
         ::fixy::HeapArray<E> run =

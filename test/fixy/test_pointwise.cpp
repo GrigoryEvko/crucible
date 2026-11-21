@@ -48,18 +48,22 @@ static_assert(!::foundation::core::LaneOpOf<ScalarAdd, float, float, float>, "Sc
 void branded_inputs(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<float, 40> values{};
     ::fixy::FixedArray<float, 40> addends{};
-    float next = 0.5f;
-    for (float& value : values) {
-        value = next;
-        next += 1.0f;
-    }
-    for (float& addend : addends) {
-        addend = 100.0f;
-    }
+    values.with_mut([](auto run) noexcept {
+        float next = 0.5f;
+        for (float& value : run) {
+            value = next;
+            next += 1.0f;
+        }
+    });
+    addends.with_mut([](auto run) noexcept {
+        for (float& addend : run) {
+            addend = 100.0f;
+        }
+    });
     ::fixy::FixedArray<std::size_t, 2> const sizes{2, 20};
     ::fixy::FixedArray<std::size_t, 2> const strides{20, 1};
-    auto [is_written, kept] = ::fixy::with_mut(std::move(values), [&](auto target_run) noexcept {
-        auto [is_inner, inputs_kept] = ::fixy::with_mut(std::move(addends), [&](auto source_run) noexcept {
+    bool const is_written = values.with_mut([&](auto target_run) noexcept {
+        return addends.with_mut([&](auto source_run) noexcept {
             auto const source = ::fixy::mint_strided_view_mut(std::move(source_run), sizes.view(), strides.view(), 0)
                                     .expect("a dense matrix has no overlap");
             auto out = ::fixy::mint_strided_view_mut(std::move(target_run), sizes.view(), strides.view(), 0)
@@ -67,12 +71,10 @@ void branded_inputs(::fixy::TestRunnerCtx const& test) noexcept {
             ::fixy::StridedView<float const, 2> const in_place = out.view();
             return ::foundation::core::write_pointwise(out, Add{}, in_place, source).is_ok();
         });
-        static_cast<void>(inputs_kept);
-        return is_inner;
     });
     bool is_summed = true;
     float expected = 100.5f;
-    for (float const value : kept) {
+    for (float const value : values) {
         is_summed = is_summed && ::fixy::bit_cast<std::uint32_t>(value) == ::fixy::bit_cast<std::uint32_t>(expected);
         expected += 1.0f;
     }
@@ -90,11 +92,11 @@ void shape_mismatch(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<std::size_t, 2> const other_strides{3, 1};
     ::fixy::StridedView<int const, 2> const wrong =
         ::fixy::mint_strided_view(others.view(), other_sizes.view(), other_strides.view(), 0).expect("it fits");
-    auto [is_refused, kept] = ::fixy::with_mut(std::move(values), [&](auto run) noexcept {
+    bool const is_refused = values.with_mut([&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("dense");
         return ::foundation::core::write_pointwise(out, Negate{}, wrong).is_err();
     });
-    CRUCIBLE_TEST_ASSERT(test, is_refused && kept == (::fixy::FixedArray<int, 12>{}));
+    CRUCIBLE_TEST_ASSERT(test, is_refused && values == (::fixy::FixedArray<int, 12>{}));
     pass(test, "  shape_mismatch: PASSED\n");
 }
 
@@ -105,12 +107,12 @@ void fill_and_edges(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<std::size_t, 1> const sizes{7};
     ::fixy::FixedArray<std::size_t, 1> const strides{3};
     ::fixy::View<std::size_t const> const no_axes{};
-    auto [is_filled, kept] = ::fixy::with_mut(std::move(values), [&](auto run) noexcept {
+    bool const is_filled = values.with_mut([&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("it fits");
         return ::foundation::core::write_pointwise(out, [] noexcept { return 2.5; }).is_ok();
     });
     double total = 0.0;
-    for (double const value : kept) {
+    for (double const value : values) {
         total += value;
     }
     CRUCIBLE_TEST_ASSERT(test,
@@ -120,14 +122,14 @@ void fill_and_edges(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<double, 3> const source{4.0, 5.0, 6.0};
     ::fixy::StridedView<double const> const one =
         ::fixy::mint_strided_view(source.view(), no_axes, no_axes, 2).expect("one element fits");
-    auto [is_one, one_kept] = ::fixy::with_mut(std::move(point), [&](auto run) noexcept {
+    bool const is_one = point.with_mut([&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), no_axes, no_axes, 1).expect("one element fits");
         return ::foundation::core::write_pointwise(out, Negate{}, one).is_ok();
     });
     ::fixy::FixedArray<double, 3> const one_expected{1.0, -6.0, 3.0};
-    CRUCIBLE_TEST_ASSERT(test, is_one
-                                   && same_bits(::fixy::View<double const>{one_kept.view()},
-                                                ::fixy::View<double const>{one_expected.view()}));
+    CRUCIBLE_TEST_ASSERT(
+        test,
+        is_one && same_bits(::fixy::View<double const>{point.view()}, ::fixy::View<double const>{one_expected.view()}));
     pass(test, "  fill_and_edges: PASSED\n");
 }
 
@@ -138,16 +140,20 @@ void static_rank_one(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<float, 20> values{};
     ::fixy::FixedArray<float, 60> sources{};
     ::fixy::FixedArray<float, 20> expected{};
-    float next = 0.5f;
-    for (float& source : sources) {
-        source = next;
-        next += 1.0f;
-    }
-    float sum = 21.0f;
-    for (float& element : expected) {
-        element = sum;
-        sum += 3.0f;
-    }
+    sources.with_mut([](auto run) noexcept {
+        float next = 0.5f;
+        for (float& source : run) {
+            source = next;
+            next += 1.0f;
+        }
+    });
+    expected.with_mut([](auto run) noexcept {
+        float sum = 21.0f;
+        for (float& element : run) {
+            element = sum;
+            sum += 3.0f;
+        }
+    });
     ::fixy::FixedArray<std::size_t, 1> const sizes{20};
     ::fixy::FixedArray<std::size_t, 1> const dense{1};
     ::fixy::FixedArray<std::size_t, 1> const step_two{2};
@@ -155,13 +161,13 @@ void static_rank_one(::fixy::TestRunnerCtx const& test) noexcept {
         ::fixy::mint_strided_view(sources.view(), sizes.view(), dense.view(), 0).expect("the input fits");
     ::fixy::StridedView<float const, 1> const second =
         ::fixy::mint_strided_view(sources.view(), sizes.view(), step_two.view(), 20).expect("the input fits");
-    auto [is_written, kept] = ::fixy::with_mut(std::move(values), [&](auto run) noexcept {
+    bool const is_written = values.with_mut([&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), dense.view(), 0).expect("dense");
         return ::foundation::core::write_pointwise(out, Add{}, first, second).is_ok();
     });
     CRUCIBLE_TEST_ASSERT(
         test,
-        is_written && same_bits(::fixy::View<float const>{kept.view()}, ::fixy::View<float const>{expected.view()}));
+        is_written && same_bits(::fixy::View<float const>{values.view()}, ::fixy::View<float const>{expected.view()}));
     pass(test, "  static_rank_one: PASSED\n");
 }
 

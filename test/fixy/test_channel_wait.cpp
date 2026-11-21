@@ -111,10 +111,11 @@ template <class Policy, class Consumer, typename... PopTag>
             continue;
         }
         Item const value = std::move(got).expect("the test above found an item");
-        Item& expected = *next.get(value & 1).expect("a lane bit is below two");
+        ::fixy::Index<2> const lane = ::fixy::Index<2>::check(value & 1).expect("a lane bit is below two");
+        Item const expected = next.at(lane);
         result.is_ordered = result.is_ordered && (value >> 1) == expected;
         result.is_in_turn = result.is_in_turn && value == result.count;
-        ++expected;
+        next.with_element(lane, [](Item& held) noexcept { ++held; });
         ++result.count;
     }
     return result;

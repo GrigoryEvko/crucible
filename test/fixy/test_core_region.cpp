@@ -465,8 +465,8 @@ void test_cursor_at_the_end_aborts() {
 // needs no mapping.
 void test_cursor_position() {
     fixy::FixedArray<std::uint64_t, 16> storage{};
-    fixy::View<std::uint64_t> const words = storage.view();
-    fixy::View<std::uint64_t> run = words.window(3, 5).expect("five words fit");
+    fixy::View<std::uint64_t const> const words = storage.view();
+    fixy::View<std::uint64_t const> run = words.window(3, 5).expect("five words fit");
     auto cursor = run.begin();
     std::size_t position = 0;
     while (!cursor.is_at_end()) {
@@ -487,8 +487,8 @@ void test_cursor_position() {
 void test_offset_of_an_element() {
     fixy::FixedArray<Record, 100> first_storage{};
     fixy::FixedArray<Record, 20> second_storage{};
-    fixy::View<Record> const records = first_storage.view();
-    fixy::View<Record> middle = records.window(10, 20).expect("twenty records fit");
+    fixy::View<Record const> const records = first_storage.view();
+    fixy::View<Record const> middle = records.window(10, 20).expect("twenty records fit");
     for (std::size_t position = 0; position < middle.size(); ++position) {
         Record const& element = *middle.get(position).expect("the position is below the count");
         CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, element) == fixy::some(position));
@@ -498,7 +498,7 @@ void test_offset_of_an_element() {
     Record const& after = *records.get(30).expect("record 30 fits");
     CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, before).is_none());
     CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, after).is_none());
-    fixy::View<Record> const other = second_storage.view();
+    fixy::View<Record const> const other = second_storage.view();
     CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, *other.begin()).is_none());
     fixy::View<Record> const empty{};
     CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(empty, *middle.begin()).is_none());
