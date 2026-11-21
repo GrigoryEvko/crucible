@@ -293,7 +293,7 @@ class BpfMapImage : public ::foundation::Pinned<BpfMapImage<Key, Value, MaxEntri
         return find_free_slot(key).match(
             [this, &key, &value](SlotIndex index) noexcept -> UpdateResult {
                 Slot const filled{.key = key, .value = value, .is_occupied = true};
-                slots_.with_element(index, [filled](Slot& held) noexcept { held = filled; });
+                slots_.with_element(index, [&filled](Slot& held) noexcept { held = filled; });
                 ++size_;
                 return ::fixy::Unit{};
             },

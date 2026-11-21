@@ -660,7 +660,7 @@ public:
                                                 ThermalSample sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
                     if (!slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }
@@ -677,7 +677,7 @@ public:
     [[nodiscard]] constexpr bool update_ecc(Ctx const&, cog::CogIdentity const& peer, EccCounters sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
                     if (!detail::no_counter_behind(sample, slot.ecc) || !slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }
@@ -696,7 +696,7 @@ public:
     [[nodiscard]] constexpr bool update_drops(Ctx const&, cog::CogIdentity const& peer, DropCounters sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
                     if (!detail::no_counter_behind(sample, slot.drops) || !slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }
@@ -717,7 +717,7 @@ public:
         }
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
                     if (!slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }

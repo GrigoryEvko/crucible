@@ -219,14 +219,17 @@ class AsymmetricFailureDetector
                                       bool success) noexcept {
         ::fixy::Index<kRingSlots> const next =
             ::fixy::Index<kRingSlots>::check(window.next).expect("the cursor of a probe window is below its size");
-        if (window.count == Window) {
-            if (ring.at(next)) {
-                --window.successes;
+        // The read of the sample that leaves the window and the write of the new sample take one slot.
+        ring.with_element(next, [&window, success](bool& held) noexcept {
+            if (window.count == Window) {
+                if (held) {
+                    --window.successes;
+                }
+            } else {
+                ++window.count;
             }
-        } else {
-            ++window.count;
-        }
-        ring.with_element(next, [success](bool& held) noexcept { held = success; });
+            held = success;
+        });
         if (success) {
             ++window.successes;
         }
@@ -310,7 +313,7 @@ class AsymmetricFailureDetector
             .witness_reachable = summary.witness_reachable,
             .sequence = summary.sequence,
         };
-        events_.with_element(next_event_, [event](AsymmetricFailureEvent& held) noexcept { held = event; });
+        events_.with_element(next_event_, [&event](AsymmetricFailureEvent& held) noexcept { held = event; });
         next_event_ = detail::next_ring_index(next_event_);
         if (event_count_ < kMaxEvents) {
             ++event_count_;
@@ -333,23 +336,34 @@ class AsymmetricFailureDetector
                                               std::uint64_t sequence) noexcept {
         return find_or_insert(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                bool const is_advanced = peers_.with_element(
-                    index, [sequence](PeerSlot& slot) noexcept { return slot.sequence.try_advance(sequence); });
+                // The advance of the sequence and the push of the sample write one slot in one body.
+                bool const is_advanced =
+                    peers_.with_element(index, [sequence, is_outbound, success](PeerSlot& slot) noexcept {
+                        if (!slot.sequence.try_advance(sequence)) {
+                            return false;
+                        }
+                        if (is_outbound) {
+                            push_sample(slot.outbound, slot.outbound_window, success);
+                        } else {
+                            push_sample(slot.inbound, slot.inbound_window, success);
+                        }
+                        return true;
+                    });
                 if (!is_advanced) {
                     return false;
                 }
-                peers_.with_element(index, [is_outbound, success](PeerSlot& slot) noexcept {
-                    if (is_outbound) {
-                        push_sample(slot.outbound, slot.outbound_window, success);
-                    } else {
-                        push_sample(slot.inbound, slot.inbound_window, success);
-                    }
-                });
                 record_if_transition(index);
                 return true;
             },
             [] { return false; });
     }
+
+    // The result of the write of one vote into the witness row of a peer.
+    enum class VoteWrite : std::uint8_t {
+        Stale,
+        Written,
+        NoRoom,
+    };
 
     // Records the vote of witness for the peer of index.  A vote older than
     // the last vote of the witness, or a new witness with no free slot, is
@@ -359,48 +373,41 @@ class AsymmetricFailureDetector
         if (sequence < peers_.at(index).sequence.get()) {
             return false;
         }
-        ::fixy::FixedArray<WitnessSlot, MaxWitnesses> const& witnesses = witnesses_.at(index);
-        for (::fixy::Index<MaxWitnesses> const position : witnesses.indices()) {
-            WitnessSlot const& existing = witnesses.at(position);
-            if (existing.occupied && existing.witness_uuid == witness.uuid) {
-                if (sequence < existing.sequence.get()) {
-                    return false;
-                }
-                peers_.with_element(index, [sequence](PeerSlot& slot) noexcept {
-                    static_cast<void>(slot.sequence.try_advance(sequence));
+        // The search of the witness and the write of its vote take one loop over the row, as one body.
+        cog::Uuid const witness_uuid = witness.uuid;
+        VoteWrite const written =
+            witnesses_.with_element(index, [witness_uuid, witness_reaches_target,
+                                            sequence](::fixy::FixedArray<WitnessSlot, MaxWitnesses>& row) noexcept {
+                return row.with_mut([witness_uuid, witness_reaches_target, sequence](auto run) noexcept {
+                    for (WitnessSlot& existing : run) {
+                        if (existing.occupied && existing.witness_uuid == witness_uuid) {
+                            if (sequence < existing.sequence.get()) {
+                                return VoteWrite::Stale;
+                            }
+                            static_cast<void>(existing.sequence.try_advance(sequence));
+                            existing.reachable = witness_reaches_target;
+                            return VoteWrite::Written;
+                        }
+                    }
+                    for (WitnessSlot& existing : run) {
+                        if (!existing.occupied) {
+                            existing.occupied = true;
+                            existing.witness_uuid = witness_uuid;
+                            existing.reachable = witness_reaches_target;
+                            static_cast<void>(existing.sequence.try_advance(sequence));
+                            return VoteWrite::Written;
+                        }
+                    }
+                    return VoteWrite::NoRoom;
                 });
-                witnesses_.with_element(index, [position, sequence, witness_reaches_target](
-                                                   ::fixy::FixedArray<WitnessSlot, MaxWitnesses>& row) noexcept {
-                    row.with_element(position, [sequence, witness_reaches_target](WitnessSlot& held) noexcept {
-                        static_cast<void>(held.sequence.try_advance(sequence));
-                        held.reachable = witness_reaches_target;
-                    });
-                });
-                record_if_transition(index);
-                return true;
-            }
+            });
+        if (written != VoteWrite::Written) {
+            return false;
         }
-        for (::fixy::Index<MaxWitnesses> const position : witnesses.indices()) {
-            if (!witnesses.at(position).occupied) {
-                cog::Uuid const witness_uuid = witness.uuid;
-                witnesses_.with_element(index, [position, witness_uuid, witness_reaches_target,
-                                                sequence](::fixy::FixedArray<WitnessSlot, MaxWitnesses>& row) noexcept {
-                    row.with_element(position,
-                                     [witness_uuid, witness_reaches_target, sequence](WitnessSlot& held) noexcept {
-                                         held.occupied = true;
-                                         held.witness_uuid = witness_uuid;
-                                         held.reachable = witness_reaches_target;
-                                         static_cast<void>(held.sequence.try_advance(sequence));
-                                     });
-                });
-                peers_.with_element(index, [sequence](PeerSlot& slot) noexcept {
-                    static_cast<void>(slot.sequence.try_advance(sequence));
-                });
-                record_if_transition(index);
-                return true;
-            }
-        }
-        return false;
+        peers_.with_element(
+            index, [sequence](PeerSlot& slot) noexcept { static_cast<void>(slot.sequence.try_advance(sequence)); });
+        record_if_transition(index);
+        return true;
     }
 
 public:

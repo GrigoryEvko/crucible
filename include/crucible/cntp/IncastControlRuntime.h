@@ -106,20 +106,22 @@ public:
     issue_credit(Ctx const&, cntp::SocketIdentity socket, cntp::PositiveCreditBytes bytes,
                  std::uint64_t sequence) noexcept {
         CRUCIBLE_TRY(index, find(socket).ok_or(cntp::IncastError::FlowNotStarted));
-        const std::uint32_t room = ::fixy::max_of<std::uint32_t> - flows_.at(index).credit_bytes;
-        if (bytes.value() > room) {
-            return ::fixy::err(cntp::IncastError::CreditOverflow);
-        }
-        std::uint32_t const added = bytes.value();
-        flows_.with_element(index, [added, sequence](FlowSlot& flow) noexcept {
-            flow.credit_bytes += added;
-            flow.sequence = sequence;
-        });
-        return IncastCreditGrant{
-            .socket = socket,
-            .bytes = bytes,
-            .sequence = sequence,
-        };
+        // The test of the room and the add read one element.
+        return flows_.with_element(
+            index,
+            [socket, bytes, sequence](FlowSlot& flow) noexcept -> ::fixy::Result<IncastCreditGrant, cntp::IncastError> {
+                const std::uint32_t room = ::fixy::max_of<std::uint32_t> - flow.credit_bytes;
+                if (bytes.value() > room) {
+                    return ::fixy::err(cntp::IncastError::CreditOverflow);
+                }
+                flow.credit_bytes += bytes.value();
+                flow.sequence = sequence;
+                return IncastCreditGrant{
+                    .socket = socket,
+                    .bytes = bytes,
+                    .sequence = sequence,
+                };
+            });
     }
 
     // This never waits.  The controller is a single-threaded drain-side state
@@ -131,12 +133,14 @@ public:
     [[nodiscard]] constexpr ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError>
     try_consume_credit(Ctx const&, cntp::SocketIdentity socket) noexcept {
         CRUCIBLE_TRY(index, find(socket).ok_or(cntp::IncastError::FlowNotStarted));
-        if (flows_.at(index).credit_bytes == 0) {
-            return ::fixy::err(cntp::IncastError::CreditUnavailable);
-        }
-        const std::uint32_t granted =
-            flows_.with_element(index, [](FlowSlot& flow) noexcept { return ::fixy::exchange(flow.credit_bytes, 0); });
-        return ::fixy::mint_refined<::fixy::positive>(granted);
+        // The test and the exchange read one element, so the optimizer knows that the grant is not zero.
+        return flows_.with_element(
+            index, [](FlowSlot& flow) noexcept -> ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError> {
+                if (flow.credit_bytes == 0) {
+                    return ::fixy::err(cntp::IncastError::CreditUnavailable);
+                }
+                return ::fixy::mint_refined<::fixy::positive>(::fixy::exchange(flow.credit_bytes, 0));
+            });
     }
 
     [[nodiscard]] constexpr ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError>

@@ -219,11 +219,21 @@ template <std::size_t N>
 template <std::size_t N>
 [[nodiscard]] constexpr bool invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
     using Row = ::fixy::FixedArray<std::uint8_t, N>;
-    // Writes value into the entry at row and col of matrix.
-    auto const set_entry = [](SquareMatrix<N>& matrix, ::fixy::Index<N> row, ::fixy::Index<N> col,
-                              std::uint8_t value) noexcept {
-        matrix.with_element(row, [col, value](Row& entries) noexcept {
-            entries.with_element(col, [value](std::uint8_t& entry) noexcept { entry = value; });
+    // Writes each entry of a row as its product with scale.
+    auto const scale_row = [](Row& entries, std::uint8_t scale) noexcept {
+        entries.with_mut([scale](auto run) noexcept {
+            for (std::uint8_t& entry : run) {
+                entry = mul(entry, scale);
+            }
+        });
+    };
+    // Adds the product of factor and each entry of pivot to the same entry of a row.  The row is not the pivot.
+    auto const eliminate_row = [](Row& entries, Row const& pivot, std::uint8_t factor) noexcept {
+        entries.with_mut([&pivot, factor](auto run) noexcept {
+            auto const out = run.view();
+            for (auto j : pivot.indices()) {
+                out.at(j) = static_cast<std::uint8_t>(out.at(j) ^ mul(factor, pivot.at(j)));
+            }
         });
     };
     for (auto row : inverse.indices()) {
@@ -240,22 +250,23 @@ template <std::size_t N>
         }
         auto const pivot = std::move(found).expect("the search found a pivot");
         if (pivot != col) {
+            // The type of the two indexes proves that each names a row, so the swap takes no check.
             input.with_mut([pivot, col](auto run) noexcept {
-                ::fixy::swap(*run.get(pivot.raw()).expect("the pivot is a row of the matrix"),
-                             *run.get(col.raw()).expect("the column is a row of the matrix"));
+                auto const rows = run.view();
+                ::fixy::swap(rows.at(pivot), rows.at(col));
             });
             inverse.with_mut([pivot, col](auto run) noexcept {
-                ::fixy::swap(*run.get(pivot.raw()).expect("the pivot is a row of the matrix"),
-                             *run.get(col.raw()).expect("the column is a row of the matrix"));
+                auto const rows = run.view();
+                ::fixy::swap(rows.at(pivot), rows.at(col));
             });
         }
 
         const std::uint8_t scale = inv(input.at(col).at(col));
-        for (auto j : input.indices()) {
-            set_entry(input, col, j, mul(input.at(col).at(j), scale));
-            set_entry(inverse, col, j, mul(inverse.at(col).at(j), scale));
-        }
+        input.with_element(col, [&scale_row, scale](Row& entries) noexcept { scale_row(entries, scale); });
+        inverse.with_element(col, [&scale_row, scale](Row& entries) noexcept { scale_row(entries, scale); });
 
+        Row const& input_pivot = input.at(col);
+        Row const& inverse_pivot = inverse.at(col);
         for (auto row : input.indices()) {
             if (row == col) {
                 continue;
@@ -264,12 +275,12 @@ template <std::size_t N>
             if (factor == 0) {
                 continue;
             }
-            for (auto j : input.indices()) {
-                set_entry(input, row, j,
-                          static_cast<std::uint8_t>(input.at(row).at(j) ^ mul(factor, input.at(col).at(j))));
-                set_entry(inverse, row, j,
-                          static_cast<std::uint8_t>(inverse.at(row).at(j) ^ mul(factor, inverse.at(col).at(j))));
-            }
+            input.with_element(row, [&eliminate_row, &input_pivot, factor](Row& entries) noexcept {
+                eliminate_row(entries, input_pivot, factor);
+            });
+            inverse.with_element(row, [&eliminate_row, &inverse_pivot, factor](Row& entries) noexcept {
+                eliminate_row(entries, inverse_pivot, factor);
+            });
         }
     }
     return true;

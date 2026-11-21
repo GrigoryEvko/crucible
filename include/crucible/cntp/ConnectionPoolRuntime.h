@@ -155,7 +155,7 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
             .connection_id = connection.connection_id().value(),
             .sequence = ++sequence_,
         };
-        events_.with_element(next_event_, [event](PoolEvent& held) noexcept { held = event; });
+        events_.with_element(next_event_, [&event](PoolEvent& held) noexcept { held = event; });
         next_event_ = next_event_index(next_event_);
         if (event_count_ < MaxEvents) {
             ++event_count_;

@@ -237,9 +237,9 @@ struct MtlsPolicy {
     [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, MtlsError>
     allow_peer_with_pin(MtlsDnsName name, MtlsCertificateFingerprint fingerprint) noexcept {
         CRUCIBLE_TRY(slot, PeerIndex::check(allowed_peer_count.value()).ok_or(MtlsError::TooManyPeerNames));
-        allowed_peer_dns.with_element(slot, [name](MtlsDnsName& peer) noexcept { peer = name; });
+        allowed_peer_dns.with_element(slot, [&name](MtlsDnsName& peer) noexcept { peer = name; });
         allowed_peer_pins.with_element(
-            slot, [pin = fingerprint.value()](MtlsSha256Fingerprint& peer_pin) noexcept { peer_pin = pin; });
+            slot, [&fingerprint](MtlsSha256Fingerprint& peer_pin) noexcept { peer_pin = fingerprint.value(); });
         ++allowed_peer_count.value_;
         return ::fixy::Unit{};
     }

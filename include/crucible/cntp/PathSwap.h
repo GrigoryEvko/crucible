@@ -238,7 +238,7 @@ private:
                 event.new_path = plan.new_path().value();
             },
             []() noexcept { ::fixy::fatal("an event of a swap comes after begin_swap, which sets the plan"); });
-        events_.with_element(next_event_, [event](PathSwapEvent& slot) noexcept { slot = event; });
+        events_.with_element(next_event_, [&event](PathSwapEvent& slot) noexcept { slot = event; });
         next_event_ = EventIndex::check((next_event_.raw() + 1u) % MaxEvents)
                           .expect("a remainder of a division by MaxEvents is below MaxEvents");
         if (event_count_ < MaxEvents) {

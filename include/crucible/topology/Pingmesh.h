@@ -233,16 +233,16 @@ private:
         if (find_peer(peer.uuid).is_some()) {
             return PingmeshError::DuplicatePeer;
         }
-        for (PeerIndex const index : peers_.indices()) {
-            if (!peers_.at(index).active) {
-                peers_.with_element(index, [&peer](PeerSlot& slot) noexcept {
+        return peers_.with_mut([&peer](auto run) noexcept {
+            for (PeerSlot& slot : run) {
+                if (!slot.active) {
                     slot.peer = peer;
                     slot.active = true;
-                });
-                return PingmeshError::None;
+                    return PingmeshError::None;
+                }
             }
-        }
-        return PingmeshError::Full;
+            return PingmeshError::Full;
+        });
     }
 
     void enable_all_registered_pairs() noexcept {

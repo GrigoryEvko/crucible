@@ -108,7 +108,7 @@ inline void publish_congestion(
     for (::fixy::Index<kCongestionObservationCount> const index : observations.indices()) {
         ::crucible::observe::Observation const observation = observations.at(index);
         // The sink is an AtomicSnapshot, so a reader on another thread can read it during this write.
-        sinks.with_element(index, [observation](::crucible::observe::ObservationSnapshot& sink) noexcept {
+        sinks.with_element(index, [&observation](::crucible::observe::ObservationSnapshot& sink) noexcept {
             ::crucible::observe::record_observation(sink, observation);
         });
     }

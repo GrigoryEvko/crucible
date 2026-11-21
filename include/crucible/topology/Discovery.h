@@ -280,16 +280,17 @@ public:
         }
         fact.level = fact.level == cog::CogLevel::L0_Atomic ? default_level_for(fact.kind) : fact.level;
         node_facts_.with_element(slot, [&fact](DiscoveryNodeFact& held) noexcept { held = fact; });
-        cog::CogIdentity const identity{
-            .uuid = fact.uuid,
-            .level = fact.level,
-            .kind = fact.kind,
-            .vendor = fact.vendor,
-            .model = fact.model,
-            .firmware_revision = firmware_claim(fact),
-            .bios_revision = {},
-        };
-        nodes_.with_element(slot, [&identity](cog::CogIdentity& node) noexcept { node = identity; });
+        nodes_.with_element(slot, [&fact](cog::CogIdentity& node) noexcept {
+            node = cog::CogIdentity{
+                .uuid = fact.uuid,
+                .level = fact.level,
+                .kind = fact.kind,
+                .vendor = fact.vendor,
+                .model = fact.model,
+                .firmware_revision = firmware_claim(fact),
+                .bios_revision = {},
+            };
+        });
         ++node_count_;
         return idx;
     }
@@ -324,7 +325,7 @@ public:
         const std::uint16_t idx = static_cast<std::uint16_t>(edge_count_);
         ::fixy::Index<MaxEdges> const slot =
             ::fixy::Index<MaxEdges>::check(edge_count_).expect("a snapshot that is not full has a free edge slot");
-        edge_facts_.with_element(slot, [fact](DiscoveryEdgeFact& held) noexcept { held = fact; });
+        edge_facts_.with_element(slot, [&fact](DiscoveryEdgeFact& held) noexcept { held = fact; });
         TopologyEdge const edge{
             .id = EdgeId{idx},
             .kind = fact.kind,
@@ -335,7 +336,7 @@ public:
             .rtt_ns_p99 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p99),
             .drop_rate = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.drop_rate),
         };
-        edges_.with_element(slot, [edge](TopologyEdge& held) noexcept { held = edge; });
+        edges_.with_element(slot, [&edge](TopologyEdge& held) noexcept { held = edge; });
         ++edge_count_;
         return idx;
     }

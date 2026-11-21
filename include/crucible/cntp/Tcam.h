@@ -404,22 +404,22 @@ public:
         if (installed_ >= rule_limit()) {
             return ::fixy::err(TcamError::TableFull);
         }
-        for (SlotIndex index : slots_.indices()) {
-            Slot const& slot = slots_.at(index);
-            if (!slot.occupied && !slot.retired) {
-                TcamFlowRule const flow_rule = rule.value();
-                slots_.with_element(index, [flow_rule](Slot& held) noexcept {
-                    held.rule = flow_rule;
-                    held.counter = 0;
-                    held.occupied = true;
-                });
-                ++installed_;
-                TcamRuleHandle handle{identity_, plan_.value().target().uuid, slot.rule.rule_id, index.raw(),
-                                      ::fixy::widen<std::uint64_t>(slot.generation)};
-                return ::fixy::mint_linear<TcamRuleHandle>(std::move(handle));
+        return slots_.with_mut([this, &rule](auto run) noexcept -> ::fixy::Result<OwnedTcamRule, TcamError> {
+            auto const slots = run.view();
+            for (SlotIndex index : slots.indices()) {
+                Slot& slot = slots.at(index);
+                if (!slot.occupied && !slot.retired) {
+                    slot.rule = rule.value();
+                    slot.counter = 0;
+                    slot.occupied = true;
+                    ++installed_;
+                    TcamRuleHandle handle{identity_, plan_.value().target().uuid, slot.rule.rule_id, index.raw(),
+                                          ::fixy::widen<std::uint64_t>(slot.generation)};
+                    return ::fixy::mint_linear<TcamRuleHandle>(std::move(handle));
+                }
             }
-        }
-        return ::fixy::err(TcamError::TableFull);
+            return ::fixy::err(TcamError::TableFull);
+        });
     }
 
     [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> remove_rule(OwnedTcamRule handle) noexcept {
