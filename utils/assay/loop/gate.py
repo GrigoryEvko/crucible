@@ -541,7 +541,8 @@ THE RAISE OF A BUDGET
         its path with no @build/ mark, or its entity (is_named_row()).  A
         crossed row with no own text and no plain text, and an item that
         names no crossed row, each give a line that names the row or the
-        item, and the raise writes nothing.
+        item, and the raise writes nothing.  The verdict gives each such
+        line as a problem, so each requester of the run reads it.
       * A write that fails, or writes that change no row, give the ledgers
         their bytes back, and the problems of the round stay.
       * Else the round has no problem.  THE REDUCE runs when the round built
@@ -1383,6 +1384,22 @@ def is_budget_round(outcomes: Sequence[Outcome]) -> bool:
     return bool(red) and all(is_budget_outcome(item) for item in red)
 
 
+def with_raise_problems(outcomes: Sequence[Outcome], lines: Sequence[str]) -> list[Outcome]:
+    """Return the outcomes with the lines of a raise that wrote nothing as problems of the first outcome with a problem.
+
+    The verdict gives each problem to each requester of the run, and a line of the holder reaches no requester of a
+    different process (THE RAISE OF A BUDGET).  The failing items stay, so the compare with the run of the base does
+    not change.  Complexity: linear in the outcomes.
+    """
+    found: list[Outcome] = []
+    is_added = False
+    for item in outcomes:
+        is_first = bool(item.problems) and not is_added
+        found.append(replace(item, problems=(*item.problems, *lines)) if is_first else item)
+        is_added = is_added or is_first
+    return found
+
+
 def ledger_values(text: str) -> dict[tuple[str, str, str], str]:
     """Return the value of each row of a ledger text by its key: PATH, KIND and ENTITY.
 
@@ -1997,6 +2014,8 @@ class Gate:
             raised: tuple[str, ...] = ()
             if not candidate.focus and candidate.has_budget_reason and is_budget_round(outcomes):
                 raised = step.raise_budgets(outcomes)
+            if step.raise_problems:
+                outcomes = with_raise_problems(outcomes, step.raise_problems)
             if raised:
                 step.unchecked = frozenset(item.name for item in outcomes if item.problems or item.is_stopped)
                 outcomes = [replace(item, problems=(), red=(), items=()) for item in outcomes]
@@ -2108,7 +2127,8 @@ class Step:
     candidate with no built file.  `built` holds each written file that changed, and the run of ALWAYS or
     write_built() is its one writer.  `unchecked` names each configuration whose first round ended before its checks
     after the tests, and the round after a raise runs those checks (THE RAISE OF A BUDGET).  The thread of the check
-    writes it before that round.
+    writes it before that round.  `raise_problems` holds each line of a crossed row with no text and of an item that
+    names no crossed row, and the verdict gives each one as a problem (written_row_texts()).
     """
 
     __slots__ = (
@@ -2119,6 +2139,7 @@ class Step:
         "candidate",
         "environment",
         "gate",
+        "raise_problems",
         "stop",
         "unchecked",
     )
@@ -2133,6 +2154,7 @@ class Step:
         self.built_ready = threading.Event()
         self.built: tuple[str, ...] = ()
         self.unchecked: frozenset[str] = frozenset()
+        self.raise_problems: tuple[str, ...] = ()
         if not candidate.built:
             self.built_ready.set()
         self._said = threading.Lock()
@@ -2626,6 +2648,7 @@ class Step:
         for line in problems:
             self.say(f"loop land: {line}")
         if problems:
+            self.raise_problems = tuple(problems)
             return False
         for index, ((rule, kind, text), targets) in enumerate(sorted(writes.items())):
             command = [*self.gate.master("guard"), "write", "--rule", rule, "--reason", text]

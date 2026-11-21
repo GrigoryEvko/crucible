@@ -1784,11 +1784,15 @@ def budget_row_cases(expect: testing.Expect) -> None:
             holds = (
                 not verdict.is_accepted
                 and any("red alone too: guard_header_alone" in problem for problem in verdict.problems)
+                and any(problem.startswith(line) for problem in verdict.problems)
+                and verdict.items == ("default: guard_header_alone: include/a.h:0 [header-alone]",)
                 and verdict.raised == ()
-                and line in printed
                 and (tree / BUDGET_PATH).read_text(encoding="utf-8") == BUDGET_ROWS_LEDGER
             )
-            label = f"{name} refuses the commit with a line that names it, and the ledger keeps its bytes"
+            label = (
+                f"{name} refuses the commit with a problem of the verdict that names it, each requester reads it, the "
+                f"failing items stay, and the ledger keeps its bytes: {verdict.problems} {verdict.items}"
+            )
             expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
