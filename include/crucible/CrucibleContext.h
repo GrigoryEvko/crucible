@@ -79,6 +79,21 @@ struct DispatchResult {
     }
 };
 
+// The position of an input of the matched op, below the count of its inputs.
+// input_view takes it in place of a raw number.
+using InputPosition = ::fixy::Id<struct InputPositionTag, uint16_t>;
+
+// Why with_output_views refused the outputs of the matched op.
+enum class OutputRefusal : uint8_t {
+    ExternalOutput,  // an output is an external slot, whose owner holds its bytes
+    NoSlot,  // an output has no slot in the plan
+    TooManyOutputs,  // the op has more outputs than max_block_windows
+    OutsidePool,  // the window of an output ends past the last byte of the pool
+    Misaligned,  // the first byte of an output is not aligned for the element
+    PartialElement,  // the bytes of an output hold no whole count of elements
+    Overlap,  // two outputs share a byte
+};
+
 struct CrucibleContext {
     // The caller gives the allocation capability of its context.  The pool
     // of each region that the context activates allocates through it.
@@ -264,6 +279,66 @@ struct CrucibleContext {
         pool_.register_external(sid, data, pv);
     }
 
+    // The bytes of an external slot as a View of the host
+    // (PoolAllocator::register_external_view).  The View borrows its owner,
+    // and the owner outlives the activation of the region.
+    CRUCIBLE_INLINE void register_external_view(SlotId sid, ::fixy::View<uint8_t> bytes, CompiledView const&) {
+        auto pv = pool_.initialized_view_();
+        pool_.register_external_view(sid, bytes, pv);
+    }
+
+    // The bytes of an input of the matched op as a read-only View of T, for a
+    // kernel that reads them (PoolAllocator::slot_view).  No value for an
+    // input with no slot, an external slot with no registered View, bytes of
+    // the wrong size or alignment for T, and an input slot that is also an
+    // output slot of the op: an op that writes in place reads that slot
+    // through its ViewMut of with_output_views alone.  Complexity:
+    // O(outputs of the op).
+    template <class T>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view(InputPosition position, CompiledView const&) const& {
+        const TraceEntry& op = engine_.current_entry();
+        const ::fixy::View<const SlotId> inputs = op.input_slot_ids();
+        CRUCIBLE_PRE(position.raw() < inputs.size());
+        const SlotId sid = inputs.window<1>(position.raw())
+                               .expect("the precondition bounds the input position")
+                               .at(::fixy::index<0>());
+        const bool is_written =
+            op.output_slot_ids().walk().any_of([sid](SlotId const& output) noexcept { return output == sid; });
+        if (is_written) return ::fixy::Option<::fixy::View<T const>>{::fixy::none};
+        auto pv = pool_.initialized_view_();
+        return pool_.slot_view<T>(sid, pv);
+    }
+
+    template <class T>
+    ::fixy::Option<::fixy::View<T const>> input_view(InputPosition, CompiledView const&) const&& =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
+
+    // body gets a reference to a FixedList of one ViewMut<T> for each output
+    // of the matched op, in the order of the outputs, and the door gives the
+    // result of body, or Unit for a body that gives void.  The views come
+    // from the frame door with_mut_windows of the bytes of the pool
+    // (foundation/AlignedBytes.h), so each lives for the call of body alone.
+    // The window of each output comes from the plan of the active region.
+    // An external output gives ExternalOutput, an output with no slot
+    // NoSlot, more outputs than max_block_windows TooManyOutputs, and a
+    // window that the frame door refuses the refusal of the same name: the
+    // windows of the outputs of one op must not overlap.  Complexity:
+    // O(outputs) for the windows, O(outputs^2) for the check of overlap, and
+    // the cost of body.
+    template <class T, class Body>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    [[nodiscard]] auto with_output_views(CompiledView const&, Body&& body) & {
+        return output_windows_().and_then([this, &body](OutputWindows windows) noexcept {
+            return ::foundation::with_mut_windows<T>(pool_.pool_, windows, static_cast<Body&&>(body))
+                .map_err([](::foundation::WindowRefusal refusal) noexcept { return output_refusal_of_(refusal); });
+        });
+    }
+
+    template <class T, class Body>
+    void with_output_views(CompiledView const&, Body&&) && =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
+
     [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
     [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
     // The Vigil owns the region, and this context only points at it.  The
@@ -285,6 +360,57 @@ private:
     // why the migration checks it separately.
     static constexpr uint32_t MIGRATION_MAX_SLOTS = 1024;
     static constexpr uint32_t VISITED_WORDS = ::fixy::div_ceil(MIGRATION_MAX_SLOTS, uint32_t{64});
+
+    // The windows of the outputs of the matched op in the bytes of the pool,
+    // one for each output, in the order of the outputs.
+    using OutputWindows = ::fixy::FixedList<::foundation::ByteWindow, ::foundation::max_block_windows>;
+
+    // The window of each output of the matched op, from the slot of the
+    // plan of the active region: the offset of its first byte and its count
+    // of bytes.  An external slot holds bytes of its owner, and no window of
+    // the pool, so it gives ExternalOutput.  The column of bytes of the pool
+    // holds the same window for each pooled slot, and the check of each
+    // output stays in each build: a View that an owner registered for a
+    // pooled slot ends the process, so an input never reads other bytes than
+    // the output wrote.  Complexity: O(outputs).
+    [[nodiscard]] ::fixy::Result<OutputWindows, OutputRefusal> output_windows_() const {
+        using ::fixy::side_as;
+        using Start = ::foundation::core::side::WindowStart;
+        using Length = ::foundation::core::side::WindowLength;
+        const RegionNode& region = *::fixy::Option<::fixy::Ref<RegionNode const>>{active_region_.value()}.expect(
+            "a compiled context has a region");
+        const MemoryPlan& plan = *PlanLink{region.plan}.expect("an active region has a memory plan");
+        OutputWindows windows{};
+        for (const SlotId sid : engine_.current_entry().output_slot_ids()) {
+            if (!sid.is_valid()) [[unlikely]]
+                return ::fixy::err(OutputRefusal::NoSlot);
+            const TensorSlot& slot = *plan.slots.get(sid.raw()).expect("init checked each slot id against the plan");
+            if (slot.is_external) [[unlikely]]
+                return ::fixy::err(OutputRefusal::ExternalOutput);
+            CRUCIBLE_FATAL_INVARIANT(pool_.is_pool_window_(sid, slot));
+            const ::foundation::ByteWindow window{side_as<Start>(::fixy::ByteCount{slot.offset_bytes}),
+                                                  side_as<Length>(::fixy::ByteCount{slot.nbytes})};
+            if (windows.append(window).is_err()) [[unlikely]]
+                return ::fixy::err(OutputRefusal::TooManyOutputs);
+        }
+        return windows;
+    }
+
+    // The refusal of the outputs for a refusal of the frame door.
+    [[nodiscard]] static constexpr OutputRefusal output_refusal_of_(::foundation::WindowRefusal refusal) noexcept {
+        switch (refusal) {
+            case ::foundation::WindowRefusal::outside_block:
+                return OutputRefusal::OutsidePool;
+            case ::foundation::WindowRefusal::misaligned:
+                return OutputRefusal::Misaligned;
+            case ::foundation::WindowRefusal::partial_element:
+                return OutputRefusal::PartialElement;
+            case ::foundation::WindowRefusal::overlap:
+                return OutputRefusal::Overlap;
+            default:
+                ::fixy::unreachable();
+        }
+    }
 
     // The one body of both advance overloads.  A switch rather than a chain
     // of tests, so that a status added later has to be given a meaning here
@@ -414,7 +540,7 @@ private:
     }
 
     ActiveRegionLink active_region_{};  // offset 88
-    PoolAllocator pool_;  // 64 bytes, offset 96
+    PoolAllocator pool_;  // 80 bytes, offset 96
     // The allocation capability that the constructor received.  The pool of
     // each activated region allocates only through it.  The tag is empty, so
     // it adds no storage.  It has no initializer, because the one

@@ -6,7 +6,7 @@ namespace crucible {
 
 static_assert(sizeof(DispatchResult) == 8, "DispatchResult: 1+1+2+4 = 8 bytes");
 
-static_assert(sizeof(CrucibleContext) == 160, "CrucibleContext: 72 engine + 24 cold + 64 pool = 160");
+static_assert(sizeof(CrucibleContext) == 176, "CrucibleContext: 72 engine + 24 cold + 80 pool = 176");
 
 // A view must not outlive the frame that minted it, so storing one in a field
 // would let it escape.

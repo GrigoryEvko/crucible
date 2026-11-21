@@ -569,6 +569,81 @@ static void test_slot_bounds_guard_is_armed(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "  test_slot_bounds_guard_is_armed: PASSED\n");
 }
 
+// The column of bytes.  A pooled slot reads its window of the pool, and an
+// external slot reads the View that its owner registered.  An external slot
+// with an address alone, a slot of no byte and the id with no slot read no
+// View.  The address of each slot is the first byte of its View.
+static void test_slot_views() {
+    ::foundation::core::FixedArray<TensorSlot, 3> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 256,
+                                                .nbytes = 64,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{1},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 32,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{1},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 512,
+                                                .nbytes = 0,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{1},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{2},
+                                                .pad2 = {}};
+    MemoryPlan plan = make_manual_plan(slots.view(), 1024, 1);
+
+    PoolAllocator pool;
+    pool.init(::foundation::effects::testing::test().alloc, plan);
+    auto pv = pool.mint_initialized_view(kVigilForeground);
+
+    const auto is_count = [](::fixy::View<float const> const& values) noexcept { return values.size() == 16; };
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{0}, pv).is_some_and(is_count));
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{1}, pv).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{2}, pv).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId::none(), pv).is_none());
+
+    ::fixy::Layout const layout =
+        ::fixy::mint_layout(::fixy::ByteCount{64},
+                            ::fixy::mint_alignment(::fixy::ByteCount{64}).expect("64 is a power of two"))
+            .expect("64 bytes at an alignment of 64 is a layout");
+    ::foundation::AlignedBytes owner =
+        ::foundation::mint_aligned_bytes_zeroed(::foundation::effects::testing::test().alloc, layout);
+    pool.register_external_view(SlotId{1}, owner.view(), pv);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{1}, pv).is_some_and(is_count));
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(SlotId{1}, pv) == ::fixy::mint_run_address(owner.view(), 0));
+
+    // A registration by address alone gives the slot no bytes.
+    pool.register_external(
+        SlotId{1},
+        crucible::TensorData{::fixy::mint_run_address(owner.view(), 0).expect("the block holds 64 bytes"),
+                             crucible::kHostDevice},
+        pv);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{1}, pv).is_none());
+
+    ::fixy::check::pass(kTest, "  test_slot_views: PASSED\n");
+}
+
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_pool_allocator:\n");
     test_basic_init();
@@ -578,6 +653,7 @@ int main() {
     test_reinit();
     test_integration_with_sweep_line();
     test_device_of_slots();
+    test_slot_views();
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_slot_bounds_guard_is_armed(test);
     ::fixy::check::pass(test, "test_pool_allocator: all tests passed\n");

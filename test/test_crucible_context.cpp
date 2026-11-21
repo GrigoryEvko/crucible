@@ -507,6 +507,160 @@ static void test_divergence_counter() {
     ::fixy::check::pass(kTest, "  test_divergence_counter: PASSED\n");
 }
 
+// The layout of a block of external bytes: 32 bytes at an alignment of 64.
+static ::fixy::Layout make_external_layout() {
+    return ::fixy::mint_layout(::fixy::ByteCount{32},
+                               ::fixy::mint_alignment(::fixy::ByteCount{64}).expect("64 is a power of two"))
+        .expect("32 bytes at an alignment of 64 is a layout");
+}
+
+// The doors of the views of an op.  input_view lends the bytes of an input
+// as a read-only View, and with_output_views lends one ViewMut for each
+// output.  An input that is also an output of the op, an input of an
+// external slot with no View, and an input of the wrong size or alignment
+// give no View.  Each refusal of the outputs gives its kind, and its body
+// does not run.
+static void test_slot_views() {
+    using crucible::InputPosition;
+    using crucible::OutputRefusal;
+    ::foundation::core::FixedArray<SlotId, 1> in0{SlotId{2}};
+    ::foundation::core::FixedArray<SlotId, 2> out0{SlotId{0}, SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 3> in1{SlotId{0}, SlotId{4}, SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> out1{SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> out2{SlotId{3}};
+    ::foundation::core::FixedArray<SlotId, 1> out3{SlotId{2}};
+    ::foundation::core::FixedArray<SlotId, 2> out4{SlotId{0}, SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out5{SlotId::none()};
+    ::foundation::core::FixedArray<SlotId, 9> out6{SlotId{0}, SlotId{0}, SlotId{0}, SlotId{0}, SlotId{0},
+                                                   SlotId{0}, SlotId{0}, SlotId{0}, SlotId{0}};
+
+    ::foundation::core::FixedArray<TraceEntry, 7> ops{};
+    uint32_t position = 0;
+    for (TraceEntry& op : ops) {
+        op.schema_hash = SchemaHash{700 + position};
+        op.shape_hash = ShapeHash{800 + position};
+        ++position;
+    }
+    set_input_slots(ops.at(::foundation::core::index<0>()), in0.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out0.view());
+    set_input_slots(ops.at(::foundation::core::index<1>()), in1.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out1.view());
+    set_output_slots(ops.at(::foundation::core::index<2>()), out2.view());
+    set_output_slots(ops.at(::foundation::core::index<3>()), out3.view());
+    set_output_slots(ops.at(::foundation::core::index<4>()), out4.view());
+    set_output_slots(ops.at(::foundation::core::index<5>()), out5.view());
+    set_output_slots(ops.at(::foundation::core::index<6>()), out6.view());
+
+    // Slots 0, 1 and 3 are pooled, at 0, 256 and 768.  Slot 3 holds 6
+    // bytes, no whole count of floats.  Slots 2 and 4 are external.
+    ::foundation::core::FixedArray<TensorSlot, 5> slots{};
+    auto plan = make_simple_plan(slots.view());
+    slots.at(::foundation::core::index<2>()).is_external = true;
+    slots.at(::foundation::core::index<3>()).nbytes = 6;
+    slots.at(::foundation::core::index<4>()).is_external = true;
+    plan.num_external = 2;
+
+    RegionNode region{};
+    init_region(&region, ops.view(), crucible::make_plan_link(plan));
+
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
+
+    // Each byte of the external input holds 0x3f, so each float of it has
+    // the bits 0x3f3f3f3f.  Slot 4 gets an address alone.
+    ::foundation::AlignedBytes input =
+        ::foundation::mint_aligned_bytes(g_test.alloc, make_external_layout()).fill(std::uint8_t{0x3f});
+    ::foundation::AlignedBytes address_only =
+        ::foundation::mint_aligned_bytes_zeroed(g_test.alloc, make_external_layout());
+    ctx.register_external(
+        SlotId{4},
+        crucible::TensorData{::fixy::mint_run_address(address_only.view(), 0).expect("the block holds 32 bytes"),
+                             crucible::kHostDevice},
+        cv);
+
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{700}, ShapeHash{800}, cv).status() == ReplayStatus::MATCH);
+
+    // An input whose first byte is off the alignment of a float, or whose
+    // bytes hold no whole count of floats, gives no View of floats.
+    ctx.register_external_view(SlotId{2}, input.view().window(2, 8).expect("the block holds 32 bytes"), cv);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<std::uint8_t>(InputPosition{0}, cv)
+                                    .is_some_and([](::fixy::View<std::uint8_t const> const& bytes) noexcept {
+                                        return bytes.size() == 8;
+                                    }));
+    ctx.register_external_view(SlotId{2}, input.view().window(0, 30).expect("the block holds 32 bytes"), cv);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_none());
+
+    ctx.register_external_view(SlotId{2}, input.view(), cv);
+    const auto is_input_value = [](::fixy::View<float const> const& values) noexcept {
+        return values.size() == 8 && values.walk().all_of([](float const& value) noexcept {
+            return ::fixy::bit_cast<std::uint32_t>(value) == 0x3f3f3f3fu;
+        });
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value));
+
+    // The two outputs of op 0 get one ViewMut each, in their order.
+    const auto written = ctx.with_output_views<float>(cv, [](auto& views) noexcept {
+        float value = 1.5f;
+        std::size_t count = 0;
+        for (auto& view : views) {
+            for (float& element : view) {
+                element = value;
+                ++count;
+            }
+            value += 1.0f;
+        }
+        return count;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, written.is_ok_and([](std::size_t const& count) noexcept { return count == 128; }));
+
+    // Op 1 reads slot 0 and writes slot 1 in place.  Its input of slot 1 is
+    // also its output, so it reads that slot through its ViewMut alone.  The
+    // input of slot 4 has an address and no bytes.
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{701}, ShapeHash{801}, cv).status() == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        ctx.input_view<float>(InputPosition{0}, cv).is_some_and([](::fixy::View<float const> const& values) noexcept {
+            return values.size() == 64 && values.walk().all_of([](float const& value) noexcept {
+                return ::fixy::bit_cast<std::uint32_t>(value) == ::fixy::bit_cast<std::uint32_t>(1.5f);
+            });
+        }));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{1}, cv).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{2}, cv).is_none());
+    const auto in_place = ctx.with_output_views<float>(cv, [](auto& views) noexcept {
+        std::size_t matched = 0;
+        for (auto& view : views) {
+            for (float& element : view) {
+                matched += ::fixy::bit_cast<std::uint32_t>(element) == ::fixy::bit_cast<std::uint32_t>(2.5f) ? 1u : 0u;
+                element = 3.5f;
+            }
+        }
+        return matched;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, in_place.is_ok_and([](std::size_t const& matched) noexcept { return matched == 64; }));
+
+    int runs = 0;
+    const auto refusal_of = [&ctx, &cv, &runs]() noexcept {
+        return ctx.with_output_views<float>(cv, [&runs](auto&) noexcept { ++runs; })
+            .err()
+            .expect("the door refuses the outputs");
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{702}, ShapeHash{802}, cv).status() == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of() == OutputRefusal::PartialElement);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{703}, ShapeHash{803}, cv).status() == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of() == OutputRefusal::ExternalOutput);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{704}, ShapeHash{804}, cv).status() == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of() == OutputRefusal::Overlap);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{705}, ShapeHash{805}, cv).status() == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of() == OutputRefusal::NoSlot);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{706}, ShapeHash{806}, cv).status() == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of() == OutputRefusal::TooManyOutputs);
+    CRUCIBLE_TEST_ASSERT(kTest, runs == 0);
+
+    ::fixy::check::pass(kTest, "  test_slot_views: PASSED\n");
+}
+
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_crucible_context:\n");
     test_initial_state();
@@ -518,6 +672,7 @@ int main() {
     test_external_slots();
     test_integration_sweep_line();
     test_divergence_counter();
+    test_slot_views();
     ::fixy::check::pass(kTest, "test_crucible_context: all tests passed\n");
     return 0;
 }
