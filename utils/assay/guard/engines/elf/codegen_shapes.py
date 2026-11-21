@@ -830,6 +830,11 @@ PROBES: tuple[Probe, ...] = (
         "the cold claim only for the sentinel",
     ),
     Probe(
+        "seat_step_send",
+        "a step of a send loop over a Seat is the emplace of the raw form with no test and no clear of a flag: the "
+        "send on the payload in place, and the store of the next handle in the same storage",
+    ),
+    Probe(
         "box_in_hole",
         "mint_box in a Hole is the placement new of the raw form in the storage of the Hole, with no call of the "
         "allocation door.  It adds one test of the storage and one branch to a call of the fatal exit, the clear of "

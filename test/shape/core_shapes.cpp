@@ -34,6 +34,7 @@
 #include <foundation/alloc/Layout.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/core/Immortal.h>
+#include <foundation/core/Seat.h>
 #include <foundation/core/WindowStack.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -847,6 +848,31 @@ public:
         }
         return sum;
     });
+}
+
+// A linear handle of one word, whose send gives the next handle, as the send
+// of a session handle gives the handle of the next step.
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] StepHandle final {
+    std::uint64_t state = 0;
+
+    explicit StepHandle(std::uint64_t value) noexcept : state{value} {}
+    StepHandle(StepHandle&&) noexcept = default;
+    StepHandle& operator=(StepHandle&& source) noexcept {
+        state = source.state;
+        return *this;
+    }
+    StepHandle(StepHandle const&) = delete("a handle of a step is linear");
+    StepHandle& operator=(StepHandle const&) = delete("a handle of a step is linear");
+    ~StepHandle() = default;
+
+    [[nodiscard]] StepHandle send(std::uint64_t item) && noexcept { return StepHandle{state + item}; }
+};
+
+// One turn of a send loop over a Seat: the send on the payload in place, and
+// the next handle in the same storage.  The raw form is the emplace of a
+// std::optional, which tests and clears its flag first.
+[[gnu::used]] void seat_step_send(foundation::core::Seat<StepHandle>& seat, std::uint64_t item) noexcept {
+    seat.step([item](StepHandle&& handle) noexcept { return static_cast<StepHandle&&>(handle).send(item); });
 }
 
 // A Box built in a Hole: one test of the storage of the Hole with a branch
@@ -2245,6 +2271,10 @@ struct RawHeapState final {
         heap->release(foundation::alloc::SizeClass{1}, block);
     }
     return sum;
+}
+
+[[gnu::used]] void seat_step_send_raw(std::optional<StepHandle>& slot, std::uint64_t item) noexcept {
+    slot.emplace(std::move(*slot).send(item));
 }
 
 [[gnu::used]] Payload* box_in_hole_raw(void* storage, std::uint32_t value) noexcept {
