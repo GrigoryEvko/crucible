@@ -180,35 +180,39 @@ concept IsAccepted =
 
 namespace detail::reject {
 
+// The texts of the tags below are static strings that the builders make.
+// mint_static_text gives each one as a TextView, so a tag field reads as
+// each other tag field does.
+
 template <Axis A>
-[[nodiscard]] consteval std::string_view duplicate_name_() {
+[[nodiscard]] consteval ::foundation::core::TextView duplicate_name_() {
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"DuplicateAtomOn"};
-    text += ::fixy::axis_name(A);
-    return std::define_static_string(text);
+    ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 // The texts of a Row axis say that the axis takes the union of its atoms
 // and refuses one atom stated twice.  The texts of each other axis say that
 // the axis carries one grade.
 template <Axis A>
-[[nodiscard]] consteval std::string_view duplicate_description_() {
+[[nodiscard]] consteval ::foundation::core::TextView duplicate_description_() {
     constexpr bool is_row_axis = axis_record(A).shape == Shape::Row;
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
         is_row_axis ? "One fixy::fn pack names one atom of the " : "Two or more atoms in one fixy::fn pack name the "};
-    text += ::fixy::axis_name(A);
+    ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
     text += is_row_axis ? " axis twice.  A Row axis takes the union of its atoms, so the copy adds no effect, and "
                           "the pack does not say what the second atom was meant to state."
                         : " axis.  An axis carries one grade, so the pack does not say which of them the binding "
                           "means.";
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 template <class G>
-[[nodiscard]] consteval std::string_view malformed_name_() {
+[[nodiscard]] consteval ::foundation::core::TextView malformed_name_() {
     ::foundation::reflect::anchored_t<^^G, std::string> text{"MalformedAtom<"};
     text += std::meta::display_string_of(^^G);
     text += '>';
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 // The text is a std::string, so the tier-2 message can append it.  GCC 16
@@ -230,16 +234,16 @@ template <class G>
 }
 
 template <class G>
-[[nodiscard]] consteval std::string_view malformed_description_() {
-    return std::define_static_string(malformed_text_<G>());
+[[nodiscard]] consteval ::foundation::core::TextView malformed_description_() {
+    return ::foundation::core::mint_static_text(std::define_static_string(malformed_text_<G>()));
 }
 
 template <class T>
-[[nodiscard]] consteval std::string_view payload_name_() {
+[[nodiscard]] consteval ::foundation::core::TextView payload_name_() {
     ::foundation::reflect::anchored_t<^^T, std::string> text{"UnholdablePayload<"};
     text += std::meta::display_string_of(^^T);
     text += '>';
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 }  // namespace detail::reject
@@ -248,37 +252,36 @@ template <class T>
 // stamped by hand.
 template <Axis A>
 struct duplicate_atom_on final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = detail::reject::duplicate_name_<A>();
-    static constexpr std::string_view description = detail::reject::duplicate_description_<A>();
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::core::TextView name = detail::reject::duplicate_name_<A>();
+    static constexpr ::foundation::core::TextView description = detail::reject::duplicate_description_<A>();
+    static constexpr ::foundation::core::TextView remediation =
         axis_record(A).shape == Shape::Row
-            ? "Remove the copy of the atom.  A Row axis takes the union of its atoms, so two different atoms on it "
-              "state the union of their effects."
-            : "Remove every atom on the axis but the one the binding means.  An axis the pack says nothing about "
-              "resolves to its strict pole, so dropping an atom never silently widens the binding.";
+            ? ::foundation::core::TextView{"Remove the copy of the atom.  A Row axis takes the union of its atoms, so "
+                                           "two different atoms on it state the union of their effects."}
+            : ::foundation::core::TextView{"Remove every atom on the axis but the one the binding means.  An axis "
+                                           "the pack says nothing about resolves to its strict pole, so dropping an "
+                                           "atom never silently widens the binding."};
 };
 
 template <class G>
 struct malformed_atom final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = detail::reject::malformed_name_<G>();
-    static constexpr std::string_view description = detail::reject::malformed_description_<G>();
-    static constexpr std::string_view remediation = "Pass an atom from fixy::atom.  A new atom is declared in the "
-                                                    "header of its family, beside that family's atom_seal, and a "
-                                                    "new family is a line in fixy/Atom.h.  A cv-qualified or "
-                                                    "reference-qualified atom is refused rather than stripped, "
-                                                    "because such a type comes from a decltype on a variable.";
+    static constexpr ::foundation::core::TextView name = detail::reject::malformed_name_<G>();
+    static constexpr ::foundation::core::TextView description = detail::reject::malformed_description_<G>();
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Pass an atom from fixy::atom.  A new atom is declared in the header of its family, beside that family's "
+        "atom_seal, and a new family is a line in fixy/Atom.h.  A cv-qualified or reference-qualified atom is refused "
+        "rather than stripped, because such a type comes from a decltype on a variable.";
 };
 
 template <class T>
 struct unholdable_payload final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = detail::reject::payload_name_<T>();
-    static constexpr std::string_view description = "A fixy::fn holds its payload by value, so the payload has to "
-                                                    "be a non-array, non-reference, non-function, cv-unqualified "
-                                                    "object type.";
-    static constexpr std::string_view remediation = "Name the object type the binding carries.  For a reference, "
-                                                    "wrap the referent instead.  For an array, use a span or a "
-                                                    "fixy::FixedArray.  A cv qualifier belongs on the binding that "
-                                                    "holds the fn, not inside it.";
+    static constexpr ::foundation::core::TextView name = detail::reject::payload_name_<T>();
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "A fixy::fn holds its payload by value, so the payload has to be a non-array, non-reference, non-function, "
+        "cv-unqualified object type.";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Name the object type the binding carries.  For a reference, wrap the referent instead.  For an array, use a "
+        "span or a fixy::FixedArray.  A cv qualifier belongs on the binding that holds the fn, not inside it.";
 };
 
 // ---------------------------------------------------------------------
@@ -414,6 +417,10 @@ template <class T, class... Atoms>
 // guard here repeats that, because a static_assert message is
 // instantiated whatever the condition beside it concluded — that is the
 // same reason tier5_message_ opens with one.
+//
+// Each tier message is a std::string_view, because fn of fixy/Fn.h prints it
+// in a static_assert.  The message of a static_assert needs data() and size(),
+// and a TextView gives no address by design.
 template <class... Atoms>
 [[nodiscard]] consteval std::string_view tier4_message_() noexcept {
     constexpr std::size_t offender = first_duplicated_axis_(^^::fixy::collision::pack_key<Atoms...>);
@@ -426,7 +433,7 @@ template <class... Atoms>
                           "must not name one atom on it twice.  The axis that names one atom twice here is "
                         : "fixy::fn<Type, Atoms...> [tier 4]: an axis carries one grade, so the pack must not "
                           "name an axis twice.  The axis graded twice here is "};
-        text += ::fixy::axis_name(static_cast<Axis>(offender));
+        ::fixy::detail::append_text_(text, ::fixy::axis_name(static_cast<Axis>(offender)));
         text += ", and fixy::duplicate_atom_on<Axis> carries its insight.";
         return std::define_static_string(text);
     }
@@ -484,9 +491,9 @@ template <class T, class... Atoms>
         }
         if constexpr (!std::is_void_v<Entry>) {
             text += "Corpus entry ";
-            text += Entry::name;
+            ::fixy::detail::append_text_(text, Entry::name);
             text += ": ";
-            text += Entry::cite();
+            ::fixy::detail::append_text_(text, Entry::cite());
             text += "  ";
         }
         // The theorems are appended from the rows of the rule table, in its

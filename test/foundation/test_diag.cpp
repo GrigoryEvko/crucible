@@ -8,19 +8,16 @@
 #include <foundation/diag/JsonEmitter.h>
 #include <foundation/diag/Runtime.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/core/Report.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/ReflectionList.h>
 
-#include <array>
-#include <atomic>
 #include <cstddef>
-#include <cstdio>
-#include <cstring>
+#include <cstdint>
 #include <meta>
-#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -29,17 +26,13 @@ namespace diag = ::foundation::diag;
 
 namespace {
 
-int g_failures = 0;
+using ::fixy::TextView;
+using ::fixy::check::Tally;
 
-// Prints the failing expression and its position, and counts it.  A cell
-// keeps going after a failure so one run reports every failure it has.
-#define EXPECT(cond)                                                               \
-    do {                                                                           \
-        if (!(cond)) {                                                             \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
-            ++g_failures;                                                          \
-        }                                                                          \
-    } while (0)
+// The context of the test, which each check of the Check family takes.  Each
+// check of a cell counts in a Tally, and a cell keeps going after a failure,
+// so one run reports every failure it has.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 // ── Catalog: compile-time cells ──────────────────────────────────────────
 
@@ -67,9 +60,9 @@ static_assert(std::is_same_v<diag::tag_of_t<diag::Category::HotPathViolation>, d
 // The fixture lives at namespace scope because a function-local class
 // may not have static data members, and a tag is all static members.
 struct anonymous_local_tag : diag::tag_base {
-    static constexpr std::string_view name = "AnonymousLocalTag";
-    static constexpr std::string_view description = "test fixture";
-    static constexpr std::string_view remediation = "rebuild";
+    static constexpr diag::tag_text_literal name = "AnonymousLocalTag";
+    static constexpr diag::tag_text_literal description = "test fixture";
+    static constexpr diag::tag_text_literal remediation = "rebuild";
 };
 
 static_assert(diag::is_diagnostic_class_v<diag::EffectRowMismatch>);
@@ -122,9 +115,9 @@ namespace smoke {
 // A local class may not have static data members, so the fixture tag for the
 // smoke test below lives at namespace scope.
 struct smoke_local_tag : diag::tag_base {
-    static constexpr std::string_view name = "SmokeLocalTag";
-    static constexpr std::string_view description = "runtime smoke probe";
-    static constexpr std::string_view remediation = "this tag exists only as the smoke-test fixture";
+    static constexpr diag::tag_text_literal name = "SmokeLocalTag";
+    static constexpr diag::tag_text_literal description = "runtime smoke probe";
+    static constexpr diag::tag_text_literal remediation = "this tag exists only as the smoke-test fixture";
 };
 
 }  // namespace smoke
@@ -141,9 +134,9 @@ void test_runtime_smoke() {
     volatile std::size_t const cap = catalog_size;
     for (std::size_t i = 0; i < cap; ++i) {
         Category const c = static_cast<Category>(i);
-        std::string_view const n = name_of(c);
-        std::string_view const d = description_of(c);
-        std::string_view const r = remediation_of(c);
+        TextView const n = name_of(c);
+        TextView const d = description_of(c);
+        TextView const r = remediation_of(c);
 
         volatile std::size_t sink = 0;
         sink ^= n.size();
@@ -164,72 +157,87 @@ void test_runtime_smoke() {
 // The bound is a floor, not an equality.  The catalog is append-only, so
 // this guards against it shrinking; the header derives the exact count
 // from the enum and pins it to the tuple itself.
-void test_catalog_floor() { EXPECT(diag::catalog_size >= std::size_t{33}); }
+void test_catalog_floor(Tally& checks) { CRUCIBLE_TEST_EXPECT(checks, diag::catalog_size >= std::size_t{33}); }
 
-void test_accessor_runtime_coverage() {
+void test_accessor_runtime_coverage(Tally& checks) {
     // The volatile bound stops the loop folding away, so each accessor
     // is entered with a value the compiler cannot see through.
     volatile std::size_t const cap = diag::catalog_size;
-    constexpr std::string_view sentinel{"<unknown Category>"};
+    constexpr TextView sentinel{"<unknown Category>"};
     for (std::size_t i = 0; i < cap; ++i) {
         diag::Category const c = static_cast<diag::Category>(i);
-        std::string_view const n = diag::name_of(c);
-        std::string_view const d = diag::description_of(c);
-        std::string_view const r = diag::remediation_of(c);
-        EXPECT(!n.empty());
-        EXPECT(!d.empty());
-        EXPECT(!r.empty());
-        EXPECT(n != sentinel);
-        EXPECT(d != sentinel);
-        EXPECT(r != sentinel);
+        TextView const n = diag::name_of(c);
+        TextView const d = diag::description_of(c);
+        TextView const r = diag::remediation_of(c);
+        CRUCIBLE_TEST_EXPECT(checks, n.size() != 0);
+        CRUCIBLE_TEST_EXPECT(checks, d.size() != 0);
+        CRUCIBLE_TEST_EXPECT(checks, r.size() != 0);
+        CRUCIBLE_TEST_EXPECT(checks, n != sentinel);
+        CRUCIBLE_TEST_EXPECT(checks, d != sentinel);
+        CRUCIBLE_TEST_EXPECT(checks, r != sentinel);
     }
 
     // A value outside the enumeration fails the range check and comes
     // back as the sentinel.  Only a cast can produce such a value, which
     // is why the test has to make one by hand.
     diag::Category const bogus = static_cast<diag::Category>(255);
-    EXPECT(diag::name_of(bogus) == sentinel);
-    EXPECT(diag::description_of(bogus) == sentinel);
-    EXPECT(diag::remediation_of(bogus) == sentinel);
+    CRUCIBLE_TEST_EXPECT(checks, diag::name_of(bogus) == sentinel);
+    CRUCIBLE_TEST_EXPECT(checks, diag::description_of(bogus) == sentinel);
+    CRUCIBLE_TEST_EXPECT(checks, diag::remediation_of(bogus) == sentinel);
 }
 
-void test_categories_array() {
-    EXPECT(diag::categories_v.size() == diag::catalog_size);
-    EXPECT(diag::categories_v[0] == diag::category_of_v<LeadingTag>);
-    EXPECT(diag::categories_v[diag::catalog_size - 1] == diag::category_of_v<TrailingTag>);
+void test_categories_array(Tally& checks) {
+    CRUCIBLE_TEST_EXPECT(checks, diag::categories_v.size() == diag::catalog_size);
+    CRUCIBLE_TEST_EXPECT(checks, diag::categories_v[0] == diag::category_of_v<LeadingTag>);
+    CRUCIBLE_TEST_EXPECT(checks, diag::categories_v[diag::catalog_size - 1] == diag::category_of_v<TrailingTag>);
 
     // The array index and the enumerator value have to stay the same
     // number, because the accessors above index by enumerator.
     volatile std::size_t const cap = diag::catalog_size;
     for (std::size_t i = 0; i < cap; ++i) {
-        EXPECT(diag::categories_v[i] == static_cast<diag::Category>(i));
+        CRUCIBLE_TEST_EXPECT(checks, diag::categories_v[i] == static_cast<diag::Category>(i));
     }
 }
 
-void test_enumerate_categories_order() {
+void test_enumerate_categories_order(Tally& checks) {
     // The count alone would pass for a visitor that visited one entry
-    // many times, so the walk is repeated for its order.
-    std::array<std::string_view, diag::catalog_size> visited{};
+    // many times, so the walk is repeated for its order: each visit is the
+    // category at the position of the visit, and the names of the first and
+    // the last visit are the names of the two end tags.
+    TextView first_visited{};
+    TextView last_visited{};
     std::size_t cursor = 0;
-    diag::enumerate_categories(
-        [&visited, &cursor]<diag::Category C>() noexcept { visited[cursor++] = diag::name_of(C); });
-    EXPECT(cursor == diag::catalog_size);
-    EXPECT(visited.front() == LeadingTag::name);
-    EXPECT(visited.back() == TrailingTag::name);
+    std::size_t misplaced = 0;
+    diag::enumerate_categories([&first_visited, &last_visited, &cursor, &misplaced]<diag::Category C>() noexcept {
+        if (cursor >= diag::catalog_size || diag::categories_v[cursor] != C) ++misplaced;
+        if (cursor == 0) first_visited = diag::name_of(C);
+        last_visited = diag::name_of(C);
+        ++cursor;
+    });
+    CRUCIBLE_TEST_EXPECT(checks, misplaced == 0);
+    CRUCIBLE_TEST_EXPECT(checks, cursor == diag::catalog_size);
+    CRUCIBLE_TEST_EXPECT(checks, first_visited == LeadingTag::name);
+    CRUCIBLE_TEST_EXPECT(checks, last_visited == TrailingTag::name);
 }
 
 // The accessors index arrays derived from the tuple.  Every category is
 // walked rather than three named ones, so an array built in the wrong
-// order, or a tag whose fields drifted from its accessors, is named by
-// the category it fails at.
-void test_accessor_strings_match_tag_fields() {
-    diag::enumerate_categories([]<diag::Category C>() noexcept {
+// order, or a tag whose fields drifted from its accessors, shows in the count
+// of its field.
+void test_accessor_strings_match_tag_fields(Tally& checks) {
+    std::size_t name_drifts = 0;
+    std::size_t description_drifts = 0;
+    std::size_t remediation_drifts = 0;
+    diag::enumerate_categories([&name_drifts, &description_drifts, &remediation_drifts]<diag::Category C>() noexcept {
         using tag = diag::tag_of_t<C>;
-        EXPECT(diag::name_of(C) == tag::name);
-        EXPECT(diag::description_of(C) == tag::description);
-        EXPECT(diag::remediation_of(C) == tag::remediation);
+        if (diag::name_of(C) != tag::name) ++name_drifts;
+        if (diag::description_of(C) != tag::description) ++description_drifts;
+        if (diag::remediation_of(C) != tag::remediation) ++remediation_drifts;
     });
-    EXPECT(diag::name_of(diag::categories_v.back()) == TrailingTag::name);
+    CRUCIBLE_TEST_EXPECT(checks, name_drifts == 0);
+    CRUCIBLE_TEST_EXPECT(checks, description_drifts == 0);
+    CRUCIBLE_TEST_EXPECT(checks, remediation_drifts == 0);
+    CRUCIBLE_TEST_EXPECT(checks, diag::name_of(diag::categories_v.back()) == TrailingTag::name);
 }
 
 // The tuple is derived from the enum by identifier: the tag at every
@@ -242,7 +250,9 @@ void test_accessor_strings_match_tag_fields() {
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         constexpr diag::Category c = [:en:];
-        if (std::meta::identifier_of(en) != diag::tag_of_t<c>::name) return false;
+        // The identifier of a reflection has static storage and a zero after
+        // its last character, so the static text door gives it as a TextView.
+        if (::fixy::mint_static_text(std::meta::identifier_of(en).data()) != diag::tag_of_t<c>::name) return false;
         // tag_of_t is an alias, and an alias has no identifier of its own.
         if (std::meta::identifier_of(en) != std::meta::identifier_of(std::meta::dealias(^^diag::tag_of_t<c>))) {
             return false;
@@ -264,30 +274,35 @@ namespace user_proj::diag_tags {
 
 // A tag must inherit tag_base to be registrable.
 struct PaymentRefundLeak : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "PaymentRefundLeak";
-    static constexpr std::string_view description = "user-defined: payment service refunded a transaction without "
-                                                    "rolling back the parent order's revenue accrual";
-    static constexpr std::string_view remediation = "Use TwoPhaseRefund<...> or include the refund in the "
-                                                    "original transaction's atomic boundary.";
+    static constexpr ::foundation::diag::tag_text_literal name = "PaymentRefundLeak";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "user-defined: payment service refunded a transaction without "
+        "rolling back the parent order's revenue accrual";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Use TwoPhaseRefund<...> or include the refund in the "
+        "original transaction's atomic boundary.";
 };
 
 // A tag whose prose is still pending but whose severity already matters, so
 // it is registered through the severity-only form.
 struct ScheduleDoubleAcceleration : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "ScheduleDoubleAcceleration";
-    static constexpr std::string_view description = "user-defined: a scheduled event was accelerated twice in the "
-                                                    "same window — surfaces in finance / ops";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal name = "ScheduleDoubleAcceleration";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "user-defined: a scheduled event was accelerated twice in the "
+        "same window — surfaces in finance / ops";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Use idempotent acceleration tokens (TODO: extract into combinator).";
 };
 
 // A tag whose every prose field clears the quality minimums.
 struct CrossTenantLeak : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "CrossTenantLeak";
-    static constexpr std::string_view description = "user-defined: a query response from tenant A surfaced data "
-                                                    "from tenant B's table — multi-tenant isolation breach";
-    static constexpr std::string_view remediation = "Wrap query handles in TenantScoped<TenantId, T>; refuse "
-                                                    "construction across tenant boundaries via Refined<>.";
+    static constexpr ::foundation::diag::tag_text_literal name = "CrossTenantLeak";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "user-defined: a query response from tenant A surfaced data "
+        "from tenant B's table — multi-tenant isolation breach";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Wrap query handles in TenantScoped<TenantId, T>; refuse "
+        "construction across tenant boundaries via Refined<>.";
 };
 
 }  // namespace user_proj::diag_tags
@@ -324,13 +339,13 @@ namespace user_proj::diag_tags::self_test {
 
 using Pfull = diag::insight_provider<PaymentRefundLeak>;
 static_assert(Pfull::severity == diag::Severity::Error);
-static_assert(Pfull::why_this_matters.starts_with("Refunds without"));
-static_assert(Pfull::violating_example.find("VIOLATES") != std::string_view::npos);
+static_assert(::fixy::starts_with(Pfull::why_this_matters, "Refunds without"));
+static_assert(::fixy::find(Pfull::violating_example, "VIOLATES").is_some());
 
 using Psev = diag::insight_provider<ScheduleDoubleAcceleration>;
 static_assert(Psev::severity == diag::Severity::Fatal);
-static_assert(Psev::why_this_matters.empty());
-static_assert(Psev::correct_example.empty());
+static_assert(Psev::why_this_matters.size() == 0);
+static_assert(Psev::correct_example.size() == 0);
 
 using Pqv = diag::insight_provider<CrossTenantLeak>;
 static_assert(Pqv::severity == diag::Severity::Fatal);
@@ -368,92 +383,97 @@ namespace {
 
 // Reading the accessors at runtime forces the instantiations into the
 // binary, which nothing above does.
-void test_insights_runtime() {
+void test_insights_runtime(Tally& checks) {
     auto sev_full = diag::insight_provider<::user_proj::diag_tags::PaymentRefundLeak>::severity;
     auto sev_qv = diag::insight_provider<::user_proj::diag_tags::CrossTenantLeak>::severity;
-    EXPECT(diag::severity_name(sev_full) == "Error");
-    EXPECT(diag::severity_name(sev_qv) == "Fatal");
+    CRUCIBLE_TEST_EXPECT(checks, diag::severity_name(sev_full) == "Error");
+    CRUCIBLE_TEST_EXPECT(checks, diag::severity_name(sev_qv) == "Fatal");
 
     // The bound is the enumerator count read off the enum, so a new
     // severity is covered without an edit here; the enumerators are
     // consecutive from zero, which the loop's cast relies on.
     volatile std::size_t const cap = std::meta::enumerators_of(^^diag::Severity).size();
     for (std::size_t i = 0; i < cap; ++i) {
-        EXPECT(diag::severity_name(static_cast<diag::Severity>(i)).size() != 0);
-        EXPECT(diag::severity_name(static_cast<diag::Severity>(i)) != "<unknown Severity>");
+        CRUCIBLE_TEST_EXPECT(checks, diag::severity_name(static_cast<diag::Severity>(i)).size() != 0);
+        CRUCIBLE_TEST_EXPECT(checks, diag::severity_name(static_cast<diag::Severity>(i)) != "<unknown Severity>");
     }
-    EXPECT(diag::severity_name(static_cast<diag::Severity>(9)) == "<unknown Severity>");
+    CRUCIBLE_TEST_EXPECT(checks, diag::severity_name(static_cast<diag::Severity>(9)) == "<unknown Severity>");
 }
 
 // ── Runtime: the sink protocol, through a capturing sink ─────────────────
 
 struct CapturedCall {
-    std::atomic<int> count{0};
+    ::fixy::Atomic<std::uint32_t> count{0};
     diag::Category last_cat{diag::Category::EffectRowMismatch};
     // The runtime formats "<file>:<line>:<column>@<function>" into 2048
     // bytes. A shorter buffer cuts the function name off in a deep checkout.
-    char last_fn[2048]{};
-    char last_detail[256]{};
+    ::fixy::FixedText<2048> last_fn{};
+    ::fixy::FixedText<256> last_detail{};
 };
 
 CapturedCall g_captured{};
 
-void capture_sink(diag::Category cat, std::string_view fn, std::string_view detail) noexcept {
-    g_captured.count.fetch_add(1, std::memory_order_relaxed);
-    g_captured.last_cat = cat;
+// Copies the characters of source into target, up to the capacity of
+// target.  A longer source keeps its first characters.
+template <std::size_t Capacity>
+void copy_bounded(::fixy::FixedText<Capacity>& target, TextView source) noexcept {
+    target.clear();
+    for (char const character : source) {
+        if (target.append(character).is_err()) return;
+    }
+}
 
-    // An empty string_view may carry a null data pointer, and passing
-    // that to memcpy is undefined even for a length of zero.
-    auto bounded_copy = [](char* dst, std::size_t cap, std::string_view src) noexcept {
-        const std::size_t n = src.size() < cap - 1 ? src.size() : cap - 1;
-        if (n > 0 && src.data() != nullptr) {
-            std::memcpy(dst, src.data(), n);
-        }
-        dst[n] = '\0';
-    };
-    bounded_copy(g_captured.last_fn, sizeof(g_captured.last_fn), fn);
-    bounded_copy(g_captured.last_detail, sizeof(g_captured.last_detail), detail);
+void capture_sink(diag::Category cat, diag::ViolationContextText const& fn,
+                  diag::ViolationDetailText const& detail) noexcept {
+    static_cast<void>(g_captured.count.fetch_add_acq_rel(1));
+    g_captured.last_cat = cat;
+    copy_bounded(g_captured.last_fn, fn.value());
+    copy_bounded(g_captured.last_detail, detail.value());
 }
 
 void reset_capture() noexcept {
-    g_captured.count.store(0, std::memory_order_relaxed);
+    g_captured.count.store_release(0);
     g_captured.last_cat = diag::Category::EffectRowMismatch;
-    g_captured.last_fn[0] = '\0';
-    g_captured.last_detail[0] = '\0';
+    g_captured.last_fn.clear();
+    g_captured.last_detail.clear();
 }
 
-void test_default_sink_installed() { EXPECT(diag::current_violation_sink() == &diag::default_violation_sink); }
+void test_default_sink_installed(Tally& checks) {
+    CRUCIBLE_TEST_EXPECT(checks, diag::current_violation_sink() == &diag::default_violation_sink);
+}
 
-void test_custom_sink_install_and_route() {
+void test_custom_sink_install_and_route(Tally& checks) {
     auto previous = diag::set_violation_sink(&capture_sink);
-    EXPECT(previous == &diag::default_violation_sink);
-    EXPECT(diag::current_violation_sink() == &capture_sink);
+    CRUCIBLE_TEST_EXPECT(checks, previous == &diag::default_violation_sink);
+    CRUCIBLE_TEST_EXPECT(checks, diag::current_violation_sink() == &capture_sink);
 
     reset_capture();
-    diag::report_violation(diag::Category::DetSafeLeak, "test_function", "value=42 fails determinism predicate");
+    diag::report_violation(diag::Category::DetSafeLeak, diag::ViolationContextText{"test_function"},
+                           diag::ViolationDetailText{"value=42 fails determinism predicate"});
 
-    EXPECT(g_captured.count.load() == 1);
-    EXPECT(g_captured.last_cat == diag::Category::DetSafeLeak);
-    EXPECT(std::string_view{g_captured.last_fn} == "test_function");
-    EXPECT(std::string_view{g_captured.last_detail} == "value=42 fails determinism predicate");
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.count.load_acquire() == 1);
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.last_cat == diag::Category::DetSafeLeak);
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.last_fn.view() == "test_function");
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.last_detail.view() == "value=42 fails determinism predicate");
 
     diag::set_violation_sink(previous);
-    EXPECT(diag::current_violation_sink() == &diag::default_violation_sink);
+    CRUCIBLE_TEST_EXPECT(checks, diag::current_violation_sink() == &diag::default_violation_sink);
 }
 
-void test_null_sink_drops_silently() {
+void test_null_sink_drops_silently(Tally& checks) {
     auto previous = diag::set_violation_sink(nullptr);
-    EXPECT(diag::current_violation_sink() == nullptr);
+    CRUCIBLE_TEST_EXPECT(checks, diag::current_violation_sink() == nullptr);
 
     reset_capture();
-    diag::report_violation(diag::Category::HotPathViolation, "drop_test", "should be silently dropped");
-    EXPECT(g_captured.count.load() == 0);
+    diag::report_violation(diag::Category::HotPathViolation, diag::ViolationContextText{"drop_test"},
+                           diag::ViolationDetailText{"should be silently dropped"});
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.count.load_acquire() == 0);
 
     diag::set_violation_sink(previous);
 }
 
 // No Category may be special-cased out of the emitter.
-void test_all_categories_route_through_sink() {
+void test_all_categories_route_through_sink(Tally& checks) {
     auto previous = diag::set_violation_sink(&capture_sink);
 
     // The walk hands each Category to the lambda as a non-type template
@@ -461,83 +481,89 @@ void test_all_categories_route_through_sink() {
     std::size_t seen = 0;
     diag::enumerate_categories([&]<diag::Category C>() noexcept {
         reset_capture();
-        diag::report_violation(C, "enum_test", "category enumeration walk");
-        if (g_captured.count.load() == 1 && g_captured.last_cat == C) {
+        diag::report_violation(C, diag::ViolationContextText{"enum_test"},
+                               diag::ViolationDetailText{"category enumeration walk"});
+        if (g_captured.count.load_acquire() == 1 && g_captured.last_cat == C) {
             ++seen;
         }
     });
-    EXPECT(seen == diag::catalog_size);
+    CRUCIBLE_TEST_EXPECT(checks, seen == diag::catalog_size);
 
     diag::set_violation_sink(previous);
 }
 
-void test_long_input_reaches_sink_once() {
+void test_long_input_reaches_sink_once(Tally& checks) {
     constexpr std::size_t big_n = 8192;
-    char big[big_n + 1];
-    std::memset(big, 'x', big_n);
-    big[big_n] = '\0';
+    ::fixy::FixedText<big_n> big{};
+    bool is_filled = true;
+    for (std::size_t index = 0; index < big_n; ++index) {
+        is_filled = is_filled && big.append('x').is_ok();
+    }
+    CRUCIBLE_TEST_EXPECT(checks, is_filled && big.size() == big_n);
 
     auto previous = diag::set_violation_sink(&capture_sink);
     reset_capture();
-    diag::report_violation(diag::Category::BudgetExceeded, "long_detail_test", std::string_view{big, big_n});
-    EXPECT(g_captured.count.load() == 1);
+    diag::report_violation(diag::Category::BudgetExceeded, diag::ViolationContextText{"long_detail_test"},
+                           diag::ViolationDetailText{big.view()});
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.count.load_acquire() == 1);
     diag::set_violation_sink(previous);
 }
 
-void test_empty_strings_handled() {
+void test_empty_strings_handled(Tally& checks) {
     auto previous = diag::set_violation_sink(&capture_sink);
     reset_capture();
-    diag::report_violation(diag::Category::EpochMismatch, {}, {});
-    EXPECT(g_captured.count.load() == 1);
-    EXPECT(std::string_view{g_captured.last_fn} == "");
-    EXPECT(std::string_view{g_captured.last_detail} == "");
+    diag::report_violation(diag::Category::EpochMismatch, diag::ViolationContextText{TextView{}},
+                           diag::ViolationDetailText{TextView{}});
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.count.load_acquire() == 1);
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.last_fn.view() == "");
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.last_detail.view() == "");
     diag::set_violation_sink(previous);
 }
 
 // This covers the exchange semantic only.  Race detection belongs to the
 // sanitizer preset.
-void test_sink_install_round_trips() {
+void test_sink_install_round_trips(Tally& checks) {
     for (int i = 0; i < 100; ++i) {
         auto p1 = diag::set_violation_sink(&capture_sink);
         auto p2 = diag::set_violation_sink(p1);
-        EXPECT(p2 == &capture_sink);
-        EXPECT(diag::current_violation_sink() == p1);
+        CRUCIBLE_TEST_EXPECT(checks, p2 == &capture_sink);
+        CRUCIBLE_TEST_EXPECT(checks, diag::current_violation_sink() == p1);
     }
 }
 
-void test_report_violation_at_captures_location() {
+void test_report_violation_at_captures_location(Tally& checks) {
     auto previous = diag::set_violation_sink(&capture_sink);
     reset_capture();
 
     diag::report_violation_at(diag::Category::RefinementViolation, "value=-7 fails predicate `positive`");
-    EXPECT(g_captured.count.load() == 1);
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.count.load_acquire() == 1);
 
     // The captured name field carries "<file>:<line>:<column>@<function>",
     // and the JSON emitter's parser reads it back.
-    std::string_view fn{g_captured.last_fn};
-    EXPECT(fn.find("test_diag.cpp") != std::string_view::npos);
-    EXPECT(fn.find('@') != std::string_view::npos);
-    EXPECT(fn.find("test_report_violation_at_captures_location") != std::string_view::npos);
+    TextView const fn = g_captured.last_fn.view();
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::find(fn, "test_diag.cpp").is_some());
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::find(fn, '@').is_some());
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::find(fn, "test_report_violation_at_captures_location").is_some());
 
     const diag::SourcePosition pos = diag::parse_source_position(fn);
-    EXPECT(pos.file.ends_with("test_diag.cpp"));
-    EXPECT(pos.line > 0);
-    EXPECT(pos.column > 0);
-    EXPECT(pos.function.find("test_report_violation_at_captures_location") != std::string_view::npos);
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::ends_with(pos.file, "test_diag.cpp"));
+    CRUCIBLE_TEST_EXPECT(checks, pos.line > 0);
+    CRUCIBLE_TEST_EXPECT(checks, pos.column > 0);
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::find(pos.function, "test_report_violation_at_captures_location").is_some());
 
     diag::set_violation_sink(previous);
 }
 
-void test_macro_captures_location() {
+void test_macro_captures_location(Tally& checks) {
     auto previous = diag::set_violation_sink(&capture_sink);
     reset_capture();
 
     CRUCIBLE_DIAG_RUNTIME_VIOLATION(diag::Category::HotPathViolation, "macro test detail");
 
-    EXPECT(g_captured.count.load() == 1);
-    EXPECT(g_captured.last_cat == diag::Category::HotPathViolation);
-    EXPECT(std::string_view{g_captured.last_detail} == "macro test detail");
-    EXPECT(std::string_view{g_captured.last_fn}.find("test_macro_captures_location") != std::string_view::npos);
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.count.load_acquire() == 1);
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.last_cat == diag::Category::HotPathViolation);
+    CRUCIBLE_TEST_EXPECT(checks, g_captured.last_detail.view() == "macro test detail");
+    CRUCIBLE_TEST_EXPECT(checks, ::fixy::find(g_captured.last_fn.view(), "test_macro_captures_location").is_some());
 
     diag::set_violation_sink(previous);
 }
@@ -550,7 +576,8 @@ void test_abort_emitters_reach_sink_then_abort(::fixy::TestRunnerCtx const& test
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            diag::report_violation_and_abort(diag::Category::CrashClassMismatch, "abort_fn", "abort detail");
+            diag::report_violation_and_abort(diag::Category::CrashClassMismatch, diag::ViolationContextText{"abort_fn"},
+                                             diag::ViolationDetailText{"abort detail"});
         },
         ::foundation::core::TextView{
             "crucible-violation: category=CrashClassMismatch fn=abort_fn detail=abort detail\n"});
@@ -578,78 +605,79 @@ void test_abort_emitters_reach_sink_then_abort(::fixy::TestRunnerCtx const& test
 // emitter, and test/harness/check_output.py compares their bytes.  This call
 // writes the line of the default sink to the standard error of this process.
 void test_default_sink_emits_text() {
-    diag::default_violation_sink(diag::Category::DetSafeLeak, "test_default_sink_emits_text", "expected line");
+    diag::default_violation_sink(diag::Category::DetSafeLeak,
+                                 diag::ViolationContextText{"test_default_sink_emits_text"},
+                                 diag::ViolationDetailText{"expected line"});
 }
 
 // The violation record is the composite context taken apart plus the
 // catalog's prose for the category.  test/harness/check_output.py compares
 // the bytes of the record in the fixed field order.
-void test_json_violation_record_shape() {
+void test_json_violation_record_shape(Tally& checks) {
     constexpr diag::Category cat = diag::Category::EffectRowMismatch;
-    const diag::JsonDiagnosticRecord rec = diag::record_from_violation(cat, "plain_fn", "gap");
-    EXPECT(rec.category == cat);
-    EXPECT(rec.source.file.empty());
-    EXPECT(rec.source.function == "plain_fn");
-    EXPECT(rec.have == "plain_fn");
-    EXPECT(rec.error_code == diag::name_of(cat));
-    EXPECT(rec.goal == diag::description_of(cat));
-    EXPECT(rec.suggestion == diag::remediation_of(cat));
+    const diag::JsonDiagnosticRecord rec =
+        diag::record_from_violation(cat, diag::ViolationContextText{"plain_fn"}, diag::ViolationDetailText{"gap"});
+    CRUCIBLE_TEST_EXPECT(checks, rec.category == cat);
+    CRUCIBLE_TEST_EXPECT(checks, rec.source.file.size() == 0);
+    CRUCIBLE_TEST_EXPECT(checks, rec.source.function == "plain_fn");
+    CRUCIBLE_TEST_EXPECT(checks, rec.have == "plain_fn");
+    CRUCIBLE_TEST_EXPECT(checks, rec.error_code == diag::name_of(cat));
+    CRUCIBLE_TEST_EXPECT(checks, rec.goal == diag::description_of(cat));
+    CRUCIBLE_TEST_EXPECT(checks, rec.suggestion == diag::remediation_of(cat));
 }
 
-void test_source_position_parser() {
+void test_source_position_parser(Tally& checks) {
     const auto pos = diag::parse_source_position("/tmp/project/test.cpp:42:7@void ns::fn()");
-    EXPECT(pos.file == "/tmp/project/test.cpp");
-    EXPECT(pos.line == 42);
-    EXPECT(pos.column == 7);
-    EXPECT(pos.function == "void ns::fn()");
+    CRUCIBLE_TEST_EXPECT(checks, pos.file == "/tmp/project/test.cpp");
+    CRUCIBLE_TEST_EXPECT(checks, pos.line == 42);
+    CRUCIBLE_TEST_EXPECT(checks, pos.column == 7);
+    CRUCIBLE_TEST_EXPECT(checks, pos.function == "void ns::fn()");
 
     const auto legacy = diag::parse_source_position("plain_function");
-    EXPECT(legacy.file.empty());
-    EXPECT(legacy.function == "plain_function");
+    CRUCIBLE_TEST_EXPECT(checks, legacy.file.size() == 0);
+    CRUCIBLE_TEST_EXPECT(checks, legacy.function == "plain_function");
 
     const auto line_only = diag::parse_source_position("only.cpp:12@fn");
-    EXPECT(line_only.file == "only.cpp");
-    EXPECT(line_only.line == 12);
-    EXPECT(line_only.column == 0);
+    CRUCIBLE_TEST_EXPECT(checks, line_only.file == "only.cpp");
+    CRUCIBLE_TEST_EXPECT(checks, line_only.line == 12);
+    CRUCIBLE_TEST_EXPECT(checks, line_only.column == 0);
 
     const auto oversized = diag::parse_source_position("overflow.cpp:999999999999999999999999:7@overflow_fn");
-    EXPECT(oversized.file == "overflow.cpp:999999999999999999999999:7");
-    EXPECT(oversized.line == 0);
+    CRUCIBLE_TEST_EXPECT(checks, oversized.file == "overflow.cpp:999999999999999999999999:7");
+    CRUCIBLE_TEST_EXPECT(checks, oversized.line == 0);
 
     const auto empty = diag::parse_source_position("");
-    EXPECT(empty.file.empty());
-    EXPECT(empty.function.empty());
+    CRUCIBLE_TEST_EXPECT(checks, empty.file.size() == 0);
+    CRUCIBLE_TEST_EXPECT(checks, empty.function.size() == 0);
 }
 
 }  // namespace
 
 int main() {
+    Tally checks{kTest, "test_diag"};
     test_runtime_smoke();
-    test_catalog_floor();
-    test_accessor_runtime_coverage();
-    test_categories_array();
-    test_enumerate_categories_order();
-    test_accessor_strings_match_tag_fields();
-    test_insights_runtime();
+    test_catalog_floor(checks);
+    test_accessor_runtime_coverage(checks);
+    test_categories_array(checks);
+    test_enumerate_categories_order(checks);
+    test_accessor_strings_match_tag_fields(checks);
+    test_insights_runtime(checks);
 
-    test_default_sink_installed();
-    test_custom_sink_install_and_route();
-    test_null_sink_drops_silently();
-    test_all_categories_route_through_sink();
-    test_long_input_reaches_sink_once();
-    test_empty_strings_handled();
-    test_sink_install_round_trips();
-    test_report_violation_at_captures_location();
-    test_macro_captures_location();
-    test_abort_emitters_reach_sink_then_abort(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_default_sink_installed(checks);
+    test_custom_sink_install_and_route(checks);
+    test_null_sink_drops_silently(checks);
+    test_all_categories_route_through_sink(checks);
+    test_long_input_reaches_sink_once(checks);
+    test_empty_strings_handled(checks);
+    test_sink_install_round_trips(checks);
+    test_report_violation_at_captures_location(checks);
+    test_macro_captures_location(checks);
+    test_abort_emitters_reach_sink_then_abort(kTest);
 
     test_default_sink_emits_text();
-    test_json_violation_record_shape();
-    test_source_position_parser();
+    test_json_violation_record_shape(checks);
+    test_source_position_parser(checks);
 
-    if (g_failures > 0) {
-        std::fprintf(stderr, "FAILURES: %d\n", g_failures);
-        return 1;
-    }
+    std::move(checks).close();
     return 0;
 }

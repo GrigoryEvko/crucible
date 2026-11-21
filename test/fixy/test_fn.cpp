@@ -420,7 +420,7 @@ static_assert(::fixy::duplicate_tag_or_void_t<::fixy::atom::copy, ::fixy::atom::
 static_assert(::fixy::duplicate_tag_or_void_t<::fixy::atom::mut_append, ::fixy::atom::mut_monotonic>::name
               == "DuplicateAtomOnMutation");
 static_assert(std::is_same_v<::fixy::malformed_tag_or_void_t<not_an_atom>, ::fixy::malformed_atom<not_an_atom>>);
-static_assert(!::fixy::malformed_atom<not_an_atom>::name.empty());
+static_assert(::fixy::malformed_atom<not_an_atom>::name.size() != 0);
 static_assert(std::is_same_v<::fixy::payload_tag_or_void_t<void>, ::fixy::unholdable_payload<void>>);
 
 // The name carries the axis identifier, so renaming an axis renames its
@@ -537,10 +537,10 @@ static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, StderrBinding>, "t
 
     // The generated tag strings exist at runtime, not only in a
     // constant expression.
-    const std::string_view dup = ::fixy::duplicate_atom_on<Axis::Usage>::name;
+    ::fixy::TextView const dup = ::fixy::duplicate_atom_on<Axis::Usage>::name;
     if (dup != "DuplicateAtomOnUsage") return 9;
-    if (::fixy::duplicate_atom_on<Axis::Usage>::description.empty()) return 10;
-    if (::fixy::duplicate_atom_on<Axis::Usage>::remediation.empty()) return 11;
+    if (::fixy::duplicate_atom_on<Axis::Usage>::description.size() == 0) return 10;
+    if (::fixy::duplicate_atom_on<Axis::Usage>::remediation.size() == 0) return 11;
 
     if (axis_count != 33) return 12;
     return 0;

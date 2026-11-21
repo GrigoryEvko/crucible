@@ -105,7 +105,7 @@ static_assert(every_atom_axis_is_an_enumerator());
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : fad::roster_members_v<every_atom_roster>) {
         using A = [:member:];
-        if (::fixy::axis_name(A::axis) == std::string_view{"<unknown Axis>"}) return false;
+        if (::fixy::axis_name(A::axis) == ::foundation::core::TextView{"<unknown Axis>"}) return false;
     }
 #pragma GCC diagnostic pop
     return true;
@@ -204,7 +204,7 @@ template <typename A>
     [[maybe_unused]] A atom{};
     [[maybe_unused]] A copied = atom;
     volatile Axis axis = A::axis;
-    return ::fixy::axis_name(axis) != std::string_view{"<unknown Axis>"} && sizeof(A) == 1;
+    return ::fixy::axis_name(axis) != ::foundation::core::TextView{"<unknown Axis>"} && sizeof(A) == 1;
 }
 
 // The walk calls the function above for each atom of each family.

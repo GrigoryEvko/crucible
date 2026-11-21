@@ -139,12 +139,15 @@ void write_formatted(core::Option<core::TextView> const& formatted) noexcept {
 }  // namespace
 
 int main() {
-    diag::emit_legacy_text_violation(core::Sink::Out, diag::Category::DetSafeLeak, "fn_name", "detail text");
-    diag::emit_legacy_text_violation(core::Sink::Out, diag::Category::DetSafeLeak, CRUCIBLE_PROBE_X8192, "d");
+    diag::emit_legacy_text_violation(core::Sink::Out, diag::Category::DetSafeLeak,
+                                     diag::ViolationContextText{"fn_name"}, diag::ViolationDetailText{"detail text"});
+    diag::emit_legacy_text_violation(core::Sink::Out, diag::Category::DetSafeLeak,
+                                     diag::ViolationContextText{CRUCIBLE_PROBE_X8192}, diag::ViolationDetailText{"d"});
 
     bool const escapes = diag::emit_json_record(core::Sink::Out, escape_record());
     bool const violation = diag::emit_json_violation(core::Sink::Out, diag::Category::EffectRowMismatch,
-                                                     "test_diag.cpp:77:9@test_fn", "caller row lacks Bg");
+                                                     diag::ViolationContextText{"test_diag.cpp:77:9@test_fn"},
+                                                     diag::ViolationDetailText{"caller row lacks Bg"});
     bool const fallback =
         diag::emit_json_record(core::Sink::Out, diag::JsonDiagnosticRecord{.category = diag::Category::DetSafeLeak});
     bool const long_one = diag::emit_json_record(core::Sink::Out, long_record());
@@ -152,7 +155,8 @@ int main() {
     bool const over = diag::emit_json_record(core::Sink::Out, over_record());
     core::report(core::Sink::Out, "results: {} {} {} {} {} {}\n", escapes, violation, fallback, long_one, exact, over);
 
-    diag::report_violation(diag::Category::DetSafeLeak, "default_fn", "default detail");
+    diag::report_violation(diag::Category::DetSafeLeak, diag::ViolationContextText{"default_fn"},
+                           diag::ViolationDetailText{"default detail"});
 
     core::FixedText<1024> record_text;
     write_formatted(diag::format_json_record(record_text, escape_record()));

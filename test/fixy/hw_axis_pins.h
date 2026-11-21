@@ -69,7 +69,9 @@ template <::fixy::Axis... Listed>
     for (std::size_t index = 0; index < want.size(); ++index) {
         if (want[index] && !have[index]) {
             names += ' ';
-            names += ::fixy::axis_name(static_cast<::fixy::Axis>(index));
+            for (char const character : ::fixy::axis_name(static_cast<::fixy::Axis>(index))) {
+                names += character;
+            }
         }
     }
     return names;

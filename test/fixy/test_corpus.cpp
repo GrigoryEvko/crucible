@@ -14,10 +14,10 @@
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
 #include <fixy/atoms/Syscall.h>
+#include <foundation/core/Algorithms.h>
 
 #include <cstddef>
 #include <meta>
-#include <string_view>
 #include <tuple>
 #include <type_traits>
 
@@ -28,25 +28,9 @@ namespace corpus = ::fixy::corpus;
 namespace policy = ::fixy::tags::secret_policy;
 using Eff = ::foundation::effects::Effect;
 using ::fixy::IsAccepted;
-
-// A text search for constant expressions.  string_view::find
-// null-checks a pointer into the define_static_string object behind
-// every generated text, which GCC 16.2's constant evaluator refuses;
-// indexing is accepted.
-[[nodiscard]] consteval bool contains(std::string_view haystack, std::string_view needle) noexcept {
-    if (needle.size() > haystack.size()) return false;
-    for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
-        bool same = true;
-        for (std::size_t offset = 0; offset < needle.size(); ++offset) {
-            if (haystack[start + offset] != needle[offset]) {
-                same = false;
-                break;
-            }
-        }
-        if (same) return true;
-    }
-    return false;
-}
+using ::foundation::core::find;
+using ::foundation::core::mint_static_text;
+using ::foundation::core::starts_with;
 
 // ---------------------------------------------------------------------
 // The corpus is the tuple it says it is.  The literal sits on the right
@@ -271,11 +255,11 @@ static_assert(std::is_same_v<corpus::matched_entry_or_void_t<int, at::ghost, at:
 
 static_assert(corpus::corpus_entry_name_for_v<int, at::with_io> == "classified_io_without_declassify");
 static_assert(corpus::corpus_entry_name_for_v<int, at::as_internal, at::with_bg> == "internal_bg_without_declassify");
-static_assert(corpus::corpus_entry_name_for_v<int>.empty());
-static_assert(contains(corpus::corpus_full_diagnostic_v<int, at::with_io>, "classified_io_without_declassify"));
-static_assert(contains(corpus::corpus_full_diagnostic_v<int, at::with_io>, "Sabelfeld-Myers 2003"));
-static_assert(corpus::corpus_full_diagnostic_v<int, at::with_io>.starts_with("fixy::fn<Type, Atoms...> [tier 5"));
-static_assert(corpus::corpus_full_diagnostic_v<int>.empty());
+static_assert(corpus::corpus_entry_name_for_v<int>.size() == 0);
+static_assert(find(corpus::corpus_full_diagnostic_v<int, at::with_io>, "classified_io_without_declassify").is_some());
+static_assert(find(corpus::corpus_full_diagnostic_v<int, at::with_io>, "Sabelfeld-Myers 2003").is_some());
+static_assert(starts_with(corpus::corpus_full_diagnostic_v<int, at::with_io>, "fixy::fn<Type, Atoms...> [tier 5"));
+static_assert(corpus::corpus_full_diagnostic_v<int>.size() == 0);
 
 // ---------------------------------------------------------------------
 // Every entry is a diagnostic tag named after itself, with a citation.
@@ -290,8 +274,8 @@ static_assert(corpus::corpus_full_diagnostic_v<int>.empty());
         // `^^Entry` would reflect the alias just declared, whose
         // identifier is the word Entry; the class is behind dealias.
         all_named = all_named && ::foundation::diag::is_diagnostic_class_v<Entry>
-                 && Entry::name == std::meta::identifier_of(std::meta::dealias(^^Entry)) && !Entry::cite().empty()
-                 && contains(Entry::full_diagnostic(), Entry::name);
+                 && Entry::name == mint_static_text(std::meta::identifier_of(std::meta::dealias(^^Entry)).data())
+                 && Entry::cite().size() != 0 && find(Entry::full_diagnostic(), Entry::name).is_some();
     }
     return all_named;
 }
@@ -309,24 +293,24 @@ static_assert(every_entry_is_a_named_tag());
     template for (constexpr auto entry :
                   std::define_static_array(std::meta::template_arguments_of(std::meta::dealias(^^corpus::Entries)))) {
         using Entry = [:entry:];
-        const std::string_view name = Entry::name;
-        const std::string_view description = Entry::description;
-        const std::string_view remediation = Entry::remediation;
-        const std::string_view cite = Entry::cite();
-        const std::string_view full = Entry::full_diagnostic();
-        if (name.empty()) return 1;
-        if (description.empty()) return 2;
-        if (remediation.empty()) return 3;
-        if (cite.empty()) return 4;
-        if (!full.contains(name)) return 5;
-        if (!full.contains(cite)) return 6;
+        ::foundation::core::TextView const name = Entry::name;
+        ::foundation::core::TextView const description = Entry::description;
+        ::foundation::core::TextView const remediation = Entry::remediation;
+        ::foundation::core::TextView const cite = Entry::cite();
+        ::foundation::core::TextView const full = Entry::full_diagnostic();
+        if (name.size() == 0) return 1;
+        if (description.size() == 0) return 2;
+        if (remediation.size() == 0) return 3;
+        if (cite.size() == 0) return 4;
+        if (find(full, name).is_none()) return 5;
+        if (find(full, cite).is_none()) return 6;
         ++walked;
     }
     if (walked != corpus::corpus_size) return 7;
 
-    const std::string_view matched = corpus::corpus_entry_name_for_v<int, at::with_io>;
+    ::foundation::core::TextView const matched = corpus::corpus_entry_name_for_v<int, at::with_io>;
     if (matched != "classified_io_without_declassify") return 8;
-    if (!corpus::corpus_entry_name_for_v<int>.empty()) return 9;
+    if (corpus::corpus_entry_name_for_v<int>.size() != 0) return 9;
 
     const auto mask = at::DischargeAxis::Staleness | at::DischargeAxis::Bg;
     if (!at::discharge_axis_contains(mask, at::DischargeAxis::Bg)) return 10;

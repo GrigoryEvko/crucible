@@ -140,13 +140,6 @@ public:
                                                          "that the full expression ends");
 };
 
-// The TextView of a text field of a tag.  The field holds its characters
-// and their count, and the view takes the two.
-template <class Field>
-[[nodiscard]] consteval ::foundation::core::TextView tag_field_text_(Field const& field) noexcept {
-    return ::foundation::core::detail::text_over_(field.data(), field.size());
-}
-
 }  // namespace detail
 
 // The buffer is sized to the exact sum of the literals and the rendered
@@ -211,8 +204,8 @@ inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_LINES = detail::format_newline
 template <typename Tag, auto FnPtr, typename CallerRow, typename CalleeRow, typename OffendingDiff>
     requires is_diagnostic_class_v<Tag>
 [[nodiscard]] consteval auto build_row_mismatch_message() noexcept {
-    constexpr auto category = detail::tag_field_text_(Tag::name);
-    constexpr auto remediation = detail::tag_field_text_(Tag::remediation);
+    constexpr ::foundation::core::TextView category = Tag::name;
+    constexpr ::foundation::core::TextView remediation = Tag::remediation;
     constexpr auto fn_name = function_display_name<FnPtr>;
     constexpr auto caller_str = type_name<CallerRow>;
     constexpr auto callee_str = type_name<CalleeRow>;

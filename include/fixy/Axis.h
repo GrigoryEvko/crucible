@@ -52,6 +52,7 @@
 
 #include <foundation/algebra/lattices/ConfLattice.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Enumerate.h>
@@ -182,13 +183,24 @@ inline constexpr std::size_t axis_count = 33;
 // the enum yields the sentinel "<unknown Axis>" rather than an empty
 // view, so a caller that prints a corrupt byte sees that it was one.
 // Constexpr rather than consteval so a runtime diagnostic can call it.  The
-// name is a std::string_view, because the insight texts that the builders of
-// fixy/Reject.h and fixy/Insights.h make are std::string_view.
-[[nodiscard]] constexpr std::string_view axis_name(Axis axis) noexcept {
-    return ::foundation::reflect::detail::enum_name_view_(axis);
+// name has static storage, so the view never dangles.
+[[nodiscard]] constexpr ::foundation::core::TextView axis_name(Axis axis) noexcept {
+    return ::foundation::core::enum_name_text(axis);
 }
 
 namespace detail {
+
+// Puts the characters of text after the last character of the string of a
+// builder.  A builder of a diagnostic of this layer gives its string to
+// std::define_static_string.  The function is a template over the string, so
+// only a unit that builds such a text instantiates it.  Complexity: linear in
+// the length of text.
+template <class Builder>
+consteval void append_text_(Builder& builder, ::foundation::core::TextView text) {
+    for (char const character : text) {
+        builder += character;
+    }
+}
 
 // Whether one text contains another, for a constant expression.
 //
@@ -196,9 +208,9 @@ namespace detail {
 // back, and GCC 16.2's constant evaluator refuses that comparison on a
 // pointer into the template-parameter object std::define_static_string
 // returns; indexing the same pointer is accepted, so this walks indices.
-// Every header in this layer that searches a generated diagnostic —
-// Collision.h, Corpus.h, Reject.h, Insights.h — reads it, which is why
-// it sits here rather than in one of them.
+// The checks of the tier messages of fixy/Reject.h read it, because each
+// tier message is a std::string_view.  A search of a TextView is find of
+// foundation/core/Algorithms.h.
 [[nodiscard]] consteval bool text_contains(std::string_view haystack, std::string_view needle) noexcept {
     if (needle.size() > haystack.size()) return false;
     for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
@@ -688,7 +700,7 @@ template <class Anchor = void>
             }
             if (!is_weakest) {
                 if (!offenders.empty()) offenders += ", ";
-                offenders += axis_name(axis);
+                append_text_(offenders, axis_name(axis));
             }
         }
     }
@@ -696,6 +708,9 @@ template <class Anchor = void>
     return offenders;
 }
 
+// The diagnostic is a std::string_view, because the check file of this header
+// prints it in a static_assert.  The message of a static_assert needs data()
+// and size(), and a TextView gives no address by design.
 template <class Anchor = void>
 [[nodiscard]] consteval std::string_view weakest_claim_diagnostic_() {
     ::foundation::reflect::anchored_t<^^Anchor, std::string> message =

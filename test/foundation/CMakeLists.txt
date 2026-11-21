@@ -1932,10 +1932,16 @@ foundation_neg_compile_test(neg_diag_assert_refuses_a_tag_outside_the_catalog
 # The second regex names the instantiation the compiler refused.
 foundation_neg_compile_test(neg_diag_accessor_refuses_a_non_tag
   "static assertion failed: foundation::diag \\[DiagnosticAccessor_NonTag\\]"
-  "required from .constexpr const std::string_view foundation::diag::diagnostic_name_v<int>.")
+  "required from .constexpr const foundation::core::TextView foundation::diag::diagnostic_name_v<int>.")
 foundation_neg_compile_test(neg_diag_category_of_refuses_an_unregistered_tag
   "static assertion failed: category_of_v<Tag>: Tag is not registered in the foundation Catalog"
   "In instantiation of .struct foundation::diag::detail::category_of_impl<\\{anonymous\\}::user_local_tag>.")
+# An insight field of a tag is a TextView.  A field of another text type,
+# here a FixedText, stops the build at the reader with the name of the field,
+# so no reader gives the prose of such a tag as empty.
+foundation_neg_compile_test(neg_diag_insight_field_of_another_type
+  "static assertion failed: foundation::diag \\[InsightField_NotText\\]: the field why_this_matters of a tag"
+  "In instantiation of .consteval foundation::core::TextView foundation::diag::detail::why_this_matters_of_\\(\\) \\[with Tag = \\{anonymous\\}::text_of_another_type_tag\\].")
 
 # ── The row hash, as one fold ─────────────────────────────────────────
 #

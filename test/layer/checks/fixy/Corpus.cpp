@@ -2,6 +2,7 @@
 
 #include <fixy/Corpus.h>
 
+#include <foundation/core/Algorithms.h>
 #include <foundation/reflect/ReflectionList.h>
 
 namespace fixy::corpus {
@@ -69,13 +70,17 @@ namespace detail::corpus_self_test {
 // Every entry is a diagnostic tag whose name is its own class name, so
 // the string the message carries cannot drift from the type the
 // instantiation trail names.  Each carries a citation, and its full
-// diagnostic names it.
+// diagnostic names it.  The identifier of a reflection has static storage
+// and a zero after its last character, so the static text door gives it as a
+// TextView.
 template <class Entry>
 [[nodiscard]] consteval bool entry_is_well_formed_() noexcept {
-    return ::foundation::diag::is_diagnostic_class_v<Entry> && Entry::name == std::meta::identifier_of(^^Entry)
-        && !Entry::description.empty() && !Entry::remediation.empty() && !Entry::cite().empty()
-        && Entry::full_diagnostic().starts_with("fixy::fn<") && text_contains(Entry::full_diagnostic(), Entry::name)
-        && text_contains(Entry::full_diagnostic(), Entry::cite());
+    return ::foundation::diag::is_diagnostic_class_v<Entry>
+        && Entry::name == ::foundation::core::mint_static_text(std::meta::identifier_of(^^Entry).data())
+        && Entry::description.size() != 0 && Entry::remediation.size() != 0 && Entry::cite().size() != 0
+        && ::foundation::core::starts_with(Entry::full_diagnostic(), "fixy::fn<")
+        && ::foundation::core::find(Entry::full_diagnostic(), Entry::name).is_some()
+        && ::foundation::core::find(Entry::full_diagnostic(), Entry::cite()).is_some();
 }
 
 [[nodiscard]] consteval bool every_entry_is_well_formed_() noexcept {
@@ -132,9 +137,10 @@ static_assert(!IsInCorpus<int, ::fixy::atom::declassify<::fixy::tags::secret_pol
 // The name and the diagnostic read off a matched pack, and are empty
 // off an admitted one.
 static_assert(corpus_entry_name_for_v<int, ::fixy::atom::with_io> == "classified_io_without_declassify");
-static_assert(text_contains(corpus_full_diagnostic_v<int, ::fixy::atom::with_io>, "Sabelfeld-Myers 2003"));
-static_assert(corpus_entry_name_for_v<int>.empty());
-static_assert(corpus_full_diagnostic_v<int>.empty());
+static_assert(
+    ::foundation::core::find(corpus_full_diagnostic_v<int, ::fixy::atom::with_io>, "Sabelfeld-Myers 2003").is_some());
+static_assert(corpus_entry_name_for_v<int>.size() == 0);
+static_assert(corpus_full_diagnostic_v<int>.size() == 0);
 
 }  // namespace detail::corpus_self_test
 

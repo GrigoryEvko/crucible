@@ -8,11 +8,12 @@
 // foundation/diag/Catalog.h puts them together into the closed set.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Side.h>
+#include <foundation/core/Text.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -28,18 +29,31 @@ struct tag_base {
     ~tag_base() = default;
 };
 
-// The text of one field of a tag: a std::string_view over its string
-// literal.  A std::string_view built from a pointer counts the characters
-// one at a time in a constant evaluation.  Each translation unit that
-// includes this header would do that count again for each field of each
-// tag, and the fields hold about 100,000 characters.  GCC folds
-// __builtin_strlen of a string literal to a constant in one step.  The
-// constructor is not a template, so the fields of different lengths share
-// one instantiation.
-struct tag_text_literal : std::string_view {
+// The text of one field of a tag: a TextView over its string literal.  The
+// constructor of a TextView from a literal reads each character one at a
+// time in a constant evaluation.  Each translation unit that includes this
+// header would do that read again for each field of each tag, and the
+// fields hold about 100,000 characters.  GCC folds __builtin_strlen of a
+// string literal to a constant in one step.  The constructor is not a
+// template, so the fields of different lengths share one instantiation.
+// The literal has static storage, so the view never dangles.
+struct tag_text_literal : ::foundation::core::TextView {
     consteval tag_text_literal(const char (&literal)[]) noexcept
-        : std::string_view{literal, __builtin_strlen(literal)} {}
+        : ::foundation::core::TextView{::foundation::core::detail::text_over_(literal, __builtin_strlen(literal))} {}
 };
+
+// The two texts of a violation in their roles: the context, such as the
+// name of a function or the position of a call, and the detail.  Two tags
+// give two types, so a call cannot swap the two texts
+// (foundation/core/Side.h).  A call names each role:
+// report_violation(category, ViolationContextText{"fn"}, ViolationDetailText{"detail"}).
+namespace side {
+struct ViolationContext final {};
+struct ViolationDetail final {};
+}  // namespace side
+
+using ViolationContextText = ::foundation::core::Side<side::ViolationContext, ::foundation::core::TextView>;
+using ViolationDetailText = ::foundation::core::Side<side::ViolationDetail, ::foundation::core::TextView>;
 
 // Error and Fatal behave identically at compile time. They differ in
 // what tooling is meant to do: Fatal marks a violation whose silent
@@ -81,9 +95,13 @@ namespace detail {
 // that declares no such member is a compile error at the read.  The
 // catalog arrays of foundation/diag/Catalog.h vary over these three, and
 // their walk is written once.
-inline constexpr auto select_name = []<typename Tag>() consteval { return std::string_view{Tag::name}; };
-inline constexpr auto select_description = []<typename Tag>() consteval { return std::string_view{Tag::description}; };
-inline constexpr auto select_remediation = []<typename Tag>() consteval { return std::string_view{Tag::remediation}; };
+inline constexpr auto select_name = []<typename Tag>() consteval { return ::foundation::core::TextView{Tag::name}; };
+inline constexpr auto select_description = []<typename Tag>() consteval {
+    return ::foundation::core::TextView{Tag::description};
+};
+inline constexpr auto select_remediation = []<typename Tag>() consteval {
+    return ::foundation::core::TextView{Tag::remediation};
+};
 
 // The direct form constrains the variable template itself with
 // `requires is_diagnostic_class_v<T>`. A requires-clause failure on a variable
@@ -91,7 +109,7 @@ inline constexpr auto select_remediation = []<typename Tag>() consteval { return
 // Routing through this function puts the wording under our control.  The
 // if constexpr keeps the read away from a type that declares no name.
 template <typename T>
-[[nodiscard]] consteval std::string_view tag_name_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView tag_name_() noexcept {
     static_assert(is_diagnostic_class_v<T>, "foundation::diag [DiagnosticAccessor_NonTag]: "
                                             "diagnostic_name_v requires T to be derived from "
                                             "foundation::diag::tag_base.  See foundation/diag/Catalog.h's catalog "
@@ -107,7 +125,7 @@ template <typename T>
 }  // namespace detail
 
 template <typename T>
-inline constexpr std::string_view diagnostic_name_v = detail::tag_name_<T>();
+inline constexpr ::foundation::core::TextView diagnostic_name_v = detail::tag_name_<T>();
 
 template <typename DiagnosticClass, typename... Context>
     requires is_diagnostic_class_v<DiagnosticClass>
@@ -115,9 +133,9 @@ struct Diagnostic {
     using diagnostic_class = DiagnosticClass;
     using context = std::tuple<Context...>;
 
-    static constexpr std::string_view name = DiagnosticClass::name;
-    static constexpr std::string_view description = DiagnosticClass::description;
-    static constexpr std::string_view remediation = DiagnosticClass::remediation;
+    static constexpr ::foundation::core::TextView name = DiagnosticClass::name;
+    static constexpr ::foundation::core::TextView description = DiagnosticClass::description;
+    static constexpr ::foundation::core::TextView remediation = DiagnosticClass::remediation;
 };
 
 template <typename T>

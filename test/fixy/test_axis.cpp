@@ -26,13 +26,17 @@ using ::fixy::Wrapper;
 static_assert(::fixy::every_axis_has_traits());
 
 // The name of every axis is the identifier reflection reads off its
-// enumerator, and a value outside the enum yields the sentinel.
+// enumerator, and a value outside the enum yields the sentinel.  The
+// identifier has static storage and a zero after its last character, so the
+// static text door gives it as a TextView.
 [[nodiscard]] consteval bool every_axis_name_is_its_identifier() noexcept {
     static constexpr auto axes = std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : axes) {
-        if (::fixy::axis_name([:en:]) != std::meta::identifier_of(en)) return false;
+        if (::fixy::axis_name([:en:]) != ::foundation::core::mint_static_text(std::meta::identifier_of(en).data())) {
+            return false;
+        }
     }
 #pragma GCC diagnostic pop
     return true;
@@ -200,7 +204,7 @@ int main() {
     // call keeps it covered by the sanitizers, and one runtime call
     // with a value outside the enum covers the sentinel arm.
     volatile auto axis = Axis::Regime;
-    const std::string_view name = ::fixy::axis_name(axis);
+    ::foundation::core::TextView const name = ::fixy::axis_name(axis);
     if (name != "Regime") return 1;
     volatile auto outside = static_cast<Axis>(::fixy::axis_count);
     if (::fixy::axis_name(outside) != "<unknown Axis>") return 2;

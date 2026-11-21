@@ -23,7 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace foundation::diag {
@@ -50,18 +50,24 @@ template <typename Tag>
     }
 }
 
-// One reader per prose field.  The requires-clause asks whether the tag
-// declares the member and whether it reads as text, so a tag that
-// declares none of them, or declares one of an unrelated type, reads as
-// empty rather than failing to compile.
-#define FOUNDATION_DIAG_INSIGHT_READER(Member)                         \
-    template <typename Tag>                                            \
-    [[nodiscard]] consteval std::string_view Member##_of_() noexcept { \
-        if constexpr (requires { std::string_view{Tag::Member}; }) {   \
-            return std::string_view{Tag::Member};                      \
-        } else {                                                       \
-            return {};                                                 \
-        }                                                              \
+// One reader per prose field.  A tag that declares no such member reads as
+// empty.  A tag that declares the member gives it as a TextView, such as a
+// tag_text_literal of foundation/diag/Tag.h.  A member of another type stops
+// the build with the name of the field, so a text of another type never
+// reads as an empty field.
+#define FOUNDATION_DIAG_INSIGHT_READER(Member)                                                                        \
+    template <typename Tag>                                                                                           \
+    [[nodiscard]] consteval ::foundation::core::TextView Member##_of_() noexcept {                                    \
+        if constexpr (!requires { Tag::Member; }) {                                                                   \
+            return {};                                                                                                \
+        } else if constexpr (std::is_convertible_v<decltype(Tag::Member) const&, ::foundation::core::TextView>) {     \
+            return ::foundation::core::TextView{Tag::Member};                                                         \
+        } else {                                                                                                      \
+            static_assert(false, "foundation::diag [InsightField_NotText]: the field " #Member " of a tag is a "      \
+                                 "TextView, such as a tag_text_literal of foundation/diag/Tag.h.  Declare the field " \
+                                 "as a TextView.");                                                                   \
+            return {};                                                                                                \
+        }                                                                                                             \
     }
 
 FOUNDATION_DIAG_INSIGHT_READER(why_this_matters)
@@ -87,10 +93,10 @@ FOUNDATION_DIAG_INSIGHT_READER(violating_example)
 template <typename Tag>
 struct insight_provider {
     static constexpr Severity severity = detail::severity_of_<Tag>();
-    static constexpr std::string_view why_this_matters = detail::why_this_matters_of_<Tag>();
-    static constexpr std::string_view symptom_pattern = detail::symptom_pattern_of_<Tag>();
-    static constexpr std::string_view correct_example = detail::correct_example_of_<Tag>();
-    static constexpr std::string_view violating_example = detail::violating_example_of_<Tag>();
+    static constexpr ::foundation::core::TextView why_this_matters = detail::why_this_matters_of_<Tag>();
+    static constexpr ::foundation::core::TextView symptom_pattern = detail::symptom_pattern_of_<Tag>();
+    static constexpr ::foundation::core::TextView correct_example = detail::correct_example_of_<Tag>();
+    static constexpr ::foundation::core::TextView violating_example = detail::violating_example_of_<Tag>();
 };
 
 // Name the tag fully qualified. A specialization has to be declared in
@@ -103,26 +109,26 @@ struct insight_provider {
 // A second invocation for one tag is a redefinition. Changing a
 // severity means removing the first invocation, which puts the change in
 // front of a reviewer.
-#define CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating) \
-    namespace foundation::diag {                                               \
-    template <>                                                                \
-    struct insight_provider<TagType> {                                         \
-        static constexpr Severity severity = (Sev);                            \
-        static constexpr std::string_view why_this_matters = (Why);            \
-        static constexpr std::string_view symptom_pattern = (Symptom);         \
-        static constexpr std::string_view correct_example = (Correct);         \
-        static constexpr std::string_view violating_example = (Violating);     \
-    };                                                                         \
-    }                                                                          \
+#define CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, Why, Symptom, Correct, Violating)         \
+    namespace foundation::diag {                                                       \
+    template <>                                                                        \
+    struct insight_provider<TagType> {                                                 \
+        static constexpr Severity severity = (Sev);                                    \
+        static constexpr ::foundation::core::TextView why_this_matters = (Why);        \
+        static constexpr ::foundation::core::TextView symptom_pattern = (Symptom);     \
+        static constexpr ::foundation::core::TextView correct_example = (Correct);     \
+        static constexpr ::foundation::core::TextView violating_example = (Violating); \
+    };                                                                                 \
+    }                                                                                  \
     static_assert(true, "force trailing semicolon at call site")
 
 // This pins a severity while the prose is still missing. The result is a
 // registered tag with nothing to say, which the predicates below still
 // report as uninsighted.  It is the full registration with every prose
 // field empty.
-#define CRUCIBLE_DIAG_INSIGHTS_SEVERITY(TagType, Sev)                                                      \
-    CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, ::std::string_view{}, ::std::string_view{}, ::std::string_view{}, \
-                           ::std::string_view{})
+#define CRUCIBLE_DIAG_INSIGHTS_SEVERITY(TagType, Sev)                                                    \
+    CRUCIBLE_DIAG_INSIGHTS(TagType, Sev, ::foundation::core::TextView{}, ::foundation::core::TextView{}, \
+                           ::foundation::core::TextView{}, ::foundation::core::TextView{})
 
 // The same registration with a floor under each field, so a placeholder
 // left in one of them fails the build instead of reaching a reader.
@@ -174,8 +180,8 @@ struct insights_quality_thresholds {
 
 template <typename Tag>
 inline constexpr bool has_insights_v =
-    !insight_provider<Tag>::why_this_matters.empty() || !insight_provider<Tag>::symptom_pattern.empty()
-    || !insight_provider<Tag>::correct_example.empty() || !insight_provider<Tag>::violating_example.empty();
+    insight_provider<Tag>::why_this_matters.size() != 0 || insight_provider<Tag>::symptom_pattern.size() != 0
+    || insight_provider<Tag>::correct_example.size() != 0 || insight_provider<Tag>::violating_example.size() != 0;
 
 // Every field, against its own threshold. The strictly stronger
 // predicate of the two.

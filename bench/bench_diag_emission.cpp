@@ -20,8 +20,9 @@ int main() {
         core::FixedText<4096> record;
         const bool is_formatted =
             diag::format_json_record(
-                record, diag::record_from_violation(cat, "bench_diag_emission.cpp:32:5@bench_diag_emission",
-                                                    "caller row lacks Bg while callee requires Bg"))
+                record, diag::record_from_violation(
+                            cat, diag::ViolationContextText{"bench_diag_emission.cpp:32:5@bench_diag_emission"},
+                            diag::ViolationDetailText{"caller row lacks Bg while callee requires Bg"}))
                 .is_some();
         bench::do_not_optimize(is_formatted);
     });

@@ -45,10 +45,10 @@ static_assert(fmt_len == expected_len, "format_total_length must equal the sum o
 constexpr auto sample_msg = build_row_mismatch_message<EffectRowMismatch, &sample_fn, int, float, double>();
 constexpr TextView sample_text = sample_msg.view();
 
-// The names of the tag as TextViews, for the offsets below.
-constexpr TextView effect_row_name = tag_field_text_(EffectRowMismatch::name);
-constexpr TextView hot_path_name = tag_field_text_(HotPathViolation::name);
-constexpr TextView det_safe_name = tag_field_text_(DetSafeLeak::name);
+// The names of the tags, for the offsets below.
+constexpr TextView effect_row_name = EffectRowMismatch::name;
+constexpr TextView hot_path_name = HotPathViolation::name;
+constexpr TextView det_safe_name = DetSafeLeak::name;
 
 // The characters of the sample block from Offset to its end, or the empty
 // text when Offset is past the end.
@@ -59,8 +59,7 @@ static_assert(sample_msg.size() > 0, "build_row_mismatch_message returned an emp
                                      "literal table or input strings collapsed somehow.");
 static_assert(sample_msg.size()
                   == format_total_length(effect_row_name, function_display_name<&sample_fn>, type_name<int>,
-                                         type_name<float>, type_name<double>,
-                                         tag_field_text_(EffectRowMismatch::remediation)),
+                                         type_name<float>, type_name<double>, EffectRowMismatch::remediation),
               "build_row_mismatch_message buffer length diverged from "
               "format_total_length predicted size — fold-loop drift.");
 

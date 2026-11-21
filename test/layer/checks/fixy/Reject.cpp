@@ -126,8 +126,8 @@ static_assert(std::is_same_v<payload_tag_or_void_t<void>, unholdable_payload<voi
 static_assert(duplicate_atom_on<Axis::Usage>::name == "DuplicateAtomOnUsage");
 static_assert(duplicate_atom_on<Axis::MemoryScope>::name == "DuplicateAtomOnMemoryScope");
 static_assert(duplicate_atom_on<Axis::Usage>::name != duplicate_atom_on<Axis::Effect>::name);
-static_assert(!duplicate_atom_on<Axis::Usage>::description.empty());
-static_assert(!duplicate_atom_on<Axis::Usage>::remediation.empty());
+static_assert(duplicate_atom_on<Axis::Usage>::description.size() != 0);
+static_assert(duplicate_atom_on<Axis::Usage>::remediation.size() != 0);
 
 // Every generated tag is a diagnostic tag, checked across the whole
 // enum rather than on a sample, so an axis added later is covered.
@@ -138,7 +138,7 @@ static_assert(!duplicate_atom_on<Axis::Usage>::remediation.empty());
     template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^Axis))) {
         constexpr Axis axis = [:axis_member:];
         all_tagged = all_tagged && ::foundation::diag::is_diagnostic_class_v<duplicate_atom_on<axis>>
-                  && !duplicate_atom_on<axis>::name.empty();
+                  && duplicate_atom_on<axis>::name.size() != 0;
     }
     return all_tagged;
 }

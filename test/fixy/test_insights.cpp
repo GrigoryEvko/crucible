@@ -15,13 +15,13 @@
 #include <fixy/Axis.h>
 #include <fixy/Corpus.h>
 #include <fixy/Reject.h>
+#include <foundation/core/Algorithms.h>
 #include <foundation/diag/Insights.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
 #include <meta>
 #include <string>
-#include <string_view>
 #include <type_traits>
 
 namespace {
@@ -31,55 +31,43 @@ using ::fixy::Axis;
 using ::fixy::axis_name;
 using ::fixy::strict_pole_t;
 using ::fixy::duplicate_atom_on;
+using ::foundation::core::find;
+using ::foundation::core::mint_static_text;
+using ::foundation::core::starts_with;
+using ::foundation::core::TextView;
 
 // ---------------------------------------------------------------------
 // The independent splice.  Three shapes: a value pole named by its
 // value, a specialisation named by its template, a class named by
-// itself; and the caller-supplied axis, which has no pole.
+// itself; and the caller-supplied axis, which has no pole.  Each text
+// that reflection or a static string gives has static storage and a zero
+// after its last character, so the static text door gives it as a
+// TextView.
 
-// A text search for constant expressions.  string_view::find
-// null-checks a pointer into the define_static_string object behind
-// every generated text, which GCC 16.2's constant evaluator refuses;
-// indexing is accepted.
-[[nodiscard]] consteval bool contains(std::string_view haystack, std::string_view needle) noexcept {
-    if (needle.size() > haystack.size()) return false;
-    for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
-        bool same = true;
-        for (std::size_t offset = 0; offset < needle.size(); ++offset) {
-            if (haystack[start + offset] != needle[offset]) {
-                same = false;
-                break;
-            }
-        }
-        if (same) return true;
-    }
-    return false;
-}
-
-[[nodiscard]] consteval std::string_view digits(unsigned long long value) noexcept {
+[[nodiscard]] consteval TextView digits(unsigned long long value) noexcept {
     std::string text;
     do {
         text.insert(text.begin(), static_cast<char>('0' + static_cast<int>(value % 10)));
         value /= 10;
     } while (value != 0);
-    return std::define_static_string(text);
+    return mint_static_text(std::define_static_string(text));
 }
 
 // The identifier of the enumerator that holds Value, read by reflection, so
 // the expected name does not come from a name form of the base.
 template <auto Value>
-[[nodiscard]] consteval std::string_view identifier_of_value() noexcept {
+[[nodiscard]] consteval TextView identifier_of_value() noexcept {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : std::define_static_array(std::meta::enumerators_of(^^decltype(Value)))) {
-        if ([:en:] == Value) return std::meta::identifier_of(en);
+        if ([:en:] == Value) return mint_static_text(std::meta::identifier_of(en).data());
     }
 #pragma GCC diagnostic pop
     return {};
 }
 
 template <Axis A>
-[[nodiscard]] consteval std::string_view expected_pole_name() noexcept {
+[[nodiscard]] consteval TextView expected_pole_name() noexcept {
     if constexpr (::fixy::IsCallerSupplied<A>) {
         return "the payload type the binding names";
     } else {
@@ -92,9 +80,10 @@ template <Axis A>
                 return digits(static_cast<unsigned long long>(value));
             }
         } else if constexpr (std::meta::has_template_arguments(std::meta::dealias(^^Strict))) {
-            return std::meta::identifier_of(std::meta::template_of(std::meta::dealias(^^Strict)));
+            return mint_static_text(
+                std::meta::identifier_of(std::meta::template_of(std::meta::dealias(^^Strict))).data());
         } else {
-            return std::meta::identifier_of(std::meta::dealias(^^Strict));
+            return mint_static_text(std::meta::identifier_of(std::meta::dealias(^^Strict)).data());
         }
     }
 }
@@ -130,13 +119,13 @@ static_assert(expected_pole_name<Axis::Type>() == "the payload type the binding 
         const bool provided = fd::has_insights_v<Tag> && fd::has_substantive_insights_v<Tag>
                            && fd::HasSubstantiveInsights<Tag> && fd::WellInsightedTag<Tag>
                            && Provider::severity == fd::Severity::Error
-                           && contains(Provider::why_this_matters, axis_name(axis))
-                           && contains(Provider::why_this_matters, expected_pole_name<axis>())
-                           && contains(Provider::symptom_pattern, axis_name(axis))
-                           && contains(Provider::correct_example, expected_pole_name<axis>())
-                           && Provider::correct_example.starts_with("fixy::fn<")
-                           && contains(Provider::violating_example, axis_name(axis))
-                           && Provider::violating_example.starts_with("fixy::fn<");
+                           && find(Provider::why_this_matters, axis_name(axis)).is_some()
+                           && find(Provider::why_this_matters, expected_pole_name<axis>()).is_some()
+                           && find(Provider::symptom_pattern, axis_name(axis)).is_some()
+                           && find(Provider::correct_example, expected_pole_name<axis>()).is_some()
+                           && starts_with(Provider::correct_example, "fixy::fn<")
+                           && find(Provider::violating_example, axis_name(axis)).is_some()
+                           && starts_with(Provider::violating_example, "fixy::fn<");
         if (provided) ++counted;
     }
     return counted;
@@ -157,9 +146,9 @@ static_assert(fd::insight_provider<duplicate_atom_on<Axis::Usage>>::correct_exam
 // providers above are the partial specialisation and not a primary
 // that answers for everything.
 struct undescribed_tag : fd::tag_base {
-    static constexpr std::string_view name = "Undescribed";
-    static constexpr std::string_view description = "fixture";
-    static constexpr std::string_view remediation = "fixture";
+    static constexpr fd::tag_text_literal name = "Undescribed";
+    static constexpr fd::tag_text_literal description = "fixture";
+    static constexpr fd::tag_text_literal remediation = "fixture";
 };
 static_assert(!fd::has_insights_v<undescribed_tag>);
 
@@ -176,8 +165,8 @@ static_assert(!fd::has_insights_v<undescribed_tag>);
         using Entry = [:entry:];
         using Provider = fd::insight_provider<Entry>;
         const bool provided = fd::HasSubstantiveInsights<Entry> && Provider::severity == fd::Severity::Fatal
-                           && Provider::correct_example.starts_with("fixy::fn<")
-                           && Provider::violating_example.starts_with("fixy::fn<");
+                           && starts_with(Provider::correct_example, "fixy::fn<")
+                           && starts_with(Provider::violating_example, "fixy::fn<");
         if (provided) ++counted;
     }
     return counted;
@@ -197,10 +186,12 @@ static_assert(fd::insight_provider<::fixy::corpus::internal_bg_without_declassif
 // The policies the examples name are declassification policies.
 static_assert(::fixy::atom::IsDeclassificationPolicy<::fixy::tags::secret_policy::WireSerialize>);
 static_assert(::fixy::atom::IsDeclassificationPolicy<::fixy::tags::secret_policy::AuthorizedReplay>);
-static_assert(contains(fd::insight_provider<::fixy::corpus::classified_io_without_declassify>::correct_example,
-                       "WireSerialize"));
-static_assert(contains(fd::insight_provider<::fixy::corpus::staleness_secret_without_declassify>::correct_example,
-                       "AuthorizedReplay"));
+static_assert(find(fd::insight_provider<::fixy::corpus::classified_io_without_declassify>::correct_example,
+                   "WireSerialize")
+                  .is_some());
+static_assert(find(fd::insight_provider<::fixy::corpus::staleness_secret_without_declassify>::correct_example,
+                   "AuthorizedReplay")
+                  .is_some());
 
 // ---------------------------------------------------------------------
 // A static_assert proves the constant-evaluated path only.  These run.
@@ -212,19 +203,18 @@ static_assert(contains(fd::insight_provider<::fixy::corpus::staleness_secret_wit
     template for (constexpr auto axis_member : std::define_static_array(std::meta::enumerators_of(^^::fixy::Axis))) {
         constexpr Axis axis = [:axis_member:];
         using Provider = fd::insight_provider<duplicate_atom_on<axis>>;
-        const std::string_view why = Provider::why_this_matters;
-        const std::string_view symptom = Provider::symptom_pattern;
-        const std::string_view correct = Provider::correct_example;
-        const std::string_view violating = Provider::violating_example;
-        if (why.empty() || symptom.empty() || correct.empty() || violating.empty()) return 1;
-        if (!why.contains(axis_name(axis))) return 2;
+        TextView const why = Provider::why_this_matters;
+        TextView const symptom = Provider::symptom_pattern;
+        TextView const correct = Provider::correct_example;
+        TextView const violating = Provider::violating_example;
+        if (why.size() == 0 || symptom.size() == 0 || correct.size() == 0 || violating.size() == 0) return 1;
+        if (find(why, axis_name(axis)).is_none()) return 2;
         ++walked;
     }
     if (walked != ::fixy::axis_count) return 3;
 
-    const std::string_view fatal_why =
-        fd::insight_provider<::fixy::corpus::classified_io_without_declassify>::why_this_matters;
-    if (fatal_why.empty()) return 4;
+    TextView const fatal_why = fd::insight_provider<::fixy::corpus::classified_io_without_declassify>::why_this_matters;
+    if (fatal_why.size() == 0) return 4;
     if (fd::severity_name(fd::insight_provider<::fixy::corpus::classified_io_without_declassify>::severity)
         != "Fatal") {
         return 5;

@@ -14,8 +14,9 @@ namespace {
 
 [[gnu::noinline]] bool emit_one_record() noexcept {
     return foundation::diag::emit_json_violation(foundation::core::Sink::Out,
-                                                 foundation::diag::Category::BudgetExceeded, "frame.cpp:1:2@frame_fn",
-                                                 "the frame of the emitter");
+                                                 foundation::diag::Category::BudgetExceeded,
+                                                 foundation::diag::ViolationContextText{"frame.cpp:1:2@frame_fn"},
+                                                 foundation::diag::ViolationDetailText{"the frame of the emitter"});
 }
 
 }  // namespace

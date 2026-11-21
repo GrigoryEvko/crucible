@@ -321,7 +321,8 @@ void test_try_load_rejects_in_progress() {
 constexpr int kLinearityViolationSeen = 42;
 constexpr int kOtherViolationSeen = 43;
 
-void exit_on_linearity_violation(::foundation::diag::Category category, std::string_view, std::string_view) noexcept {
+void exit_on_linearity_violation(::foundation::diag::Category category, ::foundation::diag::ViolationContextText const&,
+                                 ::foundation::diag::ViolationDetailText const&) noexcept {
     std::_Exit(category == ::foundation::diag::Category::LinearityViolation ? kLinearityViolationSeen
                                                                             : kOtherViolationSeen);
 }

@@ -152,7 +152,7 @@ namespace detail {
 // table is a C array, and its index calls no function of the library in a
 // build.
 template <auto Select, class Unused, std::size_t... Is>
-inline constexpr std::string_view catalog_fields_v[sizeof...(Is) + 1] = {
+inline constexpr ::foundation::core::TextView catalog_fields_v[sizeof...(Is) + 1] = {
     Select.template operator()<std::tuple_element_t<Is, Catalog<Unused>>>()...,
     "<unknown Category>"
 };
@@ -161,7 +161,7 @@ inline constexpr std::string_view catalog_fields_v[sizeof...(Is) + 1] = {
 // reads the sentinel.  A value cast in from an out-of-range integer then
 // gives the sentinel, and the read stays in the table.
 template <auto Select, class Unused, std::size_t... Is>
-[[nodiscard]] constexpr std::string_view catalog_field(Category c, std::index_sequence<Is...>) noexcept {
+[[nodiscard]] constexpr ::foundation::core::TextView catalog_field(Category c, std::index_sequence<Is...>) noexcept {
     const auto index = static_cast<std::size_t>(std::to_underlying(c));
     return catalog_fields_v<Select, Unused, Is...>[index < sizeof...(Is) ? index : sizeof...(Is)];
 }
@@ -174,17 +174,17 @@ template <auto Select, class Unused, std::size_t... Is>
 // reads is built only where a call instantiates it.  A call names no
 // template argument: name_of(c).
 template <class Unused = void>
-[[nodiscard]] constexpr std::string_view name_of(Category c) noexcept {
+[[nodiscard]] constexpr ::foundation::core::TextView name_of(Category c) noexcept {
     return detail::catalog_field<detail::select_name, Unused>(c, std::make_index_sequence<catalog_size>{});
 }
 
 template <class Unused = void>
-[[nodiscard]] constexpr std::string_view description_of(Category c) noexcept {
+[[nodiscard]] constexpr ::foundation::core::TextView description_of(Category c) noexcept {
     return detail::catalog_field<detail::select_description, Unused>(c, std::make_index_sequence<catalog_size>{});
 }
 
 template <class Unused = void>
-[[nodiscard]] constexpr std::string_view remediation_of(Category c) noexcept {
+[[nodiscard]] constexpr ::foundation::core::TextView remediation_of(Category c) noexcept {
     return detail::catalog_field<detail::select_remediation, Unused>(c, std::make_index_sequence<catalog_size>{});
 }
 

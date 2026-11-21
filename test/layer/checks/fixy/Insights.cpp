@@ -2,6 +2,7 @@
 
 #include <fixy/Insights.h>
 
+#include <foundation/core/Algorithms.h>
 #include <foundation/reflect/ReflectionList.h>
 
 // The four policies below are named verbatim inside the inert strings of
@@ -37,9 +38,9 @@ namespace fixy::insights::detail::insights_self_test {
         using Tag = ::fixy::duplicate_atom_on<axis>;
         using Provider = ::foundation::diag::insight_provider<Tag>;
         all_provided = all_provided && ::foundation::diag::HasSubstantiveInsights<Tag>
-                    && ::fixy::detail::text_contains(Provider::why_this_matters, ::fixy::axis_name(axis))
-                    && ::fixy::detail::text_contains(Provider::why_this_matters, strict_pole_name_<axis>())
-                    && ::fixy::detail::text_contains(Provider::violating_example, ::fixy::axis_name(axis));
+                    && ::foundation::core::find(Provider::why_this_matters, ::fixy::axis_name(axis)).is_some()
+                    && ::foundation::core::find(Provider::why_this_matters, strict_pole_name_<axis>()).is_some()
+                    && ::foundation::core::find(Provider::violating_example, ::fixy::axis_name(axis)).is_some();
     }
 #pragma GCC diagnostic pop
     return all_provided;

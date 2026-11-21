@@ -2,6 +2,7 @@
 
 #include <foundation/diag/Catalog.h>
 
+#include <foundation/core/Array.h>
 #include <foundation/reflect/ReflectionList.h>
 
 namespace foundation::diag {
@@ -96,9 +97,11 @@ static_assert(category_count == catalog_size, "Category enum cardinality and Cat
 // checked here is the pin: the enumerator at position I must have the value
 // I, the tuple must hold its tag at I, that tag's name must spell the
 // enumerator, and the three accessors must answer for it with the tag's own
-// fields rather than the sentinel.
+// fields rather than the sentinel.  The identifier of a reflection has static
+// storage and a zero after its last character, so the static text door gives
+// it as a TextView.
 [[nodiscard]] consteval bool category_mirrors_catalog() noexcept {
-    constexpr std::string_view sentinel{"<unknown Category>"};
+    constexpr ::foundation::core::TextView sentinel{"<unknown Category>"};
     bool mirrors = true;
     // -Wshadow fires spuriously on the expansion-statement induction variable.
 #pragma GCC diagnostic push
@@ -107,11 +110,11 @@ static_assert(category_count == catalog_size, "Category enum cardinality and Cat
         constexpr std::size_t index = enumerator_position(en);
         constexpr Category c = [:en:];
         using tag = std::tuple_element_t<index, Catalog<>>;
-        mirrors = mirrors && static_cast<std::size_t>(std::to_underlying(c)) == index
-               && std::is_same_v<tag, tag_of_t<c>> && std::meta::identifier_of(en) == tag::name
-               && name_of(c) == tag::name && description_of(c) == tag::description
-               && remediation_of(c) == tag::remediation && name_of(c) != sentinel && description_of(c) != sentinel
-               && remediation_of(c) != sentinel;
+        mirrors =
+            mirrors && static_cast<std::size_t>(std::to_underlying(c)) == index && std::is_same_v<tag, tag_of_t<c>>
+            && ::foundation::core::mint_static_text(std::meta::identifier_of(en).data()) == tag::name
+            && name_of(c) == tag::name && description_of(c) == tag::description && remediation_of(c) == tag::remediation
+            && name_of(c) != sentinel && description_of(c) != sentinel && remediation_of(c) != sentinel;
     }
 #pragma GCC diagnostic pop
     return mirrors;
@@ -142,11 +145,16 @@ static_assert(category_of_reverse_map(), "category_of_v<Tag> does not round-trip
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool catalog_names_distinct_impl(std::index_sequence<Is...>) noexcept {
-    constexpr auto names = std::array<std::string_view, sizeof...(Is)>{std::tuple_element_t<Is, Catalog<>>::name...};
-    for (std::size_t i = 0; i < names.size(); ++i) {
-        for (std::size_t j = i + 1; j < names.size(); ++j) {
-            if (names[i] == names[j]) return false;
+    constexpr ::foundation::core::FixedArray<::foundation::core::TextView, sizeof...(Is)> names{
+        ::foundation::core::TextView{std::tuple_element_t<Is, Catalog<>>::name}...};
+    std::size_t i = 0;
+    for (::foundation::core::TextView const first : names.view()) {
+        std::size_t j = 0;
+        for (::foundation::core::TextView const second : names.view()) {
+            if (j > i && first == second) return false;
+            ++j;
         }
+        ++i;
     }
     return true;
 }
@@ -161,9 +169,9 @@ static_assert(catalog_names_distinct(), "Two or more tags in Catalog share the s
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool catalog_fields_nonempty_impl(std::index_sequence<Is...>) noexcept {
-    return ((!std::tuple_element_t<Is, Catalog<>>::description.empty()
-             && !std::tuple_element_t<Is, Catalog<>>::remediation.empty()
-             && !std::tuple_element_t<Is, Catalog<>>::name.empty())
+    return ((std::tuple_element_t<Is, Catalog<>>::description.size() != 0
+             && std::tuple_element_t<Is, Catalog<>>::remediation.size() != 0
+             && std::tuple_element_t<Is, Catalog<>>::name.size() != 0)
             && ...);
 }
 

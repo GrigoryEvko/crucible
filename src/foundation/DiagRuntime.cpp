@@ -10,7 +10,7 @@
 
 namespace foundation::diag {
 
-void default_violation_sink(Category cat, std::string_view fn, std::string_view detail) noexcept {
+void default_violation_sink(Category cat, ViolationContextText const& fn, ViolationDetailText const& detail) noexcept {
     emit_legacy_text_violation(core::Sink::Err, cat, fn, detail);
 }
 
@@ -26,14 +26,15 @@ violation_sink_t set_violation_sink(violation_sink_t sink) noexcept {
 
 violation_sink_t current_violation_sink() noexcept { return violation_sink_slot.load(std::memory_order_acquire); }
 
-void report_violation(Category cat, std::string_view fn, std::string_view detail) noexcept {
+void report_violation(Category cat, ViolationContextText const& fn, ViolationDetailText const& detail) noexcept {
     const auto sink = violation_sink_slot.load(std::memory_order_acquire);
     if (sink) [[likely]] {
         sink(cat, fn, detail);
     }
 }
 
-void report_violation_and_abort(Category cat, std::string_view fn, std::string_view detail) noexcept {
+void report_violation_and_abort(Category cat, ViolationContextText const& fn,
+                                ViolationDetailText const& detail) noexcept {
     report_violation(cat, fn, detail);
     os::abort_process();
 }
@@ -64,7 +65,9 @@ public:
     LocationText(LocationText const&) = delete("the view of the text points into this object");
     LocationText& operator=(LocationText const&) = delete("the view of the text points into this object");
 
-    [[nodiscard]] std::string_view view() const noexcept { return {bytes_, length_}; }
+    // The characters of the text.  The view borrows this object, which the
+    // copy is refused for, and the caller keeps the object while a sink runs.
+    [[nodiscard]] core::TextView view() const noexcept { return core::detail::text_over_(bytes_, length_); }
 
 private:
     void append(char byte) noexcept {
@@ -103,12 +106,12 @@ private:
 
 }  // namespace
 
-void report_violation_at(Category cat, std::string_view detail, std::source_location loc) noexcept {
+void report_violation_at(Category cat, core::TextView detail, std::source_location loc) noexcept {
     LocationText const location{loc};
-    report_violation(cat, location.view(), detail);
+    report_violation(cat, ViolationContextText{location.view()}, ViolationDetailText{detail});
 }
 
-void report_violation_at_and_abort(Category cat, std::string_view detail, std::source_location loc) noexcept {
+void report_violation_at_and_abort(Category cat, core::TextView detail, std::source_location loc) noexcept {
     report_violation_at(cat, detail, loc);
     os::abort_process();
 }

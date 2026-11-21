@@ -13,9 +13,9 @@ struct random_struct_for_test {};
 static_assert(!is_diagnostic_class_v<random_struct_for_test>);
 
 struct user_defined_tag : tag_base {
-    static constexpr std::string_view name = "UserDefinedTag";
-    static constexpr std::string_view description = "user-extension test";
-    static constexpr std::string_view remediation = "this is a self-test";
+    static constexpr tag_text_literal name = "UserDefinedTag";
+    static constexpr tag_text_literal description = "user-extension test";
+    static constexpr tag_text_literal remediation = "this is a self-test";
 };
 static_assert(is_diagnostic_class_v<user_defined_tag>);
 static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");

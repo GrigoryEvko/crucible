@@ -23,13 +23,12 @@
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/RowMismatch.h>
 #include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/EnumName.h>
 
-#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <vector>
 
 namespace foundation::diag {
@@ -38,21 +37,28 @@ namespace foundation::diag {
 // RowMismatch.h, which ties it to the line count of the block.
 
 struct SourcePosition {
-    std::string_view file{};
+    core::TextView file{};
     std::uint_least32_t line = 0;
     std::uint_least32_t column = 0;
-    std::string_view function{};
+    core::TextView function{};
 };
 
 struct JsonDiagnosticRecord {
     Category category = Category::EffectRowMismatch;
     SourcePosition source{};
-    std::string_view error_code{};
-    std::string_view goal{};
-    std::string_view have{};
-    std::string_view gap{};
-    std::string_view suggestion{};
-    std::string_view related_snippet{};
+    core::TextView error_code{};
+    core::TextView goal{};
+    core::TextView have{};
+    core::TextView gap{};
+    core::TextView suggestion{};
+    core::TextView related_snippet{};
+};
+
+// The end of a string field of a record: a comma when another field follows
+// in its object, or no character for the last field.
+enum class JsonFieldEnd : std::uint8_t {
+    comma = 0,
+    last = 1,
 };
 
 // A record longer than this is refused whole: nothing of it reaches the
@@ -77,20 +83,28 @@ namespace detail {
 // purpose: `source` is emitted as the nested object "source_position",
 // and `related_snippet` as the array "related_snippets".  `category` is
 // emitted through no key of its own: it supplies the fallback text for
-// error_code, goal and suggestion when those are empty.
-inline constexpr std::array<std::string_view, 4> source_position_fields{"file", "line", "column", "function"};
+// error_code, goal and suggestion when those are empty.  Each roster is a
+// View over the names, so a check gives record_fields_are the same form.
+inline constexpr core::TextView source_position_names[] = {"file", "line", "column", "function"};
+inline constexpr core::View<core::TextView const, 4> source_position_fields{core::detail::ViewDoor::key(),
+                                                                            source_position_names};
 
-inline constexpr std::array<std::string_view, 8> json_record_fields{
-    "category", "source", "error_code", "goal", "have", "gap", "suggestion", "related_snippet"};
+inline constexpr core::TextView json_record_names[] = {"category", "source", "error_code", "goal",
+                                                       "have",     "gap",    "suggestion", "related_snippet"};
+inline constexpr core::View<core::TextView const, 8> json_record_fields{core::detail::ViewDoor::key(),
+                                                                        json_record_names};
 
-// The members of Record, in declaration order, are exactly `expected`.
+// The members of Record, in declaration order, are exactly `expected`.  The
+// identifier of a reflection has a zero after its last character, so its
+// view borrows the characters that reflection gives.  The walk reads the
+// roster through its cursor, one name for each member.
 template <typename Record, std::size_t N>
-[[nodiscard]] consteval bool record_fields_are(std::array<std::string_view, N> const& expected) noexcept {
+[[nodiscard]] consteval bool record_fields_are(core::View<core::TextView const, N> expected) noexcept {
     static constexpr auto members =
         std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Record, std::vector<std::meta::info>>>(
             std::meta::nonstatic_data_members_of(^^Record, std::meta::access_context::current())));
     if (members.size() != N) return false;
-    std::size_t index = 0;
+    auto roster = expected.begin();
     bool matched = true;
 // An expansion statement unrolls into successive scopes that each
 // declare the same induction variable, so -Wshadow fires once per
@@ -98,47 +112,53 @@ template <typename Record, std::size_t N>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {
-        matched = matched && std::meta::identifier_of(member) == expected[index];
-        ++index;
+        constexpr ::foundation::reflect::detail::NameChars name =
+            ::foundation::reflect::detail::read_identifier_chars(member);
+        matched = matched && core::detail::c_text_over_(name.first, name.size).view() == *roster;
+        ++roster;
     }
 #pragma GCC diagnostic pop
     return matched;
 }
 
-// Reads s as a decimal number of std::uint_least32_t: one digit or more,
+// Reads text as a decimal number of std::uint_least32_t: one digit or more,
 // and no other character.  A value past the largest value of the type gives
-// false, and out does not change.
-[[nodiscard]] inline bool parse_u32(std::string_view s, std::uint_least32_t& out) noexcept {
-    if (s.empty()) return false;
+// no value.  Complexity: linear in the length of text.
+[[nodiscard]] constexpr core::Option<std::uint_least32_t> parse_u32(core::TextView text) noexcept {
+    if (text.size() == 0) return core::none;
     constexpr std::uint_least32_t largest = ~std::uint_least32_t{0};
     std::uint_least32_t value = 0;
-    for (char c : s) {
-        if (c < '0' || c > '9') return false;
+    for (char const c : text) {
+        if (c < '0' || c > '9') return core::none;
         const auto digit = static_cast<std::uint_least32_t>(c - '0');
-        if (value > (largest - digit) / 10U) return false;
+        if (value > (largest - digit) / 10U) return core::none;
         value = value * 10U + digit;
     }
-    out = value;
-    return true;
+    return core::Option<std::uint_least32_t>::some(value);
 }
 
-[[nodiscard]] inline bool all_decimal_digits(std::string_view s) noexcept {
+[[nodiscard]] constexpr bool all_decimal_digits(core::TextView text) noexcept {
     bool has_digit = false;
-    for (char c : s) {
+    for (char const c : text) {
         if (c < '0' || c > '9') return false;
         has_digit = true;
     }
     return has_digit;
 }
 
-// The part of a view from START, with LENGTH characters at the maximum.  A
-// START past the end gives an empty part at the end.  std::string_view::substr
-// throws std::out_of_range for such a START, and this function has no throw.
-[[nodiscard]] constexpr std::string_view view_part(std::string_view view, std::size_t start,
-                                                   std::size_t length = std::string_view::npos) noexcept {
-    const std::size_t first = start < view.size() ? start : view.size();
-    const std::size_t rest = view.size() - first;
-    return std::string_view{view.data() + first, length < rest ? length : rest};
+// The position of the last character of text that is Character, or no value.
+// Complexity: linear in the length of text.
+template <char Character>
+[[nodiscard]] constexpr core::Option<std::size_t> find_last_(core::TextView text) noexcept {
+    std::size_t const size = text.size();
+    std::size_t last = size;
+    std::size_t position = 0;
+    for (char const letter : text) {
+        if (letter == Character) last = position;
+        ++position;
+    }
+    if (last == size) return core::none;
+    return core::Option<std::size_t>::some(last);
 }
 
 // A sink takes the bytes of a record one at a time: the counter below, a
@@ -257,7 +277,7 @@ template <class Text, class Step>
 // backslash, the five named controls by their short form, and every
 // other byte below 0x20 as \u00XX with uppercase hex.
 template <JsonSink S>
-[[nodiscard]] bool append_json_escaped(S& sink, std::string_view s) noexcept {
+[[nodiscard]] bool append_json_escaped(S& sink, core::TextView s) noexcept {
     static constexpr char hex[] = "0123456789ABCDEF";
     return each_byte(s, [&sink](char raw) {
         const auto c = static_cast<unsigned char>(raw);
@@ -290,12 +310,13 @@ template <JsonSink S>
 }
 
 // Writes `"key":"value"` and, unless the field is the last of its
-// object, the comma after it.
+// object, the comma after it.  The key is a literal of the format, so it is
+// a CText, and a call cannot swap it with the value.
 template <JsonSink S>
-[[nodiscard]] bool append_json_string_field(S& sink, std::string_view key, std::string_view value,
-                                            bool comma = true) noexcept {
-    return sink.push('"') && append_json_escaped(sink, key) && append_text(sink, "\":\"")
-        && append_json_escaped(sink, value) && sink.push('"') && (!comma || sink.push(','));
+[[nodiscard]] bool append_json_string_field(S& sink, core::CText key, core::TextView value,
+                                            JsonFieldEnd end = JsonFieldEnd::comma) noexcept {
+    return sink.push('"') && append_json_escaped(sink, key.view()) && append_text(sink, "\":\"")
+        && append_json_escaped(sink, value) && sink.push('"') && (end == JsonFieldEnd::last || sink.push(','));
 }
 
 // Writes value in decimal.  An unsigned long has at most 20 digits.
@@ -323,9 +344,10 @@ template <JsonSink S>
 // catalog (CLAUDE.md §XV "Compile time", rule 2).
 template <JsonSink S, class Unused = void>
 [[nodiscard]] bool write_json_record(S& sink, JsonDiagnosticRecord const& rec) noexcept {
-    const std::string_view code = rec.error_code.empty() ? name_of<Unused>(rec.category) : rec.error_code;
-    const std::string_view goal = rec.goal.empty() ? description_of<Unused>(rec.category) : rec.goal;
-    const std::string_view suggestion = rec.suggestion.empty() ? remediation_of<Unused>(rec.category) : rec.suggestion;
+    const core::TextView code = rec.error_code.size() == 0 ? name_of<Unused>(rec.category) : rec.error_code;
+    const core::TextView goal = rec.goal.size() == 0 ? description_of<Unused>(rec.category) : rec.goal;
+    const core::TextView suggestion =
+        rec.suggestion.size() == 0 ? remediation_of<Unused>(rec.category) : rec.suggestion;
 
     if (!append_text(sink, "{\"format_version\":")) return false;
     if (!append_json_uint(sink, static_cast<unsigned long>(CRUCIBLE_DIAG_FORMAT_VERSION))) return false;
@@ -336,7 +358,7 @@ template <JsonSink S, class Unused = void>
     if (!append_text(sink, ",\"column\":")) return false;
     if (!append_json_uint(sink, static_cast<unsigned long>(rec.source.column))) return false;
     if (!sink.push(',')) return false;
-    if (!append_json_string_field(sink, "function", rec.source.function, false)) return false;
+    if (!append_json_string_field(sink, "function", rec.source.function, JsonFieldEnd::last)) return false;
     if (!append_text(sink, "},")) return false;
     if (!append_json_string_field(sink, "error_code", code)) return false;
     if (!append_json_string_field(sink, "goal", goal)) return false;
@@ -344,7 +366,7 @@ template <JsonSink S, class Unused = void>
     if (!append_json_string_field(sink, "gap", rec.gap)) return false;
     if (!append_json_string_field(sink, "suggestion", suggestion)) return false;
     if (!append_text(sink, "\"related_snippets\":[")) return false;
-    if (!rec.related_snippet.empty()) {
+    if (rec.related_snippet.size() != 0) {
         if (!sink.push('"') || !append_json_escaped(sink, rec.related_snippet) || !sink.push('"')) {
             return false;
         }
@@ -358,39 +380,50 @@ template <JsonSink S, class Unused = void>
 // field, "<file>:<line>:<column>@<function>". Every shorter or malformed
 // form degrades rather than fails: whatever cannot be read as a position
 // stays whole in one of the two string fields.
-[[nodiscard]] inline SourcePosition parse_source_position(std::string_view context) noexcept {
+//
+// Each part of the result is a window of context, so it borrows the owner
+// of context.  Each position comes from a search of the same text, so each
+// window fits.  Complexity: linear in the length of context.
+[[nodiscard]] inline SourcePosition parse_source_position(core::TextView context) noexcept {
+    using core::Option;
+    using core::TextView;
     SourcePosition pos{};
-    const std::size_t at = context.rfind('@');
-    const bool has_function_delimiter = at != std::string_view::npos;
-    std::string_view loc = context;
+    Option<std::size_t> found_at = detail::find_last_<'@'>(context);
+    const bool has_function_delimiter = found_at.is_some();
+    TextView loc = context;
     if (has_function_delimiter) {
-        loc = detail::view_part(context, 0, at);
-        pos.function = detail::view_part(context, at + 1);
+        std::size_t const at = static_cast<Option<std::size_t>&&>(found_at).value_or(0);
+        loc = context.window(0, at).value_or(TextView{});
+        pos.function = context.window(at + 1, context.size() - at - 1).value_or(TextView{});
     } else {
         pos.function = context;
     }
 
-    if (loc.empty()) return pos;
+    if (loc.size() == 0) return pos;
 
-    const std::size_t last_colon = loc.rfind(':');
-    if (last_colon == std::string_view::npos) {
+    Option<std::size_t> found_last_colon = detail::find_last_<':'>(loc);
+    if (found_last_colon.is_none()) {
         if (has_function_delimiter) pos.file = loc;
         return pos;
     }
+    std::size_t const last_colon = static_cast<Option<std::size_t>&&>(found_last_colon).value_or(0);
 
-    std::uint_least32_t tail = 0;
-    if (!detail::parse_u32(detail::view_part(loc, last_colon + 1), tail)) {
+    Option<std::uint_least32_t> parsed_tail =
+        detail::parse_u32(loc.window(last_colon + 1, loc.size() - last_colon - 1).value_or(TextView{}));
+    if (parsed_tail.is_none()) {
         pos.file = loc;
         return pos;
     }
+    std::uint_least32_t const tail = static_cast<Option<std::uint_least32_t>&&>(parsed_tail).value_or(0);
 
-    const std::size_t prev_colon = last_colon == 0 ? std::string_view::npos : loc.rfind(':', last_colon - 1);
-    if (prev_colon != std::string_view::npos) {
-        std::uint_least32_t parsed_line = 0;
-        const std::string_view line_field = detail::view_part(loc, prev_colon + 1, last_colon - prev_colon - 1);
-        if (detail::parse_u32(line_field, parsed_line)) {
-            pos.file = detail::view_part(loc, 0, prev_colon);
-            pos.line = parsed_line;
+    Option<std::size_t> found_prev_colon = detail::find_last_<':'>(loc.window(0, last_colon).value_or(TextView{}));
+    if (found_prev_colon.is_some()) {
+        std::size_t const prev_colon = static_cast<Option<std::size_t>&&>(found_prev_colon).value_or(0);
+        const TextView line_field = loc.window(prev_colon + 1, last_colon - prev_colon - 1).value_or(TextView{});
+        Option<std::uint_least32_t> parsed_line = detail::parse_u32(line_field);
+        if (parsed_line.is_some()) {
+            pos.file = loc.window(0, prev_colon).value_or(TextView{});
+            pos.line = static_cast<Option<std::uint_least32_t>&&>(parsed_line).value_or(0);
             pos.column = tail;
             return pos;
         }
@@ -400,22 +433,22 @@ template <JsonSink S, class Unused = void>
         }
     }
 
-    pos.file = detail::view_part(loc, 0, last_colon);
+    pos.file = loc.window(0, last_colon).value_or(TextView{});
     pos.line = tail;
     return pos;
 }
 
 template <class Unused = void>
-[[nodiscard]] JsonDiagnosticRecord record_from_violation(Category cat, std::string_view context,
-                                                         std::string_view detail) noexcept {
-    const SourcePosition source = parse_source_position(context);
+[[nodiscard]] JsonDiagnosticRecord record_from_violation(Category cat, ViolationContextText const& context,
+                                                         ViolationDetailText const& detail) noexcept {
+    const SourcePosition source = parse_source_position(context.value());
     return JsonDiagnosticRecord{
         .category = cat,
         .source = source,
         .error_code = name_of<Unused>(cat),
         .goal = description_of<Unused>(cat),
-        .have = source.function.empty() ? context : source.function,
-        .gap = detail,
+        .have = source.function.size() == 0 ? context.value() : source.function,
+        .gap = detail.value(),
         .suggestion = remediation_of<Unused>(cat),
         .related_snippet = {},
     };
@@ -453,8 +486,8 @@ template <std::size_t Capacity, class Unused = void>
 }
 
 template <class Unused = void>
-[[nodiscard]] bool emit_json_violation(core::Sink out, Category cat, std::string_view context,
-                                       std::string_view detail) noexcept {
+[[nodiscard]] bool emit_json_violation(core::Sink out, Category cat, ViolationContextText const& context,
+                                       ViolationDetailText const& detail) noexcept {
     return emit_json_record<Unused>(out, record_from_violation<Unused>(cat, context, detail));
 }
 
@@ -499,9 +532,10 @@ template <JsonSink S, class Text>
 // parameter detail hides the namespace detail.  For that reason, the body
 // names diag::detail.
 template <class Unused = void>
-void emit_legacy_text_violation(core::Sink out, Category cat, std::string_view fn, std::string_view detail) noexcept {
+void emit_legacy_text_violation(core::Sink out, Category cat, ViolationContextText const& fn,
+                                ViolationDetailText const& detail) noexcept {
     diag::detail::report_json_sink sink{out};
-    static_cast<void>(diag::detail::write_legacy_text(sink, name_of<Unused>(cat), fn, detail));
+    static_cast<void>(diag::detail::write_legacy_text(sink, name_of<Unused>(cat), fn.value(), detail.value()));
     sink.flush();
 }
 

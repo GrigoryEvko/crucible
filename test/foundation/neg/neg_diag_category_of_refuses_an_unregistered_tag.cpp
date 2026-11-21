@@ -3,13 +3,11 @@
 // category_of_v reaches the static_assert of the closed enum.
 #include <foundation/diag/Catalog.h>
 
-#include <string_view>
-
 namespace {
 struct user_local_tag : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "UserLocalTag";
-    static constexpr std::string_view description = "user-defined";
-    static constexpr std::string_view remediation = "see project docs";
+    static constexpr ::foundation::diag::tag_text_literal name = "UserLocalTag";
+    static constexpr ::foundation::diag::tag_text_literal description = "user-defined";
+    static constexpr ::foundation::diag::tag_text_literal remediation = "see project docs";
 };
 }  // namespace
 

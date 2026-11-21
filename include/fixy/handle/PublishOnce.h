@@ -9,11 +9,12 @@
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Report.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/tags/Aborts.h>
+#include <foundation/os/Abort.h>
 
 #include <atomic>
-#include <cstdio>
-#include <cstdlib>
 #include <type_traits>
 
 // The claims the carriers in this header make that no lattice grades.
@@ -34,13 +35,13 @@ namespace fixy::handle {
 
 [[noreturn]] CRUCIBLE_COLD inline void publish_once_double_publish_abort_() noexcept {
     using Tag = ::foundation::diag::PublishOnceDoublePublish;
-    std::fprintf(stderr,
-                 "crucible: fatal: %.*s\n"
-                 "  description: %.*s\n"
-                 "  remediation: %.*s\n",
-                 static_cast<int>(Tag::name.size()), Tag::name.data(), static_cast<int>(Tag::description.size()),
-                 Tag::description.data(), static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
-    std::abort();
+    ::foundation::core::report(::foundation::core::Sink::Err,
+                               "crucible: fatal: {}\n"
+                               "  description: {}\n"
+                               "  remediation: {}\n",
+                               ::foundation::core::TextView{Tag::name}, ::foundation::core::TextView{Tag::description},
+                               ::foundation::core::TextView{Tag::remediation});
+    ::foundation::os::abort_process();
 }
 
 // T names the pointee, never the pointer.  Both slots below add the

@@ -32,7 +32,6 @@
 #include <cstddef>
 #include <meta>
 #include <string>
-#include <string_view>
 #include <type_traits>
 
 namespace fixy::insights::detail {
@@ -40,13 +39,13 @@ namespace fixy::insights::detail {
 // The decimal digits of value.  The function is a template only so that
 // its text can depend on Anchor (foundation/reflect/Anchor.h).
 template <class Anchor = void>
-[[nodiscard]] consteval std::string_view digits_(unsigned long long value) noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView digits_(unsigned long long value) noexcept {
     ::foundation::reflect::anchored_t<^^Anchor, std::string> text;
     do {
         text.insert(text.begin(), static_cast<char>('0' + static_cast<int>(value % 10)));
         value /= 10;
     } while (value != 0);
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 // The name of an axis's strict pole, read off the table.  A value pole
@@ -54,9 +53,11 @@ template <class Anchor = void>
 // an integer.  A type pole is named by its class, or by its template
 // when it is a specialisation, so pole::Unconstrained<A> reads as
 // Unconstrained and Row<> as Row.  The Type axis has no pole; its grade
-// is the payload the caller named.
+// is the payload the caller named.  The identifier of a reflection has
+// static storage and a zero after its last character, so the static text
+// door gives it as a TextView.
 template <Axis A>
-[[nodiscard]] consteval std::string_view strict_pole_name_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView strict_pole_name_() noexcept {
     if constexpr (::fixy::IsCallerSupplied<A>) {
         return "the payload type the binding names";
     } else {
@@ -64,7 +65,7 @@ template <Axis A>
         if constexpr (requires { Strict::value; }) {
             constexpr auto value = Strict::value;
             if constexpr (std::is_enum_v<decltype(value)>) {
-                return ::foundation::reflect::detail::enum_name_view_(value);
+                return ::foundation::core::enum_name_text(value);
             } else {
                 return digits_<::foundation::reflect::anchored_t<^^Strict, void>>(
                     static_cast<unsigned long long>(value));
@@ -72,9 +73,10 @@ template <Axis A>
         } else {
             constexpr std::meta::info pole = std::meta::dealias(^^Strict);
             if constexpr (std::meta::has_template_arguments(pole)) {
-                return std::meta::identifier_of(std::meta::template_of(pole));
+                return ::foundation::core::mint_static_text(
+                    std::meta::identifier_of(std::meta::template_of(pole)).data());
             } else {
-                return std::meta::identifier_of(pole);
+                return ::foundation::core::mint_static_text(std::meta::identifier_of(pole).data());
             }
         }
     }
@@ -84,65 +86,65 @@ template <Axis A>
 // and refuses one atom stated twice.  The texts of each other axis say that
 // the axis carries one grade.
 template <Axis A>
-[[nodiscard]] consteval std::string_view why_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView why_() noexcept {
     constexpr bool is_row_axis = axis_record(A).shape == Shape::Row;
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
         is_row_axis ? "A Row axis takes the union of its atoms.  A binding that says nothing about the "
                     : "An axis carries one grade.  A binding that says nothing about the "};
-    text += ::fixy::axis_name(A);
+    ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
     text += " axis takes its strict pole, ";
-    text += strict_pole_name_<A>();
+    ::fixy::detail::append_text_(text, strict_pole_name_<A>());
     text += is_row_axis ? ", and each atom on the axis adds its effects to the grade.  A copy of an atom adds no "
                           "effect, so a pack that names one atom twice says one thing two times, and the second "
                           "copy usually stands where a different atom was meant."
                         : ", and one atom on the axis relaxes it to exactly that atom's grade.  Two atoms on the "
                           "axis do not say which grade the binding means, and the resolver cannot pick one without "
                           "granting a claim nobody made.";
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 template <Axis A>
-[[nodiscard]] consteval std::string_view symptom_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView symptom_() noexcept {
     constexpr bool is_row_axis = axis_record(A).shape == Shape::Row;
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{
         is_row_axis ? "One atom from the " : "Two atoms from the "};
-    text += ::fixy::axis_name(A);
+    ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
     text += is_row_axis ? " family two times in one fixy::fn pack, usually after two packs were merged, or after a "
                           "role that already names the atom was extended with the same atom."
                         : " family in one fixy::fn pack, usually after two packs were merged, or after a role that "
                           "already names the axis was extended with a second atom on it.";
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 template <Axis A>
-[[nodiscard]] consteval std::string_view correct_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView correct_() noexcept {
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"fixy::fn<T, atom_on_"};
-    text += ::fixy::axis_name(A);
+    ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
     if constexpr (axis_record(A).shape == Shape::Row) {
         text += ", other_atom_on_";
-        text += ::fixy::axis_name(A);
+        ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
     }
     text += ">  // or fixy::fn<T>: the strict pole ";
-    text += strict_pole_name_<A>();
+    ::fixy::detail::append_text_(text, strict_pole_name_<A>());
     text += " needs no atom";
-    return std::define_static_string(text);
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 template <Axis A>
-[[nodiscard]] consteval std::string_view violating_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView violating_() noexcept {
     ::foundation::reflect::anchored_t<std::meta::reflect_constant(A), std::string> text{"fixy::fn<T, atom_on_"};
-    text += ::fixy::axis_name(A);
+    ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
     if constexpr (axis_record(A).shape == Shape::Row) {
         text += ", atom_on_";
-        text += ::fixy::axis_name(A);
+        ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
         text += ">  // one atom two times on ";
     } else {
         text += ", second_atom_on_";
-        text += ::fixy::axis_name(A);
+        ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
         text += ">  // two grades on ";
     }
-    text += ::fixy::axis_name(A);
-    return std::define_static_string(text);
+    ::fixy::detail::append_text_(text, ::fixy::axis_name(A));
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }
 
 }  // namespace fixy::insights::detail
@@ -155,10 +157,10 @@ namespace foundation::diag {
 template <::fixy::Axis A>
 struct insight_provider<::fixy::duplicate_atom_on<A>> {
     static constexpr Severity severity = Severity::Error;
-    static constexpr std::string_view why_this_matters = ::fixy::insights::detail::why_<A>();
-    static constexpr std::string_view symptom_pattern = ::fixy::insights::detail::symptom_<A>();
-    static constexpr std::string_view correct_example = ::fixy::insights::detail::correct_<A>();
-    static constexpr std::string_view violating_example = ::fixy::insights::detail::violating_<A>();
+    static constexpr ::foundation::core::TextView why_this_matters = ::fixy::insights::detail::why_<A>();
+    static constexpr ::foundation::core::TextView symptom_pattern = ::fixy::insights::detail::symptom_<A>();
+    static constexpr ::foundation::core::TextView correct_example = ::fixy::insights::detail::correct_<A>();
+    static constexpr ::foundation::core::TextView violating_example = ::fixy::insights::detail::violating_<A>();
 };
 
 }  // namespace foundation::diag

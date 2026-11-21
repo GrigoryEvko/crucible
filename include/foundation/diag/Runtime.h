@@ -12,10 +12,10 @@
 // an effect that the call site of a violation does not show.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/Tag.h>
 
 #include <source_location>
-#include <string_view>
 
 namespace foundation::diag {
 
@@ -26,14 +26,16 @@ namespace foundation::diag {
 // is async-signal-safe when its sink is.
 //
 // The views that a sink gets are valid while the sink runs.  A sink that
-// keeps a field after it returns copies the characters.
+// keeps a field after it returns copies the characters.  The two texts come
+// in their roles (ViolationContextText and ViolationDetailText of
+// foundation/diag/Tag.h), so a call cannot swap them.
 
-using violation_sink_t = void (*)(Category, std::string_view, std::string_view) noexcept;
+using violation_sink_t = void (*)(Category, ViolationContextText const&, ViolationDetailText const&) noexcept;
 
 // Writes the line of a violation to standard error.  The caller keeps the
 // detail free of newlines.  One violation is one line.
 [[gnu::cold]]
-void default_violation_sink(Category cat, std::string_view fn, std::string_view detail) noexcept;
+void default_violation_sink(Category cat, ViolationContextText const& fn, ViolationDetailText const& detail) noexcept;
 
 // Returns the sink installed before this call, which lets a caller
 // restore it. The sink pointer is stored with release ordering and read
@@ -46,21 +48,22 @@ violation_sink_t set_violation_sink(violation_sink_t sink) noexcept;
 violation_sink_t current_violation_sink() noexcept;
 
 [[gnu::cold]]
-void report_violation(Category cat, std::string_view fn, std::string_view detail) noexcept;
+void report_violation(Category cat, ViolationContextText const& fn, ViolationDetailText const& detail) noexcept;
 
 [[gnu::cold]] [[noreturn]]
-void report_violation_and_abort(Category cat, std::string_view fn, std::string_view detail) noexcept;
+void report_violation_and_abort(Category cat, ViolationContextText const& fn,
+                                ViolationDetailText const& detail) noexcept;
 
 // These fill the `fn` field with the composite
 // "<file>:<line>:<column>@<function>". A parser splits it on `@` to
 // recover the function name and the position.
 
 [[gnu::cold]]
-void report_violation_at(Category cat, std::string_view detail,
+void report_violation_at(Category cat, ::foundation::core::TextView detail,
                          std::source_location loc = std::source_location::current()) noexcept;
 
 [[gnu::cold]] [[noreturn]]
-void report_violation_at_and_abort(Category cat, std::string_view detail,
+void report_violation_at_and_abort(Category cat, ::foundation::core::TextView detail,
                                    std::source_location loc = std::source_location::current()) noexcept;
 
 }  // namespace foundation::diag

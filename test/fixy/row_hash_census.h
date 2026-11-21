@@ -576,6 +576,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                              "claim to fold"},
     {^^::foundation::diag, "the row-hash fold and the diagnostic surface themselves"},
     {^^::foundation::diag::row_discipline, "discipline identities, declared and never defined"},
+    {^^::foundation::diag::side, "the roles of the two texts of a violation: empty tags that a Side names at compile "
+                                 "time, and none of them is a value"},
     {^^::foundation::fail_closed, kMachinery},
     {^^::foundation::contracts, "armed cells and the roster verdict, which are gate machinery"},
     {^^::foundation::lifetime, "the annotation that refuses a lifetime start over bytes, read at compile time"},

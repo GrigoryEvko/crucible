@@ -111,24 +111,19 @@ template <class Anchor = void>
 
 namespace detail {
 
-// The compile-time text search that the checks of this header read
-// lives in fixy/Axis.h, because Collision.h needs it too and sits below
-// this header.
-using ::fixy::detail::text_contains;
-
 // Assembled one time per entry, in a translation unit that reads the
 // text.  The full_diagnostic() of each entry below is a template, so a
 // translation unit that includes this header and reads no text does not
 // assemble it.
 template <class Entry>
-inline constexpr std::string_view full_diagnostic_v = []() consteval -> std::string_view {
+inline constexpr ::foundation::core::TextView full_diagnostic_v = []() consteval -> ::foundation::core::TextView {
     ::foundation::reflect::anchored_t<^^Entry, std::string> text{
         "fixy::fn<Type, Atoms...> [tier 5: NotInCorpus]: the binding matches the "
         "refused-combination corpus entry "};
-    text += Entry::name;
+    ::fixy::detail::append_text_(text, Entry::name);
     text += ".  ";
-    text += Entry::cite();
-    return std::define_static_string(text);
+    ::fixy::detail::append_text_(text, Entry::cite());
+    return ::foundation::core::mint_static_text(std::define_static_string(text));
 }();
 
 }  // namespace detail
@@ -141,11 +136,11 @@ inline constexpr std::string_view full_diagnostic_v = []() consteval -> std::str
 // carries and the type the instantiation trail names cannot drift.
 
 struct classified_io_without_declassify final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "classified_io_without_declassify";
-    static constexpr std::string_view description =
+    static constexpr ::foundation::diag::tag_text_literal name = "classified_io_without_declassify";
+    static constexpr ::foundation::diag::tag_text_literal description =
         "A classified value flows out of the program through an I/O channel, and no declassification "
         "policy licenses the export.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Drop the IO atom, project Security below the classified carrier with atom::as_public or "
         "atom::as_unclassified, or name atom::declassify<Policy> with a policy whose mask licenses IO: "
         "AuditedLogging, WireSerialize or UserDisplay.";
@@ -154,7 +149,7 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
         return premise.classified_on_send && premise.row_io;
     }
 
-    [[nodiscard]] static constexpr std::string_view cite() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView cite() noexcept {
         return "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 type-system foundation) — implicit "
                "information flow: classified value flows out of the program via I/O without a "
                "declassification policy that licenses I/O.  Drop the IO effect, project Security to "
@@ -163,17 +158,17 @@ struct classified_io_without_declassify final : ::foundation::diag::tag_base {
     }
 
     template <class Self = classified_io_without_declassify>
-    [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView full_diagnostic() noexcept {
         return detail::full_diagnostic_v<Self>;
     }
 };
 
 struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "classified_bg_without_declassify";
-    static constexpr std::string_view description =
+    static constexpr ::foundation::diag::tag_text_literal name = "classified_bg_without_declassify";
+    static constexpr ::foundation::diag::tag_text_literal description =
         "A classified value crosses into a background-thread context, whose scheduling then depends on the "
         "secret, and no declassification policy licenses the crossing.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Drop the Bg atom and run the body on the foreground thread, where scheduling is deterministic, or "
         "project Security below the classified carrier: atom::as_public or atom::as_unclassified.  No "
         "policy licenses the Bg channel, so a declassification does not either.";
@@ -182,7 +177,7 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
         return premise.classified_on_bg && premise.row_bg;
     }
 
-    [[nodiscard]] static constexpr std::string_view cite() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView cite() noexcept {
         return "Smith-Volpano 1998 / Sabelfeld-Sands 2000 / Hedin-Sabelfeld 2012 — concurrent information "
                "flow: classified value crosses into a background-thread context without a declassification "
                "policy; the spawn is itself a scheduler-observable event.  Drop the Bg effect OR project "
@@ -190,17 +185,17 @@ struct classified_bg_without_declassify final : ::foundation::diag::tag_base {
     }
 
     template <class Self = classified_bg_without_declassify>
-    [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView full_diagnostic() noexcept {
         return detail::full_diagnostic_v<Self>;
     }
 };
 
 struct staleness_secret_without_declassify final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "staleness_secret_without_declassify";
-    static constexpr std::string_view description =
+    static constexpr ::foundation::diag::tag_text_literal name = "staleness_secret_without_declassify";
+    static constexpr ::foundation::diag::tag_text_literal description =
         "A secret is reachable through a stale-replay window, and no declassification policy discharges "
         "the Staleness axis, so the erasure the policy would require never happens.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Name atom::declassify<tags::secret_policy::AuthorizedReplay>, the one shipped policy whose mask "
         "carries Staleness; or drop the stale_to<N> atom, so Staleness returns to Fresh; or project "
         "Security below the carrier.";
@@ -209,7 +204,7 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
         return premise.classified_on_staleness && premise.stale;
     }
 
-    [[nodiscard]] static constexpr std::string_view cite() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView cite() noexcept {
         return "Hunt-Sands 2008 'Just Forget It' (POPL) — PRIMARY: formalizes information-erasure semantics "
                "and shows a classified value reachable through a stale-replay window (stale_to<TauMax>) "
                "without a freshness-discharging declassification policy is semantically a FAILED erasure — "
@@ -229,17 +224,17 @@ struct staleness_secret_without_declassify final : ::foundation::diag::tag_base 
     }
 
     template <class Self = staleness_secret_without_declassify>
-    [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView full_diagnostic() noexcept {
         return detail::full_diagnostic_v<Self>;
     }
 };
 
 struct ghost_runtime_observable final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "ghost_runtime_observable";
-    static constexpr std::string_view description =
+    static constexpr ::foundation::diag::tag_text_literal name = "ghost_runtime_observable";
+    static constexpr ::foundation::diag::tag_text_literal description =
         "A ghost binding, erased at codegen, claims an effect that requires emitted code: Alloc, IO, Block "
         "or Bg.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Drop the ghost atom, so Usage returns to its linear strict pole, or drop the runtime-observable "
         "effects.  A declassification does not apply: this is a ghost-versus-runtime category error, not an "
         "information-flow channel.";
@@ -251,7 +246,7 @@ struct ghost_runtime_observable final : ::foundation::diag::tag_base {
         return premise.ghost && (premise.row_observable || premise.row_bg);
     }
 
-    [[nodiscard]] static constexpr std::string_view cite() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView cite() noexcept {
         return "Filliâtre-Gondelman-Paskevich 2014 'The Spirit of Ghost Code' / Leino 2010 'Dafny' — "
                "ghost-state discipline: a binding engaging Usage=Ghost AND any runtime-observable effect "
                "(Alloc / IO / Block / Bg) is contradictory — ghost values are erased at compile time and "
@@ -261,17 +256,17 @@ struct ghost_runtime_observable final : ::foundation::diag::tag_base {
     }
 
     template <class Self = ghost_runtime_observable>
-    [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView full_diagnostic() noexcept {
         return detail::full_diagnostic_v<Self>;
     }
 };
 
 struct internal_io_without_declassify final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "internal_io_without_declassify";
-    static constexpr std::string_view description =
+    static constexpr ::foundation::diag::tag_text_literal name = "internal_io_without_declassify";
+    static constexpr ::foundation::diag::tag_text_literal description =
         "An org-internal value, below the classified carrier but above public, flows into an I/O sink with "
         "no declassification policy: a write-down.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Drop the IO atom, project Security to atom::as_public or atom::as_unclassified, or replace "
         "atom::as_internal with atom::declassify<Policy> for a policy whose mask licenses IO: AuditedLogging, "
         "WireSerialize or UserDisplay.";
@@ -284,7 +279,7 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
         return premise.internal && premise.row_io;
     }
 
-    [[nodiscard]] static constexpr std::string_view cite() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView cite() noexcept {
         return "Bell-LaPadula 1973 / Volpano-Smith-Irvine 1996 / Sabelfeld-Myers 2003 — no-write-down for "
                "Internal tier: org-internal value flows into an I/O sink without a declassification policy.  "
                "Internal data is below the strict pole (Classified) but ABOVE Public — every "
@@ -293,17 +288,17 @@ struct internal_io_without_declassify final : ::foundation::diag::tag_base {
     }
 
     template <class Self = internal_io_without_declassify>
-    [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView full_diagnostic() noexcept {
         return detail::full_diagnostic_v<Self>;
     }
 };
 
 struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "internal_bg_without_declassify";
-    static constexpr std::string_view description =
+    static constexpr ::foundation::diag::tag_text_literal name = "internal_bg_without_declassify";
+    static constexpr ::foundation::diag::tag_text_literal description =
         "An org-internal value crosses into a background-thread context, whose scheduling then depends on "
         "it, with no declassification policy: a concurrent write-down.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Drop the Bg atom and run the body on the foreground thread, where scheduling is deterministic, or "
         "project Security to atom::as_public or atom::as_unclassified.  No policy licenses the Bg channel.";
 
@@ -311,7 +306,7 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
         return premise.internal && premise.row_bg;
     }
 
-    [[nodiscard]] static constexpr std::string_view cite() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView cite() noexcept {
         return "Bell-LaPadula 1973 / Smith-Volpano 1998 / Sabelfeld-Myers 2003 — concurrent no-write-down "
                "for Internal tier: org-internal value crosses into a background-thread context whose "
                "scheduling becomes Internal-tier-dependent.  Sequential IFC type systems are UNSOUND under "
@@ -323,7 +318,7 @@ struct internal_bg_without_declassify final : ::foundation::diag::tag_base {
     }
 
     template <class Self = internal_bg_without_declassify>
-    [[nodiscard]] static constexpr std::string_view full_diagnostic() noexcept {
+    [[nodiscard]] static constexpr ::foundation::core::TextView full_diagnostic() noexcept {
         return detail::full_diagnostic_v<Self>;
     }
 };
@@ -415,7 +410,10 @@ consteval void append_corpus_offenders_(std::string& offenders, bool& found) {
 
 // The diagnostic names each offender that the walk finds, so a reader gets
 // the declaration and the one line to edit.  It is empty when each entry is
-// joined and no class template stands outside fixy::corpus::detail.
+// joined and no class template stands outside fixy::corpus::detail.  It is a
+// std::string_view, because corpus_is_joined prints it in a static_assert.
+// The message of a static_assert needs data() and size(), and a TextView gives
+// no address by design.
 template <class Site>
 [[nodiscard]] consteval std::string_view corpus_join_diagnostic() {
     ::foundation::reflect::anchored_t<^^Site, std::string> message =
@@ -490,7 +488,7 @@ using matched_entry_or_void_t = [:detail::first_match_of_(
 namespace detail {
 
 template <class Type, class... Atoms>
-[[nodiscard]] consteval std::string_view entry_name_for_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView entry_name_for_() noexcept {
     using Entry = matched_entry_or_void_t<Type, Atoms...>;
     if constexpr (std::is_void_v<Entry>) {
         return {};
@@ -500,7 +498,7 @@ template <class Type, class... Atoms>
 }
 
 template <class Type, class... Atoms>
-[[nodiscard]] consteval std::string_view full_diagnostic_for_() noexcept {
+[[nodiscard]] consteval ::foundation::core::TextView full_diagnostic_for_() noexcept {
     using Entry = matched_entry_or_void_t<Type, Atoms...>;
     if constexpr (std::is_void_v<Entry>) {
         return {};
@@ -514,9 +512,9 @@ template <class Type, class... Atoms>
 // Both are empty when no entry matches.  A caller never sees that case
 // through the gate, because a binding with no match is never refused.
 template <class Type, class... Atoms>
-inline constexpr std::string_view corpus_entry_name_for_v = detail::entry_name_for_<Type, Atoms...>();
+inline constexpr ::foundation::core::TextView corpus_entry_name_for_v = detail::entry_name_for_<Type, Atoms...>();
 
 template <class Type, class... Atoms>
-inline constexpr std::string_view corpus_full_diagnostic_v = detail::full_diagnostic_for_<Type, Atoms...>();
+inline constexpr ::foundation::core::TextView corpus_full_diagnostic_v = detail::full_diagnostic_for_<Type, Atoms...>();
 
 }  // namespace fixy::corpus

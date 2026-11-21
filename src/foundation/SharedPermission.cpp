@@ -25,13 +25,8 @@ constexpr core::Fmt<core::TextView, core::TextView, core::TextView> saturated_te
 // door.
 void shared_permission_pool_saturated_abort_() noexcept {
     using Tag = ::foundation::diag::SharedPermissionPoolSaturated;
-    core::detail::FmtArg const arguments[] = {
-        core::detail::FmtArg{core::detail::FmtArgKind::text, 0, Tag::name.data(), Tag::name.size()},
-        core::detail::FmtArg{core::detail::FmtArgKind::text, 0, Tag::description.data(), Tag::description.size()},
-        core::detail::FmtArg{core::detail::FmtArgKind::text, 0, Tag::remediation.data(), Tag::remediation.size()},
-    };
-    core::detail::report_(core::Sink::Err, core::detail::fmt_text_(saturated_text), arguments,
-                          sizeof arguments / sizeof arguments[0]);
+    core::report(core::Sink::Err, saturated_text, core::TextView{Tag::name}, core::TextView{Tag::description},
+                 core::TextView{Tag::remediation});
     os::abort_process();
 }
 

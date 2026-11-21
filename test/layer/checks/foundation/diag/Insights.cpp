@@ -44,9 +44,9 @@ static_assert(insight_provider<HotPathViolation>::severity == Severity::Error);
 static_assert(insight_provider<EffectRowMismatch>::severity == Severity::Error);
 
 struct user_tag : tag_base {
-    static constexpr std::string_view name = "UserDefinedX";
-    static constexpr std::string_view description = "user";
-    static constexpr std::string_view remediation = "see local docs";
+    static constexpr tag_text_literal name = "UserDefinedX";
+    static constexpr tag_text_literal description = "user";
+    static constexpr tag_text_literal remediation = "see local docs";
 };
 static_assert(!has_insights_v<user_tag>);
 static_assert(insight_provider<user_tag>::severity == Severity::Error);
@@ -54,15 +54,15 @@ static_assert(insight_provider<user_tag>::severity == Severity::Error);
 // The member route, on a tag the catalog does not know.  Each field is
 // read off the tag by name.
 struct carrying_tag : tag_base {
-    static constexpr std::string_view name = "CarryingTag";
-    static constexpr std::string_view description = "fixture for the member route";
-    static constexpr std::string_view remediation = "n/a — fixture";
+    static constexpr tag_text_literal name = "CarryingTag";
+    static constexpr tag_text_literal description = "fixture for the member route";
+    static constexpr tag_text_literal remediation = "n/a — fixture";
 
     static constexpr Severity severity = Severity::Warning;
-    static constexpr std::string_view why_this_matters = "the why field, carried on the tag";
-    static constexpr std::string_view symptom_pattern = "the symptom field";
-    static constexpr std::string_view correct_example = "fn(Good);";
-    static constexpr std::string_view violating_example = "fn(Bad);";
+    static constexpr tag_text_literal why_this_matters = "the why field, carried on the tag";
+    static constexpr tag_text_literal symptom_pattern = "the symptom field";
+    static constexpr tag_text_literal correct_example = "fn(Good);";
+    static constexpr tag_text_literal violating_example = "fn(Bad);";
 };
 
 static_assert(insight_provider<carrying_tag>::severity == Severity::Warning);
@@ -76,17 +76,17 @@ static_assert(has_insights_v<carrying_tag>);
 // tag that carries some prose and not the rest is the state a partly
 // written entry is in, and the reader does not confuse the fields.
 struct partly_carrying_tag : tag_base {
-    static constexpr std::string_view name = "PartlyCarryingTag";
-    static constexpr std::string_view description = "fixture for a single carried field";
-    static constexpr std::string_view remediation = "n/a — fixture";
+    static constexpr tag_text_literal name = "PartlyCarryingTag";
+    static constexpr tag_text_literal description = "fixture for a single carried field";
+    static constexpr tag_text_literal remediation = "n/a — fixture";
 
-    static constexpr std::string_view correct_example = "only_this_one();";
+    static constexpr tag_text_literal correct_example = "only_this_one();";
 };
 
 static_assert(insight_provider<partly_carrying_tag>::correct_example == "only_this_one();");
-static_assert(insight_provider<partly_carrying_tag>::why_this_matters.empty());
-static_assert(insight_provider<partly_carrying_tag>::symptom_pattern.empty());
-static_assert(insight_provider<partly_carrying_tag>::violating_example.empty());
+static_assert(insight_provider<partly_carrying_tag>::why_this_matters.size() == 0);
+static_assert(insight_provider<partly_carrying_tag>::symptom_pattern.size() == 0);
+static_assert(insight_provider<partly_carrying_tag>::violating_example.size() == 0);
 static_assert(insight_provider<partly_carrying_tag>::severity == Severity::Error,
               "a tag declaring no severity reads as Error");
 static_assert(has_insights_v<partly_carrying_tag>);
@@ -106,10 +106,10 @@ static_assert(!HasSubstantiveInsights<user_tag>);
 namespace foundation::diag::detail::insights_macro_test {
 
 struct macro_target_tag : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "MacroTargetTag";
-    static constexpr std::string_view description = "test fixture for "
+    static constexpr tag_text_literal name = "MacroTargetTag";
+    static constexpr tag_text_literal description = "test fixture for "
                                                     "CRUCIBLE_DIAG_INSIGHTS expansion";
-    static constexpr std::string_view remediation = "n/a — fixture";
+    static constexpr tag_text_literal remediation = "n/a — fixture";
 };
 
 }  // namespace foundation::diag::detail::insights_macro_test
@@ -125,23 +125,23 @@ using P = ::foundation::diag::insight_provider<macro_target_tag>;
 
 static_assert(P::severity == ::foundation::diag::Severity::Warning,
               "CRUCIBLE_DIAG_INSIGHTS failed to set severity correctly.");
-static_assert(P::why_this_matters == std::string_view{"WHY-MACRO-TEST"});
-static_assert(P::symptom_pattern == std::string_view{"SYMPTOM-MACRO-TEST"});
-static_assert(P::correct_example == std::string_view{"CORRECT-MACRO-TEST"});
-static_assert(P::violating_example == std::string_view{"VIOLATING-MACRO-TEST"});
+static_assert(P::why_this_matters == ::foundation::core::TextView{"WHY-MACRO-TEST"});
+static_assert(P::symptom_pattern == ::foundation::core::TextView{"SYMPTOM-MACRO-TEST"});
+static_assert(P::correct_example == ::foundation::core::TextView{"CORRECT-MACRO-TEST"});
+static_assert(P::violating_example == ::foundation::core::TextView{"VIOLATING-MACRO-TEST"});
 static_assert(::foundation::diag::has_insights_v<macro_target_tag>,
               "Macro-populated insights must register as has_insights_v.");
 
 struct severity_only_tag : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "SeverityOnlyTag";
-    static constexpr std::string_view description = "test fixture for CRUCIBLE_DIAG_INSIGHTS_SEVERITY expansion";
-    static constexpr std::string_view remediation = "n/a — fixture";
+    static constexpr tag_text_literal name = "SeverityOnlyTag";
+    static constexpr tag_text_literal description = "test fixture for CRUCIBLE_DIAG_INSIGHTS_SEVERITY expansion";
+    static constexpr tag_text_literal remediation = "n/a — fixture";
 };
 
 struct qv_target_tag : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "QvTargetTag";
-    static constexpr std::string_view description = "test fixture for CRUCIBLE_DIAG_INSIGHTS_QV expansion";
-    static constexpr std::string_view remediation = "n/a — fixture";
+    static constexpr tag_text_literal name = "QvTargetTag";
+    static constexpr tag_text_literal description = "test fixture for CRUCIBLE_DIAG_INSIGHTS_QV expansion";
+    static constexpr tag_text_literal remediation = "n/a — fixture";
 };
 
 }  // namespace foundation::diag::detail::insights_macro_test
@@ -162,8 +162,8 @@ namespace foundation::diag::detail::insights_macro_test {
 using PSev = ::foundation::diag::insight_provider<severity_only_tag>;
 static_assert(PSev::severity == ::foundation::diag::Severity::Fatal,
               "CRUCIBLE_DIAG_INSIGHTS_SEVERITY must set severity.");
-static_assert(PSev::why_this_matters.empty(), "Severity-only macro should leave why_this_matters empty.");
-static_assert(PSev::symptom_pattern.empty(), "Severity-only macro should leave symptom_pattern empty.");
+static_assert(PSev::why_this_matters.size() == 0, "Severity-only macro should leave why_this_matters empty.");
+static_assert(PSev::symptom_pattern.size() == 0, "Severity-only macro should leave symptom_pattern empty.");
 // Registering a severity alone leaves every prose field empty, and the
 // predicate reports that state as uninsighted rather than registered.
 static_assert(!::foundation::diag::has_insights_v<severity_only_tag>,
