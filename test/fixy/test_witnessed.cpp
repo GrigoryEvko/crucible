@@ -61,6 +61,22 @@ struct OtherWire {
 using Sending = s::Send<Ping, s::End>;
 using Looping = s::Loop<s::Send<Ping, s::Continue>>;
 
+// A handle that keeps the count of its steps answers step_count().
+template <typename Handle>
+concept CountsSteps = requires(Handle const& handle) { handle.step_count(); };
+
+// A handle outside each loop keeps no count: no step of its session reaches
+// its type again, so the type tells its time, and the witness reads only
+// the record and its generation.  A handle in a loop keeps the count.
+using SendingHandle = s::SessionHandle<Sending, Wire>;
+using SentHandle = s::SessionHandle<s::End, Wire>;
+using LoopingHandle = decltype(s::mint_session<Looping>(std::declval<::fixy::TestRunnerCtx const&>(), Wire{}));
+static_assert(!CountsSteps<SendingHandle> && !SendingHandle::keeps_step_count);
+static_assert(!std::is_same_v<SendingHandle, SentHandle>, "a step of a protocol with no loop changes the type");
+static_assert(CountsSteps<LoopingHandle> && LoopingHandle::keeps_step_count);
+static_assert(sizeof(SendingHandle) + sizeof(std::uint64_t) == sizeof(s::SessionHandle<Sending, Wire, Looping>),
+              "the count of the steps is the only member that a loop adds to a handle");
+
 constexpr auto send_ping = [](Wire& wire, Ping& ping) noexcept {
     wire.last_sent = ping.value;
     return true;
@@ -239,7 +255,6 @@ void test_a_witness_refuses_a_later_session_on_the_same_record(::fixy::TestRunne
 
     auto second = s::mint_session<Sending>(ctx, Wire{});
     CRUCIBLE_TEST_ASSERT(test, second.watch_endpoint() == record);
-    CRUCIBLE_TEST_ASSERT(test, second.step_count() == 1);
     ::fixy::check::expect_dies(
         test, [&witnessed, &second] noexcept { static_cast<void>(deref(witnessed, second)); }, kStale);
 

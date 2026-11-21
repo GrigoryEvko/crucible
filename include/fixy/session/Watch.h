@@ -773,15 +773,12 @@ enum class thread_slot : std::uint16_t {
     return static_cast<thread_slot>(detail::tls_holder_stamp);
 }
 
-// What a handle keeps of the watch: the session's record, the thread
-// that the watch names as its holder, and the count of the steps that led
-// to the handle.  A step builds the next handle with a count one higher, so
-// two handles of one session at two times have two counts, also when a
-// loop gives them one type.
+// What a handle keeps of the watch: the session's record, and the thread
+// that the watch names as its holder.  The count of the steps of a handle
+// in a loop is no part of the watch (fixy/session/Handle.h keeps it).
 struct session_ref {
     endpoint_id endpoint = endpoint_id::none;
     thread_slot holder = thread_slot::none;
-    std::uint64_t steps = 0;
 };
 
 /// Records that the calling thread holds the handle of `endpoint` now,

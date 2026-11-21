@@ -21,9 +21,9 @@ static_assert(!std::is_empty_v<Cancel>, "check::Cancel must carry state.  An emp
 static_assert(!std::is_same_v<Enforced, Cancel>, "check::Enforced and check::Cancel must be different types, "
                                                  "because the policy is part of the handle type.");
 
-static_assert(sizeof(Enforced) == 2 * sizeof(std::source_location) + sizeof(std::uint64_t),
-              "the record index of fixy/session/Watch.h must sit in the padding after the flag, and the count of "
-              "steps is the one word that a checked handle adds for the watch.");
+static_assert(sizeof(Enforced) == 2 * sizeof(std::source_location),
+              "the record index of fixy/session/Watch.h must sit in the padding after the flag, and the policy keeps "
+              "no count of steps: a handle in a loop keeps that count (fixy/session/Handle.h).");
 
 }  // namespace check
 

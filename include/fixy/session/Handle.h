@@ -179,13 +179,50 @@ public:
 namespace detail {
 
 // What the factory gives to the handle that it builds: the record of the
-// session in the watch, and a site.  start_ and rewind give the site of the
-// mint to the first handle of a session.  A step gives no site
-// (SessionHandleBase::step_origin_), so it stores the same empty site on each
-// step.
+// session in the watch, a site, and the count of the steps of a handle in a
+// loop.  start_ and rewind give the site of the mint to the first handle of a
+// session.  A step gives no site (handle_core::step_origin_), so it stores the
+// same empty site on each step.  A handle that keeps no count of its steps
+// (handle_core::keeps_step_count) does not read the count.
 struct step_origin {
     watch::session_ref session{};
     std::source_location site{};
+    std::uint64_t steps = 0;
+};
+
+// The count of the steps that led to a handle in a loop.  A loop gives a
+// handle its type again at each iteration, so only the count tells two such
+// handles of one session apart.  A handle outside each loop has a position
+// that no step reaches again, so its type tells its time, and it keeps no
+// count: the empty form takes no byte, and a step adds nothing to it.
+template <bool KeepsCount>
+class step_tally {
+    std::uint64_t steps_ = 0;
+
+public:
+    constexpr step_tally() noexcept = default;
+    constexpr explicit step_tally(step_origin const& origin) noexcept : steps_{origin.steps} {}
+
+    // The copy reads and writes the field, not the class.  GCC 16 then keeps
+    // the count of a local handle in a register across a loop of steps.  A
+    // copy of the class makes an aggregate copy, and the loop then loads the
+    // count from the stack in each iteration (test/shape/session_send.cpp).
+    constexpr step_tally(step_tally const& other) noexcept : steps_{other.steps_} {}
+    constexpr step_tally& operator=(step_tally const& other) noexcept {
+        steps_ = other.steps_;
+        return *this;
+    }
+
+    [[nodiscard]] constexpr std::uint64_t value() const noexcept { return steps_; }
+};
+
+template <>
+class step_tally<false> {
+public:
+    constexpr step_tally() noexcept = default;
+    constexpr explicit step_tally(step_origin const& /*origin*/) noexcept {}
+
+    [[nodiscard]] constexpr std::uint64_t value() const noexcept { return 0; }
 };
 
 // Names the wrapper class alone, without its template arguments.
@@ -471,18 +508,9 @@ protected:
     // The session's record in fixy/session/Watch.h, or none.
     [[nodiscard]] constexpr watch::session_ref session_() const noexcept { return tracker_.session(); }
 
-    // What a step gives to the handle that it builds: the record of the
-    // session, and no site.  A copy of the site would cost a load and a store
-    // on each step, so a stepped handle names no site, and the report of a
-    // dropped protocol reads the site of the mint from the record of the
-    // session in the watch (detail::report_dropped_protocol).
-    [[nodiscard]] constexpr detail::step_origin step_origin_() const noexcept { return {tracker_.session(), {}}; }
-
-    // What a turn of a pin gives to the handle that it builds: the record and
-    // the site of this handle (HandleFactory::pin).  A turn is no step, so
-    // the count and the site stay.
-    [[nodiscard]] constexpr detail::step_origin turn_origin_() const noexcept {
-        return {tracker_.session(), tracker_.construction_loc()};
+    // The site of the handle, which the turn of a pin keeps.
+    [[nodiscard]] constexpr std::source_location construction_loc_() const noexcept {
+        return tracker_.construction_loc();
     }
 
     // The one holder check of a pin (HandleFactory::pin), under a tracked
@@ -613,11 +641,6 @@ public:
     // decorator that waits on its own, as the crash transport does, opens
     // its watch::wait_scope on this endpoint, so the watch sees the wait.
     [[nodiscard]] constexpr watch::endpoint_id watch_endpoint() const noexcept { return tracker_.session().endpoint; }
-
-    // The count of the steps that led to this handle in its session.  Two
-    // handles of one session at two times have two counts.  Under
-    // check::Off the policy keeps no count, and the answer is zero.
-    [[nodiscard]] constexpr std::uint64_t step_count() const noexcept { return tracker_.session().steps; }
 
     SessionHandleBase(const SessionHandleBase&) =
         delete("SessionHandle is linear — protocol progress is consumed, not copied.");
@@ -1633,6 +1656,23 @@ class handle_core : public SessionHandleBase<Proto, SessionHandle<Proto, Resourc
                   "noexcept function cancel_session(Resource&) that argument-dependent lookup finds, or use "
                   "check::Enforced.");
 
+public:
+    // True when the handle keeps the count of its steps: a checking policy,
+    // a position other than End, and an enclosing loop.  Only a Continue
+    // gives a handle its type again, and a Continue stands only inside the
+    // body of a loop, where the inner loop context is not void.  So a handle
+    // outside each loop has a position that no step of its session reaches
+    // again, and its type tells two handles of one session apart.  The test
+    // compares types and walks no registry of the combinators, so a unit that
+    // instantiates a handle walks no family of that namespace for it.
+    static constexpr bool keeps_step_count =
+        Policy::checks_abandonment && !std::is_same_v<Proto, End> && !std::is_void_v<session_loop_ctx_inner_t<LoopCtx>>;
+
+private:
+    // The count sits after the policy and before the Resource, so a handle in
+    // a loop has the layout of a policy with a count in it.
+    [[no_unique_address]] step_tally<keeps_step_count> tally_;
+
     Resource resource_;
 
     // The token or the loan of each element of PS (HoldSlots of
@@ -1670,6 +1710,22 @@ protected:
         return resource_;
     }
 
+    // What a step gives to the handle that it builds: the record of the
+    // session, no site, and the count of this handle.  A copy of the site
+    // would cost a load and a store on each step, so a stepped handle names no
+    // site, and the report of a dropped protocol reads the site of the mint
+    // from the record of the session in the watch
+    // (detail::report_dropped_protocol).  The step adds one to the count for a
+    // handle that keeps one (HandleFactory::step_).
+    [[nodiscard]] constexpr step_origin step_origin_() const noexcept { return {this->session_(), {}, tally_.value()}; }
+
+    // What a turn of a pin gives to the handle that it builds: the record,
+    // the site and the count of this handle (HandleFactory::pin).  A turn is
+    // no step, so the count and the site stay.
+    [[nodiscard]] constexpr step_origin turn_origin_() const noexcept {
+        return {this->session_(), this->construction_loc_(), tally_.value()};
+    }
+
 public:
     using protocol = Proto;
     using resource_type = Resource;
@@ -1679,14 +1735,28 @@ public:
     // The constructor takes the handle key, which only the handle factory
     // makes.  The handle over this core passes the key on, so a core is
     // built only when the factory builds its handle.
-    constexpr handle_core(HandleKey const&, Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                          std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : base_type{loc, session}, resource_{std::forward<Resource>(r)}, slots_{std::move(slots)} {}
+    constexpr handle_core(HandleKey const&, Resource r, HoldSlots<PS> slots,
+                          step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : base_type{origin.site, origin.session},
+          tally_{origin},
+          resource_{std::forward<Resource>(r)},
+          slots_{std::move(slots)} {}
 
     constexpr handle_core(handle_core&& other) noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : base_type{std::move(other)},
+          tally_{other.tally_},
           resource_{std::forward<Resource>(other.resource_)},
           slots_{std::move(other.slots_)} {}
+
+    // The count of the steps that led to this handle in its session, for a
+    // handle in a loop (keeps_step_count).  Two handles of one session at two
+    // times have two counts.  A handle outside each loop has no count: its
+    // type tells its time, so the call does not compile.
+    [[nodiscard]] constexpr std::uint64_t step_count() const noexcept
+        requires keeps_step_count
+    {
+        return tally_.value();
+    }
 
     // An assignment over a live handle drops the protocol that the target
     // held.  The target's policy acts on that drop first, and only then
@@ -1702,6 +1772,7 @@ public:
             return *this;
         cancel_if_owed_();
         base_type::operator=(std::move(other));
+        tally_ = other.tally_;
         resource_ = std::move(other.resource_);
         slots_ = std::move(other.slots_);
         return *this;
@@ -1832,9 +1903,10 @@ SessionHandle<End, Resource, LoopCtx, Policy, PS> : public detail::handle_core<E
     [[no_unique_address]] detail::end_mark<Policy::checks_abandonment> mark_{};
 
 public:
-    constexpr explicit SessionHandle(HandleKey const& key, Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                                     std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{key, std::forward<Resource>(r), std::move(slots), session, loc} {}
+    constexpr explicit SessionHandle(
+        HandleKey const& key, Resource r, HoldSlots<PS> slots,
+        detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : core_type{key, std::forward<Resource>(r), std::move(slots), origin} {}
 
     // Closing is what hands the Resource back.  It is available only at
     // End, so a caller can recover the Resource only after the protocol
@@ -1869,9 +1941,10 @@ class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>
     using core_type = detail::handle_core<Send<T, R>, Resource, LoopCtx, Policy, PS>;
 
 public:
-    constexpr explicit SessionHandle(HandleKey const& key, Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                                     std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{key, std::forward<Resource>(r), std::move(slots), session, loc} {}
+    constexpr explicit SessionHandle(
+        HandleKey const& key, Resource r, HoldSlots<PS> slots,
+        detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : core_type{key, std::forward<Resource>(r), std::move(slots), origin} {}
 
     using message_type = T;
     using continuation = R;
@@ -2005,9 +2078,10 @@ class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx, Policy, PS>
     using core_type = detail::handle_core<Recv<T, R>, Resource, LoopCtx, Policy, PS>;
 
 public:
-    constexpr explicit SessionHandle(HandleKey const& key, Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                                     std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{key, std::forward<Resource>(r), std::move(slots), session, loc} {}
+    constexpr explicit SessionHandle(
+        HandleKey const& key, Resource r, HoldSlots<PS> slots,
+        detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : core_type{key, std::forward<Resource>(r), std::move(slots), origin} {}
 
     using message_type = T;
     using continuation = R;
@@ -2085,9 +2159,10 @@ class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx, Policy
     using core_type = detail::handle_core<Select<Branches...>, Resource, LoopCtx, Policy, PS>;
 
 public:
-    constexpr explicit SessionHandle(HandleKey const& key, Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                                     std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{key, std::forward<Resource>(r), std::move(slots), session, loc} {}
+    constexpr explicit SessionHandle(
+        HandleKey const& key, Resource r, HoldSlots<PS> slots,
+        detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : core_type{key, std::forward<Resource>(r), std::move(slots), origin} {}
 
     using protocol = Select<Branches...>;
 
@@ -2187,9 +2262,10 @@ class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx, Policy,
     using core_type = detail::handle_core<Offer<Branches...>, Resource, LoopCtx, Policy, PS>;
 
 public:
-    constexpr explicit SessionHandle(HandleKey const& key, Resource r, HoldSlots<PS> slots, watch::session_ref session,
-                                     std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : core_type{key, std::forward<Resource>(r), std::move(slots), session, loc} {}
+    constexpr explicit SessionHandle(
+        HandleKey const& key, Resource r, HoldSlots<PS> slots,
+        detail::step_origin origin) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : core_type{key, std::forward<Resource>(r), std::move(slots), origin} {}
 
     using protocol = Offer<Branches...>;
 
@@ -2336,16 +2412,14 @@ constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, detail::ste
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
                                     "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
-        // A step counts one: the policy keeps the count of the reference that
-        // it gets, so the turn of a pin, which is no step, keeps the count.  A
-        // terminal handle holds no record, and it keeps the count of one.
-        constexpr watch::session_ref terminal{.steps = 1};
+        // A terminal handle holds no record and keeps no count.
+        constexpr detail::step_origin terminal{};
         if constexpr (Policy::checks_abandonment && std::is_same_v<R, End>) {
             // The handle at End holds no record, and it keeps the mark of the
             // record.  The release clears the peer of the record, so the mark
             // is read first.
             auto at_end = make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                                  detail::step_origin{terminal, origin.site});
+                                                                  detail::step_origin{terminal.session, origin.site});
             if !consteval {
                 at_end.mark_ = detail::end_mark<true>{watch::mark_of(origin.session.endpoint)};
                 watch::release(origin.session.endpoint);
@@ -2356,11 +2430,17 @@ constexpr auto HandleFactory::step_(Resource r, HoldSlots<PS> slots, detail::ste
                 watch::release(origin.session.endpoint);
             }
             return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                           detail::step_origin{terminal, origin.site});
+                                                           detail::step_origin{terminal.session, origin.site});
+        } else if constexpr (SessionHandle<R, Resource, LoopCtx, Policy, PS>::keeps_step_count) {
+            // A step counts one.  The turn of a pin is no step, and it keeps
+            // the count (turn_origin_).
+            return make_<R, Resource, LoopCtx, Policy, PS>(
+                std::forward<Resource>(r), std::move(slots),
+                detail::step_origin{origin.session, origin.site, origin.steps + 1});
         } else {
-            const watch::session_ref next{origin.session.endpoint, origin.session.holder, origin.session.steps + 1};
+            // A handle outside each loop keeps no count, so the step adds none.
             return make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                           detail::step_origin{next, origin.site});
+                                                           detail::step_origin{origin.session, origin.site});
         }
     }
 }
@@ -2496,7 +2576,7 @@ constexpr auto HandleFactory::make_(Resource r, HoldSlots<PS> slots,
     static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_Refused]: the handle "
                                              "factory builds a handle only over a Resource that a mint admits.");
     return SessionHandle<Proto, Resource, LoopCtx, Policy, PS>{HandleKey{}, std::forward<Resource>(r), std::move(slots),
-                                                               origin.session, origin.site};
+                                                               origin};
 }
 
 // HandleFactory::start_ builds the first handle of an admitted protocol

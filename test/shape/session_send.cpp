@@ -71,6 +71,25 @@ using LoopHandle =
                                    });
 }
 
+// The count of the steps.  A handle outside each loop keeps no count
+// (handle_core::keeps_step_count of fixy/session/Handle.h), so its send adds
+// one to nothing.  The probe sends one item from the first position of a
+// protocol with no loop, and the item is a parameter, so no add of one is in
+// the function.  The control sends one item through a handle in a loop, whose
+// count is the only value that the send adds one to.
+using SendTwice = s::Send<Item, s::Send<Item, s::End>>;
+using TwiceHandle =
+    decltype(s::mint_session<SendTwice>(::foundation::effects::testing::foreground(), std::declval<ProbeChannel>()));
+using OnceMoreHandle = decltype(std::declval<TwiceHandle>().send(std::declval<Item>(), write_item));
+
+[[gnu::used]] void send_once_outside_a_loop(TwiceHandle& handle, OnceMoreHandle& next, Item item) noexcept {
+    next = std::move(handle).send(item, write_item);
+}
+
+[[gnu::used]] void send_once_in_a_loop(LoopHandle& handle, Item item) noexcept {
+    handle = std::move(handle).send(item, write_item);
+}
+
 // The control of the check: the loop steps the handle and the item of the
 // caller in place.  The cold note can write each value that the caller can
 // reach through a pointer, so this loop keeps the handle in memory, and the

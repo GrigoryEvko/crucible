@@ -51,9 +51,10 @@ using Picks = s::Select<Once, s::End>;
 
 // A handle at End keeps its mark only under a policy that keeps a record.
 // Under check::Off it is the size of its Resource.  Under check::Enforced
-// the mark adds two words to the four words of a checked handle.
+// the mark adds two words to the three words of a checked handle with no
+// count of steps.
 static_assert(sizeof(s::SessionHandle<s::End, LeftWire, void, s::check::Off>) == sizeof(LeftWire));
-static_assert(sizeof(s::SessionHandle<s::End, LeftWire, void, s::check::Enforced>) == 6 * sizeof(void*));
+static_assert(sizeof(s::SessionHandle<s::End, LeftWire, void, s::check::Enforced>) == 5 * sizeof(void*));
 
 // The two ends of a test channel at End rewind to End, and then to the start
 // of Once.  The first rewind links the two new records before each end steps

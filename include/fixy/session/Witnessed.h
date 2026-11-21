@@ -36,10 +36,10 @@
 //     handles of one type are two sessions of the same shape, or one
 //     session at two times, after a loop iteration gave the handle its
 //     type again.  The carrier keeps the record of the session in the
-//     watch, the generation of the record and the count of steps, and
-//     the read ends the process when the presented handle differs in
-//     one of them.  Validity is one handle at one time, not lexical
-//     scope.
+//     watch, the generation of the record and, for a handle in a loop,
+//     the count of steps.  The read ends the process when the presented
+//     handle differs in one of them.  Validity is one handle at one time,
+//     not lexical scope.
 //
 //   UnderRow<Tag> — EFFECT.  The mint takes the permission tag of the
 //     region that the borrow views, and permission_row<Tag> says what
@@ -198,7 +198,9 @@ template <typename Witness>
 inline constexpr bool is_protocol_witness_v = std::is_same_v<typename stamp_of<Witness>::type, handle_stamp>;
 
 // The stamp of a handle now.  A constant evaluation has no watch, so the
-// stamp then holds no record.
+// stamp then holds no record.  A handle outside each loop keeps no count of
+// its steps (handle_core::keeps_step_count of fixy/session/Handle.h): no step
+// of its session reaches its type again, so its stamp counts zero steps.
 template <typename Handle>
 [[nodiscard]] constexpr handle_stamp stamp_handle(Handle const& handle) noexcept {
     const watch::endpoint_id endpoint = handle.watch_endpoint();
@@ -206,7 +208,11 @@ template <typename Handle>
     if !consteval {
         generation = watch::record_generation(endpoint);
     }
-    return handle_stamp{endpoint, generation, handle.step_count()};
+    std::uint64_t steps = 0;
+    if constexpr (Handle::keeps_step_count) {
+        steps = handle.step_count();
+    }
+    return handle_stamp{endpoint, generation, steps};
 }
 
 [[noreturn, gnu::cold, gnu::noinline]] inline void report_stale_witness() noexcept {

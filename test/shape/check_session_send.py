@@ -3,7 +3,8 @@
 usage: check_session_send.py BUILD_DIR SOURCE_ROOT
 
 THE PROBE
-    test/shape/session_send.cpp holds three functions.  send_on_a_local_handle
+    test/shape/session_send.cpp holds five functions: three of the steady
+    loops, and two of THE COUNT OF THE STEPS.  send_on_a_local_handle
     moves a handle into a local, sends each item through it, and moves it
     back.  send_through_a_pin pins the handle of the caller and sends each
     item through the pinned handle (HandleFactory::pin of
@@ -46,16 +47,29 @@ THE STEADY PATH
     the loop again and can change the slot, so the compiler does not split
     the compare out of the loop.
 
+THE COUNT OF THE STEPS
+    A handle outside each loop keeps no count of its steps
+    (handle_core::keeps_step_count of fixy/session/Handle.h).
+    send_once_outside_a_loop sends one item from the first position of a
+    protocol with no loop, and send_once_in_a_loop sends one item through a
+    handle in a loop.  Neither function adds one to its item, so an add of one
+    in them is the add of the count: an add or a sub of the number 1, an inc
+    or a dec, or a lea with the displacement 1.  The check reads each
+    instruction of the two functions, in the hot part and in the cold part.
+
 THE VERDICT
     send_on_a_local_handle must have at least one steady loop, and no refusal
     in it.  send_through_a_pin must have at least one steady loop, and no
     refusal and no read of the slot of the thread in it, so the check cannot
     pass on a function that it does not read.  send_in_caller_memory must
     have at least one refusal:
-    the control shows that the check sees a handle in memory.  Exit 0 when the
-    three hold, 1 when one does not hold or the probe does not compile, 2 on a
-    usage error, 77 for a skip.  Complexity: one compile, one disassembly, and
-    a walk linear in the edges of each loop.
+    the control shows that the check sees a handle in memory.
+    send_once_outside_a_loop must have no add of one, and send_once_in_a_loop
+    must have at least one: the control shows that the check sees the count.
+    Exit 0 when the five hold, 1 when one does not hold or the probe does not
+    compile, 2 on a usage error, 77 for a skip.  Complexity: one compile, one
+    disassembly, and a walk linear in the edges of each loop and in the
+    instructions of the two functions of the count.
 """
 
 from __future__ import annotations
@@ -70,6 +84,11 @@ PROBE_UNIT = "test/shape/session_send.cpp"
 LOCAL_FORM = "send_on_a_local_handle"
 PIN_FORM = "send_through_a_pin"
 CALLER_MEMORY_FORM = "send_in_caller_memory"
+OUTSIDE_A_LOOP_FORM = "send_once_outside_a_loop"
+IN_A_LOOP_FORM = "send_once_in_a_loop"
+# The numbers that an add of one and a sub of minus one name, at each width of an operand.
+ONE_WORDS = frozenset({1})
+MINUS_ONE_WORDS = frozenset({-1, 0xFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF})
 DROPPED_PREFIXES = ("-fplugin", "-fsanitize", "-fno-sanitize", "-DCRUCIBLE_QUARANTINE_ACTIVE")
 # The words of a unit of a library, and the word of a unit of a program that takes their place.
 LIBRARY_WORDS = ("-fPIC", "-fpic")
@@ -202,10 +221,30 @@ def findings_of(code, admits_holder_slot: bool = True) -> tuple[int, list[str]]:
     return len(loops), sorted(set(found))
 
 
+def adds_of_one(code) -> list[str]:
+    """Return each instruction of a function, in each of its parts, that adds one (THE COUNT OF THE STEPS)."""
+    from assay.guard.engines.elf import codegen_shapes as shapes
+    from assay.readers import objdump
+
+    found: list[str] = []
+    for part in shapes.flow_of(code).parts:
+        for instruction in part:
+            mnemonic = instruction.mnemonic
+            numbers = {operand.value for operand in instruction.operands if isinstance(operand, objdump.Immediate)}
+            is_add_of_one = mnemonic.startswith("add") and bool(numbers & ONE_WORDS)
+            is_sub_of_minus_one = mnemonic.startswith("sub") and bool(numbers & MINUS_ONE_WORDS)
+            is_lea_of_one = mnemonic.startswith("lea") and any(
+                isinstance(operand, objdump.Memory) and operand.displacement == 1 for operand in instruction.operands
+            )
+            if is_add_of_one or is_sub_of_minus_one or is_lea_of_one or mnemonic.startswith("inc"):
+                found.append(instruction.shown)
+    return found
+
+
 def verdict(codes: Mapping[str, object]) -> list[str]:
-    """Return the problems of the three functions of the probe (THE VERDICT)."""
+    """Return the problems of the five functions of the probe (THE VERDICT)."""
     problems: list[str] = []
-    for name in (LOCAL_FORM, PIN_FORM, CALLER_MEMORY_FORM):
+    for name in (LOCAL_FORM, PIN_FORM, CALLER_MEMORY_FORM, OUTSIDE_A_LOOP_FORM, IN_A_LOOP_FORM):
         if name not in codes:
             problems.append(f"the object of {PROBE_UNIT} holds no function {name}")
     if problems:
@@ -221,6 +260,9 @@ def verdict(codes: Mapping[str, object]) -> list[str]:
     _, control = findings_of(codes[CALLER_MEMORY_FORM])
     if not control:
         problems.append(f"{CALLER_MEMORY_FORM} holds no refusal, so the check does not see a handle in memory")
+    problems += [f"{OUTSIDE_A_LOOP_FORM}: adds one to a count: {item}" for item in adds_of_one(codes[OUTSIDE_A_LOOP_FORM])]
+    if not adds_of_one(codes[IN_A_LOOP_FORM]):
+        problems.append(f"{IN_A_LOOP_FORM} adds one to nothing, so the check does not see the count of the steps")
     return problems
 
 
@@ -252,9 +294,11 @@ def main(arguments: Sequence[str]) -> int:
     loops, _ = findings_of(codes[LOCAL_FORM])
     pinned_loops, _ = findings_of(codes[PIN_FORM], admits_holder_slot=False)
     _, control = findings_of(codes[CALLER_MEMORY_FORM])
+    counted = adds_of_one(codes[IN_A_LOOP_FORM])
     print(f"check_session_send: {LOCAL_FORM} has {loops} steady loop(s) with no call and no read of memory other "
           f"than the slot of the thread.  {PIN_FORM} has {pinned_loops} steady loop(s) with no call and no read "
-          f"of memory.  The control {CALLER_MEMORY_FORM} holds {len(control)} refusal(s).")
+          f"of memory.  The control {CALLER_MEMORY_FORM} holds {len(control)} refusal(s).  {OUTSIDE_A_LOOP_FORM} "
+          f"adds one to no count, and the control {IN_A_LOOP_FORM} adds one {len(counted)} time(s).")
     return 0
 
 
