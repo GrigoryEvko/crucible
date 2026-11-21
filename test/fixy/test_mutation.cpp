@@ -46,6 +46,15 @@ constexpr ::fixy::TextView kSoleWriterStepBack{"foundation: contract violation: 
 constexpr ::fixy::TextView kBumpOverflow{
     "foundation: contract violation: ::foundation::decide::no_overflow_sum(observed, delta)"};
 
+// The owner of the proof of the one writer of the proven publish.  The test
+// holds one counter and its copy, so the owner makes the proof of the writer.
+struct ProofOwner final {
+    struct Role final {};
+    using Proof = ::fixy::SoleWriterProof<ProofOwner, Role>;
+
+    [[nodiscard]] static constexpr Proof proof() noexcept { return Proof{}; }
+};
+
 // ── Storage regimes ──────────────────────────────────────────────────
 //
 // Monotonic: the grade is the value (regime 2), one cell.
@@ -813,6 +822,20 @@ int check_contracts_abort() {
         test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_from(7, 11, sole_copy); },
         ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
     if (sole.get() != 10 || sole_copy.get() != 10) return 213;
+
+    // The proven publish refuses a step back and a step that stands still,
+    // before it moves the counter or the copy.  The step of the copy folds
+    // into this one check.
+    constexpr ::fixy::TextView kProvenStepBack{"foundation: fatal invariant failed: Cmp{}(current, new_value)"};
+    expect_dies(
+        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_by_proof(ProofOwner::proof(), sole_copy, 9); },
+        kProvenStepBack);
+    expect_dies(
+        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_by_proof(ProofOwner::proof(), sole_copy, 10); },
+        kProvenStepBack);
+    if (sole.get() != 10 || sole_copy.get() != 10) return 214;
+    sole.advance_sole_writer_by_proof(ProofOwner::proof(), sole_copy, 11);
+    if (sole.get() != 11 || sole_copy.get() != 11) return 215;
 
     AtomicMonotonic<std::int64_t> signed_counter = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
     expect_dies(

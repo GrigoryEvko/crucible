@@ -892,8 +892,10 @@ public:
     // copy of the counter that the
     // writer keeps on a line of its own, and it holds the value of the
     // counter.  The step check compares own and new_value in registers, in
-    // each build and under each contract semantic, and the advance of own
-    // checks the order again.  The store is a plain release, and the call
+    // each build and under each contract semantic.  Then own steps from the
+    // value that the check read, so the order check of that step compares the
+    // same two registers, and the optimizer folds it into the step check.
+    // The store is a plain release, and the call
     // loads nothing from the counter, so a reader that polls the line of the
     // counter costs the writer no transfer of that line.
     template <class Owner, class Role>
@@ -901,8 +903,9 @@ public:
                                       T new_value) noexcept
         requires SoleWriterCounter<Writers>
     {
-        CRUCIBLE_FATAL_INVARIANT(Cmp{}(own.get(), new_value));
-        own.advance(new_value);
+        T const current = own.get();
+        CRUCIBLE_FATAL_INVARIANT(Cmp{}(current, new_value));
+        own.advance_from_checked_(current, new_value);
         value_.store(new_value, std::memory_order_release);
     }
     template <class Owner, class Role>
