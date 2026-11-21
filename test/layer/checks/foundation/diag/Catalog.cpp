@@ -10,16 +10,20 @@ namespace foundation::diag {
 namespace detail {
 
 [[nodiscard]] consteval bool every_category_names_a_tag() noexcept {
-    for (const auto tag : catalog_tags()) {
+    static constexpr ::foundation::reflect::ReflectionList tags =
+        ::foundation::reflect::reflection_list(catalog_tags());
+    for (const std::meta::info tag : tags) {
         if (tag == ^^void) return false;
     }
     return true;
 }
 
 // True when some Category enumerator spells `identifier`.
-[[nodiscard]] consteval bool category_names_(std::string_view identifier) noexcept {
-    for (const auto en : std::meta::enumerators_of(^^Category)) {
-        if (std::meta::identifier_of(en) == identifier) return true;
+[[nodiscard]] consteval bool category_names_(::foundation::core::TextView identifier) noexcept {
+    static constexpr ::foundation::reflect::ReflectionList enumerators =
+        ::foundation::reflect::reflection_list(std::meta::enumerators_of(^^Category));
+    for (const std::meta::info en : enumerators) {
+        if (::foundation::core::identifier_text(en) == identifier) return true;
     }
     return false;
 }
@@ -36,11 +40,13 @@ namespace detail {
 // closed, and such a tag is meant to have no enumerator.  A namespace has
 // no access control, so the current context reads each of its members.
 [[nodiscard]] consteval bool every_tag_names_a_category() noexcept {
-    for (const auto m : std::meta::members_of(^^::foundation::diag, std::meta::access_context::current())) {
+    static constexpr ::foundation::reflect::ReflectionList members = ::foundation::reflect::reflection_list(
+        std::meta::members_of(^^::foundation::diag, std::meta::access_context::current()));
+    for (const std::meta::info m : members) {
         if (!std::meta::is_type(m) || std::meta::is_type_alias(m) || !std::meta::is_class_type(m)) continue;
         if (m == ^^tag_base || !std::meta::is_base_of_type(^^tag_base, m)) continue;
         if (!std::meta::has_identifier(m)) continue;
-        if (!category_names_(std::meta::identifier_of(m))) return false;
+        if (!category_names_(::foundation::core::identifier_text(m))) return false;
     }
     return true;
 }
