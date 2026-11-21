@@ -234,8 +234,10 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 [[nodiscard]] inline ::fixy::Option<TensorMeta> decode_ffi_meta(const CrucibleMeta& record) noexcept {
     UncheckedTensorMeta fields{};
     for (const TensorDimArray::LaneIndex lane : decltype(fields.sizes)::indices()) {
-        fields.sizes.at(lane) = record.sizes[lane.raw()];
-        fields.strides.at(lane) = record.strides[lane.raw()];
+        const int64_t size = record.sizes[lane.raw()];
+        const int64_t stride = record.strides[lane.raw()];
+        fields.sizes.with_element(lane, [size](int64_t& held) noexcept { held = size; });
+        fields.strides.with_element(lane, [stride](int64_t& held) noexcept { held = stride; });
     }
     fields.ndim = record.ndim;
     fields.dtype = record.dtype;

@@ -338,9 +338,12 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::size();
     const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
     if (scalar_values) {
-        for (uint16_t i = 0; i < stored_scalars; i++)
-            entry.scalar_values.at(::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room")) =
-                scalar_values[i];
+        for (uint16_t i = 0; i < stored_scalars; i++) {
+            const int64_t value = scalar_values[i];
+            entry.scalar_values.with_element(
+                ::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
+                [value](int64_t& held) noexcept { held = value; });
+        }
         // The tags of the stored values, after the flags, because the tag of
         // slot 4 is in the two high bits of op_flags.  The bits of a slot past
         // the stored values are zero, as on the recording paths.
@@ -610,8 +613,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         uint16_t stored = 0;
         for (const int64_t value : te.scalar_args()) {
             if (stored == 5) break;
-            rec.scalar_values.at(::fixy::Index<5>::check(stored).expect("the test above keeps the lane below 5")) =
-                value;
+            rec.scalar_values.with_element(
+                ::fixy::Index<5>::check(stored).expect("the test above keeps the lane below 5"),
+                [value](int64_t& held) noexcept { held = value; });
             ++stored;
         }
         cursor.put(crucible::encode_trace_op(rec));

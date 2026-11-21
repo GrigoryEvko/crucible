@@ -872,10 +872,14 @@ struct Recording {
     // The three helpers below are always inline, so the optimizer sees each
     // read of the counts, and each check of an index or a window folds.
     //
-    // The slot at position.  Each caller tests the position against Capacity
-    // first, so the optimizer removes the check.
-    [[nodiscard]] CRUCIBLE_INLINE crucible::TensorMeta& slot_at(uint32_t position) noexcept {
-        return metas.at(::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot"));
+    // Lends the slot at position to body in place, and gives the result of
+    // body.  The slots are a View that the caller lends for the record of
+    // one op.  Each caller tests the position against Capacity first, so the
+    // optimizer removes the check.
+    template <class Body>
+    CRUCIBLE_INLINE decltype(auto) with_slot(uint32_t position, Body&& body) noexcept {
+        return static_cast<Body&&>(body)(
+            metas.at(::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot")));
     }
 
     // The records of the input tensors.  add_input keeps the count of the
@@ -898,7 +902,10 @@ struct Recording {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a Recording takes the tensors of an operator of PyTorch")
     void add_input(const at::Tensor& tensor) {
         if (tensor.defined() && counts.inputs < Capacity) {
-            if (!fill_meta(slot_at(counts.inputs), tensor)) is_each_enumeration_named = false;
+            if (!with_slot(counts.inputs,
+                           [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
+                is_each_enumeration_named = false;
+            }
             counts.inputs++;
         } else if constexpr (MayOverflow) {
             if (tensor.defined()) add_overflow_input(tensor);
@@ -920,7 +927,10 @@ struct Recording {
     // append and every reader of it expect.
     void add_output(const at::Tensor& tensor) {
         if (tensor.defined() && counts.total() < Capacity) {
-            if (!fill_meta(slot_at(counts.total()), tensor)) is_each_enumeration_named = false;
+            if (!with_slot(counts.total(),
+                           [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
+                is_each_enumeration_named = false;
+            }
             counts.outputs++;
         }
     }
@@ -929,7 +939,8 @@ struct Recording {
     // A result that is one scalar, as the meta of scalar_result_meta.
     void add_scalar_output(crucible::ScalarType dtype) {
         if (counts.total() < Capacity) {
-            slot_at(counts.total()) = scalar_result_meta(dtype);
+            const crucible::TensorMeta meta = scalar_result_meta(dtype);
+            with_slot(counts.total(), [&meta](crucible::TensorMeta& slot) noexcept { slot = meta; });
             counts.outputs++;
         }
     }

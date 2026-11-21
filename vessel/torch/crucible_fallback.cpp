@@ -23,6 +23,7 @@
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/WindowStack.h>
 
 #include <c10/core/CPUAllocator.h>
 #include <c10/core/CrucibleState.h>
@@ -119,9 +120,11 @@ consteval ::fixy::FixedArray<ModeEnumerator, kModeCount> read_mode_enumerators()
     ::fixy::FixedArray<ModeEnumerator, kModeCount> table{};
     std::size_t position = 0;
     for (const std::meta::info enumerator : std::meta::enumerators_of(^^c10::CrucibleMode)) {
-        table.at(::fixy::Index<kModeCount>::check(position).expect("the walk stays below the count of the modes")) =
-            ModeEnumerator{.name = std::define_static_string(std::meta::identifier_of(enumerator)),
-                           .value = std::to_underlying(std::meta::extract<c10::CrucibleMode>(enumerator))};
+        const ModeEnumerator mode{.name = std::define_static_string(std::meta::identifier_of(enumerator)),
+                                  .value = std::to_underlying(std::meta::extract<c10::CrucibleMode>(enumerator))};
+        table.with_element(
+            ::fixy::Index<kModeCount>::check(position).expect("the walk stays below the count of the modes"),
+            [mode](ModeEnumerator& held) noexcept { held = mode; });
         ++position;
     }
     return table;
@@ -266,11 +269,22 @@ static constexpr uint32_t SCHEMA_CACHE_PROBES = 8;
 // facts again and fills its own slot.
 static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cache{};
 
-// The slot of a probe.  The mask keeps it below SCHEMA_CACHE_CAP, so the
-// optimizer removes the check.
-[[nodiscard]] static SchemaHashSlot& get_schema_slot(uint64_t probe) noexcept {
+// The slot of a probe, for a read.  The mask keeps it below SCHEMA_CACHE_CAP,
+// so the optimizer removes the check.
+[[nodiscard]] static SchemaHashSlot const& read_schema_slot(uint64_t probe) noexcept {
     return schema_cache.at(::fixy::Index<SCHEMA_CACHE_CAP>::check(probe & SCHEMA_CACHE_MASK)
                                .expect("a masked probe is below SCHEMA_CACHE_CAP"));
+}
+
+// Lends the slot of a probe to body in place, and gives the result of body.
+// The cache is process-wide and each thread probes it at the same time: the
+// state of a slot is an Atomic, and a thread writes the other fields only
+// after its claim of the state.
+template <class Body>
+static decltype(auto) with_schema_slot(uint64_t probe, Body&& body) noexcept {
+    return schema_cache.with_element(::fixy::Index<SCHEMA_CACHE_CAP>::check(probe & SCHEMA_CACHE_MASK)
+                                         .expect("a masked probe is below SCHEMA_CACHE_CAP"),
+                                     static_cast<Body&&>(body));
 }
 
 // The first slot of the probe window of a key.  The hash of the key mixes
@@ -349,15 +363,18 @@ CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fix
     // same facts.
     const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
-        SchemaHashSlot& slot = get_schema_slot(idx + probe);
-        if (slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) {
-            slot.key = key;
-            slot.hash = schema_hash;
-            slot.flags = (mutable_op ? FLAG_MUTABLE : 0) | (foreach_op ? FLAG_FOREACH : 0)
-                       | (uint64_t{data_arguments.bits()} << FLAG_DATA_ARGUMENTS_SHIFT);
-            slot.state.store_release(SLOT_READY);
-            break;
-        }
+        const uint64_t flags = (mutable_op ? FLAG_MUTABLE : 0) | (foreach_op ? FLAG_FOREACH : 0)
+                             | (uint64_t{data_arguments.bits()} << FLAG_DATA_ARGUMENTS_SHIFT);
+        const bool is_claimed =
+            with_schema_slot(idx + probe, [&key, schema_hash, flags](SchemaHashSlot& slot) noexcept {
+                if (!slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) return false;
+                slot.key = key;
+                slot.hash = schema_hash;
+                slot.flags = flags;
+                slot.state.store_release(SLOT_READY);
+                return true;
+            });
+        if (is_claimed) break;
     }
     return {schema_hash, mutable_op, foreach_op, data_arguments};
 }
@@ -400,7 +417,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
-        SchemaHashSlot& slot = get_schema_slot(idx + probe);
+        SchemaHashSlot const& slot = read_schema_slot(idx + probe);
         const uint64_t state = slot.state.load_acquire();
         // The compare reads the whole key of the slot, not only its index.
         // Two operators whose keys give one index take two slots of the
@@ -438,10 +455,13 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
 static void retire_schema_slots(::fixy::AddressKey const& key) noexcept {
     const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
-        SchemaHashSlot& slot = get_schema_slot(idx + probe);
+        SchemaHashSlot const& slot = read_schema_slot(idx + probe);
         const uint64_t state = slot.state.load_acquire();
         if (state == SLOT_EMPTY) break;
-        if (state == SLOT_READY && slot.key == key) slot.state.store_release(SLOT_RETIRED);
+        if (state == SLOT_READY && slot.key == key) {
+            with_schema_slot(idx + probe,
+                             [](SchemaHashSlot& held) noexcept { held.state.store_release(SLOT_RETIRED); });
+        }
     }
 }
 
@@ -507,7 +527,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 using MetaSlots = ::fixy::View<crucible::TensorMeta, MAX_INLINE_METAS>;
 
 // The slots of the cold path, on the stack of its call.
-using InlineMetas = ::fixy::FixedArray<crucible::TensorMeta, MAX_INLINE_METAS>;
+using InlineMetas = ::foundation::core::WindowStack<crucible::TensorMeta, MAX_INLINE_METAS>;
 
 // The slot at position.  Each caller tests the position against
 // MAX_INLINE_METAS first, so the optimizer removes the check.
@@ -768,8 +788,16 @@ CRUCIBLE_COLD static void record_boxed_op_on_stack(const c10::OperatorHandle& op
                                                    torch::jit::Stack& stack, c10::CrucibleState& state,
                                                    crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                                    crucible::OpDepth depth) {
-    InlineMetas metas{};
-    record_boxed_op(op, dispatch_keys, stack, state, vigil, fg, depth, metas.view());
+    // The op can raise, so the slots lend their run through a loan, which an
+    // unwind ends too, and not through a frame door, whose body cannot raise.
+    InlineMetas slots{};
+    const ::foundation::core::WindowLoan<crucible::TensorMeta, MAX_INLINE_METAS> loan{
+        slots, ::foundation::core::WindowCount{MAX_INLINE_METAS}};
+    for (const ::fixy::View<crucible::TensorMeta> window : loan.window()) {
+        for (const MetaSlots metas : window.window<MAX_INLINE_METAS>(0)) {
+            record_boxed_op(op, dispatch_keys, stack, state, vigil, fg, depth, metas);
+        }
+    }
 }
 
 void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys, torch::jit::Stack* stack) {
