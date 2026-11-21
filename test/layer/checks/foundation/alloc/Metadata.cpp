@@ -29,6 +29,16 @@ static_assert(SlabMeta::has_named_bytes());
 static_assert(ChunkMeta{}.owner() == ChunkOwner::none && ChunkMeta{}.state() == ChunkState::clean);
 static_assert(SlabMeta{}.free_count().raw() == 0 && SlabMeta{}.summary() == SummaryBits{});
 
+// THE SLOT OF AN OFFSET: the first byte of a slot gives its index, a byte
+// inside a slot and the first byte past the slots of a slab give none, and
+// the reciprocal of each class fits the bound of its proof.
+static_assert(slot_at(SizeClass{9}, core::ByteCount{320}).value_or(SlabSlotIndex{core::StaticIndex<0>{}}).raw() == 2);
+static_assert(slot_at(SizeClass{9}, core::ByteCount{321}).is_none());
+static_assert(slot_at(SizeClass{9}, core::ByteCount{409 * 160}).is_none());
+static_assert(slot_at(SizeClass{1}, core::ByteCount{kSlabUnitBytes - 16}).is_some());
+static_assert(detail::kSlotFacts.rows[1].reciprocal == (std::uint64_t{1} << 28));
+static_assert(detail::kSlotFacts.rows[kSizeClassCount].slab_slots == 1);
+
 // A record lives at its place in the region.
 static_assert(!std::is_copy_constructible_v<ChunkMeta> && !std::is_copy_assignable_v<ChunkMeta>);
 static_assert(!std::is_copy_constructible_v<SlabMeta> && !std::is_copy_assignable_v<SlabMeta>);

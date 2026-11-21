@@ -13,6 +13,8 @@
 //   MetadataLayout::of(chunks) the offset of each section of the region of
 //                              a window of that many chunks, and of each
 //                              record
+//   slot_at(class, offset)     the slot that starts at an offset of a slab,
+//                              with no division (THE SLOT OF AN OFFSET)
 //
 // THE REGION
 //   No block holds a header, a link or a canary.  Each fact of the allocator
@@ -228,6 +230,76 @@ private:
 
 inline constexpr std::size_t kChunkMetaBytes = 64;
 inline constexpr std::size_t kSlabMetaBytes = 576;
+
+// ── The slot of an offset ──────────────────────────────────────────────
+//
+// THE SLOT OF AN OFFSET
+//   The flush of a bin finds the slot of each address that it gives back: the
+//   offset of the address from the first byte of its slab, over the bytes of
+//   the slot of the class.  A slot is not a power of two above 128 bytes, so
+//   each class holds a reciprocal in place of a division: the index of the
+//   slot is (offset * m) >> kSlotReciprocalShift, with m = ceil(2^32 / slot),
+//   as the div_info of jemalloc divides by a slot.  Then the test
+//   index * slot == offset refuses an offset inside a slot, and a second test
+//   refuses an index past the slots of the slab.  So the index must be exact
+//   only for an offset that is a whole count of the slot.  With m * slot =
+//   2^32 + e and e < slot, the error of such an offset is index * e / 2^32,
+//   and index * e < offset < 2^21, so the error stays below 1.  An offset
+//   lies below one chunk, so the product stays below 2^49.
+
+// The shift of the reciprocal of a slot (THE SLOT OF AN OFFSET).
+inline constexpr std::uint32_t kSlotReciprocalShift = 32;
+
+// The index of a slot in a slab: below the 4096 slots of the smallest class.
+using SlabSlotIndex = ::foundation::core::Index<kSlabBitmapWords * 64>;
+
+namespace detail {
+
+// The facts of the slot of one class: its reciprocal, its bytes and the
+// slots of its slab.
+struct SlotFacts final {
+    std::uint64_t reciprocal = 0;
+    std::uint32_t slot_bytes = 0;
+    std::uint32_t slab_slots = 0;
+};
+
+// The facts of the classes 1 to 64, at the index of the class.  Index 0 names
+// no class, and its facts hold zero.
+struct SlotFactTable final {
+    SlotFacts rows[kSizeClassCount + 1]{};
+};
+
+[[nodiscard]] consteval SlotFactTable build_slot_facts_() noexcept {
+    SlotFactTable table{};
+    for (std::uint32_t value = 1; value <= kSizeClassCount; ++value) {
+        SizeClass const size_class{static_cast<std::uint8_t>(value)};
+        std::uint64_t const slot = slot_bytes(size_class).raw();
+        table.rows[value].reciprocal = ((std::uint64_t{1} << kSlotReciprocalShift) + slot - 1) / slot;
+        table.rows[value].slot_bytes = static_cast<std::uint32_t>(slot);
+        table.rows[value].slab_slots = slab_slots(size_class);
+    }
+    return table;
+}
+
+inline constexpr SlotFactTable kSlotFacts = build_slot_facts_();
+
+}  // namespace detail
+
+// The slot whose first byte is OFFSET bytes after the first byte of a slab of
+// the class, or none for an offset that is not the first byte of a slot of
+// the slab (THE SLOT OF AN OFFSET).  Complexity: O(1), two multiplies, one
+// shift and three compares, with no division.
+[[nodiscard]] constexpr ::foundation::core::Option<SlabSlotIndex>
+slot_at(SizeClass size_class, ::foundation::core::ByteCount offset) noexcept {
+    CRUCIBLE_PRE(is_size_class(size_class));
+    std::uint64_t const bytes = offset.raw();
+    if (bytes >= kSlabChunkBytes) return ::foundation::core::none;
+    detail::SlotFacts const& facts = detail::kSlotFacts.rows[static_cast<std::uint8_t>(size_class)];
+    std::uint64_t const index = (bytes * facts.reciprocal) >> kSlotReciprocalShift;
+    if (index * facts.slot_bytes != bytes) return ::foundation::core::none;
+    if (index >= facts.slab_slots) return ::foundation::core::none;
+    return SlabSlotIndex::check(static_cast<std::size_t>(index));
+}
 
 // The guard before the first section and after the last section of the
 // region, and the step of each commit of a section (THE REGION).
