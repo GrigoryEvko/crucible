@@ -417,7 +417,7 @@ enforce @build/test/fuzz/generated/ error
 enforce bench/ error
 enforce cmake/ report
 enforce examples/ report
-enforce include/crucible/ report
+enforce include/crucible/ error
 enforce include/fixy/ error include
 enforce include/foundation/ error include
 enforce src/ error
