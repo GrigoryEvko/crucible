@@ -111,7 +111,7 @@ template <typename Proto, typename SelfTag, typename PeerTag, AbandonmentPolicy 
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
 mint_forked_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                     ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
-                    detail::mint_site_ site = {}) noexcept {
+                    MintSite site = {}) noexcept {
     return detail::late_door_t<SessionMintDoor, Proto>::template fork_channel<Proto, dual_of_t<Proto>, SelfTag, PeerTag,
                                                                               Policy>(
         ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
@@ -127,7 +127,7 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
     requires CtxFitsTestChannel<Ctx, Proto> && PlainSessionResource<ResourceA> && PlainSessionResource<ResourceB>
           && ChannelEndsShareAPriority<ResourceA, ResourceB>
 [[nodiscard]] constexpr auto mint_test_channel(Ctx const& ctx, ResourceA resource_a, ResourceB resource_b,
-                                               detail::mint_site_ site = {}) noexcept {
+                                               MintSite site = {}) noexcept {
     return detail::late_door_t<SessionMintDoor, Proto>::template open_test_channel<Proto, Policy>(
         ctx, std::forward<ResourceA>(resource_a), std::forward<ResourceB>(resource_b), site);
 }

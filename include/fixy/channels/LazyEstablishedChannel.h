@@ -101,7 +101,7 @@ public:
     // exchange, so two observers that race get one handle between them.
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::session::CtxFitsSession<Ctx, Proto, Resource&>
-    [[nodiscard]] auto mint_established_session(Ctx const& ctx, ::fixy::session::detail::mint_site_ site = {}) noexcept
+    [[nodiscard]] auto mint_established_session(Ctx const& ctx, ::fixy::session::MintSite site = {}) noexcept
         -> std::expected<decltype(::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx,
                                                                 Resource&>(ctx, std::declval<Resource&>())),
                          LazyChannelRefusal> {

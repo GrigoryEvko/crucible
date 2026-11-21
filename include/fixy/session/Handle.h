@@ -146,27 +146,25 @@
 
 namespace fixy::session {
 
-namespace detail {
-
 // The site of a mint: the location that the handle keeps for its reports,
 // and the Site of foundation/core/Fatal.h that the record of the watch keeps
 // (fixy/session/Watch.h).  The constructor is consteval, so a location of
 // the run time cannot make a site, and the file of the Site is a text of
 // static storage.  Each public mint takes the site as its last parameter,
-// `detail::mint_site_ site = {}`, so the default reads the place of the call
-// of the mint.  A caller can give a constant location in its place.
+// `MintSite site = {}`, so the default reads the place of the call of the
+// mint.  A caller can give a constant location in its place.
 //
 // The two parts name strings of static storage that no thread writes, so the
 // site moves to the thread of each side of a forked channel
 // (foundation/Transfer.h).  The fork asks only that fact.  The record of the
 // watch reads no function, so the Site names none, and the constructor
 // walks no long name of a function of a template.
-class[[= ::foundation::transfer::sendable{}]] mint_site_ {
+class[[= ::foundation::transfer::sendable{}]] MintSite {
     std::source_location loc_{};
     ::foundation::core::Site site_{};
 
 public:
-    consteval mint_site_(std::source_location location = std::source_location::current()) noexcept
+    consteval MintSite(std::source_location location = std::source_location::current()) noexcept
         : loc_{location}, site_{location.file_name(), static_cast<int>(location.line()), ""} {}
 
     // The location of the call of the mint, for the reports of the handle.
@@ -175,6 +173,8 @@ public:
     // The Site of the call of the mint, for the record of the watch.
     [[nodiscard]] constexpr ::foundation::core::Site watch_site() const noexcept { return site_; }
 };
+
+namespace detail {
 
 // What the factory gives to the handle that it builds: the record of the
 // session in the watch, and a site.  start_ and rewind give the site of the
@@ -950,7 +950,7 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
     // Resource, and names the calling thread as its holder.  The record
     // keeps the Site of the mint.
     template <typename Proto, typename Resource, AbandonmentPolicy Policy>
-    [[nodiscard]] static constexpr watch::session_ref claim_(detail::mint_site_ site) noexcept;
+    [[nodiscard]] static constexpr watch::session_ref claim_(MintSite site) noexcept;
 
     // The core of a handle, where its Resource and its tracker are.
     template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
@@ -1062,18 +1062,16 @@ public:
     // mint claimed.  The slots hold the tokens of PS that the mint consumed.
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
     [[nodiscard]] static constexpr auto open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots,
-                                              detail::mint_site_ site) noexcept;
+                                              MintSite site) noexcept;
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx = void>
-    [[nodiscard]] static constexpr auto open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots,
-                                              detail::mint_site_ site, watch::endpoint_id endpoint) noexcept;
+    [[nodiscard]] static constexpr auto open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots, MintSite site,
+                                              watch::endpoint_id endpoint) noexcept;
 
     // The type of the first handle of a session, for the gates that read
     // it.  It builds nothing.
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
-    using first_handle =
-        decltype(open_<Proto, Resource, Policy, PS, LoopCtx>(std::declval<SessionOpenKey const&>(),
-                                                             std::declval<Resource>(), std::declval<HoldSlots<PS>>(),
-                                                             detail::mint_site_{}));
+    using first_handle = decltype(open_<Proto, Resource, Policy, PS, LoopCtx>(
+        std::declval<SessionOpenKey const&>(), std::declval<Resource>(), std::declval<HoldSlots<PS>>(), MintSite{}));
 
     // The type of the handle at position R in the loop context LoopCtx,
     // after Continue, Loop, a named state and a vendor pin resolve.  It
@@ -1103,7 +1101,7 @@ public:
         requires RewindableTo<R, LoopCtx, EndLoopCtx> && (!ReachesAChannelPole<Resource>)
     [[nodiscard]] static constexpr auto
     rewind(SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
-           detail::mint_site_ site = {}) noexcept;
+           MintSite site = {}) noexcept;
 
     // Rewinds the two ends of a channel together.  It takes the handle at
     // End of each end and opens a new session on each Resource: one at
@@ -1132,7 +1130,7 @@ public:
     [[nodiscard]] static constexpr auto rewind_channel(
         SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
         SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& peer_at_end,
-        detail::mint_site_ site = {}) noexcept;
+        MintSite site = {}) noexcept;
 
     // Enters branch I of an Offer, a branch that is no label, with no word
     // read.  The crash transport of fixy/session/CrashTransport.h enters a
@@ -2530,7 +2528,7 @@ constexpr auto HandleFactory::start_(Resource r, HoldSlots<PS> slots, std::sourc
 }
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy>
-constexpr watch::session_ref HandleFactory::claim_(detail::mint_site_ site) noexcept {
+constexpr watch::session_ref HandleFactory::claim_(MintSite site) noexcept {
     // A constexpr variable is evaluated where it stands, so a Resource that
     // states its priority with the wrong type is refused here, with the
     // message of the refusal.
@@ -2549,8 +2547,7 @@ constexpr watch::session_ref HandleFactory::claim_(detail::mint_site_ site) noex
 // Opens a session that has no record yet, and claims one for it with the
 // priority of its Resource.  The calling thread holds the first handle.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
-constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots,
-                                    detail::mint_site_ site) noexcept {
+constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots, MintSite site) noexcept {
     return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), std::move(slots), site.location(),
                                                         claim_<Proto, Resource, Policy>(site));
 }
@@ -2559,7 +2556,7 @@ constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots
 // its peer.  The mint claimed it with no holder, and can run on a
 // different thread, and the calling thread records itself as the holder.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
-constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots, detail::mint_site_ site,
+constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots, MintSite site,
                                     watch::endpoint_id endpoint) noexcept {
     watch::session_ref session{};
     if constexpr (Policy::checks_abandonment) {
@@ -2579,7 +2576,7 @@ template <typename R, typename LoopCtx, typename Resource, typename EndLoopCtx, 
     requires RewindableTo<R, LoopCtx, EndLoopCtx> && (!ReachesAChannelPole<Resource>)
 constexpr auto HandleFactory::rewind(
     SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
-    detail::mint_site_ site) noexcept {
+    MintSite site) noexcept {
     if constexpr (Policy::checks_abandonment) {
         if !consteval {
             CRUCIBLE_PRE(watch::is_end_of_no_channel(at_end.mark_.value()));
@@ -2610,7 +2607,7 @@ template <typename R, typename LoopCtx, typename Resource, typename PeerResource
 constexpr auto HandleFactory::rewind_channel(
     SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
     SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& peer_at_end,
-    detail::mint_site_ site) noexcept {
+    MintSite site) noexcept {
     if constexpr (Policy::checks_abandonment) {
         if !consteval {
             CRUCIBLE_PRE(watch::are_ends_of_one_channel(at_end.mark_.value(), peer_at_end.mark_.value()));
@@ -2646,7 +2643,7 @@ struct channel_records {
 // the ends: each end's holder is the thread that opens it.  Under
 // check::Off it claims nothing.
 template <typename SelfProto, typename PeerProto, AbandonmentPolicy Policy, watch::priority Order>
-[[nodiscard]] inline channel_records claim_channel_(mint_site_ site) noexcept {
+[[nodiscard]] inline channel_records claim_channel_(MintSite site) noexcept {
     if constexpr (Policy::checks_abandonment) {
         const watch::endpoint_id self =
             watch::claim<type_display_text_v<SelfProto>>(site.watch_site(), Order, watch::holder_on_claim::none_yet);
@@ -2781,7 +2778,7 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
         requires(sizeof...(Record) <= 1)
              && (std::is_same_v<PeerProto, detail::one_end_peer>
                  || ChannelSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>)
-    [[nodiscard]] static constexpr auto open_end_(ResourceSelf resource, HoldSlots<PS> slots, detail::mint_site_ site,
+    [[nodiscard]] static constexpr auto open_end_(ResourceSelf resource, HoldSlots<PS> slots, MintSite site,
                                                   Record... record) noexcept {
         return HandleFactory::open_<SelfProto, ResourceSelf, Policy, PS, LoopCtx>(
             SessionOpenKey{}, std::forward<ResourceSelf>(resource), std::move(slots), site, record...);
@@ -2798,7 +2795,7 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
     struct forked_endpoint_ {
         Resource resource;
         Body body;
-        detail::mint_site_ site;
+        MintSite site;
         // The record the channel mint claimed for this end, linked to the
         // record of the other end.
         watch::endpoint_id endpoint = watch::endpoint_id::none;
@@ -2820,7 +2817,7 @@ public:
     // mint_session: a session with the empty permission set.
     template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource>
         requires CtxFitsSessionFrom<Ctx, Proto, Resource>
-    [[nodiscard]] static constexpr auto open(Ctx const&, Resource r, detail::mint_site_ site) noexcept {
+    [[nodiscard]] static constexpr auto open(Ctx const&, Resource r, MintSite site) noexcept {
         return open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy,
                          ::foundation::permissions::EmptyPermSet>(std::forward<Resource>(r), no_slots_{}, site);
     }
@@ -2838,7 +2835,7 @@ public:
                       ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
         using Set = ::foundation::permissions::PermSet<::foundation::permissions::Permission<Tags, Brands>...>;
         return open_end_<Proto, detail::one_end_peer, Resource, Resource, Policy, Set>(
-            std::forward<Resource>(resource), HoldFactory::slots_of(std::move(tokens)...), detail::mint_site_{});
+            std::forward<Resource>(resource), HoldFactory::slots_of(std::move(tokens)...), MintSite{});
     }
 
     // mint_substrate_session of fixy/channels/SubstrateSessionBridge.h and
@@ -2849,7 +2846,7 @@ public:
     // the two sides holds for them.  The session owns the pole.
     template <AbandonmentPolicy Policy, typename Ctx, typename Pole>
         requires CtxFitsPoleSession<Ctx, Pole>
-    [[nodiscard]] static constexpr auto open_pole(Ctx const&, Pole pole, detail::mint_site_ site = {}) noexcept {
+    [[nodiscard]] static constexpr auto open_pole(Ctx const&, Pole pole, MintSite site = {}) noexcept {
         return open_end_<pole_protocol_t<Pole>, pole_peer_protocol_t<Pole>, Pole, Pole, Policy,
                          ::foundation::permissions::EmptyPermSet>(std::move(pole), no_slots_{}, site);
     }
@@ -2859,7 +2856,7 @@ public:
     // body returns.
     template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource, typename Body>
         requires CtxFitsSessionFrom<Ctx, Proto, Resource> && SessionBody<Body, Proto, Resource, Policy>
-    [[nodiscard]] static constexpr Resource run(Ctx const&, Resource r, Body body, detail::mint_site_ site) noexcept(
+    [[nodiscard]] static constexpr Resource run(Ctx const&, Resource r, Body body, MintSite site) noexcept(
         std::is_nothrow_invocable_v<
             Body, detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
                                          detail::brand_ctx_t<Body>>>) {
@@ -2881,7 +2878,7 @@ public:
     [[nodiscard]] static ::foundation::permissions::Permission<Parent, Brand>
     fork_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                  ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body, PeerBody peer_body,
-                 detail::mint_site_ site = {}) noexcept {
+                 MintSite site = {}) noexcept {
         using SelfSide = forked_endpoint_<SelfProto, PeerProto, Policy, ResourceSelf, ResourcePeer, SelfBody>;
         using PeerSide = forked_endpoint_<PeerProto, SelfProto, Policy, ResourcePeer, ResourceSelf, PeerBody>;
         const auto [self_endpoint, peer_endpoint] =
@@ -2898,7 +2895,7 @@ public:
         requires CtxFitsTestChannel<Ctx, Proto> && PlainSessionResource<ResourceA> && PlainSessionResource<ResourceB>
               && ChannelEndsShareAPriority<ResourceA, ResourceB>
     [[nodiscard]] static constexpr auto open_test_channel(Ctx const&, ResourceA resource_a, ResourceB resource_b,
-                                                          detail::mint_site_ site) noexcept {
+                                                          MintSite site) noexcept {
         detail::channel_records records{};
         if !consteval {
             records = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority(^^ResourceA)>(site);

@@ -1340,6 +1340,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::SessionOpenKey,
      "the passkey of the builders that open a session: only the door of the mints makes one, for one call, and it "
      "is never stored or a template argument of a kernel signature"},
+    {^^::fixy::session::MintSite,
+     "the place of the call of a session mint: a constant that the handle keeps for its reports, never a value in "
+     "a kernel signature"},
     {^^::fixy::session::DelegationKey,
      "the passkey of the DelegatedSession constructor: only the delegation door makes one, for one call, and it is "
      "never stored or a template argument of a kernel signature"},

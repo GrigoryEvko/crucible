@@ -916,7 +916,7 @@ public:
         requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource, Third>
     [[nodiscard]] static auto open(Ctx const& ctx, Resource resource, const CrashCell<Peer, Self>& peer_cell,
                                    CrashWriter<Self, Peer> own, CrashWriter<Self, Third> third,
-                                   detail::mint_site_ site) noexcept {
+                                   MintSite site) noexcept {
         CrashCellCore& own_cell = take_cell_(own);
         CrashCellCore* third_cell = nullptr;
         if constexpr (!std::is_same_v<Third, NoThirdRole>) third_cell = &take_cell_(third);
@@ -928,7 +928,7 @@ public:
     template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy, typename Ctx,
               typename Resource, typename Third>
     static void open(Ctx const&, Resource, const CrashCell<Peer, Self>&&, CrashWriter<Self, Peer>,
-                     CrashWriter<Self, Third>, detail::mint_site_) =
+                     CrashWriter<Self, Third>, MintSite) =
         delete("[Crash_Cell_Temporary] the detector cell is a temporary.  The decorator keeps its address, so the "
                "cell must outlive every handle of the session.");
 
@@ -1512,7 +1512,7 @@ template <typename Proto, typename Self, typename Peer, typename Reliable = NoRe
     requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource, Third>
 [[nodiscard]] auto mint_crash_session(Ctx const& ctx, Resource resource, const CrashCell<Peer, Self>& peer_cell,
                                       CrashWriter<Self, Peer> own, CrashWriter<Self, Third> third = {},
-                                      detail::mint_site_ site = {}) noexcept {
+                                      MintSite site = {}) noexcept {
     return CrashSessionDoor::open<Proto, Self, Peer, Reliable, Policy>(ctx, std::forward<Resource>(resource), peer_cell,
                                                                        std::move(own), std::move(third), site);
 }
@@ -1523,7 +1523,7 @@ template <typename Proto, typename Self, typename Peer, typename Reliable = NoRe
           AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
           typename Third = NoThirdRole>
 void mint_crash_session(Ctx const&, Resource, const CrashCell<Peer, Self>&&, CrashWriter<Self, Peer>,
-                        CrashWriter<Self, Third> = {}, detail::mint_site_ = {}) =
+                        CrashWriter<Self, Third> = {}, MintSite = {}) =
     delete("[Crash_Cell_Temporary] mint_crash_session: the detector cell is a temporary.  The decorator keeps its "
            "address, so the cell must outlive every handle of the session.");
 

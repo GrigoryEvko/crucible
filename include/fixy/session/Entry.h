@@ -72,7 +72,7 @@ concept CtxFitsSession = CtxFitsSessionFrom<Ctx, Proto, Resource>;
 // refusal that the gate states only as a boolean.
 template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource>
     requires CtxFitsSession<Ctx, Proto, Resource>
-[[nodiscard]] constexpr auto mint_session(Ctx const& ctx, Resource resource, detail::mint_site_ site = {}) noexcept {
+[[nodiscard]] constexpr auto mint_session(Ctx const& ctx, Resource resource, MintSite site = {}) noexcept {
     static_assert(is_well_formed_v<Proto>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                            "protocol is ill-formed.  Most likely cause: a Continue "
                                            "appears outside any enclosing Loop<Body>.  Every Continue must "
@@ -135,7 +135,7 @@ template <typename Proto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, t
           typename Body>
     requires CtxFitsSessionBody<Ctx, Proto, Resource, Policy, Body>
 [[nodiscard]] constexpr Resource
-with_session(Ctx const& ctx, Resource resource, Body body, detail::mint_site_ site = {}) noexcept(
+with_session(Ctx const& ctx, Resource resource, Body body, MintSite site = {}) noexcept(
     std::is_nothrow_invocable_v<Body,
                                 detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
                                                        detail::brand_ctx_t<Body>>>) {

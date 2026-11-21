@@ -1034,7 +1034,7 @@ public:
     template <typename Proto, typename PeerProto, AbandonmentPolicy Policy,
               std::size_t WorkBound = checkpoint_work_bound, typename Ctx, typename Resource>
         requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource, WorkBound>
-    [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, detail::mint_site_ site) noexcept {
+    [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, MintSite site) noexcept {
         using Start = detail::checkpoint::resolve<Proto, void>;
         auto inner =
             mint_session<checkpoint_erase_t<Proto>, Policy, Ctx, Resource>(ctx, std::forward<Resource>(resource), site);
@@ -1221,8 +1221,7 @@ public:
 template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy,
           std::size_t WorkBound = checkpoint_work_bound, typename Ctx, typename Resource>
     requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource, WorkBound>
-[[nodiscard]] constexpr auto mint_checkpoint_session(Ctx const& ctx, Resource resource,
-                                                     detail::mint_site_ site = {}) noexcept {
+[[nodiscard]] constexpr auto mint_checkpoint_session(Ctx const& ctx, Resource resource, MintSite site = {}) noexcept {
     return CheckpointDoor::open<Proto, PeerProto, Policy, WorkBound>(ctx, std::forward<Resource>(resource), site);
 }
 

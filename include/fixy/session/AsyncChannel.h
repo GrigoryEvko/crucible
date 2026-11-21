@@ -90,7 +90,7 @@ template <typename SelfProto, typename PeerProto, typename SelfTag, typename Pee
 [[nodiscard]] ::foundation::permissions::Permission<Parent, Brand>
 mint_forked_async_channel(Ctx const& ctx, ::foundation::permissions::Permission<Parent, Brand>&& parent,
                           ResourceSelf self_resource, ResourcePeer peer_resource, SelfBody self_body,
-                          PeerBody peer_body, detail::mint_site_ site = {}) noexcept {
+                          PeerBody peer_body, MintSite site = {}) noexcept {
     return SessionMintDoor::fork_channel<SelfProto, PeerProto, SelfTag, PeerTag, Policy>(
         ctx, std::move(parent), std::forward<ResourceSelf>(self_resource), std::forward<ResourcePeer>(peer_resource),
         std::move(self_body), std::move(peer_body), site);
