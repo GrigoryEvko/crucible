@@ -1173,6 +1173,91 @@ def row_merge_cases(expect: testing.Expect, work: Path) -> None:
     )
 
 
+def count_sum_cases(expect: testing.Expect) -> None:
+    """Hold the sum of the count rows of two requests: each request adds its change of a count to the base.
+
+    Two series each raise one row from 1 to 2 in a commit of the ledger only, as two agents that add one region each do.
+    The composed tree needs 3.  A raise and a fall compose to the base, a conflict outside the ledgers still refuses,
+    a patch that main holds whole changes nothing, and a series with a landed commit is refused before the queue.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-count-sum-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        scratch = work / "patches"
+        scratch.mkdir()
+        planted_repository(root)
+        (root / "utils/registry.txt").write_text(MERGE_REGISTRY, encoding="utf-8")
+        (root / MERGE_LEDGER).write_text(ledger_text((1, 2, 1)), encoding="utf-8")
+        (root / "lines.txt").write_text(numbered({}), encoding="utf-8")
+        base = git.commit_all(root, "Add the registry, the ledger and the lines")
+        raised = {MERGE_LEDGER: ledger_text((2, 2, 1))}
+        requests: list[land.Request] = []
+        for name, own in (("first", "r1.txt"), ("second", "r2.txt")):
+            planted_branch(root, name, (({own: f"{name}\n"}, f"Add {own}"), (raised, f"Raise a for {own}")))
+            (scratch / name).mkdir()
+            requests.append(land.series_request(root, name, scratch / name))
+        seen: list[tuple[gate.Candidate, bool]] = []
+        decisions, _ = batch_landing(root, requests, passing(seen))
+        lines = [line.content for line in decisions[2].lines]
+        expect(
+            "two series that each raise one row from 1 to 2 compose to 3, each with its own commits, and the gate runs "
+            f"each configuration for the sum: {lines}",
+            [decisions[number].status for number in (1, 2)] == [0, 0]
+            and git.show(root, "HEAD", MERGE_LEDGER) == ledger_text((3, 2, 1)).encode()
+            and subjects_since(root, base) == ["Add r1.txt", "Raise a for r1.txt", "Add r2.txt", "Raise a for r2.txt"]
+            and seen[-1][0].is_every
+            and any("with a sum of two changes of a count" in line for line in lines),
+        )
+        moved = git.head(root)
+        raise_patch = patch_of(root, work, "raise.patch", {MERGE_LEDGER: ledger_text((4, 2, 1))})
+        fall_patch = patch_of(root, work, "fall.patch", {MERGE_LEDGER: ledger_text((2, 2, 1))})
+        decisions, _ = landed(
+            root,
+            [request_of(("Raise a again",), patches=(raise_patch,)), request_of(("Lower a",), patches=(fall_patch,))],
+            passing([]),
+        )
+        expect(
+            "a raise and a fall of one row compose to the base",
+            [decisions[number].status for number in (1, 2)] == [0, 0]
+            and git.show(root, "HEAD", MERGE_LEDGER) == ledger_text((3, 2, 1)).encode()
+            and subjects_since(root, moved) == ["Raise a again", "Lower a"],
+        )
+        moved = git.head(root)
+        both = {MERGE_LEDGER: ledger_text((4, 2, 1)), "lines.txt": numbered({3: "first"})}
+        first = patch_of(root, work, "first.patch", both)
+        clash = patch_of(root, work, "clash.patch", {**both, "lines.txt": numbered({3: "second"})})
+        decisions, _ = landed(
+            root,
+            [request_of(("Raise a and change a line",), patches=(first,)), request_of(("Clash",), patches=(clash,))],
+            passing([]),
+        )
+        refusal = " ".join(line.content for line in decisions[2].lines)
+        expect(
+            f"a request whose ledger rows sum and whose other file conflicts is refused for that file: {refusal}",
+            decisions[1].status == 0
+            and decisions[2].status == ExitCode.USAGE
+            and "lines.txt: the two sides change the same lines" in refusal
+            and git.show(root, "HEAD", MERGE_LEDGER) == ledger_text((4, 2, 1)).encode()
+            and subjects_since(root, moved) == ["Raise a and change a line"],
+        )
+        decisions, _ = landed(root, [request_of(("Land the first patch again",), patches=(first,))], passing([]))
+        expect(
+            "a patch of a request that main holds whole landed already, so it changes nothing and is refused",
+            decisions[1].status == ExitCode.USAGE
+            and "the commit would change nothing" in " ".join(line.content for line in decisions[1].lines)
+            and git.show(root, "HEAD", MERGE_LEDGER) == ledger_text((4, 2, 1)).encode(),
+        )
+        try:
+            land.series_request(root, "first", scratch / "first")
+            said = ""
+        except land.LandError as problem:
+            said = str(problem)
+        expect(
+            f"a series with a commit whose subject a commit of HEAD after the merge base holds is refused: {said}",
+            "'Add r1.txt' of the series has the subject of a commit of HEAD" in said and "git rebase main" in said,
+        )
+
+
 def fall_cases(expect: testing.Expect, work: Path) -> None:
     """Hold the update of a work tree after a fold of the gate next to the hunk of a patch.
 
@@ -3523,6 +3608,7 @@ def main(argv: list[str]) -> int:
             landing_cases,
             falls_cases,
             merge_cases,
+            count_sum_cases,
             built_cases,
             built_race_cases,
             ratchet_rows_cases,

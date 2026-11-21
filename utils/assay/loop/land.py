@@ -61,6 +61,15 @@ THE MERGE
         rows (THE MERGE of assay.core.ledger).  When two changes of one count
         merge by a sum, the merged count can be too high.  The gate then runs
         each configuration, and THE REDUCE writes the measured count.
+      * A count that ours and the patch change to one value is two changes,
+        so it merges by a sum too (EqualChange.SUM of assay.core.ledger).
+        Two requests that each raise a row from 1 to 2 then compose to 3, on
+        the branch, on the stack and in each commit of a series.  Two
+        different reasons of such a row join.  The one exception is a patch
+        of a request of --patch that ours holds whole, file for file: its
+        commit landed already, so it changes nothing (HeldPatch.LANDED).  A
+        commit of a series is never such a commit, because the series
+        refuses a commit that HEAD holds (THE SERIES).
       * A witness fixture and the witness manifest come from the writer of
         assay.loop.derive.witness_fixtures and the composed rule table, when
         the composition holds the code of the writer of this copy.
@@ -88,6 +97,14 @@ THE SERIES
         into the file NUMBER.series of the queue.  An earlier copy of this
         module reads only the files NUMBER.request, so it never lands a
         series as one commit.
+      * A commit of the branch whose subject a commit of HEAD after the
+        merge base of HEAD and the branch holds refuses the series
+        (landed_subjects()).  A landing makes new commits with the messages
+        of the series, and the branch keeps the commits that it landed.  A
+        second queue of such a branch with no rebase then holds the change
+        of a landed commit two times.  The refusal tells the agent to rebase
+        the branch onto main, which drops each such commit.  The subjects of
+        main are unique: 2033 commits of 2026-11 had no subject two times.
       * A merge of the branch gives no commit, because its two sides are in
         the series or in HEAD.  A merge that holds a change of its own, such
         as the resolution of a conflict, refuses the series, because no
@@ -618,6 +635,7 @@ Usage
 """
 
 import contextlib
+import enum
 import fcntl
 import functools
 import hashlib
@@ -764,6 +782,18 @@ FILE_MODES = (git.PLAIN_FILE_MODE, EXECUTABLE_MODE)
 
 class LandError(Exception):
     """The request does not compose: a usage error, an edit that does not apply, or a path that is not listed."""
+
+
+class HeldPatch(enum.Enum):
+    """What a patch is when the composition holds each of its files as the patch gives it (THE MERGE).
+
+    LANDED is the patch of a request of --patch: its commit landed already, and it changes nothing.  SECOND is a commit
+    of a series: the series refuses a commit that HEAD holds (THE SERIES), so the patch is a second change of each count
+    that it changes.
+    """
+
+    LANDED = "landed"
+    SECOND = "second"
 
 
 # The errors of a tool or of an input that the landing expects (THE HOLDER).  An error of a different type is a defect
@@ -1145,12 +1175,37 @@ def series_request(root: Path, revision: str, directory: Path) -> Request:
     commits = git.run(root, "rev-list", "--reverse", "--topo-order", "--no-merges", f"{head}..{tip}").decode().split()
     if not commits:
         raise LandError(f"HEAD {head[:SHORT_HASH]} holds each commit of {revision}, so the series is empty")
+    landed = landed_subjects(root, head, tip)
     parts: list[Part] = []
     for index, commit in enumerate(commits):
-        patch = directory / f"part-{index}.patch"
-        patch.write_bytes(git.run(root, "diff", "--binary", "--full-index", "-M", git.parent(root, commit), commit))
-        parts.append(Part(git.message_of(root, commit).rstrip("\n") + "\n", patch, commit))
+        part = Part(git.message_of(root, commit).rstrip("\n") + "\n", directory / f"part-{index}.patch", commit)
+        if part.subject in landed:
+            raise LandError(
+                f"the commit {commit[:SHORT_HASH]} '{part.subject}' of the series has the subject of a commit of HEAD "
+                f"after the merge base, so it landed already, and the series would land its change a second time.  "
+                f"Rebase {revision} onto main (git rebase main), which drops each landed commit, and queue again"
+            )
+        part.patch.write_bytes(
+            git.run(root, "diff", "--binary", "--full-index", "-M", git.parent(root, commit), commit)
+        )
+        parts.append(part)
     return Request((), (), (), (), tuple(parts))
+
+
+def landed_subjects(root: Path, head: str, tip: str) -> frozenset[str]:
+    """Return the subject of each commit of HEAD after the merge base of HEAD and the tip of a series (THE SERIES).
+
+    Histories with no merge base give no subject.  Complexity: two runs of git, and linear in the commits after the
+    merge base.
+
+    Raises:
+        git.GitError: If git fails
+    """
+    found = git.run_any_exit(root, "merge-base", head, tip)
+    fork = found.out.strip() if found.exit == 0 else ""
+    if not fork:
+        return frozenset()
+    return frozenset(git.run(root, "log", "--format=%s", f"{fork}..{head}").decode("utf-8").splitlines())
 
 
 # ── The edits ──────────────────────────────────────────────────────────────
@@ -1278,16 +1333,22 @@ def ledger_rules(root: Path, scratch: Path) -> dict[str, rule_registry.Rule]:
 
 
 def merged_ledger(
-    root: Path, rule: rule_registry.Rule, path: str, sides: tuple[git.TreeEntry | None, ...]
+    root: Path,
+    rule: rule_registry.Rule,
+    path: str,
+    sides: tuple[git.TreeEntry | None, ...],
+    equal: rule_ledger.EqualChange,
 ) -> tuple[git.TreeEntry | None, bool]:
     """Return the entry of a ledger that two changes of one base merge to, and tell if a count merged by a sum.
+
+    `equal` tells how two sides that change one count to one value merge (THE MERGE).
 
     Raises:
         LandError: If the merge of the ledger conflicts (THE MERGE of assay.core.ledger)
     """
     texts = (blob_text(root, sides[0]), blob_text(root, sides[1]), blob_text(root, sides[2]))
     try:
-        merged = rule_ledger.merge(rule, texts, path)
+        merged = rule_ledger.merge(rule, texts, path, equal)
     except rule_ledger.LedgerError as problem:
         raise LandError(str(problem)) from None
     if merged.text is None:
@@ -1359,17 +1420,23 @@ def regenerated_witnesses(root: Path, scratch: Path) -> list[tuple[git.TreeEntry
     return entries
 
 
-def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchMerge:
+def merged_patch(root: Path, scratch: Path, patch: Path, problem: str, held: HeldPatch) -> PatchMerge:
     """Compose a patch that does not apply as text by a three-way merge of each of its files (THE MERGE).
+
+    A count ledger that ours and the patch change to one copy merges by its rows too, and each count that the two
+    change to one value merges by a sum.  A patch of HeldPatch.LANDED that ours holds whole changes nothing.
 
     Args:
         root: The top of the work tree of the request
         scratch: The scratch repository of the composition, whose index holds the composition before the patch
         patch: The patch
         problem: The error of `git apply`
+        held: What the patch is when ours holds each of its files
 
     Raises:
         LandError: If a file of the patch does not merge.  The message names each such file and the error of git
+
+    Complexity: one read of the index for the paths of the patch, and one merge for each path that the two sides change.
     """
     try:
         base, theirs = patch_sides(root, patch)
@@ -1381,6 +1448,9 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchM
     changed = sorted(path for path in set(base) | set(theirs) if base.get(path) != theirs.get(path))
     ours = git.index_entries(scratch, changed)
     rules = ledger_rules(root, scratch)
+    is_whole_held = all(ours.get(path) == theirs.get(path) for path in changed)
+    is_landed = is_whole_held and held == HeldPatch.LANDED
+    equal = rule_ledger.EqualChange.AGREE if is_landed else rule_ledger.EqualChange.SUM
     entries: list[tuple[git.TreeEntry | None, str]] = []
     merged: list[str] = []
     built: list[str] = []
@@ -1392,10 +1462,13 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchM
         if sides[1] == sides[0]:
             entries.append((sides[2], path))
             continue
-        if sides[1] == sides[2]:
-            continue
-        merged.append(path)
         stem = PurePosixPath(path).stem
+        rule = rules.get(stem) if path.startswith(LEDGER_PREFIX) and path.endswith(LEDGER_SUFFIX) else None
+        is_count_sum = (
+            rule is not None and rule.policy == rule_registry.Policy.COUNT and equal == rule_ledger.EqualChange.SUM
+        )
+        if sides[1] == sides[2] and not is_count_sum:
+            continue
         try:
             if is_witness_output(path):
                 needs_witnesses = True
@@ -1403,12 +1476,15 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchM
                 if sides[1] is None or sides[2] is None:
                     raise LandError(f"{path}: one side adds or removes the file, and the other side changes it")
                 built.append(path)
-            elif path.startswith(LEDGER_PREFIX) and path.endswith(LEDGER_SUFFIX) and stem in rules:
-                entry, summed = merged_ledger(root, rules[stem], path, sides)
+            elif rule is not None:
+                entry, summed = merged_ledger(root, rule, path, sides, equal)
+                if entry == sides[1]:
+                    continue
                 entries.append((entry, path))
                 is_summed = is_summed or summed
             else:
                 entries.append((merged_text(root, path, sides), path))
+            merged.append(path)
         except LandError as conflict:
             conflicts.append(str(conflict))
     if not conflicts and needs_witnesses:
@@ -1427,7 +1503,14 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchM
     return PatchMerge(tuple(entries), tuple(merged), is_summed, tuple(built))
 
 
-def compose(root: Path, request: Request, head: str, with_diff: bool = False, since: str = "") -> Composed:
+def compose(
+    root: Path,
+    request: Request,
+    head: str,
+    with_diff: bool = False,
+    since: str = "",
+    held: HeldPatch = HeldPatch.LANDED,
+) -> Composed:
     """Compose the tree of a request on a commit (THE TREE, THE COMPOSITION).
 
     Args:
@@ -1436,6 +1519,7 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
         head: The full name of the commit that the tree starts from
         with_diff: Give the diff of the tree against the commit, too
         since: The commit of HEAD of the work tree at the request, or "".  The own paths compare with it
+        held: What a patch is when the composition holds each of its files (THE MERGE)
 
     Raises:
         LandError: If the request does not compose
@@ -1456,7 +1540,7 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
             applied = git.run_any_exit(scratch, "apply", "--cached", str(patch))
             if applied.exit == 0:
                 continue
-            result = merged_patch(root, scratch, patch, applied.err)
+            result = merged_patch(root, scratch, patch, applied.err, held)
             if not git.set_index_entries(scratch, result.entries):
                 raise LandError("git cannot give the index of the composition the merged files")
             merged += result.merged
@@ -1542,7 +1626,7 @@ def series_link(queued: Queued, parent: str, since: str) -> Link:
     is_summed = False
     for index, part in enumerate(parts, start=1):
         try:
-            composed = compose(queued.root, Request((), (part.patch,), (), ()), top, since=since)
+            composed = compose(queued.root, Request((), (part.patch,), (), ()), top, since=since, held=HeldPatch.SECOND)
         except (LandError, git.GitError) as problem:
             raise LandError(
                 f"the commit {index} of the {len(parts)} commits of the series, {part.commit[:SHORT_HASH]} "

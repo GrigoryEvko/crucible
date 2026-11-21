@@ -565,6 +565,26 @@ def merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
         "two different reasons of one key are a conflict",
         refuses(partial(rule_ledger.merge, count, (base, reasons, other), "ledger.txt"), rule_ledger.LedgerError),
     )
+    equal_sides = (base, ours.replace("a.py | kind | 6", "a.py | kind | 5"), theirs.replace("kind | 9", "kind | 5"))
+    agreed = rule_ledger.merge(count, equal_sides, "ledger.txt")
+    added = rule_ledger.merge(count, equal_sides, "ledger.txt", rule_ledger.EqualChange.SUM)
+    expect(
+        "two sides that raise one count to one value agree in the mode AGREE, and sum to the base plus the two raises "
+        "in the mode SUM, as a summed key",
+        "a.py | kind | 5 | - | -" in (agreed.text or "")
+        and agreed.summed == ()
+        and "a.py | kind | 6 | - | -" in (added.text or "")
+        and added.summed == (key("a.py", "kind", ""),),
+    )
+    joined = rule_ledger.merge(count, (base, reasons, other), "ledger.txt", rule_ledger.EqualChange.SUM)
+    same_reason = rule_ledger.merge(
+        count, (base, reasons, reasons.replace("kind | 6", "kind | 7")), "x", rule_ledger.EqualChange.SUM
+    )
+    expect(
+        "in the mode SUM, two reasons of one summed key join, ours first, and one changed reason stays",
+        "a.py | kind | 11 | - | one reason.  a different reason" in (joined.text or "")
+        and "a.py | kind | 9 | - | one reason" in (same_reason.text or ""),
+    )
     admit = table["admit-rule"]
     admit_head = "format 1\nrule admit-rule\n"
     expect(
