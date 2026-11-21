@@ -42,6 +42,7 @@
 #include <fixy/Role.h>
 #include <fixy/Tagged.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/WindowStack.h>
 
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
@@ -845,7 +846,17 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // Recording writes it, and each reader reads only the slots that the
 // Recording wrote.  fill_meta and scalar_result_meta write each byte of a
 // slot, so the lanes of a record past its rank stay zero.
-template <uint32_t Capacity, bool MayOverflow>
+//
+// Where the slots of a Recording live: in a frame of the record stack or a
+// list that the caller lends as a View (Lent), or in the list that the
+// Recording holds inline (Owned).  An operation with an exact bound records
+// into a Recording of its own, so its list gives out no View.
+enum class SlotsHome : std::uint8_t {
+    Lent,
+    Owned,
+};
+
+template <uint32_t Capacity, bool MayOverflow, SlotsHome Home = SlotsHome::Lent>
 struct Recording {
     static_assert(Capacity <= MAX_INLINE_METAS, "a Recording must not admit more metadata than either path records");
 
@@ -854,14 +865,20 @@ struct Recording {
     // Capacity.
     static constexpr uint32_t kSlots = Capacity > 0 ? Capacity : 1;
 
-    // The slots of the records, and the list of a caller that puts them on
-    // its own stack.
+    // The slots of the records that a caller lends, and the list that a
+    // Recording of the home Owned holds.
     using Slots = ::fixy::View<crucible::TensorMeta, kSlots>;
     using List = ::fixy::FixedArray<crucible::TensorMeta, kSlots>;
+    using Storage = std::conditional_t<Home == SlotsHome::Lent, Slots, List>;
 
-    explicit Recording(Slots slots) noexcept : metas{slots} {}
+    explicit Recording(Slots slots) noexcept
+        requires(Home == SlotsHome::Lent)
+        : metas{slots} {}
+    Recording() noexcept
+        requires(Home == SlotsHome::Owned)
+        : metas{} {}
 
-    Slots metas;
+    Storage metas;
     MetaCount counts{};
     ScalarArgs<MayOverflow> scalars{};
     [[no_unique_address]] typename input_overflow_of<MayOverflow>::type overflow{};
@@ -873,13 +890,28 @@ struct Recording {
     // read of the counts, and each check of an index or a window folds.
     //
     // Lends the slot at position to body in place, and gives the result of
-    // body.  The slots are a View that the caller lends for the record of
-    // one op.  Each caller tests the position against Capacity first, so the
-    // optimizer removes the check.
+    // body.  The slots of the home Lent are a View that the caller lends for
+    // the record of one op, and the list of the home Owned lends its slot
+    // through its element door.  Each caller tests the position against
+    // Capacity first, so the optimizer removes the check.
     template <class Body>
     CRUCIBLE_INLINE decltype(auto) with_slot(uint32_t position, Body&& body) noexcept {
-        return static_cast<Body&&>(body)(
-            metas.at(::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot")));
+        const ::fixy::Index<kSlots> slot =
+            ::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot");
+        if constexpr (Home == SlotsHome::Lent) {
+            return static_cast<Body&&>(body)(metas.at(slot));
+        } else {
+            return metas.with_element(slot, static_cast<Body&&>(body));
+        }
+    }
+
+    // The slots for a read.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> read_slots() const& noexcept {
+        if constexpr (Home == SlotsHome::Lent) {
+            return ::fixy::View<const crucible::TensorMeta>{metas};
+        } else {
+            return ::fixy::View<const crucible::TensorMeta>{metas.view()};
+        }
     }
 
     // The records of the input tensors.  add_input keeps the count of the
@@ -887,7 +919,7 @@ struct Recording {
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> input_records() const& noexcept {
         const uint32_t count = counts.inputs;
         [[assume(count <= Capacity)]];
-        return ::fixy::View<const crucible::TensorMeta>{metas}.window(0, count).expect("the inputs fit the slots");
+        return read_slots().window(0, count).expect("the inputs fit the slots");
     }
 
     // The records of the operation: the inputs and then the outputs.  The
@@ -895,7 +927,7 @@ struct Recording {
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> records() const& noexcept {
         const uint32_t count = counts.total();
         [[assume(count <= Capacity)]];
-        return ::fixy::View<const crucible::TensorMeta>{metas}.window(0, count).expect("the records fit the slots");
+        return read_slots().window(0, count).expect("the records fit the slots");
     }
 
     // The three adds below take the tensors of PyTorch.
@@ -954,8 +986,8 @@ struct Recording {
 // terminates.  Role is the role of each slot of the argument (argument_role),
 // and an absent optional fills a structural slot.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the record reads the arguments and the results of an operator of PyTorch")
-template <crucible::ScalarRole Role, uint32_t Capacity, bool MayOverflow, class T>
-void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value) {
+template <crucible::ScalarRole Role, uint32_t Capacity, bool MayOverflow, SlotsHome Home, class T>
+void record_argument(Recording<Capacity, MayOverflow, Home>& recording, const T& value) {
     constexpr ArgumentKind kind = argument_kind_of<T>();
 
     if constexpr (kind == ArgumentKind::Tensor) {
@@ -1023,8 +1055,8 @@ void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value
 // an IValue of the tag Double, ComplexDouble, Bool or Int, and the element
 // type of its meta follows the tag.  A symbolic SymInt boxes into a tag of
 // its own and gives no meta.
-template <uint32_t Capacity, bool MayOverflow, class T>
-void record_scalar_result(Recording<Capacity, MayOverflow>& recording, const T& value) {
+template <uint32_t Capacity, bool MayOverflow, SlotsHome Home, class T>
+void record_scalar_result(Recording<Capacity, MayOverflow, Home>& recording, const T& value) {
     constexpr ArgumentKind kind = argument_kind_of<T>();
     if constexpr (kind == ArgumentKind::Bool) {
         recording.add_scalar_output(crucible::ScalarType::Bool);
@@ -1053,8 +1085,8 @@ void record_scalar_result(Recording<Capacity, MayOverflow>& recording, const T& 
 // destructuring the tuple reaches the same elements in the same order. A
 // result that is neither a tensor, a scalar nor a list of tensors
 // contributes nothing, which is what the fallback does with one.
-template <uint32_t Capacity, bool MayOverflow, class T>
-void record_result(Recording<Capacity, MayOverflow>& recording, const T& result) {
+template <uint32_t Capacity, bool MayOverflow, SlotsHome Home, class T>
+void record_result(Recording<Capacity, MayOverflow, Home>& recording, const T& result) {
     using Result = std::remove_cvref_t<T>;
     if constexpr (std::is_same_v<Result, at::Tensor>) {
         recording.add_output(result);
@@ -1211,13 +1243,15 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The scalar slots of an entry, from the Recording of its operation.
-template <uint32_t Capacity>
-void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<Capacity, false>& recording) noexcept {
+template <uint32_t Capacity, SlotsHome Home>
+void write_recorded_scalars(crucible::TraceRing::Entry& entry,
+                            const Recording<Capacity, false, Home>& recording) noexcept {
     write_scalar_slots(entry, recording.scalars);
 }
 
-template <uint32_t Capacity>
-void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<Capacity, true>& recording) noexcept {
+template <uint32_t Capacity, SlotsHome Home>
+void write_recorded_scalars(crucible::TraceRing::Entry& entry,
+                            const Recording<Capacity, true, Home>& recording) noexcept {
     write_scalar_slots(entry, recording.scalars, recording.overflow);
 }
 
@@ -1231,8 +1265,8 @@ void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<C
 // Never inlined: an inline copy in each of the 3110 kernels would take the
 // place of the one copy of each family.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch give the flags of the entry")
-template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow>
-[[gnu::noinline]] void append_trace_entry(const Recording<Capacity, MayOverflow>& recording,
+template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, SlotsHome Home>
+[[gnu::noinline]] void append_trace_entry(const Recording<Capacity, MayOverflow, Home>& recording,
                                           crucible::SchemaHash schema_hash, c10::DispatchKeySet dispatch_keys,
                                           crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                           crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
@@ -1395,6 +1429,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     }
 
     using OpRecording = Recording<kCapacity, kMayOverflow>;
+    using OwnedRecording = Recording<kCapacity, kMayOverflow, SlotsHome::Owned>;
 
     // True when the operator has no exact bound of its records: a tensor-list
     // argument, or a result that is a list.  Then the records go into a frame
@@ -1446,8 +1481,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
             }
             return call_recording_on_stack(vigil, fg, dispatch_keys, nest.depth(), args...);
         } else {
-            typename OpRecording::List metas{};
-            return record_operation(vigil, fg, dispatch_keys, nest.depth(), metas.view(), args...);
+            // The Recording holds its slots inline, on the stack of this call,
+            // and writes them across the redispatch.
+            OwnedRecording recording{};
+            return record_operation(vigil, fg, dispatch_keys, nest.depth(), recording, args...);
         }
     }
 
@@ -1459,42 +1496,51 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
                                                  typename OpRecording::Slots metas, Args... args)
         requires kRecordsInFrame
     {
-        return record_operation(vigil, fg, dispatch_keys, depth, metas, args...);
+        OpRecording recording{metas};
+        return record_operation(vigil, fg, dispatch_keys, depth, recording, args...);
     }
 
     // Records the operation through a list on the stack of this call.  The
     // kernel takes this path only when the record stack of the Vigil has
     // fewer free slots than kCapacity, which a deep nest of operations needs.
     // The list costs a fill of each of its slots.  The list is in this
-    // function, so the frame of call_recording holds no list.
+    // function, so the frame of call_recording holds no list.  The list is a
+    // window stack, and one loan lends its slots to the Recording of the
+    // home Lent, so this path and the frame path share one body of the record.
     CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                                      c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
                                                      Args... args)
         requires kRecordsInFrame
     {
-        typename OpRecording::List metas{};
-        return record_in_slots(vigil, fg, dispatch_keys, depth, metas.view(), args...);
+        ::foundation::core::WindowStack<crucible::TensorMeta, OpRecording::kSlots> list{};
+        const ::foundation::core::WindowLoan loan{list, ::foundation::core::WindowCount{OpRecording::kSlots}};
+        for (const ::fixy::View<crucible::TensorMeta> slots : loan.window()) {
+            for (const typename OpRecording::Slots metas : slots.template window<OpRecording::kSlots>(0)) {
+                return record_in_slots(vigil, fg, dispatch_keys, depth, metas, args...);
+            }
+        }
+        ::fixy::unreachable();
     }
 
     // Records each argument with the role of its position (kArgumentRole), in
     // the order of the arguments, as the boxed fallback reads its stack.
-    template <std::size_t... Positions>
-    CRUCIBLE_INLINE static void record_arguments(OpRecording& recording, std::index_sequence<Positions...>,
-                                                 const Args&... args) {
+    template <SlotsHome Home, std::size_t... Positions>
+    CRUCIBLE_INLINE static void record_arguments(Recording<kCapacity, kMayOverflow, Home>& recording,
+                                                 std::index_sequence<Positions...>, const Args&... args) {
         (record_argument<kArgumentRole<Positions, Args>>(recording, args), ...);
     }
 
-    // Records the inputs into the slots, runs the operation, records its
-    // results, and gives the operation to the Vigil.  The slots hold the
-    // records from the first record_argument to the dispatch, and no other
-    // operation writes them in between.
+    // Records the inputs into the slots of recording, runs the operation,
+    // records its results, and gives the operation to the Vigil.  The slots
+    // hold the records from the first record_argument to the dispatch, and no
+    // other operation writes them in between.
+    template <SlotsHome Home>
     CRUCIBLE_INLINE static Ret record_operation(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                                 c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
-                                                typename OpRecording::Slots metas, Args... args) {
+                                                Recording<kCapacity, kMayOverflow, Home>& recording, Args... args) {
         // Inputs before the operation runs, because an out= argument is
         // written by it.  The role of each argument comes from its type and
         // its position, at compile time.
-        OpRecording recording{metas};
         record_arguments(recording, std::index_sequence_for<Args...>{}, args...);
         const auto scope_hash = crucible::ScopeHash{c10::CrucibleState::get_tls_state().scope_hash()};
 
