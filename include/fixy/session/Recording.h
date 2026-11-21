@@ -442,7 +442,7 @@ public:
         auto [record, next] = std::move(recorder.inner_).recv();
         record_(recorder, SessionEvent::stop(recorder.self_, recorder.peer_, recorder.peer_,
                                              StopReasonKind::PeerCrashed, record.cause));
-        return std::pair{record, wrap_(recorder, std::move(next))};
+        return ::foundation::core::Record{record, wrap_(recorder, std::move(next))};
     }
 
     // A select over a pole of a channel takes only no_label, and the inner

@@ -125,6 +125,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Fatal.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
@@ -1356,17 +1357,18 @@ public:
         "its channel (fixy/session/Admission.h) moves no label word.  The send needs a pole table that moves the "
         "label word.  A write of the caller would move the words of one channel in two ways.");
 
-    // Receives a value.  The pair is the value and the handle at the
-    // continuation.  A polling read that finds the message costs one call.
-    // The token or the loan of a marker goes into the slots, and the pair
-    // holds the value of the marker.  A bare Permission goes into the slots,
-    // and the result is the handle alone.
+    // Receives a value.  The Record of foundation/core/Record.h holds the
+    // value and the handle at the continuation, and a structured binding
+    // gives the two out.  A polling read that finds the message costs one
+    // call.  The token or the loan of a marker goes into the slots, and the
+    // Record holds the value of the marker.  A bare Permission goes into the
+    // slots, and the result is the handle alone.
     //
     // The source of the read is the transport of the caller, with one of the
     // two read shapes of fixy/session/Transport.h.  A pole of a channel takes
     // no transport of the caller: its source is the context of the step, and
     // the step reads through the read of the pole table of its channel
-    // (fixy/session/Admission.h).  One step holds the two forms, so the pair
+    // (fixy/session/Admission.h).  One step holds the two forms, so the Record
     // of each receive of a value has one source.
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Source>
@@ -1401,11 +1403,11 @@ public:
         } else if constexpr (slot_form_v<T> != SlotForm::Plain) {
             auto [payload, next_slots] = HoldFactory::value_into_slots(core.take_slots_(), std::move(value));
             auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), origin);
-            return std::pair{std::move(payload), std::move(next)};
+            return ::foundation::core::Record{std::move(payload), std::move(next)};
         } else {
             HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
             auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
-            return std::pair{std::move(value), std::move(next)};
+            return ::foundation::core::Record{std::move(value), std::move(next)};
         }
     }
 
@@ -2007,13 +2009,13 @@ public:
     static constexpr bool is_keyed = is_keyed_step_v<Recv<T, R>>;
 
     // The source of the read is a Transport with one of the two read shapes
-    // of fixy/session/Transport.h.  The pair is the received value and the
-    // handle at the continuation.  A polling read that finds the message
+    // of fixy/session/Transport.h.  The Record holds the received value and
+    // the handle at the continuation.  A polling read that finds the message
     // costs one call.  A session over a pole of a channel takes the context
     // of the step in place of a Transport, and it receives through the read
     // of the pole table of its channel (fixy/session/Admission.h).  The read
     // takes a reference to the context for the step only.  One member holds
-    // the two forms, so the pair of each receive of a value has one source.
+    // the two forms, so the Record of each receive of a value has one source.
     template <typename Source>
         requires(!is_keyed)
              && ((!ChannelPole<Resource> && ReadTransport<std::remove_cvref_t<Source>, Resource, T>)

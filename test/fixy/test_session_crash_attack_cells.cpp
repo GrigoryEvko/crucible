@@ -148,10 +148,14 @@ using TakesLabelThenPayload = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>
     std::move(q).branch(poll_label, [](auto branch) noexcept {
         using Head = typename decltype(branch)::protocol;
         if constexpr (s::is_crash_branch_v<Head>) {
-            static_cast<void>(std::move(std::move(branch).recv().second).close());
+            auto [record, at_end] = std::move(branch).recv();
+            static_cast<void>(record);
+            static_cast<void>(std::move(at_end).close());
             finish(Outcome::Correct);
         } else {
-            static_cast<void>(std::move(std::move(branch).recv(read_int).second).close());
+            auto [value, at_end] = std::move(branch).recv(read_int);
+            static_cast<void>(value);
+            static_cast<void>(std::move(at_end).close());
         }
     });
     finish(Outcome::Silent);
@@ -317,10 +321,14 @@ void keyed_messages_to_a_third_role_count_in_its_pair() {
     std::move(q).branch(poll_label, [](auto branch) noexcept {
         using Head = typename decltype(branch)::protocol;
         if constexpr (s::is_crash_branch_v<Head>) {
-            static_cast<void>(std::move(std::move(branch).recv().second).close());
+            auto [record, at_end] = std::move(branch).recv();
+            static_cast<void>(record);
+            static_cast<void>(std::move(at_end).close());
             finish(Outcome::Correct);
         } else {
-            static_cast<void>(std::move(std::move(branch).recv(read_int).second).close());
+            auto [value, at_end] = std::move(branch).recv(read_int);
+            static_cast<void>(value);
+            static_cast<void>(std::move(at_end).close());
         }
     });
     finish(Outcome::Silent);
@@ -402,7 +410,9 @@ void peer_reads_label_before_the_report() {
             finish(Outcome::Silent);
         } else {
             crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
-            static_cast<void>(std::move(std::move(branch).recv(read_int).second).close());
+            auto [value, at_end] = std::move(branch).recv(read_int);
+            static_cast<void>(value);
+            static_cast<void>(std::move(at_end).close());
         }
     });
     finish(Outcome::Silent);

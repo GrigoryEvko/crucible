@@ -151,6 +151,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Record.h>
 
 #include <atomic>
 #include <concepts>
@@ -1092,7 +1093,7 @@ public:
         // A bare reception is a new message.  The payload of a label is part
         // of the label's message, which the branch counted.
         constexpr bool is_new_message = std::is_same_v<Position, detail::crash_transport::between_messages>;
-        return std::pair{
+        return ::foundation::core::Record{
             std::move(value),
             wrap_(watched, std::move(next),
                   is_new_message ? detail::crash_transport::one_more_received(watched.counts_) : watched.counts_)};
@@ -1143,7 +1144,7 @@ public:
         auto [record, next] = std::move(watched.inner_).recv([cause](Resource&) noexcept -> ::fixy::Option<Record> {
             return ::fixy::some(Record{cause});
         });
-        return std::pair{record, wrap_(watched, std::move(next), watched.counts_)};
+        return ::foundation::core::Record{record, wrap_(watched, std::move(next), watched.counts_)};
     }
 
     // ── branch ───────────────────────────────────────────────────────

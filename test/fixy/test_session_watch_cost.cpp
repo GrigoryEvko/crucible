@@ -69,13 +69,12 @@ template <typename Policy>
         note_scope(wait, seen.write);
         wire.value = value;
     });
-    auto at_end = std::move(std::move(reads)
-                                .recv([&seen, &echoed](Wire& wire, s::watch::wait_scope& wait) noexcept {
-                                    note_scope(wait, seen.read);
-                                    echoed = wire.value;
-                                    return wire.value;
-                                })
-                                .second);
+    auto [received, at_end] = std::move(reads).recv([&seen, &echoed](Wire& wire, s::watch::wait_scope& wait) noexcept {
+        note_scope(wait, seen.read);
+        echoed = wire.value;
+        return wire.value;
+    });
+    static_cast<void>(received);
     static_cast<void>(std::move(at_end).close());
     CRUCIBLE_TEST_ASSERT(kTest, echoed == 7);
     return seen;

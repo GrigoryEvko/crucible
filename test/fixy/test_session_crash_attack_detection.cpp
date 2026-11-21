@@ -228,14 +228,17 @@ void reliable_message_does_not_drain_the_peer() {
     int from_r = 0;
     int from_p = 0;
     std::move(q).branch(poll_label, [&from_r, &from_p](auto message_of_r) noexcept {
-        auto waits_for_p = std::move(std::move(message_of_r).recv(read_int_into(from_r)).second);
+        auto [value_of_r, waits_for_p] = std::move(message_of_r).recv(read_int_into(from_r));
+        static_cast<void>(value_of_r);
         if (from_r != 7) finish(Outcome::Silent);
         std::move(waits_for_p).branch(poll_label, [&from_p](auto branch) noexcept {
             using Head = typename decltype(branch)::protocol;
             if constexpr (s::is_crash_branch_v<Head>) {
                 finish(Outcome::Silent);
             } else {
-                static_cast<void>(std::move(std::move(branch).recv(read_int_into(from_p)).second).close());
+                auto [value_of_p, at_end] = std::move(branch).recv(read_int_into(from_p));
+                static_cast<void>(value_of_p);
+                static_cast<void>(std::move(at_end).close());
             }
         });
     });
@@ -256,7 +259,9 @@ void reliable_offer_while_the_peer_is_crashed() {
                                                                            s::mint_crash_writer(cell_q));
     int from_r = 0;
     std::move(q).branch(poll_label, [&from_r](auto branch) noexcept {
-        static_cast<void>(std::move(std::move(branch).recv(read_int_into(from_r)).second).close());
+        auto [value_of_r, at_end] = std::move(branch).recv(read_int_into(from_r));
+        static_cast<void>(value_of_r);
+        static_cast<void>(std::move(at_end).close());
     });
     finish(from_r == 7 ? Outcome::Correct : Outcome::Silent);
 }
