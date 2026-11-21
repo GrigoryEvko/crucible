@@ -31,8 +31,9 @@
 //   - check::Off does nothing.  It is an explicit hatch, and a handle
 //     under it does not keep the guarantee above.
 //   - check::Pinned and check::PinnedCancel act as Enforced and Cancel,
-//     with no holder check at a step or a move.  Only a pin builds a handle
-//     under them, and the type keeps that handle on the thread of the pin.
+//     with no holder check at a step or a move.  A mint under them, a bind
+//     and a pin of fixy/session/Handle.h build such a handle on the calling
+//     thread, and the type keeps that handle on that thread.
 //
 // The default is check::Enforced in every build mode, and NDEBUG does not
 // change it.  check::Cancel is not the default, because it needs a
@@ -260,8 +261,9 @@ struct policy_turn<pinned_policy<Action>> {
 using Enforced = detail::tracked_policy<AbandonAction::Abort>;
 using Cancel = detail::tracked_policy<AbandonAction::Cancel>;
 
-// The policies of a handle that a pin holds (detail::pinned_policy).  Only a
-// pin builds a handle under them.
+// The policies of a handle that stays on one thread (detail::pinned_policy).
+// A mint under them, HandleFactory::bind and HandleFactory::pin build a handle
+// under them on the calling thread.
 using Pinned = detail::pinned_policy<AbandonAction::Abort>;
 using PinnedCancel = detail::pinned_policy<AbandonAction::Cancel>;
 

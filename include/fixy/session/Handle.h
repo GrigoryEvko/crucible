@@ -1194,25 +1194,20 @@ public:
     // through this during the pin is a use of a consumed handle when the
     // program runs, which the liveness check ends, or a none of the emptied
     // Option.
+    //
+    // A pin is a bind, the body and a release in one scope.
     template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
               typename Body>
         requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>) && PinBody<Body>
               && detail::PinBodyGivesAPinnedHandle<
                      Body, SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>>
     [[nodiscard]] static constexpr auto
-    pin(Ctx const&, SessionHandle<Proto, Resource, LoopCtx, check::detail::tracked_policy<Action>, PS>&& handle,
+    pin(Ctx const& ctx, SessionHandle<Proto, Resource, LoopCtx, check::detail::tracked_policy<Action>, PS>&& handle,
         Body&& body) noexcept(std::is_nothrow_move_constructible_v<Resource>
                               && std::is_nothrow_invocable_v<
                                   Body,
                                   SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>>) {
-        auto& core = core_(handle);
-        core.require_live_();
-        core.hold_on_this_thread_();
-        const detail::step_origin origin = core.turn_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return turn_back_(
-            std::forward<Body>(body)(make_<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>(
-                core.take_resource_(), std::move(slots), origin)));
+        return release(std::forward<Body>(body)(bind(ctx, std::move(handle))));
     }
 
     template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
@@ -1223,6 +1218,39 @@ public:
                                      "reference or a pointer to one, or a Ref of one.  The pin holds the handle for "
                                      "the run of the body, so the body must reach it only through the pinned handle "
                                      "that it gets.");
+
+    // Binds a tracked handle to the calling thread for the rest of its life:
+    // the one holder check of a pin, with no body.  The bound handle holds the
+    // pinned policy of the same action, which is thread_bound and not
+    // Shareable (fixy/session/Stepping.h).  So no door of foundation/Transfer.h
+    // moves the handle to another thread, and no step or move of it reads the
+    // slot of the thread.  A bind is no step, so the count of the steps and the
+    // site stay.  release gives the tracked handle back, for a handle that must
+    // cross a thread.
+    template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS>
+        requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>)
+    [[nodiscard]] static constexpr auto
+    bind(Ctx const&, SessionHandle<Proto, Resource, LoopCtx, check::detail::tracked_policy<Action>, PS>&&
+                         handle) noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        auto& core = core_(handle);
+        core.require_live_();
+        core.hold_on_this_thread_();
+        const detail::step_origin origin = core.turn_origin_();
+        HoldSlots<PS> slots = core.take_slots_();
+        return make_<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>(core.take_resource_(),
+                                                                                         std::move(slots), origin);
+    }
+
+    // Gives a bound or a pinned handle back to the tracked policy of the same
+    // action, at the same position.  The session goes on: the release ends no
+    // record of the watch, and the tracked handle notes its holder at its first
+    // step on another thread.
+    template <typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS>
+    [[nodiscard]] static constexpr auto
+    release(SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>&& pinned) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>) {
+        return turn_back_(std::move(pinned));
+    }
 
     // ── The steps ─────────────────────────────────────────────────────
     //

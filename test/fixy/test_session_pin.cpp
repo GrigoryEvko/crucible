@@ -6,7 +6,8 @@
 // that the body gives back to the tracked policy.  The cells below run the
 // pin, read the count of the steps across it, show that the pinned handle
 // cannot leave its thread, and show that a dropped pinned handle still
-// reports the drop.
+// reports the drop.  Two more cells run a bind and a release with no body,
+// and a session that opens under the pinned policy.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -98,6 +99,37 @@ void pin_reaches_the_end(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "  pin_reaches_the_end: PASSED\n");
 }
 
+// A bind holds a handle on the calling thread for the rest of its life, with
+// no body, and a release gives the tracked handle back at the same position.
+// A bind and a release are no steps, so the count grows only by the sends.
+void bind_and_release_the_handle(::fixy::TestRunnerCtx const& test) {
+    const auto ctx = ::foundation::effects::testing::foreground();
+    auto head = s::mint_session<Pings>(ctx, Wire{});
+    const std::uint64_t minted = head.step_count();
+    PinnedHandle bound = s::HandleFactory::bind(ctx, std::move(head));
+    bound = std::move(bound).send(Ping{1}, write_ping);
+    bound = std::move(bound).send(Ping{2}, write_ping);
+    CRUCIBLE_TEST_ASSERT(test, bound.step_count() == minted + 2);
+    TrackedHandle released = s::HandleFactory::release(std::move(bound));
+    CRUCIBLE_TEST_ASSERT(test, released.step_count() == minted + 2);
+    CRUCIBLE_TEST_ASSERT(test, released.is_live());
+    std::move(released).detach(s::detach_reason::TestInstrumentation{});
+    ::fixy::check::pass(test, "  bind_and_release_the_handle: PASSED\n");
+}
+
+// A session opens under the pinned policy: the claim of its record names the
+// calling thread, so the mint notes no other holder, and the type keeps each
+// handle of the session on that thread.
+void mint_a_pinned_session(::fixy::TestRunnerCtx const& test) {
+    const auto ctx = ::foundation::effects::testing::foreground();
+    auto head = s::mint_session<Once, s::check::Pinned>(ctx, Wire{});
+    static_assert(!::foundation::transfer::Sendable<decltype(head)>);
+    auto at_end = std::move(head).send(Ping{5}, write_ping);
+    const Wire wire = std::move(at_end).close();
+    CRUCIBLE_TEST_ASSERT(test, wire.last_sent == 5);
+    ::fixy::check::pass(test, "  mint_a_pinned_session: PASSED\n");
+}
+
 // A pinned handle that the body drops is a dropped protocol, as under the
 // tracked policy, and the report names the site of the mint.
 void drop_a_pinned_handle() {
@@ -126,6 +158,8 @@ int main() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     pin_steps_the_handle(test);
     pin_reaches_the_end(test);
+    bind_and_release_the_handle(test);
+    mint_a_pinned_session(test);
     pin_reports_a_drop(test);
     return 0;
 }

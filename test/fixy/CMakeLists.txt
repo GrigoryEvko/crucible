@@ -3258,6 +3258,14 @@ fixy_neg_compile_test(neg_sess_send_weak_ref
 fixy_neg_compile_test(neg_sess_send_a_pinned_handle
   "run_joined: the body captures .moved."
   "its type is not Sendable")
+# A bound handle and a handle of a session that opens under check::Pinned stay
+# on their thread, as a pinned handle does.
+fixy_neg_compile_test(neg_sess_send_a_bound_handle
+  "run_joined: the body captures .moved."
+  "its type is not Sendable")
+fixy_neg_compile_test(neg_sess_send_a_pinned_mint
+  "run_joined: the body captures .moved."
+  "its type is not Sendable")
 fixy_neg_compile_test(neg_sess_pin_body_captures_the_handle
   "use of deleted function"
   "Pin_Body_Holds_A_Handle. the body of a pin captures a session handle")
