@@ -2228,28 +2228,29 @@ crucible_neg_compile_test(neg_deserialize_region_cross_tag
   "neg_deserialize_region_cross_tag.cpp:27")
 
 # kSchemaNameLenRange is the typed gate of a .crtrace schema-name
-# length, in_range<1, 256>.  load_trace takes each length only through
-# its mint.  The name feeds a 257-byte stack buffer, so a length outside
-# [1, 256] is either an empty-name entry in the global schema table
-# (lower) or a stack-buffer overflow (upper).  Two fixtures:
+# length, in_range<1, 4096>.  load_trace takes each length only through
+# its mint.  The name goes into a text of 4096 characters, so a length
+# outside [1, 4096] is either an empty-name entry in the global schema
+# table (lower) or an overflow of that text (upper).  Two fixtures:
 #   * neg_schema_name_len_below_min.cpp — lower-bound edge (= 0).
-#     Catches a range that widens to in_range<0, 256>.
+#     Catches a range that widens to in_range<0, 4096>.
 #   * neg_schema_name_len_above_max.cpp — wide miss (= UINT16_MAX).
 #     Catches a gate that no longer runs its predicate.
 crucible_neg_compile_test(neg_schema_name_len_below_min
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<InRange<1, 256>\\(\\), short unsigned int>\\(0\\)")
+  "mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(0\\)")
 crucible_neg_compile_test(neg_schema_name_len_above_max
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<InRange<1, 256>\\(\\), short unsigned int>\\(65535\\)")
+  "mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(65535\\)")
 
-# The three header counts of a .crtrace file each have a typed gate:
+# The three counts of a .crtrace file each have a typed gate:
 # kTraceNumOpsBound (MAX_OPS = 1 << 22), kTraceNumMetasBound
-# (MAX_METAS = 1 << 24) and kTraceNumNamesBound (SCHEMA_TABLE_CAP).
-# load_trace takes each count only through the mint of its gate.
-# Without the gates a corrupted header could request multi-GB
-# allocations, or drive the schema-name loop past the fixed entries
-# of the schema table.  Each gate has two fixtures: a boundary edge
+# (MAX_METAS = 1 << 24) and kTraceNumNamesBound (TRACE_NAMES_MAX, the
+# names of the two schema tables that the writer writes).  load_trace
+# takes each count only through the mint of its gate.  Without the
+# gates a corrupted header could request multi-GB allocations, or the
+# check of the name table could walk names that no writer wrote.  Each
+# gate has two fixtures: a boundary edge
 # (cap + 1) that catches a bound that widens by one, and a wide miss
 # (UINT32_MAX) that catches a gate that no longer runs its predicate.
 crucible_neg_compile_test(neg_trace_num_ops_above_max
@@ -2266,10 +2267,10 @@ crucible_neg_compile_test(neg_trace_num_metas_uint32_max
   "mint_refined<BoundedAbove<16777216>\\(\\), unsigned int>\\(4294967295\\)")
 crucible_neg_compile_test(neg_trace_num_names_above_max
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<512>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::SCHEMA_TABLE_CAP\\) \\+ 1\\)\\)")
+  "mint_refined<BoundedAbove<1024>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::TRACE_NAMES_MAX\\) \\+ 1\\)\\)")
 crucible_neg_compile_test(neg_trace_num_names_uint32_max
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<512>\\(\\), unsigned int>\\(4294967295\\)")
+  "mint_refined<BoundedAbove<1024>\\(\\), unsigned int>\\(4294967295\\)")
 
 # TraceGraph build counters are
 # WriteOnce<uint32_t>.  The fixtures pin both soundness directions:

@@ -23,12 +23,21 @@
 //   struct.  Each record goes through decode_tensor_meta, the checked door of
 //   that struct.
 //
-//   A schema-name table follows if the file has trailing data:
+//   A schema-name table follows the metadata records and ends the file:
 //     uint32   name count
 //     Then, per name:
 //       uint64   schema hash
 //       uint16   name length, terminator excluded
 //       char     the name itself, not terminated in the file
+//
+// THE LOAD DOOR.  The loader reads the whole file into one buffer, and the
+// check of CheckedTraceImage reads that image once: the header, each count
+// against the length of the image, and the name table to its end.  A file that
+// ends before a record or a name of its counts, a name length outside its
+// range, and a byte after the last name are each refused with a TraceLoadError.
+// So each cut of a file that the writer wrote is refused, and the load gives a
+// whole trace or no trace.  The decode then reads only the checked image, and
+// a refused file registers no name.
 //
 // THE FIRST FORMAT.  The loader reads the version 1 too, the format of the
 // traces that the vessel recorded first.  Its op records have 80 bytes: the
@@ -65,19 +74,26 @@ namespace crucible {
 inline constexpr uint32_t MAX_OPS = 1u << 22;
 inline constexpr uint32_t MAX_METAS = 1u << 24;
 
-// The typed gates of the three header counts.  The loader takes each count
-// from its header field only through the mint of its gate.  Zero is admitted:
-// an empty trace is well-formed.
+// The most names of a name table.  The writer writes the union of the global
+// schema table and the late schema table (crucible/SchemaTable.h), each of
+// SCHEMA_TABLE_CAP names.  A load registers the names that the global table
+// has room for, and the table refuses each name after that.
+inline constexpr uint32_t TRACE_NAMES_MAX = 2 * SCHEMA_TABLE_CAP;
+
+// The typed gates of the three counts of a file.  The loader takes each count
+// from its field only through the mint of its gate.  Zero is admitted: an
+// empty trace is well-formed.
 inline constexpr auto kTraceNumOpsBound = ::fixy::bounded_above<MAX_OPS>;
 inline constexpr auto kTraceNumMetasBound = ::fixy::bounded_above<MAX_METAS>;
-inline constexpr auto kTraceNumNamesBound = ::fixy::bounded_above<SCHEMA_TABLE_CAP>;
+inline constexpr auto kTraceNumNamesBound = ::fixy::bounded_above<TRACE_NAMES_MAX>;
 
 // A name length is stored on disk as a 16-bit value, so any of them can
-// arrive. The lower bound is one, because a zero-length name names nothing.
-// The upper bound is what the loader's fixed buffer holds once room is left
-// for the terminator it writes.
+// arrive.  The lower bound is one, because a zero-length name names nothing.
+// The upper bound is SCHEMA_NAME_MAX, the longest name that the schema table
+// holds, so each name that the writer writes fits it.  The check file of this
+// header holds the two bounds equal.
 inline constexpr uint16_t SCHEMA_NAME_LEN_MIN = 1;
-inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 256;
+inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 4096;
 inline constexpr auto kSchemaNameLenRange = ::fixy::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>;
 
 struct TraceOpRecord {
@@ -147,6 +163,13 @@ enum class TraceLoadError : uint8_t {
     OpCorrupt,
     // The metadata of an op runs past the metadata count.
     MetaRunPastCount,
+    // The file ends inside the name table: before its count, or before a name
+    // of its count.
+    NameTableTruncated,
+    // A name of the table has a length outside kSchemaNameLenRange.
+    NameLengthPastLimit,
+    // A byte follows the last name of the table.
+    TrailingBytes,
 };
 
 // The loader reads each field from the bytes of the file with no byte swap.
@@ -195,10 +218,6 @@ concept CtxFitsTraceLoad = ::foundation::effects::IsExecCtx<Ctx>
 
 namespace detail {
 
-// The count of records that one read fills.  The buffer of a batch is on the
-// stack, so the reads of a load need no allocation.
-inline constexpr uint32_t kTraceRecordsPerRead = 64;
-
 // The bytes of the inline scalar values of an op record.
 inline constexpr std::size_t kTraceScalarBlockBytes = sizeof(int64_t) * decltype(TraceOpRecord::scalar_values)::size();
 
@@ -245,32 +264,6 @@ template <CtxFitsTraceLoad Ctx>
                                ::foundation::os::error_number(error));
                 return ::fixy::err(TraceLoadError::ReadFailed);
             });
-}
-
-// Reads count records of RecordBytes bytes each, and gives each record with
-// its index to on_record.  One read fills one batch of kTraceRecordsPerRead
-// records.  The first error of a read or of on_record ends the walk, and the
-// walk gives that error.  Complexity: O(count) bytes, and one read for each
-// batch.
-template <std::size_t RecordBytes, CtxFitsTraceLoad Ctx, class OnRecord>
-[[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
-read_records_(Ctx const& io, TraceFileRef file, uint32_t count, OnRecord&& on_record) noexcept {
-    ::fixy::FixedArray<std::byte, RecordBytes * kTraceRecordsPerRead> batch{};
-    return batch.with_mut([&io, file, count,
-                           &on_record](auto run) noexcept -> ::fixy::Result<::fixy::Unit, TraceLoadError> {
-        uint32_t index = 0;
-        while (index < count) {
-            const std::size_t batch_bytes = std::size_t{::fixy::min(count - index, kTraceRecordsPerRead)} * RecordBytes;
-            const ::fixy::View<std::byte> filled =
-                run.view().window(0, batch_bytes).expect("a batch of at most kTraceRecordsPerRead records fits");
-            CRUCIBLE_TRY(_, read_exact_(io, file, filled));
-            for (::fixy::View<std::byte, RecordBytes> record : filled.template chunks<RecordBytes>()) {
-                CRUCIBLE_TRY(_, on_record(index, ::fixy::View<std::byte const, RecordBytes>{record}));
-                ++index;
-            }
-        }
-        return ::fixy::Unit{};
-    });
 }
 
 // Fills the ring entry, the metadata start, the scope hash and the callsite
@@ -482,39 +475,284 @@ decode_meta_record_(::fixy::View<std::byte const, MetaBytes> raw) noexcept {
     }
 }
 
-// Reads the op records and then the metadata records of trace, of the format
-// of OpBytes and MetaBytes, and fills trace.  The first error ends the reads.
-// Complexity: linear in the records.
-template <std::size_t OpBytes, std::size_t MetaBytes, CtxFitsTraceLoad Ctx>
-[[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
-read_trace_records_(Ctx const& io, TraceFileRef source, LoadedTrace& trace) noexcept {
-    using Step = ::fixy::Result<::fixy::Unit, TraceLoadError>;
-    uint32_t meta_cursor = 0;
-    CRUCIBLE_TRY(
-        _, read_records_<OpBytes>(
-               io, source, trace.num_ops,
-               [&trace, &meta_cursor](uint32_t i, ::fixy::View<std::byte const, OpBytes> op_record) noexcept -> Step {
-                   return decode_trace_op_<OpBytes>(op_record, i, trace, meta_cursor);
-               }));
+// The bytes of the count of a name table, and of the hash and the length that
+// start each name.
+inline constexpr std::size_t kTraceNameCountBytes = sizeof(uint32_t);
+inline constexpr std::size_t kTraceNameHeadBytes = sizeof(uint64_t) + sizeof(uint16_t);
 
-    // Each record is read into a buffer of its full length and decoded from
-    // there, so no byte of the file reaches a TensorMeta unchecked.
-    return read_records_<MetaBytes>(
-        io, source, trace.num_metas,
-        [&trace](uint32_t i, ::fixy::View<std::byte const, MetaBytes> raw) noexcept -> Step {
-            return decode_meta_record_<MetaBytes>(raw).match(
-                [&trace, i](TensorMeta meta) noexcept -> Step {
-                    *trace.metas.get(i).expect("a metadata index is below the metadata count") = meta;
-                    return ::fixy::Unit{};
-                },
-                [i]() noexcept -> Step {
-                    ::fixy::report(::fixy::Sink::Err,
-                                   "load_trace: the metadata record {} breaks a claim of its type, so the trace is "
-                                   "corrupt\n",
-                                   i);
-                    return ::fixy::err(TraceLoadError::MetaCorrupt);
-                });
-        });
+// The most bytes of a name table: the count, and TRACE_NAMES_MAX names of the
+// longest length.
+inline constexpr uint64_t kTraceNameTableMaxBytes =
+    kTraceNameCountBytes + uint64_t{TRACE_NAMES_MAX} * (kTraceNameHeadBytes + SCHEMA_NAME_LEN_MAX);
+
+// One name of a name table: its schema hash and its characters.
+struct TraceName {
+    SchemaHash hash{};
+    ::fixy::View<std::byte const> characters{};
+};
+
+// The first name of rest, and rest moves past it.  A rest that ends before
+// the head or the characters of the name gives NameTableTruncated, and a
+// length outside kSchemaNameLenRange gives NameLengthPastLimit.  Complexity:
+// constant.
+[[nodiscard]] inline ::fixy::Result<TraceName, TraceLoadError>
+take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
+    if (rest.size() < kTraceNameHeadBytes) return ::fixy::err(TraceLoadError::NameTableTruncated);
+    const ::fixy::View<std::byte const, kTraceNameHeadBytes> head =
+        rest.template window<kTraceNameHeadBytes>(0).expect("the test above keeps the head in rest");
+    const auto raw_length = read_record_field_<uint16_t, sizeof(uint64_t)>(head);
+    if (!kSchemaNameLenRange(raw_length)) return ::fixy::err(TraceLoadError::NameLengthPastLimit);
+    const std::size_t length = ::fixy::mint_refined<kSchemaNameLenRange>(raw_length).value();
+    const std::size_t after = kTraceNameHeadBytes + length;
+    if (after > rest.size()) return ::fixy::err(TraceLoadError::NameTableTruncated);
+    const TraceName name{
+        .hash = SchemaHash{read_record_field_<uint64_t, 0>(head)},
+        .characters = rest.window(kTraceNameHeadBytes, length).expect("the test above keeps the name in rest"),
+    };
+    rest = rest.window(after, rest.size() - after).expect("the test above keeps the name in rest");
+    return name;
+}
+
+// The report of a refusal of the name table, with the offset in the image of
+// the start of the table.
+[[gnu::cold, gnu::noinline]] inline void report_name_table_(TraceLoadError error, uint64_t table_at) noexcept {
+    switch (error) {
+        case TraceLoadError::NameTableTruncated:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: the file ends inside the name table at the offset {}, so the file is cut\n",
+                           table_at);
+            return;
+        case TraceLoadError::NameLengthPastLimit:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: a name of the table at the offset {} has a length outside [{}, {}]\n", table_at,
+                           SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX);
+            return;
+        case TraceLoadError::TrailingBytes:
+            ::fixy::report(::fixy::Sink::Err, "load_trace: bytes follow the last name of the table at the offset {}\n",
+                           table_at);
+            return;
+        case TraceLoadError::CountPastLimit:
+            ::fixy::report(::fixy::Sink::Err, "load_trace: the name table at the offset {} counts more than {} names\n",
+                           table_at, TRACE_NAMES_MAX);
+            return;
+        default:
+            return;
+    }
+}
+
+}  // namespace detail
+
+// The format of a trace file: the format of today, or the first format (THE
+// FIRST FORMAT).
+enum class TraceFormat : uint8_t {
+    current,
+    first,
+};
+
+// A header that check() accepted (THE LOAD DOOR): the magic CRTR, a version
+// that the loader reads, and counts inside their gates.  Only check() makes
+// one.
+class CheckedTraceHeader {
+public:
+    // Checks the bytes of a header: the magic, the version, and each count
+    // against its gate.  It gives a Result of a CheckedTraceHeader or of the
+    // TraceLoadError.  The return type is deduced, because a Result of the
+    // class needs the complete class.  Complexity: constant.
+    [[nodiscard]] static auto check(::fixy::View<std::byte const, TRACE_HEADER_BYTES> header) noexcept;
+
+    [[nodiscard]] TraceFormat format() const noexcept { return format_; }
+    [[nodiscard]] uint32_t num_ops() const noexcept { return num_ops_; }
+    [[nodiscard]] uint32_t num_metas() const noexcept { return num_metas_; }
+
+    // The bytes of one op record and of one metadata record of the format.
+    [[nodiscard]] uint64_t op_record_bytes() const noexcept {
+        return format_ == TraceFormat::first ? TRACE_FIRST_OP_BYTES : sizeof(TraceOpRecord);
+    }
+    [[nodiscard]] uint64_t meta_record_bytes() const noexcept {
+        return format_ == TraceFormat::first ? TRACE_FIRST_META_BYTES : TRACE_META_BYTES;
+    }
+
+    // The offset of the name table: the header, then the records of the
+    // counts.  The gates of the counts keep the sum below 2^33, so it does not
+    // wrap.
+    [[nodiscard]] uint64_t table_at() const noexcept {
+        return TRACE_HEADER_BYTES + uint64_t{num_ops_} * op_record_bytes() + uint64_t{num_metas_} * meta_record_bytes();
+    }
+
+private:
+    // The image holds a copy of its checked header.
+    friend class CheckedTraceImage;
+
+    CheckedTraceHeader() noexcept = default;
+
+    TraceFormat format_ = TraceFormat::current;
+    uint32_t num_ops_ = 0;
+    uint32_t num_metas_ = 0;
+};
+
+inline auto CheckedTraceHeader::check(::fixy::View<std::byte const, TRACE_HEADER_BYTES> header) noexcept {
+    using detail::read_record_field_;
+    using Checked = ::fixy::Result<CheckedTraceHeader, TraceLoadError>;
+    if (!::fixy::equal(detail::record_block_<0, TRACE_MAGIC.size()>(header), TRACE_MAGIC.view())) {
+        ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file does not start with the magic CRTR\n");
+        return Checked{::fixy::err(TraceLoadError::WrongMagic)};
+    }
+    const auto version = read_record_field_<uint32_t, 4>(header);
+    if (version != TRACE_FORMAT_VERSION && version != TRACE_FORMAT_FIRST_VERSION) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "load_trace: the trace file has the version {}, and the loader reads {} and {}\n", version,
+                       TRACE_FORMAT_VERSION, TRACE_FORMAT_FIRST_VERSION);
+        return Checked{::fixy::err(TraceLoadError::WrongVersion)};
+    }
+    const auto raw_num_ops = read_record_field_<uint32_t, 8>(header);
+    const auto raw_num_metas = read_record_field_<uint32_t, 12>(header);
+    if (!kTraceNumOpsBound(raw_num_ops) || !kTraceNumMetasBound(raw_num_metas)) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "load_trace: the header counts are past their limits (num_ops={} num_metas={})\n", raw_num_ops,
+                       raw_num_metas);
+        return Checked{::fixy::err(TraceLoadError::CountPastLimit)};
+    }
+    // The test above refuses an out-of-range count with a message.  The header
+    // then takes each count only through the mint of its gate.
+    CheckedTraceHeader checked{};
+    checked.format_ = version == TRACE_FORMAT_FIRST_VERSION ? TraceFormat::first : TraceFormat::current;
+    checked.num_ops_ = ::fixy::mint_refined<kTraceNumOpsBound>(raw_num_ops).value();
+    checked.num_metas_ = ::fixy::mint_refined<kTraceNumMetasBound>(raw_num_metas).value();
+    return Checked{checked};
+}
+
+// An image of a trace file that check() accepted (THE LOAD DOOR): a checked
+// header, the records of its counts, and a name table that holds the names of
+// its count and ends at the end of the image.  It borrows the bytes of the
+// image, so it must not outlive them.  Only check() makes one.
+class CheckedTraceImage {
+public:
+    // Checks an image whose first bytes are the checked header.  Records of
+    // the counts that do not fit give CountPastFile.  A name count past
+    // kTraceNumNamesBound gives CountPastLimit.  The errors of the names are
+    // those of the table (TraceLoadError).  It gives a Result of a
+    // CheckedTraceImage or of the TraceLoadError, with a deduced return type,
+    // as CheckedTraceHeader::check.  Complexity: linear in the names.
+    [[nodiscard]] static auto check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image) noexcept;
+
+    // Checks a whole image: its header, then the rest.  An image shorter than
+    // a header gives HeaderTruncated.
+    [[nodiscard]] static auto check(::fixy::View<std::byte const> image) noexcept;
+
+    [[nodiscard]] CheckedTraceHeader const& header() const noexcept { return header_; }
+
+    // The op records and the metadata records, each of the length of its
+    // format times its count.
+    [[nodiscard]] ::fixy::View<std::byte const> op_records() const noexcept { return op_records_; }
+    [[nodiscard]] ::fixy::View<std::byte const> meta_records() const noexcept { return meta_records_; }
+
+    // The names of the table, after its count, and the count.  The names end
+    // at the end of the image.
+    [[nodiscard]] ::fixy::View<std::byte const> names() const noexcept { return names_; }
+    [[nodiscard]] uint32_t num_names() const noexcept { return num_names_; }
+
+private:
+    CheckedTraceImage() noexcept = default;
+
+    CheckedTraceHeader header_ = CheckedTraceHeader{};
+    ::fixy::View<std::byte const> op_records_{};
+    ::fixy::View<std::byte const> meta_records_{};
+    ::fixy::View<std::byte const> names_{};
+    uint32_t num_names_ = 0;
+};
+
+inline auto CheckedTraceImage::check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image) noexcept {
+    using Checked = ::fixy::Result<CheckedTraceImage, TraceLoadError>;
+    const uint64_t table_at = header.table_at();
+    if (table_at > image.size()) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "load_trace: the header counts do not fit in the file "
+                       "(num_ops={} num_metas={}, {} bytes in the file)\n",
+                       header.num_ops(), header.num_metas(), image.size());
+        return Checked{::fixy::err(TraceLoadError::CountPastFile)};
+    }
+    CheckedTraceImage checked{};
+    checked.header_ = header;
+    const std::size_t op_bytes = header.num_ops() * header.op_record_bytes();
+    checked.op_records_ = image.window(TRACE_HEADER_BYTES, op_bytes).expect("the records fit in the image");
+    checked.meta_records_ = image.window(TRACE_HEADER_BYTES + op_bytes, table_at - TRACE_HEADER_BYTES - op_bytes)
+                                .expect("the records fit in the image");
+    const ::fixy::View<std::byte const> table =
+        image.window(table_at, image.size() - table_at).expect("the table starts inside the image");
+    if (table.size() < detail::kTraceNameCountBytes) {
+        detail::report_name_table_(TraceLoadError::NameTableTruncated, table_at);
+        return Checked{::fixy::err(TraceLoadError::NameTableTruncated)};
+    }
+    const auto raw_num_names = detail::read_record_field_<uint32_t, 0>(
+        table.template window<detail::kTraceNameCountBytes>(0).expect("the test above keeps the count in the table"));
+    if (!kTraceNumNamesBound(raw_num_names)) {
+        detail::report_name_table_(TraceLoadError::CountPastLimit, table_at);
+        return Checked{::fixy::err(TraceLoadError::CountPastLimit)};
+    }
+    checked.num_names_ = ::fixy::mint_refined<kTraceNumNamesBound>(raw_num_names).value();
+    checked.names_ = table.window(detail::kTraceNameCountBytes, table.size() - detail::kTraceNameCountBytes)
+                         .expect("the count is the start of the table");
+    ::fixy::View<std::byte const> rest = checked.names_;
+    for (uint32_t index = 0; index < checked.num_names_; ++index) {
+        const ::fixy::Result<detail::TraceName, TraceLoadError> taken = detail::take_trace_name_(rest);
+        if (taken.is_err()) {
+            const TraceLoadError error = taken.err().value_or(TraceLoadError::NameTableTruncated);
+            detail::report_name_table_(error, table_at);
+            return Checked{::fixy::err(error)};
+        }
+    }
+    if (rest.size() != 0) {
+        detail::report_name_table_(TraceLoadError::TrailingBytes, table_at);
+        return Checked{::fixy::err(TraceLoadError::TrailingBytes)};
+    }
+    return Checked{checked};
+}
+
+inline auto CheckedTraceImage::check(::fixy::View<std::byte const> image) noexcept {
+    using Checked = ::fixy::Result<CheckedTraceImage, TraceLoadError>;
+    if (image.size() < TRACE_HEADER_BYTES) {
+        ::fixy::report(::fixy::Sink::Err, "load_trace: the header of the trace file is truncated\n");
+        return Checked{::fixy::err(TraceLoadError::HeaderTruncated)};
+    }
+    const ::fixy::Result<CheckedTraceHeader, TraceLoadError> header = CheckedTraceHeader::check(
+        image.template window<TRACE_HEADER_BYTES>(0).expect("the test above keeps the header in the image"));
+    return header.match(
+        [image](CheckedTraceHeader const& checked_header) noexcept { return check(checked_header, image); },
+        [](TraceLoadError error) noexcept { return Checked{::fixy::err(error)}; });
+}
+
+namespace detail {
+
+// Decodes the op records and then the metadata records of a checked image of
+// the format of OpBytes and MetaBytes into trace, whose arrays hold the counts
+// of the image.  The first refusal of a record ends the decode.  Complexity:
+// linear in the records.
+template <std::size_t OpBytes, std::size_t MetaBytes>
+[[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError> decode_trace_records_(CheckedTraceImage const& image,
+                                                                                        LoadedTrace& trace) noexcept {
+    uint32_t meta_cursor = 0;
+    uint32_t index = 0;
+    for (const ::fixy::View<std::byte const, OpBytes> op_record : image.op_records().template chunks<OpBytes>()) {
+        CRUCIBLE_TRY(_, decode_trace_op_<OpBytes>(op_record, index, trace, meta_cursor));
+        ++index;
+    }
+    // Each record goes through the checked door of TensorMeta, so no byte of
+    // the file reaches a TensorMeta unchecked.
+    index = 0;
+    for (const ::fixy::View<std::byte const, MetaBytes> raw : image.meta_records().template chunks<MetaBytes>()) {
+        const ::fixy::Option<TensorMeta> meta = decode_meta_record_<MetaBytes>(raw);
+        if (meta.is_none()) [[unlikely]] {
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: the metadata record {} breaks a claim of its type, so the trace is corrupt\n",
+                           index);
+            return ::fixy::err(TraceLoadError::MetaCorrupt);
+        }
+        for (const TensorMeta& decoded : meta) {
+            *trace.metas.get(index).expect("a metadata index is below the metadata count") = decoded;
+        }
+        ++index;
+    }
+    return ::fixy::Unit{};
 }
 
 }  // namespace detail
@@ -616,15 +854,21 @@ encode_trace_meta(TensorMeta const& meta) noexcept {
     return image;
 }
 
-// Loads the trace at path.  When should_register_names is true, the schema
-// names of the trace go into the global table through schema_table_view.  An
-// empty view means that the table is sealed, and the names then stay out.
+// The use of the names of a trace: a load that leaves the global schema table
+// alone, or a load that registers each name of the trace in it.
+enum class TraceNameUse : uint8_t {
+    skip,
+    register_names,
+};
+
+// Loads the trace at path (THE LOAD DOOR).  With register_names, the schema
+// names of the trace go into the global table through schema_table_view after
+// the whole trace decodes.  An empty view means that the table is sealed, and
+// the names then stay out.  Complexity: linear in the bytes of the file.
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
 load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& path,
-            ::fixy::Option<SchemaTable::MutableView> const& schema_table_view, bool should_register_names) {
-    using detail::read_record_field_;
-
+            ::fixy::Option<SchemaTable::MutableView> const& schema_table_view, TraceNameUse name_use) {
     // A report names no path, because a report writes no raw text.  Each
     // caller knows the path that it gave.
     using Opened = ::fixy::Result<detail::TraceFile, TraceLoadError>;
@@ -662,142 +906,92 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
     CRUCIBLE_TRY(
         _, header.with_mut([&io, &source](auto run) noexcept { return detail::read_exact_(io, source, run.view()); }));
-    const ::fixy::View<std::byte const, TRACE_HEADER_BYTES> header_bytes{header.view()};
+    CRUCIBLE_TRY(checked_header,
+                 CheckedTraceHeader::check(::fixy::View<std::byte const, TRACE_HEADER_BYTES>{header.view()}));
 
-    if (!::fixy::equal(detail::record_block_<0, TRACE_MAGIC.size()>(header_bytes), TRACE_MAGIC.view())) {
-        ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file does not start with the magic CRTR\n");
-        return ::fixy::err(TraceLoadError::WrongMagic);
-    }
-    const auto version = read_record_field_<uint32_t, 4>(header_bytes);
-    const bool is_first_format = version == TRACE_FORMAT_FIRST_VERSION;
-    if (version != TRACE_FORMAT_VERSION && !is_first_format) {
+    // A file longer than the records of its counts and the largest name table
+    // holds bytes that no table reaches, so the load refuses it before it sizes
+    // the buffer of the file.  A file shorter than its records gives
+    // CountPastFile in the check of the image, after a read of that short
+    // file, so a small file that claims millions of records allocates nothing.
+    const uint64_t table_at = checked_header.table_at();
+    if (file_bytes > table_at && file_bytes - table_at > detail::kTraceNameTableMaxBytes) {
         ::fixy::report(::fixy::Sink::Err,
-                       "load_trace: the trace file has the version {}, and the loader reads {} and {}\n", version,
-                       TRACE_FORMAT_VERSION, TRACE_FORMAT_FIRST_VERSION);
-        return ::fixy::err(TraceLoadError::WrongVersion);
+                       "load_trace: the file holds {} bytes after its records, and a name table holds at most {}\n",
+                       file_bytes - table_at, detail::kTraceNameTableMaxBytes);
+        return ::fixy::err(TraceLoadError::TrailingBytes);
     }
 
-    const auto raw_num_ops = read_record_field_<uint32_t, 8>(header_bytes);
-    const auto raw_num_metas = read_record_field_<uint32_t, 12>(header_bytes);
-    if (!kTraceNumOpsBound(raw_num_ops) || !kTraceNumMetasBound(raw_num_metas)) {
-        ::fixy::report(::fixy::Sink::Err,
-                       "load_trace: the header counts are past their limits (num_ops={} num_metas={})\n", raw_num_ops,
-                       raw_num_metas);
-        return ::fixy::err(TraceLoadError::CountPastLimit);
-    }
-    // The check above refuses an out-of-range count with a message.  The
-    // loader then takes each count only through the mint of its gate, so no
-    // later read of a count skips the bound.
-    const uint32_t num_ops = ::fixy::mint_refined<kTraceNumOpsBound>(raw_num_ops).value();
-    const uint32_t num_metas = ::fixy::mint_refined<kTraceNumMetasBound>(raw_num_metas).value();
-
-    // A count is refused when its records cannot fit in the bytes that
-    // remain.  The check comes before any array is sized from a count, so a
-    // small file that claims millions of records allocates nothing.  The
-    // size check above keeps the subtraction from a wrap.
-    const uint64_t after_header = file_bytes - TRACE_HEADER_BYTES;
-    const uint64_t op_record_bytes = is_first_format ? TRACE_FIRST_OP_BYTES : sizeof(TraceOpRecord);
-    const uint64_t meta_record_bytes = is_first_format ? TRACE_FIRST_META_BYTES : TRACE_META_BYTES;
-    const uint64_t op_bytes = uint64_t{num_ops} * op_record_bytes;
-    if (op_bytes > after_header || uint64_t{num_metas} * meta_record_bytes > after_header - op_bytes) {
-        ::fixy::report(::fixy::Sink::Err,
-                       "load_trace: the header counts do not fit in the file "
-                       "(num_ops={} num_metas={}, {} bytes after the header)\n",
-                       num_ops, num_metas, after_header);
-        return ::fixy::err(TraceLoadError::CountPastFile);
-    }
+    // The image of the file in one buffer: the header, then one read of the
+    // rest.  Each step after the check reads the checked image, and no step
+    // reads the file again.
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(io.cap().alloc, file_bytes, std::byte{0});
+    ::fixy::copy(
+        image.view().template window<TRACE_HEADER_BYTES>(0).expect("the size test keeps the header in the image"),
+        header.view());
+    CRUCIBLE_TRY(_, detail::read_exact_(io, source,
+                                        image.view()
+                                            .window(TRACE_HEADER_BYTES, file_bytes - TRACE_HEADER_BYTES)
+                                            .expect("the header is the start of the image")));
+    CRUCIBLE_TRY(checked, CheckedTraceImage::check(checked_header, ::fixy::View<std::byte const>{image.view()}));
 
     LoadedTrace trace{};
-    trace.num_ops = num_ops;
-    trace.num_metas = num_metas;
-    trace.entries = ::fixy::mint_heap_array(io.cap().alloc, num_ops, TraceRing::Entry{});
-    trace.meta_starts = ::fixy::mint_heap_array(io.cap().alloc, num_ops, MetaIndex{});
-    trace.scope_hashes = ::fixy::mint_heap_array(io.cap().alloc, num_ops, ScopeHash{});
-    trace.callsite_hashes = ::fixy::mint_heap_array(io.cap().alloc, num_ops, CallsiteHash{});
-    trace.depths = ::fixy::mint_heap_array(io.cap().alloc, num_ops, OpDepth{});
-    trace.metas = ::fixy::mint_heap_array(io.cap().alloc, num_metas, TensorMeta{});
+    trace.num_ops = checked_header.num_ops();
+    trace.num_metas = checked_header.num_metas();
+    trace.entries = ::fixy::mint_heap_array(io.cap().alloc, trace.num_ops, TraceRing::Entry{});
+    trace.meta_starts = ::fixy::mint_heap_array(io.cap().alloc, trace.num_ops, MetaIndex{});
+    trace.scope_hashes = ::fixy::mint_heap_array(io.cap().alloc, trace.num_ops, ScopeHash{});
+    trace.callsite_hashes = ::fixy::mint_heap_array(io.cap().alloc, trace.num_ops, CallsiteHash{});
+    trace.depths = ::fixy::mint_heap_array(io.cap().alloc, trace.num_ops, OpDepth{});
+    trace.metas = ::fixy::mint_heap_array(io.cap().alloc, trace.num_metas, TensorMeta{});
 
-    if (is_first_format) {
-        CRUCIBLE_TRY(_, (detail::read_trace_records_<TRACE_FIRST_OP_BYTES, TRACE_FIRST_META_BYTES>(io, source, trace)));
+    if (checked_header.format() == TraceFormat::first) {
+        CRUCIBLE_TRY(_, (detail::decode_trace_records_<TRACE_FIRST_OP_BYTES, TRACE_FIRST_META_BYTES>(checked, trace)));
     } else {
-        CRUCIBLE_TRY(_, (detail::read_trace_records_<sizeof(TraceOpRecord), TRACE_META_BYTES>(io, source, trace)));
+        CRUCIBLE_TRY(_, (detail::decode_trace_records_<sizeof(TraceOpRecord), TRACE_META_BYTES>(checked, trace)));
     }
 
-    // The name table is optional and sits after the metadata.  A failed read
-    // in the table ends the table, as a malformed tail does, and the trace
-    // still loads.
-    ::fixy::FixedArray<std::byte, sizeof(uint32_t)> count_bytes{};
-    const bool has_name_count = count_bytes.with_mut(
-        [&io, &source](auto run) noexcept { return detail::read_exact_(io, source, run.view()).is_ok(); });
-    const uint32_t raw_num_names =
-        has_name_count
-            ? read_record_field_<uint32_t, 0>(::fixy::View<std::byte const, sizeof(uint32_t)>{count_bytes.view()})
-            : 0;
-    if (raw_num_names > 0 && kTraceNumNamesBound(raw_num_names)) {
-        uint32_t num_names = ::fixy::mint_refined<kTraceNumNamesBound>(raw_num_names).value();
-        // Once the table is sealed the background thread reads it with no
-        // lock, so a trace loaded after the seal keeps its names out of the
-        // table.  The trace itself still loads.
-        if (!should_register_names) {
-            num_names = 0;
-        } else if (schema_table_view.is_none()) {
-            ::fixy::report(::fixy::Sink::Err,
-                           "load_trace: the schema table is sealed, so the {} names of the trace are not registered\n",
-                           num_names);
-            num_names = 0;
+    // The whole trace decodes before the first name goes into the table, so a
+    // refused file registers no name.  Once the table is sealed the background
+    // thread reads it with no lock, so a trace loaded after the seal keeps its
+    // names out of the table.  The trace itself still loads.
+    if (name_use == TraceNameUse::skip || checked.num_names() == 0) return trace;
+    if (schema_table_view.is_none()) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "load_trace: the schema table is sealed, so the {} names of the trace are not registered\n",
+                       checked.num_names());
+        return trace;
+    }
+    ::fixy::View<std::byte const> rest = checked.names();
+    for (uint32_t index = 0; index < checked.num_names(); ++index) {
+        const detail::TraceName entry =
+            detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
+        ::fixy::FixedText<SCHEMA_NAME_LEN_MAX> name_text{};
+        for (const std::byte name_byte : entry.characters) {
+            name_text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
         }
-        for (uint32_t i = 0; i < num_names; i++) {
-            ::fixy::FixedArray<std::byte, sizeof(uint64_t) + sizeof(uint16_t)> entry_head{};
-            const bool is_head_read = entry_head.with_mut(
-                [&io, &source](auto run) noexcept { return detail::read_exact_(io, source, run.view()).is_ok(); });
-            if (!is_head_read) break;
-            const ::fixy::View<std::byte const, sizeof(uint64_t) + sizeof(uint16_t)> entry_head_bytes{
-                entry_head.view()};
-            const auto schema_hash_raw = read_record_field_<uint64_t, 0>(entry_head_bytes);
-            const auto raw_name_len = read_record_field_<uint16_t, sizeof(uint64_t)>(entry_head_bytes);
-            // A length outside the bound ends the table here. Whatever names
-            // were read stay registered, which is this function's policy for a
-            // malformed tail.
-            if (!kSchemaNameLenRange(raw_name_len)) break;
-            const uint16_t name_len = ::fixy::mint_refined<kSchemaNameLenRange>(raw_name_len).value();
-            ::fixy::FixedArray<std::byte, SCHEMA_NAME_LEN_MAX> name_bytes{};
-            const bool is_name_read = name_bytes.with_mut([&io, &source, name_len](auto run) noexcept {
-                return detail::read_exact_(
-                           io, source,
-                           run.view().window(0, name_len).expect("a name of a bounded length fits in its buffer"))
-                    .is_ok();
-            });
-            if (!is_name_read) break;
-            const ::fixy::View<std::byte const> name_read =
-                name_bytes.view().window(0, name_len).expect("a name of a bounded length fits in its buffer");
-            ::fixy::FixedText<SCHEMA_NAME_LEN_MAX> name_text{};
-            for (const std::byte name_byte : name_read) {
-                name_text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
-            }
-            // Bounded here, which is what lets the bytes cross from untrusted
-            // file content into the table.  The table copies the characters
-            // before the first zero.  A seal that lands during the load ends
-            // the table here too: the table refuses every later write.
-            auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view())
-                            .retag<::fixy::tags::source::Sanitized>();
-            // A name that the table refuses ends the table here, as a
-            // malformed tail does.  A collision is a name that the file gives
-            // a held hash in place of its first name.  A full table holds
-            // SCHEMA_TABLE_CAP names and refuses each new hash.  The report
-            // names the name of each of the two.
-            const SchemaRegistration registration = schema_table_view.match(
-                [&](SchemaTable::MutableView const& view) {
-                    return register_schema_name(io, io.cap().alloc, view, SchemaHash{schema_hash_raw}, name);
-                },
-                [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
-            if (registration.is_err()) {
-                if (is_collision(registration)) detail::report_name_collision_(schema_hash_raw, name_text.view());
-                if (is_full(registration)) detail::report_name_table_full_(schema_hash_raw, name_text.view());
-                break;
-            }
+        // The check of the image bounds the length, which is what lets the
+        // bytes cross from untrusted file content into the table.  The table
+        // copies the characters before the first zero.  A seal that lands
+        // during the load ends the names here too: the table refuses every
+        // later write.
+        auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view())
+                        .retag<::fixy::tags::source::Sanitized>();
+        // A name that the table refuses ends the names here.  A collision is a
+        // name that the file gives a held hash in place of its first name.  A
+        // full table holds SCHEMA_TABLE_CAP names and refuses each new hash.
+        // The report names the name of each of the two.
+        const SchemaRegistration registration = schema_table_view.match(
+            [&](SchemaTable::MutableView const& view) {
+                return register_schema_name(io, io.cap().alloc, view, entry.hash, name);
+            },
+            [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
+        if (registration.is_err()) {
+            if (is_collision(registration)) detail::report_name_collision_(entry.hash.raw(), name_text.view());
+            if (is_full(registration)) detail::report_name_table_full_(entry.hash.raw(), name_text.view());
+            break;
         }
     }
-
     return trace;
 }
 
@@ -809,7 +1003,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
 load_trace(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& path) {
-    return load_trace_(io, path, ::fixy::none, false);
+    return load_trace_(io, path, ::fixy::none, TraceNameUse::skip);
 }
 
 // Loads the trace at path, and puts its schema names into the global table.
@@ -819,7 +1013,7 @@ load_trace(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& p
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
 load_trace(Ctx const& io, VigilFgCtx const& fg, ::fixy::Path<::fixy::tags::source::Sanitized> const& path) {
-    return load_trace_(io, path, global_schema_table().mint_mutable_view(fg), true);
+    return load_trace_(io, path, global_schema_table().mint_mutable_view(fg), TraceNameUse::register_names);
 }
 
 }  // namespace crucible

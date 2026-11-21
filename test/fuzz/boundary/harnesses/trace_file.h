@@ -72,9 +72,9 @@ inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
     if (!write_scratch_file("input.crtrace", image)) return;
     // The load registers the names of the trace into the global table, so a
     // second name of one hash reaches the refusal of a collision.  The table
-    // starts empty at each run, so no name of an earlier input collides,
-    // and the names of one trace fit, because the loader bounds their count
-    // at the capacity of the table.
+    // starts empty at each run, so no name of an earlier input collides.  A
+    // trace can name more schemas than the table holds, and the table then
+    // refuses each name past its capacity.
     constexpr VigilFgCtx kForeground = ::foundation::effects::testing::foreground<Vigil>();
     global_schema_table().clear(::foundation::effects::testing::test());
     auto loaded = load_trace(kHarnessCtx, kForeground, path);

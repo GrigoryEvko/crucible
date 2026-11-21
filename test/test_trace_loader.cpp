@@ -34,9 +34,13 @@ struct HeaderImage {
 // The magic of a trace file.
 constexpr ::fixy::FixedArray<std::byte, 4> kMagic{std::byte{'C'}, std::byte{'R'}, std::byte{'T'}, std::byte{'R'}};
 
-// The bytes of a trace file that a case puts one after the other: a header
-// and a name table.  The largest image of the cases holds 330 bytes.
-using TraceImage = ::fixy::FixedList<std::byte, 512>;
+// The bytes of a trace file that a case puts one after the other: a header,
+// records and a name table.  The largest image of the cases, a table of
+// TRACE_NAMES_MAX names of one character, holds 11284 bytes.
+using TraceImage = ::fixy::FixedList<std::byte, 16384>;
+
+// The size of an empty name table: its count of zero names.
+constexpr std::size_t kEmptyNameTable = sizeof(uint32_t);
 
 // The roles of the two tensor counts of an op record.
 struct InputCountRole final {};
@@ -181,11 +185,15 @@ static void test_truncated_op_records() {
 }
 
 static void test_happy_path_zero_ops() {
-    // The smallest valid file is the header alone, with both counts at
-    // zero.
+    // The smallest valid file is the header with both counts at zero, and a
+    // name table of no name.  The header alone ends before the count of the
+    // table, so it is a cut file.
     const HeaderImage hdr{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_image(::fixy::bytes(hdr), "crtrace-header-alone.bin"),
+                                              TraceLoadError::NameTableTruncated));
+    const ::fixy::FixedArray<std::byte, 16 + kEmptyNameTable> image = make_image<16 + kEmptyNameTable>(hdr);
     const LoadedTrace t =
-        load_image(::fixy::bytes(hdr), "crtrace-zero-ops.bin").expect("a header with zero counts loads");
+        load_image(image.view(), "crtrace-zero-ops.bin").expect("a header with zero counts and no name loads");
     CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
     CRUCIBLE_TEST_ASSERT(kTest, t.num_metas == 0);
     CRUCIBLE_TEST_ASSERT(kTest, t.entries.size() == 0);
@@ -203,9 +211,10 @@ static void test_adversarial_num_ops_rejected() {
 }
 
 static void test_round_trip_single_op() {
-    // Header, one op record, no metas.
-    ::fixy::FixedArray<std::byte, 16 + sizeof(TraceOpRecord)> buf = make_image<16 + sizeof(TraceOpRecord)>(
-        HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = 0});
+    // Header, one op record, no metas, and a name table of no name.
+    ::fixy::FixedArray<std::byte, 16 + sizeof(TraceOpRecord) + kEmptyNameTable> buf =
+        make_image<16 + sizeof(TraceOpRecord) + kEmptyNameTable>(
+            HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = 0});
 
     const uint64_t schema = 0xAABBCCDDEEFF0011ULL;
     const uint64_t shape = 0x1122334455667788ULL;
@@ -474,8 +483,8 @@ static void test_op_with_scalars_past_the_slots_is_refused() {
     ::fixy::check::pass(kTest, "  test_op_scalars_past_the_slots: PASSED\n");
 }
 
-// The trailing schema-name section of the file carries a length field
-// gated by a refinement over one to 256 bytes.
+// The schema-name table ends the file, and each name carries a length field
+// gated by a refinement over one to SCHEMA_NAME_LEN_MAX bytes.
 //
 // Each case clears the global table first, which also unseals it so a
 // mutable view can be minted.
@@ -659,9 +668,9 @@ static void test_schema_name_table_round_trip() {
 
 static void test_schema_name_table_corrupt_zero_len() {
     // A length of zero is the lower-bound corruption.  Without the
-    // minimum, the hash would be bound to the empty string left by the
-    // zero-initialized buffer, and every later lookup of that hash would
-    // return it.
+    // minimum, the hash would be bound to the empty string, and every later
+    // lookup of that hash would return it.  The file is corrupt, so the load
+    // refuses it whole.
     global_schema_table().clear(::foundation::effects::testing::test());
 
     auto buf = make_zero_op_header();
@@ -671,15 +680,12 @@ static void test_schema_name_table_corrupt_zero_len() {
 
     constexpr ::fixy::CText kFileName{"crtrace-zero-len.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(buf.view(), kFileName);
-    // The header and ops parsed cleanly, so the loader still returns a
-    // trace.  A failure in the name table breaks that loop only.
-    const LoadedTrace t =
-        load_trace(kTestIo, kVigilForeground, path).expect("a name of length zero ends the table only");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, path), TraceLoadError::NameLengthPastLimit));
     remove_image(kFileName);
-    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
 
-    // The guard fired before the registration, so the hash never
-    // reached the table.
+    // The check refused the image before the registration, so the hash
+    // never reached the table.
     CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFCAFEBABEULL})));
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
 
@@ -688,33 +694,32 @@ static void test_schema_name_table_corrupt_zero_len() {
 }
 
 static void test_schema_name_table_corrupt_oversize_len() {
-    // A length of 300 exceeds the 256-byte maximum.  Without the upper
-    // bound the read would pull 300 bytes into a 257-byte buffer and the
-    // trailing terminator would land past its end.  The guard must fire
-    // before both the refinement and the read.
+    // A length one past SCHEMA_NAME_LEN_MAX exceeds the longest name that
+    // the schema table holds.  Without the upper bound, the copy into the
+    // text of the name would run past its capacity.
     //
-    // The file carries 300 bytes of plausible name data, so that a
+    // The file carries that many bytes of plausible name data, so that a
     // dropped bound would let the read succeed and the overrun actually
-    // happen.  The bound promises to stop before reading, and that is
-    // what the case checks.
+    // happen.  The bound refuses the file before the copy, and that is what
+    // the case checks.
     global_schema_table().clear(::foundation::effects::testing::test());
 
+    constexpr uint16_t kOversize = SCHEMA_NAME_LEN_MAX + 1;
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
     append_le<uint64_t>(buf, 0xFEEDFACEBAADF00DULL);  // schema_hash
-    append_le<uint16_t>(buf, 300);  // CORRUPT name_len
+    append_le<uint16_t>(buf, kOversize);  // CORRUPT name_len
     // A recognizable byte, so it stands out in a buffer that should
     // never hold it.
-    for (std::size_t filler = 0; filler < 300; ++filler) {
+    for (std::size_t filler = 0; filler < kOversize; ++filler) {
         CRUCIBLE_TEST_ASSERT(kTest, buf.append(std::byte{0x5A}).is_ok());
     }
 
     constexpr ::fixy::CText kFileName{"crtrace-oversize-len.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(buf.view(), kFileName);
-    const LoadedTrace t =
-        load_trace(kTestIo, kVigilForeground, path).expect("a name past the length bound ends the table only");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, path), TraceLoadError::NameLengthPastLimit));
     remove_image(kFileName);
-    CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
 
     // The guard fired before the length was refined, which under
     // enforced contracts would otherwise abort.
@@ -725,19 +730,179 @@ static void test_schema_name_table_corrupt_oversize_len() {
     ::fixy::check::pass(kTest, "  test_schema_name_table_corrupt_oversize_len: PASSED\n");
 }
 
+// An image as the writer of the export writes it: two ops, with one input
+// and one output each, four metadata records, and a name table of two
+// names.  The sections end at the offsets of CutSections.
+static TraceImage make_written_image() {
+    TraceImage image{};
+    const auto append_bytes = [&image](::fixy::View<std::byte const> bytes) {
+        for (const std::byte byte : bytes) {
+            CRUCIBLE_TEST_ASSERT(kTest, image.append(byte).is_ok());
+        }
+    };
+    const ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header = encode_trace_header(2, 4);
+    append_bytes(header.view());
+    for (uint64_t op = 1; op <= 2; ++op) {
+        TraceOpRecord record{};
+        record.schema_hash = SchemaHash{op == 1 ? 0xAAAA111122223333ULL : 0xBBBB444455556666ULL};
+        record.num_inputs = 1;
+        record.num_outputs = 1;
+        const ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> op_bytes = encode_trace_op(record);
+        append_bytes(op_bytes.view());
+    }
+    TensorMeta meta{};
+    meta.ndim = 1;
+    meta.sizes[0] = tensor_dim(4);
+    meta.strides[0] = tensor_dim(1);
+    meta.dtype = ScalarType::Float;
+    const ::fixy::FixedArray<std::byte, TRACE_META_BYTES> meta_bytes = encode_trace_meta(meta);
+    for (int record_index = 0; record_index < 4; ++record_index) {
+        append_bytes(meta_bytes.view());
+    }
+    append_le<uint32_t>(image, 2);
+    append_le<uint64_t>(image, 0xAAAA111122223333ULL);
+    append_le<uint16_t>(image, 9);
+    append_text(image, "aten::add");
+    append_le<uint64_t>(image, 0xBBBB444455556666ULL);
+    append_le<uint16_t>(image, 9);
+    append_text(image, "aten::mul");
+    return image;
+}
+
+// The offsets where the sections of make_written_image end: the header, the
+// op records, the metadata records, the name count and the first name.
+struct CutSections {
+    std::size_t header = TRACE_HEADER_BYTES;
+    std::size_t ops = TRACE_HEADER_BYTES + 2 * sizeof(TraceOpRecord);
+    std::size_t metas = TRACE_HEADER_BYTES + 2 * sizeof(TraceOpRecord) + 4 * TRACE_META_BYTES;
+    std::size_t count = TRACE_HEADER_BYTES + 2 * sizeof(TraceOpRecord) + 4 * TRACE_META_BYTES + sizeof(uint32_t);
+    std::size_t first_name = TRACE_HEADER_BYTES + 2 * sizeof(TraceOpRecord) + 4 * TRACE_META_BYTES + sizeof(uint32_t)
+                           + sizeof(uint64_t) + sizeof(uint16_t) + 9;
+};
+
+// The error of the check of the image cut to its first length bytes, or no
+// value when the check accepts it.
+static ::fixy::Option<TraceLoadError> cut_error(TraceImage const& image, std::size_t length) {
+    const ::fixy::View<std::byte const> cut = image.view().window(0, length).expect("a cut is a prefix of the image");
+    return CheckedTraceImage::check(cut).err();
+}
+
+// Each cut of a file that the writer wrote is refused, at each byte, with
+// the error of the section that the cut ends in.  The whole image passes.
+// The old loader took a file that ends after the metadata as a trace with no
+// name, and a file cut in the name table as a trace with the names before
+// the cut.
+static void test_each_cut_of_a_written_file_is_refused() {
+    const TraceImage image = make_written_image();
+    const CutSections sections{};
+    CRUCIBLE_TEST_ASSERT(kTest, image.size() == sections.first_name + sizeof(uint64_t) + sizeof(uint16_t) + 9);
+    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(image.view()).is_ok());
+    for (std::size_t length = 0; length < image.size(); ++length) {
+        TraceLoadError expected = TraceLoadError::NameTableTruncated;
+        if (length < sections.header) {
+            expected = TraceLoadError::HeaderTruncated;
+        } else if (length < sections.metas) {
+            expected = TraceLoadError::CountPastFile;
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, cut_error(image, length) == ::fixy::some(expected));
+    }
+    ::fixy::check::pass(kTest, "  test_each_cut_is_refused:       PASSED\n");
+}
+
+// A load of a file cut at each section boundary is refused, and it registers
+// no name of the file.  The cut after the first name is the case of the old
+// loader that registered aten::add and gave a trace.
+static void test_cut_files_at_the_section_boundaries_are_refused() {
+    const TraceImage image = make_written_image();
+    const CutSections sections{};
+    const ::fixy::FixedArray<std::size_t, 5> boundaries{sections.header, sections.ops, sections.metas, sections.count,
+                                                        sections.first_name};
+    constexpr ::fixy::CText kFileName{"crtrace-cut.bin"};
+    for (const std::size_t length : boundaries) {
+        global_schema_table().clear(::foundation::effects::testing::test());
+        const ::fixy::Path<::fixy::tags::source::Sanitized> path =
+            write_image(image.view().window(0, length).expect("a cut is a prefix of the image"), kFileName);
+        const ::fixy::Result<LoadedTrace, TraceLoadError> loaded = load_trace(kTestIo, kVigilForeground, path);
+        remove_image(kFileName);
+        CRUCIBLE_TEST_ASSERT(kTest, loaded.is_err());
+        CRUCIBLE_TEST_ASSERT(kTest, loaded.err() == cut_error(image, length));
+        CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
+    }
+    // The whole file loads, with each of its names.
+    const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(image.view(), kFileName);
+    const LoadedTrace trace = load_trace(kTestIo, kVigilForeground, path).expect("the written file loads");
+    remove_image(kFileName);
+    CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 2 && trace.num_metas == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}), "aten::add"));
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}), "aten::mul"));
+    global_schema_table().clear(::foundation::effects::testing::test());
+    ::fixy::check::pass(kTest, "  test_cut_files_are_refused:     PASSED\n");
+}
+
+// A byte after the last name, and a name count past kTraceNumNamesBound, are
+// refused.
+static void test_trailing_byte_and_count_past_the_bound_are_refused() {
+    TraceImage trailing = make_written_image();
+    CRUCIBLE_TEST_ASSERT(kTest, trailing.append(std::byte{0}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(trailing.view()).err()
+                                    == ::fixy::some(TraceLoadError::TrailingBytes));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, is_refused_as(load_image(trailing.view(), "crtrace-trailing.bin"), TraceLoadError::TrailingBytes));
+
+    auto counted = make_zero_op_header();
+    append_le<uint32_t>(counted, TRACE_NAMES_MAX + 1);
+    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(counted.view()).err()
+                                    == ::fixy::some(TraceLoadError::CountPastLimit));
+    ::fixy::check::pass(kTest, "  test_trailing_and_count:        PASSED\n");
+}
+
+// The format holds what the writer can write: a name of SCHEMA_NAME_LEN_MAX
+// characters, and a table of TRACE_NAMES_MAX names, the union of the two
+// schema tables.  The old gates refused the first after 256 characters and
+// skipped a table of more than SCHEMA_TABLE_CAP names.
+static void test_the_writer_maxima_pass_the_check() {
+    global_schema_table().clear(::foundation::effects::testing::test());
+    auto longest = make_zero_op_header();
+    append_le<uint32_t>(longest, 1);
+    append_le<uint64_t>(longest, 0x10E6ULL);
+    append_le<uint16_t>(longest, SCHEMA_NAME_LEN_MAX);
+    for (std::size_t character = 0; character < SCHEMA_NAME_LEN_MAX; ++character) {
+        CRUCIBLE_TEST_ASSERT(kTest, longest.append(std::byte{'n'}).is_ok());
+    }
+    const LoadedTrace trace =
+        load_image(longest.view(), "crtrace-longest-name.bin").expect("a name of the longest length loads");
+    CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 0);
+
+    auto widest = make_zero_op_header();
+    append_le<uint32_t>(widest, TRACE_NAMES_MAX);
+    for (uint64_t hash = 1; hash <= TRACE_NAMES_MAX; ++hash) {
+        append_le<uint64_t>(widest, hash);
+        append_le<uint16_t>(widest, 1);
+        append_text(widest, "n");
+    }
+    const auto checked = CheckedTraceImage::check(widest.view());
+    const bool holds_each_name =
+        checked.match([](CheckedTraceImage const& image) noexcept { return image.num_names() == TRACE_NAMES_MAX; },
+                      [](TraceLoadError) noexcept { return false; });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each_name);
+    global_schema_table().clear(::foundation::effects::testing::test());
+    ::fixy::check::pass(kTest, "  test_the_writer_maxima:         PASSED\n");
+}
+
 // The loader builds each op's meta start from a running cursor over its
 // tensor counts, and every consumer indexes the metas from that start.
 // A cursor that runs past the meta count turns those reads into an
 // out-of-bounds read driven by an untrusted file.  The loader must reject
 // such a file, so that the trace it returns is always self-consistent.
 
-// The load of a 1-op .crtrace with MetaCount metas and the given op tensor
-// counts.  The metas region is zero-filled (ndim=0, valid).  The file goes
-// after the load.
+// The load of a 1-op .crtrace with MetaCount metas, the given op tensor
+// counts and a name table of no name.  The metas region is zero-filled
+// (ndim=0, valid).  The file goes after the load.
 template <uint32_t MetaCount>
 static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op_with_metas(InputCount const& num_inputs,
                                                                           OutputCount const& num_outputs) {
-    constexpr std::size_t kBytes = 16 + sizeof(TraceOpRecord) + std::size_t{MetaCount} * TRACE_META_BYTES;
+    constexpr std::size_t kBytes =
+        16 + sizeof(TraceOpRecord) + std::size_t{MetaCount} * TRACE_META_BYTES + kEmptyNameTable;
     ::fixy::FixedArray<std::byte, kBytes> buf = make_image<kBytes>(
         HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = MetaCount});
     // The op record begins at offset 16.  The two tensor counts sit at
@@ -828,10 +993,12 @@ static void set_meta_field(MetaRecord& record, Field value) {
     record.with_mut([value](auto run) noexcept { write_record_field_<FieldOffset>(run.view(), value); });
 }
 
-// Loads a trace of one op with one tensor, whose metadata is the record.
+// Loads a trace of one op with one tensor, whose metadata is the record, and a
+// name table of no name.
 static bool loads_with_meta(const MetaRecord& record) {
     constexpr std::size_t kMetaAt = 16 + sizeof(TraceOpRecord);
-    ::fixy::FixedArray<std::byte, kMetaAt + sizeof(TensorMeta)> buf = make_image<kMetaAt + sizeof(TensorMeta)>(
+    constexpr std::size_t kBytes = kMetaAt + sizeof(TensorMeta) + kEmptyNameTable;
+    ::fixy::FixedArray<std::byte, kBytes> buf = make_image<kBytes>(
         HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = 1});
     const uint16_t num_inputs = 1;
     buf.with_mut([num_inputs, &record](auto run) noexcept {
@@ -933,11 +1100,15 @@ int main() {
     test_schema_name_table_round_trip();
     test_schema_name_table_corrupt_zero_len();
     test_schema_name_table_corrupt_oversize_len();
+    test_each_cut_of_a_written_file_is_refused();
+    test_cut_files_at_the_section_boundaries_are_refused();
+    test_trailing_byte_and_count_past_the_bound_are_refused();
+    test_the_writer_maxima_pass_the_check();
     test_meta_overrun_rejected();
     test_meta_exact_count_loads();
     test_meta_count_uint16_overflow_rejected();
     test_meta_bytes_break_no_claim_of_the_type();
     test_names_on_a_sealed_table_are_skipped();
-    ::fixy::check::pass(kTest, "test_trace_loader: 21 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_trace_loader: 25 groups, all passed\n");
     return 0;
 }
