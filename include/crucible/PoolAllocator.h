@@ -18,8 +18,9 @@
 //   The bytes of each slot as a View: the window of the pool for a pooled
 //   slot, the View that its owner registered for an external slot, or the
 //   empty View for an external slot with no registered View.  The address of
-//   a slot is the first byte of its View, or the View is empty: init and each
-//   registration check it.  A reader of an input takes the bytes through
+//   a slot is the first byte of its View, or the View is empty: init builds
+//   the address from the View, and each registration checks it.  A reader of
+//   an input takes the bytes through
 //   slot_view, which gives a read-only View of T.  No door of the pool gives
 //   a mutable View of a slot: the context lends the outputs of an op through
 //   the frame door with_mut_windows of the pool bytes.
@@ -80,7 +81,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // True when a pool of pool_bytes can serve the slot.  An external slot
     // lives outside the pool.  A pooled slot must start on the alignment and
     // end inside the pool, with no wrap in the sum.  init aborts on a slot
-    // that fails this, and a loader of a plan refuses one with it.
+    // that fails the same test, through the window of the pool and the
+    // alignment, and a loader of a plan refuses one with it.
     [[nodiscard]] static constexpr bool can_serve_slot(const TensorSlot& slot, uint64_t pool_bytes) noexcept {
         if (slot.is_external) return true;
         const bool is_inside =
@@ -94,7 +96,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // allocation fails. Externally owned slots start null and are registered
     // before replay.  The pool and the slot table allocate through the
     // allocation capability of the caller.
-    [[gnu::cold, gnu::noinline]]
+    //
+    // init has no cold attribute.  GCC compiles a cold function for size, so
+    // the doors of the loop of the slots stay out of line, and the loop of a
+    // plan of 4096 slots took twice the cycles of each slot.
+    [[gnu::noinline]]
     void init(::foundation::effects::Alloc allocation, const MemoryPlan& plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(!is_initialized());
         CRUCIBLE_PRE(pool_.size() == 0u);
@@ -130,47 +136,51 @@ struct CRUCIBLE_OWNER PoolAllocator {
             views_ = ::fixy::mint_heap_array<::fixy::View<uint8_t>>(allocation, plan_slots, ::fixy::View<uint8_t>{});
 
             // Externally owned slots hold no address and no bytes. The rest
-            // are the address of the byte at their offset, on the host, and
-            // the window of their bytes in the pool.
+            // are the window of their bytes in the pool, and the address of
+            // its first byte, on the host.
             //
-            // The sum is checked for wrap before it is compared. An offset
-            // near the top of the range plus a modest size wraps to a small
-            // number, which then compares as comfortably inside the pool while
-            // the slot it describes runs off the end of it. The offsets come
-            // from shapes supplied by a foreign runtime, so this stays a
-            // runtime check with a diagnostic rather than a precondition.
+            // The window of the pool is the check of the bounds of a slot: it
+            // compares the offset with the count of the pool, and the count of
+            // the slot with the bytes after the offset, so no sum can wrap.
+            // The offsets come from shapes supplied by a foreign runtime, so
+            // this stays a runtime check with a diagnostic rather than a
+            // precondition.  The check stays armed in a release build.  The
+            // window becomes a copy destination, so a slot reaching past the
+            // pool would corrupt the heap silently instead of trapping.  A
+            // slot off the alignment means the planner produced a slot that
+            // the hot path then reads with aligned loads.  A contract clause
+            // could not carry the check: it reads a slot of the plan this loop
+            // walks, which no precondition on init can name.
+            //
+            // One branded scope of the slots reads the two columns at each
+            // index with no check, and the address comes from the window, so
+            // the address of each pooled slot is the first byte of its View by
+            // construction.  A pooled slot of no byte has no first byte, so its
+            // address is the byte of the pool at its offset.  Complexity: one
+            // pass over the slots.
             const ::fixy::View<uint8_t> pool = pool_.view();
-            uint32_t slot_index = 0;
-            for (const TensorSlot& slot : plan.slots) {
-                // The check stays armed in a release build.  The next
-                // statement publishes an address that later becomes a copy
-                // destination, so a slot reaching past the pool would corrupt
-                // the heap silently instead of trapping.  A slot off the
-                // alignment means the planner produced a slot that the hot
-                // path then reads with aligned loads.
-                //
-                // A contract clause could not carry the check: it reads a
-                // slot of the plan this loop walks, which no precondition on
-                // init can name.  This form is also independent of the
-                // contract evaluation semantic, which differs across targets
-                // in this tree.  Once per plan on a cold path.
-                if (!can_serve_slot(slot, plan.pool_bytes)) [[unlikely]] {
-                    ::fixy::fatal("PoolAllocator: slot {} does not fit the pool: offset={} nbytes={} pool_bytes={} "
-                                  "alignment={}",
-                                  slot_index, slot.offset_bytes, slot.nbytes, plan.pool_bytes, ALIGNMENT);
+            static_cast<void>(::fixy::mint_branded_scope(plan.slots, [this, pool, &plan](auto const& slots) noexcept {
+                auto const addresses =
+                    slots.parallel(addresses_.view()).expect("the column holds one entry for each slot of the plan");
+                auto const views =
+                    slots.parallel(views_.view()).expect("the column holds one entry for each slot of the plan");
+                for (auto const index : slots.indices()) {
+                    const TensorSlot& slot = slots.at(index);
+                    if (slot.is_external) continue;
+                    pool.window(slot.offset_bytes, slot.nbytes)
+                        .match(
+                            [&](::fixy::View<uint8_t> bytes) noexcept {
+                                if (slot.offset_bytes % ALIGNMENT != 0) [[unlikely]]
+                                    refuse_slot_(slot, plan, index);
+                                addresses.at(index) = bytes.size() == 0
+                                                        ? ::fixy::mint_run_address(pool, slot.offset_bytes)
+                                                        : ::fixy::mint_run_address(bytes, 0);
+                                views.at(index) = bytes;
+                            },
+                            [&]() noexcept { refuse_slot_(slot, plan, index); });
                 }
-                if (!slot.is_external) {
-                    const ::fixy::Option<::fixy::RunAddress> address =
-                        ::fixy::mint_run_address(pool, slot.offset_bytes);
-                    const ::fixy::View<uint8_t> bytes = pool.window(slot.offset_bytes, slot.nbytes)
-                                                            .expect("the check above keeps the slot in the pool");
-                    CRUCIBLE_FATAL_INVARIANT(is_address_of_bytes_(address, bytes));
-                    *addresses_.get(slot_index).expect("the column holds one entry for each slot of the plan") =
-                        address;
-                    *views_.get(slot_index).expect("the column holds one entry for each slot of the plan") = bytes;
-                }
-                ++slot_index;
-            }
+                return ::fixy::Unit{};
+            }));
         }
         // A contract predicate that reads a member through `this` is skipped
         // when the compiler folds the body at compile time, so every such
@@ -423,6 +433,18 @@ private:
     [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView initialized_view_() const noexcept {
         CRUCIBLE_PRE(is_initialized());
         return ::fixy::erase_brand(::fixy::mint_view<pool_state::Initialized>(*this));
+    }
+
+    // Ends the process for a pooled slot that the pool cannot serve: its
+    // window ends past the pool, or its first byte is off the alignment.  The
+    // path is cold and out of line, so the loop of init holds no object of
+    // it, and each arm of the loop that refuses a slot names it alone.  The
+    // position is the branded index of the slot in the scope of the loop.
+    template <class Position>
+    [[noreturn]] CRUCIBLE_COLD static void refuse_slot_(const TensorSlot& slot, const MemoryPlan& plan,
+                                                        Position position) noexcept {
+        ::fixy::fatal("PoolAllocator: slot {} does not fit the pool: offset={} nbytes={} pool_bytes={} alignment={}",
+                      position.raw(), slot.offset_bytes, slot.nbytes, plan.pool_bytes, ALIGNMENT);
     }
 
     // The address of the first byte of the pool, or no address for a pool of

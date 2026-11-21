@@ -623,6 +623,17 @@ static void test_slot_views() {
     CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{2}, pv).is_none());
     CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId::none(), pv).is_none());
 
+    // The address of pooled slot 0 is the first byte of its View, the byte
+    // of the pool at its offset.  Pooled slot 2 holds no byte, so its address
+    // is the byte of the pool at its offset, and its View is empty.
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<std::uint8_t>(SlotId{0}, pv)
+                                    .is_some_and([&pool, &pv](::fixy::View<std::uint8_t const> const& bytes) noexcept {
+                                        return bytes.size() == 64
+                                            && pool.slot_ptr(SlotId{0}, pv)
+                                                   == ::fixy::mint_run_address(pool.bytes(), 256);
+                                    }));
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(SlotId{2}, pv) == ::fixy::mint_run_address(pool.bytes(), 512));
+
     ::fixy::Layout const layout =
         ::fixy::mint_layout(::fixy::ByteCount{64},
                             ::fixy::mint_alignment(::fixy::ByteCount{64}).expect("64 is a power of two"))
