@@ -122,6 +122,7 @@
 #include <fixy/session/Wire.h>
 
 #include <foundation/Closure.h>
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Fatal.h>
@@ -617,29 +618,6 @@ public:
     // handles of one session at two times have two counts.  Under
     // check::Off the policy keeps no count, and the answer is zero.
     [[nodiscard]] constexpr std::uint64_t step_count() const noexcept { return tracker_.session().steps; }
-
-    // Marks the handle consumed without advancing the protocol.  The
-    // destructor check still fires for every handle that does not
-    // detach, so accidental abandonment stays caught.
-    template <typename Reason>
-        requires DetachReason<Reason>
-    constexpr void detach(Reason /*reason_tag*/) && noexcept {
-        require_live_();
-        release_endpoint_();
-        tracker_.mark();
-    }
-
-    // The deleted overload outranks the templated one for a zero-arg
-    // call, so the diagnostic is this string rather than a
-    // compiler-version-specific "no matching function" message.
-    void detach() && = delete("[DetachReason_Required] SessionHandle::detach() requires a typed "
-                              "reason tag from detach_reason::*.  Pass one of "
-                              "detach_reason::InfiniteLoopProtocol{} (Loop<X> with no close "
-                              "branch), TransportClosedOutOfBand{} (peer crash), "
-                              "TestInstrumentation{} (test code only), AsyncCancellation{} "
-                              "(jthread stop_token), or OwnerLifetimeBoundEarlyExit{} "
-                              "(bridge/wrapper destructor).  The tag names the audit class so "
-                              "each class of abandonment stays separately greppable.");
 
     SessionHandleBase(const SessionHandleBase&) =
         delete("SessionHandle is linear — protocol progress is consumed, not copied.");
@@ -1730,6 +1708,37 @@ public:
     }
 
     ~handle_core() { cancel_if_owed_(); }
+
+    // The named detach door of a handle (foundation/Linear.h).  It marks the
+    // handle consumed without advancing the protocol, with a typed reason,
+    // and the Resource ends with the handle.  The destructor check still
+    // fires for each handle that does not detach, so an accidental drop stays
+    // caught.
+    //
+    // The handle is the explicit object parameter, an rvalue reference to the
+    // handle itself, so the rule must-consume sees the call consume the
+    // handle and its linear Resource, such as a pole of a channel.  The
+    // explicit object parameter states the rule of && in the constraint of
+    // the door: an lvalue handle gives no Self that the constraint admits.
+    template <typename Self, typename Reason>
+        requires std::derived_from<Self, handle_core> && DetachReason<Reason>
+    [[= ::foundation::linear::detach_door{}]] constexpr void detach(this Self&& self, Reason /*reason_tag*/) noexcept {
+        self.require_live_();
+        self.release_endpoint_();
+        self.mark_consumed_();
+    }
+
+    // The deleted overload outranks the templated one for a zero-arg
+    // call, so the diagnostic is this string rather than a
+    // compiler-version-specific "no matching function" message.
+    void detach() && = delete("[DetachReason_Required] SessionHandle::detach() requires a typed "
+                              "reason tag from detach_reason::*.  Pass one of "
+                              "detach_reason::InfiniteLoopProtocol{} (Loop<X> with no close "
+                              "branch), TransportClosedOutOfBand{} (peer crash), "
+                              "TestInstrumentation{} (test code only), AsyncCancellation{} "
+                              "(jthread stop_token), or OwnerLifetimeBoundEarlyExit{} "
+                              "(bridge/wrapper destructor).  The tag names the audit class so "
+                              "each class of abandonment stays separately greppable.");
 
     [[nodiscard]] constexpr Resource& resource() & noexcept {
         this->require_live_();

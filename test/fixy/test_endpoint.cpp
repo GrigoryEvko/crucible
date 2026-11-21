@@ -118,15 +118,11 @@ struct MergeTag {};
     const bool is_filled = feeder.try_push(5) && feeder.try_push(6);
     if (!is_filled) ::fixy::fatal("test_endpoint: the merge channel refused a value below capacity");
 
-    // The first receive goes through the handle of the pole.  The second goes
-    // through a recorder over the same handle, and the detach of the recorder
-    // ends the stream.
+    // Each receive goes through the handle of the pole, and the detach door of
+    // the handle ends the stream and the pole with it.
     auto [first, after_first] = std::move(head).recv(ctx);
-    s::SessionEventLog log;
-    auto recorded = s::mint_recorded_session(std::move(after_first), s::mint_session_event_writer(log), s::RoleTagId{2},
-                                             s::RoleTagId{1});
-    auto [second, next] = std::move(recorded).recv(ctx);
-    const bool is_in_order = first == 5 && second == 6 && log.size() == 1;
+    auto [second, next] = std::move(after_first).recv(ctx);
+    const bool is_in_order = first == 5 && second == 6;
     std::move(next).detach(s::detach_reason::InfiniteLoopProtocol{});
     const bool is_drained = channel.empty_approx(kSnapshot);
     return is_in_order && is_drained ? 0

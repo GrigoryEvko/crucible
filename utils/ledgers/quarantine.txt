@@ -163,8 +163,8 @@ bench/ | region | 1 | MEASURE: the rows of the bare rings run their workers on s
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the two sinks keep each send of a body, so the optimizer cannot fold them | the session bench gives each send an input sink on the item and an output sink on the written item, so the optimizer cannot fold the sends of a body
 bench/ | replace-pending:std::bit_cast | 5 | - | -
-bench/ | std-entity | 66 | - | -
-bench/ | std-object | 20 | - | -
+bench/ | std-entity | 54 | - | -
+bench/ | std-object | 16 | - | -
 include/crucible/ | opted-out | 1 | ABI: a test or a bench gives a synthetic address as the data pointer of a tensor | a test or a bench gives a synthetic address as the data pointer of a TensorMeta, a cookie that no code reads through, and no door of the base makes a pointer from an integer
 include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of the tensor at the record of the op | -
 include/crucible/ | region | 1 | ABI: a test or a bench gives a synthetic address as the data pointer of a tensor | a test or a bench gives a synthetic address as the data pointer of a TensorMeta, a cookie that no code reads through, and no door of the base makes a pointer from an integer
@@ -240,7 +240,7 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 389 | - | -
+include/fixy/session/ | base-std-entity | 384 | - | -
 include/fixy/session/ | base-std-object | 150 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
@@ -370,8 +370,8 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 499 | - | -
-test/ | std-object | 159 | - | -
+test/ | std-entity | 493 | - | -
+test/ | std-object | 157 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
@@ -462,8 +462,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2216 | - | -
-test/fixy/ | std-object | 744 | - | -
+test/fixy/ | std-entity | 2142 | - | -
+test/fixy/ | std-object | 665 | - | -
 test/fixy/neg/ | c-array-object | 42 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 322 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -548,8 +548,8 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 74 | - | -
-test/fixy/neg/ | std-object | 31 | - | -
+test/fixy/neg/ | std-entity | 68 | - | -
+test/fixy/neg/ | std-object | 29 | - | -
 test/foundation/ | c-array-object | 6 | - | -
 test/foundation/ | c-library-call | 2 | - | -
 test/foundation/ | opted-out | 12 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
@@ -745,7 +745,7 @@ test/session_oracle/ | c-library-call | 5 | - | -
 test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
-test/session_oracle/ | std-object | 1383 | - | -
+test/session_oracle/ | std-object | 1382 | - | -
 test/shape/ | opted-out | 277 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
