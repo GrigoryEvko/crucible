@@ -228,11 +228,20 @@ concept inner_can_detect_crash = requires(Inner&& inner) { std::move(inner).recv
 template <typename Inner>
 concept inner_can_close = requires(Inner&& inner) { std::move(inner).close(); };
 
-// The close of the inner handle gives its Resource alone.  An End handle
-// that holds a token gives a Record of the Resource and the token.
+// What the close of the inner handle gives: its Resource alone, or, for an End
+// handle that holds a token, the Record of the Resource and the token of each
+// tag (closed_of of fixy/session/Handle.h).  A decorator states no set and
+// closes to its Resource.
 template <typename Inner>
-concept inner_closes_to_resource = requires(Inner&& inner) {
-    { std::move(inner).close() } -> std::same_as<typename Inner::resource_type>;
+struct close_of {
+    using type = typename Inner::resource_type;
+};
+
+template <typename Inner>
+    requires requires { typename Inner::perm_set; }
+struct close_of<Inner> {
+    using type =
+        typename ::fixy::session::detail::closed_of<typename Inner::resource_type, typename Inner::perm_set>::type;
 };
 
 template <typename Inner>
@@ -729,16 +738,8 @@ public:
     // or a Record of the Resource and the token of each tag that the End
     // handle holds.
     template <typename P = protocol>
-        requires is_terminal_state_v<P> && detail::recording::inner_closes_to_resource<Inner>
-    [[nodiscard]] constexpr resource_type close() && {
-        record_(SessionEvent::close(self_, peer_));
-        return std::move(inner_).close();
-    }
-
-    template <typename P = protocol>
         requires is_terminal_state_v<P> && detail::recording::inner_can_close<Inner>
-              && (!detail::recording::inner_closes_to_resource<Inner>)
-    [[nodiscard]] constexpr auto close() && {
+    [[nodiscard]] constexpr typename detail::recording::close_of<Inner>::type close() && {
         record_(SessionEvent::close(self_, peer_));
         return std::move(inner_).close();
     }
