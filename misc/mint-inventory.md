@@ -288,7 +288,7 @@ that the axis does not apply to the row.
 | `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | token | · | HS14: 30 |
 | `mint_delegated_session` | `include/fixy/session/Delegate.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_forked_async_channel` | `include/fixy/session/AsyncChannel.h` | Y | - | Y | Y | ctx | Y | HS14: 6 |
-| `mint_forked_channel` | `include/fixy/session/Mint.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_forked_channel` | `include/fixy/session/Mint.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_mode_writer` | `include/fixy/session/VigilModeCell.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_permission_hold` | `include/fixy/session/Flow.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_permissioned_session` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 15 |
@@ -395,7 +395,7 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 233 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 234 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 52 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |

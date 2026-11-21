@@ -27,3 +27,17 @@ finding gaps quarantine c-array-object src/gaps.cpp:42:41 | row
 compile missed src/missed.cpp must-consume=on
 flag missed -freflection
 exit missed pass
+
+# A thread_bound object (a session handle under check::Pinned) that one thread
+# parks in a global and another thread takes out (static_route.cpp).  No door
+# of foundation/Transfer.h sees the move.  The rule process-wide-state notes
+# each global as an unmarked static, and a marker or a ledger row admits it,
+# so no rule refuses the thread_bound type in it.  A change that refuses a
+# static of a thread_bound type makes this control fail, and moves the unit to
+# a plant.
+
+compile static_route src/static_route.cpp must-consume=on
+flag static_route -freflection
+exit static_route pass
+finding static_route process-wide-state unmarked-static src/static_route.cpp:38:19 | planted::g_slot
+finding static_route process-wide-state unmarked-static src/static_route.cpp:39:8 | planted::g_parked

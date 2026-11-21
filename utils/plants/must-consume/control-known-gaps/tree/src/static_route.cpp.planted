@@ -1,0 +1,51 @@
+// A thread_bound object that leaves its thread through a global, with no door
+// of foundation/Transfer.h.  PinnedEnd stands for a session handle under
+// check::Pinned, whose policy is thread_bound.  One thread parks the object in
+// a global, and another thread takes it out and uses it.  No door sees the
+// move, so the type does not refuse it, and the rule gives no line for it.  A
+// static or a global of a thread_bound type, or of a type that holds one, is
+// the form that a refusal at compile time must close.
+#include <foundation/Linear.h>
+#include <foundation/Transfer.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] [[= ::foundation::transfer::thread_bound{}]] PinnedEnd {
+    int handle = 0;
+    constexpr explicit PinnedEnd(int value) noexcept : handle{value} {}
+    constexpr PinnedEnd(PinnedEnd&&) noexcept = default;
+    constexpr PinnedEnd& operator=(PinnedEnd&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    PinnedEnd(const PinnedEnd&) = delete;
+};
+
+// A class that holds a thread_bound object.
+struct Parked {
+    Option<PinnedEnd> end;
+};
+
+void use(PinnedEnd&& end) noexcept;
+
+// The global of the thread_bound type, and the global of a class that holds
+// one.
+Option<PinnedEnd> g_slot{};
+Parked g_parked{};
+
+// The thread of the object parks it.
+void park_on_its_thread(PinnedEnd&& end) noexcept { g_slot.fill(std::move(end)); }
+
+// Another thread takes the object out of the global and uses it.
+void take_on_another_thread() noexcept { use(std::move(g_slot).expect("the slot holds the parked end")); }
+
+// The same route through the class that holds the object.
+void park_in_the_class(PinnedEnd&& end) noexcept { g_parked.end.fill(std::move(end)); }
+void take_from_the_class() noexcept { use(std::move(g_parked.end).expect("the class holds the parked end")); }
+
+}  // namespace planted

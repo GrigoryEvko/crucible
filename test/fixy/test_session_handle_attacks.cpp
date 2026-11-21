@@ -594,6 +594,14 @@ using LeftProto = s::Recv<Ping, s::End>;
 // first releases the endpoint to the tracked policy, as a handle that leaves
 // its thread must.  Each step of the endpoint on the other thread then notes
 // its holder for the watch.
+//
+// If a body gives the pinned endpoint away with no release, the endpoint
+// steps on the other thread with no holder note, and the watch does not see
+// the wait.  The forked sides open pinned, so no run-time check catches that
+// route.  A refusal at compile time of a global of a thread_bound type is the
+// check for it, and the known-gap control of must-consume
+// (utils/plants/must-consume/control-known-gaps, static_route.cpp) holds the
+// route until that refusal exists.
 struct GiveAwayBody;
 using RightHead =
     s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, GiveAwayBody>;
