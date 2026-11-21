@@ -534,8 +534,10 @@ public:
 
     // A step of one in the direction of Cmp, as the bump of Monotonic.  An
     // ascending counter stays at most Max.  A descending counter starts at
-    // most Max and moves down, so the bound holds for each step.
-    constexpr void bump() noexcept
+    // most Max and moves down, so the bound holds for each step.  The step
+    // always inlines, so a caller that tests the bound first folds the check
+    // of the precondition.
+    CRUCIBLE_INLINE constexpr void bump() noexcept
         requires(AscendingOrder<T, Cmp> || DescendingOrder<T, Cmp>)
     {
         CRUCIBLE_PRE((DescendingOrder<T, Cmp>) || std::cmp_less(inner_.get(), Max));
