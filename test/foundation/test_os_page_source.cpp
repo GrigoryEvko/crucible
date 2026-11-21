@@ -8,7 +8,8 @@
 // makes it read zero again, a populate and a collapse change no byte, a
 // process that refuses THP gets the base pages of a collapse, a bind to a
 // node that the host does not have gives the unknown placement, and on a
-// host with two nodes a bind to node 1 puts the first page on node 1.  A grow
+// host with two nodes a bind to node 1 puts the first page on node 1, or
+// numa_foreign of node 1 counts the page that went to another node.  A grow
 // keeps each byte and the alignment of a huge page, and refuses a smaller
 // count and a reservation of two kinds of access.
 //
@@ -21,6 +22,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/NumaCounters.h>
 #include <fixy/os/Pages.h>
 #include <fixy/os/Process.h>
 #include <foundation/Quarantine.h>
@@ -222,8 +224,88 @@ void test_bind_falls_back(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "a bind to a node that the host does not have keeps the policy of the thread\n");
 }
 
-// On a host with two nodes, a bind to node 1 before the first touch puts each
-// page on node 1.  A host with one node refuses the bind, and the test skips.
+// The counters of node 1 (fixy/os/NumaCounters.h).
+[[nodiscard]] ::fixy::Option<::fixy::numa::NodeAllocationCounters>
+counters_of_node_one(::fixy::TestRunnerCtx const& test) noexcept {
+    return ::fixy::numa::read_allocation_counters(test, ::fixy::NumaNodeId{1}).ok();
+}
+
+// The growth of numa_hit and numa_foreign of node 1 over the write of a range.
+struct NodeOneGrowth {
+    std::uint64_t hit = 0;
+    std::uint64_t foreign = 0;
+};
+
+// What the bind case saw: the node of the first page, the count of the pages
+// of the write, and the growth of the counters of node 1, which has no value
+// when a read of the counters failed.  An Id has no empty value, so the node
+// starts at node 0, and each observation names its node.
+struct FirstPageSeen {
+    os::NumaNodeId node{0};
+    std::uint64_t pages = 0;
+    ::fixy::Option<NodeOneGrowth> growth{};
+};
+
+// The verdict on the first page of a range that a bind sent to node 1.
+enum class FirstPageVerdict : std::uint8_t {
+    // The first page is on node 1.
+    on_node_one,
+    // The first page is on another node, and numa_foreign of node 1 counts a
+    // page that went to another node.
+    fell_back,
+    // The first page is on another node, and numa_foreign of node 1 counts no
+    // such page.
+    misplaced,
+    // The first page is on another node, and the counters of node 1 did not
+    // count the pages of the write, as a kernel with vm.numa_stat at 0 does.
+    uncounted,
+};
+
+// Each page of the write counts in numa_hit or numa_foreign of node 1.  So a
+// first page off node 1 is a fallback of the kernel only when numa_foreign
+// grew.
+[[nodiscard]] FirstPageVerdict judge_first_page(FirstPageSeen const& seen) noexcept {
+    if (seen.node == os::NumaNodeId{1}) return FirstPageVerdict::on_node_one;
+    return seen.growth.match(
+        [&seen](NodeOneGrowth const& growth) noexcept {
+            if (growth.hit + growth.foreign < seen.pages) return FirstPageVerdict::uncounted;
+            return growth.foreign != 0 ? FirstPageVerdict::fell_back : FirstPageVerdict::misplaced;
+        },
+        []() noexcept { return FirstPageVerdict::uncounted; });
+}
+
+// The verdict through planted observations: a first page off node 1 passes
+// only with a counted fallback.  The second observation is the one that the
+// old case refused at its assert of node 1: the page on node 0, and
+// numa_foreign of node 1 one higher.
+void test_first_page_verdict(::fixy::TestRunnerCtx const& test) {
+    constexpr std::uint64_t kPages = 512;
+    ::fixy::Option<NodeOneGrowth> const counted_fallback =
+        ::fixy::Option<NodeOneGrowth>::some(NodeOneGrowth{.hit = kPages - 1, .foreign = 1});
+    ::fixy::Option<NodeOneGrowth> const no_fallback =
+        ::fixy::Option<NodeOneGrowth>::some(NodeOneGrowth{.hit = kPages, .foreign = 0});
+    ::fixy::Option<NodeOneGrowth> const nothing_counted = ::fixy::Option<NodeOneGrowth>::some(NodeOneGrowth{});
+    CRUCIBLE_TEST_ASSERT(test, judge_first_page({.node = os::NumaNodeId{1}, .pages = kPages})
+                                   == FirstPageVerdict::on_node_one);
+    CRUCIBLE_TEST_ASSERT(test,
+                         judge_first_page({.node = os::NumaNodeId{0}, .pages = kPages, .growth = counted_fallback})
+                             == FirstPageVerdict::fell_back);
+    CRUCIBLE_TEST_ASSERT(test, judge_first_page({.node = os::NumaNodeId{0}, .pages = kPages, .growth = no_fallback})
+                                   == FirstPageVerdict::misplaced);
+    CRUCIBLE_TEST_ASSERT(test, judge_first_page({.node = os::NumaNodeId{0}, .pages = kPages, .growth = nothing_counted})
+                                   == FirstPageVerdict::uncounted);
+    CRUCIBLE_TEST_ASSERT(test,
+                         judge_first_page({.node = os::NumaNodeId{0}, .pages = kPages}) == FirstPageVerdict::uncounted);
+    ::fixy::check::pass(test, "the first page off node 1 passes only with a counted fallback\n");
+}
+
+// On a host with two nodes, a bind to node 1 before the first touch sends each
+// page to node 1.  The bind of one node is MPOL_PREFERRED, so the kernel gives
+// a page to another node when node 1 has fewer free pages than its low
+// watermark, and it counts that page in numa_foreign of node 1.  The free
+// pages of a node are a fact of the whole host, so the first page is on node 1,
+// or numa_foreign of node 1 grew over the write (judge_first_page).  A host
+// with one node refuses the bind, and the test skips.
 void test_bind_places_the_pages(::fixy::TestRunnerCtx const& test) {
     os::Reservation reservation = reserve_or_end(ByteCount{2 * kMebibyte}, os::ReserveAlignment::page);
     os::Placement const second = os::Placement::on_node(os::NumaNodeId{1});
@@ -232,10 +314,34 @@ void test_bind_places_the_pages(::fixy::TestRunnerCtx const& test) {
         return;
     }
     os::CommittedRange const committed = commit_whole(reservation);
+    ::fixy::Option<::fixy::numa::NodeAllocationCounters> const before = counters_of_node_one(test);
     write_each_page(reservation.bytes_of(committed), 0x01);
+    ::fixy::Option<::fixy::numa::NodeAllocationCounters> const after = counters_of_node_one(test);
     os::NumaNodeId const node =
         reservation.node_of_first_page(committed).expect("the census reads the node of a touched page");
-    CRUCIBLE_TEST_ASSERT(test, node == os::NumaNodeId{1});
+    ::fixy::Option<NodeOneGrowth> const growth = before.match(
+        [&after](::fixy::numa::NodeAllocationCounters const& first) noexcept {
+            return after.match(
+                [&first](::fixy::numa::NodeAllocationCounters const& last) noexcept {
+                    return ::fixy::Option<NodeOneGrowth>::some(
+                        NodeOneGrowth{.hit = last.hit >= first.hit ? last.hit - first.hit : 0,
+                                      .foreign = last.foreign >= first.foreign ? last.foreign - first.foreign : 0});
+                },
+                []() noexcept { return ::fixy::Option<NodeOneGrowth>{}; });
+        },
+        []() noexcept { return ::fixy::Option<NodeOneGrowth>{}; });
+    FirstPageVerdict const verdict =
+        judge_first_page({.node = node, .pages = 2 * kMebibyte / host_page_bytes(), .growth = growth});
+    if (verdict == FirstPageVerdict::uncounted) {
+        ::fixy::check::pass(test, "  [skipped] the first page is off node 1, and the counters of node 1 did not "
+                                  "count the write\n");
+        return;
+    }
+    if (verdict == FirstPageVerdict::fell_back) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "  [fallback] the first page is on node {}, and numa_foreign of node 1 grew\n", node.raw());
+    }
+    CRUCIBLE_TEST_ASSERT(test, verdict != FirstPageVerdict::misplaced);
     os::NumaNodeSet const both = os::NumaNodeSet{}
                                      .with(os::numa_node_slot(os::NumaNodeId{0}).expect("node 0 has a slot"))
                                      .with(os::numa_node_slot(os::NumaNodeId{1}).expect("node 1 has a slot"));
@@ -398,6 +504,7 @@ int main() {
     test_huge_pages_change_no_byte(test);
     test_refused_collapse_gives_base_pages(test);
     test_bind_falls_back(test);
+    test_first_page_verdict(test);
     test_bind_places_the_pages(test);
     test_current_node(test);
     test_grow_keeps_each_byte(test);

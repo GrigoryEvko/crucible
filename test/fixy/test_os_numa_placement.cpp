@@ -9,8 +9,16 @@
 // not admit node 0 answers EINVAL or EPERM.  The cases that need a
 // binding skip on those answers.  The refusals of the mint itself do not
 // depend on the machine, so they run everywhere.
+//
+// An interleave and a preferred policy are preferences of the kernel.  When
+// a node has fewer free pages than its low watermark, the kernel gives a page
+// of that node to another node, and it counts the page in numa_foreign of the
+// node.  The free pages of a node are a fact of the whole host, so the cases
+// of these two policies accept a page off its node only when numa_foreign of
+// its node counts it (judge_placement).
 
 #include <fixy/os/Mmap.h>
+#include <fixy/os/NumaCounters.h>
 #include <fixy/os/NumaPlacement.h>
 
 #include <linux/mempolicy.h>
@@ -228,14 +236,149 @@ struct AddressPolicy {
         [](fixy::numa::NumaQueryError) noexcept { return fixy::NumaNodeMask{}; });
 }
 
-// The census of the pages of a region after the test wrote each byte.  The
-// region leaves its proof, and the kernel keeps the policy of the range.
+// The sums of numa_hit and numa_foreign over some nodes (fixy/os/NumaCounters.h).
+struct CounterSums {
+    std::uint64_t hit = 0;
+    std::uint64_t foreign = 0;
+};
+
+// The sums over the nodes of a mask, or no value when the read of a node
+// fails.  Complexity: one read of a file for each node of the mask.
+[[nodiscard]] fixy::Option<CounterSums> sum_counters(BgCtx const& ctx, fixy::NumaNodeMask const& nodes) noexcept {
+    CounterSums sums{};
+    bool is_whole = true;
+    for (fixy::NumaNodeMask::Slot const slot : nodes.slots()) {
+        fixy::numa::read_allocation_counters(ctx, fixy::numa_node_of_slot(slot))
+            .match(
+                [&sums](fixy::numa::NodeAllocationCounters counters) noexcept {
+                    sums.hit += counters.hit;
+                    sums.foreign += counters.foreign;
+                },
+                [&is_whole](fixy::numa::NumaQueryError) noexcept { is_whole = false; });
+    }
+    if (!is_whole) return fixy::none;
+    return fixy::Option<CounterSums>::some(sums);
+}
+
+// What a case saw of the pages that a policy sent to the nodes of a mask: the
+// count that the policy sent there, the count that the census found there,
+// and the growth of the sums of the counters of those nodes over the write of
+// the pages.  The growth has no value when a read of the counters failed.
+struct PlacementSeen {
+    std::size_t sent = 0;
+    std::size_t found = 0;
+    fixy::Option<CounterSums> growth{};
+};
+
+// The verdict on the pages of a case.
+enum class PlacementVerdict : std::uint8_t {
+    // The census found each page that the policy sent.
+    placed,
+    // The kernel gave a page to another node, and numa_foreign counts it.
+    fell_back,
+    // A page is not where the policy sent it, and numa_foreign does not
+    // count it.
+    misplaced,
+    // A page is not where the policy sent it, and the counters did not count
+    // the pages of the case, as a kernel with vm.numa_stat at 0 does.
+    uncounted,
+};
+
+// Each page that the policy sent to a node counts in numa_hit of that node, or
+// in numa_foreign of that node when it went to another node.  So a page is
+// missing with no fault of the door only when numa_foreign grew by at least
+// the count of the missing pages.
+[[nodiscard]] constexpr PlacementVerdict judge_placement(PlacementSeen const& seen) noexcept {
+    if (seen.found >= seen.sent) return PlacementVerdict::placed;
+    std::uint64_t const missing = seen.sent - seen.found;
+    return seen.growth.match(
+        [&seen, missing](CounterSums const& growth) noexcept {
+            if (growth.hit + growth.foreign < seen.sent) return PlacementVerdict::uncounted;
+            return growth.foreign >= missing ? PlacementVerdict::fell_back : PlacementVerdict::misplaced;
+        },
+        []() noexcept { return PlacementVerdict::uncounted; });
+}
+
+// The census of the pages of a region after the test wrote each byte, and the
+// growth of the counters of the nodes of a mask over the write.  The region
+// leaves its proof, and the kernel keeps the policy of the range.
+struct TouchedRegion {
+    fixy::numa::PageNodeCensus census{};
+    fixy::Option<CounterSums> growth{};
+};
+
 template <class Proof>
-[[nodiscard]] fixy::numa::PageNodeCensus census_of(BgCtx const& ctx, Proof&& placement) noexcept {
+[[nodiscard]] TouchedRegion touch_region(BgCtx const& ctx, Proof&& placement,
+                                         fixy::NumaNodeMask const& counted) noexcept {
     auto region = std::move(placement).consume().consume();
     fixy::View<std::byte> const bytes = region.template view<std::byte>().expect("the region is whole pages");
+    fixy::Option<CounterSums> const before = sum_counters(ctx, counted);
     fixy::fill(bytes, std::byte{0x5a});
-    return fixy::numa::census_page_nodes(ctx, bytes).expect("the kernel answers the census of a mapped range");
+    fixy::Option<CounterSums> const after = sum_counters(ctx, counted);
+    fixy::Option<CounterSums> const growth = before.match(
+        [&after](CounterSums const& first) noexcept {
+            return after.match(
+                [&first](CounterSums const& last) noexcept {
+                    return fixy::Option<CounterSums>::some(
+                        CounterSums{.hit = last.hit >= first.hit ? last.hit - first.hit : 0,
+                                    .foreign = last.foreign >= first.foreign ? last.foreign - first.foreign : 0});
+                },
+                []() noexcept { return fixy::Option<CounterSums>{}; });
+        },
+        []() noexcept { return fixy::Option<CounterSums>{}; });
+    return TouchedRegion{
+        .census = fixy::numa::census_page_nodes(ctx, bytes).expect("the kernel answers the census of a mapped range"),
+        .growth = growth};
+}
+
+// The return of a case for a verdict: 0 for a page on its node or a counted
+// fallback, kSkip when the counters counted nothing, and 1 for a misplaced
+// page.  A fallback writes a line, so a run of the suite shows it.
+[[nodiscard]] int result_of_verdict(PlacementVerdict verdict, fixy::TextView policy) noexcept {
+    switch (verdict) {
+        case PlacementVerdict::placed:
+            return 0;
+        case PlacementVerdict::fell_back:
+            fixy::report(fixy::Sink::Err, "[fallback] the kernel gave a page of the {} policy to another node\n",
+                         policy);
+            return 0;
+        case PlacementVerdict::uncounted:
+            fixy::report(fixy::Sink::Err,
+                         "[skipped] a page of the {} policy is off its node, and the counters of the "
+                         "node did not count the pages\n",
+                         policy);
+            return kSkip;
+        case PlacementVerdict::misplaced:
+            return 1;
+        default:
+            return 1;
+    }
+}
+
+// The verdict accepts a page off its node only when numa_foreign counts it.
+// The first fallback below is the case that the census of the old test refused:
+// one page of two off the node, with numa_foreign of the node one higher.
+[[nodiscard]] int the_verdict_accepts_only_a_counted_fallback() {
+    CounterSums const counted_fallback{.hit = 1, .foreign = 1};
+    CounterSums const no_fallback{.hit = 2, .foreign = 0};
+    bool const is_placed = judge_placement({.sent = 2, .found = 2}) == PlacementVerdict::placed;
+    bool const is_fallback =
+        judge_placement({.sent = 2, .found = 1, .growth = fixy::Option<CounterSums>::some(counted_fallback)})
+        == PlacementVerdict::fell_back;
+    bool const is_misplaced =
+        judge_placement({.sent = 2, .found = 1, .growth = fixy::Option<CounterSums>::some(no_fallback)})
+        == PlacementVerdict::misplaced;
+    bool const is_uncounted =
+        judge_placement({.sent = 2, .found = 0, .growth = fixy::Option<CounterSums>::some(CounterSums{})})
+        == PlacementVerdict::uncounted;
+    bool const is_unread = judge_placement({.sent = 2, .found = 1}) == PlacementVerdict::uncounted;
+    if (!is_placed || !is_fallback || !is_misplaced || !is_uncounted || !is_unread) {
+        fixy::report(fixy::Sink::Err,
+                     "the placement verdict is wrong (placed {}, fallback {}, misplaced {}, uncounted {}, unread {})\n",
+                     is_placed, is_fallback, is_misplaced, is_uncounted, is_unread);
+        return 1;
+    }
+    return 0;
 }
 
 [[nodiscard]] int the_allowed_nodes_are_not_empty() {
@@ -247,9 +390,21 @@ template <class Proof>
     return 0;
 }
 
-// An interleave over the allowed nodes puts the pages of a region on each of
-// them in turn, so each allowed node holds a page, and no page is off the
-// nodes of the mask.
+// The count of the pages of a census on the nodes of a mask.  Complexity:
+// linear in the nodes of the mask.
+[[nodiscard]] std::size_t pages_on_nodes(fixy::numa::PageNodeCensus const& census,
+                                         fixy::NumaNodeMask const& nodes) noexcept {
+    std::size_t pages = 0;
+    for (fixy::NumaNodeMask::Slot const slot : nodes.slots()) {
+        pages += census.pages_on(fixy::numa_node_of_slot(slot));
+    }
+    return pages;
+}
+
+// An interleave over the allowed nodes sends the pages of a region to each of
+// them in turn, so each allowed node gets a page, or numa_foreign of the node
+// counts the page that went to another node.  No page is off the allowed
+// nodes, because the kernel takes no page of a node that the cpuset refuses.
 [[nodiscard]] int an_interleaved_region_spreads_over_its_nodes() {
     BgCtx ctx{eff::testing::bg()};
     fixy::NumaNodeMask const nodes = allowed_nodes(ctx);
@@ -265,25 +420,31 @@ template <class Proof>
         fixy::report(fixy::Sink::Err, "the interleave proof states a mask that the mint was not given\n");
         return 1;
     }
-    fixy::numa::PageNodeCensus const census = census_of(ctx, std::move(placement));
-    std::size_t on_mask = 0;
+    TouchedRegion const touched = touch_region(ctx, std::move(placement), nodes);
     std::size_t nodes_with_a_page = 0;
     for (fixy::NumaNodeMask::Slot const slot : nodes.slots()) {
-        std::size_t const pages = census.pages_on(fixy::numa_node_of_slot(slot));
-        on_mask += pages;
-        nodes_with_a_page += pages != 0 ? 1 : 0;
+        if (touched.census.pages_on(fixy::numa_node_of_slot(slot)) != 0) ++nodes_with_a_page;
     }
-    std::size_t const expected_nodes = nodes.size() < 2 ? nodes.size() : 2;
-    if (on_mask != census.pages() || nodes_with_a_page != expected_nodes) {
-        fixy::report(fixy::Sink::Err, "an interleave put {} of {} pages on its {} nodes, and pages on {} of them\n",
-                     on_mask, census.pages(), nodes.size(), nodes_with_a_page);
+    std::size_t const on_mask = pages_on_nodes(touched.census, nodes);
+    if (on_mask != touched.census.pages()) {
+        fixy::report(fixy::Sink::Err, "an interleave put {} of {} pages on its {} allowed nodes\n", on_mask,
+                     touched.census.pages(), nodes.size());
         return 1;
     }
-    return 0;
+    std::size_t const expected_nodes = nodes.size() < 2 ? nodes.size() : 2;
+    PlacementVerdict const verdict =
+        judge_placement({.sent = expected_nodes, .found = nodes_with_a_page, .growth = touched.growth});
+    if (verdict == PlacementVerdict::misplaced) {
+        fixy::report(fixy::Sink::Err,
+                     "an interleave put pages on {} of {} nodes, and numa_foreign of the nodes counts no fallback\n",
+                     nodes_with_a_page, expected_nodes);
+    }
+    return result_of_verdict(verdict, fixy::TextView{"interleave"});
 }
 
-// A preferred policy over one allowed node puts each page on that node while
-// the node has free memory, which a region of two pages does not exhaust.
+// A preferred policy over one allowed node sends each page to that node, or
+// numa_foreign of the node counts the page that went to another node.  No page
+// is off the allowed nodes.
 [[nodiscard]] int a_preferred_region_is_on_its_node() {
     BgCtx ctx{eff::testing::bg()};
     fixy::NumaNodeMask const allowed = allowed_nodes(ctx);
@@ -300,13 +461,21 @@ template <class Proof>
                      std::size_t{std::to_underlying(node)}, foundation::os::error_number_of(placed));
         return 1;
     }
-    fixy::numa::PageNodeCensus const census = census_of(ctx, std::move(placed).expect("the policy was set"));
-    if (!census.is_all_on(node)) {
-        fixy::report(fixy::Sink::Err, "a preferred region has {} of its {} pages off node {}\n", census.pages_off(node),
-                     census.pages(), std::size_t{std::to_underlying(node)});
+    TouchedRegion const touched = touch_region(ctx, std::move(placed).expect("the policy was set"), one_node);
+    fixy::numa::PageNodeCensus const& census = touched.census;
+    if (pages_on_nodes(census, allowed) != census.pages()) {
+        fixy::report(fixy::Sink::Err, "a preferred region has a page off the allowed nodes\n");
         return 1;
     }
-    return 0;
+    PlacementVerdict const verdict =
+        judge_placement({.sent = census.pages(), .found = census.pages_on(node), .growth = touched.growth});
+    if (verdict == PlacementVerdict::misplaced) {
+        fixy::report(fixy::Sink::Err,
+                     "a preferred region has {} of its {} pages off node {}, and numa_foreign of the node counts no "
+                     "fallback\n",
+                     census.pages_off(node), census.pages(), std::size_t{std::to_underlying(node)});
+    }
+    return result_of_verdict(verdict, fixy::TextView{"preferred"});
 }
 
 // The policy mint refuses an empty mask and a preferred policy over two
@@ -400,7 +569,8 @@ template <class Proof>
 int main() {
     int const refusals = the_mint_refuses_a_sentinel_node() + the_mint_refuses_an_empty_region()
                        + the_mint_refuses_a_node_the_machine_lacks() + the_policy_mint_refuses_a_bad_mask()
-                       + the_allowed_nodes_are_not_empty() + the_thread_policy_door_refuses_a_bad_policy();
+                       + the_allowed_nodes_are_not_empty() + the_thread_policy_door_refuses_a_bad_policy()
+                       + the_verdict_accepts_only_a_counted_fallback();
     if (refusals != 0) return 1;
     int const thread_policy = the_thread_policy_reads_back_as_set();
     if (thread_policy != 0 && thread_policy != kSkip) return 1;
