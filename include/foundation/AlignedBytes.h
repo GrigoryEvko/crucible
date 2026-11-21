@@ -60,6 +60,14 @@
 //                   window gives a WindowRefusal and not an end of the process.
 //                   A call takes at most max_block_windows windows, and the
 //                   check of overlap compares each pair of them
+//   with_mut_windows<T>(block, fixed_windows, body)
+//                   the same door over a FixedArray of N windows, for a
+//                   count that the caller knows at compile time.  body gets N
+//                   arguments, one ViewMut<T> for each window, so no array of
+//                   views lives in the frame.  The door tests each window
+//                   and each pair at a fixed position, with no loop over a
+//                   run-time count, and it gives the same refusals in the
+//                   same order
 // The block stays with the caller while body runs, so the door holds no
 // proof that body reads no byte of the block through a second name.  The
 // windows do not overlap, so two ViewMuts of one call never share a byte.
@@ -581,6 +589,186 @@ void with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const&
 // A temporary block gives its bytes back at the end of the full expression.
 template <class T, class... Refused, std::size_t N, class Body>
 void with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) =
+    delete("a ViewMut of a temporary block points into bytes that the full expression gives back: name the block");
+
+// ── The windows of a static count ──────────────────────────────────────────
+
+namespace detail {
+
+// The tests of one window, in the order of the form of a list: inside the
+// block, a whole count of T, and the first byte aligned for T.  A refused
+// window writes its WindowRefusal to refusal and gives true.  Complexity:
+// O(1).
+template <class T>
+[[nodiscard]] CRUCIBLE_INLINE bool is_window_refused_(core::View<std::uint8_t> bytes, ByteWindow const& window,
+                                                      WindowRefusal& refusal) noexcept {
+    std::uint8_t* const block_first = first_of_(core::detail::ViewDoor::key(), bytes);
+    std::size_t const start = window.start().raw();
+    // The two compares of the bound of a window, with no Option of a View.
+    if (start > bytes.size() || window.length().raw() > bytes.size() - start) [[unlikely]] {
+        refusal = WindowRefusal::outside_block;
+        return true;
+    }
+    if (window.length().raw() % sizeof(T) != 0) [[unlikely]] {
+        refusal = WindowRefusal::partial_element;
+        return true;
+    }
+    if ((__builtin_bit_cast(std::uintptr_t, block_first + start) & (alignof(T) - 1)) != 0) [[unlikely]] {
+        refusal = WindowRefusal::misaligned;
+        return true;
+    }
+    return false;
+}
+
+// True when the window at First shares a byte with a window after it.  Each
+// term with a position at or before First is false at compile time, so the
+// compiler emits only the pairs after First.  Complexity: O(N).
+template <std::size_t First, std::size_t N, std::size_t... Seconds>
+[[nodiscard]] CRUCIBLE_INLINE constexpr bool
+overlaps_a_later_window_(core::FixedArray<ByteWindow, N> const& windows,
+                         std::index_sequence<Seconds...> /*seconds*/) noexcept {
+    return (
+        false || ...
+        || (Seconds > First && windows_overlap_(windows.at(core::index<First>()), windows.at(core::index<Seconds>()))));
+}
+
+// True when two windows of the array share a byte: each pair, one time.
+// Complexity: O(N^2) compares, all at fixed positions.
+template <std::size_t N, std::size_t... Firsts>
+[[nodiscard]] CRUCIBLE_INLINE constexpr bool has_window_overlap_(core::FixedArray<ByteWindow, N> const& windows,
+                                                                 std::index_sequence<Firsts...> /*firsts*/) noexcept {
+    return (false || ... || overlaps_a_later_window_<Firsts>(windows, std::make_index_sequence<N>{}));
+}
+
+// The ViewMut of the elements of one window that the tests passed.  The
+// start of the lifetime of the elements gives their View (start_as_array of
+// foundation/core/Array.h).  The tests of the door prove two facts that the
+// start checks again, and the two assumptions give them to the optimizer,
+// as size() of a View gives its bound:
+//   - The window is inside the bytes, and a View holds at most
+//     max_view_count(1) bytes, so its count of T is at most
+//     max_view_count(sizeof(T)).
+//   - A View holds a pointer that is not null for each count above zero, so
+//     the first byte of a window of some elements is not null.
+// A window of no element starts no lifetime, so its View holds no object.
+// Complexity: O(1).
+template <class T, ::foundation::brand::IsBrand Fresh>
+[[nodiscard]] CRUCIBLE_INLINE core::ViewMut<T, Fresh> window_view_(core::View<std::uint8_t> bytes,
+                                                                   ByteWindow const& window) noexcept {
+    std::uint8_t* const first = first_of_(core::detail::ViewDoor::key(), bytes) + window.start().raw();
+    std::size_t const count = window.length().raw() / sizeof(T);
+    if (count == 0) {
+        T* const none = static_cast<T*>(static_cast<void*>(first));
+        return core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(),
+                                       core::View<T>{core::detail::ViewDoor::key(), none, count}};
+    }
+    [[assume(count <= core::max_view_count(sizeof(T)))]];
+    [[assume(first != nullptr)]];
+    core::View<T> const elements = lifetime::start_as_array<T>(first, count);
+    return core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(), elements};
+}
+
+// The type of the argument of a body of the static form at a position: one
+// ViewMut for each window.
+template <class View, std::size_t Position>
+using window_argument_t = View;
+
+// True when body takes one View for each of N positions, with no exception.
+// The gates of the door read only a concept and an alias, so no unit can
+// specialize a template that changes what they admit.
+template <class Body, class View, std::size_t N>
+concept WindowBody = []<std::size_t... Positions>(std::index_sequence<Positions...> /*positions*/) consteval {
+    return std::is_nothrow_invocable_v<Body, window_argument_t<View, Positions>...>;
+}(std::make_index_sequence<N>{});
+
+// The result of a body that takes one View for each of N positions.
+template <class Body, class View, std::size_t N>
+using window_body_result_t =
+    typename decltype([]<std::size_t... Positions>(std::index_sequence<Positions...> /*positions*/) consteval {
+        return std::type_identity<std::invoke_result_t<Body, window_argument_t<View, Positions>...>>{};
+    }(std::make_index_sequence<N>{}))::type;
+
+// The views of the windows that the tests passed, given to body.  The windows
+// come by value, so the door reads each field one time, before the start of
+// the lifetime of a window, which hides the memory of the window from the
+// optimizer.  The checks of each start then read the values that the tests
+// of the door read.
+template <class T, ::foundation::brand::IsBrand Fresh, class Body, class... Windows>
+[[nodiscard]] CRUCIBLE_INLINE decltype(auto) lend_window_views_(core::View<std::uint8_t> bytes, Body&& body,
+                                                                Windows... chosen) noexcept {
+    return static_cast<Body&&>(body)(window_view_<T, Fresh>(bytes, chosen)...);
+}
+
+// The windows at each position, tested and lent to body (the door below).
+template <class T, ::foundation::brand::IsBrand Fresh, std::size_t N, class Body, std::size_t... Positions>
+[[nodiscard]] CRUCIBLE_INLINE auto lend_static_windows_(core::View<std::uint8_t> bytes,
+                                                        core::FixedArray<ByteWindow, N> const& windows, Body&& body,
+                                                        std::index_sequence<Positions...> positions) noexcept
+    -> core::Result<window_frame_value_t<window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal> {
+    using Given = window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>;
+    WindowRefusal refusal = WindowRefusal::overlap;
+    bool const is_refused =
+        (false || ... || is_window_refused_<T>(bytes, windows.at(core::index<Positions>()), refusal))
+        || has_window_overlap_(windows, positions);
+    if (is_refused) [[unlikely]] {
+        return core::err(refusal);
+    }
+    // Each ViewMut goes to body as an argument of its own, so no array of
+    // views lives in the frame.  The windows do not overlap, so the order of
+    // the starts of their lifetimes does not change a byte.
+    if constexpr (std::is_void_v<Given>) {
+        lend_window_views_<T, Fresh>(bytes, static_cast<Body&&>(body), windows.at(core::index<Positions>())...);
+        return core::Unit{};
+    } else {
+        return lend_window_views_<T, Fresh>(bytes, static_cast<Body&&>(body), windows.at(core::index<Positions>())...);
+    }
+}
+
+}  // namespace detail
+
+// The frame door of a static count of windows of a named block (THE
+// WINDOWS).  The count N is a template parameter, and the windows are a
+// FixedArray of N, so the door tests each window and each pair at a fixed
+// position, with no loop over a run-time count.  body gets N arguments, one
+// ViewMut<T, Fresh> for each window, in the order of the windows, so it
+// takes each by value or by a forwarding reference.  No array of views
+// lives in the frame.  The door gives the result of body, or Unit for a body
+// that gives void.  The tests and the refusals are those of the form of a
+// list, in the same order: the tests of each window in order, then the
+// pairs.  Complexity: N tests and N(N-1)/2 compares, with N at most
+// max_block_windows, and the cost of the body.
+template <class T, class... Refused, std::size_t N, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
+         && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
+         && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
+[[nodiscard]] core::Result<
+    detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
+with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {
+    return detail::lend_static_windows_<T, Fresh>(block.view(), windows, static_cast<Body&&>(body),
+                                                  std::make_index_sequence<N>{});
+}
+
+// A body whose result holds a borrow or names the brand of the frame binds
+// to this overload, so the refusal gives its reason.
+template <class T, class... Refused, std::size_t N, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
+             && core::UniqueTarget<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
+             && (!core::FrameResult<detail::window_body_result_t<Body &&, core::ViewMut<T, Fresh>, N>, Fresh>)
+void with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) = delete(
+    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+    "the frame: give a plain value");
+
+// More windows than the check of overlap compares bind to this overload.
+template <class T, class... Refused, std::size_t N, class Body>
+    requires(N > max_block_windows)
+void with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) =
+    delete("with_mut_windows takes at most max_block_windows windows, because its check of overlap compares each pair");
+
+// A temporary block gives its bytes back at the end of the full expression.
+template <class T, class... Refused, std::size_t N, class Body>
+void with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) =
     delete("a ViewMut of a temporary block points into bytes that the full expression gives back: name the block");
 
 }  // namespace foundation

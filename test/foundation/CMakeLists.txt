@@ -2177,6 +2177,15 @@ foundation_neg_compile_test(neg_aligned_bytes_window_view_leaves_frame
 foundation_neg_compile_test(neg_aligned_bytes_windows_of_temporary
   "use of deleted function .void foundation::with_mut_windows"
   "a ViewMut of a temporary block points into bytes that the full expression gives back")
+# The static form over a FixedArray of windows has the same gates: a body
+# result that names the brand of the frame, and more windows than the check
+# of overlap compares.
+foundation_neg_compile_test(neg_aligned_bytes_static_window_view_leaves_frame
+  "use of deleted function .void foundation::with_mut_windows"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_aligned_bytes_static_windows_too_many
+  "use of deleted function .void foundation::with_mut_windows"
+  "with_mut_windows takes at most max_block_windows windows")
 # No number converts to a ByteCount or to an Alignment, so the doors of a
 # Layout refuse two bare numbers, a swapped pair, and a count of elements.  A
 # type that is only declared has no layout.

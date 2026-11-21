@@ -799,6 +799,18 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "aligned_bytes_two_windows_static",
+        "with_mut_windows of a FixedArray of two windows is the raw form of two pointer windows: the tests of each "
+        "window and the four compares of the pair at fixed positions, and the store of the body into each window, "
+        "with no loop and no canary of the stack protector.  The door proves the count and the first byte of each "
+        "window, so the checks of start_as_array fold.  The body reads the first element through get, and the asm "
+        "statement of the start hides the pointer of the window, so the Ref of each element takes a test and a "
+        "branch to a fatal path.  A window of no element takes a branch of its own, and starts no lifetime.  In a "
+        "unit with -fharden-compares, the compares of the door that give a value take a second test into a trap",
+        checks=("fatal",),
+        branches=True,
+    ),
+    Probe(
         "box_read",
         "A read through the dereference of a Box adds one test and one branch to a call of the fatal exit",
         checks=("fatal",),

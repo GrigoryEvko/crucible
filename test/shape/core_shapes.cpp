@@ -814,6 +814,26 @@ public:
     return foundation::with_mut_windows<float>(block, windows, write_first).is_ok();
 }
 
+// The same two output windows through the door of a static count.  The
+// FixedArray holds the two windows, so the door tests each window and the
+// one pair at a fixed position, and the body gets one ViewMut for each
+// window as an argument.  The body writes value into the first element of
+// each window that holds one.  The two windows can swap with no change of
+// the result.
+[[gnu::used]] bool aligned_bytes_two_windows_static(foundation::AlignedBytes& block,
+                                                    fixy::FixedArray<foundation::ByteWindow, 2> const& windows,
+                                                    float value) noexcept {
+    auto const write_first = [value](auto first_view, auto second_view) noexcept {
+        for (auto element : first_view.get(0)) {
+            *element = value;
+        }
+        for (auto element : second_view.get(0)) {
+            *element = value;
+        }
+    };
+    return foundation::with_mut_windows<float>(block, windows, write_first).is_ok();
+}
+
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
@@ -2181,6 +2201,33 @@ struct RawByteWindow final {
 // the first element of each window that holds one.
 [[gnu::used]] bool aligned_bytes_two_windows_raw(RawBlock& block, RawByteWindow first, RawByteWindow second,
                                                  float value) noexcept {
+    std::uint8_t* const base =
+        block.storage == nullptr
+            ? nullptr
+            : block.storage
+                  + ((std::size_t{0} - __builtin_bit_cast(std::uintptr_t, block.storage)) & (block.alignment - 1));
+    if (first.start > block.bytes || first.length > block.bytes - first.start) return false;
+    if (first.length % sizeof(float) != 0) return false;
+    if ((__builtin_bit_cast(std::uintptr_t, base + first.start) & (alignof(float) - 1)) != 0) return false;
+    if (second.start > block.bytes || second.length > block.bytes - second.start) return false;
+    if (second.length % sizeof(float) != 0) return false;
+    if ((__builtin_bit_cast(std::uintptr_t, base + second.start) & (alignof(float) - 1)) != 0) return false;
+    std::size_t const first_end = first.start + first.length;
+    std::size_t const second_end = second.start + second.length;
+    if (first.start < first_end && second.start < second_end && first.start < second_end && second.start < first_end) {
+        return false;
+    }
+    if (first.length != 0) *static_cast<float*>(static_cast<void*>(base + first.start)) = value;
+    if (second.length != 0) *static_cast<float*>(static_cast<void*>(base + second.start)) = value;
+    return true;
+}
+
+// The raw form of the static door: the two pointer windows of the raw form
+// above, read from an array of the caller, as the door reads them.
+[[gnu::used]] bool aligned_bytes_two_windows_static_raw(RawBlock& block, RawByteWindow const (&windows)[2],
+                                                        float value) noexcept {
+    RawByteWindow const& first = windows[0];
+    RawByteWindow const& second = windows[1];
     std::uint8_t* const base =
         block.storage == nullptr
             ? nullptr

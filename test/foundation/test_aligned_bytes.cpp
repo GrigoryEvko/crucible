@@ -285,6 +285,77 @@ void test_windows_refusals() {
     CRUCIBLE_FATAL_INVARIANT(touching.is_ok() && nothing.is_ok() && runs == 2);
 }
 
+using ::foundation::core::FixedArray;
+
+// The count of the elements of the views of a call, or 1000 plus the
+// refusal of the call, so the results of the two doors compare as numbers.
+template <class Given>
+[[nodiscard]] std::size_t code_of(Given const& given) noexcept {
+    return given.match(
+        [](std::size_t const& count) noexcept { return count; },
+        [](WindowRefusal const& refusal) noexcept { return std::size_t{1000} + static_cast<std::size_t>(refusal); });
+}
+
+// The door of a static count gives the count or the refusal that the door
+// of a list gives for the same windows.  Its body gets one ViewMut for each
+// window, in the order of the windows, and each writes only its window.
+void test_static_windows_agree_with_the_list() {
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    AlignedBytes block = mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64}));
+    FixedArray<FixedArray<ByteWindow, 2>, 8> const pairs{
+        FixedArray<ByteWindow, 2>{kFirst16, kAt64Of32}, FixedArray<ByteWindow, 2>{kFirst16, kAt240Of32},
+        FixedArray<ByteWindow, 2>{kAt2Of4, kAt64Of16},  FixedArray<ByteWindow, 2>{kFirst6, kAt64Of16},
+        FixedArray<ByteWindow, 2>{kFirst16, kAt8Of16},  FixedArray<ByteWindow, 2>{kAt32Of16, kFirst36},
+        FixedArray<ByteWindow, 2>{kFirst16, kAt16Of16}, FixedArray<ByteWindow, 2>{kAt8Empty, kFirst16}};
+    for (FixedArray<ByteWindow, 2> const& pair : pairs) {
+        auto const listed = with_mut_windows<float>(
+            block, make_windows(pair.at(::foundation::core::index<0>()), pair.at(::foundation::core::index<1>())),
+            [](auto& views) noexcept {
+                std::size_t count = 0;
+                for (auto& view : views)
+                    count += view.size();
+                return count;
+            });
+        auto const fixed = with_mut_windows<float>(
+            block, pair, [](auto first, auto second) noexcept { return first.size() + second.size(); });
+        CRUCIBLE_FATAL_INVARIANT(code_of(listed) == code_of(fixed));
+    }
+
+    auto const written = with_mut_windows<float>(block, FixedArray<ByteWindow, 2>{kFirst16, kAt64Of32},
+                                                 [](auto first, auto second) noexcept {
+                                                     for (float& element : first)
+                                                         element = 1.5f;
+                                                     for (float& element : second)
+                                                         element = 2.5f;
+                                                 });
+    CRUCIBLE_FATAL_INVARIANT(written.is_ok());
+    auto const matched = with_mut_windows<float>(block, make_windows(kFirst16, kAt64Of32), [](auto& views) noexcept {
+        using ::foundation::core::bit_cast;
+        float expected = 1.5f;
+        std::size_t count = 0;
+        for (auto& view : views) {
+            for (float& element : view) {
+                count += bit_cast<std::uint32_t>(element) == bit_cast<std::uint32_t>(expected) ? 1u : 0u;
+            }
+            expected += 1.0f;
+        }
+        return count;
+    });
+    CRUCIBLE_FATAL_INVARIANT(matched.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
+
+    auto const one = with_mut_windows<float>(block, FixedArray<ByteWindow, 1>{kAt32Of16},
+                                             [](auto only) noexcept { return only.size(); });
+    auto const three = with_mut_windows<float>(
+        block, FixedArray<ByteWindow, 3>{kFirst16, kAt32Of16, kAt64Of32},
+        [](auto first, auto second, auto third) noexcept { return first.size() + second.size() + third.size(); });
+    auto const three_overlap = with_mut_windows<float>(block, FixedArray<ByteWindow, 3>{kFirst16, kAt64Of32, kAt8Of16},
+                                                       [](auto, auto, auto) noexcept {});
+    CRUCIBLE_FATAL_INVARIANT(code_of(one) == 4 && code_of(three) == 16);
+    CRUCIBLE_FATAL_INVARIANT(
+        three_overlap.match([](::foundation::core::Unit const&) noexcept { return false; },
+                            [](WindowRefusal const& refusal) noexcept { return refusal == WindowRefusal::overlap; }));
+}
+
 }  // namespace
 
 int main() {
@@ -297,6 +368,7 @@ int main() {
     test_layouts_refuse_bad_requests();
     test_windows_lend_disjoint_views();
     test_windows_refusals();
+    test_static_windows_agree_with_the_list();
 
     // A writer that leaves a byte with no write, or that gives a byte past the
     // last one, ends the process.  Each refused call runs in a child through
