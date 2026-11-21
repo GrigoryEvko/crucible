@@ -67,8 +67,8 @@
 #include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/os/KernelFloor.h>
-#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/ReflectionList.h>
 #include <foundation/reflect/Hash.h>
 
 #include <concepts>
@@ -76,7 +76,6 @@
 #include <cstdint>
 #include <meta>
 #include <utility>
-#include <vector>
 
 namespace foundation::effects {
 
@@ -262,9 +261,9 @@ namespace detail {
 
 template <Effect E>
 [[nodiscard]] consteval std::meta::info bare_tag_info_() noexcept {
-    static constexpr auto members = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<std::meta::reflect_constant(E), std::vector<std::meta::info>>>(
-            std::meta::members_of(^^cap, std::meta::access_context::current())));
+    static constexpr ::foundation::reflect::ReflectionList members =
+        ::foundation::reflect::reflection_list<std::meta::reflect_constant(E)>(
+            std::meta::members_of(^^cap, std::meta::access_context::current()));
 // An expansion statement unrolls into successive scopes that each
 // declare the same induction variable, so -Wshadow fires once per
 // iteration.

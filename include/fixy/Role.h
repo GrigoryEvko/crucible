@@ -22,12 +22,11 @@
 #include <fixy/Tags.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <cstdint>
 #include <meta>
 #include <type_traits>
-#include <vector>
 
 namespace fixy::role {
 
@@ -112,9 +111,9 @@ template <class Site = void>
 template <class Site = void>
 [[nodiscard]] consteval std::size_t roles_off_the_zero_slot() noexcept {
     std::size_t proven = 0;
-    static constexpr auto role_members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
-            std::meta::members_of(^^::fixy::role, std::meta::access_context::current())));
+    static constexpr ::foundation::reflect::ReflectionList role_members =
+        ::foundation::reflect::reflection_list<^^Site>(
+            std::meta::members_of(^^::fixy::role, std::meta::access_context::current()));
     template for (constexpr auto role_member : role_members) {
         constexpr auto payload = ^^int;
         constexpr auto policy = ^^::fixy::tags::secret_policy::WireSerialize;

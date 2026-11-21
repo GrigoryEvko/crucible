@@ -11,7 +11,7 @@
 // corpus with the rules that the build compiles.
 
 #include <fixy/Axis.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <array>
 #include <cstddef>
@@ -19,7 +19,6 @@
 #include <meta>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace fixy {
 
@@ -915,9 +914,8 @@ template <class Anchor = void>
     bool found = false;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto enumerator : std::define_static_array(
-                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-                          std::meta::enumerators_of(^^RuleCode)))) {
+    template for (constexpr auto enumerator :
+                  ::foundation::reflect::reflection_list<^^Anchor>(std::meta::enumerators_of(^^RuleCode))) {
         if (std::meta::identifier_of(enumerator) == code) found = true;
     }
 #pragma GCC diagnostic pop
@@ -953,9 +951,8 @@ template <class Anchor = void>
     std::string_view missing{};
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto enumerator : std::define_static_array(
-                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-                          std::meta::enumerators_of(^^RuleCode)))) {
+    template for (constexpr auto enumerator :
+                  ::foundation::reflect::reflection_list<^^Anchor>(std::meta::enumerators_of(^^RuleCode))) {
         constexpr std::string_view name = std::meta::identifier_of(enumerator);
         if (missing.empty() && !corpus_lists_(name)) missing = name;
     }

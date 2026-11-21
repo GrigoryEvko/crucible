@@ -4,6 +4,9 @@
 //
 //   reflection_list(range)      the reflections of a range, as one array of
 //                               static storage
+//   reflection_list<Owner>(range)
+//                               the same list, with a call that depends on
+//                               the reflection Owner
 //   list.size()                 the count of the reflections
 //   list.is_empty()             true when the list holds no reflection
 //   list[index]                 the reflection at index, below the count
@@ -19,6 +22,8 @@
 // The first instantiation of std::define_static_array in a unit costs about
 // 68 M instructions (foundation/reflect/EnumName.h).  So a walk that needs
 // no list, such as the walks of EnumName.h, keeps an array of its own size.
+
+#include <foundation/reflect/Anchor.h>
 
 #include <cstddef>
 #include <meta>
@@ -116,6 +121,25 @@ template <class Range>
 [[nodiscard]] consteval ReflectionList reflection_list(Range const& reflections) {
     auto const array = std::define_static_array(reflections);
     return ReflectionList{array.data(), array.size()};
+}
+
+// The list of the reflections of the range, as reflection_list(range) gives
+// it, with a call that depends on Owner.  Owner is the reflection of what the
+// list belongs to: ^^T for a template type parameter T, or a template
+// parameter of the type std::meta::info.
+//
+// A query of a fixed entity, such as the members of one namespace, depends on
+// no template parameter.  So GCC evaluates reflection_list(query) where its
+// template stands, in each unit that includes the header (Anchor.h).  The
+// template argument Owner makes the call depend on Owner, so only a unit that
+// instantiates the enclosing template evaluates it.  A probe unit that
+// defines a template and never instantiates it measures this: with
+// reflection_list<^^T>(query) it adds no instruction, and with
+// reflection_list(query) it adds about 105 M.  A query that reads a template
+// parameter, such as std::meta::enumerators_of(^^T), needs no Owner.
+template <std::meta::info Owner, class Range>
+[[nodiscard]] consteval ReflectionList reflection_list(Range const& reflections) {
+    return ::foundation::reflect::reflection_list(static_cast<anchored_t<Owner, Range> const&>(reflections));
 }
 
 }  // namespace foundation::reflect

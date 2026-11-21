@@ -12,7 +12,7 @@
 
 #include <fixy/Predicates.h>
 #include <foundation/diag/FailClosed.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <array>
 #include <cstddef>
@@ -574,9 +574,8 @@ template <class From, class To>
 // do test/fixy/test_refined.cpp and the fixtures that plant a cycle.
 template <class Site = void>
 [[nodiscard]] consteval bool every_edge_holds() noexcept {
-    static constexpr auto members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
-            std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked())));
+    static constexpr ::foundation::reflect::ReflectionList members = ::foundation::reflect::reflection_list<^^Site>(
+        std::meta::members_of(^^refined::admitted_implications, std::meta::access_context::unchecked()));
     constexpr bool is_each_member_known = [] consteval {
         for (std::meta::info const member : members) {
             if (!::foundation::fail_closed::is_edge(member) && !refined::is_narrowing_edge(member)

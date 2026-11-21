@@ -24,6 +24,24 @@ static_assert(kNone.size() == 0 && kNone.is_empty());
 static_assert(kKinds[0] == ^^Kind::first);
 static_assert(kKinds[2] == ^^Kind::third);
 
+// The list with an owner is the list of the same range: the same count and
+// the same reflections in the same order.  The owner changes no element.
+inline constexpr ReflectionList kOwnedKinds = reflection_list<^^Empty>(std::meta::enumerators_of(^^Kind));
+static_assert(kOwnedKinds.size() == 3);
+static_assert(kOwnedKinds[0] == ^^Kind::first);
+static_assert(kOwnedKinds[2] == ^^Kind::third);
+static_assert(kOwnedKinds[1] == kKinds[1]);
+static_assert(reflection_list<^^Kind>(std::meta::enumerators_of(^^Empty)).is_empty());
+
+// In a template, a query of a fixed entity takes a template parameter as its
+// owner.  Each instantiation gives the same list.
+template <class Owner>
+consteval std::size_t count_of_fixed_kinds() {
+    static constexpr ReflectionList kinds = reflection_list<^^Owner>(std::meta::enumerators_of(^^Kind));
+    return kinds.size();
+}
+static_assert(count_of_fixed_kinds<int>() == 3 && count_of_fixed_kinds<Empty>() == 3);
+
 // A read below the count is a constant expression, and a read at the count
 // is not one.
 template <std::size_t Index>

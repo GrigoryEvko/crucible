@@ -29,15 +29,14 @@
 
 #include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
-#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
 #include <type_traits>
-#include <vector>
 
 namespace foundation::effects {
 
@@ -193,9 +192,9 @@ namespace detail {
 // of the namespace.
 template <ResourceKind K>
 [[nodiscard]] consteval std::meta::info tag_template_of_() noexcept {
-    static constexpr auto members = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<std::meta::reflect_constant(K), std::vector<std::meta::info>>>(
-            std::meta::members_of(^^resource, std::meta::access_context::current())));
+    static constexpr ::foundation::reflect::ReflectionList members =
+        ::foundation::reflect::reflection_list<std::meta::reflect_constant(K)>(
+            std::meta::members_of(^^resource, std::meta::access_context::current()));
     std::meta::info found = ^^void;
     std::size_t matches = 0;
 #pragma GCC diagnostic push

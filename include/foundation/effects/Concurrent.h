@@ -23,7 +23,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Resources.h>
-#include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <array>
 #include <cstddef>
@@ -114,9 +114,8 @@ template <typename R1, typename R2>
     // The local must be static.  An expansion statement needs its
     // operand to be a constant expression, and a non-static constexpr
     // local has a per-invocation address, which is not one.
-    static constexpr auto axes =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^R1, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^ResourceKind)));
+    static constexpr ::foundation::reflect::ReflectionList axes =
+        ::foundation::reflect::reflection_list<^^R1>(std::meta::enumerators_of(^^ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto axis : axes) {
@@ -144,9 +143,8 @@ namespace detail {
 
 template <typename R1, typename R2>
 [[nodiscard]] consteval std::meta::info canonical_sum_() noexcept {
-    static constexpr auto axes =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^R1, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^ResourceKind)));
+    static constexpr ::foundation::reflect::ReflectionList axes =
+        ::foundation::reflect::reflection_list<^^R1>(std::meta::enumerators_of(^^ResourceKind));
     std::vector<std::meta::info> tags;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -184,10 +182,9 @@ template <typename... Rs>
     if constexpr (!(IsConcurrentRow<Rs> && ...)) {
         return false;
     } else {
-        using axis_list =
-            ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Rs)), std::vector<std::meta::info>>;
-        static constexpr auto axes =
-            std::define_static_array(static_cast<axis_list>(std::meta::enumerators_of(^^ResourceKind)));
+        static constexpr ::foundation::reflect::ReflectionList axes =
+            ::foundation::reflect::reflection_list<std::meta::reflect_constant(sizeof...(Rs))>(
+                std::meta::enumerators_of(^^ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
         template for (constexpr auto axis : axes) {
@@ -246,9 +243,8 @@ struct kind_occurrence_count<K, ConcurrentRow<Ts...>> {
 
 template <typename R>
 [[nodiscard]] consteval bool names_each_axis_once_() noexcept {
-    static constexpr auto axes =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^R, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^ResourceKind)));
+    static constexpr ::foundation::reflect::ReflectionList axes =
+        ::foundation::reflect::reflection_list<^^R>(std::meta::enumerators_of(^^ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto axis : axes) {

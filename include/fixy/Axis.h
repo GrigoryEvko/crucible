@@ -56,6 +56,7 @@
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Enumerate.h>
+#include <foundation/reflect/ReflectionList.h>
 #include <fixy/Tags.h>
 
 #include <concepts>
@@ -65,7 +66,6 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
-#include <vector>
 
 namespace fixy {
 
@@ -630,9 +630,8 @@ using strict_pole_t = typename[:axis_record(A).strict:];
 // and each call between the walks passes Anchor on.
 template <class Anchor = void>
 [[nodiscard]] consteval bool every_axis_has_traits() noexcept {
-    static constexpr auto axes =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^Axis)));
+    static constexpr ::foundation::reflect::ReflectionList axes =
+        ::foundation::reflect::reflection_list<^^Anchor>(std::meta::enumerators_of(^^Axis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : axes) {
@@ -659,9 +658,8 @@ template <class Anchor = void>
 
 template <class Anchor = void>
 [[nodiscard]] consteval std::size_t count_axes_of_shape(Shape shape) noexcept {
-    static constexpr auto axes =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^Axis)));
+    static constexpr ::foundation::reflect::ReflectionList axes =
+        ::foundation::reflect::reflection_list<^^Anchor>(std::meta::enumerators_of(^^Axis));
     std::size_t count = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -685,9 +683,8 @@ namespace detail {
 
 template <class Anchor = void>
 [[nodiscard]] consteval std::string axes_whose_pole_is_not_the_weakest_claim_() {
-    static constexpr auto axes =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^Axis)));
+    static constexpr ::foundation::reflect::ReflectionList axes =
+        ::foundation::reflect::reflection_list<^^Anchor>(std::meta::enumerators_of(^^Axis));
     std::string offenders;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"

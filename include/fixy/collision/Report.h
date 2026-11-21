@@ -15,6 +15,7 @@
 #include <fixy/Collision.h>
 #include <fixy/collision/Codes.h>
 #include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <cstddef>
 #include <meta>
@@ -119,9 +120,8 @@ template <class Roster, class Population = all_atom_roster>
 template <class Site>
 [[nodiscard]] consteval std::string_view roster_declared_but_not_joined() {
     ::foundation::reflect::anchored_t<^^Site, std::string> offenders;
-    static constexpr auto members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
-            std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current())));
+    static constexpr ::foundation::reflect::ReflectionList members = ::foundation::reflect::reflection_list<^^Site>(
+        std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current()));
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type_alias(member)) {
             constexpr std::string_view name = std::meta::identifier_of(member);
@@ -146,9 +146,8 @@ template <class Site>
 template <class Site>
 [[nodiscard]] consteval std::string_view sample_set_wrongly_joined() {
     ::foundation::reflect::anchored_t<^^Site, std::string> offenders;
-    static constexpr auto members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
-            std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current())));
+    static constexpr ::foundation::reflect::ReflectionList members = ::foundation::reflect::reflection_list<^^Site>(
+        std::meta::members_of(^^::fixy::atom::detail, std::meta::access_context::current()));
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_type_alias(member)) {
             constexpr std::string_view name = std::meta::identifier_of(member);

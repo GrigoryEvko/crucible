@@ -59,7 +59,6 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace fixy::corpus {
 
@@ -74,9 +73,8 @@ namespace detail {
 template <class Anchor = void>
 [[nodiscard]] consteval std::size_t non_none_policy_count_() noexcept {
     std::size_t count = 0;
-    static constexpr auto members =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-            std::meta::members_of(^^::fixy::tags::secret_policy, std::meta::access_context::unchecked())));
+    static constexpr ::foundation::reflect::ReflectionList members = ::foundation::reflect::reflection_list<^^Anchor>(
+        std::meta::members_of(^^::fixy::tags::secret_policy, std::meta::access_context::unchecked()));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : members) {

@@ -95,6 +95,7 @@
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <concepts>
 #include <cstddef>
@@ -541,9 +542,8 @@ inline constexpr std::size_t pending_axis_count = pending_axes.size();
 template <class Anchor = void>
 [[nodiscard]] consteval bool every_pending_axis_is_still_empty() noexcept {
     bool unchanged = true;
-    template for (constexpr auto axis_member : std::define_static_array(
-                      static_cast<::foundation::reflect::anchored_t<^^Anchor, std::vector<std::meta::info>>>(
-                          std::meta::enumerators_of(^^::fixy::Axis)))) {
+    template for (constexpr auto axis_member :
+                  ::foundation::reflect::reflection_list<^^Anchor>(std::meta::enumerators_of(^^::fixy::Axis))) {
         constexpr Axis axis = [:axis_member:];
         if constexpr (axis != Axis::Type) {
             unchanged = unchanged && (axis_is_pending(axis) != axis_has_an_atom<axis>);
