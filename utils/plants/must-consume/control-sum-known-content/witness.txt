@@ -1,9 +1,16 @@
 # Each door of an Option on a content that the door admits: a fill of an
 # empty Option and of an Option after take, an expect_none after take, and
 # the two doors after a test.  Each door on a content that the rule does not
-# know: a parameter, the value of a call, and a join of two contents.  The
-# unit compiles in the mode error, and the rule gives no line.
+# know: a parameter, the value of a call, and a join of two contents.  A
+# borrow ends each fact of the content, because the callee can keep the
+# Option and fill it at a later call: a reference that a callee keeps, a
+# raw address in an opt-out region, a class that holds a reference to the
+# Option, a local reference and a capture by reference.  So an expect after a
+# test that shows such an Option empty keeps its run-time check.  The unit
+# compiles in the mode error, and the rule gives no line.
 
 compile known src/known.cpp must-consume=on mode=error
 flag known -freflection
 exit known pass
+finding known quarantine region src/known.cpp:89:1 | PROBE: the callee keeps a raw address of the Option
+finding known quarantine opted-out src/known.cpp:90:34 | raw-pointer-object held

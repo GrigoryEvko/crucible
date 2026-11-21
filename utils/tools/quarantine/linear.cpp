@@ -168,7 +168,10 @@
 //     sum that the rule shows empty gives option-known-empty.  The run-time
 //     check of such a member would end the process on each path.  The check
 //     stays only where the rule does not know the content: a sum of a call, a
-//     parameter, a member, or a sum after an alias or a join of two contents.
+//     parameter, a member, a sum after an alias or a join of two contents,
+//     and a sum after a call that took it by a reference or a pointer that
+//     is not const, because the callee can keep the reference and fill the
+//     sum at a later call.
 //     A use that can fill the sum makes it one that can be
 //     full: a member with an object parameter that is not const, and an
 //     argument of a reference or a pointer that is not const.  An alias of
@@ -755,6 +758,10 @@ struct Slot {
     // A capture by reference, a stored address or a reference member names
     // the sum, so a later write through it can fill the sum (THE SUMS).
     bool is_aliased = false;
+    // A call took the sum by a reference or a pointer that is not const, and
+    // the callee can keep it and fill the sum at a later point, so no fact
+    // of the content holds for THE KNOWN CONTENT after it (THE SUMS).
+    bool is_borrowed = false;
     // A closure captured the object by reference, so the rule cannot see its
     // consume, and the rule linear-capture reports the capture (THE CAPTURES).
     bool is_escaped = false;
@@ -1158,10 +1165,12 @@ private:
     // such as fill or expect_none, on a sum that each path shows full, and a
     // member that carries needs_full, such as expect, on a sum that each path
     // shows empty.  The run-time check of such a member ends the process on
-    // each path, so the rule refuses the call at compile time.
+    // each path, so the rule refuses the call at compile time.  A sum that a
+    // call borrowed gives no refusal, because the callee can keep the
+    // reference and change the sum at each later call.
     void check_known_content(tree decl, tree field, tree callee, location_t location, const FlowState& state) {
         std::size_t slot = sum_slot(decl, field);
-        if (!can_show_content(slot) || callee == NULL_TREE || !state.is_reachable) {
+        if (!can_show_content(slot) || slots_[slot].is_borrowed || callee == NULL_TREE || !state.is_reachable) {
             return;
         }
         Content content = state.get_content(slot);
@@ -2071,6 +2080,9 @@ private:
                 (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) || TYPE_PTR_P(parameter_type);
             if (is_mutable_borrow && !TYPE_READONLY(TREE_TYPE(parameter_type))) {
                 note_can_be_full(decl, field, state);
+                if (std::size_t slot = sum_slot(decl, field); slot != kNoParent) {
+                    slots_[slot].is_borrowed = true;
+                }
             }
             bool is_rvalue_reference = TYPE_REF_P(parameter_type) && TYPE_REF_IS_RVALUE(parameter_type);
             if (is_rvalue_reference || (!TYPE_REF_P(parameter_type) && CLASS_TYPE_P(parameter_type))) {

@@ -2,6 +2,7 @@
 // that the rule does not know.  The unit compiles in the mode error with no
 // line of the rule, and each unknown content keeps its run-time check.
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Choice.h>
 
 #include <utility>
@@ -65,6 +66,77 @@ void reads_unknown_contents(Option<Token> parameter) {
     }
     joined.fill(Token{5});
     sink(std::move(joined).expect("the second fill gave a token"));
+}
+
+void keep(Option<Token>& held) noexcept;
+void fill_kept() noexcept;
+
+// A callee keeps the reference, and a later call fills the Option through it
+// after a test showed it empty.  The borrow ends each fact of the content, so
+// the expect keeps its run-time check.
+void reads_a_kept_reference() {
+    Option<Token> held{};
+    keep(held);
+    if (held.is_none()) {
+        fill_kept();
+        sink(std::move(held).expect("the kept reference gave a token"));
+    } else {
+        sink(std::move(held).expect("keep gave a token"));
+    }
+}
+
+// The same through a pointer that the callee keeps.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the callee keeps a raw address of the Option")
+void keep_address(Option<Token>* held) noexcept;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+void reads_a_kept_address() {
+    Option<Token> held{};
+    keep_address(&held);
+    if (held.is_none()) {
+        fill_kept();
+        sink(std::move(held).expect("the kept address gave a token"));
+    } else {
+        sink(std::move(held).expect("keep_address gave a token"));
+    }
+}
+
+// The same through a class that holds a reference to the Option, which a
+// callee keeps.
+struct Slot {
+    Option<Token>& held;
+};
+
+void keep_slot(Slot& slot) noexcept;
+
+void reads_a_kept_member() {
+    Option<Token> held{};
+    Slot slot{held};
+    keep_slot(slot);
+    if (held.is_none()) {
+        fill_kept();
+        sink(std::move(held).expect("the kept slot gave a token"));
+    } else {
+        sink(std::move(held).expect("keep_slot gave a token"));
+    }
+}
+
+// A local reference empties the Option before the fill.
+void fills_after_a_local_reference() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    Option<Token>& same = held;
+    sink(same.take().expect("the reference took the token"));
+    held.fill(Token{2});
+    sink(std::move(held).expect("fill gave the second token"));
+}
+
+// A capture by reference empties the Option before the fill.
+void fills_after_a_capture() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    auto empty = [&held] { sink(held.take().expect("the capture took the token")); };
+    empty();
+    held.fill(Token{2});
+    sink(std::move(held).expect("fill gave the second token"));
 }
 
 }  // namespace planted
