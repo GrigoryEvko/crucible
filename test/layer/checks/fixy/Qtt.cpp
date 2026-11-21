@@ -4,6 +4,7 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/core/Index.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
@@ -15,7 +16,7 @@ namespace fixy {
 // Both builds are pinned, and each pin is written so the other build
 // cannot satisfy it by accident.  fixy/Qtt.h keeps the pins of the
 // tracked build, because only a translation unit that sets
-// CRUCIBLE_QTT_TRACK_CONSUME can read them.
+// CRUCIBLE_QTT_TRACK_CONSUME can read them: each unit of a test build.
 //
 // Off: the grade is empty, the tracker is empty, and the wrapper is the
 // value.  This is the shape every hot path was measured against.
@@ -27,6 +28,14 @@ static_assert(qtt_consume_tracked || sizeof(Affine<void*>) == sizeof(void*));
 static_assert(qtt_consume_tracked || sizeof(Affine<long long>) == sizeof(long long));
 static_assert(qtt_consume_tracked || std::is_trivially_destructible_v<Linear<int>>);
 static_assert(qtt_consume_tracked || std::is_trivially_move_constructible_v<Linear<int>>);
+
+// THE CONSUME STATE of fixy/Qtt.h: a T that declares a niche holds the
+// state in its own bytes in the tracked build, so the wrapper has the size of
+// T in each build.  Its destructor reads the state only in the tracked build.
+static_assert(sizeof(Linear<::foundation::core::Index<8>>) == sizeof(::foundation::core::Index<8>));
+static_assert(sizeof(Affine<::foundation::core::Index<8>>) == sizeof(::foundation::core::Index<8>));
+static_assert(qtt_consume_tracked == !std::is_trivially_destructible_v<Linear<::foundation::core::Index<8>>>);
+static_assert(qtt_consume_tracked == !std::is_trivially_move_constructible_v<Linear<::foundation::core::Index<8>>>);
 
 static_assert(Linear<int>::modality == ::foundation::algebra::ModalityKind::Absolute);
 static_assert(Affine<int>::modality == ::foundation::algebra::ModalityKind::Absolute);

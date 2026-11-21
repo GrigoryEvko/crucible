@@ -40,7 +40,7 @@ unwrap_error(ci::IntegrityWrappedMessage<ci::IntegrityOwnedPayload<PayloadBytes>
 
 int main() {
     static_assert(sizeof(ci::IntegrityHash) == sizeof(std::uint64_t));
-    static_assert(sizeof(ci::IntegrityOwnedPayload<HelloBytes>) == sizeof(HelloBytes));
+    static_assert(::fixy::qtt_consume_tracked || sizeof(ci::IntegrityOwnedPayload<HelloBytes>) == sizeof(HelloBytes));
     static_assert(!std::copy_constructible<ci::IntegrityOwnedPayload<HelloBytes>>);
     static_assert(ci::ByteContiguousPayload<HelloBytes>);
     static_assert(ci::ByteContiguousPayload<::fixy::View<std::byte const>>);

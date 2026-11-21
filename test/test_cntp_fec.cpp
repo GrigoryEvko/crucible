@@ -155,7 +155,7 @@ int main() {
     static_assert(Rs42::shard_bytes_for(1) == 1);
     static_assert(Rs42::shard_bytes_for(17) == 5);
     static_assert(Rs42::encoded_size_for(17) == 30);
-    static_assert(sizeof(ci::LinearShardBuffer<Bytes<8>>) == sizeof(Bytes<8>));
+    static_assert(::fixy::qtt_consume_tracked || sizeof(ci::LinearShardBuffer<Bytes<8>>) == sizeof(Bytes<8>));
     static_assert(std::same_as<Rs42::concurrent_budget,
                                ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>);
     static_assert(ci::ByteContiguousBuffer<Bytes<8>> && ci::ByteContiguousBuffer<::fixy::View<std::byte const>>);

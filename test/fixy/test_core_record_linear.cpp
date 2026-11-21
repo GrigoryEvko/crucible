@@ -49,7 +49,7 @@ void test_linear_values_consume_through_a_binding() {
     using Values = fixy::Record<fixy::Linear<int>, fixy::Linear<int>>;
     static_assert(::foundation::linear::is_linear_v<Values>);
     static_assert(!std::is_copy_constructible_v<Values>);
-    static_assert(sizeof(Values) == 2 * sizeof(int));
+    static_assert(fixy::qtt_consume_tracked || sizeof(Values) == 2 * sizeof(int));
 
     Values values{fixy::mint_linear<int>(3), fixy::mint_linear<int>(4)};
     auto [first, second] = std::move(values);

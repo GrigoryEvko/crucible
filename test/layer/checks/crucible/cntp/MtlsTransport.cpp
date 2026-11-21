@@ -8,8 +8,8 @@ static_assert(sizeof(MtlsPeerCount) == sizeof(std::uint8_t));
 static_assert(MtlsPolicy::max_peer_names <= ::fixy::max_of<std::uint8_t>,
               "MtlsPeerCount must be able to name every allowlist slot");
 
-static_assert(sizeof(MtlsCertificate) == sizeof(MtlsCertificateBytes));
-static_assert(sizeof(MtlsPrivateKey) == sizeof(MtlsPrivateKeyBytes));
+static_assert(::fixy::qtt_consume_tracked || sizeof(MtlsCertificate) == sizeof(MtlsCertificateBytes));
+static_assert(::fixy::qtt_consume_tracked || sizeof(MtlsPrivateKey) == sizeof(MtlsPrivateKeyBytes));
 static_assert(sizeof(MtlsCertificateFingerprint) == sizeof(MtlsSha256Fingerprint));
 static_assert(sizeof(AuthenticatedMtlsPeer) == sizeof(MtlsPeerIdentity));
 static_assert(!std::copy_constructible<MtlsPrivateKeyBytes>);

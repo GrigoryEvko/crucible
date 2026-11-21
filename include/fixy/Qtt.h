@@ -35,9 +35,12 @@
 // layout with nothing to say so.  The bit has its own key, and the
 // disagreement is loud.
 //
-//   - CRUCIBLE_QTT_TRACK_CONSUME is the key, and the build system sets
-//     it once per preset for every target in it, so a library and the
-//     tests that link it cannot differ inside one build.
+//   - CRUCIBLE_QTT_TRACK_CONSUME is the key.  The build system sets it on
+//     each target of a build with a sanitizer (the test builds: the presets
+//     default, tsan and ubsan-strict), and on no target of a Release build.
+//     So a library and the tests that link it cannot differ inside one
+//     build.  The tracker is a test oracle of the rule must-consume of the
+//     quarantine plugin, which refuses a drop at compile time.
 //   - CRUCIBLE_QTT_ABI puts [[gnu::abi_tag]] on the class while the
 //     bit is on, so a Qtt that crosses a translation-unit boundary
 //     between a tracked build and an untracked one is an undefined
@@ -51,6 +54,14 @@
 // is empty and collapses.  The move assignment is user-provided in each
 // build, so the wrapper is not trivially copyable: std::bit_cast builds no
 // wrapper from bytes, and an Option of a wrapper takes the owning form.
+//
+// THE CONSUME STATE
+//     With the bit on, a T that declares a niche (niche<T> of
+//     foundation/core/Choice.h) holds the state in its own bytes: a consumed
+//     wrapper holds the empty value of the niche, which no valid T holds.
+//     So Linear<T> keeps the size of T, and the move and the destructor of
+//     the wrapper are user-provided.  Each other T gets one bool beside it in
+//     the base tracker.
 //
 // Linear<T> carries the annotation linear of foundation/Linear.h, and
 // Affine<T> does not.  An Affine value can end with no door, so it is not
@@ -78,8 +89,10 @@
 //     accuses.
 //   - A consume whose RESULT is discarded.  The obligation moves into
 //     the returned T, and the tracker stops following it there.
-//   - Anything at all in a build with the key off, which is every build
-//     that ships.  The key arms one test target today.
+//   - A write of the empty value of the niche through peek_mut.  The
+//     wrapper of a niche then reads as consumed.  No valid T holds that
+//     value, so only a write of a T that is not valid does it.
+//   - Anything at all in a build with the key off: each Release build.
 
 #include <fixy/GradedFacade.h>
 #include <foundation/ByteSeal.h>
@@ -88,6 +101,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/QttSemiring.h>
 #include <foundation/contracts/Armed.h>
+#include <foundation/core/Choice.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -213,8 +227,15 @@ private:
     bool live_ = true;
 };
 
+// A tracked wrapper of T keeps its consume state in the niche of T (THE
+// CONSUME STATE).  Such a wrapper holds no bool beside T, and the base tracker
+// is the empty one.  The fact is a concept, because niche is an open template
+// and a gate reads it only through a concept (the rule home).
+template <class T>
+concept TracksInNiche = CRUCIBLE_QTT_TRACK_CONSUME != 0 && !::foundation::core::detail::UndeclaredNicheOf<T>;
+
 template <auto Grade, class T>
-using ConsumeTracker = ConsumeTrackerImpl<Grade, T, CRUCIBLE_QTT_TRACK_CONSUME != 0>;
+using ConsumeTracker = ConsumeTrackerImpl<Grade, T, CRUCIBLE_QTT_TRACK_CONSUME != 0 && !TracksInNiche<T>>;
 
 }  // namespace detail
 
@@ -327,9 +348,31 @@ private:
 
     using key_ = ::foundation::algebra::grade_key<Qtt>;
     using tracker_ = detail::ConsumeTracker<Grade, T>;
+    using niche_state_ = ::foundation::core::detail::ConsumedNiche<T>;
+
+    // THE CONSUME STATE in the niche of T: a consumed wrapper holds the empty
+    // value of the niche, and each other wrapper is live.
+    static constexpr bool is_niche_tracked_ = detail::TracksInNiche<T>;
 
     [[nodiscard]] static constexpr typename lattice_type::element_type pinned_grade() noexcept {
         return typename lattice_type::element_type{};
+    }
+
+    [[nodiscard]] constexpr bool is_niche_live_() const noexcept { return !niche_state_::holds(impl_.peek()); }
+
+    constexpr void mark_niche_consumed_() noexcept { niche_state_::mark(impl_.peek_mut(key_{})); }
+
+    constexpr void require_niche_live_(const char* what, const char* site, int line) const noexcept {
+        if (!is_niche_live_()) [[unlikely]]
+            detail::fail_consume(what, site, line);
+    }
+
+    // Only the exactly-once grade owes a discharge, as in the base tracker.
+    constexpr void report_niche_obligation_(const char* site, int line) const noexcept {
+        if constexpr (Grade == ::foundation::algebra::lattices::QttGrade::One) {
+            if (is_niche_live_()) [[unlikely]]
+                detail::fail_consume("linear obligation never discharged", site, line);
+        }
     }
 
     template <typename... Args>
@@ -349,8 +392,27 @@ private:
 public:
     Qtt(const Qtt&) = delete("Linear<T> and Affine<T> are move-only; use std::move or drop()");
     Qtt& operator=(const Qtt&) = delete("Linear<T> and Affine<T> are move-only; use std::move or drop()");
-    Qtt(Qtt&&) = default;
-    ~Qtt() = default;
+    Qtt(Qtt&&)
+        requires(!is_niche_tracked_)
+    = default;
+    ~Qtt()
+        requires(!is_niche_tracked_)
+    = default;
+
+    // A move of a wrapper with the state in the niche leaves the empty value
+    // in the source, so the end of the source is silent and a later use of
+    // the source is caught.
+    constexpr Qtt(Qtt&& other) noexcept
+        requires is_niche_tracked_
+        : impl_{static_cast<graded_type&&>(other.impl_)} {
+        other.mark_niche_consumed_();
+    }
+
+    constexpr ~Qtt()
+        requires is_niche_tracked_
+    {
+        report_niche_obligation_(__PRETTY_FUNCTION__, __LINE__);
+    }
 
     // User-provided, so the wrapper is not trivially copyable, and an
     // assignment stays a call that a rule of the plugin can read.  An
@@ -361,8 +423,16 @@ public:
     constexpr Qtt& operator=(Qtt&& other) noexcept(std::is_nothrow_move_assignable_v<T>)
         requires std::is_move_assignable_v<T>
     {
-        this->tracker_::operator=(static_cast<tracker_&&>(other));
-        impl_ = static_cast<graded_type&&>(other.impl_);
+        if constexpr (is_niche_tracked_) {
+            // The base tracker is the empty one, and the state travels in
+            // the bytes of the payload.
+            report_niche_obligation_(__PRETTY_FUNCTION__, __LINE__);
+            impl_ = static_cast<graded_type&&>(other.impl_);
+            other.mark_niche_consumed_();
+        } else {
+            this->tracker_::operator=(static_cast<tracker_&&>(other));
+            impl_ = static_cast<graded_type&&>(other.impl_);
+        }
         return *this;
     }
 
@@ -372,7 +442,14 @@ public:
     // an already moved-from value.
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         this->mark_consumed(__PRETTY_FUNCTION__, __LINE__);
-        return std::move(impl_).consume();
+        if constexpr (is_niche_tracked_) {
+            require_niche_live_("consumed twice", __PRETTY_FUNCTION__, __LINE__);
+            T value = std::move(impl_).consume();
+            mark_niche_consumed_();
+            return value;
+        } else {
+            return std::move(impl_).consume();
+        }
     }
 
     // Reading a consumed wrapper is use-after-consume in the plainest
@@ -381,6 +458,9 @@ public:
     // dangles at the end of the full expression.
     [[nodiscard]] constexpr const T& peek() const& noexcept {
         this->require_live("read after consume", __PRETTY_FUNCTION__, __LINE__);
+        if constexpr (is_niche_tracked_) {
+            require_niche_live_("read after consume", __PRETTY_FUNCTION__, __LINE__);
+        }
         return impl_.peek();
     }
     const T& peek() const&& = delete("a reference into a temporary Linear or Affine dangles at the end of the full "
@@ -390,6 +470,9 @@ public:
     // semantic rather than incidental.
     [[nodiscard]] constexpr T& peek_mut() & noexcept {
         this->require_live("written after consume", __PRETTY_FUNCTION__, __LINE__);
+        if constexpr (is_niche_tracked_) {
+            require_niche_live_("written after consume", __PRETTY_FUNCTION__, __LINE__);
+        }
         return impl_.peek_mut(key_{});
     }
 
@@ -416,6 +499,10 @@ public:
             // A deliberate discard is a discharge, so the state records
             // it and a use after this drop reads as use-after-consume.
             x.mark_consumed(__PRETTY_FUNCTION__, __LINE__);
+            if constexpr (is_niche_tracked_) {
+                x.require_niche_live_("consumed twice", __PRETTY_FUNCTION__, __LINE__);
+                x.mark_niche_consumed_();
+            }
         }
     }
 };
@@ -437,9 +524,9 @@ template <class T, class... Args>
 inline constexpr bool qtt_consume_tracked = CRUCIBLE_QTT_TRACK_CONSUME != 0;
 
 // The pins of the tracked build stay in this header.  They hold only in
-// a translation unit that sets CRUCIBLE_QTT_TRACK_CONSUME, and
-// test_qtt_tracked is the one unit that sets it.  The check file of this
-// header pins the untracked build.
+// a translation unit that sets CRUCIBLE_QTT_TRACK_CONSUME: each unit of a
+// test build, and test_qtt_tracked in each build.  The check file of this
+// header pins the untracked build, and the form of the niche.
 //
 // On: the state is one bool, so the wrapper grows by at most the
 // alignment it has to round up to.  A tracker that quietly grew past

@@ -54,6 +54,16 @@ constexpr ::fixy::TextView kNeverDischargedAtScopeEnd{
 constexpr ::fixy::TextView kNeverDischargedAtAssignment{
     "foundation: linear obligation never discharged failed: constexpr fixy::detail::ConsumeTrackerImpl<Grade, T, "
     "true>& fixy::detail::ConsumeTrackerImpl<Grade, T, true>::operator="};
+// The reports of a wrapper that keeps the state in the niche of its payload.
+constexpr ::fixy::TextView kNicheNeverDischargedAtScopeEnd{
+    "foundation: linear obligation never discharged failed: constexpr fixy::Qtt<Grade, T>::~Qtt()"};
+constexpr ::fixy::TextView kNicheNeverDischargedAtAssignment{
+    "foundation: linear obligation never discharged failed: constexpr fixy::Qtt<Grade, T>& fixy::Qtt<Grade, "
+    "T>::operator="};
+
+// A payload with a niche: the empty value of an Index<8> is 8, which no
+// Index<8> holds.
+using Slot = ::fixy::Index<8>;
 
 // Without the key this TU would prove nothing, and it would prove it
 // quietly: every death test below would end its child with no abort.
@@ -66,9 +76,16 @@ static_assert(::fixy::qtt_consume_tracked,
 static_assert(sizeof(Linear<std::uint32_t>) <= sizeof(std::uint32_t) + alignof(std::uint32_t));
 static_assert(sizeof(Affine<std::uint64_t>) <= sizeof(std::uint64_t) + alignof(std::uint64_t));
 
+// A payload with a niche keeps the state in its own bytes, so the wrapper
+// keeps the size of the payload.
+static_assert(sizeof(Linear<Slot>) == sizeof(Slot));
+static_assert(sizeof(Affine<Slot>) == sizeof(Slot));
+
 // A destructor that can say something is a destructor that runs.
 static_assert(!std::is_trivially_destructible_v<Linear<int>>);
 static_assert(!std::is_trivially_destructible_v<Affine<int>>);
+static_assert(!std::is_trivially_destructible_v<Linear<Slot>>);
+static_assert(std::is_nothrow_move_constructible_v<Linear<Slot>>);
 
 // The tracker holds the obligation, not a copy of it: the wrapper is
 // still move-only, and the move is still noexcept.
@@ -248,6 +265,59 @@ int main() {
         swap(live, spent);
         drop(std::move(spent));
     }();
+
+    // ── The state in the niche of the payload ────────────────────────
+    //
+    // A consumed wrapper of an Index holds the empty value of the niche, so
+    // each cell above holds for it too, with no byte beside the payload.
+    [] noexcept {
+        auto once = ::fixy::mint_linear<Slot>(::fixy::StaticIndex<3>{});
+        auto moved = std::move(once);
+        if (moved.peek().raw() != 3) ::fixy::fatal("a move of a Linear of an Index keeps its index");
+        if (std::move(moved).consume().raw() != 3) ::fixy::fatal("a consume of a Linear of an Index gives its index");
+        auto discarded = ::fixy::mint_linear<Slot>(::fixy::StaticIndex<4>{});
+        drop(std::move(discarded));
+        auto abandoned = ::fixy::mint_affine<Slot>(::fixy::StaticIndex<5>{});
+        (void)abandoned.peek();
+    }();
+
+    expect_dies(
+        test,
+        [] noexcept {
+            auto twice = ::fixy::mint_linear<Slot>(::fixy::StaticIndex<3>{});
+            (void)std::move(twice).consume();
+            (void)std::move(twice).consume();
+        },
+        kLinearConsumedTwice);
+
+    expect_dies(
+        test,
+        [] noexcept {
+            auto source = ::fixy::mint_linear<Slot>(::fixy::StaticIndex<3>{});
+            auto destination = std::move(source);
+            (void)source.peek();
+            (void)std::move(destination).consume();
+        },
+        kLinearReadAfterConsume);
+
+    // The planted drop: a Linear of an Index that ends its scope live.
+    expect_dies(
+        test,
+        [] noexcept {
+            auto forgotten = ::fixy::mint_linear<Slot>(::fixy::StaticIndex<1>{});
+            (void)forgotten.peek();
+        },
+        kNicheNeverDischargedAtScopeEnd);
+
+    expect_dies(
+        test,
+        [] noexcept {
+            auto held = ::fixy::mint_linear<Slot>(::fixy::StaticIndex<1>{});
+            auto other = ::fixy::mint_linear<Slot>(::fixy::StaticIndex<2>{});
+            held = std::move(other);
+            drop(std::move(held));
+        },
+        kNicheNeverDischargedAtAssignment);
 
     return 0;
 }

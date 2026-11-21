@@ -1286,6 +1286,10 @@ PROBES: tuple[Probe, ...] = (
         "in each round, and the at() reads of a FixedArray block are the subscripts of the raw form",
     ),
     Probe("linear_consume", "the ABI passes a Linear in a register, as it passes its value, and consume is a move"),
+    Probe(
+        "linear_consume_word",
+        "a Linear of a word has the size of the word in the Release form, so consume is the move of one register",
+    ),
     Probe("linear_assign", "the user-provided move assignment of a Linear is the store of its value"),
     Probe("token_pass", "a token is empty and its move constructor is trivial, so a pass moves no byte"),
     Probe("token_assign", "the user-provided move assignment of a token moves no byte"),

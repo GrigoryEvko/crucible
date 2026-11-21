@@ -100,7 +100,7 @@ static_assert(!std::is_copy_constructible_v<fixy::RefinedLinear<fixy::positive, 
 static_assert(!std::is_copy_assignable_v<fixy::RefinedLinear<fixy::positive, int>>,
               "a refinement of a value that does not copy does not copy either");
 static_assert(std::is_move_constructible_v<fixy::RefinedLinear<fixy::positive, int>>);
-static_assert(sizeof(fixy::RefinedLinear<fixy::positive, int>) == sizeof(int));
+static_assert(fixy::qtt_consume_tracked || sizeof(fixy::RefinedLinear<fixy::positive, int>) == sizeof(int));
 
 // into takes an rvalue Refined and nothing else, and does not exist on
 // the sealed wrapper.

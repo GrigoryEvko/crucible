@@ -3,11 +3,12 @@
 // and the mutating accessors write through a live wrapper without
 // spending the usage the grade counts.
 //
-// This is the tracker-off half of the header.  The runtime checks that
+// This is the header as each build gives it.  The runtime checks that
 // make the grade exactly-once rather than at-most-once live behind
-// CRUCIBLE_QTT_TRACK_CONSUME and are exercised in test_qtt_tracked.cpp;
-// here they are absent by construction, which is what the size and
-// triviality claims below are worth.
+// CRUCIBLE_QTT_TRACK_CONSUME, which each test build sets, and
+// test_qtt_tracked.cpp exercises them.  The claims of the size hold in a
+// Release build, where the checks are absent by construction.  Each cell
+// below consumes each Linear, so it passes in a tracked build too.
 
 #include <fixy/Core.h>
 #include <fixy/Qtt.h>
@@ -32,19 +33,16 @@ struct TwoWords {
     std::uint64_t hi = 0;
 };
 
-// This TU is the tracker-off sentinel, and says so rather than
-// discovering it in a size mismatch.
-static_assert(!::fixy::qtt_consume_tracked,
-              "test_qtt is the tracker-off sentinel; the tracker-on claims live in test_qtt_tracked.cpp");
-
-// Regime 1: the grade is empty and collapses under EBO.
-static_assert(sizeof(Linear<int>) == sizeof(int));
-static_assert(sizeof(Linear<double>) == sizeof(double));
-static_assert(sizeof(Linear<TwoWords>) == sizeof(TwoWords));
+// Regime 1: the grade is empty and collapses under EBO.  The tracked build of
+// a test preset adds one bool beside a T with no niche.
+constexpr bool kTracked = ::fixy::qtt_consume_tracked;
+static_assert(kTracked || sizeof(Linear<int>) == sizeof(int));
+static_assert(kTracked || sizeof(Linear<double>) == sizeof(double));
+static_assert(kTracked || sizeof(Linear<TwoWords>) == sizeof(TwoWords));
 static_assert(alignof(Linear<TwoWords>) == alignof(TwoWords));
-static_assert(sizeof(Affine<int>) == sizeof(int));
-static_assert(sizeof(Affine<double>) == sizeof(double));
-static_assert(sizeof(Affine<TwoWords>) == sizeof(TwoWords));
+static_assert(kTracked || sizeof(Affine<int>) == sizeof(int));
+static_assert(kTracked || sizeof(Affine<double>) == sizeof(double));
+static_assert(kTracked || sizeof(Affine<TwoWords>) == sizeof(TwoWords));
 static_assert(alignof(Affine<TwoWords>) == alignof(TwoWords));
 
 // The two aliases are the one template at its two bounded grades.

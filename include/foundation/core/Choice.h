@@ -150,6 +150,9 @@ class OptionSlot;
 template <class T>
 class NicheRead;
 
+template <class T>
+class ConsumedNiche;
+
 }  // namespace detail
 
 // The key of the niche protocol.  The empty value of a niche is a value that
@@ -279,12 +282,14 @@ namespace detail {
 
 // The one reader of the niche of T, and the one class that builds a
 // niche_key<T>.  The storage of a niche Option reads the empty value
-// through its private members.  The gate and the lifetime mark read only
-// its two facts, which are constants of type bool, and a decode reads only
-// the bool of holds_empty.  So no other code gets an empty value or a key.
+// through its private members, and ConsumedNiche writes it into the slot of
+// a consumed wrapper.  The gate and the lifetime mark read only its two
+// facts, which are constants of type bool, and a decode reads only the bool
+// of holds_empty.  So no other code gets an empty value or a key.
 template <class T>
 class NicheRead final {
     friend class OptionSlot<T, OptionForm::niche>;
+    friend class ConsumedNiche<T>;
 
     [[nodiscard]] static constexpr T empty_() noexcept { return niche<T>::empty(niche_key<T>{}); }
     [[nodiscard]] static constexpr bool is_empty_(T const& value) noexcept {
@@ -424,6 +429,28 @@ concept BuildsNoEmptyValue =
     !std::is_aggregate_v<T> && !std::is_default_constructible_v<T> && !std::is_constructible_v<T, std::nullptr_t>
     && !std::is_constructible_v<T, void*> && !std::is_constructible_v<T, int>
     && !std::is_constructible_v<T, unsigned long long> && vouches_each_raw_parameter<T>();
+
+// The second reader of the niche of T: the consume tracker of a Linear of the
+// test builds (fixy/Qtt.h).  A tracked wrapper of a payload with a niche keeps
+// its consume state in the payload, so it has the size of the payload.  A
+// consumed wrapper holds the empty value, which no valid T holds.  mark writes
+// the empty value only into the slot of a wrapper whose payload the consume
+// took, and no code reads that slot as a T again.  holds gives only the bool.
+template <class T>
+class ConsumedNiche final {
+public:
+    static constexpr void mark(T& slot) noexcept
+        requires(!UndeclaredNicheOf<T>)
+    {
+        slot = NicheRead<T>::empty_();
+    }
+
+    [[nodiscard]] static constexpr bool holds(T const& slot) noexcept
+        requires(!UndeclaredNicheOf<T>)
+    {
+        return NicheRead<T>::is_empty_(slot);
+    }
+};
 
 }  // namespace detail
 

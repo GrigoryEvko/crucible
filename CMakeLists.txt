@@ -1602,7 +1602,14 @@ endif()
 # says that ThreadSanitizer does not model it.  It names no defect.  Each
 # fence of the tree is necessary for the memory model, so no site can
 # remove the warning.
+# A build with a sanitizer is a test build, and each of its units arms the
+# consume tracker of fixy::Linear (fixy/Qtt.h) as a test oracle of the rule
+# must-consume.  The tracker adds state to a Linear, so a Release build keeps it
+# off: a Linear there has the size of its value and a trivial move.  One build
+# gives each unit the same key, and the ABI tag of the tracked class turns a
+# mix of two builds into an undefined reference.
 if(_crucible_sanitizers)
+  target_compile_definitions(crucible_dialect INTERFACE CRUCIBLE_QTT_TRACK_CONSUME=1)
   target_compile_options(crucible_dialect INTERFACE
     -fsanitize=${_crucible_sanitizers}
     $<$<NOT:$<BOOL:${CRUCIBLE_TSAN}>>:-fno-sanitize-recover=all>

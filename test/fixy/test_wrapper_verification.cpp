@@ -127,8 +127,11 @@ inline constexpr bool keeps_the_layout_of_every_shape =
     keeps_the_layout_and_the_end<Wrapper, int> && keeps_the_layout_and_the_end<Wrapper, double>
     && keeps_the_layout_and_the_end<Wrapper, int*> && keeps_the_layout_and_the_end<Wrapper, TwoWords>;
 
-static_assert(keeps_the_layout_of_every_shape<Linear> && keeps_the_layout_of_every_shape<Affine>
-              && keeps_the_layout_of_every_shape<RefinedAny> && keeps_the_layout_of_every_shape<SealedAny>);
+// The consume tracker of a test build adds a bool beside each of these
+// values, so the Release build holds the claims of Linear and Affine.
+static_assert(::fixy::qtt_consume_tracked
+              || (keeps_the_layout_of_every_shape<Linear> && keeps_the_layout_of_every_shape<Affine>));
+static_assert(keeps_the_layout_of_every_shape<RefinedAny> && keeps_the_layout_of_every_shape<SealedAny>);
 static_assert(keeps_the_layout_and_zeroizes_at_the_end<Secret, int>
               && keeps_the_layout_and_zeroizes_at_the_end<Secret, double>
               && keeps_the_layout_and_zeroizes_at_the_end<Secret, int*>
@@ -343,7 +346,7 @@ static_assert(residency_heat::Hot<int>::lattice_name() != cipher_tier::Hot<int>:
 // collapsing wrapper outside a value keeps the value's storage.
 
 using TaggedLinear = Tagged<Linear<int>, FromUser>;
-static_assert(sizeof(TaggedLinear) == sizeof(int));
+static_assert(::fixy::qtt_consume_tracked || sizeof(TaggedLinear) == sizeof(int));
 static_assert(!std::is_copy_constructible_v<TaggedLinear>,
               "Tagged<Linear<T>> must preserve Linear's move-only discipline.");
 
@@ -357,7 +360,7 @@ static_assert(sizeof(SecretRefined) == sizeof(int));
 static_assert(fa::GradedWrapper<SecretRefined>);
 
 using LinearSealed = Linear<SealedRefined<positive_local, int>>;
-static_assert(sizeof(LinearSealed) == sizeof(int));
+static_assert(::fixy::qtt_consume_tracked || sizeof(LinearSealed) == sizeof(int));
 
 using TaggedStale = Tagged<Stale<int>, FromUser>;
 // Stale's counter, and not Tagged, sets the size here.
@@ -369,7 +372,7 @@ static_assert(sizeof(TaggedBitexact) == sizeof(int),
               "stacked, both with an empty grade.");
 
 using BitexactOverLinear = numerical_tier::Bitexact<Linear<int>>;
-static_assert(sizeof(BitexactOverLinear) == sizeof(int));
+static_assert(::fixy::qtt_consume_tracked || sizeof(BitexactOverLinear) == sizeof(int));
 static_assert(!std::is_copy_constructible_v<BitexactOverLinear>,
               "NumericalTier<Linear<T>> must preserve Linear's move-only discipline.  If this fires, "
               "Linear's copy-deletion is no longer visible through the band.");
@@ -380,7 +383,7 @@ static_assert(sizeof(Fp32OverRefined) == sizeof(int));
 static_assert(IsBand<Fp32OverRefined>);
 
 using PureOverLinear = det_safe::Pure<Linear<int>>;
-static_assert(sizeof(PureOverLinear) == sizeof(int));
+static_assert(::fixy::qtt_consume_tracked || sizeof(PureOverLinear) == sizeof(int));
 static_assert(!std::is_copy_constructible_v<PureOverLinear>);
 static_assert(std::is_move_constructible_v<PureOverLinear>);
 

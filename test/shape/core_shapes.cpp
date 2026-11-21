@@ -23,6 +23,13 @@
 // is the reference for the shape of its family operation, so it must stay raw.
 // The one exception is a combinator of Option or Result: its reference is the
 // hand match that it replaces, beside it, and the match has its own pair.
+//
+// A test build arms the consume tracker of fixy/Qtt.h on each unit, as a test
+// oracle of the rule must-consume.  The probes read the Release form of a
+// Linear in each build, so this unit keeps the tracker off.  The unit is an
+// object of its own, and no target links it.
+#undef CRUCIBLE_QTT_TRACK_CONSUME
+#define CRUCIBLE_QTT_TRACK_CONSUME 0
 
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
@@ -1551,6 +1558,12 @@ using ProbeToken = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand
 // ABI passes a Linear in a register, as it passes its value.
 [[gnu::used]] int linear_consume(fixy::Linear<int> value) noexcept { return std::move(value).consume(); }
 
+// A Linear of a word has the size of the word, so the ABI passes it in one
+// register, and consume is the move of the register.
+[[gnu::used]] std::uint64_t linear_consume_word(fixy::Linear<std::uint64_t> value) noexcept {
+    return std::move(value).consume();
+}
+
 // The move assignment of a Linear is user-provided, so the class is not
 // trivially copyable.  It stores the value, as the assignment of the value
 // does.
@@ -2789,6 +2802,8 @@ struct RawBounds final {
 struct RawToken final {};
 
 [[gnu::used]] int linear_consume_raw(int value) noexcept { return value; }
+
+[[gnu::used]] std::uint64_t linear_consume_word_raw(std::uint64_t value) noexcept { return value; }
 
 [[gnu::used]] void linear_assign_raw(int& target, int& source) noexcept { target = source; }
 

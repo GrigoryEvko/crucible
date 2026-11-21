@@ -95,8 +95,11 @@ set(_CRUCIBLE_NOT_CODE_PREFIXES
 set(_CRUCIBLE_PER_BUILD_PREFIXES
   -O -march= -mtune= -mcpu= -fPIC -fPIE -fpic -fpie -fsanitize -fno-sanitize -fprofile- -fno-profile-
   -fbranch-probabilities -fauto-profile -fanalyzer -fcontract-evaluation-semantic=)
+# A build with a sanitizer arms the consume tracker of fixy/Qtt.h on each unit
+# of the tree, and a target of the Release code keeps the Release form.
 set(_CRUCIBLE_PER_BUILD_DEFINITIONS
-  NDEBUG _GLIBCXX_ASSERTIONS _GLIBCXX_SANITIZE_VECTOR CRUCIBLE_PGO_PROFILE CRUCIBLE_QUARANTINE_ACTIVE)
+  NDEBUG _GLIBCXX_ASSERTIONS _GLIBCXX_SANITIZE_VECTOR CRUCIBLE_PGO_PROFILE CRUCIBLE_QUARANTINE_ACTIVE
+  CRUCIBLE_QTT_TRACK_CONSUME)
 
 # Sets OUT to the code word of WORD, or to an empty string when WORD does not
 # change the code or changes with the kind of build.  A definition becomes

@@ -7424,16 +7424,14 @@ fixy_neg_compile_test(neg_shared_read_from_a_temporary_region
 
 # ── The consume tracker ───────────────────────────────────────────────
 #
-# test_qtt is fixy/Qtt.h with CRUCIBLE_QTT_TRACK_CONSUME off, which is
-# every other target here and every shipped build: sizeof(T), a trivial
-# move, a trivial destructor.  This one is the same header with the key
-# on, and it is the only target in the tree that sets it.
-#
-# The key belongs to a target and not to a preset because it changes
-# sizeof(Qtt<G, T>).  fixy is an INTERFACE library, so there is no
-# compiled artifact for this TU to disagree with, and [[gnu::abi_tag]]
-# in the header turns any future disagreement into an undefined
-# reference rather than a silent layout mismatch.
+# Each build with a sanitizer sets CRUCIBLE_QTT_TRACK_CONSUME on each target
+# (the root CMakeLists.txt), and a Release build sets it on none: there
+# test_qtt states sizeof(T), a trivial move and a trivial destructor.  This
+# target sets the key in each build, so a Release build tests the tracker
+# too.  fixy is an INTERFACE library, so there is no compiled artifact for
+# this TU to disagree with, and [[gnu::abi_tag]] in the header turns any
+# future disagreement into an undefined reference rather than a silent
+# layout mismatch.
 fixy_test(test_qtt_tracked)
 target_compile_definitions(test_qtt_tracked PRIVATE CRUCIBLE_QTT_TRACK_CONSUME=1)
 
