@@ -433,7 +433,6 @@ enforce test/dataplane_neg/ error
 enforce test/effect_row_neg/ error
 enforce test/forge_neg/ error
 enforce test/fuzz/boundary/ error
-enforce test/fuzz/boundary/harnesses/ report
 enforce test/fuzz/property/ error
 enforce test/kernel_neg/ error
 enforce test/layer/ error

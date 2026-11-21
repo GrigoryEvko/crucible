@@ -203,7 +203,8 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
             CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
             CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
             auto const record = event.encode();
-            CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_event(record.view()).has_value());
+            CRUCIBLE_FUZZ_CLAIM("cipher_store",
+                                ::fixy::session::decode_session_log(test_alloc(), record.view()).is_ok());
         }
     });
 }
