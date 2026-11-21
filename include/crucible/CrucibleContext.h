@@ -94,6 +94,13 @@ enum class OutputRefusal : uint8_t {
     Overlap,  // two outputs share a byte
 };
 
+// Why register_external_view refused a View.
+enum class ViewRefusal : uint8_t {
+    PooledSlot,  // the plan puts the slot in the pool, which owns its bytes
+    TooSmall,  // the View holds fewer bytes than the slot of the plan
+    Misaligned,  // the first byte of the View is not aligned for an element of the slot
+};
+
 // The slots of a memory plan, and no other type, so the mint reads the flag
 // of a slot of a plan.
 template <class Slots>
@@ -331,10 +338,33 @@ struct CrucibleContext {
 
     // The bytes of an external slot as a View of the host
     // (PoolAllocator::register_external_view).  The View borrows its owner,
-    // and the owner outlives the activation of the region.
-    CRUCIBLE_INLINE void register_external_view(SlotId sid, ::fixy::View<uint8_t> bytes, CompiledView const&) {
-        auto pv = pool_.initialized_view_();
-        pool_.register_external_view(sid, bytes, pv);
+    // and the owner outlives the activation of the region.  The plan of the
+    // active region is the one source of the windows, so the door checks
+    // the View against the slot of the plan once, here.  The slot must be
+    // external, the View must hold at least the nbytes of the slot, and its
+    // first byte must be aligned for an element of the slot.  The View comes
+    // from its owner, outside the program, so a refusal gives its
+    // ViewRefusal, and the pool keeps the slot as it was.  The pool keeps the
+    // first nbytes of a larger View, so a read of the slot gives the count of
+    // elements of the plan.  A slot id outside the plan ends the process.
+    // Complexity: O(1).
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, ViewRefusal>
+    register_external_view(SlotId sid, ::fixy::View<uint8_t> bytes, CompiledView const&) {
+        using Registered = ::fixy::Result<::fixy::Unit, ViewRefusal>;
+        const TensorSlot& slot =
+            *active_plan_().slots.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+        if (!slot.is_external) [[unlikely]]
+            return ::fixy::err(ViewRefusal::PooledSlot);
+        return bytes.window(0, slot.nbytes)
+            .match(
+                [this, sid, &slot](::fixy::View<uint8_t> planned) noexcept -> Registered {
+                    if (!is_aligned_for_(slot.dtype, planned)) [[unlikely]]
+                        return ::fixy::err(ViewRefusal::Misaligned);
+                    auto pv = pool_.initialized_view_();
+                    pool_.register_external_view(sid, planned, pv);
+                    return ::fixy::Unit{};
+                },
+                []() noexcept -> Registered { return ::fixy::err(ViewRefusal::TooSmall); });
     }
 
     // The bytes of an input of the matched op as a read-only View of T, for a
@@ -415,21 +445,52 @@ private:
     // one for each output, in the order of the outputs.
     using OutputWindows = ::fixy::FixedList<::foundation::ByteWindow, ::foundation::max_block_windows>;
 
+    // The plan of the active region.  A compiled context has a region, and
+    // the region of an activation has a plan.
+    [[nodiscard]] const MemoryPlan& active_plan_() const {
+        const RegionNode& region = *::fixy::Option<::fixy::Ref<RegionNode const>>{active_region_.value()}.expect(
+            "a compiled context has a region");
+        return *PlanLink{region.plan}.expect("an active region has a memory plan");
+    }
+
+    // True when the first byte of the bytes is aligned for an element of the
+    // type, or the bytes hold no byte.  A complex element is aligned for its
+    // part, so its alignment is half its size.  An element of one byte and
+    // the undefined type ask for no alignment.  Complexity: O(1).
+    [[nodiscard]] static bool is_aligned_for_(ScalarType dtype, ::fixy::View<uint8_t> bytes) noexcept {
+        const bool is_complex =
+            dtype == ScalarType::ComplexHalf || dtype == ScalarType::ComplexFloat || dtype == ScalarType::ComplexDouble;
+        const uint8_t size = element_size(dtype).raw();
+        const uint8_t alignment = is_complex ? static_cast<uint8_t>(size / 2) : size;
+        return ::fixy::mint_run_address(bytes, 0).is_none_or([alignment](::fixy::RunAddress const& first) noexcept {
+            switch (alignment) {
+                case 2:
+                    return first.is_aligned<2>();
+                case 4:
+                    return first.is_aligned<4>();
+                case 8:
+                    return first.is_aligned<8>();
+                default:
+                    return true;
+            }
+        });
+    }
+
     // The window of each output of the matched op, from the slot of the
     // plan of the active region: the offset of its first byte and its count
     // of bytes.  An external slot holds bytes of its owner, and no window of
     // the pool, so it gives ExternalOutput.  The column of bytes of the pool
-    // holds the same window for each pooled slot, and the check of each
-    // output stays in each build: a View that an owner registered for a
-    // pooled slot ends the process, so an input never reads other bytes than
-    // the output wrote.  Complexity: O(outputs).
+    // holds the same window for each pooled slot.  register_external_view
+    // refuses a pooled slot, and register_external takes an ExternalSlotId,
+    // but that id can come from the plan of an earlier activation.  So the
+    // check of each output stays in each build: a pooled slot with another
+    // address or View ends the process, and an input never reads other bytes
+    // than the output wrote.  Complexity: O(outputs).
     [[nodiscard]] ::fixy::Result<OutputWindows, OutputRefusal> output_windows_() const {
         using ::fixy::side_as;
         using Start = ::foundation::core::side::WindowStart;
         using Length = ::foundation::core::side::WindowLength;
-        const RegionNode& region = *::fixy::Option<::fixy::Ref<RegionNode const>>{active_region_.value()}.expect(
-            "a compiled context has a region");
-        const MemoryPlan& plan = *PlanLink{region.plan}.expect("an active region has a memory plan");
+        const MemoryPlan& plan = active_plan_();
         OutputWindows windows{};
         for (const SlotId sid : engine_.current_entry().output_slot_ids()) {
             if (!sid.is_valid()) [[unlikely]]

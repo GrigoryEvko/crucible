@@ -185,7 +185,7 @@ int main() {
 
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     const auto bind = [&](SlotId slot, ::foundation::AlignedBytes& block) noexcept {
-        ctx.register_external_view(slot, block.view(), cv);
+        ctx.register_external_view(slot, block.view(), cv).expect("each block holds the bytes of its external slot");
     };
 
     bind(SlotId{SL_X}, weights.X);

@@ -269,9 +269,9 @@ int main() {
     // is only reachable in compiled mode.
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
-    ctx.register_external_view(SlotId{SL_X}, x_block.view(), cv);
-    ctx.register_external_view(SlotId{SL_W1}, w1_block.view(), cv);
-    ctx.register_external_view(SlotId{SL_W2}, w2_block.view(), cv);
+    ctx.register_external_view(SlotId{SL_X}, x_block.view(), cv).expect("the block holds the bytes of its slot");
+    ctx.register_external_view(SlotId{SL_W1}, w1_block.view(), cv).expect("the block holds the bytes of its slot");
+    ctx.register_external_view(SlotId{SL_W2}, w2_block.view(), cv).expect("the block holds the bytes of its slot");
 
     // A read-only view, so that even these checks reach the pool the
     // way the hot path does.

@@ -513,22 +513,25 @@ static void test_divergence_counter() {
     ::fixy::check::pass(kTest, "  test_divergence_counter: PASSED\n");
 }
 
-// The layout of a block of external bytes: 32 bytes at an alignment of 64.
+// The layout of a block of external bytes: 64 bytes at an alignment of 64.
 static ::fixy::Layout make_external_layout() {
-    return ::fixy::mint_layout(::fixy::ByteCount{32},
+    return ::fixy::mint_layout(::fixy::ByteCount{64},
                                ::fixy::mint_alignment(::fixy::ByteCount{64}).expect("64 is a power of two"))
-        .expect("32 bytes at an alignment of 64 is a layout");
+        .expect("64 bytes at an alignment of 64 is a layout");
 }
 
-// The doors of the views of an op.  input_view lends the bytes of an input
-// as a read-only View, and with_output_views lends one ViewMut for each
-// output.  An input that is also an output of the op, an input of an
-// external slot with no View, and an input of the wrong size or alignment
-// give no View.  Each refusal of the outputs gives its kind, and its body
-// does not run.
+// The doors of the views of an op.  register_external_view checks a View
+// against the slot of the plan, and refuses a pooled slot, a View smaller
+// than the slot and a View off the alignment of the element.  input_view
+// lends the bytes of an input as a read-only View, and with_output_views
+// lends one ViewMut for each output.  An input that is also an output of the
+// op, an input of an external slot with no View, and an input of the wrong
+// size or alignment for the type of the read give no View.  Each refusal of
+// the outputs gives its kind, and its body does not run.
 static void test_slot_views() {
     using crucible::InputPosition;
     using crucible::OutputRefusal;
+    using crucible::ViewRefusal;
     ::foundation::core::FixedArray<SlotId, 1> in0{SlotId{2}};
     ::foundation::core::FixedArray<SlotId, 2> out0{SlotId{0}, SlotId{1}};
     ::foundation::core::FixedArray<SlotId, 3> in1{SlotId{0}, SlotId{4}, SlotId{1}};
@@ -558,10 +561,12 @@ static void test_slot_views() {
     set_output_slots(ops.at(::foundation::core::index<6>()), out6.view());
 
     // Slots 0, 1 and 3 are pooled, at 0, 256 and 768.  Slot 3 holds 6
-    // bytes, no whole count of floats.  Slots 2 and 4 are external.
+    // bytes, no whole count of floats.  Slots 2 and 4 are external, and
+    // slot 2 holds 36 bytes, nine floats.
     ::foundation::core::FixedArray<TensorSlot, 5> slots{};
     auto plan = make_simple_plan(slots.view());
     slots.at(::foundation::core::index<2>()).is_external = true;
+    slots.at(::foundation::core::index<2>()).nbytes = 36;
     slots.at(::foundation::core::index<3>()).nbytes = 6;
     slots.at(::foundation::core::index<4>()).is_external = true;
     plan.num_external = 2;
@@ -581,29 +586,46 @@ static void test_slot_views() {
         ::foundation::mint_aligned_bytes_zeroed(g_test.alloc, make_external_layout());
     ctx.register_external(
         crucible::mint_external_slot(plan.slots, SlotId{4}).expect("the plan marks slot 4 external"),
-        crucible::TensorData{::fixy::mint_run_address(address_only.view(), 0).expect("the block holds 32 bytes"),
+        crucible::TensorData{::fixy::mint_run_address(address_only.view(), 0).expect("the block holds 64 bytes"),
                              crucible::kHostDevice},
         cv);
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{700}, ShapeHash{800}, cv).status() == ReplayStatus::MATCH);
 
-    // An input whose first byte is off the alignment of a float, or whose
-    // bytes hold no whole count of floats, gives no View of floats.
-    ctx.register_external_view(SlotId{2}, input.view().window(2, 8).expect("the block holds 32 bytes"), cv);
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<std::uint8_t>(InputPosition{0}, cv)
-                                    .is_some_and([](::fixy::View<std::uint8_t const> const& bytes) noexcept {
-                                        return bytes.size() == 8;
-                                    }));
-    ctx.register_external_view(SlotId{2}, input.view().window(0, 30).expect("the block holds 32 bytes"), cv);
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_none());
+    // The door checks a View against the slot of the plan.  A pooled slot,
+    // a View of fewer bytes than the slot, and a View off the alignment of a
+    // float are refused, and the slot keeps no View.
+    const ::fixy::View<std::uint8_t> bytes = input.view();
+    const auto view_refusal_of = [&ctx, &cv](SlotId sid, ::fixy::View<std::uint8_t> given) noexcept {
+        return ctx.register_external_view(sid, given, cv).err().expect("the door refuses the View");
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, view_refusal_of(SlotId{0}, bytes.window(0, 36).expect("the block holds 64 bytes"))
+                                    == ViewRefusal::PooledSlot);
+    CRUCIBLE_TEST_ASSERT(kTest, view_refusal_of(SlotId{2}, bytes.window(0, 32).expect("the block holds 64 bytes"))
+                                    == ViewRefusal::TooSmall);
+    CRUCIBLE_TEST_ASSERT(kTest, view_refusal_of(SlotId{2}, bytes.window(2, 36).expect("the block holds 64 bytes"))
+                                    == ViewRefusal::Misaligned);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<std::uint8_t>(InputPosition{0}, cv).is_none());
 
-    ctx.register_external_view(SlotId{2}, input.view(), cv);
+    // The View of nine floats at an offset of 4 bytes is off the alignment
+    // of a double, and nine floats hold no whole count of doubles.  So a read
+    // of doubles gives no View for each, and a read of floats gives one.  A
+    // View of 64 bytes holds more bytes than the slot, and the pool keeps
+    // its first 36, so a read gives the nine floats of the plan.
     const auto is_input_value = [](::fixy::View<float const> const& values) noexcept {
-        return values.size() == 8 && values.walk().all_of([](float const& value) noexcept {
+        return values.size() == 9 && values.walk().all_of([](float const& value) noexcept {
             return ::fixy::bit_cast<std::uint32_t>(value) == 0x3f3f3f3fu;
         });
     };
+    ctx.register_external_view(SlotId{2}, bytes.window(4, 36).expect("the block holds 64 bytes"), cv)
+        .expect("the View holds the 36 bytes of slot 2");
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<double>(InputPosition{0}, cv).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value));
+    ctx.register_external_view(SlotId{2}, bytes.window(0, 36).expect("the block holds 64 bytes"), cv)
+        .expect("the View holds the 36 bytes of slot 2");
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<double>(InputPosition{0}, cv).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value));
+    ctx.register_external_view(SlotId{2}, bytes, cv).expect("the View holds more than the 36 bytes of slot 2");
     CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value));
 
     // The two outputs of op 0 get one ViewMut each, in their order.
