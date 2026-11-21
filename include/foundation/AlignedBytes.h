@@ -511,24 +511,18 @@ with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& wind
     using Given = std::invoke_result_t<Body&&, Views&>;
     core::View<std::uint8_t> const bytes = block.view();
     core::View<ByteWindow const> const asked = windows.view();
-    Views views{};
+    std::uint8_t* const block_first = first_of_(core::detail::ViewDoor::key(), bytes);
     for (ByteWindow const& window : asked) {
-        core::Option<core::View<std::uint8_t>> const found = bytes.window(window.start().raw(), window.length().raw());
-        if (found.is_none()) [[unlikely]] {
+        if (bytes.window(window.start().raw(), window.length().raw()).is_none()) [[unlikely]] {
             return core::err(WindowRefusal::outside_block);
         }
-        core::View<std::uint8_t> const run =
-            core::Option<core::View<std::uint8_t>>{found}.expect("the test above found the window");
         if (window.length().raw() % sizeof(T) != 0) [[unlikely]] {
             return core::err(WindowRefusal::partial_element);
         }
-        std::uint8_t* const first = first_of_(core::detail::ViewDoor::key(), run);
-        if ((__builtin_bit_cast(std::uintptr_t, first) & (alignof(T) - 1)) != 0) [[unlikely]] {
+        if ((__builtin_bit_cast(std::uintptr_t, block_first + window.start().raw()) & (alignof(T) - 1)) != 0)
+            [[unlikely]] {
             return core::err(WindowRefusal::misaligned);
         }
-        core::View<T> const elements = lifetime::start_as_array<T>(run);
-        static_cast<void>(views.append(core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(), elements})
-                              .expect("the list of views holds one view for each window"));
     }
     std::size_t outer = 0;
     for (ByteWindow const& first_window : asked) {
@@ -540,6 +534,24 @@ with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& wind
             ++inner;
         }
         ++outer;
+    }
+    // Each window starts the lifetime of its elements in a loop of its own.
+    // The start is a barrier for the memory of the window, so a later loop
+    // builds the views, and the count of the list stays in a register
+    // between two appends.  The laundered address then names the elements
+    // that the start began.
+    for (ByteWindow const& window : asked) {
+        static_cast<void>(lifetime::start_as_array<T>(
+            bytes.window(window.start().raw(), window.length().raw()).expect("the test above found the window")));
+    }
+    Views views{};
+    for (ByteWindow const& window : asked) {
+        std::size_t const count = window.length().raw() / sizeof(T);
+        T* const first = static_cast<T*>(static_cast<void*>(block_first + window.start().raw()));
+        core::View<T> const elements{core::detail::ViewDoor::key(), count == 0 ? first : __builtin_launder(first),
+                                     count};
+        static_cast<void>(views.append(core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(), elements})
+                              .expect("the list of views holds one view for each window"));
     }
     if constexpr (std::is_void_v<Given>) {
         static_cast<Body&&>(body)(views);
