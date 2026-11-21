@@ -611,8 +611,8 @@ void report(bool can_add_dependencies) {
             is_include_kind(finding.kind) ? finding.file->is_include_error_mode : finding.file->is_error_mode;
         bool is_error = state.is_error_mode || is_file_error || is_language;
         // The contract rule, the unit facts, the rules specialization-home and
-        // base-namespace and the escapes of a scope brand give an error in
-        // each mode.
+        // base-namespace, the escapes of a scope brand and the end of a
+        // linear sum with a payload give an error in each mode.
         if (finding.kind == Kind::contract_specifier && !is_out) {
             report_contract(finding);
         } else if (finding.kind == Kind::binding_hook && !is_out) {
@@ -627,6 +627,8 @@ void report(bool can_add_dependencies) {
             report_base_namespace(finding);
         } else if (rule_of_finding == Rule::brand_escape && !is_out) {
             report_scope_escape(finding);
+        } else if (rule_of_finding == Rule::must_consume && !is_out) {
+            report_option_end(finding);
         } else if (rule_of_finding == Rule::fresh_brand && !is_out) {
             report_fresh_brand(finding);
         } else if (is_each_mode_kind(finding.kind) && !is_out) {

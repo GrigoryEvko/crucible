@@ -1,0 +1,124 @@
+// Each linear sum of this file can end with its payload, or the code discards
+// a temporary of one, so each one is a compile error in each mode.  The opt-out
+// region turns the last drop into an opted-out line.
+#include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+using Refused = ::foundation::core::Result<int, Token>;
+
+void sink(Token&& token) noexcept;
+void borrow(Option<Token>& held) noexcept;
+void read(Option<Token> const& held) noexcept;
+[[noreturn]] void stop() noexcept;
+Option<Token> poll() noexcept;
+Refused refuse() noexcept;
+
+void ends_full() { Option<Token> held = Option<Token>::some(Token{1}); }
+
+void ends_after_fill() {
+    Option<Token> held{};
+    held.fill(Token{2});
+}
+
+void borrowed_by_reference() {
+    Option<Token> held{};
+    borrow(held);
+}
+
+void captured_by_reference() {
+    Option<Token> held{};
+    auto fill = [&held] { held.fill(Token{3}); };
+    fill();
+}
+
+void consumed_on_one_path(bool is_kept) {
+    Option<Token> held = poll();
+    if (is_kept) sink(std::move(held).expect("the caller keeps the token"));
+}
+
+void tested_full_only() {
+    Option<Token> held = poll();
+    if (held.is_some()) return;
+}
+
+void asserted_full() {
+    Option<Token> held = poll();
+    do {
+        if (!(held.is_some())) stop();
+    } while (0);
+}
+
+void ends_result() { Refused refused = refuse(); }
+
+void discards_a_test() { static_cast<void>(poll().is_none()); }
+
+void discards_a_take(Option<Token>& held) { static_cast<void>(held.take()); }
+
+void reads_a_temporary() { read(poll()); }
+
+void discards_a_result() { static_cast<void>(refuse().is_ok()); }
+
+void dropped_in_a_probe() {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test drops a full Option")
+    Option<Token> held = Option<Token>::some(Token{4});
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+}
+
+// An alias can fill the Option after a test or a take shows it empty.
+struct Holder {
+    Option<Token>& held;
+};
+
+void fill_through(Holder const& holder) noexcept;
+
+void captured_then_tested() {
+    Option<Token> held{};
+    auto fill = [&held] { held.fill(Token{5}); };
+    do {
+        if (!(held.is_none())) stop();
+    } while (0);
+    fill();
+}
+
+void addressed_then_tested() {
+    Option<Token> held{};
+    Option<Token>* const address = &held;
+    do {
+        if (!(held.is_none())) stop();
+    } while (0);
+    address->fill(Token{6});
+}
+
+void captured_then_taken() {
+    Option<Token> held = Option<Token>::some(Token{7});
+    auto refill = [&held] { held.fill(Token{8}); };
+    Option<Token> taken = held.take();
+    std::move(taken).match([](Token token) { sink(std::move(token)); }, [] {});
+    refill();
+}
+
+void held_by_a_member() {
+    Option<Token> held{};
+    Holder const holder{held};
+    fill_through(holder);
+}
+
+}  // namespace planted

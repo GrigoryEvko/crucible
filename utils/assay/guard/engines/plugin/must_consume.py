@@ -17,10 +17,26 @@ THE RULE
                             consume, which drops that value
       discarded-temporary   a linear temporary that the code discards
       unanalyzed            a function with a goto or a label
+    A linear sum gives the kinds of THE SUMS in place of unconsumed,
+    unconsumed-on-path and discarded-temporary.
     The plugin reads a body of a base file in the sentinel unit of the file,
     and an instance of a template in each unit that makes it.  The entity of a
     line is FUNCTION: OBJECT, with no template argument, so each instance of
     one template gives the same line.
+
+THE SUMS
+    A linear sum, an Option, a Result or a OneOf of a linear alternative,
+    gives its alternative out only through a consumer (linear.cpp, THE SUMS).
+    The plugin reads the empty state of an Option through the annotations of
+    include/foundation/Linear.h, so an Option that is empty on each path to
+    its end needs no consume.  The two kinds:
+      option-unconsumed     a linear sum that can end with its alternative,
+                            on each path or on some paths
+      option-discarded      a temporary of a linear sum that the code
+                            discards
+    The plugin makes each line of the two kinds a compile error in each build
+    and each mode, so no object holds one.  No ledger row admits such a line,
+    and a write refuses a build that holds one.
 
 THE FIELDS, THE ACCESSORS, THE CAPTURES
     An object of a class that is linear by its parts gets one slot for each
@@ -46,8 +62,8 @@ THE LEDGER
 
 THE WRITE
     A write counts the lines of the rule in each build (THE WRITE of
-    assay.guard.engines.plugin.linear_family).  A stale linear-door row stops
-    the write.
+    assay.guard.engines.plugin.linear_family).  A stale linear-door row and a
+    line of a kind of THE SUMS stop the write.
 
 Usage
     guard check --rule must-consume --build-dir DIR [--warnings-dir DIR]
@@ -84,7 +100,13 @@ ACTIONS = {
     "discarded-temporary": "the object is a linear temporary that the code discards.  Give it to its consumer",
     "unanalyzed": "the object has a goto or a label, and the rule does not read it.  Use the statements of structured "
     "control",
+    "option-unconsumed": "the linear sum can end with its payload.  Consume it on each path, test an Option empty "
+    "before its end, or end an empty Option with expect_none(reason)",
+    "option-discarded": "the object is a temporary linear sum that the code discards.  Give it to a consumer, or end an "
+    "empty Option with expect_none(reason)",
 }
+# The kinds of THE SUMS.  Each line is a compile error, and no ledger row admits one.
+SUM_KINDS = ("option-unconsumed", "option-discarded")
 
 
 def stale_doors(root: Path, records: set[str]) -> list[check_report.Finding]:
@@ -131,11 +153,13 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 def build_counts(rule: rule_registry.Rule, context: runner.PluginContext) -> Counter[rule_ledger.Key]:
     """Return the count of each key of the lines of the rule in the build of the context (THE WRITE).
 
+    A line of a kind of SUM_KINDS is a problem of the build, so the write refuses the build (THE SUMS).
+
     Raises:
         NotApplicable: If the rule does not apply to the build
         BuildError: If the build cannot be read, or it has a problem or a stale linear-door row
     """
-    return linear_family.build_counts(rule, context, problem_kinds=(STALE_DOOR_KIND,))
+    return linear_family.build_counts(rule, context, problem_kinds=(STALE_DOOR_KIND, *SUM_KINDS))
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:

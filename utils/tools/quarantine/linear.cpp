@@ -110,6 +110,10 @@
 //     unanalyzed           a function with a goto or a label, which the rule
 //                          does not read
 //     door                 no finding: a linear-door row that the unit read
+//     option-unconsumed    a linear sum that can end with its alternative, on
+//                          each path or on some paths (THE SUMS)
+//     option-discarded     a temporary of a linear sum that the code discards
+//                          (THE SUMS)
 //     The entity is FUNCTION: OBJECT.  FUNCTION has no template argument, so
 //     each instance of one template gives the same line, and the key of a
 //     ledger row holds no line of an exit.
@@ -125,6 +129,43 @@
 //     from the move to the object.  A move of the whole after a move of a
 //     field, or of a field after a move of the whole, is a second consume.  A
 //     reference to a field borrows it.
+//
+// THE SUMS
+//     A linear sum is a linear class that carries the annotation sum of
+//     include/foundation/Linear.h: an Option, a Result or a OneOf of a linear
+//     alternative.  It gives the alternative out only through a consumer.  A
+//     tracked object whose own type is a linear sum gives the kind
+//     option-unconsumed in place of unconsumed and unconsumed-on-path, and a
+//     temporary of one gives option-discarded in place of
+//     discarded-temporary.  Each finding of the two kinds is a compile error
+//     in each build and each mode (is_each_mode_kind of plugin.h).  The
+//     message does not start with "quarantine: ", so a regex of a negative
+//     fixture reads it.  A field of a class keeps the other kinds.
+//     The content of a sum is a fact beside its status: empty, or can be
+//     full.  A sum is empty at a point only when each path to it shows it
+//     empty, so each new value, each parameter and each value of a call can
+//     be full.  These facts show it empty:
+//       * a constructor with the annotation empties built it, such as the
+//         default constructor of an Option, through the original of THE FOLDS
+//       * a member with the annotation empties ran on it, such as take
+//       * a consumer took it, because a consume moves the alternative out
+//       * a test with the annotation tests_empty or tests_full in the
+//         condition of an if statement said empty on the branch, also through
+//         ! and through an arm that does not return, as the assert of
+//         fixy/check/Check.h does.
+//     A member with the annotation fills, such as fill, gives the sum a new
+//     value to consume.  A use that can fill the sum makes it one that can be
+//     full: a member with an object parameter that is not const, and an
+//     argument of a reference or a pointer that is not const.  An alias of
+//     the sum can fill it at each later point: a capture by reference, an
+//     address that is not const in a pointer, and a reference member that is
+//     not const.  So after an alias, no test and no take shows the sum empty,
+//     and only a consume ends it.  A capture hides each later consume, so a
+//     captured sum that can be full at its end gives the kind
+//     option-unconsumed.  An empty sum at an exit drops nothing.  A Result and a OneOf have no member with these annotations,
+//     so only a consume ends one.  The body of a door gives neither kind.
+//     The rule does not see a sum that a data member, a static object or a
+//     capture holds, or the end of a sum in the body of a door.
 //
 // THE BASE DOORS
 //     A member function of a base class gets the base subobject as its object.
@@ -157,8 +198,9 @@
 //     The rule reads one function at a time.  A consume through a reference or
 //     a member call of a door is not visible to it, and a consume that depends
 //     on a correlated branch, such as a test of has_value(), needs a switch or
-//     a door.  A template that no unit instantiates with a linear type gives no
-//     finding.
+//     a door.  The tests of the empty state of a linear sum are the one such
+//     correlation that the rule reads (THE SUMS).  A template that no unit
+//     instantiates with a linear type gives no finding.
 //
 // THE SHAPES
 //     The rules of the shapes read each class, each signature and each body
@@ -264,6 +306,13 @@ struct LinearNames {
     tree detach_door = NULL_TREE;
     tree scope_end_door = NULL_TREE;
     tree forward = NULL_TREE;
+    // THE SUMS: the annotation of a sum class, and the annotations of its
+    // empty state.
+    tree sum = NULL_TREE;
+    tree empties = NULL_TREE;
+    tree fills = NULL_TREE;
+    tree tests_full = NULL_TREE;
+    tree tests_empty = NULL_TREE;
 };
 
 LinearNames linear_names;
@@ -508,6 +557,23 @@ bool is_linear_or_reference(tree type) {
     return is_linear_type(type);
 }
 
+// True when TYPE is a linear sum (THE SUMS): a linear class that carries the
+// annotation sum, such as an Option of a linear payload.  An array of sums is
+// no sum.
+bool is_linear_sum(tree type) {
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return false;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    return CLASS_TYPE_P(type) && carries_annotation(TYPE_ATTRIBUTES(type), linear_names.sum) && is_linear_type(type);
+}
+
+// True when the function FUNCTION, or the template of an instance of it,
+// carries the annotation NAME of include/foundation/Linear.h.
+bool carries_linear_annotation(tree function, tree name) {
+    return function_carries_base_annotation(function, name, linear_names.linear);
+}
+
 // True for an accessor: a member function with an implicit object parameter
 // and no qualifier &&, that gives an lvalue reference to a linear value, such
 // as operator* or value() of std::optional (THE ACCESSORS).  A member function
@@ -561,9 +627,18 @@ enum class Status : std::uint8_t {
     maybe,  // some paths consumed it
 };
 
+// The content of one tracked sum on the paths that reach a point (THE SUMS).
+// A sum is empty only when each path shows it empty.  Each other sum can hold
+// a payload, so the default is can_be_full.
+enum class Content : std::uint8_t {
+    can_be_full,
+    empty,
+};
+
 struct FlowState {
     bool is_reachable = true;
     std::vector<Status> status;
+    std::vector<Content> content;
 
     [[nodiscard]] Status get(std::size_t slot) const { return slot < status.size() ? status[slot] : Status::dead; }
     void set(std::size_t slot, Status value) {
@@ -571,6 +646,15 @@ struct FlowState {
             status.resize(slot + 1, Status::dead);
         }
         status[slot] = value;
+    }
+    [[nodiscard]] Content get_content(std::size_t slot) const {
+        return slot < content.size() ? content[slot] : Content::can_be_full;
+    }
+    void set_content(std::size_t slot, Content value) {
+        if (slot >= content.size()) {
+            content.resize(slot + 1, Content::can_be_full);
+        }
+        content[slot] = value;
     }
 };
 
@@ -582,6 +666,8 @@ FlowState unreachable_state() {
 
 // The join of two states at a point that two paths reach.  The join is
 // monotone, so a fixed point of a loop stays above each state of its passes.
+// A slot that one path holds dead takes the status and the content of the
+// other path.  Complexity: linear in the slots.
 FlowState join(const FlowState& left, const FlowState& right) {
     if (!left.is_reachable) {
         return right;
@@ -590,8 +676,9 @@ FlowState join(const FlowState& left, const FlowState& right) {
         return left;
     }
     FlowState joined;
-    std::size_t size = std::max(left.status.size(), right.status.size());
+    std::size_t size = std::max({left.status.size(), right.status.size(), left.content.size(), right.content.size()});
     joined.status.resize(size, Status::dead);
+    joined.content.resize(size, Content::can_be_full);
     for (std::size_t slot = 0; slot < size; ++slot) {
         Status one = left.get(slot);
         Status other = right.get(slot);
@@ -602,6 +689,16 @@ FlowState join(const FlowState& left, const FlowState& right) {
         } else {
             joined.status[slot] = Status::maybe;
         }
+        Content one_content = left.get_content(slot);
+        Content other_content = right.get_content(slot);
+        if (other == Status::dead) {
+            joined.content[slot] = one_content;
+        } else if (one == Status::dead) {
+            joined.content[slot] = other_content;
+        } else {
+            bool is_each_empty = one_content == Content::empty && other_content == Content::empty;
+            joined.content[slot] = is_each_empty ? Content::empty : Content::can_be_full;
+        }
     }
     return joined;
 }
@@ -610,9 +707,12 @@ bool is_same_state(const FlowState& left, const FlowState& right) {
     if (left.is_reachable != right.is_reachable) {
         return false;
     }
-    std::size_t size = std::max(left.status.size(), right.status.size());
+    std::size_t size = std::max({left.status.size(), right.status.size(), left.content.size(), right.content.size()});
+    // The content of a dead slot means nothing, so the compare skips it.
     for (std::size_t slot = 0; slot < size; ++slot) {
-        if (left.get(slot) != right.get(slot)) {
+        Status status = left.get(slot);
+        if (status != right.get(slot)
+            || (status != Status::dead && left.get_content(slot) != right.get_content(slot))) {
             return false;
         }
     }
@@ -632,6 +732,11 @@ struct Slot {
     std::vector<std::size_t> fields;
     // The end of the scope of the object is a door (THE LINEAR TYPES).
     bool ends_at_scope = false;
+    // The object is a linear sum, whose end reads its content (THE SUMS).
+    bool is_sum = false;
+    // A capture by reference, a stored address or a reference member names
+    // the sum, so a later write through it can fill the sum (THE SUMS).
+    bool is_aliased = false;
     // A closure captured the object by reference, so the rule cannot see its
     // consume, and the rule linear-capture reports the capture (THE CAPTURES).
     bool is_escaped = false;
@@ -661,8 +766,9 @@ struct PendingFinding {
 };
 
 // The bound of the passes of the fixed point of one loop.  The lattice of one
-// object has the height 3, so the head of a loop stops changing after a few
-// passes.  A loop that reaches the bound keeps the state of its last pass.
+// object has the height 3, and the content of a sum adds 1, so the head of a
+// loop stops changing after a few passes.  A loop that reaches the bound keeps
+// the state of its last pass.
 constexpr int kLoopPasses = 6;
 
 // The state of the walk of a body for THE DROPPED ELEMENTS: each node of the
@@ -699,6 +805,12 @@ tree walk_presence(tree* node_pointer, int* walk_subtrees, void* data) {
 enum class BaseStep : std::uint8_t {
     no_slot,  // a base is no slot, so the walk names no object
     whole_object,  // the walk names the whole object, for the object of a member with the qualifier &&
+};
+
+// The branch of a condition that a path takes (THE SUMS, the tests).
+enum class TestBranch : std::uint8_t {
+    condition_true,
+    condition_false,
 };
 
 // True when the special member FUNCTION moves or transfers a linear value by
@@ -875,6 +987,7 @@ private:
         Slot entry;
         entry.decl = decl;
         entry.ends_at_scope = facts.ends_at_scope;
+        entry.is_sum = is_linear_sum(type);
         slots_.push_back(entry);
         slot_of_.emplace(decl, slot);
         add_field_slots(slot, type);
@@ -923,11 +1036,170 @@ private:
         return kNoParent;
     }
 
-    // Sets the object of SLOT and each of its fields to STATUS.
+    // Sets the object of SLOT and each of its fields to STATUS.  A new value
+    // can hold a payload, so a live sum can be full until a fact shows it
+    // empty (THE SUMS).
     void set_object(FlowState& state, std::size_t slot, Status status) {
         state.set(slot, status);
+        if (status == Status::live) {
+            state.set_content(slot, Content::can_be_full);
+        }
         for (std::size_t part : slots_[slot].fields) {
             state.set(part, status);
+        }
+    }
+
+    // The slot of the tracked sum that DECL and FIELD name, or kNoParent for
+    // a field or an object that is no sum (THE SUMS).
+    std::size_t sum_slot(tree decl, tree field) const {
+        if (decl == NULL_TREE || field != NULL_TREE) {
+            return kNoParent;
+        }
+        std::size_t slot = slot_of_.at(decl);
+        return slots_[slot].is_sum ? slot : kNoParent;
+    }
+
+    // A use of a tracked sum that can fill it, such as a reference that is not
+    // const or an address (THE SUMS).
+    void note_can_be_full(tree decl, tree field, FlowState& state) {
+        std::size_t slot = sum_slot(decl, field);
+        if (slot != kNoParent && state.is_reachable) {
+            state.set_content(slot, Content::can_be_full);
+        }
+    }
+
+    // A capture by reference, a stored address that is not const or a
+    // reference member that is not const names a tracked sum (THE SUMS).  A
+    // write through it can fill the sum at each later point, so the sum stays
+    // one that can be full until a consume, and no test and no take shows it
+    // empty after it.
+    void note_alias(tree decl, tree field, FlowState& state) {
+        std::size_t slot = sum_slot(decl, field);
+        if (slot == kNoParent) {
+            return;
+        }
+        slots_[slot].is_aliased = true;
+        note_can_be_full(decl, field, state);
+    }
+
+    // True when a fact of a test or of take can show the tracked sum of SLOT
+    // empty: the sum has no alias (THE SUMS).
+    bool can_show_empty(std::size_t slot) const { return slot != kNoParent && !slots_[slot].is_aliased; }
+
+    // True when VALUE, the initializer of a tracked sum, builds an empty sum:
+    // a call of a constructor that carries the annotation empties, through
+    // the temporaries and the casts of the initializer (THE SUMS).  The caller
+    // gives the initializer before its fold.  Each other value can be full.
+    static bool builds_empty_sum(tree value) {
+        for (int depth = 0; value != NULL_TREE && depth < kTypeDepth; ++depth) {
+            value = tree_strip_any_location_wrapper(value);
+            switch (TREE_CODE(value)) {
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case CLEANUP_POINT_EXPR:
+                    value = TREE_OPERAND(value, 0);
+                    continue;
+                case TARGET_EXPR:
+                    value = TARGET_EXPR_INITIAL(value);
+                    continue;
+                case CALL_EXPR:
+                case AGGR_INIT_EXPR: {
+                    tree callee = cp_get_callee_fndecl_nofold(value);
+                    return callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL && DECL_CONSTRUCTOR_P(callee)
+                        && carries_linear_annotation(callee, linear_names.empties);
+                }
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    // The content of the tracked object DECL, which VALUE initializes: empty
+    // when DECL is a sum and VALUE builds an empty sum (THE SUMS).
+    void note_initial_content(tree decl, tree value, FlowState& state) {
+        std::size_t slot = sum_slot(decl, NULL_TREE);
+        if (can_show_empty(slot) && state.is_reachable && builds_empty_sum(value)) {
+            state.set_content(slot, Content::empty);
+        }
+    }
+
+    // THE TESTS: the branch BRANCH of the condition CONDITION finds a tracked
+    // sum empty when the condition is a test of its state, such as is_none()
+    // of an Option, and the test says empty on that branch.  The walk goes
+    // through the casts and through !.  A test of a full sum gives no fact,
+    // because a full sum is already one that can be full.
+    void refine_by_test(tree condition, TestBranch branch, FlowState& state) const {
+        if (!state.is_reachable) {
+            return;
+        }
+        bool is_true = branch == TestBranch::condition_true;
+        for (int depth = 0; condition != NULL_TREE && depth < kTypeDepth; ++depth) {
+            condition = tree_strip_any_location_wrapper(condition);
+            switch (TREE_CODE(condition)) {
+                case TRUTH_NOT_EXPR:
+                    is_true = !is_true;
+                    condition = TREE_OPERAND(condition, 0);
+                    continue;
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case CLEANUP_POINT_EXPR:
+                case SAVE_EXPR:
+                    condition = TREE_OPERAND(condition, 0);
+                    continue;
+                case CALL_EXPR:
+                    break;
+                default:
+                    return;
+            }
+            tree callee = cp_get_callee_fndecl_nofold(condition);
+            if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || call_expr_nargs(condition) < 1) {
+                return;
+            }
+            bool is_empty_test = carries_linear_annotation(callee, linear_names.tests_empty);
+            bool is_full_test = !is_empty_test && carries_linear_annotation(callee, linear_names.tests_full);
+            bool says_empty = (is_empty_test && is_true) || (is_full_test && !is_true);
+            if (!says_empty) {
+                return;
+            }
+            bool saw_rvalue = false;
+            tree field = NULL_TREE;
+            tree decl = strip_to_tracked(CALL_EXPR_ARG(condition, 0), saw_rvalue, &field);
+            std::size_t slot = sum_slot(decl, field);
+            if (can_show_empty(slot)) {
+                state.set_content(slot, Content::empty);
+            }
+            return;
+        }
+    }
+
+    // A call of a member function of a tracked sum (THE SUMS): a member that
+    // carries the annotation empties, such as take, leaves the sum empty, and
+    // a member that carries fills, such as fill, gives it a new payload to
+    // consume.  Each other member that can change the sum, with an object
+    // parameter that is not const, can fill it.  A const member reads it.
+    void note_sum_member(tree decl, tree field, tree type, tree callee, FlowState& state) {
+        std::size_t slot = sum_slot(decl, field);
+        if (slot == kNoParent || !state.is_reachable) {
+            return;
+        }
+        if (callee != NULL_TREE && carries_linear_annotation(callee, linear_names.empties)) {
+            if (can_show_empty(slot)) {
+                state.set_content(slot, Content::empty);
+            }
+            return;
+        }
+        if (callee != NULL_TREE && carries_linear_annotation(callee, linear_names.fills)) {
+            set_object(state, slot, Status::live);
+            return;
+        }
+        tree object_type = TYPE_ARG_TYPES(type) != NULL_TREE ? TREE_VALUE(TYPE_ARG_TYPES(type)) : NULL_TREE;
+        bool is_const_object =
+            object_type != NULL_TREE && INDIRECT_TYPE_P(object_type) && TYPE_READONLY(TREE_TYPE(object_type));
+        if (!is_const_object) {
+            state.set_content(slot, Content::can_be_full);
         }
     }
 
@@ -1102,9 +1374,9 @@ private:
         return NULL_TREE;
     }
 
-    // True when NODE is a linear temporary through the casts, whose end is no
-    // door.
-    bool is_linear_temporary(tree node) const {
+    // The type of NODE when NODE is a linear temporary through the casts,
+    // whose end is no door, or null.
+    static tree linear_temporary_type(tree node) {
         for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
             switch (TREE_CODE(node)) {
                 case NOP_EXPR:
@@ -1116,12 +1388,12 @@ private:
                     node = TREE_OPERAND(node, 0);
                     continue;
                 case TARGET_EXPR:
-                    return is_dropped_temporary_type(TREE_TYPE(node));
+                    return is_dropped_temporary_type(TREE_TYPE(node)) ? TREE_TYPE(node) : NULL_TREE;
                 default:
-                    return false;
+                    return NULL_TREE;
             }
         }
-        return false;
+        return NULL_TREE;
     }
 
     std::string entity_of(tree decl) const { return function_text(function_) + ": " + simple_name(decl); }
@@ -1161,7 +1433,10 @@ private:
             return;
         }
         if (field == NULL_TREE) {
+            // A consumer takes the payload out of a sum, so the sum is empty
+            // after it (THE SUMS).
             set_object(state, whole, Status::consumed);
+            state.set_content(whole, Content::empty);
             return;
         }
         state.set(slot, Status::consumed);
@@ -1212,9 +1487,13 @@ private:
         for (std::size_t scope = depth; scope < scopes_.size(); ++scope) {
             for (std::size_t slot : scopes_[scope]) {
                 Status status = state.get(slot);
-                if (slots_[slot].ends_at_scope || slots_[slot].is_escaped) {
+                const Slot& entry = slots_[slot];
+                if (entry.ends_at_scope || (entry.is_escaped && !entry.is_sum)) {
                     // The end of the scope is the door of the object, or a
                     // capture by reference hides the consume (THE CAPTURES).
+                } else if (entry.is_sum && state.get_content(slot) == Content::empty) {
+                    // An empty sum holds no payload, so its end drops none
+                    // (THE SUMS).
                 } else if (status == Status::live && is_live_at_exit(state, slot)) {
                     slots_[slot].has_live_exit = true;
                 } else if (status == Status::live || status == Status::maybe) {
@@ -1287,6 +1566,8 @@ private:
                 }
                 FlowState then_state = state;
                 FlowState else_state = state;
+                refine_by_test(IF_COND(node), TestBranch::condition_true, then_state);
+                refine_by_test(IF_COND(node), TestBranch::condition_false, else_state);
                 walk_statement(THEN_CLAUSE(node), then_state);
                 walk_statement(ELSE_CLAUSE(node), else_state);
                 state = join(then_state, else_state);
@@ -1425,8 +1706,14 @@ private:
             // borrows the field and consumes nothing (THE FIELDS).
             bool is_field_borrow =
                 field != NULL_TREE && decl_type != NULL_TREE && TYPE_REF_P(decl_type) && !TYPE_REF_IS_RVALUE(decl_type);
+            // An address of a tracked sum in a pointer that is not const can
+            // fill the sum (THE SUMS).
+            bool is_mutable_address =
+                decl_type != NULL_TREE && TYPE_PTR_P(decl_type) && !TYPE_READONLY(TREE_TYPE(decl_type));
             if (source != NULL_TREE && source != decl && is_borrow && field == NULL_TREE) {
                 referent_of_[decl] = source;
+            } else if (source != NULL_TREE && source != decl && is_mutable_address) {
+                note_alias(source, field, state);
             } else if (source != NULL_TREE && source != decl && !is_borrow && !is_field_borrow
                        && (saw_rvalue || is_linear_or_reference(decl_type))) {
                 consume(source, field, state, location_or(initial, DECL_SOURCE_LOCATION(decl)));
@@ -1441,6 +1728,10 @@ private:
         }
         if (is_tracked && state.is_reachable) {
             set_object(state, slot_of_.at(decl), Status::live);
+            // INITIAL is the initializer before its fold (THE FOLDS).
+            if (initial != NULL_TREE && initial != error_mark_node) {
+                note_initial_content(decl, initial, state);
+            }
         }
         // The bindings of a structured binding, which have no DECL_EXPR of
         // their own.
@@ -1719,11 +2010,17 @@ private:
                 continue;
             }
             if (decl == NULL_TREE) {
-                if (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)
-                    && is_linear_temporary(argument)) {
-                    record_discarded(location);
+                if (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) {
+                    record_discarded(location, linear_temporary_type(argument));
                 }
                 continue;
+            }
+            // A reference that is not const, or an address, lets the callee
+            // fill a tracked sum (THE SUMS).
+            bool is_mutable_borrow =
+                (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) || TYPE_PTR_P(parameter_type);
+            if (is_mutable_borrow && !TYPE_READONLY(TREE_TYPE(parameter_type))) {
+                note_can_be_full(decl, field, state);
             }
             bool is_rvalue_reference = TYPE_REF_P(parameter_type) && TYPE_REF_IS_RVALUE(parameter_type);
             if (is_rvalue_reference || (!TYPE_REF_P(parameter_type) && CLASS_TYPE_P(parameter_type))) {
@@ -1744,8 +2041,8 @@ private:
             return;
         }
         if (decl == NULL_TREE) {
-            if (!FUNCTION_RVALUE_QUALIFIED(type) && is_linear_temporary(argument)) {
-                record_discarded(location);
+            if (!FUNCTION_RVALUE_QUALIFIED(type)) {
+                record_discarded(location, linear_temporary_type(argument));
             }
             return;
         }
@@ -1756,6 +2053,8 @@ private:
             }
         } else if (FUNCTION_RVALUE_QUALIFIED(type) || (callee != NULL_TREE && DECL_DESTRUCTOR_P(callee))) {
             consume(decl, field, state, location);
+        } else {
+            note_sum_member(decl, field, type, callee, state);
         }
     }
 
@@ -1784,14 +2083,26 @@ private:
         bool is_reference_capture = target != NULL_TREE && TREE_CODE(target) == COMPONENT_REF
                                  && LAMBDA_TYPE_P(TREE_TYPE(TREE_OPERAND(target, 0))) && TREE_TYPE(target) != NULL_TREE
                                  && TYPE_REF_P(TREE_TYPE(target));
+        // An address of a tracked sum in a pointer that is not const, and a
+        // reference member that is not const, can fill the sum (THE SUMS).
+        tree target_type = target != NULL_TREE ? TREE_TYPE(target) : NULL_TREE;
+        bool is_mutable_address =
+            target_type != NULL_TREE
+            && (TYPE_PTR_P(target_type) || (TYPE_REF_P(target_type) && TREE_CODE(target) == COMPONENT_REF))
+            && !TYPE_READONLY(TREE_TYPE(target_type));
         if (source != NULL_TREE && is_reference_capture) {
+            // The closure can fill a captured sum (THE SUMS).
             mark_escaped(source);
+            note_alias(source, field, state);
+        } else if (source != NULL_TREE && source != tracked_target && is_mutable_address) {
+            note_alias(source, field, state);
         } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)) {
             consume(source, field, state, location);
         }
         if (tracked_target != NULL_TREE && state.is_reachable) {
             if (is_init) {
                 set_object(state, slot_of_.at(tracked_target), Status::live);
+                note_initial_content(tracked_target, value, state);
             } else {
                 assign_over(tracked_target, state, location);
             }
@@ -1812,17 +2123,27 @@ private:
             if (field != NULL_TREE && TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE
                 && TYPE_REF_P(TREE_TYPE(field)) && !TYPE_REF_IS_RVALUE(TREE_TYPE(field))) {
                 // THE CAPTURES: a closure that captures a tracked object by
-                // reference hides each later consume of it.
+                // reference hides each later consume of it.  A reference
+                // member that is not const can fill a tracked sum (THE SUMS).
                 bool saw_reference = false;
-                tree captured = LAMBDA_TYPE_P(TREE_TYPE(node)) ? strip_to_tracked(value, saw_reference) : NULL_TREE;
-                if (captured != NULL_TREE) {
-                    mark_escaped(captured);
+                tree referred = strip_to_tracked(value, saw_reference);
+                if (referred != NULL_TREE && LAMBDA_TYPE_P(TREE_TYPE(node))) {
+                    mark_escaped(referred);
+                }
+                if (referred != NULL_TREE && !TYPE_READONLY(TREE_TYPE(TREE_TYPE(field)))) {
+                    note_alias(referred, NULL_TREE, state);
                 }
                 continue;
             }
-            // An address or a pointer in an element is no transfer.
+            // An address or a pointer in an element is no transfer.  An
+            // address that is not const can fill a tracked sum (THE SUMS).
             tree value_type = TREE_TYPE(value);
             if (value_type == NULL_TREE || TREE_CODE(value_type) == POINTER_TYPE) {
+                bool saw_address = false;
+                tree addressed = value_type != NULL_TREE ? strip_to_tracked(value, saw_address) : NULL_TREE;
+                if (addressed != NULL_TREE && !TYPE_READONLY(TREE_TYPE(value_type))) {
+                    note_alias(addressed, NULL_TREE, state);
+                }
                 continue;
             }
             bool saw_rvalue = false;
@@ -1836,8 +2157,15 @@ private:
 
     // ── Discarded temporaries ──
 
-    void record_discarded(location_t location) {
-        add_pending(Kind::linear_discarded_temporary, location, function_text(function_) + ": temporary");
+    // A discarded temporary of the linear type TYPE.  A temporary of a linear
+    // sum gives the kind option-discarded (THE SUMS).  A null TYPE is no
+    // linear temporary, and gives nothing.
+    void record_discarded(location_t location, tree type) {
+        if (type == NULL_TREE) {
+            return;
+        }
+        Kind kind = is_linear_sum(type) ? Kind::linear_option_discarded : Kind::linear_discarded_temporary;
+        add_pending(kind, location, function_text(function_) + ": temporary");
     }
 
     void check_discarded(tree node) {
@@ -1861,7 +2189,7 @@ private:
         tree_code code = TREE_CODE(current);
         if ((code == CALL_EXPR || code == AGGR_INIT_EXPR || code == TARGET_EXPR)
             && is_dropped_temporary_type(TREE_TYPE(current))) {
-            record_discarded(location_or(current, function_location()));
+            record_discarded(location_or(current, function_location()), TREE_TYPE(current));
         }
     }
 
@@ -1871,7 +2199,8 @@ private:
     bool is_ended_by_door(Kind kind) const {
         return is_door_
             && (kind == Kind::linear_unconsumed || kind == Kind::linear_unconsumed_on_path
-                || kind == Kind::linear_discarded_temporary);
+                || kind == Kind::linear_discarded_temporary || kind == Kind::linear_option_unconsumed
+                || kind == Kind::linear_option_discarded);
     }
 
     void report() {
@@ -1885,7 +2214,11 @@ private:
             if (!entry.has_live_exit && !entry.has_maybe_exit) {
                 continue;
             }
+            // A linear sum gives one kind for each path (THE SUMS).
             Kind kind = entry.has_live_exit ? Kind::linear_unconsumed : Kind::linear_unconsumed_on_path;
+            if (entry.is_sum) {
+                kind = Kind::linear_option_unconsumed;
+            }
             record(kind, DECL_SOURCE_LOCATION(entry.decl), entity_of(entry.decl));
         }
         for (const PendingFinding& finding : pending_) {
@@ -3288,6 +3621,33 @@ void report_scope_escape(const Finding& finding) {
            "%<foundation/Quarantine.h%>");
 }
 
+// The error of one finding of the kinds option-unconsumed and
+// option-discarded of the rule must-consume that no region opts out (THE
+// SUMS).  The message does not start with "quarantine: ", so a regex of a
+// negative fixture reads it.
+void report_option_end(const Finding& finding) {
+    if (finding.kind == Kind::linear_option_unconsumed) {
+        error_at(finding.spelling, "a linear sum can end with a payload that no consumer took: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "an Option, a Result or a OneOf of a linear payload gives the payload out only through a consumer, "
+               "so its end with a payload drops a value that each path must use one time");
+        inform(finding.spelling,
+               "consume the sum on each path, or test an Option empty before its end, or end an empty Option with "
+               "%<expect_none(reason)%>");
+    } else if (finding.kind == Kind::linear_option_discarded) {
+        error_at(finding.spelling, "the code discards a temporary linear sum, so its payload can drop: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling, "give the temporary to a consumer, such as expect, the rvalue match, a combinator, or "
+                                 "%<expect_none(reason)%> for an empty Option");
+    } else {
+        return;
+    }
+    inform(finding.spelling,
+           "a test of the drop itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
+           "%<foundation/Quarantine.h%>");
+}
+
 // The rule brand-reentry at the end of the unit (plugin.cpp, walk_unit): each
 // body of the unit gave its edges of the call graph by then.
 void finish_linear_rules() {
@@ -3312,6 +3672,11 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.detach_door = get_identifier("detach_door");
     linear_names.scope_end_door = get_identifier("scope_end_door");
     linear_names.forward = get_identifier("forward");
+    linear_names.sum = get_identifier("sum");
+    linear_names.empties = get_identifier("empties");
+    linear_names.fills = get_identifier("fills");
+    linear_names.tests_full = get_identifier("tests_full");
+    linear_names.tests_empty = get_identifier("tests_empty");
     if (checks_must_consume) {
         register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
         register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);

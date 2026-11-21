@@ -116,14 +116,16 @@ THE DERIVED DIAGNOSTICS
     finding of the rules of EACH_MODE_RULES, a finding of a kind of
     SPECIALIZATION_ERRORS of the rule specialization-home, a finding of a
     kind of BASE_NAMESPACE_ERRORS of the rule base-namespace, a finding of a
-    kind of SCOPE_ERRORS of the rule brand-escape, and a finding of a kind of
+    kind of SCOPE_ERRORS of the rule brand-escape, a finding of a kind of
+    SUM_ERRORS of the rule must-consume, and a finding of a kind of
     FRESH_ERRORS of the rule fresh-brand give an error.
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
     contract-specifier gives the error of the contract rule, a finding of the
     rules binding-hook and borrow-match gives the start of its error, and a
-    finding of the rules specialization-home, base-namespace and fresh-brand
-    or of a scope kind of the rule brand-escape gives the text of its kind.
+    finding of the rules specialization-home, base-namespace and fresh-brand,
+    of a scope kind of the rule brand-escape or of a sum kind of the rule
+    must-consume gives the text of its kind.
     The record open-extension of the rule specialization-home is no finding,
     so it gives no error in each mode.  A
     finding at the line 0, a fact of all the unit, gives an error with no
@@ -301,6 +303,13 @@ BRAND_ESCAPE_RULE = "brand-escape"
 SCOPE_ERRORS = {
     "scope-static": "an object of static or thread storage duration holds a value of a scope brand",
     "scope-return": "a scope mint gives a result that holds its own scope brand",
+}
+# The rule must-consume, and the start of the error of each of its kinds that is an error in each mode: the end of a
+# linear sum with its payload (THE SUMS of utils/tools/quarantine/linear.cpp).  Its other kinds are lines of a ledger.
+MUST_CONSUME_RULE = "must-consume"
+SUM_ERRORS = {
+    "option-unconsumed": "a linear sum can end with a payload that no consumer took: {entity}",
+    "option-discarded": "the code discards a temporary linear sum, so its payload can drop: {entity}",
 }
 # The rule fresh-brand, and the start of the error of each of its kinds (THE ERRORS of
 # utils/tools/quarantine/fresh_brand.cpp).  Each finding of the rule is an error in each mode.
@@ -798,13 +807,14 @@ def diagnostic_difference(
 def is_each_mode(finding: plugin_sections.Finding) -> bool:
     """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, a kind of
     SPECIALIZATION_ERRORS of the rule specialization-home, a kind of BASE_NAMESPACE_ERRORS of the rule
-    base-namespace, a kind of SCOPE_ERRORS of the rule brand-escape, or a kind of FRESH_ERRORS of the rule fresh-brand
-    (THE DERIVED DIAGNOSTICS)."""
+    base-namespace, a kind of SCOPE_ERRORS of the rule brand-escape, a kind of SUM_ERRORS of the rule must-consume,
+    or a kind of FRESH_ERRORS of the rule fresh-brand (THE DERIVED DIAGNOSTICS)."""
     return (
         finding.rule in EACH_MODE_RULES
         or (finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS)
         or (finding.rule == BASE_NAMESPACE_RULE and finding.kind in BASE_NAMESPACE_ERRORS)
         or (finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS)
+        or (finding.rule == MUST_CONSUME_RULE and finding.kind in SUM_ERRORS)
         or (finding.rule == FRESH_BRAND_RULE and finding.kind in FRESH_ERRORS)
     )
 
@@ -834,6 +844,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, BASE_NAMESPACE_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS:
             errors.append((place, SCOPE_ERRORS[finding.kind]))
+        elif finding.rule == MUST_CONSUME_RULE and finding.kind in SUM_ERRORS:
+            errors.append((place, SUM_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == FRESH_BRAND_RULE and finding.kind in FRESH_ERRORS:
             errors.append((place, FRESH_ERRORS[finding.kind].format(entity=finding.entity)))
         else:

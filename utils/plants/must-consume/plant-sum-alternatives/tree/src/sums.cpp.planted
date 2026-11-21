@@ -1,7 +1,7 @@
 // A sum with a linear alternative is linear: an Option of a token, a Result
 // with a token as its error, and a OneOf with a token as one alternative.  Each
 // drops function moves its sum to a consumer on one path only, so each sum
-// gives a line.  The function keeps_each moves each sum and gives no line.
+// gives an error.  The function keeps_each moves each sum and gives no line.
 #include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/OneOf.h>

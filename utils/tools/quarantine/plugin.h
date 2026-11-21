@@ -375,6 +375,12 @@
 //     door                  no finding: one record of each linear-door row of
 //                           the rule table that a unit read, for the module of
 //                           the rule, which refuses a row with no record
+//     option-unconsumed, option-discarded
+//                           a linear sum, such as an Option of a linear
+//                           payload, that can end with its payload, and a
+//                           temporary of one that the code discards (THE SUMS
+//                           of linear.cpp).  Each finding of the two kinds is
+//                           an error in each mode (is_each_mode_kind)
 //     The other rules of the family linear (linear.cpp, THE SHAPES):
 //     pinned-holder         linear-containment: a class that cannot move,
 //                           holds a linear part and has no door at the end of
@@ -1022,6 +1028,8 @@ enum class Kind : std::uint8_t {
     linear_discarded_temporary,
     linear_unanalyzed,
     linear_door,
+    linear_option_unconsumed,
+    linear_option_discarded,
     linear_pinned_holder,
     linear_copyable_holder,
     linear_library_holder,
@@ -1358,6 +1366,10 @@ inline const char* kind_name(Kind kind) {
             return "unanalyzed";
         case Kind::linear_door:
             return "door";
+        case Kind::linear_option_unconsumed:
+            return "option-unconsumed";
+        case Kind::linear_option_discarded:
+            return "option-discarded";
         case Kind::linear_pinned_holder:
             return "pinned-holder";
         case Kind::linear_copyable_holder:
@@ -1543,6 +1555,8 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_discarded_temporary:
         case Kind::linear_unanalyzed:
         case Kind::linear_door:
+        case Kind::linear_option_unconsumed:
+        case Kind::linear_option_discarded:
             return Rule::must_consume;
         case Kind::linear_pinned_holder:
         case Kind::linear_copyable_holder:
@@ -1600,9 +1614,11 @@ inline Rule rule_of(Kind kind) {
 // True for a kind whose finding is an error in each mode: the contract rule,
 // the rules binding-hook and borrow-match, the unit facts, the findings of the
 // rules specialization-home, base-namespace and fresh-brand, the escapes of a
-// scope brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp), and a
-// bit copy into the tag of a sum (THE CLOSED TAGS of library.cpp).  No enforce
-// mode changes such a finding, and an opt-out region covers it.
+// scope brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp), the
+// end of a linear sum with a payload of the rule must-consume (THE SUMS of
+// linear.cpp), and a bit copy into the tag of a sum (THE CLOSED TAGS of
+// library.cpp).  No enforce mode changes such a finding, and an opt-out region
+// covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::forged_tag:
@@ -1613,6 +1629,8 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::fast_math_override:
         case Kind::brand_scope_static:
         case Kind::brand_scope_return:
+        case Kind::linear_option_unconsumed:
+        case Kind::linear_option_discarded:
         case Kind::specialization_outside_home:
         case Kind::specialization_orphan:
         case Kind::specialization_forward_declaration:
@@ -1820,6 +1838,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "discarded-temporary"},
     {"must-consume", "unanalyzed"},
     {"must-consume", "door"},
+    {"must-consume", "option-unconsumed"},
+    {"must-consume", "option-discarded"},
     {"linear-containment", "pinned-holder"},
     {"linear-containment", "copyable-holder"},
     {"linear-containment", "library-holder"},
@@ -1879,6 +1899,8 @@ inline bool is_name_kind(Kind kind) {
         case Kind::base_namespace_using_directive:
         case Kind::brand_scope_static:
         case Kind::brand_scope_return:
+        case Kind::linear_option_unconsumed:
+        case Kind::linear_option_discarded:
         case Kind::fresh_deduced_brand:
         case Kind::fresh_named_brand:
             return true;
@@ -2889,6 +2911,10 @@ void finish_linear_rules();
 // scope-return of the rule brand-escape that no region opts out (THE SCOPE
 // BRANDS of linear.cpp).
 void report_scope_escape(const Finding& finding);
+// linear.cpp: the error of one finding of the kinds option-unconsumed and
+// option-discarded of the rule must-consume that no region opts out (THE SUMS
+// of linear.cpp).
+void report_option_end(const Finding& finding);
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);

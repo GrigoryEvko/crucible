@@ -293,6 +293,26 @@ def comparison_cases(expect: testing.Expect) -> None:
         "derived_notes() gives no note for a kind of the rule base-namespace",
         witness.derived_notes([planted, directive]) == [],
     )
+    ended = sections.Finding("unit.cpp", 14, 19, "must-consume", "option-unconsumed", "planted::ends: held")
+    discarded = sections.Finding("unit.cpp", 16, 40, "must-consume", "option-discarded", "planted::drops: temporary")
+    counted = sections.Finding("unit.cpp", 18, 10, "must-consume", "unconsumed", "planted::keeps: token")
+    expect(
+        "derived_errors() gives the error of each sum kind of the rule must-consume in the mode report, and no error "
+        "for a kind of its ledger",
+        witness.derived_errors([ended, discarded, counted], False)
+        == [
+            ("unit.cpp:14", "a linear sum can end with a payload that no consumer took: planted::ends: held"),
+            (
+                "unit.cpp:16",
+                "the code discards a temporary linear sum, so its payload can drop: planted::drops: temporary",
+            ),
+        ],
+    )
+    expect(
+        "derived_notes() gives no note for a sum kind of the rule must-consume, and a note for a kind of its ledger",
+        witness.derived_notes([ended, discarded, counted])
+        == [("unit.cpp:18", "quarantine: unconsumed planted::keeps: token")],
+    )
     work, plugin, repo = Path("/w/one"), Path("/r/build/p.so"), Path("/r")
     expect(
         "normalized() writes the paths of the work directory, the plugin and the repository as marks",

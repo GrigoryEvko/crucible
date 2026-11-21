@@ -10,3 +10,14 @@ compile gaps src/gaps.cpp must-consume=on
 flag gaps -freflection
 exit gaps pass
 finding gaps must-consume unconsumed src/gaps.cpp:24:33 | planted::extended_temporary: parent
+
+# The ends of a linear sum that the rule does not see, and that the end of a
+# full Option of a linear payload catches at run time (missed.cpp): a capture
+# by reference that fills the Option after its consume (line 38), a callee that
+# keeps the reference and fills the Option after a test (48), and a data member
+# that a drop door ends (58).  Each one gives no line.  A change that refuses
+# one of them makes this control fail, and moves it to a plant.
+
+compile missed src/missed.cpp must-consume=on
+flag missed -freflection
+exit missed pass

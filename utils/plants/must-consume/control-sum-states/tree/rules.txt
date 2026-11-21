@@ -1,0 +1,10 @@
+# The rule table of this control.  The unit of src/ is quarantined, and it can
+# name the Choice family, the vocabulary of the linear marker, the test context
+# and the assert of the repository, and std::move.
+
+admit foundation::core | the Choice family, whose sums the planted code holds
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit fixy | the test context and the assert of the Check family
+admit foundation::effects | the context that the test context holds
+admit std::move | the cast of each consume
+quarantine src/

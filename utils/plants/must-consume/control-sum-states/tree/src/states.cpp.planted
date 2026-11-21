@@ -1,0 +1,115 @@
+// Each linear sum of this file ends empty or consumed on each path, so the
+// rule must-consume gives no line.  An Option is empty when a constructor of
+// an empty Option built it, when take emptied it, when a consumer took its
+// payload, and on the branch where a test of its state says empty, also
+// through ! and through the assert of fixy/check/Check.h.
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/OneOf.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::none;
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+enum class Code : unsigned char { closed };
+
+using Refused = ::foundation::core::Result<int, Token>;
+using Either = ::foundation::core::OneOf<Token, Code>;
+
+void sink(Token&& token) noexcept;
+void read(Option<Token> const& held) noexcept;
+Option<Token> poll() noexcept;
+Refused refuse() noexcept;
+Either either() noexcept;
+
+void built_empty() {
+    Option<Token> braces{};
+    Option<Token> defaulted;
+    Option<Token> marker = none;
+    Option<Token> marker_braces{none};
+    auto temporary = Option<Token>{none};
+    read(braces);
+}
+
+void emptied_by_take() {
+    Option<Token> held = poll();
+    Option<Token> taken = held.take();
+    std::move(taken).match([](Token token) { sink(std::move(token)); }, [] {});
+}
+
+void kept_in_one_option(int turns) {
+    Option<Token> held = Option<Token>::some(Token{1});
+    for (int turn = 0; turn < turns; ++turn) {
+        Token current = held.take().expect("the loop keeps a token in the Option");
+        held.fill(Token{current.handle + 1});
+        sink(std::move(current));
+    }
+    sink(std::move(held).expect("the loop leaves the last token"));
+}
+
+void consumed_behind_a_test() {
+    Option<Token> held = poll();
+    if (held.is_some()) sink(std::move(held).expect("the test found a token"));
+}
+
+void returns_when_empty() {
+    Option<Token> held = poll();
+    if (held.is_none()) return;
+    sink(std::move(held).expect("the test found a token"));
+}
+
+Option<Token> polls_until_full() {
+    for (;;) {
+        auto arrived = poll();
+        if (arrived.is_some()) return arrived;
+    }
+}
+
+void asserted_empty(::fixy::TestRunnerCtx const& test) {
+    Option<Token> first = poll();
+    CRUCIBLE_TEST_ASSERT(test, first.is_none());
+    Option<Token> second = poll();
+    CRUCIBLE_TEST_ASSERT(test, !second.is_some());
+}
+
+void ended_through_doors() {
+    poll().expect_none("the source gives no token here");
+    Option<Token> held{};
+    std::move(held).expect_none("the Option was built empty");
+    ::foundation::linear::drop(Option<Token>{});
+}
+
+Option<Token> tried() {
+    CRUCIBLE_TRY(token, poll());
+    return Option<Token>::some(std::move(token));
+}
+
+void consumed_result_and_one_of() {
+    Refused refused = refuse();
+    std::move(refused).match([](int) {}, [](Token token) { sink(std::move(token)); });
+    Either held = either();
+    std::move(held).match([](Token token) { sink(std::move(token)); }, [](Code) {});
+}
+
+// The body of a door ends the linear values of its frame.
+[[= ::foundation::linear::drop_door{}]] void ends_in_a_door(Option<Token> held) noexcept {
+    static_cast<void>(held.is_some());
+}
+
+}  // namespace planted

@@ -2659,9 +2659,12 @@ foundation_neg_compile_test(neg_core_result_temporary_borrow_match
 foundation_neg_compile_test(neg_core_option_linear_assign
   "use of deleted function .foundation::core::Option<Token>& foundation::core::Option<Token>::operator=\\(foundation::core::Option<Token>&&\\)."
   "an assignment drops the payload that the Option holds, and a linear payload must not be dropped")
+# The rule must-consume refuses the dropped result too, at compile time in
+# each build.
 foundation_neg_compile_test(neg_core_option_replace_result_dropped
   "ignoring return value of .constexpr foundation::core::Option<T> foundation::core::Option<T>::replace"
-  "declared with attribute .nodiscard.")
+  "declared with attribute .nodiscard."
+  "the code discards a temporary linear sum, so its payload can drop: main: temporary")
 foundation_neg_compile_test(neg_core_result_linear_assign
   "use of deleted function .foundation::core::Result<int, Token>& foundation::core::Result<int, Token>::operator=\\(foundation::core::Result<int, Token>&&\\)."
   "use of deleted function .foundation::core::detail::ResultSlot<int, Token>& foundation::core::detail::ResultSlot<int, Token>::operator=\\(foundation::core::detail::ResultSlot<int, Token>&&\\)."
