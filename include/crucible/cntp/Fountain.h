@@ -172,7 +172,8 @@ template <std::size_t SourceSymbols>
 
     ::fixy::FixedArray<std::uint8_t, SourceSymbols> permutation{};
     for (auto position : permutation.indices()) {
-        permutation.at(position) = static_cast<std::uint8_t>(position.raw());
+        permutation.with_element(position, [value = static_cast<std::uint8_t>(position.raw())](
+                                               std::uint8_t& element) noexcept { element = value; });
     }
 
     std::uint64_t mask = 0;
@@ -194,8 +195,9 @@ template <std::size_t SourceSymbols>
         const auto product = static_cast<__uint128_t>(uniform64) * static_cast<__uint128_t>(span);
         const auto j = i + static_cast<std::size_t>(product >> 64U);
         [[assume(j < SourceSymbols)]];
-        ::fixy::swap(permutation.at(step),
-                     permutation.at(::fixy::Index<SourceSymbols>::check(j).expect("the draw is a remaining symbol")));
+        const auto draw = ::fixy::Index<SourceSymbols>::check(j).expect("the draw is a remaining symbol");
+        permutation.with_mut(
+            [step, draw](auto run) noexcept { ::fixy::swap(run.view().at(step), run.view().at(draw)); });
         mask |= std::uint64_t{1} << permutation.at(step);
     }
     return mask;
@@ -215,17 +217,19 @@ template <std::size_t SourceSymbols>
 template <std::size_t SymbolBytes>
 CRUCIBLE_HOT void copy_symbol(::fixy::View<std::byte const> input, std::size_t symbol,
                               FountainSymbol<SymbolBytes>& out) noexcept {
-    ::fixy::fill(out.view(), std::byte{0});
+    out.with_mut([input, symbol](auto run) noexcept {
+        ::fixy::fill(run.view(), std::byte{0});
 
-    const auto start = symbol * SymbolBytes;
-    if (start >= input.size()) {
-        return;
-    }
+        const auto start = symbol * SymbolBytes;
+        if (start >= input.size()) {
+            return;
+        }
 
-    const auto live = ::fixy::min(SymbolBytes, input.size() - start);
-    ::fixy::copy(out.view().window(0, live).expect("the live bytes fit in a symbol"),
-                 input.window(start, live).expect("the live bytes lie inside the input"))
-        .expect("the two windows have the count of the live bytes");
+        const auto live = ::fixy::min(SymbolBytes, input.size() - start);
+        ::fixy::copy(run.view().window(0, live).expect("the live bytes fit in a symbol"),
+                     input.window(start, live).expect("the live bytes lie inside the input"))
+            .expect("the two windows have the count of the live bytes");
+    });
 }
 
 template <std::size_t SymbolBytes>
@@ -323,7 +327,8 @@ private:
         while (remaining != 0) {
             const auto source = static_cast<std::size_t>(::fixy::countr_zero(remaining));
             fountain_detail::copy_symbol(input, source, symbol);
-            detail::mul_xor(packet.payload.view(), symbol.view(), 1);
+            packet.payload.with_mut(
+                [source_bytes = symbol.view()](auto run) noexcept { detail::mul_xor(run.view(), source_bytes, 1); });
             remaining &= remaining - 1U;
         }
 
@@ -470,7 +475,9 @@ private:
         auto overlap = equation.mask & decoded_mask_;
         while (overlap != 0) {
             auto const symbol = symbol_of(overlap);
-            detail::mul_xor(equation.payload.view(), decoded_symbol(symbol), 1);
+            equation.payload.with_mut([source_bytes = decoded_symbol(symbol)](auto run) noexcept {
+                detail::mul_xor(run.view(), source_bytes, 1);
+            });
             equation.mask &= ~(std::uint64_t{1} << symbol.raw());
             overlap &= overlap - 1U;
         }
@@ -487,44 +494,48 @@ private:
             return ::fixy::Unit{};
         }
 
-        ::fixy::copy(decoded_.view()
-                         .template window<SymbolBytes>(symbol.raw() * SymbolBytes)
-                         .expect("each source symbol lies inside the decoded bytes"),
-                     payload.view());
+        decoded_.with_mut([symbol, source_bytes = payload.view()](auto run) noexcept {
+            ::fixy::copy(run.view()
+                             .template window<SymbolBytes>(symbol.raw() * SymbolBytes)
+                             .expect("each source symbol lies inside the decoded bytes"),
+                         source_bytes);
+        });
         decoded_mask_ |= singleton_mask;
         return ::fixy::Unit{};
     }
 
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError> peel() noexcept {
-        bool progressed = true;
-        while (progressed) {
-            progressed = false;
-            for (Equation& equation : equations_) {
-                if (equation.mask == 0) {
-                    continue;
-                }
-
-                reduce_known(equation);
-                if (equation.mask == 0) {
-                    if (!fountain_detail::zero_symbol(equation.payload)) {
-                        return ::fixy::err(FountainError::InconsistentEquation);
+        return equations_.with_mut([this](auto run) noexcept -> ::fixy::Result<::fixy::Unit, FountainError> {
+            bool progressed = true;
+            while (progressed) {
+                progressed = false;
+                for (Equation& equation : run) {
+                    if (equation.mask == 0) {
+                        continue;
                     }
-                    continue;
-                }
-                if (::fixy::popcount(equation.mask) != 1) {
-                    continue;
-                }
 
-                CRUCIBLE_TRY(_, admit_symbol(equation.mask, equation.payload));
-                equation.mask = 0;
-                progressed = true;
+                    reduce_known(equation);
+                    if (equation.mask == 0) {
+                        if (!fountain_detail::zero_symbol(equation.payload)) {
+                            return ::fixy::err(FountainError::InconsistentEquation);
+                        }
+                        continue;
+                    }
+                    if (::fixy::popcount(equation.mask) != 1) {
+                        continue;
+                    }
+
+                    CRUCIBLE_TRY(_, admit_symbol(equation.mask, equation.payload));
+                    equation.mask = 0;
+                    progressed = true;
+                }
             }
-        }
-        return ::fixy::Unit{};
+            return ::fixy::Unit{};
+        });
     }
 
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError> store_equation(Equation const& equation) noexcept {
-        for (Equation& existing : equations_) {
+        for (Equation const& existing : equations_) {
             if (existing.mask == equation.mask) {
                 if (!(equation.payload == existing.payload)) {
                     return ::fixy::err(FountainError::InconsistentEquation);
@@ -533,13 +544,15 @@ private:
             }
         }
 
-        for (Equation& existing : equations_) {
-            if (existing.mask == 0) {
-                existing = equation;
-                return ::fixy::Unit{};
+        return equations_.with_mut([&equation](auto run) noexcept -> ::fixy::Result<::fixy::Unit, FountainError> {
+            for (Equation& existing : run) {
+                if (existing.mask == 0) {
+                    existing = equation;
+                    return ::fixy::Unit{};
+                }
             }
-        }
-        return ::fixy::err(FountainError::EquationCapacityExceeded);
+            return ::fixy::err(FountainError::EquationCapacityExceeded);
+        });
     }
 
     [[nodiscard]] constexpr FountainDecodeState state() const noexcept {

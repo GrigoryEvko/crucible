@@ -220,10 +220,12 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
             }
         }
         for (SlotIndex const index : slots_.indices()) {
-            Slot& slot = slots_.at(index);
-            if (!slot.occupied) {
-                slot.occupied = true;
-                slot.cog_uuid = id.uuid;
+            if (!slots_.at(index).occupied) {
+                cog::Uuid const cog_uuid = id.uuid;
+                slots_.with_element(index, [cog_uuid](Slot& slot) noexcept {
+                    slot.occupied = true;
+                    slot.cog_uuid = cog_uuid;
+                });
                 return ::fixy::some(index);
             }
         }
@@ -248,7 +250,9 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
                                                                  std::uint64_t sequence) noexcept {
         return find_or_insert(id).match(
             [this, sequence](SlotIndex index) noexcept -> ::fixy::Option<SlotIndex> {
-                if (!slots_.at(index).sequence.try_advance(sequence)) {
+                bool const is_advanced = slots_.with_element(
+                    index, [sequence](Slot& slot) noexcept { return slot.sequence.try_advance(sequence); });
+                if (!is_advanced) {
                     return ::fixy::none;
                 }
                 return ::fixy::some(index);
@@ -270,7 +274,7 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
     }
 
     constexpr void append_event(Slot const& slot, QuarantineState from, QuarantineState to) noexcept {
-        events_.at(next_event_) = QuarantineEvent{
+        QuarantineEvent const event{
             .cog_uuid = slot.cog_uuid,
             .from = from,
             .to = to,
@@ -280,6 +284,7 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
             .admitted_load_ppm = detail::load_for(to, config_),
             .sequence = slot.sequence.get(),
         };
+        events_.with_element(next_event_, [event](QuarantineEvent& held) noexcept { held = event; });
         next_event_ = EventIndex::check((next_event_.raw() + 1u) % MaxEvents)
                           .expect("a remainder of MaxEvents is a slot of the ring");
         if (event_count_ < MaxEvents) {
@@ -287,20 +292,22 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
         }
     }
 
-    constexpr void transition_to(Slot& slot, QuarantineState next, std::uint64_t now_ns) noexcept {
-        if (slot.state == next) {
+    constexpr void transition_to(SlotIndex index, QuarantineState next, std::uint64_t now_ns) noexcept {
+        QuarantineState const prior = slots_.at(index).state;
+        if (prior == next) {
             return;
         }
-        QuarantineState const prior = slot.state;
-        slot.state = next;
-        if (next == QuarantineState::Quarantined && slot.quarantine_since_ns == 0) {
-            slot.quarantine_since_ns = now_ns;
-        }
-        if (next == QuarantineState::Healthy || next == QuarantineState::Suspect) {
-            slot.quarantine_since_ns = 0;
-            slot.consecutive_recovery_probes = 0;
-        }
-        append_event(slot, prior, next);
+        slots_.with_element(index, [next, now_ns](Slot& slot) noexcept {
+            slot.state = next;
+            if (next == QuarantineState::Quarantined && slot.quarantine_since_ns == 0) {
+                slot.quarantine_since_ns = now_ns;
+            }
+            if (next == QuarantineState::Healthy || next == QuarantineState::Suspect) {
+                slot.quarantine_since_ns = 0;
+                slot.consecutive_recovery_probes = 0;
+            }
+        });
+        append_event(slots_.at(index), prior, next);
     }
 
     [[nodiscard]] constexpr QuarantineState state_from_health(Slot const& slot, topology::HealthSnapshot const& health,
@@ -340,11 +347,12 @@ public:
         return admit_fact(cog, health.sequence)
             .match(
                 [this, &health, now_ns](SlotIndex index) noexcept {
-                    Slot& slot = slots_.at(index);
-                    slot.health_score = health.score;
-                    slot.signals = {};
-                    QuarantineState const next = state_from_health(slot, health, slot.signals);
-                    transition_to(slot, next, now_ns);
+                    QuarantineState const next = slots_.with_element(index, [this, &health](Slot& slot) noexcept {
+                        slot.health_score = health.score;
+                        slot.signals = {};
+                        return state_from_health(slot, health, slot.signals);
+                    });
+                    transition_to(index, next, now_ns);
                     return true;
                 },
                 []() noexcept { return false; });
@@ -358,19 +366,21 @@ public:
         return admit_fact(cog, sequence)
             .match(
                 [this, cls, now_ns](SlotIndex index) noexcept {
-                    Slot& slot = slots_.at(index);
-                    slot.signals = {};
-                    QuarantineState next = slot.state;
-                    if (cls == topology::FailureClass::BidiFailed) {
-                        slot.signals.set(QuarantineSignal::AsymmetricDead);
-                        next = QuarantineState::Quarantined;
-                    } else if (cls == topology::FailureClass::TxBroken || cls == topology::FailureClass::RxBroken) {
-                        slot.signals.set(QuarantineSignal::AsymmetricSuspect);
-                        if (slot.state == QuarantineState::Healthy || slot.state == QuarantineState::Recovered) {
-                            next = QuarantineState::Suspect;
+                    QuarantineState const next = slots_.with_element(index, [cls](Slot& slot) noexcept {
+                        slot.signals = {};
+                        QuarantineState decided = slot.state;
+                        if (cls == topology::FailureClass::BidiFailed) {
+                            slot.signals.set(QuarantineSignal::AsymmetricDead);
+                            decided = QuarantineState::Quarantined;
+                        } else if (cls == topology::FailureClass::TxBroken || cls == topology::FailureClass::RxBroken) {
+                            slot.signals.set(QuarantineSignal::AsymmetricSuspect);
+                            if (slot.state == QuarantineState::Healthy || slot.state == QuarantineState::Recovered) {
+                                decided = QuarantineState::Suspect;
+                            }
                         }
-                    }
-                    transition_to(slot, next, now_ns);
+                        return decided;
+                    });
+                    transition_to(index, next, now_ns);
                     return true;
                 },
                 []() noexcept { return false; });
@@ -383,23 +393,30 @@ public:
         return admit_fact(cog, outcome.sequence)
             .match(
                 [this, &outcome, now_ns](SlotIndex index) noexcept {
-                    Slot& slot = slots_.at(index);
-                    slot.signals = {};
+                    slots_.with_element(index, [](Slot& slot) noexcept { slot.signals = {}; });
+                    Slot const& slot = slots_.at(index);
                     if (slot.state != QuarantineState::Quarantined) {
                         return true;
                     }
                     if (outcome.ok()) {
-                        slot.signals.set(QuarantineSignal::RecoveryProbePassed);
-                        if (slot.consecutive_recovery_probes < config_.recovery_probe_count.value()) {
-                            ++slot.consecutive_recovery_probes;
-                        }
-                        if (slot.consecutive_recovery_probes >= config_.recovery_probe_count.value()) {
-                            slot.signals.set(QuarantineSignal::RecoveryThresholdMet);
-                            transition_to(slot, QuarantineState::Recovered, now_ns);
+                        auto const probe_count = config_.recovery_probe_count.value();
+                        slots_.with_element(index, [probe_count](Slot& held) noexcept {
+                            held.signals.set(QuarantineSignal::RecoveryProbePassed);
+                            if (held.consecutive_recovery_probes < probe_count) {
+                                ++held.consecutive_recovery_probes;
+                            }
+                        });
+                        if (slot.consecutive_recovery_probes >= probe_count) {
+                            slots_.with_element(index, [](Slot& held) noexcept {
+                                held.signals.set(QuarantineSignal::RecoveryThresholdMet);
+                            });
+                            transition_to(index, QuarantineState::Recovered, now_ns);
                         }
                     } else {
-                        slot.signals.set(QuarantineSignal::RecoveryProbeFailed);
-                        slot.consecutive_recovery_probes = 0;
+                        slots_.with_element(index, [](Slot& held) noexcept {
+                            held.signals.set(QuarantineSignal::RecoveryProbeFailed);
+                            held.consecutive_recovery_probes = 0;
+                        });
                     }
                     return true;
                 },
@@ -413,15 +430,17 @@ public:
         return admit_fact(cog, sequence)
             .match(
                 [this, now_ns](SlotIndex index) noexcept {
-                    Slot& slot = slots_.at(index);
-                    slot.signals = {};
+                    slots_.with_element(index, [](Slot& slot) noexcept { slot.signals = {}; });
+                    Slot const& slot = slots_.at(index);
                     if (slot.state != QuarantineState::Quarantined || slot.quarantine_since_ns == 0
                         || now_ns < slot.quarantine_since_ns
                         || now_ns - slot.quarantine_since_ns < config_.permanent_after_ns.value()) {
                         return true;
                     }
-                    slot.signals.set(QuarantineSignal::PermanentTimerElapsed);
-                    slot.signals.set(QuarantineSignal::PermanentRequiresOperator);
+                    slots_.with_element(index, [](Slot& held) noexcept {
+                        held.signals.set(QuarantineSignal::PermanentTimerElapsed);
+                        held.signals.set(QuarantineSignal::PermanentRequiresOperator);
+                    });
                     append_event(slot, slot.state, slot.state);
                     return true;
                 },
@@ -440,10 +459,11 @@ public:
         admit_fact(cog, sequence)
             .match(
                 [this, forced, now_ns](SlotIndex index) noexcept {
-                    Slot& slot = slots_.at(index);
-                    slot.signals = {};
-                    slot.signals.set(QuarantineSignal::OperatorOverride);
-                    transition_to(slot, forced, now_ns);
+                    slots_.with_element(index, [](Slot& slot) noexcept {
+                        slot.signals = {};
+                        slot.signals.set(QuarantineSignal::OperatorOverride);
+                    });
+                    transition_to(index, forced, now_ns);
                 },
                 []() noexcept {});
         return std::move(authority);

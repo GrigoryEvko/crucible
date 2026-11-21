@@ -147,7 +147,7 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
     }
 
     void append_event(PoolEventKind kind, Connection<T> const& connection) noexcept {
-        events_.at(next_event_) = PoolEvent{
+        const PoolEvent event{
             .kind = kind,
             .transport = T,
             .remote_uuid = connection.remote_uuid(),
@@ -155,30 +155,32 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
             .connection_id = connection.connection_id().value(),
             .sequence = ++sequence_,
         };
+        events_.with_element(next_event_, [event](PoolEvent& held) noexcept { held = event; });
         next_event_ = next_event_index(next_event_);
         if (event_count_ < MaxEvents) {
             ++event_count_;
         }
     }
 
-    // Records the event and empties the slot.  The caller holds the gate.
-    void drain_slot(Slot& slot, PoolEventKind kind) noexcept {
-        append_event(kind, connection_of(slot));
-        slot = Slot{};
+    // Records the event and empties the slot at index.  The caller holds the
+    // gate.
+    void drain_slot(SlotIndex index, PoolEventKind kind) noexcept {
+        append_event(kind, connection_of(slots_.at(index)));
+        slots_.with_element(index, [](Slot& held) noexcept { held = Slot{}; });
     }
 
     template <class Ctx>
     void return_index(Ctx const& ctx, SlotIndex index) noexcept {
         auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
         ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        Slot& slot = slots_.at(index);
+        Slot const& slot = slots_.at(index);
         if (slot.connection.is_none() || !slot.leased) {
             return;
         }
-        slot.leased = false;
+        slots_.with_element(index, [](Slot& held) noexcept { held.leased = false; });
         if (slot.quarantined || !slot.healthy) {
             const cog::Uuid drained_uuid = connection_of(slot).remote_uuid();
-            drain_slot(slot, slot.quarantined ? PoolEventKind::DrainedQuarantined : PoolEventKind::EvictedUnhealthy);
+            drain_slot(index, slot.quarantined ? PoolEventKind::DrainedQuarantined : PoolEventKind::EvictedUnhealthy);
             if (!has_remote(drained_uuid)) {
                 --distinct_remotes_;
             }
@@ -265,13 +267,15 @@ public:
         if (remote_occupied_count(raw.remote_uuid()) >= per_remote_limit()) {
             return ::fixy::err(PoolError::PoolFull);
         }
-        for (Slot& slot : slots_) {
-            if (slot.connection.is_none()) {
-                slot.connection = ::fixy::some(raw);
-                slot.leased = false;
-                slot.quarantined = false;
-                slot.healthy = true;
-                slot.last_used_ns = now_ns;
+        for (SlotIndex index : slots_.indices()) {
+            if (slots_.at(index).connection.is_none()) {
+                slots_.with_element(index, [&raw, now_ns](Slot& slot) noexcept {
+                    slot.connection = ::fixy::some(raw);
+                    slot.leased = false;
+                    slot.quarantined = false;
+                    slot.healthy = true;
+                    slot.last_used_ns = now_ns;
+                });
                 if (is_new_remote) {
                     ++distinct_remotes_;
                 }
@@ -293,7 +297,7 @@ public:
         auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
         ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         for (SlotIndex index : slots_.indices()) {
-            Slot& slot = slots_.at(index);
+            Slot const& slot = slots_.at(index);
             if (!holds_remote(slot, remote.uuid)) {
                 continue;
             }
@@ -304,8 +308,10 @@ public:
                 continue;
             }
             if (!slot.leased) {
-                slot.leased = true;
-                slot.last_used_ns = now_ns;
+                slots_.with_element(index, [now_ns](Slot& held) noexcept {
+                    held.leased = true;
+                    held.last_used_ns = now_ns;
+                });
                 append_event(PoolEventKind::Leased, connection_of(slot));
                 return LeaseGuard<Ctx>{*this, index, ctx};
             }
@@ -345,9 +351,10 @@ public:
         auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
         ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         const bool was_present = has_remote(remote.uuid);
-        for (Slot& slot : slots_) {
+        for (SlotIndex index : slots_.indices()) {
+            Slot const& slot = slots_.at(index);
             if (holds_remote(slot, remote.uuid) && !slot.leased && !slot.healthy) {
-                drain_slot(slot, PoolEventKind::EvictedUnhealthy);
+                drain_slot(index, PoolEventKind::EvictedUnhealthy);
             }
         }
         if (was_present && !has_remote(remote.uuid)) {
@@ -363,11 +370,13 @@ public:
         }
         auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
         ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        for (Slot& slot : slots_) {
-            if (holds_remote(slot, remote.uuid) && same_socket(connection_of(slot).socket(), socket)) {
-                slot.healthy = false;
+        slots_.with_mut([&remote, socket](auto run) noexcept {
+            for (Slot& slot : run) {
+                if (holds_remote(slot, remote.uuid) && same_socket(connection_of(slot).socket(), socket)) {
+                    slot.healthy = false;
+                }
             }
-        }
+        });
     }
 
     template <class Ctx>
@@ -379,12 +388,13 @@ public:
         auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
         ::fixy::spin::GateGuard guard{ctx, gate_, proof};
         const bool was_present = has_remote(remote.uuid);
-        for (Slot& slot : slots_) {
+        for (SlotIndex index : slots_.indices()) {
+            Slot const& slot = slots_.at(index);
             if (slot.leased || !holds_remote(slot, remote.uuid)) {
                 continue;
             }
             if (now_ns >= slot.last_used_ns && now_ns - slot.last_used_ns >= config_.max_idle_ns.value()) {
-                drain_slot(slot, PoolEventKind::EvictedIdle);
+                drain_slot(index, PoolEventKind::EvictedIdle);
             }
         }
         if (was_present && !has_remote(remote.uuid)) {
@@ -403,13 +413,14 @@ public:
         // A quarantined slot that is still leased keeps its slot, so the
         // remote can survive this call and distinct_remotes_ must not drop.
         const bool was_present = has_remote(remote.uuid);
-        for (Slot& slot : slots_) {
+        for (SlotIndex index : slots_.indices()) {
+            Slot const& slot = slots_.at(index);
             if (!holds_remote(slot, remote.uuid)) {
                 continue;
             }
-            slot.quarantined = true;
+            slots_.with_element(index, [](Slot& held) noexcept { held.quarantined = true; });
             if (!slot.leased) {
-                drain_slot(slot, PoolEventKind::DrainedQuarantined);
+                drain_slot(index, PoolEventKind::DrainedQuarantined);
             }
         }
         if (was_present && !has_remote(remote.uuid)) {

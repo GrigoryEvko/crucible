@@ -212,7 +212,7 @@ private:
 
     void record_event(SdcEvent event) noexcept {
         event.sequence = ++event_sequence_;
-        events_.at(event_cursor_) = event;
+        events_.with_element(event_cursor_, [event](SdcEvent& entry) noexcept { entry = event; });
         event_cursor_ = next_event_slot(event_cursor_);
     }
 
@@ -245,7 +245,9 @@ public:
         return CogIndex::check(active_cogs_)
             .match(
                 [&](CogIndex slot) noexcept {
-                    cogs_.at(slot) = CogSlot{.cog = cog, .mismatch_count = 0, .active = true};
+                    cogs_.with_element(slot, [&cog](CogSlot& entry) noexcept {
+                        entry = CogSlot{.cog = cog, .mismatch_count = 0, .active = true};
+                    });
                     ++active_cogs_;
                     return true;
                 },
@@ -269,8 +271,8 @@ public:
         }
 
         Work& body = work;
-        CogSlot& primary_slot = cogs_.at(::fixy::index<0>());
-        Result primary = body(primary_slot.cog);
+        Result primary = cogs_.with_element(::fixy::index<0>(),
+                                            [&body](CogSlot& primary_slot) noexcept { return body(primary_slot.cog); });
         for (CogIndex const slot : cogs_.indices()) {
             if (slot.raw() == 0) {
                 continue;
@@ -278,13 +280,19 @@ public:
             if (slot.raw() >= required) {
                 break;
             }
-            CogSlot& comparison_slot = cogs_.at(slot);
-            Result replica = body(comparison_slot.cog);
+            Result replica = cogs_.with_element(
+                slot, [&body](CogSlot& comparison_slot) noexcept { return body(comparison_slot.cog); });
             if (!detail::equivalent(primary, replica, config_.strategy, config_.tolerance_units)) {
                 // A count that wrapped to zero would clear a suspect Cog.
-                primary_slot.mismatch_count = ::fixy::saturating_add(primary_slot.mismatch_count, std::uint16_t{1});
-                comparison_slot.mismatch_count =
-                    ::fixy::saturating_add(comparison_slot.mismatch_count, std::uint16_t{1});
+                cogs_.with_element(::fixy::index<0>(), [](CogSlot& primary_slot) noexcept {
+                    primary_slot.mismatch_count = ::fixy::saturating_add(primary_slot.mismatch_count, std::uint16_t{1});
+                });
+                cogs_.with_element(slot, [](CogSlot& comparison_slot) noexcept {
+                    comparison_slot.mismatch_count =
+                        ::fixy::saturating_add(comparison_slot.mismatch_count, std::uint16_t{1});
+                });
+                CogSlot const& primary_slot = cogs_.at(::fixy::index<0>());
+                CogSlot const& comparison_slot = cogs_.at(slot);
 
                 SdcEvent event = make_event(SdcEventKind::Mismatch, slot.raw() + 1u);
                 event.comparison_slot = static_cast<std::uint16_t>(slot.raw());
@@ -297,7 +305,7 @@ public:
         }
 
         SdcEvent event = make_event(SdcEventKind::Verified, required);
-        event.primary_cog = primary_slot.cog.uuid;
+        event.primary_cog = cogs_.at(::fixy::index<0>()).cog.uuid;
         record_event(event);
         return ::fixy::mint_tagged<::fixy::tags::source::SdcVerified>(primary);
     }

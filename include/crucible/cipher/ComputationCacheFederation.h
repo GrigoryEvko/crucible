@@ -198,8 +198,12 @@ template <typename Brand>
         ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES + 4> buf{};
         const ::fixy::FixedArray<std::byte, 4> body{std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04}};
 
-        auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
-            local_permission, hash_key, buf.view(), body.view());
+        // The body borrows the permission through a Ref, so no closure holds
+        // the linear permission by reference.
+        auto written = buf.with_mut([permission = ::fixy::to(local_permission), &hash_key, &body](auto run) noexcept {
+            return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(*permission, hash_key,
+                                                                                           run.view(), body.view());
+        });
         if (written.is_err()) return false;
         const std::size_t written_bytes = std::move(written).expect("the entry fits its buffer");
         const ::fixy::View<std::byte const> entry =
@@ -216,10 +220,14 @@ template <typename Brand>
     {
         ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> buf_empty{};
         ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> buf_bg{};
-        auto wa = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
-            local_permission, hash_key, buf_empty.view(), ::fixy::View<std::byte const>{});
-        auto wb = serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(
-            local_permission, hash_key, buf_bg.view(), ::fixy::View<std::byte const>{});
+        auto wa = buf_empty.with_mut([permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
+            return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
+                *permission, hash_key, run.view(), ::fixy::View<std::byte const>{});
+        });
+        auto wb = buf_bg.with_mut([permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
+            return serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(
+                *permission, hash_key, run.view(), ::fixy::View<std::byte const>{});
+        });
         if (wa.is_err() || wb.is_err()) return false;
         const std::size_t written_empty = std::move(wa).expect("the entry of the empty row fits");
         const std::size_t written_bg = std::move(wb).expect("the entry of the Bg row fits");
@@ -232,8 +240,10 @@ template <typename Brand>
     {
         ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> buf{};
         using Payload = ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>;
-        auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
-            local_permission, hash_key, buf.view(), Payload::hash_only());
+        auto written = buf.with_mut([permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
+            return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
+                *permission, hash_key, run.view(), Payload::hash_only());
+        });
         if (written.is_err()) return false;
         if (std::move(written).expect("the hash-only entry fits") != FEDERATION_HEADER_BYTES) return false;
     }

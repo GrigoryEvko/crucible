@@ -292,7 +292,8 @@ class BpfMapImage : public ::foundation::Pinned<BpfMapImage<Key, Value, MaxEntri
     [[nodiscard]] constexpr UpdateResult insert(Key const& key, Value const& value) noexcept {
         return find_free_slot(key).match(
             [this, &key, &value](SlotIndex index) noexcept -> UpdateResult {
-                slots_.at(index) = Slot{.key = key, .value = value, .is_occupied = true};
+                Slot const filled{.key = key, .value = value, .is_occupied = true};
+                slots_.with_element(index, [filled](Slot& held) noexcept { held = filled; });
                 ++size_;
                 return ::fixy::Unit{};
             },
@@ -321,7 +322,7 @@ public:
                 if (mode == BpfMapUpdate::NoExist) {
                     return ::fixy::err(XdpError::KeyAlreadyExists);
                 }
-                slots_.at(index).value = value;
+                slots_.with_element(index, [&value](Slot& held) noexcept { held.value = value; });
                 return ::fixy::Unit{};
             },
             [this, &key, &value, mode]() noexcept -> UpdateResult {
@@ -355,12 +356,12 @@ public:
             std::uint64_t const home_to_hole = (std::uint64_t{hole.raw()} + MaxEntries - home) % MaxEntries;
             std::uint64_t const home_to_current = (std::uint64_t{current.raw()} + MaxEntries - home) % MaxEntries;
             if (home_to_hole < home_to_current) {
-                slots_.at(hole) = slot;
+                slots_.with_element(hole, [moved = slot](Slot& held) noexcept { held = moved; });
                 hole = current;
             }
             current = next_of(current);
         }
-        slots_.at(hole) = Slot{};
+        slots_.with_element(hole, [](Slot& held) noexcept { held = Slot{}; });
         --size_;
         return ::fixy::Unit{};
     }

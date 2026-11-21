@@ -405,11 +405,14 @@ public:
             return ::fixy::err(TcamError::TableFull);
         }
         for (SlotIndex index : slots_.indices()) {
-            Slot& slot = slots_.at(index);
+            Slot const& slot = slots_.at(index);
             if (!slot.occupied && !slot.retired) {
-                slot.rule = rule.value();
-                slot.counter = 0;
-                slot.occupied = true;
+                TcamFlowRule const flow_rule = rule.value();
+                slots_.with_element(index, [flow_rule](Slot& held) noexcept {
+                    held.rule = flow_rule;
+                    held.counter = 0;
+                    held.occupied = true;
+                });
                 ++installed_;
                 TcamRuleHandle handle{identity_, plan_.value().target().uuid, slot.rule.rule_id, index.raw(),
                                       ::fixy::widen<std::uint64_t>(slot.generation)};
@@ -422,16 +425,20 @@ public:
     [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> remove_rule(OwnedTcamRule handle) noexcept {
         TcamRuleHandle raw = std::move(handle).consume();
         CRUCIBLE_TRY(index, slot_for(raw));
-        Slot& slot = slots_.at(index);
-        slot.occupied = false;
-        slot.counter = 0;
+        slots_.with_element(index, [](Slot& slot) noexcept {
+            slot.occupied = false;
+            slot.counter = 0;
+        });
         --installed_;
-        ::foundation::core::checked_add(slot.generation, Generation{1})
-            .match([&slot](Generation next) noexcept { slot.generation = next; },
-                   [this, &slot]() noexcept {
-                       slot.retired = true;
-                       ++retired_;
-                   });
+        ::foundation::core::checked_add(slots_.at(index).generation, Generation{1})
+            .match(
+                [this, index](Generation next) noexcept {
+                    slots_.with_element(index, [next](Slot& slot) noexcept { slot.generation = next; });
+                },
+                [this, index]() noexcept {
+                    slots_.with_element(index, [](Slot& slot) noexcept { slot.retired = true; });
+                    ++retired_;
+                });
         return ::fixy::Unit{};
     }
 
@@ -444,9 +451,10 @@ public:
     [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> note_match(OwnedTcamRule const& handle,
                                                                                std::uint64_t count = 1) noexcept {
         CRUCIBLE_TRY(index, slot_for(handle.peek()));
-        Slot& slot = slots_.at(index);
-        CRUCIBLE_TRY(updated, ::foundation::core::checked_add(slot.counter, count).ok_or(TcamError::CounterOverflow));
-        slot.counter = updated;
+        CRUCIBLE_TRY(
+            updated,
+            ::foundation::core::checked_add(slots_.at(index).counter, count).ok_or(TcamError::CounterOverflow));
+        slots_.with_element(index, [updated](Slot& slot) noexcept { slot.counter = updated; });
         return ::fixy::Unit{};
     }
 

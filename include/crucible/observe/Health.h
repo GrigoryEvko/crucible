@@ -56,7 +56,10 @@ inline void publish_topology_health(TopologyHealthObservationSet& sinks, std::ui
                                     ObservationSource source = ObservationSource::Runtime) noexcept {
     TopologyHealthObservationBatch const observations = topology_health_observations(peer_slot, snapshot, source);
     for (::fixy::Index<kTopologyHealthObservationCount> const index : TopologyHealthObservationSet::indices()) {
-        record_observation(sinks.at(index), observations.at(index));
+        // Each sink is an AtomicSnapshot, so a reader loads it while the publish writes it.
+        sinks.with_element(index, [observation = observations.at(index)](ObservationSnapshot& sink) noexcept {
+            record_observation(sink, observation);
+        });
     }
 }
 

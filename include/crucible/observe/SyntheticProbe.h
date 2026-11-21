@@ -253,9 +253,6 @@ private:
 
     // The counters of one kind of the peer at index.  Each kind is one bit,
     // so its position is below transport_kind_count.
-    [[nodiscard]] detail::AtomicProbeStats& counters_(PeerIndex index, TransportProbeKind kind) noexcept {
-        return *stats_.at(index).get(detail::transport_probe_index(kind)).expect("each kind has a slot of the grid");
-    }
     [[nodiscard]] detail::AtomicProbeStats const& counters_(PeerIndex index, TransportProbeKind kind) const noexcept {
         return *stats_.at(index).get(detail::transport_probe_index(kind)).expect("each kind has a slot of the grid");
     }
@@ -267,21 +264,28 @@ private:
         return find_enabled_(peer, outcome.kind)
             .match(
                 [&](PeerIndex index) noexcept {
-                    detail::AtomicProbeStats& counters = counters_(index, outcome.kind);
-                    // The scheduled counter is deliberately not touched here.
-                    // Dispatch is counted by schedule_probe.
-                    counters.last_latency_ns.store_release(outcome.latency_ns);
-                    counters.last_sequence.store_release(outcome.sequence);
-                    counters.last_failure.store_release(outcome.failure);
-                    static_cast<void>(counters.bytes_transferred.fetch_add_acq_rel(outcome.bytes_transferred));
-                    if (outcome.ok()) {
-                        static_cast<void>(counters.succeeded.fetch_add_acq_rel(1));
-                    } else {
-                        static_cast<void>(counters.failed.fetch_add_acq_rel(1));
-                        if (outcome.failure == SyntheticProbeFailureClass::Timeout) {
-                            static_cast<void>(counters.timed_out.fetch_add_acq_rel(1));
-                        }
-                    }
+                    auto const kind_slot =
+                        ::fixy::Index<transport_kind_count>::check(detail::transport_probe_index(outcome.kind))
+                            .expect("each kind has a slot of the grid");
+                    // Each counter is an Atomic, so a concurrent write of the same counters is safe.
+                    stats_.with_element(index, [kind_slot, outcome](KindRow& row) noexcept {
+                        row.with_element(kind_slot, [outcome](detail::AtomicProbeStats& counters) noexcept {
+                            // The scheduled counter is deliberately not touched here.
+                            // Dispatch is counted by schedule_probe.
+                            counters.last_latency_ns.store_release(outcome.latency_ns);
+                            counters.last_sequence.store_release(outcome.sequence);
+                            counters.last_failure.store_release(outcome.failure);
+                            static_cast<void>(counters.bytes_transferred.fetch_add_acq_rel(outcome.bytes_transferred));
+                            if (outcome.ok()) {
+                                static_cast<void>(counters.succeeded.fetch_add_acq_rel(1));
+                            } else {
+                                static_cast<void>(counters.failed.fetch_add_acq_rel(1));
+                                if (outcome.failure == SyntheticProbeFailureClass::Timeout) {
+                                    static_cast<void>(counters.timed_out.fetch_add_acq_rel(1));
+                                }
+                            }
+                        });
+                    });
                     return ::fixy::some(index);
                 },
                 []() noexcept { return ::fixy::Option<PeerIndex>{::fixy::none}; });
@@ -301,11 +305,13 @@ public:
         if (find_peer(peer).is_some()) {
             return false;
         }
-        for (auto& slot : peers_) {
-            if (!slot.active) {
-                slot.peer = peer;
-                slot.enabled_kinds = kinds;
-                slot.active = true;
+        for (PeerIndex const index : peers_.indices()) {
+            if (!peers_.at(index).active) {
+                peers_.with_element(index, [peer, kinds](PeerSlot& slot) noexcept {
+                    slot.peer = peer;
+                    slot.enabled_kinds = kinds;
+                    slot.active = true;
+                });
                 return true;
             }
         }
@@ -327,7 +333,15 @@ public:
         return find_enabled_(peer, kind)
             .match(
                 [&](PeerIndex index) noexcept {
-                    static_cast<void>(counters_(index, kind).scheduled.fetch_add_acq_rel(1));
+                    auto const kind_slot =
+                        ::fixy::Index<transport_kind_count>::check(detail::transport_probe_index(kind))
+                            .expect("each kind has a slot of the grid");
+                    // The counter is an Atomic, so a concurrent write of the same counter is safe.
+                    stats_.with_element(index, [kind_slot](KindRow& row) noexcept {
+                        row.with_element(kind_slot, [](detail::AtomicProbeStats& counters) noexcept {
+                            static_cast<void>(counters.scheduled.fetch_add_acq_rel(1));
+                        });
+                    });
                     return true;
                 },
                 []() noexcept { return false; });

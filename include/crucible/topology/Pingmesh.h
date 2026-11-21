@@ -233,10 +233,12 @@ private:
         if (find_peer(peer.uuid).is_some()) {
             return PingmeshError::DuplicatePeer;
         }
-        for (PeerSlot& slot : peers_) {
-            if (!slot.active) {
-                slot.peer = peer;
-                slot.active = true;
+        for (PeerIndex const index : peers_.indices()) {
+            if (!peers_.at(index).active) {
+                peers_.with_element(index, [&peer](PeerSlot& slot) noexcept {
+                    slot.peer = peer;
+                    slot.active = true;
+                });
                 return PingmeshError::None;
             }
         }
@@ -246,7 +248,9 @@ private:
     void enable_all_registered_pairs() noexcept {
         for (PeerIndex const src : peers_.indices()) {
             for (PeerIndex const dst : peers_.indices()) {
-                enabled_pairs_.at(pair_index(src, dst)) = src != dst && peers_.at(src).active && peers_.at(dst).active;
+                bool const is_enabled = src != dst && peers_.at(src).active && peers_.at(dst).active;
+                enabled_pairs_.with_element(pair_index(src, dst),
+                                            [is_enabled](bool& enabled) noexcept { enabled = is_enabled; });
             }
         }
     }
@@ -322,7 +326,7 @@ public:
     [[nodiscard]] PingmeshError enable_pair(Ctx const&, cog::Uuid src, cog::Uuid dst) noexcept {
         return locate_pair(src, dst).match(
             [&](PairIndex index) {
-                enabled_pairs_.at(index) = true;
+                enabled_pairs_.with_element(index, [](bool& enabled) noexcept { enabled = true; });
                 return PingmeshError::None;
             },
             [](PingmeshError error) { return error; });
@@ -336,27 +340,33 @@ public:
         return enabled_pair(value.src, value.dst)
             .match(
                 [&](PairIndex index) {
-                    detail::AtomicPingmeshPairCounters& counters = counters_.at(index);
-                    counters.sent.add(1);
-                    counters.last_sequence.store_release(value.sequence);
+                    // The counters of a pair are tallies and atomics, so two probe workers write them at the same time.
+                    return counters_.with_element(
+                        index, [this, value, index](detail::AtomicPingmeshPairCounters& counters) noexcept {
+                            counters.sent.add(1);
+                            counters.last_sequence.store_release(value.sequence);
 
-                    if (value.status == PingmeshProbeStatus::Lost) {
-                        counters.lost.add(1);
-                        return PingmeshError::None;
-                    }
-                    if (value.status == PingmeshProbeStatus::Rejected) {
-                        counters.rejected.add(1);
-                        return PingmeshError::None;
-                    }
+                            if (value.status == PingmeshProbeStatus::Lost) {
+                                counters.lost.add(1);
+                                return PingmeshError::None;
+                            }
+                            if (value.status == PingmeshProbeStatus::Rejected) {
+                                counters.rejected.add(1);
+                                return PingmeshError::None;
+                            }
 
-                    std::uint64_t const latency_ns = value.latency_ns.value();
-                    if (latency_ns > MaxLatencyNs) {
-                        counters.rejected.add(1);
-                        return PingmeshError::LatencyOutOfRange;
-                    }
-                    latency_.at(index).record(histogram_type::checked_value(latency_ns));
-                    counters.delivered.add(1);
-                    return PingmeshError::None;
+                            std::uint64_t const latency_ns = value.latency_ns.value();
+                            if (latency_ns > MaxLatencyNs) {
+                                counters.rejected.add(1);
+                                return PingmeshError::LatencyOutOfRange;
+                            }
+                            auto const latency = histogram_type::checked_value(latency_ns);
+                            // A histogram holds Atomic counts, so two probe workers record into one at the same time.
+                            latency_.with_element(index,
+                                                  [latency](histogram_type& hist) noexcept { hist.record(latency); });
+                            counters.delivered.add(1);
+                            return PingmeshError::None;
+                        });
                 },
                 [](PingmeshError error) { return error; });
     }

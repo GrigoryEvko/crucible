@@ -201,10 +201,12 @@ class AsymmetricFailureDetector
             return found;
         }
         for (::fixy::Index<MaxPeers> const index : peers_.indices()) {
-            PeerSlot& slot = peers_.at(index);
-            if (!slot.occupied) {
-                slot.occupied = true;
-                slot.peer_uuid = peer.uuid;
+            if (!peers_.at(index).occupied) {
+                cog::Uuid const peer_uuid = peer.uuid;
+                peers_.with_element(index, [peer_uuid](PeerSlot& slot) noexcept {
+                    slot.occupied = true;
+                    slot.peer_uuid = peer_uuid;
+                });
                 return ::fixy::some(index);
             }
         }
@@ -224,7 +226,7 @@ class AsymmetricFailureDetector
         } else {
             ++window.count;
         }
-        ring.at(next) = success;
+        ring.with_element(next, [success](bool& held) noexcept { held = success; });
         if (success) {
             ++window.successes;
         }
@@ -297,9 +299,10 @@ class AsymmetricFailureDetector
         return out;
     }
 
-    constexpr void append_event(PeerSlot& slot, FailureClass from, FailureSummary const& summary) noexcept {
-        events_.at(next_event_) = AsymmetricFailureEvent{
-            .peer_uuid = slot.peer_uuid,
+    constexpr void append_event(::fixy::Index<MaxPeers> index, FailureClass from,
+                                FailureSummary const& summary) noexcept {
+        AsymmetricFailureEvent const event{
+            .peer_uuid = peers_.at(index).peer_uuid,
             .from = from,
             .to = summary.with_witnesses,
             .signals = summary.signals,
@@ -307,18 +310,20 @@ class AsymmetricFailureDetector
             .witness_reachable = summary.witness_reachable,
             .sequence = summary.sequence,
         };
+        events_.with_element(next_event_, [event](AsymmetricFailureEvent& held) noexcept { held = event; });
         next_event_ = detail::next_ring_index(next_event_);
         if (event_count_ < kMaxEvents) {
             ++event_count_;
         }
-        slot.last_class = summary.with_witnesses;
+        FailureClass const to = summary.with_witnesses;
+        peers_.with_element(index, [to](PeerSlot& slot) noexcept { slot.last_class = to; });
     }
 
     constexpr void record_if_transition(::fixy::Index<MaxPeers> index) noexcept {
         FailureSummary const summary = summarize(index);
-        PeerSlot& slot = peers_.at(index);
-        if (summary.with_witnesses != slot.last_class) {
-            append_event(slot, slot.last_class, summary);
+        FailureClass const last_class = peers_.at(index).last_class;
+        if (summary.with_witnesses != last_class) {
+            append_event(index, last_class, summary);
         }
     }
 
@@ -328,15 +333,18 @@ class AsymmetricFailureDetector
                                               std::uint64_t sequence) noexcept {
         return find_or_insert(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                PeerSlot& slot = peers_.at(index);
-                if (!slot.sequence.try_advance(sequence)) {
+                bool const is_advanced = peers_.with_element(
+                    index, [sequence](PeerSlot& slot) noexcept { return slot.sequence.try_advance(sequence); });
+                if (!is_advanced) {
                     return false;
                 }
-                if (is_outbound) {
-                    push_sample(slot.outbound, slot.outbound_window, success);
-                } else {
-                    push_sample(slot.inbound, slot.inbound_window, success);
-                }
+                peers_.with_element(index, [is_outbound, success](PeerSlot& slot) noexcept {
+                    if (is_outbound) {
+                        push_sample(slot.outbound, slot.outbound_window, success);
+                    } else {
+                        push_sample(slot.inbound, slot.inbound_window, success);
+                    }
+                });
                 record_if_transition(index);
                 return true;
             },
@@ -348,30 +356,46 @@ class AsymmetricFailureDetector
     // refused.
     [[nodiscard]] constexpr bool record_vote(::fixy::Index<MaxPeers> index, cog::CogIdentity const& witness,
                                              bool witness_reaches_target, std::uint64_t sequence) noexcept {
-        PeerSlot& slot = peers_.at(index);
-        if (sequence < slot.sequence.get()) {
+        if (sequence < peers_.at(index).sequence.get()) {
             return false;
         }
-        ::fixy::FixedArray<WitnessSlot, MaxWitnesses>& witnesses = witnesses_.at(index);
-        for (WitnessSlot& existing : witnesses) {
+        ::fixy::FixedArray<WitnessSlot, MaxWitnesses> const& witnesses = witnesses_.at(index);
+        for (::fixy::Index<MaxWitnesses> const position : witnesses.indices()) {
+            WitnessSlot const& existing = witnesses.at(position);
             if (existing.occupied && existing.witness_uuid == witness.uuid) {
                 if (sequence < existing.sequence.get()) {
                     return false;
                 }
-                static_cast<void>(slot.sequence.try_advance(sequence));
-                static_cast<void>(existing.sequence.try_advance(sequence));
-                existing.reachable = witness_reaches_target;
+                peers_.with_element(index, [sequence](PeerSlot& slot) noexcept {
+                    static_cast<void>(slot.sequence.try_advance(sequence));
+                });
+                witnesses_.with_element(index, [position, sequence, witness_reaches_target](
+                                                   ::fixy::FixedArray<WitnessSlot, MaxWitnesses>& row) noexcept {
+                    row.with_element(position, [sequence, witness_reaches_target](WitnessSlot& held) noexcept {
+                        static_cast<void>(held.sequence.try_advance(sequence));
+                        held.reachable = witness_reaches_target;
+                    });
+                });
                 record_if_transition(index);
                 return true;
             }
         }
-        for (WitnessSlot& existing : witnesses) {
-            if (!existing.occupied) {
-                existing.occupied = true;
-                existing.witness_uuid = witness.uuid;
-                existing.reachable = witness_reaches_target;
-                static_cast<void>(slot.sequence.try_advance(sequence));
-                static_cast<void>(existing.sequence.try_advance(sequence));
+        for (::fixy::Index<MaxWitnesses> const position : witnesses.indices()) {
+            if (!witnesses.at(position).occupied) {
+                cog::Uuid const witness_uuid = witness.uuid;
+                witnesses_.with_element(index, [position, witness_uuid, witness_reaches_target,
+                                                sequence](::fixy::FixedArray<WitnessSlot, MaxWitnesses>& row) noexcept {
+                    row.with_element(position,
+                                     [witness_uuid, witness_reaches_target, sequence](WitnessSlot& held) noexcept {
+                                         held.occupied = true;
+                                         held.witness_uuid = witness_uuid;
+                                         held.reachable = witness_reaches_target;
+                                         static_cast<void>(held.sequence.try_advance(sequence));
+                                     });
+                });
+                peers_.with_element(index, [sequence](PeerSlot& slot) noexcept {
+                    static_cast<void>(slot.sequence.try_advance(sequence));
+                });
                 record_if_transition(index);
                 return true;
             }

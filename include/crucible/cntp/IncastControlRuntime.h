@@ -57,17 +57,19 @@ class IncastController : public ::foundation::Pinned<IncastController<MaxFlows>>
 
     [[nodiscard]] constexpr ::fixy::Result<FlowIndex, cntp::IncastError>
     find_or_insert(cntp::SocketIdentity socket, cntp::PositiveCreditBytes initial_credit) noexcept {
+        std::uint32_t const credit = initial_credit.value();
         for (FlowIndex index : find(socket)) {
-            flows_.at(index).credit_bytes = initial_credit.value();
+            flows_.with_element(index, [credit](FlowSlot& flow) noexcept { flow.credit_bytes = credit; });
             return index;
         }
         for (FlowIndex index : flows_.indices()) {
-            FlowSlot& flow = flows_.at(index);
-            if (!flow.occupied) {
-                flow.occupied = true;
-                flow.socket = socket;
-                flow.credit_bytes = initial_credit.value();
-                flow.sequence = 0;
+            if (!flows_.at(index).occupied) {
+                flows_.with_element(index, [socket, credit](FlowSlot& flow) noexcept {
+                    flow.occupied = true;
+                    flow.socket = socket;
+                    flow.credit_bytes = credit;
+                    flow.sequence = 0;
+                });
                 return index;
             }
         }
@@ -104,13 +106,15 @@ public:
     issue_credit(Ctx const&, cntp::SocketIdentity socket, cntp::PositiveCreditBytes bytes,
                  std::uint64_t sequence) noexcept {
         CRUCIBLE_TRY(index, find(socket).ok_or(cntp::IncastError::FlowNotStarted));
-        FlowSlot& flow = flows_.at(index);
-        const std::uint32_t room = ::fixy::max_of<std::uint32_t> - flow.credit_bytes;
+        const std::uint32_t room = ::fixy::max_of<std::uint32_t> - flows_.at(index).credit_bytes;
         if (bytes.value() > room) {
             return ::fixy::err(cntp::IncastError::CreditOverflow);
         }
-        flow.credit_bytes += bytes.value();
-        flow.sequence = sequence;
+        std::uint32_t const added = bytes.value();
+        flows_.with_element(index, [added, sequence](FlowSlot& flow) noexcept {
+            flow.credit_bytes += added;
+            flow.sequence = sequence;
+        });
         return IncastCreditGrant{
             .socket = socket,
             .bytes = bytes,
@@ -127,11 +131,11 @@ public:
     [[nodiscard]] constexpr ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError>
     try_consume_credit(Ctx const&, cntp::SocketIdentity socket) noexcept {
         CRUCIBLE_TRY(index, find(socket).ok_or(cntp::IncastError::FlowNotStarted));
-        FlowSlot& flow = flows_.at(index);
-        if (flow.credit_bytes == 0) {
+        if (flows_.at(index).credit_bytes == 0) {
             return ::fixy::err(cntp::IncastError::CreditUnavailable);
         }
-        const std::uint32_t granted = ::fixy::exchange(flow.credit_bytes, 0);
+        const std::uint32_t granted =
+            flows_.with_element(index, [](FlowSlot& flow) noexcept { return ::fixy::exchange(flow.credit_bytes, 0); });
         return ::fixy::mint_refined<::fixy::positive>(granted);
     }
 

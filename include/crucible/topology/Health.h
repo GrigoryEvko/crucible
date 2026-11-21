@@ -237,10 +237,11 @@ template <class Slot, std::size_t Count>
         return found;
     }
     for (::fixy::Index<Count> const index : slots.indices()) {
-        Slot& slot = slots.at(index);
-        if (!slot.occupied) {
-            slot.occupied = true;
-            slot.peer = peer;
+        if (!slots.at(index).occupied) {
+            slots.with_element(index, [&peer](Slot& slot) noexcept {
+                slot.occupied = true;
+                slot.peer = peer;
+            });
             return ::fixy::some(index);
         }
     }
@@ -374,7 +375,9 @@ public:
         return claim_peer_slot(slots_, peer)
             .match(
                 [&](::fixy::Index<MaxPeers> index) {
-                    return record_heartbeat_in(slots_.at(index), observed_ns, sequence);
+                    return slots_.with_element(index, [observed_ns, sequence](Slot& slot) noexcept {
+                        return record_heartbeat_in(slot, observed_ns, sequence);
+                    });
                 },
                 [] { return false; });
     }
@@ -393,7 +396,8 @@ private:
             return false;
         }
         if (prior != 0 && observed_ns > prior) {
-            slot.intervals.at(slot.next) = observed_ns - prior;
+            slot.intervals.with_element(
+                slot.next, [interval = observed_ns - prior](std::uint64_t& held) noexcept { held = interval; });
             slot.next = next_ring_index(slot.next);
             if (slot.count < Window) {
                 ++slot.count;
@@ -476,7 +480,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
     [[nodiscard]] constexpr ::fixy::Option<::fixy::Index<MaxPeers>> claim(cog::CogIdentity const& peer) noexcept {
         ::fixy::Option<::fixy::Index<MaxPeers>> claimed = detail::claim_peer_slot(slots_, peer);
         for (::fixy::Index<MaxPeers> const index : claimed) {
-            slots_.at(index).last_snapshot.cog_uuid = peer.uuid;
+            slots_.with_element(index, [uuid = peer.uuid](Slot& slot) noexcept { slot.last_snapshot.cog_uuid = uuid; });
         }
         return claimed;
     }
@@ -510,7 +514,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
     }
 
     constexpr void append_event(Slot& slot, HealthState from, HealthState to, HealthSnapshot const& snapshot) noexcept {
-        events_.at(next_event_) = HealthDeltaEvent{
+        HealthDeltaEvent const event{
             .cog_uuid = slot.peer.uuid,
             .from = from,
             .to = to,
@@ -518,6 +522,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
             .issues = snapshot.issues,
             .sequence = snapshot.sequence,
         };
+        events_.with_element(next_event_, [event](HealthDeltaEvent& held) noexcept { held = event; });
         next_event_ = detail::next_ring_index(next_event_);
         if (event_count_ < MaxEvents) {
             ++event_count_;
@@ -655,13 +660,14 @@ public:
                                                 ThermalSample sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                Slot& slot = slots_.at(index);
-                if (!slot.sequence.try_advance(sample.sequence)) {
-                    return false;
-                }
-                slot.thermal = sample;
-                slot.has_thermal = true;
-                return true;
+                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                    if (!slot.sequence.try_advance(sample.sequence)) {
+                        return false;
+                    }
+                    slot.thermal = sample;
+                    slot.has_thermal = true;
+                    return true;
+                });
             },
             [] { return false; });
     }
@@ -671,15 +677,16 @@ public:
     [[nodiscard]] constexpr bool update_ecc(Ctx const&, cog::CogIdentity const& peer, EccCounters sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                Slot& slot = slots_.at(index);
-                if (!detail::no_counter_behind(sample, slot.ecc) || !slot.sequence.try_advance(sample.sequence)) {
-                    return false;
-                }
-                // The prior sample trails the current one, so both only advance.
-                detail::take_counters(slot.prior_ecc, slot.ecc);
-                detail::take_counters(slot.ecc, sample);
-                slot.has_ecc = true;
-                return true;
+                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                    if (!detail::no_counter_behind(sample, slot.ecc) || !slot.sequence.try_advance(sample.sequence)) {
+                        return false;
+                    }
+                    // The prior sample trails the current one, so both only advance.
+                    detail::take_counters(slot.prior_ecc, slot.ecc);
+                    detail::take_counters(slot.ecc, sample);
+                    slot.has_ecc = true;
+                    return true;
+                });
             },
             [] { return false; });
     }
@@ -689,14 +696,15 @@ public:
     [[nodiscard]] constexpr bool update_drops(Ctx const&, cog::CogIdentity const& peer, DropCounters sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                Slot& slot = slots_.at(index);
-                if (!detail::no_counter_behind(sample, slot.drops) || !slot.sequence.try_advance(sample.sequence)) {
-                    return false;
-                }
-                detail::take_counters(slot.prior_drops, slot.drops);
-                detail::take_counters(slot.drops, sample);
-                slot.has_drops = true;
-                return true;
+                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                    if (!detail::no_counter_behind(sample, slot.drops) || !slot.sequence.try_advance(sample.sequence)) {
+                        return false;
+                    }
+                    detail::take_counters(slot.prior_drops, slot.drops);
+                    detail::take_counters(slot.drops, sample);
+                    slot.has_drops = true;
+                    return true;
+                });
             },
             [] { return false; });
     }
@@ -709,13 +717,14 @@ public:
         }
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                Slot& slot = slots_.at(index);
-                if (!slot.sequence.try_advance(sample.sequence)) {
-                    return false;
-                }
-                slot.wear = sample;
-                slot.has_wear = true;
-                return true;
+                return slots_.with_element(index, [sample](Slot& slot) noexcept {
+                    if (!slot.sequence.try_advance(sample.sequence)) {
+                        return false;
+                    }
+                    slot.wear = sample;
+                    slot.has_wear = true;
+                    return true;
+                });
             },
             [] { return false; });
     }
@@ -726,7 +735,11 @@ public:
     [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot> compute(cog::CogIdentity const& peer, std::uint64_t now_ns,
                                                                   ::fixy::SequenceSource const& sequences) noexcept {
         return claim(peer).match(
-            [&](::fixy::Index<MaxPeers> index) { return compute_in(slots_.at(index), peer, now_ns, sequences); },
+            [&](::fixy::Index<MaxPeers> index) {
+                return slots_.with_element(index, [this, &peer, now_ns, &sequences](Slot& slot) noexcept {
+                    return compute_in(slot, peer, now_ns, sequences);
+                });
+            },
             [&] { return missing_snapshot(peer, sequences); });
     }
 

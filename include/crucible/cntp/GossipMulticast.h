@@ -129,7 +129,8 @@ public:
         if (is_full()) {
             return ::fixy::err(GossipMulticastError::TooManyNeighbors);
         }
-        entries_.at(::fixy::Index<MaxNeighbors>::check(count_).expect("a list that is not full has room")) = target;
+        entries_.with_element(::fixy::Index<MaxNeighbors>::check(count_).expect("a list that is not full has room"),
+                              [&target](GossipNeighborTarget& entry) noexcept { entry = target; });
         ++count_;
         return ::fixy::Unit{};
     }
@@ -191,8 +192,9 @@ namespace detail {
     ::fixy::FixedArray<std::byte, kBlockBytes> block{};
     std::size_t held = 0;
     for (char const character : text) {
-        block.at(::fixy::Index<kBlockBytes>::check(held).expect("a block that is not full has room")) =
-            static_cast<std::byte>(static_cast<unsigned char>(character));
+        auto const byte = static_cast<std::byte>(static_cast<unsigned char>(character));
+        block.with_element(::fixy::Index<kBlockBytes>::check(held).expect("a block that is not full has room"),
+                           [byte](std::byte& entry) noexcept { entry = byte; });
         ++held;
         if (held == kBlockBytes) {
             CRUCIBLE_TRY(_, state.update(block.view()));

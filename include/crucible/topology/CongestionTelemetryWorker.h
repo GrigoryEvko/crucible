@@ -106,7 +106,11 @@ inline void publish_congestion(
     ::crucible::observe::ObservationSource source = ::crucible::observe::ObservationSource::Runtime) noexcept {
     CongestionObservationBatch const observations = congestion_observations(link_slot, aggregate, sequence, source);
     for (::fixy::Index<kCongestionObservationCount> const index : observations.indices()) {
-        ::crucible::observe::record_observation(sinks.at(index), observations.at(index));
+        ::crucible::observe::Observation const observation = observations.at(index);
+        // The sink is an AtomicSnapshot, so a reader on another thread can read it during this write.
+        sinks.with_element(index, [observation](::crucible::observe::ObservationSnapshot& sink) noexcept {
+            ::crucible::observe::record_observation(sink, observation);
+        });
     }
 }
 
@@ -169,17 +173,19 @@ public:
                 return ::fixy::err(topology::TelemetryError::InvalidNicCog);
             }
         }
-        for (Slot& slot : slots_) {
-            slot = Slot{};
-        }
-        // The count of the NICs is at most MaxLinks, so each NIC finds a slot.
-        auto slot = slots_.begin();
-        for (cog::CogIdentity const& nic : nics) {
-            (*slot).occupied = true;
-            (*slot).nic = nic;
-            (*slot).last.nic_uuid = nic.uuid;
-            ++slot;
-        }
+        slots_.with_mut([nics](auto run) noexcept {
+            for (Slot& slot : run) {
+                slot = Slot{};
+            }
+            // The count of the NICs is at most MaxLinks, so each NIC finds a slot.
+            auto slot = run.begin();
+            for (cog::CogIdentity const& nic : nics) {
+                (*slot).occupied = true;
+                (*slot).nic = nic;
+                (*slot).last.nic_uuid = nic.uuid;
+                ++slot;
+            }
+        });
         schedule_ = schedule;
         return ::fixy::Unit{};
     }
@@ -192,10 +198,12 @@ public:
     record_link(Ctx const&, cog::CogIdentity const& nic, ::fixy::View<topology::TcpInfoSnapshot const> samples,
                 std::uint64_t sequence) noexcept {
         CRUCIBLE_TRY(index, find(nic));
-        Slot& slot = slots_.at(index);
-        slot.last = topology::aggregate_congestion(nic, samples);
-        slot.sequence = sequence;
-        return slot.last;
+        topology::CongestionAggregate const aggregate = topology::aggregate_congestion(nic, samples);
+        slots_.with_element(index, [aggregate, sequence](Slot& slot) noexcept {
+            slot.last = aggregate;
+            slot.sequence = sequence;
+        });
+        return slots_.at(index).last;
     }
 
     template <class Ctx>
@@ -205,10 +213,11 @@ public:
               std::uint64_t sequence) noexcept {
         CRUCIBLE_TRY(index, find(nic));
         CRUCIBLE_TRY(aggregate, topology::harvest_per_link(ctx, nic, active_fds));
-        Slot& slot = slots_.at(index);
-        slot.last = aggregate;
-        slot.sequence = sequence;
-        return slot.last;
+        slots_.with_element(index, [&aggregate, sequence](Slot& slot) noexcept {
+            slot.last = aggregate;
+            slot.sequence = sequence;
+        });
+        return slots_.at(index).last;
     }
 
     [[nodiscard]] constexpr ::fixy::Result<topology::CongestionAggregate, topology::TelemetryError>

@@ -279,8 +279,8 @@ public:
             fact.uuid = cog::Uuid{0xD15C0111ull, lo};
         }
         fact.level = fact.level == cog::CogLevel::L0_Atomic ? default_level_for(fact.kind) : fact.level;
-        node_facts_.at(slot) = fact;
-        nodes_.at(slot) = cog::CogIdentity{
+        node_facts_.with_element(slot, [&fact](DiscoveryNodeFact& held) noexcept { held = fact; });
+        cog::CogIdentity const identity{
             .uuid = fact.uuid,
             .level = fact.level,
             .kind = fact.kind,
@@ -289,6 +289,7 @@ public:
             .firmware_revision = firmware_claim(fact),
             .bios_revision = {},
         };
+        nodes_.with_element(slot, [&identity](cog::CogIdentity& node) noexcept { node = identity; });
         ++node_count_;
         return idx;
     }
@@ -300,14 +301,16 @@ public:
         }
         ::fixy::Index<MaxNodes> const slot =
             ::fixy::Index<MaxNodes>::check(idx).expect("an index below the node count is below the capacity");
-        node_facts_.at(slot) = fact;
-        cog::CogIdentity& node = nodes_.at(slot);
-        node.uuid = fact.uuid;
-        node.level = fact.level;
-        node.kind = fact.kind;
-        node.vendor = fact.vendor;
-        node.model = fact.model;
-        node.firmware_revision = firmware_claim(fact);
+        node_facts_.with_element(slot, [&fact](DiscoveryNodeFact& held) noexcept { held = fact; });
+        auto const firmware_revision = firmware_claim(fact);
+        nodes_.with_element(slot, [&fact, firmware_revision](cog::CogIdentity& node) noexcept {
+            node.uuid = fact.uuid;
+            node.level = fact.level;
+            node.kind = fact.kind;
+            node.vendor = fact.vendor;
+            node.model = fact.model;
+            node.firmware_revision = firmware_revision;
+        });
         return ::fixy::Unit{};
     }
 
@@ -321,8 +324,8 @@ public:
         const std::uint16_t idx = static_cast<std::uint16_t>(edge_count_);
         ::fixy::Index<MaxEdges> const slot =
             ::fixy::Index<MaxEdges>::check(edge_count_).expect("a snapshot that is not full has a free edge slot");
-        edge_facts_.at(slot) = fact;
-        edges_.at(slot) = TopologyEdge{
+        edge_facts_.with_element(slot, [fact](DiscoveryEdgeFact& held) noexcept { held = fact; });
+        TopologyEdge const edge{
             .id = EdgeId{idx},
             .kind = fact.kind,
             .peer = NodeId{fact.to_node},
@@ -332,6 +335,7 @@ public:
             .rtt_ns_p99 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p99),
             .drop_rate = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.drop_rate),
         };
+        edges_.with_element(slot, [edge](TopologyEdge& held) noexcept { held = edge; });
         ++edge_count_;
         return idx;
     }

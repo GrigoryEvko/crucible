@@ -134,9 +134,10 @@ public:
     // bound, so the check of the Index costs no branch.
     CRUCIBLE_HOT void record(value_type value) noexcept {
         const std::size_t slot = ::fixy::min(layout_type::counts_index(value.value()), bucket_slots - 1);
-        static_cast<void>(
-            counts_.at(::fixy::Index<bucket_slots>::check(slot).expect("a clamped slot is below bucket_slots"))
-                .fetch_add_acq_rel(1));
+        // Each count is an Atomic, so two producers add to one bucket at the same time.
+        counts_.with_element(
+            ::fixy::Index<bucket_slots>::check(slot).expect("a clamped slot is below bucket_slots"),
+            [](::fixy::Atomic<std::uint64_t>& count) noexcept { static_cast<void>(count.fetch_add_acq_rel(1)); });
         // acq_rel, not release. A release-only read-modify-write does not
         // synchronize with a second producer's release-only one. Producer Y
         // reads producer X's incremented value, but the read half of Y's
@@ -242,7 +243,10 @@ public:
         for (auto const [index, cell] : other.counts_.enumerate()) {
             const std::uint64_t count = cell->load_acquire();
             if (count != 0) {
-                static_cast<void>(counts_.at(index).fetch_add_acq_rel(count));
+                // Each count is an Atomic, so a merge and a producer add to one bucket at the same time.
+                counts_.with_element(index, [count](::fixy::Atomic<std::uint64_t>& target) noexcept {
+                    static_cast<void>(target.fetch_add_acq_rel(count));
+                });
             }
         }
         // acq_rel for the same reason as record. Concurrent merges into one
@@ -260,15 +264,18 @@ public:
         for (auto const [index, cell] : other.counts_.enumerate()) {
             const std::uint64_t count = cell->load_acquire();
             if (count != 0) {
-                saturating_sub(counts_.at(index), count);
+                // Each count is an Atomic, so a subtract and a producer change one bucket at the same time.
+                counts_.with_element(
+                    index, [count](::fixy::Atomic<std::uint64_t>& target) noexcept { saturating_sub(target, count); });
             }
         }
         saturating_sub(total_count_, other.total_count());
     }
 
     void reset() noexcept {
-        for (auto& count : counts_) {
-            count.store_release(0);
+        for (::fixy::Index<bucket_slots> const index : counts_.indices()) {
+            // Each count is an Atomic, so a reset and a producer write one bucket at the same time.
+            counts_.with_element(index, [](::fixy::Atomic<std::uint64_t>& count) noexcept { count.store_release(0); });
         }
         total_count_.store_release(0);
     }
@@ -364,11 +371,16 @@ public:
         return histogram_type::checked_value(value);
     }
 
-    CRUCIBLE_HOT void record(value_type value) noexcept { shards_.at(thread_shard_()).record(value); }
+    CRUCIBLE_HOT void record(value_type value) noexcept {
+        // A shard holds Atomic counts, so two threads record into one shard at the same time.
+        shards_.with_element(thread_shard_(), [value](histogram_type& shard) noexcept { shard.record(value); });
+    }
 
     CRUCIBLE_HOT void record_on_shard(std::size_t shard, value_type value) noexcept {
-        shards_.at(ShardIndex::check(shard % ShardCount).expect("a shard modulo ShardCount is below ShardCount"))
-            .record(value);
+        // A shard holds Atomic counts, so two threads record into one shard at the same time.
+        shards_.with_element(
+            ShardIndex::check(shard % ShardCount).expect("a shard modulo ShardCount is below ShardCount"),
+            [value](histogram_type& held) noexcept { held.record(value); });
     }
 
     void merge_into(histogram_type& out) const noexcept {
@@ -386,8 +398,9 @@ public:
     }
 
     void reset() noexcept {
-        for (auto& shard : shards_) {
-            shard.reset();
+        for (ShardIndex const index : shards_.indices()) {
+            // A shard holds Atomic counts, so a reset and a record write one shard at the same time.
+            shards_.with_element(index, [](histogram_type& shard) noexcept { shard.reset(); });
         }
     }
 

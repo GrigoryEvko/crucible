@@ -105,16 +105,25 @@ public:
         auto proof = ::foundation::permissions::mint_permission_root<StartGateTag>();
         ::fixy::spin::GateGuard guard{ctx, start_gate_, proof};
 
+        const std::uint32_t credit = initial_credit.value();
         for (FlowIndex index : find(fd)) {
-            flows_.at(index).credit_bytes.store_release(initial_credit.value());
+            // A FlowSlot holds only atomics, so a write races with no read or write of another thread.
+            flows_.with_element(index, [credit](FlowSlot& flow) noexcept { flow.credit_bytes.store_release(credit); });
             return ::fixy::Unit{};
         }
 
         const std::uint32_t key = fd_key(fd);
-        for (FlowSlot& flow : flows_) {
-            if (flow.fd_bits.cas_acq_rel(kEmptyFd, kReservedFd).is_ok()) {
-                flow.credit_bytes.store_release(initial_credit.value());
+        for (FlowIndex index : flows_.indices()) {
+            // A FlowSlot holds only atomics, so a write races with no read or write of another thread.
+            bool const is_claimed = flows_.with_element(index, [credit, key](FlowSlot& flow) noexcept {
+                if (!flow.fd_bits.cas_acq_rel(kEmptyFd, kReservedFd).is_ok()) {
+                    return false;
+                }
+                flow.credit_bytes.store_release(credit);
                 flow.fd_bits.store_release(key);
+                return true;
+            });
+            if (is_claimed) {
                 return ::fixy::Unit{};
             }
         }
@@ -126,17 +135,19 @@ public:
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
     grant_credit(Ctx const&, SocketIdentity fd, PositiveBackpressureBytes bytes) noexcept {
         CRUCIBLE_TRY(index, find(fd).ok_or(BackpressureError::CreditFlowNotStarted));
-        FlowSlot& flow = flows_.at(index);
-
-        std::uint32_t observed = flow.credit_bytes.load_acquire();
-        for (;;) {
-            if (bytes.value() > ::fixy::max_of<std::uint32_t> - observed) {
-                return ::fixy::err(BackpressureError::CreditOverflow);
-            }
-            if (swap_credit(flow, observed, observed + bytes.value())) {
-                return ::fixy::Unit{};
-            }
-        }
+        // A FlowSlot holds only atomics, so a write races with no read or write of another thread.
+        return flows_.with_element(index,
+                                   [bytes](FlowSlot& flow) noexcept -> ::fixy::Result<::fixy::Unit, BackpressureError> {
+                                       std::uint32_t observed = flow.credit_bytes.load_acquire();
+                                       for (;;) {
+                                           if (bytes.value() > ::fixy::max_of<std::uint32_t> - observed) {
+                                               return ::fixy::err(BackpressureError::CreditOverflow);
+                                           }
+                                           if (swap_credit(flow, observed, observed + bytes.value())) {
+                                               return ::fixy::Unit{};
+                                           }
+                                       }
+                                   });
     }
 
     template <class Ctx>
@@ -144,17 +155,19 @@ public:
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
     consume_credit(Ctx const&, SocketIdentity fd, PositiveBackpressureBytes bytes) noexcept {
         CRUCIBLE_TRY(index, find(fd).ok_or(BackpressureError::CreditFlowNotStarted));
-        FlowSlot& flow = flows_.at(index);
-
-        std::uint32_t observed = flow.credit_bytes.load_acquire();
-        for (;;) {
-            if (observed < bytes.value()) {
-                return ::fixy::err(BackpressureError::CreditExhausted);
-            }
-            if (swap_credit(flow, observed, observed - bytes.value())) {
-                return ::fixy::Unit{};
-            }
-        }
+        // A FlowSlot holds only atomics, so a write races with no read or write of another thread.
+        return flows_.with_element(index,
+                                   [bytes](FlowSlot& flow) noexcept -> ::fixy::Result<::fixy::Unit, BackpressureError> {
+                                       std::uint32_t observed = flow.credit_bytes.load_acquire();
+                                       for (;;) {
+                                           if (observed < bytes.value()) {
+                                               return ::fixy::err(BackpressureError::CreditExhausted);
+                                           }
+                                           if (swap_credit(flow, observed, observed - bytes.value())) {
+                                               return ::fixy::Unit{};
+                                           }
+                                       }
+                                   });
     }
 
     [[nodiscard]] ::fixy::Result<PositiveBackpressureBytes, BackpressureError>
@@ -218,20 +231,22 @@ public:
         requires CtxFitsBackpressureMint<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
     register_resource_limit(Ctx const&, ResourceLimit limit) noexcept {
-        for (LimitSlot& slot : limits_) {
-            if (slot.occupied && slot.limit.kind() == limit.kind()) {
-                slot.limit = limit;
-                return ::fixy::Unit{};
+        return limits_.with_mut([limit](auto run) noexcept -> ::fixy::Result<::fixy::Unit, BackpressureError> {
+            for (LimitSlot& slot : run) {
+                if (slot.occupied && slot.limit.kind() == limit.kind()) {
+                    slot.limit = limit;
+                    return ::fixy::Unit{};
+                }
             }
-        }
-        for (LimitSlot& slot : limits_) {
-            if (!slot.occupied) {
-                slot.occupied = true;
-                slot.limit = limit;
-                return ::fixy::Unit{};
+            for (LimitSlot& slot : run) {
+                if (!slot.occupied) {
+                    slot.occupied = true;
+                    slot.limit = limit;
+                    return ::fixy::Unit{};
+                }
             }
-        }
-        return ::fixy::err(BackpressureError::TooManyResourceLimits);
+            return ::fixy::err(BackpressureError::TooManyResourceLimits);
+        });
     }
 
     template <class Ctx>

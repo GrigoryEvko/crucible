@@ -84,13 +84,15 @@ public:
             std::size_t const low = word * 64;
             std::size_t const from = first > low ? first - low : 0;
             std::size_t const to = last < low + 63 ? last - low : 63;
-            words_.at(word_of_(low)) |= ::fixy::low_mask<std::uint64_t>(static_cast<int>(to - from + 1)) << from;
+            std::uint64_t const bits = ::fixy::low_mask<std::uint64_t>(static_cast<int>(to - from + 1)) << from;
+            words_.with_element(word_of_(low), [bits](std::uint64_t& held) noexcept { held |= bits; });
         }
     }
 
     constexpr void insert(std::size_t cpu) noexcept {
         CRUCIBLE_PRE(cpu < capacity);
-        words_.at(word_of_(cpu)) |= std::uint64_t{1} << (cpu % 64);
+        std::uint64_t const bit = std::uint64_t{1} << (cpu % 64);
+        words_.with_element(word_of_(cpu), [bit](std::uint64_t& held) noexcept { held |= bit; });
     }
 
     // True when the set holds cpu.  A negative id and an id at or past the
@@ -126,7 +128,8 @@ public:
     [[nodiscard]] constexpr CpuSet intersection(CpuSet const& other) const noexcept {
         CpuSet both{};
         for (WordIndex const index : words_.indices()) {
-            both.words_.at(index) = words_.at(index) & other.words_.at(index);
+            std::uint64_t const common = words_.at(index) & other.words_.at(index);
+            both.words_.with_element(index, [common](std::uint64_t& held) noexcept { held = common; });
         }
         return both;
     }

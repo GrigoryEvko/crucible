@@ -86,8 +86,10 @@ template <class Field>
 
     std::uint16_t x = 1;
     for (::fixy::Index<255> power : ::fixy::IndexRange<255>{}) {
-        tables.exp.at(power) = static_cast<std::uint8_t>(x);
-        tables.log.at(byte_index(static_cast<std::uint8_t>(x))) = static_cast<std::uint8_t>(power.raw());
+        auto const value = static_cast<std::uint8_t>(x);
+        auto const logarithm = static_cast<std::uint8_t>(power.raw());
+        tables.exp.with_element(power, [value](std::uint8_t& entry) noexcept { entry = value; });
+        tables.log.with_element(byte_index(value), [logarithm](std::uint8_t& entry) noexcept { entry = logarithm; });
         x = static_cast<std::uint16_t>(x << 1U);
         if ((x & 0x100U) != 0U) {
             x ^= gf_poly;
@@ -95,25 +97,32 @@ template <class Field>
     }
     for (auto power : tables.exp.indices()) {
         if (power.raw() >= 255) {
-            tables.exp.at(power) = tables.exp.at(power_index(power.raw() - 255U));
+            std::uint8_t const value = tables.exp.at(power_index(power.raw() - 255U));
+            tables.exp.with_element(power, [value](std::uint8_t& entry) noexcept { entry = value; });
         }
     }
 
+    ::fixy::FixedArray<std::uint8_t, 512> const& exp = tables.exp;
+    GfRow const& log = tables.log;
     for (auto a : tables.mul.indices()) {
         if (a.raw() == 0) {
             continue;
         }
-        GfRow& row = tables.mul.at(a);
-        for (auto b : row.indices()) {
-            if (b.raw() != 0) {
-                row.at(b) = tables.exp.at(power_index(static_cast<std::size_t>(tables.log.at(a))
-                                                      + static_cast<std::size_t>(tables.log.at(b))));
+        std::uint8_t const log_a = log.at(a);
+        tables.mul.with_element(a, [&exp, &log, log_a](GfRow& row) noexcept {
+            for (auto b : row.indices()) {
+                if (b.raw() != 0) {
+                    std::uint8_t const product =
+                        exp.at(power_index(static_cast<std::size_t>(log_a) + static_cast<std::size_t>(log.at(b))));
+                    row.with_element(b, [product](std::uint8_t& entry) noexcept { entry = product; });
+                }
             }
-        }
+        });
     }
     for (auto a : tables.inv.indices()) {
         if (a.raw() != 0) {
-            tables.inv.at(a) = tables.exp.at(power_index(255U - tables.log.at(a)));
+            std::uint8_t const inverse = tables.exp.at(power_index(255U - tables.log.at(a)));
+            tables.inv.with_element(a, [inverse](std::uint8_t& entry) noexcept { entry = inverse; });
         }
     }
     return tables;
@@ -161,16 +170,21 @@ template <std::uint8_t K, std::uint8_t M>
     GeneratorMatrix<K, M> matrix{};
 
     for (::fixy::Index<K> row : ::fixy::IndexRange<K>{}) {
-        matrix.at(row).at(row) = 1;
+        matrix.with_element(row, [row](::fixy::FixedArray<std::uint8_t, K>& entries) noexcept {
+            entries.with_element(row, [](std::uint8_t& entry) noexcept { entry = 1; });
+        });
     }
 
     for (::fixy::Index<M> parity : ::fixy::IndexRange<M>{}) {
         const auto y = static_cast<std::uint8_t>(K + parity.raw());
-        auto& row = matrix.at(::fixy::Index<static_cast<std::size_t>(K) + M>::check(K + parity.raw())
-                                  .expect("a parity row is a row of the matrix"));
-        for (auto col : row.indices()) {
-            row.at(col) = inv(static_cast<std::uint8_t>(static_cast<std::uint8_t>(col.raw()) ^ y));
-        }
+        auto const parity_row = ::fixy::Index<static_cast<std::size_t>(K) + M>::check(K + parity.raw())
+                                    .expect("a parity row is a row of the matrix");
+        matrix.with_element(parity_row, [y](::fixy::FixedArray<std::uint8_t, K>& row) noexcept {
+            for (auto col : row.indices()) {
+                std::uint8_t const entry = inv(static_cast<std::uint8_t>(static_cast<std::uint8_t>(col.raw()) ^ y));
+                row.with_element(col, [entry](std::uint8_t& held) noexcept { held = entry; });
+            }
+        });
     }
     return matrix;
 }
@@ -189,9 +203,19 @@ template <std::size_t N>
 
 template <std::size_t N>
 [[nodiscard]] constexpr bool invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
+    using Row = ::fixy::FixedArray<std::uint8_t, N>;
+    // Writes value into the entry at row and col of matrix.
+    auto const set_entry = [](SquareMatrix<N>& matrix, ::fixy::Index<N> row, ::fixy::Index<N> col,
+                              std::uint8_t value) noexcept {
+        matrix.with_element(row, [col, value](Row& entries) noexcept {
+            entries.with_element(col, [value](std::uint8_t& entry) noexcept { entry = value; });
+        });
+    };
     for (auto row : inverse.indices()) {
-        ::fixy::fill(inverse.at(row).view(), std::uint8_t{0});
-        inverse.at(row).at(row) = 1;
+        inverse.with_element(row, [row](Row& entries) noexcept {
+            entries.with_mut([](auto run) noexcept { ::fixy::fill(run.view(), std::uint8_t{0}); });
+            entries.with_element(row, [](std::uint8_t& entry) noexcept { entry = 1; });
+        });
     }
 
     for (auto col : input.indices()) {
@@ -201,14 +225,20 @@ template <std::size_t N>
         }
         auto const pivot = std::move(found).expect("the search found a pivot");
         if (pivot != col) {
-            ::fixy::swap(input.at(pivot), input.at(col));
-            ::fixy::swap(inverse.at(pivot), inverse.at(col));
+            input.with_mut([pivot, col](auto run) noexcept {
+                ::fixy::swap(*run.get(pivot.raw()).expect("the pivot is a row of the matrix"),
+                             *run.get(col.raw()).expect("the column is a row of the matrix"));
+            });
+            inverse.with_mut([pivot, col](auto run) noexcept {
+                ::fixy::swap(*run.get(pivot.raw()).expect("the pivot is a row of the matrix"),
+                             *run.get(col.raw()).expect("the column is a row of the matrix"));
+            });
         }
 
         const std::uint8_t scale = inv(input.at(col).at(col));
         for (auto j : input.indices()) {
-            input.at(col).at(j) = mul(input.at(col).at(j), scale);
-            inverse.at(col).at(j) = mul(inverse.at(col).at(j), scale);
+            set_entry(input, col, j, mul(input.at(col).at(j), scale));
+            set_entry(inverse, col, j, mul(inverse.at(col).at(j), scale));
         }
 
         for (auto row : input.indices()) {
@@ -220,8 +250,10 @@ template <std::size_t N>
                 continue;
             }
             for (auto j : input.indices()) {
-                input.at(row).at(j) ^= mul(factor, input.at(col).at(j));
-                inverse.at(row).at(j) ^= mul(factor, inverse.at(col).at(j));
+                set_entry(input, row, j,
+                          static_cast<std::uint8_t>(input.at(row).at(j) ^ mul(factor, input.at(col).at(j))));
+                set_entry(inverse, row, j,
+                          static_cast<std::uint8_t>(inverse.at(row).at(j) ^ mul(factor, inverse.at(col).at(j))));
             }
         }
     }
@@ -241,8 +273,10 @@ template <class Field = void>
     NibbleTables tables{};
     for (::fixy::Index<16> nibble : ::fixy::IndexRange<16>{}) {
         const auto value = static_cast<std::uint8_t>(nibble.raw());
-        tables.lo.at(nibble) = mul<Field>(coeff, value);
-        tables.hi.at(nibble) = mul<Field>(coeff, static_cast<std::uint8_t>(value << 4U));
+        std::uint8_t const low = mul<Field>(coeff, value);
+        std::uint8_t const high = mul<Field>(coeff, static_cast<std::uint8_t>(value << 4U));
+        tables.lo.with_element(nibble, [low](std::uint8_t& entry) noexcept { entry = low; });
+        tables.hi.with_element(nibble, [high](std::uint8_t& entry) noexcept { entry = high; });
     }
     return tables;
 }
@@ -456,8 +490,11 @@ public:
             }
             if (selected_count < K) {
                 auto const slot = ::fixy::Index<K>::check(selected_count).expect("the count is below K");
-                selected.at(slot) = shard.raw();
-                decode_matrix.at(slot) = generator().at(shard);
+                std::size_t const position = shard.raw();
+                auto const& generator_row = generator().at(shard);
+                selected.with_element(slot, [position](std::size_t& held) noexcept { held = position; });
+                decode_matrix.with_element(
+                    slot, [&generator_row](::fixy::FixedArray<std::uint8_t, K>& row) noexcept { row = generator_row; });
                 ++selected_count;
             }
         }
