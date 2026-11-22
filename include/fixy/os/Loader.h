@@ -34,11 +34,20 @@
 //       static or thread storage duration that holds the brand.
 //   No code outside the scope can name the brand, so no variable outside the
 //   scope holds a function of it.  The body gets the Library by a const
-//   reference, and a Library cannot copy or move, so no body closes the
-//   library before the end of the scope.  A holder that erases the type of a
-//   function, such as a function object of the standard library, hides the
-//   brand from the rule, and the quarantine refuses such a holder outside the
-//   base.
+//   reference, and a Library cannot copy or move.  Its destructor is private
+//   to the door, so no body ends the library before the end of the scope
+//   (neg_library_destructor_in_body).
+//
+//   A holder that erases the type of a function hides the brand from the rule.
+//   The base has one such holder, CallRef of foundation/core/CallRef.h, and it
+//   refuses each callable that holds a scope brand
+//   (neg_library_function_erased_into_static).  The quarantine counts each
+//   holder of the standard library that erases a type, such as std::function,
+//   outside the base, and no file of the base uses one.
+//
+//   The door is the one maker of a Library and of a LibraryFunction.  Each
+//   part of LoaderDoor is private, and its friends are the doors of this
+//   header.
 //
 // Diagnostic
 //   An error of a Result of the base is small and never allocates (ErrorValue
@@ -63,6 +72,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Text.h>
@@ -94,7 +104,7 @@ enum class LoaderFailure : std::uint8_t {
 
 namespace detail {
 
-struct LoaderDoor;
+class LoaderDoor;
 
 // The bits of the handle of dlopen, and the bits of the address of a function
 // of a library.  The handle names an object of the C library, and the address
@@ -121,7 +131,7 @@ public:
     text() const&& = delete("the text of a temporary diagnostic points into an object that the full expression ends");
 
 private:
-    friend struct detail::LoaderDoor;
+    friend class detail::LoaderDoor;
 
     ::foundation::core::FixedText<kLoaderDiagnosticBytes> text_{};
 };
@@ -139,13 +149,15 @@ public:
     Library& operator=(Library const&) =
         delete("a library stays in the scope of with_library, and the end of the scope closes it one time");
 
-    // The end of the scope closes the library.
-    ~Library() noexcept;
-
 private:
-    friend struct detail::LoaderDoor;
+    friend class detail::LoaderDoor;
 
     explicit Library(detail::LibraryWord handle) noexcept : handle_{handle} {}
+
+    // The end of the scope closes the library.  Only the door ends a library,
+    // so no body ends it before the end of its scope and then calls a
+    // function of it.
+    ~Library() noexcept;
 
     // The handle of dlopen, which is not zero.
     detail::LibraryWord handle_{};
@@ -170,7 +182,7 @@ public:
 private:
     using Pointer = Return (*)(Arguments...) noexcept;
 
-    friend struct detail::LoaderDoor;
+    friend class detail::LoaderDoor;
 
     explicit LibraryFunction(detail::SymbolWord address) noexcept : address_{address} {}
 
@@ -182,47 +194,6 @@ private:
 };
 
 namespace detail {
-
-// The calls of the door file.  Each call takes a path or a name that a zero
-// ends.  A failed call writes the text of dlerror into the diagnostic.  The
-// door file makes the pointer of a word, and the word of a pointer.
-[[nodiscard]] ::foundation::core::Result<LibraryWord, LoaderFailure>
-open_library_(::foundation::core::CText path, LoaderDiagnostic& diagnostic) noexcept;
-[[nodiscard]] ::foundation::core::Result<SymbolWord, LoaderFailure>
-find_symbol_(LibraryWord handle, ::foundation::core::CText name, LoaderDiagnostic& diagnostic) noexcept;
-void close_library_(LibraryWord handle) noexcept;
-
-// The door to the parts of a Library, a LibraryFunction and a
-// LoaderDiagnostic.  Only the functions of this header and of
-// src/fixy/os/Loader.cpp use it.
-struct LoaderDoor {
-    template <class Brand>
-    [[nodiscard]] static Library<Brand> make_library(LibraryWord handle) noexcept {
-        return Library<Brand>{handle};
-    }
-
-    template <class Brand>
-    [[nodiscard]] static LibraryWord handle_of(Library<Brand> const& library) noexcept {
-        return library.handle_;
-    }
-
-    template <class Signature, class Brand>
-    [[nodiscard]] static LibraryFunction<Signature, Brand> make_function(SymbolWord address) noexcept {
-        return LibraryFunction<Signature, Brand>{address};
-    }
-
-    // Empties the diagnostic.
-    static void clear(LoaderDiagnostic& diagnostic) noexcept {
-        diagnostic.text_ = ::foundation::core::FixedText<kLoaderDiagnosticBytes>{};
-    }
-
-    // Writes the text into the empty diagnostic, cut to kLoaderDiagnosticBytes
-    // characters.
-    static void write(LoaderDiagnostic& diagnostic, ::foundation::core::TextView text) noexcept {
-        std::size_t const kept = text.size() < kLoaderDiagnosticBytes ? text.size() : kLoaderDiagnosticBytes;
-        static_cast<void>(diagnostic.text_.append(text.window(0, kept).value_or(::foundation::core::TextView{})));
-    }
-};
 
 // The value of with_library for a body that gives Given: Unit for void, and
 // the value with no const for each other result.
@@ -240,11 +211,6 @@ template <class Body, class Brand>
 using library_scope_value_t = typename LibraryScopeValue<std::invoke_result_t<Body&&, Library<Brand> const&>>::type;
 
 }  // namespace detail
-
-template <class Brand>
-Library<Brand>::~Library() noexcept {
-    detail::close_library_(handle_);
-}
 
 // A result of the body of with_library: void, or a value that holds no
 // borrow, names no brand of the scope and fits a Result.  The value leaves
@@ -268,28 +234,119 @@ template <class Body, class Brand>
 concept RefusedLibraryScopeBody = std::is_nothrow_invocable_v<Body&&, Library<Brand> const&>
                                && (!LibraryScopeResult<std::invoke_result_t<Body&&, Library<Brand> const&>, Brand>);
 
-// Loads the shared library at path, calls body with the Library on the scope
-// brand of this call site, and closes the library when the body returns (the
-// loader door).  A refused load gives refused_open and calls no body, and the
-// diagnostic holds the text of the loader.  The pack refuses each explicit
-// argument, so no caller names the brand.
+// The scope door of a library.  LoaderDoor names it as a friend, and this
+// header defines it after the door.
 template <class... Refused, eff::IsExecCtx Ctx, class DiagnosticBrand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && CtxFitsLibraryLoad<Ctx> && LibraryScopeBody<Body, Fresh>
-[[nodiscard]] ::foundation::core::Result<detail::library_scope_value_t<Body, Fresh>, LoaderFailure>
-with_library(Ctx const& /*ctx*/, ::foundation::core::CText path,
-             ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic, Body&& body) noexcept {
-    using Value = detail::library_scope_value_t<Body, Fresh>;
-    detail::LoaderDoor::clear(*diagnostic);
-    return detail::open_library_(path, *diagnostic).map([&body](detail::LibraryWord handle) noexcept -> Value {
-        Library<Fresh> const library = detail::LoaderDoor::make_library<Fresh>(handle);
-        if constexpr (std::is_void_v<std::invoke_result_t<Body&&, Library<Fresh> const&>>) {
+[[nodiscard]] auto with_library(Ctx const& ctx, ::foundation::core::CText path,
+                                ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic,
+                                Body&& body) noexcept
+    -> ::foundation::core::Result<detail::library_scope_value_t<Body, Fresh>, LoaderFailure>;
+
+// The lookup door of a function, declared here for the same reason.
+template <class Signature, eff::IsExecCtx Ctx, class Brand, class DiagnosticBrand>
+    requires CtxFitsLibraryLoad<Ctx> && std::is_function_v<Signature>
+[[nodiscard]] auto find_function(Ctx const& ctx, Library<Brand> const& library, ::foundation::core::CText name,
+                                 ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic) noexcept
+    -> ::foundation::core::Result<LibraryFunction<Signature, Brand>, LoaderFailure>;
+
+namespace detail {
+
+// The door to the parts of a Library, a LibraryFunction and a
+// LoaderDiagnostic, and to the calls of the door file.  Each part is private.
+// The friends are with_library, find_function and Library, whose destructor
+// closes the library, so no other code builds a library or a function from a
+// word, ends a library, or closes a handle.
+class LoaderDoor final : ::foundation::NoObject<LoaderDoor> {
+    template <class... Refused, eff::IsExecCtx Ctx, class DiagnosticBrand, class Body,
+              ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && CtxFitsLibraryLoad<Ctx> && LibraryScopeBody<Body, Fresh>
+    friend auto ::fixy::os::with_library(Ctx const& ctx, ::foundation::core::CText path,
+                                         ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic,
+                                         Body&& body) noexcept
+        -> ::foundation::core::Result<detail::library_scope_value_t<Body, Fresh>, LoaderFailure>;
+
+    template <class Signature, eff::IsExecCtx Ctx, class Brand, class DiagnosticBrand>
+        requires CtxFitsLibraryLoad<Ctx> && std::is_function_v<Signature>
+    friend auto ::fixy::os::find_function(
+        Ctx const& ctx, Library<Brand> const& library, ::foundation::core::CText name,
+        ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic) noexcept
+        -> ::foundation::core::Result<LibraryFunction<Signature, Brand>, LoaderFailure>;
+
+    template <class Brand>
+    friend class ::fixy::os::Library;
+
+    // The calls of the door file.  Each call takes a path or a name that a
+    // zero ends.  A failed call writes the text of dlerror into the
+    // diagnostic.  The door file makes the pointer of a word, and the word of
+    // a pointer.
+    [[nodiscard]] static ::foundation::core::Result<LibraryWord, LoaderFailure>
+    open_library_(::foundation::core::CText path, LoaderDiagnostic& diagnostic) noexcept;
+    [[nodiscard]] static ::foundation::core::Result<SymbolWord, LoaderFailure>
+    find_symbol_(LibraryWord handle, ::foundation::core::CText name, LoaderDiagnostic& diagnostic) noexcept;
+    static void close_library_(LibraryWord handle) noexcept;
+
+    // Builds the Library of handle on Brand in this frame, calls body with it,
+    // and gives the value of body.  The end of the frame ends the Library,
+    // which closes the library.
+    template <class Brand, class Body>
+    [[nodiscard]] static library_scope_value_t<Body, Brand> run_scope_(LibraryWord handle, Body&& body) noexcept {
+        Library<Brand> const library{handle};
+        if constexpr (std::is_void_v<std::invoke_result_t<Body&&, Library<Brand> const&>>) {
             static_cast<Body&&>(body)(library);
             return ::foundation::core::Unit{};
         } else {
             return static_cast<Body&&>(body)(library);
         }
-    });
+    }
+
+    template <class Brand>
+    [[nodiscard]] static LibraryWord handle_of_(Library<Brand> const& library) noexcept {
+        return library.handle_;
+    }
+
+    template <class Signature, class Brand>
+    [[nodiscard]] static LibraryFunction<Signature, Brand> make_function_(SymbolWord address) noexcept {
+        return LibraryFunction<Signature, Brand>{address};
+    }
+
+    // Empties the diagnostic.
+    static void clear_(LoaderDiagnostic& diagnostic) noexcept {
+        diagnostic.text_ = ::foundation::core::FixedText<kLoaderDiagnosticBytes>{};
+    }
+
+    // Writes the text into the empty diagnostic, cut to kLoaderDiagnosticBytes
+    // characters.
+    static void write_(LoaderDiagnostic& diagnostic, ::foundation::core::TextView text) noexcept {
+        std::size_t const kept = text.size() < kLoaderDiagnosticBytes ? text.size() : kLoaderDiagnosticBytes;
+        static_cast<void>(diagnostic.text_.append(text.window(0, kept).value_or(::foundation::core::TextView{})));
+    }
+};
+
+}  // namespace detail
+
+template <class Brand>
+Library<Brand>::~Library() noexcept {
+    detail::LoaderDoor::close_library_(handle_);
+}
+
+// Loads the shared library at path, calls body with the Library on the scope
+// brand of this call site, and closes the library when the body returns (the
+// loader door).  A refused load gives refused_open and calls no body, and the
+// diagnostic holds the text of the loader.  The pack refuses each explicit
+// argument, so no caller names the brand.
+template <class... Refused, eff::IsExecCtx Ctx, class DiagnosticBrand, class Body, ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0) && CtxFitsLibraryLoad<Ctx> && LibraryScopeBody<Body, Fresh>
+auto with_library(Ctx const& /*ctx*/, ::foundation::core::CText path,
+                  ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic, Body&& body) noexcept
+    -> ::foundation::core::Result<detail::library_scope_value_t<Body, Fresh>, LoaderFailure> {
+    using Value = detail::library_scope_value_t<Body, Fresh>;
+    detail::LoaderDoor::clear_(*diagnostic);
+    return detail::LoaderDoor::open_library_(path, *diagnostic)
+        .map([&body](detail::LibraryWord handle) noexcept -> Value {
+            return detail::LoaderDoor::run_scope_<Fresh>(handle, static_cast<Body&&>(body));
+        });
 }
 
 // A body whose result holds a borrow or names the brand of the scope binds to
@@ -310,17 +367,17 @@ void with_library(Ctx const& ctx, ::foundation::core::CText path,
 // loader.
 template <class Signature, eff::IsExecCtx Ctx, class Brand, class DiagnosticBrand>
     requires CtxFitsLibraryLoad<Ctx> && std::is_function_v<Signature>
-[[nodiscard]] ::foundation::core::Result<LibraryFunction<Signature, Brand>, LoaderFailure>
-find_function(Ctx const& /*ctx*/, Library<Brand> const& library, ::foundation::core::CText name,
-              ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic) noexcept {
-    detail::LoaderDoor::clear(*diagnostic);
+auto find_function(Ctx const& /*ctx*/, Library<Brand> const& library, ::foundation::core::CText name,
+                   ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic) noexcept
+    -> ::foundation::core::Result<LibraryFunction<Signature, Brand>, LoaderFailure> {
+    detail::LoaderDoor::clear_(*diagnostic);
     // No combinator builds the function: a closure type names no brand, so a
     // map would give a result of the brand from a scope that no template
     // argument names, and the rule brand-escape refuses that.
     ::foundation::core::Result<detail::SymbolWord, LoaderFailure> found =
-        detail::find_symbol_(detail::LoaderDoor::handle_of(library), name, *diagnostic);
+        detail::LoaderDoor::find_symbol_(detail::LoaderDoor::handle_of_(library), name, *diagnostic);
     if (found.is_err()) return ::foundation::core::err(LoaderFailure::refused_symbol);
-    return detail::LoaderDoor::make_function<Signature, Brand>(std::move(found).value_or(detail::SymbolWord{}));
+    return detail::LoaderDoor::make_function_<Signature, Brand>(std::move(found).value_or(detail::SymbolWord{}));
 }
 
 }  // namespace fixy::os

@@ -6520,6 +6520,28 @@ fixy_neg_compile_test(neg_library_function_called_after_close
   "a scope mint gives a result that holds its own scope brand"
   "fixy::os::with_library: the result foundation::core::Result<.anonymous.::KeepsFunction::operator\\(\\)")
 
+# A body cannot end its library before the end of the scope: the destructor
+# of a Library is private to the loader door, also through a copy of the
+# reference in a closure.
+fixy_neg_compile_test(neg_library_destructor_in_body
+  "is private within this context"
+  "neg_library_destructor_in_body\\.cpp:[0-9]+:[0-9]+: error: .*~Library")
+
+fixy_neg_compile_test(neg_library_destructor_through_capture
+  "is private within this context"
+  "neg_library_destructor_through_capture\\.cpp:[0-9]+:[0-9]+: error: .*~Library")
+
+# A CallRef erases the type of its callable, so it refuses a callable that
+# holds a scope brand: a function of a library, and a closure that captures
+# one.  A static CallRef would otherwise keep the function past the scope.
+fixy_neg_compile_test(neg_library_function_erased_into_static
+  "a CallRef erases the type of its callable, so the rule brand-escape cannot read a scope brand behind it"
+  "neg_library_function_erased_into_static\\.cpp:[0-9]+:[0-9]+: error: use of deleted function")
+
+fixy_neg_compile_test(neg_library_function_erased_through_closure
+  "a CallRef erases the type of its callable, so the rule brand-escape cannot read a scope brand behind it"
+  "neg_library_function_erased_through_closure\\.cpp:[0-9]+:[0-9]+: error: use of deleted function")
+
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")

@@ -20,8 +20,12 @@ using OtherFunction = LibraryFunction<ReadId, OtherScopeBrand>;
 static_assert(!std::is_copy_constructible_v<ScopeLibrary> && !std::is_move_constructible_v<ScopeLibrary>,
               "a library stays in the scope of with_library");
 static_assert(!std::is_copy_assignable_v<ScopeLibrary> && !std::is_move_assignable_v<ScopeLibrary>);
+// The destructor is private, so each of the two tests of a construction
+// holds also for a public constructor.  A construction outside the door then
+// needs the destructor, and the third test pins that the door owns it.
 static_assert(!std::is_constructible_v<ScopeLibrary, LibraryWord>, "only the door builds a library");
 static_assert(!std::is_default_constructible_v<ScopeLibrary>, "a library has no empty state");
+static_assert(!std::is_destructible_v<ScopeLibrary>, "only the door ends a library, at the end of its scope");
 
 // The function: the brand of its library, and the call ABI of a pointer.
 static_assert(::foundation::brand::SameBrand<ScopeLibrary, ScopeFunction>,
