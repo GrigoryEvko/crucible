@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // storage_of gives a View of the bytes of an object, and the View borrows the
 // object.  A temporary ends at the end of the full expression, so the View of

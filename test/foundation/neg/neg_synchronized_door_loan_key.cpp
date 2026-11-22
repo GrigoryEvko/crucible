@@ -1,10 +1,10 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A LoanKey of a named brand opens the frames of the owners of that brand,
 // and the root doors mint one on each thread.  So a LoanKey proves nothing
 // about which thread owns the counter, also when the counter declares the
 // brand as its own, and the door bump that takes it stays a door with no proof
-// (THE PROOF OF A DOOR of foundation/Transfer.h).
+// (the proof of a door of foundation/Transfer.h).
 //
 // Expected diagnostic: a door is not const and takes no proof, and the
 // diagnostic names the door bump with the loan key.

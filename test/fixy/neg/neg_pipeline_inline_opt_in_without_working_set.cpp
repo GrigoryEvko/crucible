@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A stage opted in to inline dispatch whose handles declare no per-call
 // working set.  The opt-in claims the working set fits a private cache,

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_workload_profiler asks for a context whose row holds Init.  The
 // hot foreground context has the empty row, so the gate refuses it.  It

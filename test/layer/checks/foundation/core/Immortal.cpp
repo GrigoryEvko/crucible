@@ -23,11 +23,11 @@ constinit inline Immortal<Ending> held{};
 }  // namespace immortal_check
 
 // The destructor of a holder is trivial for a payload with a destructor, so
-// the destructor of the payload never runs (THE STORAGE).
+// the destructor of the payload never runs (the storage).
 static_assert(!std::is_trivially_destructible_v<immortal_check::Ending>);
 static_assert(std::is_trivially_destructible_v<Immortal<immortal_check::Ending>>);
 
-// The holder does not copy or move (THE RULES).
+// The holder does not copy or move (the rules).
 static_assert(!std::is_copy_constructible_v<Immortal<immortal_check::Ending>>);
 static_assert(!std::is_move_constructible_v<Immortal<immortal_check::Ending>>);
 static_assert(!std::is_copy_assignable_v<Immortal<immortal_check::Ending>>);

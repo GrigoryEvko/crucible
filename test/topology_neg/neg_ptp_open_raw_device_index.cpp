@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Opening /dev/ptpN takes an admitted PtpDeviceIndex.  A raw int does not
 // convert to the bounded index, so an unchecked number cannot name a

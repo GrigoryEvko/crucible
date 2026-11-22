@@ -1,4 +1,4 @@
-// A file of a read-only open holds no write right (THE RIGHTS of
+// A file of a read-only open holds no write right (the rights of
 // fixy/os/Handle.h).  A change of the size changes the bytes of the file, so
 // set_file_size asks for the write right and takes no borrow of such a file.
 

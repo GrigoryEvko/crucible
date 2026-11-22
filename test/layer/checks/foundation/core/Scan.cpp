@@ -22,7 +22,7 @@ struct Mix {
 
 inline constexpr std::uint64_t empty_value = 0xE3E3E3E3u;
 
-// The depths of THE ERROR BOUND.
+// The depths of the error bound.
 static_assert(count_exclusive_scan_depth(0) == 0 && count_exclusive_scan_depth(1) == 0
               && count_exclusive_scan_depth(2) == 1);
 static_assert(count_exclusive_scan_depth(3) == 2 && count_exclusive_scan_depth(4) == 2

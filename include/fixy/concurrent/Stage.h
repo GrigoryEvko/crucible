@@ -91,7 +91,7 @@ template <auto FnPtr>
 
 // Calls the stage with its handles.  A stage that names keys gets them from
 // the entry of the root doors, on the thread of the stage, and the entry checks
-// the handles (THE KEYS OF A STAGE of fixy/concurrent/StageShape.h).
+// the handles (the keys of a stage in fixy/concurrent/StageShape.h).
 template <auto FnPtr, class... Handles>
 void call_stage_(Handles&&... handles) noexcept {
     if constexpr (StageArity<FnPtr>::key_count == 0) {

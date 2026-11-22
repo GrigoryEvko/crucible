@@ -1,7 +1,7 @@
 // A niche outside the base brings the statement of the niche of a Ref into
 // its own scope with a using-declaration.  The statement is no member that
 // the niche declares, and the check reads only a statement whose parent is
-// the niche or the class (THE CHECK OF THE STATEMENT of
+// the niche or the class (the check of the statement of
 // foundation/core/Choice.h), so the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

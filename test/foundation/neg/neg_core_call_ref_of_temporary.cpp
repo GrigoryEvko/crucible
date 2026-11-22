@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A CallRef borrows its callable.  A lambda that is a temporary ends at the
 // end of the full expression, so a CallRef of it would call an object that

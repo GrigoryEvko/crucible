@@ -1,12 +1,12 @@
 """gauge_record — the record of `loop gauge`: the median of each step, its JSON lines, and the judge of the measured rule.
 
-THE RECORD
+Record
     With --record FILE, `loop gauge` appends its result as one JSON line to
-    FILE (assay.loop.gauge, THE REPORT).  read_records() reads the lines of
+    FILE (assay.loop.gauge, the report).  read_records() reads the lines of
     such a file, and parsed_record() reads one line.  The judge reads only the
     median of each step of EDIT_STEPS.
 
-THE MEASURED RULE
+Measured rule
     The rule edit-build-instructions judges the median of the instruction
     counts of the edit builds (judge()).  That count does not change with the
     load of the host.  When an edit build has no exact instruction count, the
@@ -32,7 +32,7 @@ from assay.loop import history as loop_history
 
 # The steps of each edit run.  A record holds the median of each step over the runs.
 EDIT_STEPS = ("build", "tests")
-# The measured rule that judges the median of the instruction counts of the edit builds (THE MEASURED RULE).
+# The measured rule that judges the median of the instruction counts of the edit builds (the measured rule).
 BUILD_RULE = "edit-build-instructions"
 
 
@@ -60,7 +60,7 @@ class GaugeRecord:
 def judge(
     medians: Mapping[str, Median], budgets: Mapping[str, check_report.Budget], place: str
 ) -> tuple[list[check_report.Finding], list[str]]:
-    """Compare the median of the instruction counts of the edit builds with its measured rule (THE MEASURED RULE).
+    """Compare the median of the instruction counts of the edit builds with its measured rule (the measured rule).
 
     Args:
         medians: The median of the build and of the tests
@@ -85,7 +85,7 @@ def judge(
 
 
 def read_records(path: Path) -> list[GaugeRecord]:
-    """Return each record of a file that --record writes, one JSON object on each line (THE REPORT).
+    """Return each record of a file that --record writes, one JSON object on each line (the report).
 
     Complexity: linear in the bytes of the file.
 
@@ -156,7 +156,7 @@ def parsed_record(value: object, where: str) -> GaugeRecord:
 def judged_record(
     record: GaugeRecord, budgets: Mapping[str, check_report.Budget], position: str
 ) -> tuple[list[check_report.Finding], list[str]]:
-    """Judge one record of the gauge with the rule edit-build-instructions (judge(), THE MEASURED RULE).
+    """Judge one record of the gauge with the rule edit-build-instructions (judge(), the measured rule).
 
     measure() judges its own record with this function, and the witness of the rule judges a planted record with it
     (assay.guard.engines.buildsys.held).

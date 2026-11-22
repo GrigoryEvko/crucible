@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Minting the topology graph needs an execution context.  An `int` in the
 // context slot, a placeholder left behind by a refactor or a count typed

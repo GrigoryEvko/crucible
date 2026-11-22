@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit records a session over the producer pole of a bridged channel of
 // Labelled values, and it sends the label word of the keyed message with a

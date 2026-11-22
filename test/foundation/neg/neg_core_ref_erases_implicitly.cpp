@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A Ref of an object with a named brand does not convert to the erased
 // brand.  Each erased Ref of one target is one type, so an implicit erasure

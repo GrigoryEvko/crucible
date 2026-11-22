@@ -16,7 +16,7 @@
 // of foundation/core/Product.h.  The tag names the role, and it holds no
 // value.
 //
-// THE RULES
+// Rules
 //   A Side is no aggregate: its one field is private, and the explicit
 //   constructor and side_as are the only ways to make one.  It has no
 //   implicit conversion to its payload or from it, no comparison and no
@@ -25,7 +25,7 @@
 //   the other order.  The check file of this header holds each rule, and the
 //   fixtures neg_core_side_* hold each refusal.
 //
-// THE COST
+// Cost
 //   A Side has the size, the alignment and the layout of its payload, and it
 //   is trivially copyable when its payload is.  So the ABI passes it as it
 //   passes the payload.  A callee that takes the Side by reference and reads

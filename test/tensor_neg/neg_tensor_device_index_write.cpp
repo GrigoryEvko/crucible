@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: a write gives the index 0 to a built device of the host.  The
 // two members of TensorDevice are private, so only its constructor sets the

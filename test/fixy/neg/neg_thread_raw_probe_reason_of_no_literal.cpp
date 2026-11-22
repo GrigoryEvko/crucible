@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The reason of a raw probe of the thread door is a string literal, so the
 // call names its probe where a reader sees it.  A text that the program

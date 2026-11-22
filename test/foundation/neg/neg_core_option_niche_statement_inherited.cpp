@@ -1,6 +1,6 @@
 // A niche outside the base takes the statement of the niche of a Ref by
 // inheritance, so its own class states nothing.  The check reads only an own
-// member of the niche or of the class (THE CHECK OF THE STATEMENT of
+// member of the niche or of the class (the check of the statement of
 // foundation/core/Choice.h), so the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

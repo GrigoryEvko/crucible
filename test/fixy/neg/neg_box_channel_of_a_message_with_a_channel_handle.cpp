@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A handle of a channel holds a ChannelBinding, which refers to the channel
 // and owns nothing.  The channel can end before a consumer on another thread

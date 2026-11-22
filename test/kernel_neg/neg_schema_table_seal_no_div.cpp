@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The seal of a table waits with no exit while a writer holds the write
 // section, so it asks for a context that owns Div.  The cold init context

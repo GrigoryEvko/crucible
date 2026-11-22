@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit opens the producer pole of a log through the pole door, and it
 // picks a branch of the Select of the log with a write of a word of its own.

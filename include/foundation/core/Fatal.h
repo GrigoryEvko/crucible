@@ -17,7 +17,7 @@
 // arguments, and the concept Formattable that refuses each other argument
 // type at the call.
 //
-// THE TEXT OF A REPORT
+// Text of a report
 //   `{}` is a placeholder, and each placeholder takes the next argument.
 //   `{{` writes `{`, and `}}` writes `}`.  Each other brace is refused.  The
 //   constructor of Fmt is consteval: it refuses a text with no terminating
@@ -25,7 +25,7 @@
 //   placeholders that differs from the count of arguments.  The refusal
 //   names its rule (detail::fmt_*), and the build stops at the call.
 //
-// THE DOORS TO THE PARTS
+// Doors to the parts
 //   The functions of the family read the text and the site of a Site and of
 //   a Fmt through the doors of detail.  Each door is a function that is no
 //   template, so no file can give a door an explicit specialization with a
@@ -193,7 +193,7 @@ constexpr char const* fmt_file_(FmtParts const& fmt) noexcept { return site_file
 constexpr char const* fmt_function_(FmtParts const& fmt) noexcept { return site_function_(fmt.site_); }
 constexpr std::uint32_t fmt_line_(FmtParts const& fmt) noexcept { return site_line_(fmt.site_); }
 
-// Writes `foundation: fatal: TEXT` and the site to standard error.  Then it
+// Writes `foundation: fatal: text` and the site to standard error.  Then it
 // aborts, also under a tracer.  The text takes no argument, and its escapes
 // `{{` and `}}` are written as one brace.
 [[noreturn, gnu::cold]] void report_fatal_(char const* text, char const* file, std::uint32_t line,

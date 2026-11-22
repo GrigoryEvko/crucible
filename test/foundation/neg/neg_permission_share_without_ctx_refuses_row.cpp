@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A share with no context names no scope that may read the region.
 // That is sound only for a pure tag.  The token here was minted under a

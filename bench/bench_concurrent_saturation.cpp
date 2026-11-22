@@ -65,7 +65,7 @@ struct SaturationCase {
             bench::do_not_optimize(nc);
             // The sink reads and writes each byte of rx, so the copy of the
             // pop into rx stays, and no other code reads rx.  A sink of one
-            // element would keep only the bytes of that element (THE SINK
+            // element would keep only the bytes of that element (the sink
             // of bench_harness.h).
             bench::mark_changed(rx);
         });
@@ -217,7 +217,7 @@ int main() {
         //        spread across all in-flight items.  So 1 item per cycle
         //        is the sustained throughput floor for fully-pipelined ops.
         //
-        // But each item IS 3 mem-ops and Zen 3 retires 3 mem-ops/cycle,
+        // But each item is 3 mem-ops and Zen 3 retires 3 mem-ops/cycle,
         // so one item per cycle.  At 4.6 GHz:
         //   1 item / 4.6e9 s = 0.217 ns/item.
         const double ns_floor_per_item = 0.217;

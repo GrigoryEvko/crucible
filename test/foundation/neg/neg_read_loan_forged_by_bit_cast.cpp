@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A read loan built from a byte would be a read right that no parked
 // token waits for.  std::bit_cast needs a trivially copyable type, and

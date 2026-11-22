@@ -10,7 +10,7 @@
 // PLUGIN_PRE_GENERICIZE gives the body of each function that is not a
 // template.  The body of a template instantiation is not read, because its
 // pattern is read instead.  The event of a member access gives a dependent
-// member that only the instantiation resolves (THE FOLDED NAMES of owner.cpp).
+// member that only the instantiation resolves (the folded names of owner.cpp).
 // An instantiation of a template of a quarantined file gives only the types
 // that it deduces for the placeholders of its template (check_instantiation).
 // The function of the dynamic initializers of the unit is read too.
@@ -29,8 +29,8 @@
 // alignof, a noexcept, a type trait, a requires-expression, a static_assert,
 // and the initializer of a variable when a call in it gives a constant, also a
 // call of a builtin such as strlen.  The events of the parser give each name
-// that the source spells there, also in the operand of a reflection (THE
-// FOLDED NAMES of owner.cpp).  An operator gives no such event.  The libstdc++
+// that the source spells there, also in the operand of a reflection (the
+// folded names of owner.cpp).  An operator gives no such event.  The libstdc++
 // assertions of the Debug, TSan and UBSan-strict presets stop some of these
 // folds, so a call such as std::optional::operator-> in an initializer can be
 // a finding in those presets and not in Release.  A constructor, a destructor
@@ -39,7 +39,7 @@
 // it.  The controls of the plugin witness in utils/plants/quarantine/ pin each
 // such gap.
 //
-// THE PROOF ROUTES (the rule proof-routes)
+// Proof routes (the rule proof-routes)
 //     A proof type attests to a fact that it cannot see, and only its door
 //     builds it.  A class is a proof type when a witness row of the rule table
 //     names it, by its qualified name with no template arguments.  A class of
@@ -137,7 +137,7 @@
 //     location, so a route that a macro forms counts in the file that expands
 //     the macro.
 //
-// THE REFINED PARAMETERS (the rule refined-pre-subsumption)
+// Refined parameters (the rule refined-pre-subsumption)
 //     A parameter of a specialization of fixy::Refinement, the class of
 //     fixy::Refined and fixy::SealedRefined, carries the proof of the
 //     predicate of its first template argument.  The cite row of the class of
@@ -147,7 +147,7 @@
 //     the parameter, is the finding retest.  Its entity is FUNCTION:
 //     PARAMETER: decide::PROCEDURE.  A lambda has a body of its own.
 //
-// THE GRANTS (the rule syscalls)
+// Grants (the rule syscalls)
 //     A grant row of the rule table names a grant file, its alias, the
 //     enumeration of the system calls and the door files.  The code of the
 //     grant file is each body of the grant file, and each expression that a
@@ -197,10 +197,10 @@ struct BodyWalk {
     hash_set<tree>* visited = nullptr;
     // The function whose body the walk reads, or null for an initializer.
     tree function = NULL_TREE;
-    // The refined parameters of the function (THE REFINED PARAMETERS).
+    // The refined parameters of the function (the refined parameters).
     std::vector<RefinedParameter> refined;
-    // The grant row of the grant file that holds the code, or null (THE
-    // GRANTS).
+    // The grant row of the grant file that holds the code, or null (the
+    // grants).
     const GrantRow* grant = nullptr;
 };
 
@@ -210,7 +210,7 @@ struct Names {
     tree decide = NULL_TREE;
     tree syscall = NULL_TREE;
     std::unordered_set<tree> cited;  // each procedure of a cite row
-    // THE PROOF ROUTES.
+    // the proof routes.
     tree bit_cast = NULL_TREE;
     tree allocator = NULL_TREE;
     tree allocator_traits = NULL_TREE;
@@ -230,7 +230,7 @@ struct Names {
 
 Names names;
 
-// The answers of the type walks of THE PROOF ROUTES, keyed by tree.  Each
+// The answers of the type walks of the proof routes, keyed by tree.  Each
 // collection clears them, because a collection can free a tree and reuse its
 // address.
 struct Caches {
@@ -241,12 +241,12 @@ struct Caches {
 
 Caches caches;
 
-// The facts of THE PROOF ROUTES that the end of the unit reads: each class
+// The facts of the proof routes that the end of the unit reads: each class
 // template that a class of include/ befriends with a template friend, and
 // each class template with a parameter that is no type, whose explicit
 // specializations can hold a pointer to a member.  The bindings of its scope
 // keep a template decl of a namespace or a class to the end of the parse, and
-// the walk of the end of the parse reads the lists (THE COLLECTIONS of
+// the walk of the end of the parse reads the lists (the collections of
 // plugin.h).
 struct RouteTemplates {
     std::vector<tree> befriended;
@@ -279,7 +279,7 @@ void record_in_unit(Kind kind, location_t location, const std::string& entity) {
     }
 }
 
-// The place of a route (THE PROOF ROUTES): the expansion point of LOCATION, in
+// The place of a route (the proof routes): the expansion point of LOCATION, in
 // a base or a quarantined file, or a place with no file.
 Place route_place(location_t location) {
     Place place;
@@ -303,7 +303,7 @@ Place route_place(location_t location) {
     return place;
 }
 
-// A finding of THE PROOF ROUTES, with the entity ROUTE: KEY.  It counts as a
+// A finding of the proof routes, with the entity ROUTE: KEY.  It counts as a
 // finding of a rule with a base scope does (counts_in_unit).
 void record_route(Kind kind, location_t location, const std::string& key) {
     Place place = route_place(location);
@@ -312,7 +312,7 @@ void record_route(Kind kind, location_t location, const std::string& key) {
     }
 }
 
-// ── The proof types (THE PROOF ROUTES) ──────────────────────────────────
+// ── The proof types (the proof routes) ──────────────────────────────────
 
 // A passkey chain is at most a key, a token that takes the key, and a carrier
 // that takes the token, as max_gate_depth of test_forgeable_proofs.cpp.  The
@@ -349,7 +349,7 @@ bool is_gated_constructor(tree constructor, int depth) {
     return false;
 }
 
-// The proof shape of THE PROOF ROUTES, with no test of the namespace.
+// The proof shape of the proof routes, with no test of the namespace.
 // Complexity: O(constructors * parameters) for each class.
 bool has_proof_shape(tree type, int depth) {
     tree source = shape_source(type);
@@ -393,7 +393,7 @@ bool is_witnessed(tree main_type) {
         && names.witnessed.count(qualified_name(decl)) != 0;
 }
 
-// True when TYPE is a proof type (THE PROOF ROUTES).  The cache keeps the
+// True when TYPE is a proof type (the proof routes).  The cache keeps the
 // answer of each class at the depth 0.
 bool is_proof_class(tree type, int depth) {
     if (type == NULL_TREE || depth > kGateDepth) {
@@ -482,8 +482,8 @@ tree cast_target_proof(tree type) {
     return target != NULL_TREE && !FUNC_OR_METHOD_TYPE_P(target) ? held_proof_of(target, 0) : NULL_TREE;
 }
 
-// True when the class template of CLASS_TYPE is an allocator of THE PROOF
-// ROUTES.
+// True when the class template of CLASS_TYPE is an allocator of the proof
+// routes.
 bool is_allocator_class(tree class_type) {
     if (!CLASS_TYPE_P(class_type) || CLASSTYPE_TEMPLATE_INFO(class_type) == NULL_TREE) {
         return false;
@@ -605,7 +605,7 @@ void check_cast(tree conversion, location_t location, bool is_pattern) {
     record_route(Kind::route_pointer_cast, location, qualified_name(TYPE_MAIN_DECL(proof)));
 }
 
-// ── The specializations (THE PROOF ROUTES) ──────────────────────────────
+// ── The specializations (the proof routes) ──────────────────────────────
 
 // True when a template argument holds a pointer to a member: a constant of a
 // pointer to a member, the address of a member of a class, or a class
@@ -825,7 +825,7 @@ bool can_reach_class(tree befriended, tree target) {
 
 // Each friend function and each friend function template of a class that
 // states synchronized{}, and each friend class that can reach the class: the
-// route synchronized-friend (THE PROOF ROUTES).  A class with no friend costs
+// route synchronized-friend (the proof routes).  A class with no friend costs
 // one test.
 void check_synchronized_friends(tree type, location_t location) {
     static tree const synchronized = get_identifier("synchronized");
@@ -915,7 +915,7 @@ void read_value_specializations(tree template_decl) {
     }
 }
 
-// ── The refined parameters (THE REFINED PARAMETERS) ─────────────────────
+// ── The refined parameters (the refined parameters) ─────────────────────
 
 // The cite row of the predicate of a refinement type TYPE, or null.
 const CiteRow* cite_of_refinement(tree type) {
@@ -1021,7 +1021,7 @@ void check_retest(tree call, location_t location, const BodyWalk& walk) {
     }
 }
 
-// ── The grants (THE GRANTS) ─────────────────────────────────────────────
+// ── The grants (the grants) ─────────────────────────────────────────────
 
 // One function that the code names: its name, the enumeration of the system
 // calls is not known before the end of the unit.
@@ -1052,7 +1052,7 @@ struct BodyFacts {
 // file that is not a template, by its DECL_UID.  A function of a door file is
 // a decl of a namespace or a class: the bindings of its scope keep it, or the
 // body of the function that declares the class keeps it, to the end of the
-// parse.  Each reader of the facts runs in the parse (THE COLLECTIONS of
+// parse.  Each reader of the facts runs in the parse (the collections of
 // plugin.h).
 struct GrantUnit {
     bool is_seen = false;
@@ -1095,7 +1095,7 @@ void collect_local_facts(tree decl, FactsWalk& walk) {
     }
 }
 
-// The facts of one node of a body (THE GRANTS).  A function counts where the
+// The facts of one node of a body (the grants).  A function counts where the
 // code names it: a call, an address or a candidate of a dependent call.
 tree collect_body_facts(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
@@ -1173,7 +1173,7 @@ const GrantRow* grant_row_at(location_t location) {
 }
 
 // The facts of an expression NODE of a body outside a grant file, when a macro
-// body of a grant file spells it at LOCATION (THE GRANTS).  The grant file
+// body of a grant file spells it at LOCATION (the grants).  The grant file
 // issues such a call in each file that expands its macro.  A macro body is in
 // no helper NAME_sys.  A location that no macro expansion gives costs one
 // test.
@@ -1210,7 +1210,7 @@ void collect_macro_facts(tree node, location_t location) {
     }
 }
 
-// ── The routes of a call (THE PROOF ROUTES) ─────────────────────────────
+// ── The routes of a call (the proof routes) ─────────────────────────────
 
 // True when FUNCTION gives raw storage: an operator new or new[] of each
 // scope, or a function with a name of names.allocators.
@@ -1291,7 +1291,7 @@ void check_call_routes(tree call, location_t location) {
 void walk_expression(tree* expression, BodyWalk& walk);
 
 // A new-expression.  Its entity is the operator, with no printed type
-// (declaration.cpp, THE ENTITY OF AN OBJECT).  The call of an allocation
+// (declaration.cpp, the entity of an object).  The call of an allocation
 // function in owner.cpp gives the same entity.
 void check_new_expression(tree expression, location_t location) {
     bool is_placement = TREE_OPERAND(expression, 0) != NULL_TREE;
@@ -1306,7 +1306,7 @@ void check_new_expression(tree expression, location_t location) {
 // TARGET_EXPR_LIST_INIT_P, and a call that returns a class calls no
 // constructor, so neither is a finding.  A TARGET_EXPR with no location of
 // its own is no finding either.  The allocator route of the class counts at
-// the same place (THE PROOF ROUTES).
+// the same place (the proof routes).
 void check_temporary(tree target) {
     if (TARGET_EXPR_LIST_INIT_P(target) || TARGET_EXPR_INITIAL(target) == NULL_TREE || !EXPR_HAS_LOCATION(target)) {
         return;
@@ -1470,7 +1470,7 @@ bool walk_call_without_immediate_defaults(tree call, BodyWalk& walk) {
 }
 
 // A type that the code names in an expression: the uses of the family owner,
-// and the allocator route (THE PROOF ROUTES).
+// and the allocator route (the proof routes).
 void check_named_type(tree type, location_t location) {
     check_type_use(type, location);
     check_allocator_type(type, location);
@@ -1540,8 +1540,8 @@ void check_named_operands(tree node, location_t location) {
     }
 }
 
-// The expression shapes of the rules of THE PROOF ROUTES and THE REFINED
-// PARAMETERS at one node.
+// The expression shapes of the rules of the proof routes and the refined
+// parameters at one node.
 void check_expression_rules(tree node, BodyWalk& walk) {
     switch (TREE_CODE(node)) {
         case NOP_EXPR:
@@ -1755,7 +1755,7 @@ void walk_expression(tree* expression, BodyWalk& walk) {
 }
 
 // One walk of a body or an initializer, with its own set of visited nodes.
-// The code of a grant file also gives its facts (THE GRANTS).
+// The code of a grant file also gives its facts (the grants).
 void walk_root_of(tree* root, location_t location, bool is_pattern, tree function,
                   std::vector<RefinedParameter> refined, const GrantRow* grant) {
     hash_set<tree> visited;
@@ -1797,7 +1797,7 @@ void on_pre_genericize(void* gcc_data, void*) {
     walk_body(function, false);
 }
 
-// ── The end of a unit (THE GRANTS) ──────────────────────────────────────
+// ── The end of a unit (the grants) ──────────────────────────────────────
 
 // The declaration that the qualified name QUALIFIED names, through each
 // namespace, or null.
@@ -2020,7 +2020,7 @@ void finish_grant(const GrantRow& row, GrantUnit& unit) {
                 std::to_string(issued.size()) + " issued, " + std::to_string(granted.size()) + " granted");
 }
 
-// ── The declarations and the types of the family (THE PROOF ROUTES) ─────
+// ── The declarations and the types of the family (the proof routes) ─────
 
 // PLUGIN_FINISH_TYPE gives each class that the source defines, also a local
 // one, an anonymous one, the pattern of a template and an explicit or partial
@@ -2100,7 +2100,7 @@ void on_route_collection(void*, void*) {
 
 // The key of an explicit instantiation: the instantiated class, or the
 // instantiated function or variable with its scope and each of its template
-// arguments (library.cpp, THE TEXT OF A KEY).
+// arguments (library.cpp, the text of a key).
 std::string instantiation_key(tree entity) {
     return TYPE_P(entity) ? type_text(TYPE_MAIN_VARIANT(entity)) : declaration_text(entity);
 }
@@ -2159,7 +2159,7 @@ void walk_root(tree* root, location_t location, bool is_pattern) {
 // The signature, and the body when IS_PATTERN or when the plugin reads it
 // from PLUGIN_PRE_GENERICIZE.  The body of a static initializer has places in
 // each file, so it gets no location gate.  A function of a door file that is
-// not a template keeps the facts of its body (THE GRANTS).
+// not a template keeps the facts of its body (the grants).
 void walk_body(tree function, bool is_pattern) {
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || state.walked.count(function) != 0) {
         return;
@@ -2201,8 +2201,8 @@ void walk_body(tree function, bool is_pattern) {
     }
 }
 
-// The comparison of each grant row whose grant file the unit read (THE
-// GRANTS), and the specializations of the templates that THE PROOF ROUTES
+// The comparison of each grant row whose grant file the unit read (the
+// grants), and the specializations of the templates that the proof routes
 // noted.  Complexity: O(specializations of the noted templates).
 void finish_expression_rules() {
     for (const GrantRow& row : state.table.grants) {
@@ -2219,7 +2219,7 @@ void finish_expression_rules() {
     }
 }
 
-// Registers the walk of each function body and the hooks of THE PROOF ROUTES.
+// Registers the walk of each function body and the hooks of the proof routes.
 void register_expressions(const char* plugin_name) {
     names.refinement = get_identifier("Refinement");
     names.decide = get_identifier("decide");

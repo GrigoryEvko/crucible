@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A std::function keeps its callable behind a pointer to void and a
 // pointer to a function, so its type names no ReadView.  A body that

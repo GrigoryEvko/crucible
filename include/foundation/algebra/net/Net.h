@@ -8,7 +8,7 @@
 //                           string literal, or a static string of reflection
 //   PortType                a type and its polarity: give(t), take(t), meet(t)
 //   MergeDoor               the merge door of a kind: closed, or open through
-//                           allow_merge(reason) (THE DETERMINISM)
+//                           allow_merge(reason) (the determinism)
 //   AgentKind               the ports of an agent: a name and a type for each
 //                           port, the principal port, a par group, the
 //                           boundary flag, and the merge door
@@ -21,7 +21,7 @@
 //                           type, the kind, the agent, the port, the wire or
 //                           the cycle that the code names
 //   SealedNet<T, K, A, W>   a copy of a net that no caller can change, and
-//                           the fault of its wiring (THE SEALED NET)
+//                           the fault of its wiring (the sealed net)
 //
 //   check_signature(signature)   the kinds are well formed
 //   check_wiring(net)            each port has exactly one wire, and each wire
@@ -50,7 +50,7 @@
 //                                one time.  Each find function and
 //                                is_same_net also take a sealed net
 //
-// THE MODEL
+// Model
 //   An agent has ports, and one of them is its principal port.  A rule fires
 //   only where two principal ports meet, and it replaces the two agents with
 //   a small net (Lafont 1990).  A port has a type.  give(t) and take(t) are
@@ -67,7 +67,7 @@
 //   three roles is a cycle, and check_forest refuses it, although the global
 //   type is live.
 //
-// WHICH CHECK FOR WHICH NET
+// Which check for which net
 //   Each structural check runs check_wiring first, because each of them reads
 //   each port through its one wire.
 //
@@ -93,7 +93,7 @@
 //   an implementation follows its net must also read the operand of each
 //   port.
 //
-// THE DETERMINISM
+// Determinism
 //   A net whose rules give at most one rule for each pair gives one result
 //   in each schedule, because each step commutes with each other step
 //   (Lafont 1990).  Plain code that runs a net keeps this only when each
@@ -114,7 +114,7 @@
 //   agent stands for a free port, so check_signature refuses a boundary kind
 //   with an open door.
 //
-// THE CANONICAL FORM
+// Canonical form
 //   Two nets are the same net when a map of the agents of one onto the
 //   agents of the other keeps each kind, each wire and each port, and maps
 //   each boundary agent onto the boundary agent at the same place among the
@@ -150,7 +150,7 @@
 //   one form.  A user that tells operands apart gives each input as a
 //   boundary agent.
 //
-// THE VERDICT
+// Verdict
 //   A check gives a NetVerdict.  An admitted verdict has no text.  A refusal
 //   names the agent, the node and the port in one line, for example:
 //     net: port 'kids' of agent 'join' (node 7) has no wire.  Each port has
@@ -161,7 +161,7 @@
 //   that includes it, and 23 constexpr verdicts in one function cost 22.8 s of
 //   debug information (probe E4).
 //
-// THE FAULT
+// Fault
 //   The body of each check finds a NetFault and makes no text.  The code
 //   names the rule that the net breaks, and the other fields name the place:
 //   the type or the kind of a fault of the signature, the agent and the port,
@@ -171,7 +171,7 @@
 //   gives that text.  So a caller that needs no text reads the fault, which
 //   holds 48 bytes and no text.
 //
-// THE RUN-TIME FORM
+// Run-time form
 //   Each find function is constexpr: the door check_* runs it at compile
 //   time, and a program calls it at run time on the same net, with the same
 //   body and the same fault.  The counts of the agents and the wires are the
@@ -196,7 +196,7 @@
 //   Debug unit, so a program reads the fault and makes the text in one source
 //   file.
 //
-// THE SEALED NET
+// Sealed net
 //   Each find function on a Net runs find_wiring_fault first, because each
 //   body reads each port through its one wire.  A program that runs some
 //   checks on one net at run time checks the wiring one time, at the
@@ -211,10 +211,10 @@
 //
 //   The door is seal_net and not a door mint_*.  A mint of the base takes a
 //   context and a concept of the layer of the effects as its constraint, and
-//   this header includes no such header (THE COSTS).  allow_merge is the
+//   this header includes no such header (the costs).  allow_merge is the
 //   door of MergeDoor for the same reason.
 //
-// THE COSTS
+// Costs
 //   P is the count of the ports, A of the agents and W of the wires.
 //     check_signature   O(K) for K kinds
 //     check_wiring      O(K + A + W), a table of the kinds and a mask of the
@@ -267,7 +267,7 @@
 //   only foundation/Platform.h, which includes <type_traits>.  This header
 //   includes no <meta>, so a light header can include it.
 //
-// SOURCES
+// Sources
 //   Lafont, Interaction nets, POPL 1990.  Lafont, Interaction combinators,
 //   Information and Computation 137, 1997.  Danos and Regnier, The structure
 //   of multiplicatives, 1989, and the contraction criterion of Danos 1990.
@@ -381,7 +381,7 @@ struct PortType {
 
 // ── The merge door ──────────────────────────────────────────────────────
 
-// The merge door of an agent kind (THE DETERMINISM).  The default door is
+// The merge door of an agent kind (the determinism).  The default door is
 // closed.  allow_merge is the only way to an open door.
 class MergeDoor {
     NetName reason_{};
@@ -416,7 +416,7 @@ inline constexpr std::size_t max_agent_ports = 8;
 // name, so a kind of two ports names two.  par_ports holds one bit for each
 // port of the par group: no port, or two or more auxiliary ports.  A
 // boundary kind has one port, and no rule reads it.  A merge kind opens its
-// merge door (THE DETERMINISM).
+// merge door (the determinism).
 struct AgentKind {
     NetName name{};
     NetName port_names[max_agent_ports]{};
@@ -709,7 +709,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 
 // ── The capacity class ──────────────────────────────────────────────────
 
-// The capacity of the arrays of a small net (THE COSTS).
+// The capacity of the arrays of a small net (the costs).
 inline constexpr std::size_t small_net_agents = 16;
 inline constexpr std::size_t small_net_wires = 32;
 
@@ -1281,14 +1281,14 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 class SealedNet;
 
-// Seals a net (THE SEALED NET): copies it, and finds the fault of the wiring
+// Seals a net (the sealed net): copies it, and finds the fault of the wiring
 // of the copy one time.  Complexity: O(K + A + W), the copy and
 // find_wiring_fault.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 [[nodiscard]] constexpr auto seal_net(Net<Types, Kinds, Agents, Wires> const& graph) noexcept
     -> SealedNet<Types, Kinds, Agents, Wires>;
 
-// A net checked one time at a boundary (THE SEALED NET): a copy of the net,
+// A net checked one time at a boundary (the sealed net): a copy of the net,
 // which no caller can change, and the fault of its wiring.  seal_net is the
 // only door.  A copy of a sealed net is a sealed net, because the two
 // fields copy together.  The seal closes the two byte routes, std::bit_cast
@@ -1927,7 +1927,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 
 // ── The determinism ─────────────────────────────────────────────────────
 
-// The determinism class of a net (THE DETERMINISM).
+// The determinism class of a net (the determinism).
 enum class NetDeterminism : std::uint8_t {
     // No agent of the net is a merge, so the net gives one result in each
     // schedule.
@@ -1951,7 +1951,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 
 // ── The canonical form ──────────────────────────────────────────────────
 
-// The hash of the canonical form of a net (THE CANONICAL FORM).
+// The hash of the canonical form of a net (the canonical form).
 enum class NetHash : std::uint64_t {
 };
 
@@ -1964,7 +1964,7 @@ struct CanonicalNet {
 
 namespace detail {
 
-// The canonical numbers of the agents of a net (THE CANONICAL FORM).
+// The canonical numbers of the agents of a net (the canonical form).
 // number_of holds the number of each agent, or no_index, and agent_at the
 // agent of each number.  peer holds the other end of the wire at each port as
 // one slot: its agent times max_agent_ports plus its port.  A net has fewer
@@ -2125,7 +2125,7 @@ enum class FormWord : std::uint64_t {
     return hash;
 }
 
-// The form of a kind (THE CANONICAL FORM): the kind, and the name of the
+// The form of a kind (the canonical form): the kind, and the name of the
 // type of each of its ports.  A form reads no index of its signature.
 struct KindForm {
     AgentKind kind{};
@@ -2289,7 +2289,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 }  // namespace detail
 
 // The canonical form of a net: the first fault of its wiring, the fault
-// AgentWithoutBoundaryPath, or the hash of its form (THE CANONICAL FORM).  The
+// AgentWithoutBoundaryPath, or the hash of its form (the canonical form).  The
 // walk of the order checks the wiring that it reads, so a net that it numbers
 // in full takes no separate check of the wiring.  Each other net runs
 // find_wiring_fault and then the body, which give its fault.
@@ -2319,7 +2319,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     return explain_fault(graph, find_canonical_form(graph).fault);
 }
 
-// Two nets of one type are the same net (THE CANONICAL FORM): each has a
+// Two nets of one type are the same net (the canonical form): each has a
 // canonical form, and the two forms are equal entry by entry.  A net with no
 // form is the same as no net.  The kinds compare by their forms, so the two
 // signatures can list the kinds and the types in other orders.  The two

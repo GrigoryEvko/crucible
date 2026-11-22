@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: the checked mint of ValidDeviceType receives int8_t{99} in
 // constant evaluation.  99 is far above the highest DeviceType enumerator,

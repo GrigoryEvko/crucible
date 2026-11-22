@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The protocol sends a computation that needs Bg.  The test context holds
 // Test, Alloc, IO and Block, and no Bg.  The test hatch gives the two

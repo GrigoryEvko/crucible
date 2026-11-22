@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_sense_hub rejects HotFgCtx.  The hot foreground context must
 // never reach SenseHub::load(), because the BPF program load and the

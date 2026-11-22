@@ -192,7 +192,7 @@ concept BoundFits = (ExactInteger<V> && ExactInteger<decltype(Bound)> && std::in
 template <auto Pred>
 using predicate_t = std::remove_cv_t<decltype(Pred)>;
 
-// THE SEAL
+// Seal
 //
 // A translation unit can specialize a class template, a member template of
 // a class, and a member of a class template instance.  A specialization of

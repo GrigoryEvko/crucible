@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A share token proves that the guard's share is outstanding.  A token
 // minted from a guard that dies at the end of the statement would prove

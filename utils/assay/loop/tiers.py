@@ -1,8 +1,8 @@
 """tiers — the tier of each preset of the presets file, which names the entry that runs the preset.
 
-THE TIERS
+Tiers
     A tier names the entry that runs an item of the plan of the tree:
-      gate     `loop land` runs the item when the change of a landing selects it (assay.loop.gate, THE SELECTION)
+      gate     `loop land` runs the item when the change of a landing selects it (assay.loop.gate, the selection)
       nightly  the nightly entry runs the item on each night
       release  the release entry runs the item before a release
       manual   no entry runs the item.  The reason of its block tells why, and what a person runs
@@ -11,9 +11,9 @@ THE TIERS
     the gate, and the release entry runs each item of the nightly entry.
     ENTRIES gives the command of the entry of each tier other than manual.
 
-THE BLOCK
+Block
     Each configure preset of PRESETS_FILE gives its tier in the entry
-    VENDOR_KEY of its field vendor (assay.readers.cmake, THE VENDOR ENTRIES),
+    VENDOR_KEY of its field vendor (assay.readers.cmake, the vendor entries),
     for example:
 
         "vendor": {"crucible": {"tier": "gate", "configuration": "x86_64-debug-asan"}}
@@ -27,7 +27,7 @@ THE BLOCK
                      a configuration by the name of its ledger before it
                      configures the build
     A block gives no other field, and each value is a text.  A child gets no
-    block of a parent (assay.readers.cmake, THE INHERITANCE).  Each configure
+    block of a parent (assay.readers.cmake, the inheritance).  Each configure
     preset then states its own tier.
 
     A plain test preset runs each test of the build of its configure preset
@@ -38,7 +38,7 @@ THE BLOCK
     The module reads PRESETS_FILE only.  A file CMakeUserPresets.json is local
     to one host, and git does not hold it.
 
-THE PROBLEMS
+Problems
     read() gives each preset with its tier, or with the problem of its block.
     These are the problems:
       * a preset with no block, or with a block that is no object
@@ -54,9 +54,9 @@ THE PROBLEMS
     A presets file that does not read is a problem of the file.  A plain test
     preset of a configure preset with a problem gets no tier and no problem,
     because its configure preset gives the problem.  `loop plan` and the
-    self-test of the plan refuse each problem (assay.loop.plan, THE
-    PROBLEMS), and the gate refuses a tree with one (assay.loop.gate, THE
-    CONFIGURATIONS).
+    self-test of the plan refuse each problem (assay.loop.plan, the
+    problems), and the gate refuses a tree with one (assay.loop.gate, the
+    configurations).
 
 `guard selftest tests.loop.test_tiers` does a test of the module.
 """
@@ -69,8 +69,8 @@ from pathlib import Path
 from assay.core import configuration as build_config
 from assay.readers import cmake
 
-# The presets file of the plan, the key of the block in the field vendor of a preset, and the fields of a block (THE
-# BLOCK).
+# The presets file of the plan, the key of the block in the field vendor of a preset, and the fields of a block (the
+# block).
 PRESETS_FILE = cmake.PRESET_FILES[0]
 VENDOR_KEY = "crucible"
 TIER_FIELD = "tier"
@@ -88,7 +88,7 @@ PROFILE_VALUE = "use"
 
 
 class Tier(enum.StrEnum):
-    """The tier of a preset or of an item of the plan (THE TIERS)."""
+    """The tier of a preset or of an item of the plan (the tiers)."""
 
     GATE = "gate"
     NIGHTLY = "nightly"
@@ -96,8 +96,8 @@ class Tier(enum.StrEnum):
     MANUAL = "manual"
 
 
-# The tiers of the entries, in their sequence, the command of the entry of each one, and the words of the tiers (THE
-# TIERS).
+# The tiers of the entries, in their sequence, the command of the entry of each one, and the words of the tiers (the
+# tiers).
 ORDER = (Tier.GATE, Tier.NIGHTLY, Tier.RELEASE)
 ENTRIES = {Tier.GATE: "loop land", Tier.NIGHTLY: "loop nightly", Tier.RELEASE: "loop release"}
 WORDS = ", ".join(str(item) for item in Tier)
@@ -112,7 +112,7 @@ class PresetKind(enum.StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PresetTier:
-    """The tier of one preset, or the problem of its block (THE PROBLEMS).
+    """The tier of one preset, or the problem of its block (the problems).
 
     `tier` is None when the preset has a problem, and `problem` is "" when it
     has none.  `build` is the build directory of a configure preset, and
@@ -167,7 +167,7 @@ class Block:
 
 
 def read_block(kind: PresetKind, name: str, vendor: Mapping[str, Mapping[str, str | None] | None]) -> Block | str:
-    """Return the block of one preset, or its problem (THE BLOCK, THE PROBLEMS).
+    """Return the block of one preset, or its problem (the block, the problems).
 
     Args:
         kind: The kind of the preset
@@ -278,7 +278,7 @@ def read_test(test: cmake.TestPreset, configure: Mapping[str, PresetTier]) -> Pr
 
 
 def read(root: Path) -> Tiers:
-    """Return the tier of each preset of PRESETS_FILE of a tree (THE BLOCK, THE PROBLEMS).
+    """Return the tier of each preset of PRESETS_FILE of a tree (the block, the problems).
 
     Complexity: one read of the presets file, and linear in the presets.
     """

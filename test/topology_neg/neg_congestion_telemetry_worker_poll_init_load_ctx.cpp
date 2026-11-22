@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A poll is background work.  The startup load context carries the IO and
 // Block of the socket option half of the poll gate, but not the background

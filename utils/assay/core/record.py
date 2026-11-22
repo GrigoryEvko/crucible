@@ -1,6 +1,6 @@
 """record — the one reader and writer of the cost records of the build steps, the tests and the fixtures.
 
-THE RECORDS
+The records
     A cost record holds the result and the cost of the last run of one step:
       compile, link  OUTPUT.cost in the directory of the output.  `loop step`
                      writes it after each compile and each link
@@ -15,7 +15,7 @@ THE RECORDS
     it.  No other module reads or writes a record (the job cost-record of
     utils/registry.txt).
 
-THE FORMAT
+The format
     A record of a build step or of a test is a JSON object with one key on
     each line:
       format        1
@@ -53,24 +53,24 @@ THE FORMAT
     in the source of the fixture, or null with no census.  A record with no
     census key has no census.
 
-THE COST BLOCK
+The cost block
     A cost block holds cpu_s, user_s, system_s, wall_s, peak_rss_kb, load
     (the one-minute load average at the start) and end (seconds since the
     epoch).  A compile also holds compiler_instructions, the user
     instructions of the compiler run, when the host gives the count
-    (assay.core.meter, A COMPILE THROUGH CCACHE).  A ccache miss also holds
+    (assay.core.meter, a compile through ccache).  A ccache miss also holds
     ccache_instructions, the instructions of the remaining part of the step:
     the preprocessor run, ccache and the meter.  A test holds
     test_instructions, the user instructions of the test and of each process
     that it starts.  The key is there only when the host gives an accurate
-    count (assay.loop.teststep, THE MEASURED RULES).  A block of an earlier
+    count (assay.loop.teststep, the measured rules).  A block of an earlier
     format holds the key
     instructions, the count of the full step, and the reader takes no count
     from it.
 
-THE WRITE
+The write
     The step meters write the records, and each import of this module is a
-    cost of each step (assay.core.value, THE COST).  This module imports only
+    cost of each step (assay.core.value, the cost).  This module imports only
     assay.core.value.
     write() makes the text of
     a record with no JSON module, and quote() escapes each character that is
@@ -79,7 +79,7 @@ THE WRITE
     reader then sees the full file or the earlier file.  The write makes the
     directory of the file only when it finds no directory.
 
-THE READ
+The read
     A reader imports json.  read() raises MissingRecord when the output has
     no record.  Each reader raises RecordError when the record cannot be read,
     or when it does not have the shape of a record of its step.  A step meter
@@ -104,19 +104,19 @@ if TYPE_CHECKING:
     from assay.core.meter import Measurement
 
 FORMAT = 1
-# The suffix of the record of a build step, and the directory and the suffix of the record of a test (THE RECORDS).
+# The suffix of the record of a build step, and the directory and the suffix of the record of a test (the records).
 SUFFIX = ".cost"
 TEST_DIRECTORY = "test-records"
 TEST_SUFFIX = ".test" + SUFFIX
 # The directory of the scratch directories of the fixtures in a build directory, and the suffix of a fixture record.
 FIXTURE_DIRECTORY = "neg-compile"
 FIXTURE_SUFFIX = ".inputs"
-# The keys of the instruction counts of a cost block (THE COST BLOCK).
+# The keys of the instruction counts of a cost block (the cost block).
 COMPILER_COUNT_KEY = "compiler_instructions"
 CCACHE_COUNT_KEY = "ccache_instructions"
 TEST_COUNT_KEY = "test_instructions"
 COUNT_KEYS = (COMPILER_COUNT_KEY, CCACHE_COUNT_KEY, TEST_COUNT_KEY)
-# The keys of the times of a cost block, with the load and the end, in the sequence of cost_text() (THE READ).
+# The keys of the times of a cost block, with the load and the end, in the sequence of cost_text() (the read).
 TIME_KEYS = ("cpu_s", "user_s", "system_s", "wall_s", "load", "end")
 PEAK_KEY = "peak_rss_kb"
 
@@ -129,14 +129,14 @@ TEST: Final = "test"
 FIXTURE: Final = "fixture"
 BUILD_STEPS: Final = frozenset({COMPILE, LINK})
 HIT: Final = "hit"
-# The results of each step (THE FORMAT).
+# The results of each step (the format).
 BUILD_RESULTS: Final = frozenset({"built", "failed", "rejected", HIT})
 TEST_RESULTS: Final = frozenset({"passed", "failed", "rejected"})
 FIXTURE_RESULTS: Final = frozenset({"compiled", "stored"})
 
 
 class RecordError(ValueError):
-    """A record cannot be read, or it does not have the shape of a record of its step (THE READ)."""
+    """A record cannot be read, or it does not have the shape of a record of its step (the read)."""
 
 
 class MissingRecord(RecordError):
@@ -144,7 +144,7 @@ class MissingRecord(RecordError):
 
 
 class Cost(Value):
-    """One cost block (THE COST BLOCK): the times in seconds, the peak memory, the load, the end and the counts."""
+    """One cost block (the cost block): the times in seconds, the peak memory, the load, the end and the counts."""
 
     __match_args__ = ("cpu_s", "user_s", "system_s", "wall_s", "peak_rss_kb", "load", "end", "counts")
     cpu_s: float
@@ -186,7 +186,7 @@ class Cost(Value):
 
 
 class CostRecord(Value):
-    """One record of a compile or a link (THE FORMAT)."""
+    """One record of a compile or a link (the format)."""
 
     __match_args__ = ("step", "result", "source", "output", "output_bytes", "exit", "cost", "last_cost")
     step: Step
@@ -224,7 +224,7 @@ class CostRecord(Value):
 
 
 class TestRecord(Value):
-    """One record of the last run of a test (THE FORMAT)."""
+    """One record of the last run of a test (the format)."""
 
     __match_args__ = ("name", "result", "program", "exit", "cost")
     name: str
@@ -239,7 +239,7 @@ class TestRecord(Value):
 
 
 class FixtureRecord(Value):
-    """One record of the last run of a negative fixture: the cost of its compile, its inputs and its census (THE FORMAT).
+    """One record of the last run of a negative fixture: the cost of its compile, its inputs and its census (the format).
 
     `inputs` holds each file that the compile read, by the path of
     `realpath()`, or it is None when the driver does not know the files.  `census_stamp` is the
@@ -337,7 +337,7 @@ def quote(text: str) -> str:
 
 
 def cost_text(cost: Cost) -> str:
-    """Return a cost block as JSON text, with the times, the peak memory and each count (THE COST BLOCK)."""
+    """Return a cost block as JSON text, with the times, the peak memory and each count (the cost block)."""
     extra = "".join(f", {quote(key)}: {value}" for key, value in cost.counts)
     return (
         f'{{"cpu_s": {cost.cpu_s:.3f}, "user_s": {cost.user_s:.3f}, "system_s": {cost.system_s:.3f}, '
@@ -347,7 +347,7 @@ def cost_text(cost: Cost) -> str:
 
 
 def cost_from_text(text: str) -> Cost | None:
-    """Return the cost block of a text that cost_text() wrote, or None for each other text (THE READ).
+    """Return the cost block of a text that cost_text() wrote, or None for each other text (the read).
 
     The function reads the text with no JSON module.  It refuses a key that a
     cost block does not hold, a missing time, a time that is not finite, and a
@@ -381,7 +381,7 @@ def object_text(fields: Sequence[tuple[str, str]]) -> str:
 
 
 def build_text(record: CostRecord) -> str:
-    """Return the text of the record of a compile or a link (THE FORMAT)."""
+    """Return the text of the record of a compile or a link (the format)."""
     fields = [("format", str(FORMAT)), ("step", quote(record.step)), ("result", quote(record.result))]
     if record.source is not None:
         fields.append(("source", quote(record.source)))
@@ -399,7 +399,7 @@ def build_text(record: CostRecord) -> str:
 
 
 def test_text(record: TestRecord) -> str:
-    """Return the text of the record of a test (THE FORMAT)."""
+    """Return the text of the record of a test (the format)."""
     return object_text(
         [
             ("format", str(FORMAT)),
@@ -414,7 +414,7 @@ def test_text(record: TestRecord) -> str:
 
 
 def fixture_text(record: FixtureRecord) -> str:
-    """Return the text of the record of a fixture (THE FORMAT).
+    """Return the text of the record of a fixture (the format).
 
     A path with a line break, which no file of the tree has, gives a record with no inputs.
     """
@@ -441,7 +441,7 @@ def fixture_text(record: FixtureRecord) -> str:
 
 
 def write(path: str | os.PathLike[str], record: CostRecord | TestRecord | FixtureRecord) -> None:
-    """Write one record at a path, through a scratch file and a rename (THE WRITE).
+    """Write one record at a path, through a scratch file and a rename (the write).
 
     The path of a record is record_file(), test_record_file() or fixture_record_file() of its step.
 
@@ -459,7 +459,7 @@ def write(path: str | os.PathLike[str], record: CostRecord | TestRecord | Fixtur
 
 
 def write_text(path: str | os.PathLike[str], text: str) -> None:
-    """Write a text at a path, through a scratch file and a rename (THE WRITE).
+    """Write a text at a path, through a scratch file and a rename (the write).
 
     write() writes each record with this function.  The read set of a test (assay.loop.readset) uses it too.
 
@@ -560,7 +560,7 @@ def _cost(block: object, path: Path) -> Cost | None:
 
 
 def read(path: Path) -> CostRecord:
-    """Read one record of a compile or a link (THE READ).
+    """Read one record of a compile or a link (the read).
 
     Raises:
         MissingRecord: If the output has no record
@@ -597,7 +597,7 @@ def read_of(output: Path) -> CostRecord:
 
 
 def read_test(path: Path) -> TestRecord:
-    """Read one record of a test (THE READ).
+    """Read one record of a test (the read).
 
     Raises:
         MissingRecord: If the file is not there
@@ -623,7 +623,7 @@ def read_test(path: Path) -> TestRecord:
 
 
 def read_fixture(path: Path) -> FixtureRecord:
-    """Read one record of a fixture (THE READ).
+    """Read one record of a fixture (the read).
 
     Raises:
         MissingRecord: If the file is not there

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The watch keeps the file of the site of each mint as a static text, so the
 // site of a mint is a constant.  A location of the run time could name a text

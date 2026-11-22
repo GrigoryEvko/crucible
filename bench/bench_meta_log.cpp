@@ -42,7 +42,7 @@ constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::
 ::fixy::FixedArray<std::byte, 64> g_storage_4d{};
 
 // The owner of the one writer of the row of the publish, which makes its proof
-// (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).
+// (the proof of the one writer of foundation/SoleWriterProof.h).
 struct PublishOwner final {
     struct Role final {};
     using Proof = ::fixy::SoleWriterProof<PublishOwner, Role>;

@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
-// A body of a fork gives its value back to the caller of the fork (THE
-// VALUE OF A BODY of foundation/permissions/PermissionFork.h).  The value
+// A body of a fork gives its value back to the caller of the fork (the
+// value of a body of foundation/permissions/PermissionFork.h).  The value
 // leaves the frame of the body, so it holds no borrow.  A View is a borrow,
 // so the fork refuses a body that gives one.
 

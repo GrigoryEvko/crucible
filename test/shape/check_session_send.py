@@ -2,9 +2,9 @@
 
 usage: check_session_send.py BUILD_DIR SOURCE_ROOT
 
-THE PROBE
+Probe
     test/shape/session_send.cpp holds five functions: three of the steady
-    loops, and two of THE COUNT OF THE STEPS.  send_on_a_local_handle
+    loops, and two of the count of the steps.  send_on_a_local_handle
     moves a handle into a local, sends each item through it, and moves it
     back.  send_through_a_pin pins the handle of the caller and sends each
     item through the pinned handle (HandleFactory::pin of
@@ -16,7 +16,7 @@ THE PROBE
     policy has no holder check, so the loop of the pin reads no slot of the
     thread either.
 
-THE COMPILE
+Compile
     The compile is the compile of REFERENCE_UNIT in the compile database of
     the build, with the probe as its source and an object in a scratch
     directory.  The probe then gets the level, the target and the hardening
@@ -29,7 +29,7 @@ THE COMPILE
     A build at a level below -O2 gives the exit SKIPPED, and so does a build
     with no REFERENCE_UNIT (a host that is not x86-64).
 
-THE STEADY PATH
+Steady path
     The walk of the rule codegen-shapes (assay.guard.engines.elf.codegen_shapes)
     reads the hot part and the cold part of each function.  The steady path
     of a loop is the loop of the hot part, when no branch goes into the cold
@@ -47,7 +47,7 @@ THE STEADY PATH
     the loop again and can change the slot, so the compiler does not split
     the compare out of the loop.
 
-THE COUNT OF THE STEPS
+Count of the steps
     A handle outside each loop keeps no count of its steps
     (handle_core::keeps_step_count of fixy/session/Handle.h).
     send_once_outside_a_loop sends one item from the first position of a
@@ -57,7 +57,7 @@ THE COUNT OF THE STEPS
     or a dec, or a lea with the displacement 1.  The check reads each
     instruction of the two functions, in the hot part and in the cold part.
 
-THE GUARD OF A SELF-MOVE
+Guard of a self-move
     The move assignment of a handle compares the address of its target with the
     address of its source (fixy/session/Handle.h).  A compare of an address of
     a handle is a cmp or a test of two 64-bit registers, one of which is the
@@ -66,7 +66,7 @@ THE GUARD OF A SELF-MOVE
     such compare.  The control move_through_two_names assigns a handle through
     two references, so its hot part must hold one.
 
-THE VERDICT
+Verdict
     send_on_a_local_handle must have at least one steady loop, and no refusal
     in it.  send_through_a_pin must have at least one steady loop, and no
     refusal and no read of the slot of the thread in it, so the check cannot
@@ -188,7 +188,7 @@ def reads_holder_slot(instruction) -> bool:
 
 
 def refusals_of(instruction, callee: str | None, admits_holder_slot: bool) -> list[str]:
-    """Return each refusal of one instruction of a steady loop (THE STEADY PATH).
+    """Return each refusal of one instruction of a steady loop (the steady path).
 
     A read of the slot of the thread is a refusal too when `admits_holder_slot` is False.
     """
@@ -238,7 +238,7 @@ def findings_of(code, admits_holder_slot: bool = True) -> tuple[int, list[str]]:
 
 
 def adds_of_one(code) -> list[str]:
-    """Return each instruction of a function, in each of its parts, that adds one (THE COUNT OF THE STEPS)."""
+    """Return each instruction of a function, in each of its parts, that adds one (the count of the steps)."""
     from assay.guard.engines.elf import codegen_shapes as shapes
     from assay.readers import objdump
 
@@ -258,7 +258,7 @@ def adds_of_one(code) -> list[str]:
 
 
 def address_compares(instructions: Sequence) -> list[str]:
-    """Return each compare of an address of a handle in the instructions (THE GUARD OF A SELF-MOVE).
+    """Return each compare of an address of a handle in the instructions (the guard of a self-move).
 
     A compare of an address is a cmp or a test of two 64-bit registers, one of which is the base of a store in the
     same instructions.  Complexity: linear in the instructions.
@@ -298,7 +298,7 @@ def hot_address_compares(code) -> list[str]:
 
 
 def verdict(codes: Mapping[str, object]) -> list[str]:
-    """Return the problems of the six functions of the probe (THE VERDICT)."""
+    """Return the problems of the six functions of the probe (the verdict)."""
     problems: list[str] = []
     for name in (LOCAL_FORM, PIN_FORM, CALLER_MEMORY_FORM, OUTSIDE_A_LOOP_FORM, IN_A_LOOP_FORM, GUARD_CONTROL):
         if name not in codes:

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The caller gives the checkpoint check of the pair below a bound of work
 // far past the operation limit of a constant evaluation.  The pair is a loop

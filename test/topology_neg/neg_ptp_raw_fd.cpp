@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A PTP handle takes the reader of the clock of its NIC.  A raw int does
 // not convert to a reader, so the number of a descriptor cannot name the

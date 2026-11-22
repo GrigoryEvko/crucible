@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // HS14 fixture 1 of 2 for fixy::mint_linear_view.
 //
@@ -9,7 +9,7 @@
 // so the refusal names the factory the call site wrote.
 //
 // Without CarrierDeclaresViewState on this factory,
-// `requires { mint_linear_view<Tag>(c) }` would answer TRUE for a
+// `requires { mint_linear_view<Tag>(c) }` would answer true for a
 // carrier that declares no predicate, and the refusal would come from
 // the inner call.
 //

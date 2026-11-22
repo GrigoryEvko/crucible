@@ -1,9 +1,9 @@
 """tracer — the trace of the system calls of one test, for its read set (assay.loop.readset).
 
-THE TRACE
+Trace
     The launcher starts the test in a child process (Tracer.start()).  Before
     the exec, the child installs a seccomp filter that returns
-    SECCOMP_RET_USER_NOTIF for the calls of THE CALLS.  The kernel then stops
+    SECCOMP_RET_USER_NOTIF for the calls of the calls.  The kernel then stops
     the caller of such a call, and it sends a notification to the launcher.
     The launcher reads the path from the memory of the caller with
     process_vm_readv, records it, and answers with
@@ -30,7 +30,7 @@ THE TRACE
         with no trace, and the trace is not complete.  An architecture with no
         row of ARCHITECTURES gives no tracer.
 
-THE CALLS
+Calls
     The filter stops these calls:
       * open, openat and openat2 with read access: an access mode that is not
         O_WRONLY, and no O_PATH.  The filter lets a write-only open of open and
@@ -51,20 +51,20 @@ THE CALLS
     launcher makes sure that the task waits for its answer at this time.  A
     task that ended between the stop and the read then adds no path.
 
-THE END
+End
     When the program of the test ends, the launcher answers the other
     processes of the test for at most GRACE_S.  It stops when the kernel tells
     that no process of the filter stays.  A process that stays longer makes
     the trace not complete, and the launcher then writes no read set.  When
     the launcher closes the listener, such a process gets ENOSYS for each call
-    of THE CALLS.
+    of the calls.
 
-THE COST
+Cost
     On 2026-10-13, a supervisor in C answered one stop in 2.88 us of CPU time
     and 3.64 us of wall time.  Each value is the median of 5 runs of 200,000
     stops.  A call that the filter lets go through cost 0.015 us.  The
     supervisor of this module answers in Python, and it stops only the calls
-    of THE CALLS.
+    of the calls.
 
 `guard selftest tests.loop.test_tracer` does a test of the module.
 """
@@ -88,7 +88,7 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-# The longest wait for the processes of a test after the end of its program, in seconds (THE END).
+# The longest wait for the processes of a test after the end of its program, in seconds (the end).
 GRACE_S = 5.0
 # The wait of one poll in that time, in milliseconds.
 POLL_MS = 100
@@ -130,7 +130,7 @@ AT_EMPTY_PATH = 0x1000
 
 
 class Shape(Value):
-    """The arguments of one call of THE CALLS.
+    """The arguments of one call of the calls.
 
     `directory` is the index of the argument with the directory descriptor, or -1 for the working directory.  `path`
     is the index of the argument with the path, or -1 for a call on a descriptor.  `flags` is the index of the
@@ -187,10 +187,10 @@ ARCHITECTURES = {
 
 
 def filter_program(architecture: Architecture) -> bytes:
-    """Return the classic BPF program of the filter of THE CALLS, as the bytes of its struct sock_filter array.
+    """Return the classic BPF program of the filter of the calls, as the bytes of its struct sock_filter array.
 
     The program lets each call of a different architecture go through.  For open and openat, it lets a write-only
-    open and an open with O_PATH go through.  It stops each other call of THE CALLS with RETURN_NOTIFY, and lets each
+    open and an open with O_PATH go through.  It stops each other call of the calls with RETURN_NOTIFY, and lets each
     other call go through.  Complexity: linear in the number of traced calls.
     """
     filtered = sorted(number for number, shape in architecture.calls.items() if shape.has_access_filter)
@@ -236,11 +236,11 @@ def signed(word: int) -> int:
 
 
 class Tracer:
-    """The supervisor of the trace of one run (THE TRACE).
+    """The supervisor of the trace of one run (the trace).
 
     make_tracer() gives a tracer for the architecture of the host.  The measure of assay.core.meter calls start(),
     serve() and finish(), in that sequence.  `events` gives the signature at its first stop of each kind and path, and
-    `is_complete` tells if the trace saw each call of THE CALLS.  `stops` counts the stops that the tracer answered.
+    `is_complete` tells if the trace saw each call of the calls.  `stops` counts the stops that the tracer answered.
     """
 
     def __init__(self, architecture: Architecture, roots: Sequence[str]) -> None:
@@ -291,7 +291,7 @@ class Tracer:
         return int(listener)
 
     def start(self, command: list[str], environment: Mapping[str, str]) -> int:
-        """Start the command in a child with the filter, and return its process ID (THE TRACE).
+        """Start the command in a child with the filter, and return its process ID (the trace).
 
         The child sets the default action of SIGINT, as assay.core.meter gives it to a command.  It sends the
         listener to this process over a socket pair, or a byte with no descriptor when the kernel refuses the filter.
@@ -346,7 +346,7 @@ class Tracer:
             return -1
 
     def serve(self, child: int) -> None:
-        """Answer each stop of the test until its program ends (THE TRACE).
+        """Answer each stop of the test until its program ends (the trace).
 
         The caller then waits for the child.  Complexity: one answer for each stop.
         """
@@ -366,7 +366,7 @@ class Tracer:
     def finish(self) -> None:
         """Answer the processes of the test that outlive its program, close the listener, and raise an exec error.
 
-        THE END gives the rules.
+        The end gives the rules.
 
         Raises:
             OSError: If the program of the test did not start
@@ -517,7 +517,7 @@ def make_tracer(roots: Sequence[str]) -> Tracer | None:
     """Return a tracer for the architecture of the host, or None for an architecture with no row of ARCHITECTURES.
 
     Args:
-        roots: The runtime roots of the test (assay.loop.readset, THE CLASSES OF A READ)
+        roots: The runtime roots of the test (assay.loop.readset, the classes of a read)
     """
     architecture = ARCHITECTURES.get(os.uname().machine)
     return None if architecture is None else Tracer(architecture, roots)

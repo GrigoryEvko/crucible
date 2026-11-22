@@ -366,7 +366,7 @@ void test_member_niche_payload() {
 
 // A payload of the base whose niche states that no door builds the empty
 // value: a Ref, which never holds the null pointer.  Only a type of the base
-// states the fact (THE CHECK OF THE STATEMENT of foundation/core/Choice.h),
+// states the fact (the check of the statement of foundation/core/Choice.h),
 // and the fixtures neg_core_option_niche_statement_* hold each refusal.  The
 // statement gives the Option the frame door that writes a new Ref in place,
 // and the storage of the Option does not test the payload in some and fill.

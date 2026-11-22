@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A root of the operator override tag is the authority to force a
 // quarantine state.  A background drain context does not own Init, so

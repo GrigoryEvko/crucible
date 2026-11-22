@@ -63,7 +63,7 @@ def planted_registry() -> rule_registry.Registry:
 
 
 def tier_cases(expect: testing.Expect) -> None:
-    """Hold the tier and the entry of an item: the first tier of ORDER of its covers (THE COVERS)."""
+    """Hold the tier and the entry of an item: the first tier of ORDER of its covers (the covers)."""
     both = plan.Item(plan.Kind.TEST, "one", "x", 0, (plan.Cover(NIGHTLY, "a"), plan.Cover(GATE, "b")))
     expect("an item gets the first tier of its covers", both.tier is GATE and both.entry == "loop land")
     manual = plan.Item(plan.Kind.PRESET, "one", "x", 0, (plan.Cover(tiers.Tier.MANUAL, "a person"),))

@@ -1,8 +1,8 @@
 """caps — the launcher crucible-caps, which runs a command with the capabilities of a BPF load and with no sudo.
 
-THE LAUNCHER
+Launcher
     LAUNCHER is a copy of setpriv of util-linux that the owner installs one
-    time (THE FIX).  root owns the file, and the group of the user can run
+    time (the fix).  root owns the file, and the group of the user can run
     it.  Its file capabilities put CAPABILITIES in the permitted and the
     effective sets.  wrapped() puts the launcher and its options before a
     command.  The launcher then adds CAPABILITIES to the inheritable and the
@@ -15,7 +15,7 @@ THE LAUNCHER
     A command that starts with setuid sudo loses the ambient set.  The
     launcher then comes after sudo in the words of a command.
 
-THE CHECK
+Check
     launcher_problem() tells why the launcher cannot run a command, or it
     gives an empty text when the launcher is ready.  The launcher is ready
     when its file exists, the user can run it, and getcap shows each name of
@@ -24,7 +24,7 @@ THE CHECK
     assay.core.proc.  A getcap that cannot start or that fails gives a
     problem and no exception.
 
-THE FIX
+Fix
     fix_line() gives one line with the problem and the two commands that
     install the launcher.  The commands give the file to the group of the
     user that runs the check.  The owner runs them one time.  No command of
@@ -42,9 +42,9 @@ from pathlib import Path
 from assay.core import proc
 
 LAUNCHER = Path("/usr/local/bin/crucible-caps")
-# The capabilities of the launcher, by their names in setpriv (THE LAUNCHER).
+# The capabilities of the launcher, by their names in setpriv (the launcher).
 CAPABILITIES = ("bpf", "perfmon", "dac_read_search")
-# The program that reads the file capabilities, and the file that the fix copies (THE CHECK, THE FIX).
+# The program that reads the file capabilities, and the file that the fix copies (the check, the fix).
 GETCAP = "getcap"
 SETPRIV = Path("/usr/bin/setpriv")
 # The prefix of a name in the text of getcap, and the sets that each capability needs: effective and permitted.
@@ -78,7 +78,7 @@ def held_capabilities(text: str) -> frozenset[str]:
 
 
 def launcher_problem(path: Path = LAUNCHER, getcap: str = GETCAP) -> str:
-    """Return why the launcher cannot run a command, or an empty text when it is ready (THE CHECK).
+    """Return why the launcher cannot run a command, or an empty text when it is ready (the check).
 
     Args:
         path: The file of the launcher
@@ -102,13 +102,13 @@ def launcher_problem(path: Path = LAUNCHER, getcap: str = GETCAP) -> str:
 
 
 def wrapped(words: Sequence[str], path: Path = LAUNCHER) -> list[str]:
-    """Return the words that run a command through the launcher, with CAPABILITIES in the ambient set (THE LAUNCHER)."""
+    """Return the words that run a command through the launcher, with CAPABILITIES in the ambient set (the launcher)."""
     raised = ",".join(f"+{name}" for name in CAPABILITIES)
     return [str(path), "--inh-caps", raised, "--ambient-caps", raised, "--", *words]
 
 
 def user_group() -> str:
-    """Return the name of the group of this process, or its number when the group has no name (THE FIX)."""
+    """Return the name of the group of this process, or its number when the group has no name (the fix)."""
     try:
         return grp.getgrgid(os.getgid()).gr_name
     except KeyError:
@@ -116,7 +116,7 @@ def user_group() -> str:
 
 
 def fix_line(problem: str, path: Path = LAUNCHER) -> str:
-    """Return one line with a problem of the launcher and the two commands that install it (THE FIX)."""
+    """Return one line with a problem of the launcher and the two commands that install it (the fix)."""
     names = ",".join(NAME_PREFIX + name for name in CAPABILITIES)
     return (
         f"{problem}.  Install the launcher one time: sudo install -o root -g {user_group()} -m 0750 {SETPRIV} {path}, "

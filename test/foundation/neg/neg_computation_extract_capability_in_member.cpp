@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // extract must not hand out a capability that a plain class holds in a
 // member.  The class names no capability in a template argument, and the
@@ -34,7 +34,7 @@ int main() {
     auto bg = fe::testing::bg();
     PureOverHolder pure = PureOverHolder::mint_computation(HoldsCapability{0, fe::mint_cap<fe::Effect::IO>(bg)});
 
-    // THE LOAD-BEARING LINE: must FAIL to compile.
+    // The load-bearing line: must fail to compile.
     auto escaped = std::move(pure).extract();
     (void)escaped;
     return 0;

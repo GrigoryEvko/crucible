@@ -106,7 +106,7 @@ void run_on_four_threads(Body const& body) {
 // Runs the same body on four threads at the same time, for a probe of the
 // memory orders, and returns after each thread joins.  The body shares a
 // plain payload that the orders of the probe publish, so it runs through the
-// raw probe of the thread door (THE RAW PROBE of fixy/os/ThreadTasks.h).
+// raw probe of the thread door (the raw probe of fixy/os/ThreadTasks.h).
 template <class Body>
 void probe_on_four_threads(Body const& body) {
     auto each = [&body]() noexcept { body(); };

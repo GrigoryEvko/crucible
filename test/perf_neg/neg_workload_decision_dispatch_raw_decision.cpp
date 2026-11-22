@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // dispatch_workload_decision takes a ProfiledDecision, which only a
 // profiler builds.  This fixture writes a decision by hand and passes

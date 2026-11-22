@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A parked token built from a byte would give a token back through
 // mint_permission_after_loan without a token ever being parked.

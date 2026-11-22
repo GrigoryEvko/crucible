@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_reliable_set is an alias of a reflection query, so no user
 // specialization makes a type that is no ReliableSet pass the first

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The fork lends each body a view under the brand of the parent, and the
 // body gate asks for exactly that view.  A body that asks for the view of

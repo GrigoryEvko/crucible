@@ -1,13 +1,13 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: passing an `alloc_class::Heap<T>` band to a function whose
 // `requires` clause demands `satisfies_v<Slot, AllocClassTag_v::Pool>`,
 // the production hot-path admission gate.
 //
-// THE LOAD-BEARING REJECTION FOR "no malloc on hot path"
+// The load-bearing rejection for "no malloc on hot path"
 // (CLAUDE.md §VIII).  PoolAllocator::slot_ptr_pinned returns the data
 // address of a slot in the Pool band.  The hot-path consumer requires Pool tier
-// (or stronger).  A heap band coming from jemalloc MUST be rejected at
+// (or stronger).  A heap band coming from jemalloc must be rejected at
 // the call boundary: its setup cost (50-200 ns) is two orders of
 // magnitude above the per-call shape budget.
 //
@@ -16,7 +16,7 @@
 //
 // satisfies_v<B, Required> = leq(Required, tier of B).  For Heap to
 // satisfy Pool, leq(Pool, Heap) would have to hold, but Pool is
-// STRONGER than Heap, so it is false and the requires clause rejects
+// stronger than Heap, so it is false and the requires clause rejects
 // the call.
 //
 // Concrete bug class this catches: a refactor that introduces a

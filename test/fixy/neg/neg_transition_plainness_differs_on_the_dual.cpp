@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A plain marker has a dual that no plain protocol holds.  The dual of a
 // well-formed protocol would then not be well-formed, so the coherence

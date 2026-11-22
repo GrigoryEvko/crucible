@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // run_beside_each calls one body on many threads while the continuation runs
 // on the calling thread.  A body that writes a plain int of the caller

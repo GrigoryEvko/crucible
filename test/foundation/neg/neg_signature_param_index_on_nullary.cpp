@@ -8,7 +8,7 @@
 // an off-by-one in the bound would admit index 0 here while still
 // rejecting index 2 there.
 //
-// VIOLATION: a TU asks a nullary function for its first parameter.
+// Violation: a TU asks a nullary function for its first parameter.
 //
 // Expected diagnostic: the bound constraint on param_type_t fails.
 

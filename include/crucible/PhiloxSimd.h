@@ -14,8 +14,8 @@
 // shifting, which is what the scalar routine's high-multiply does.
 //
 // The vectors of the batch are vectors of the target, so the batch and its
-// function are in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
-// NAMESPACE of foundation/Platform.h).  Two units of two targets keep their
+// function are in the inline namespace CRUCIBLE_SIMD_TARGET (the target
+// namespace of foundation/Platform.h).  Two units of two targets keep their
 // own body.
 
 #include <fixy/Core.h>

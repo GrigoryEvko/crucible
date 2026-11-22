@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A branded source lends a view of its own brand.  A body that asks for
 // the erased view asks for a proof about any region of the tag, which the

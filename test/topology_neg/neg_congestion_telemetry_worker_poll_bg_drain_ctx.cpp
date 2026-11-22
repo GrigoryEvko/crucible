@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A poll reads each socket through getsockopt.  The background drain
 // context passes the background half of the poll gate and carries no IO,

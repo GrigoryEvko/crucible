@@ -10,7 +10,7 @@
 //                                 Fields: the first field in the low bits,
 //                                 and each later field above the one before
 //
-// THE LAYOUT
+// Layout
 //   The fields start at bit 0, in the order of Fields, with no gap.  A field
 //   has 1 to 64 bits, and the widths sum to at most the bits of Word.  Each
 //   tag names one field.  A layout that breaks a rule does not compile, and
@@ -18,7 +18,7 @@
 //   the last field is zero: from_bits refuses a word with such a bit, and with
 //   refuses a value with a bit past the width of its field.
 //
-// THE OPERATIONS
+// Operations
 //   PackedWord{}            each field zero
 //   from_bits(word)         the packed word of a word, such as the word of a
 //                           record from a file, or no value when the word

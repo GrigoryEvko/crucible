@@ -6,14 +6,14 @@
 // two readers.  It refuses a file when the two readers give different rows or
 // a different first problem.
 //
-// THE RESULT
+// Result
 //     parse() gives each row of a file: its line from 1, the words of its head
 //     and the value of each cell.  A file that does not obey the grammar gives
 //     no row, and the line and the message of its first problem.  The line of
 //     that problem is the line that the Python reader gives, and the message
 //     can be different.
 //
-// THE SEQUENCE OF THE CHECKS
+// Sequence of the checks
 //     The Python reader decodes all the bytes of the file as UTF-8 before it
 //     reads a line.  A byte that is not part of a UTF-8 sequence is then the
 //     first problem.  A problem of the grammar on a line before that byte does
@@ -21,7 +21,7 @@
 //     problem at its last line.  Then each line from line 1 gets the checks of
 //     the grammar.
 //
-// THE BYTES
+// Bytes
 //     This reader reads bytes, and the Python reader reads code points.  The
 //     two give the same result: each byte that the grammar examines is ASCII,
 //     and no byte of a UTF-8 sequence of more than one byte is ASCII.
@@ -67,8 +67,8 @@ constexpr std::string_view kEmptyCell = "-";
 // Whether a byte divides two words: a space or a horizontal tab, and no other byte.
 inline bool is_divider(char character) { return character == ' ' || character == '\t'; }
 
-// Return the line from 1 of the byte at INDEX: the line breaks before it, plus 1.  A line more than kMaxLine gives
-// kMaxLine.  Complexity: linear in INDEX.
+// Return the line from 1 of the byte at index: the line breaks before it, plus 1.  A line more than kMaxLine gives
+// kMaxLine.  Complexity: linear in index.
 inline int line_of(std::string_view bytes, std::size_t index) {
     std::size_t breaks = 0;
     for (std::size_t position = 0; position < index && position < bytes.size(); ++position) {
@@ -186,7 +186,7 @@ inline std::vector<std::string_view> split_row(std::string_view text) {
     return parts;
 }
 
-// Write the value of one cell into VALUE: each escape replaced by its byte, and "" for the cell "-".  Returns
+// Write the value of one cell into value: each escape replaced by its byte, and "" for the cell "-".  Returns
 // nullptr, or the message of the problem of the cell.  Complexity: linear in the length of the cell.
 inline const char* unescape(std::string_view text, std::string& value) {
     if (text.empty()) return "a cell is empty.  Write - for an empty cell";
@@ -229,7 +229,7 @@ inline Rows& refuse(Rows& result, int line, std::string message) {
 }
 
 // Read one line of a file: no row for a blank line or a comment, one row for each other line.  Returns false after
-// a problem, which refuse() keeps in RESULT.  Complexity: linear in the length of the line.
+// a problem, which refuse() keeps in result.  Complexity: linear in the length of the line.
 inline bool read_line(std::string_view raw, int line, Rows& result) {
     if (raw.find('\r') != kNone) {
         refuse(result, line, "the line holds a carriage return.  Use a line feed only");
@@ -265,8 +265,8 @@ inline bool read_line(std::string_view raw, int line, Rows& result) {
 
 }  // namespace detail
 
-// Read the bytes of one file: the grammar of utils/assay/core/rows.py, and the UTF-8 check (THE SEQUENCE OF THE
-// CHECKS).  Complexity: linear in the number of bytes.
+// Read the bytes of one file: the grammar of utils/assay/core/rows.py, and the UTF-8 check (the sequence of the
+// checks).  Complexity: linear in the number of bytes.
 inline Rows parse(std::string_view bytes) {
     Rows result;
     const std::size_t bad = detail::first_bad_utf8(bytes);
@@ -294,9 +294,9 @@ inline Rows parse(std::string_view bytes) {
     return result;
 }
 
-// Read a number: one or more ASCII digits, at most MAXIMUM.  Zeros before the first other digit are permitted.  Each
+// Read a number: one or more ASCII digits, at most maximum.  Zeros before the first other digit are permitted.  Each
 // step does a check for overflow before it adds a digit, and no step causes an overflow.  Returns false for an empty
-// text, a character that is not an ASCII digit, and a value more than MAXIMUM.  Complexity: linear in the length of
+// text, a character that is not an ASCII digit, and a value more than maximum.  Complexity: linear in the length of
 // the text.
 inline bool number(std::string_view text, std::uint64_t maximum, std::uint64_t& value) {
     if (text.empty()) return false;
@@ -315,7 +315,7 @@ inline bool number(std::string_view text, std::uint64_t maximum, std::uint64_t& 
 // The keys of the rows of one kind, for a schema that refuses a second row with the same key.
 class KeyLines {
 public:
-    // Record KEY at LINE.  Returns 0, or the line of the first row with the same key, which the call does not
+    // Record key at line.  Returns 0, or the line of the first row with the same key, which the call does not
     // replace.
     int add(std::string key, int line) {
         const auto [entry, is_new] = lines_.emplace(std::move(key), line);

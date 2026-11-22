@@ -1,6 +1,6 @@
 """digests — the SHA-256 of a file, kept with the stat fields of the file.  An unchanged file then costs one stat.
 
-THE MEMO
+The memo
     A DigestMemo gives the SHA-256 of the bytes of a file.  It keeps each
     hash with the stat fields of the file at the time of the hash
     (stat_fields()).  These fields are the device, the inode, the length,
@@ -16,7 +16,7 @@ THE MEMO
     that changed in the settle period gets its hash, and the next call reads
     it again.
 
-THE CALL AND THE KEPT HASHES
+The call and the kept hashes
     The answers of one call stay until forget().  A caller that reads the
     same file before and after a step, such as a run of the tests, calls
     forget() between them.  Each answer after forget() then compares the
@@ -39,9 +39,9 @@ import os
 import stat
 from collections.abc import Mapping, Sequence
 
-# A file with a change in this period before its hash gets no kept hash (THE MEMO).
+# A file with a change in this period before its hash gets no kept hash (the memo).
 SETTLE_NS = 50_000_000
-# The answers for a path that names no regular file (THE CALL AND THE KEPT HASHES).
+# The answers for a path that names no regular file (the call and the kept hashes).
 MISSING = "missing"
 DIRECTORY = "directory"
 UNREADABLE = "unreadable"
@@ -52,7 +52,7 @@ type Entry = list[int | str]
 
 
 def stat_fields(status: os.stat_result) -> list[int]:
-    """Return the fields of a stat result that change when the file changes (THE MEMO)."""
+    """Return the fields of a stat result that change when the file changes (the memo)."""
     return [status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns]
 
 
@@ -64,14 +64,14 @@ def is_entry(value: object) -> bool:
 
 
 class DigestMemo:
-    """The SHA-256 of each file that a caller reads, with the kept hashes of an earlier call (THE MEMO)."""
+    """The SHA-256 of each file that a caller reads, with the kept hashes of an earlier call (the memo)."""
 
     __slots__ = ("_answers", "_kept", "_settle_ns", "_used")
 
     def __init__(self, kept: Mapping[str, Sequence[object]] | None = None, settle_ns: int = SETTLE_NS) -> None:
         """Start with the kept entries of an earlier call (entries()), or with none.  An entry of a different shape goes.
 
-        `settle_ns` is the settle period of THE MEMO.  A test gives a period that lets it keep a new file.
+        `settle_ns` is the settle period of the memo.  A test gives a period that lets it keep a new file.
         """
         self._settle_ns = settle_ns
         self._kept: dict[str, Entry] = {}
@@ -129,5 +129,5 @@ class DigestMemo:
         self._answers.clear()
 
     def entries(self) -> dict[str, Entry]:
-        """Return the kept entry of each file of this call, for the next call (THE CALL AND THE KEPT HASHES)."""
+        """Return the kept entry of each file of this call, for the next call (the call and the kept hashes)."""
         return dict(self._used)

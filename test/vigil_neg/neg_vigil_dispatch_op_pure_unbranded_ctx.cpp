@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Vigil::dispatch_op_pure asks for the context of the Vigil's producer
 // claim.  The unbranded foreground context has the empty row too, but it

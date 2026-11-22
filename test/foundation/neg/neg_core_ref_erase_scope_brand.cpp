@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A Ref of a branded scope names the brand of the scope, and the rule
 // brand-escape refuses each value of that brand that outlives the scope.  A

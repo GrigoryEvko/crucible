@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_external_slot is the one door of an ExternalSlotId: it reads the flag
 // of the slot in the plan.  The constructor from a SlotId is private, so no

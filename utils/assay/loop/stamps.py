@@ -27,7 +27,7 @@ files under the directory OUT:
                   file, and the enforce mode of its include kinds.  The stamp
                   of a file of the mode error then gives the word RULE:KIND of
                   each count row above zero of its directory in the ledger of
-                  each rule of COUNTED_LINE_RULES, sorted (THE COUNTED LINES
+                  each rule of COUNTED_LINE_RULES, sorted (the counted lines
                   of utils/tools/quarantine/plugin.cpp).  The plugin
                   names the mode stamp of each file with a finding in the
                   dependencies of the unit.  So a change
@@ -65,7 +65,7 @@ from pathlib import Path
 from assay.core import rows as rows_grammar
 from assay.core import ruletable as layer_rules
 
-# The rules whose lines are counted lines (THE COUNTED LINES of utils/tools/quarantine/plugin.cpp): the rules of the
+# The rules whose lines are counted lines (the counted lines of utils/tools/quarantine/plugin.cpp): the rules of the
 # family linear.  kCountedLineRules of utils/tools/quarantine/plugin.h names the same rules, and the self-test compares
 # the two lists.  A rule with a count ledger joins with one row in each list.
 COUNTED_LINE_RULES = (

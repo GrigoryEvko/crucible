@@ -100,7 +100,7 @@ static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::s
               "a repeated modifier names nothing new.");
 static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, int, mmap::share::Private>, "a prot tag with no bits is refused.");
 
-// THE SOURCE OF A MAP: the rights of the handle of a file, one form for
+// The source of a map: the rights of the handle of a file, one form for
 // each source.
 using os::RightSet;
 static_assert(mmap::file_map_rights<mmap::prot::ReadOnly, mmap::share::Shared>() == RightSet::map);

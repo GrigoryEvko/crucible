@@ -3,7 +3,7 @@
 // The end of the stream of a channel: why a receive gives no item, and the
 // count of the live producer handles that tells the end.
 //
-// THE END OF THE STREAM
+// End of the stream
 //     A channel is closed when its last live producer handle ended with its
 //     token and no producer handle started after that end.  A fresh channel
 //     is open, because no producer ended yet.  A handle that starts opens the
@@ -26,7 +26,7 @@
 //     consumer whose producers end with no last message still ends, and the
 //     join of its thread ends.
 //
-// THE WORD OF THE ROSTER
+// Word of the roster
 //     ProducerRoster holds one word: the count of the live producer handles
 //     in the low 63 bits, and the closed bit at the top.  The closed bit is
 //     set only with a count of zero.  Each change of the word is one
@@ -47,7 +47,7 @@
 
 namespace fixy::concurrent {
 
-// Why a receive gives no item (THE END OF THE STREAM).
+// Why a receive gives no item (the end of the stream).
 enum class NoItem : std::uint8_t {
     // The ring is empty, and a producer can still push.
     Empty = 0,
@@ -55,8 +55,8 @@ enum class NoItem : std::uint8_t {
     Closed = 1,
 };
 
-// The live producer handles of one channel, and the end of its stream (THE
-// WORD OF THE ROSTER).  Each producer handle of the channel writes it, and
+// The live producer handles of one channel, and the end of its stream (the
+// word of the roster).  Each producer handle of the channel writes it, and
 // the consumer reads it.
 class ProducerRoster : ::foundation::Pinned<ProducerRoster> {
 public:

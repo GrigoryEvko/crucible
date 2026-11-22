@@ -2,7 +2,7 @@
 
 usage: loop heal BUILD_DIR NAME
 
-THE STALE COMPILER
+Stale compiler
     CMake keeps the compiler of the first configure of a build directory.
     A toolchain file of the tree puts its compiler in the cache with no
     FORCE, so a new default prefix, such as the prefix of a new patch of
@@ -33,7 +33,7 @@ THE STALE COMPILER
                       heals one time, and its configure then records it.
     A build directory with no reply of the cache gives no stale compiler.
 
-THE OUTPUT
+Output
     When a compiler is stale, the command prints one line that names the
     paths of the cache and of the toolchain file, with NAME, the name of
     the configuration, at its start.  Else it prints nothing.  A RECORDED
@@ -43,7 +43,7 @@ THE OUTPUT
     this command of the warm tree before it builds a configuration, so the
     rules of the commit decide, and it configures a build directory with a
     stale compiler again with `cmake --preset NAME -B BUILD_DIR --fresh`
-    (THE COMPILER HEAL of assay.loop.gate).  Outside the gate,
+    (the compiler heal of assay.loop.gate).  Outside the gate,
     cmake/StaleCompiler.cmake refuses such a cache in each configure.
 
 Exit status: 0, or 2 on a usage error.
@@ -59,7 +59,7 @@ from assay.readers import cmake as cmake_reader
 from assay.setup import gcc as patched_gcc
 
 # The toolchain files of the tree, each with the cross target of its compilers, or None for the compilers of the
-# host, and the cache entries of the compilers that the command compares (THE STALE COMPILER).
+# host, and the cache entries of the compilers that the command compares (the stale compiler).
 TOOLCHAIN_TARGETS: dict[str, str | None] = {
     "Toolchain-gcc16.cmake": None,
     "Toolchain-gcc16-aarch64.cmake": "aarch64-linux-gnu",
@@ -77,7 +77,7 @@ FRESH_WORD = "--fresh"
 
 
 class Staleness(enum.Enum):
-    """The case of a stale compiler (THE STALE COMPILER)."""
+    """The case of a stale compiler (the stale compiler)."""
 
     CACHED = "cached"
     RECORDED = "recorded"
@@ -86,7 +86,7 @@ class Staleness(enum.Enum):
 
 @dataclass(frozen=True, slots=True)
 class StaleCompiler:
-    """A compiler of the cache of a build directory that its toolchain file does not resolve (THE STALE COMPILER).
+    """A compiler of the cache of a build directory that its toolchain file does not resolve (the stale compiler).
 
     `entry` is the cache entry of the compiler, and `kind` the case.  `cached` is the path of the cache for CACHED,
     the recorded real path for RECORDED, and an empty text for UNRECORDED, and `cached_real` is its real path.
@@ -118,7 +118,7 @@ def resolved_compilers(toolchain_file: str) -> dict[str, Path]:
 
 
 def stale_compiler(entry: str, entries: dict[str, cmake_reader.CacheEntry], compiler: Path) -> StaleCompiler | None:
-    """Return the stale compiler of one entry of COMPILER_ENTRIES, or None (THE STALE COMPILER)."""
+    """Return the stale compiler of one entry of COMPILER_ENTRIES, or None (the stale compiler)."""
     resolved_real = os.path.realpath(compiler)
     cached = entries.get(entry)
     if cached is not None and PurePosixPath(cached.value).name == compiler.name:
@@ -136,7 +136,7 @@ def stale_compiler(entry: str, entries: dict[str, cmake_reader.CacheEntry], comp
 def stale_compilers(build: Path) -> tuple[StaleCompiler, ...]:
     """Return each compiler of the cache of a build directory that its toolchain file does not resolve.
 
-    THE STALE COMPILER gives the rules.  Complexity: one read of the reply of the cache.
+    The section on a stale compiler gives the rules.  Complexity: one read of the reply of the cache.
     """
     try:
         entries = cmake_reader.cache(build)
@@ -176,7 +176,7 @@ def heal_line(name: str, build: Path, stale: tuple[StaleCompiler, ...]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    """Print the line of the stale compilers of a build directory, or nothing (THE OUTPUT).
+    """Print the line of the stale compilers of a build directory, or nothing (the output).
 
     Args:
         argv: The words after `loop heal`

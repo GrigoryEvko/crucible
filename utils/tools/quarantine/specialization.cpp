@@ -6,14 +6,14 @@
 // specialization-home closes that route for each template of the tree, and
 // one mark opens a template that the design extends from each file.
 //
-// THE TEMPLATES
+// Templates
 //     Each class template, variable template and function template whose
 //     home stands in a file of the source root or of the build directory.  A
 //     template of a header outside the root, such as std::tuple_size, is no
 //     template of the rule, and neither is a template of a host file or of a
 //     kernel file.  A template that a home row of the rule table governs is a
-//     template of the rule home (home.cpp, THE ROWS), and the rule home gives
-//     this rule each other template (home.cpp, THE TEMPLATES WITH NO ROW).
+//     template of the rule home (home.cpp, the rows), and the rule home gives
+//     this rule each other template (home.cpp, the templates with no row).
 //     An explicit specialization of a function template can give the function
 //     a different body, such as one with no bounds check, and it is a friend
 //     of each class that befriends the template.  So a function template
@@ -21,25 +21,25 @@
 //     governs it, and also with a marker or a brand that the file of the
 //     specialization defines.
 //
-// THE HOME
+// Home
 //     The home of a template is the file that defines it, or the file of its
 //     first declaration when the unit does not define it.  The check file of a
 //     header, test/layer/checks/LAYER/PATH.cpp, stands where
-//     include/LAYER/PATH.h stands (home.cpp, THE PLACE).
+//     include/LAYER/PATH.h stands (home.cpp, the place).
 //
-// THE SITES
-//     The family home reads the sites of a template (home.cpp, THE SITES):
+// Sites
+//     The family home reads the sites of a template (home.cpp, the sites):
 //     each explicit and each partial specialization on its lists, each
 //     explicit specialization of a member of an implicit instantiation, and
 //     each explicit specialization of a function template.  The place of a
 //     site is the expansion point of its location.
 //
-// THE OPEN MARK
+// Open mark
 //     A class template or a variable template that the design opens to each
 //     file carries the P3394 annotation foundation::open_extension of
 //     include/foundation/OpenExtension.h on its primary declaration, with its
 //     reason.  A coherent specialization of a marked template is no finding
-//     (THE COHERENCE).  The mark does not open a function template: a
+//     (see the coherence below).  The mark does not open a function template: a
 //     specialization for a marker of the file would still be a friend of each
 //     class that befriends the template, and a type extends a function
 //     through an overload beside its own definition.  GCC
@@ -50,7 +50,7 @@
 //     that no ledger row admits.  The ledger is the roster of the open
 //     templates, and a mark that a unit adds gives a record with no row.
 //
-// THE COHERENCE
+// Coherence
 //     The open mark opens a template to each file for the types of that file
 //     only, as the orphan rule of Rust does.  A marked template gives each
 //     argument type its protocol, such as the key of the niche of a type.  A
@@ -71,7 +71,7 @@
 //     specializes a marked template for a type of a different file is an
 //     orphan too.
 //
-// THE FORWARD DECLARATION
+// Forward declaration
 //     A unit can declare a template before the header that declares it.  The
 //     plugin gets no event for the declaration in the header.  GCC moves the
 //     place of a class template to its definition, so a forward declaration
@@ -89,18 +89,18 @@
 //     declares first is a finding of the rule base-namespace too
 //     (namespace.cpp).
 //
-// THE KINDS
+// Kinds
 //     specialization     a site outside the home of a template with no open
 //                        mark.  Its entity is the template
 //     orphan             a site outside the home of a template with the open
-//                        mark that is not coherent (THE COHERENCE).  Its
+//                        mark that is not coherent (see the coherence above).  Its
 //                        entity is the template
 //     forward-declaration
 //                        a variable template that a unit declares with
 //                        extern before its definition, at that declaration
 //     open-extension     a record: a template with the open mark, at its home
 //
-// THE ERRORS
+// Errors
 //     Each finding of the first three kinds is a compile error in each build
 //     and each mode (is_each_mode_kind of plugin.h), so a forged
 //     specialization does not compile.  The record open-extension is no
@@ -112,7 +112,7 @@
 //     and the rule quarantine counts the opted-out finding with the reason of
 //     the region.
 //
-// THE ACTIVATION
+// Activation
 //     The argument specialization-home=on turns on the rule (plugin.cpp), and
 //     Quarantine.cmake gives it to each compile of the tree.  A compile of a
 //     plant of a different rule has no such argument, so its report holds no
@@ -124,7 +124,7 @@ namespace crucible_plugin {
 
 namespace {
 
-// The facts of the home of one template (THE HOME): whether the rule reads the
+// The facts of the home of one template (see the home above): whether the rule reads the
 // template, whether the open mark opens it, whether it is a function
 // template, the path that a site compares, and the qualified name of the
 // template.
@@ -136,7 +136,7 @@ struct TemplateHome {
     std::string entity;
 };
 
-// The facts of a template that the error of a site gives (THE ERRORS).
+// The facts of a template that the error of a site gives (see the errors above).
 struct SiteHome {
     std::string path;
     bool is_function = false;
@@ -149,7 +149,7 @@ bool is_active = false;
 std::unordered_map<tree, TemplateHome> homes_by_template;
 
 // The home of each template of the rule by its qualified name, for the error
-// of a site (THE ERRORS).  No tree keys the map, so it stays for the unit.
+// of a site (see the errors above).  No tree keys the map, so it stays for the unit.
 std::unordered_map<std::string, SiteHome> site_homes_by_entity;
 
 struct Names {
@@ -164,7 +164,7 @@ void make_names() {
     }
 }
 
-// True when the primary template GENERAL carries the open mark, an annotation
+// True when the primary template general carries the open mark, an annotation
 // of the class foundation::open_extension: on the pattern class of a class
 // template, or on the pattern variable of a variable template.  Complexity:
 // linear in the attributes.
@@ -177,15 +177,15 @@ bool carries_open_mark(tree general) {
     return carries_base_annotation(attributes, names.open_extension, NULL_TREE);
 }
 
-// True when GENERAL is a variable template that a declaration with extern
-// introduced before its definition (THE FORWARD DECLARATION).
+// True when general is a variable template that a declaration with extern
+// introduced before its definition (see the forward declaration above).
 bool is_forward_declared_variable(tree general) {
     tree result = DECL_TEMPLATE_RESULT(general);
     return result != NULL_TREE && VAR_P(result) && DECL_LANG_SPECIFIC(result) != nullptr && DECL_THIS_EXTERN(result)
         && DECL_INITIAL(result) != NULL_TREE;
 }
 
-// The facts of the home of GENERAL, a most general template, made and kept on
+// The facts of the home of general, a most general template, made and kept on
 // the first request.  The first request also gives the record open-extension
 // of a marked template and the finding forward-declaration, at the home.
 // Complexity: O(depth of the scopes and the attributes) on the first request.
@@ -221,8 +221,8 @@ tree general_of(tree template_decl) {
     return general != NULL_TREE ? general : template_decl;
 }
 
-// The path that defines the head of the template argument ARGUMENT, or an
-// empty path for an argument that no file owns (THE COHERENCE).
+// The path that defines the head of the template argument argument, or an
+// empty path for an argument that no file owns (see the coherence above).
 std::string head_path(tree argument) {
     if (argument == NULL_TREE) {
         return {};
@@ -267,7 +267,7 @@ std::string head_path(tree argument) {
     return file != nullptr ? read_as(file->relative) : std::string{};
 }
 
-// True when the file PATH owns ARGUMENT, or each element of a pack.
+// True when the file path owns argument, or each element of a pack.
 bool owns_argument(tree argument, const std::string& path) {
     if (argument != NULL_TREE && ARGUMENT_PACK_P(argument)) {
         tree elements = ARGUMENT_PACK_ARGS(argument);
@@ -281,8 +281,8 @@ bool owns_argument(tree argument, const std::string& path) {
     return head_path(argument) == path;
 }
 
-// True when the file PATH owns each top-level argument of ARGUMENTS (THE
-// COHERENCE).  A site with no argument is no coherent site.  Complexity:
+// True when the file path owns each top-level argument of arguments (see
+// the coherence above).  A site with no argument is no coherent site.  Complexity:
 // linear in the arguments and the depth of their scopes.
 bool owns_arguments(tree arguments, const std::string& path) {
     tree inner = arguments != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(arguments) : NULL_TREE;

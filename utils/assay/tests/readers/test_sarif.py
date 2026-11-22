@@ -380,7 +380,7 @@ def _internal_error_log(level: str) -> dict[str, object]:
     """Return a log with one error and one notification of the level `level`, in the shape of an internal error.
 
     GCC 16.2.1 wrote this shape when SIGSEGV stopped cc1plus in a constant
-    evaluation with no earlier error (THE INTERNAL COMPILER ERROR).
+    evaluation with no earlier error (the internal compiler error).
     """
     notification = {
         "locations": [_location("/w/probe.cpp", 3, 64, "    total += index % 7;")],

@@ -8,7 +8,7 @@
 // without a constructor call, so the refusal is the constraint's and
 // not the passkey's.
 //
-// VIOLATION: a TU mints a lookalike context with a real key.
+// Violation: a TU mints a lookalike context with a real key.
 //
 // Expected diagnostic: no matching call to mint_context, with the
 // IsContext atom of CanMintContext unsatisfied.

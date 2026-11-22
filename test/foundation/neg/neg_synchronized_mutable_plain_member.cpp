@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A const door of a class that states synchronized{} writes only mutable
 // members, so the check counts a const door as safe.  A mutable member that two
 // threads cannot write would then race through the const door bump, so the
-// check refuses the member (THE DOORS OF A SYNCHRONIZED CLASS of
+// check refuses the member (the doors of a synchronized class of
 // foundation/Transfer.h).
 //
 // Expected diagnostic: a private member is mutable and two threads cannot

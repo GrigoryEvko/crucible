@@ -1,10 +1,10 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The key of the doors of a class states thread_bound{} and not_shareable{}:
 // it belongs to the thread that made it.  A body of run_joined runs on another
 // thread, so the door refuses a body that borrows the key of the owner, and a
-// second thread cannot call a door of the class with that key (THE PROOF OF A
-// DOOR of foundation/Transfer.h).
+// second thread cannot call a door of the class with that key (the proof of a
+// door of foundation/Transfer.h).
 //
 // Expected diagnostic: the verdict of the door names the capture of the key.
 

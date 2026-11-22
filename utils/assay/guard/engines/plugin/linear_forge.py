@@ -1,6 +1,6 @@
 """linear-forge — no route of bytes builds a sealed value.
 
-THE RULE
+Rule
     A sealed type is a linear type, or a type that the checked lifetime start
     of include/foundation/Lifetime.h refuses: it carries the annotation
     no_start_over_bytes of include/foundation/ByteSeal.h, holds a part that
@@ -9,7 +9,7 @@ THE RULE
     byte copy into a class with an assignment that is not trivial.  The rule
     owners refuses std::start_lifetime_as outside foundation/Lifetime.h.  The
     quarantine plugin of utils/tools/quarantine/ reads the two routes that stay
-    (linear.cpp, THE SHAPES):
+    (linear.cpp, the shapes):
       sealed-union       a union that holds a sealed type.  A read of the
                          inactive member forges a value (probe E3 of
                          misc/12_10_2026_linear.md)
@@ -17,7 +17,7 @@ THE RULE
                          lifetime start admits, because neither the class nor a
                          part of it carries no_start_over_bytes
 
-THE LEDGER, THE WRITE
+Ledger, write
     assay.guard.engines.plugin.linear_family.
 
 Usage
@@ -52,5 +52,5 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family)."""
+    """Write the ledger of the rule from the lines of the builds of the request (the write of linear_family)."""
     return linear_family.write(rule, request)

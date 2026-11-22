@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A recorded session over a pole of a channel steps through the read of the
 // pole table of its channel, as the session that it wraps does.  The recorder

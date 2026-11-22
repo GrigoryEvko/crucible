@@ -6,13 +6,13 @@ Run `loop gauge` before each stage gate.  It takes minutes, so no test runs it.
 clean build and one test run with no compiler cache
 (utils/assay/loop/gauge_cold.py).
 
-THE MEASUREMENT
+Measurement
     1. The gauge clones the source tree at its HEAD commit into
        WORK_DIR/tree, with `git clone --shared`.  A change in the work tree of
        the source is not in the copy, and the report gives the count of such
        files.  The gauge writes nothing into the source tree.  With no
        --work-dir, WORK_DIR is a directory of the process in the work root of
-       assay.core.cache (THE WORK ROOT of that module).  That root is not in
+       assay.core.cache (the work root of that module).  That root is not in
        a checkout, and the copy adds no second CLAUDE.md in the repository.
     2. It configures WORK_DIR/tree/build with the preset, and it builds the
        tree and runs each test one time, to make the build directory and the
@@ -22,7 +22,7 @@ THE MEASUREMENT
        ccache of the user.  Only the warm build runs with CCACHE_DISABLE
        (runs_without_ccache()).  Each compile of the copy then runs the
        compiler, and its record holds its instruction count (assay.core.meter,
-       A COMPILE THROUGH CCACHE).  A ccache hit in a new build directory has no
+       a compile through ccache).  A ccache hit in a new build directory has no
        earlier record and keeps no count.  The rule instruction-total does not
        apply to a build with such a hit.  The test steps keep ccache, because
        ccache_relocation_self_test gives a failure when its run gets
@@ -32,7 +32,7 @@ THE MEASUREMENT
        foundation::detail::breakpoint() in include/foundation/Platform.h.  A
        touch or a comment does not change the preprocessed text, so ccache and
        the store of the fixtures would give each result again.  The parse
-       tree of utils/assay/readers/tsast.py finds the body (THE EDIT).  Then
+       tree of utils/assay/readers/tsast.py finds the body (the edit).  Then
        the run builds the tree and runs each test with ctest.
     4. After the runs, it measures a build with nothing to do and a second
        configure (closing_steps()).  Then it runs the rule reconfigure-noop
@@ -48,12 +48,12 @@ THE MEASUREMENT
 
     Each step gives its wall time, its CPU time from getrusage, the share of
     the host CPU time that other processes used (utils/assay/loop/history.py,
-    THE HOST LOAD), and the user instructions of each process of the step,
+    the host load), and the user instructions of each process of the step,
     from one counter that each process inherits (utils/assay/core/meter.py,
-    THE INSTRUCTION COUNT).  The rule edit-build-instructions judges the
-    median over the runs (THE MEASURED RULE).
+    the instruction count).  The rule edit-build-instructions judges the
+    median over the runs (the measured rule).
 
-THE EDIT
+Edit
     The edit writes the shape that the .clang-format of the tree gives.  The
     statement goes on a line of its own, with the indent of the line of the
     definition and one more indent step.  When the body is on one line, each
@@ -66,18 +66,18 @@ THE EDIT
     With no install of the pin, the gauge prints a note, and these tests do
     not apply.
 
-THE TESTS WITH A FAILURE
+Tests with a failure
     Each test step gives ctest the option --output-junit, with a report in
     the directory of the logs.  When the status of a step is not 0, the gauge
     immediately prints FAILED and the status of the step.  For a test step,
     it also prints the name of each test with the status FAIL in the report.
     Then it prints the name of each test with the status NOTRUN, which ctest
-    did not start (assay.readers.ctest, THE STATUS OF A TEST).  A test with
+    did not start (assay.readers.ctest, the status of a test).  A test with
     the status SKIPPED gave its own skip, and it is no failure.  At the end,
     the gauge prints each such step again, and it exits with 1.  A failure in
     the warm test run is a failure of the commit before the edit.
 
-THE MEASURED RULE
+Measured rule
     edit-build-instructions judges the median of the instruction counts of
     the edit builds.  That count does not change with the load of the host.
     When an edit build has no exact instruction count, the gauge judges
@@ -87,14 +87,14 @@ THE MEASURED RULE
       * the instruction count of each test run, and its median.  A test that
         spins runs more instructions on a busy host
       * the wall time of each configure step and of its plugin build
-        (utils/assay/loop/history.py, THE PLUGIN BUILD)
+        (utils/assay/loop/history.py, the plugin build)
       * the wall time of the build with nothing to do
       * the peak concurrent memory of each build, and its median for the
         edit builds.
     For each build step, the report also gives the critical path
-    (utils/assay/loop/history.py, THE CRITICAL PATH).
+    (utils/assay/loop/history.py, the critical path).
 
-THE REPORT
+Report
     The report prints each finding in the format of utils/assay/core/report.py,
     at the path of the edited header.  The rule gives no warning, so
     --warnings-dir writes no file.  With --record FILE, the gauge appends the
@@ -173,9 +173,9 @@ NOT_RUNNABLE = 3
 # The rule that configures the build again and refuses a compile after it, and the master of the copy that runs it.
 RECONFIGURE_RULE = "reconfigure-noop"
 GUARD_MASTER = Path("utils/bin/guard")
-# The steps that configure the copy.  Each one can build the quarantine plugin (THE MEASURED RULE).
+# The steps that configure the copy.  Each one can build the quarantine plugin (the measured rule).
 CONFIGURE_STEPS = frozenset({"configure", "reconfigure"})
-# The step that runs its compiles with no ccache, and the variable of ccache that turns ccache off (THE MEASUREMENT).
+# The step that runs its compiles with no ccache, and the variable of ccache that turns ccache off (the measurement).
 UNCACHED_STEP = "warm-build"
 CCACHE_OFF = {"CCACHE_DISABLE": "1"}
 
@@ -219,7 +219,7 @@ class EditSite:
 
 
 def edit_site(header: Path) -> EditSite:
-    """Return the body of the edited function (THE EDIT).
+    """Return the body of the edited function (the edit).
 
     The parse tree finds the function definition with the name EDIT_FUNCTION in the namespace EDIT_NAMESPACE, and
     tsast gives the byte offset of each node.  The .clang-format of the tree indents with spaces and with no tab.
@@ -299,7 +299,7 @@ def edited_text(original: bytes, site: EditSite, mark: int) -> bytes:
 
 
 def check_edit_format(tree: Path) -> str | None:
-    """Make sure that the pinned clang-format makes no change to the edited header of a tree (THE EDIT).
+    """Make sure that the pinned clang-format makes no change to the edited header of a tree (the edit).
 
     Args:
         tree: The root of the tree, which holds the .clang-format of the tree and the edited header
@@ -388,7 +388,7 @@ def clone_tree(source: Path, destination: Path) -> str:
 
 
 def runs_without_ccache(name: str) -> bool:
-    """Tell if a step runs its compiles with no ccache.  Only the warm build does (THE MEASUREMENT)."""
+    """Tell if a step runs its compiles with no ccache.  Only the warm build does (the measurement)."""
     return name == UNCACHED_STEP
 
 
@@ -457,20 +457,20 @@ def run_step(
 
 
 def junit_report(logs: Path, name: str) -> Path:
-    """Return the JUnit report of one test step, in the directory of the logs (THE TESTS WITH A FAILURE)."""
+    """Return the JUnit report of one test step, in the directory of the logs (tests with a failure)."""
     return logs / f"{name}.junit.xml"
 
 
 def tests_with(statuses: Mapping[str, ctest_reader.TestStatus], status: ctest_reader.TestStatus) -> list[str]:
-    """Return the sorted names of the tests with one status in the statuses of a JUnit report (THE TESTS WITH A FAILURE)."""
+    """Return the sorted names of the tests with one status in the statuses of a JUnit report (tests with a failure)."""
     return sorted(name for name, found in statuses.items() if found is status)
 
 
 def failure_line(result: StepResult, report: Path | None) -> str:
     """Return the line of one step with a status that is not 0.
 
-    For a test step, the line names each test with a failure, and then each test that ctest did not start (THE TESTS
-    WITH A FAILURE).
+    For a test step, the line names each test with a failure, and then each test that ctest did not start (tests
+    with a failure).
 
     Args:
         result: The measures of the step
@@ -847,7 +847,7 @@ PLANTED_JUNIT_NOT_RUN = """<?xml version="1.0" encoding="UTF-8"?>
 def failure_cases(record_case: Callable[[str, bool], None]) -> None:
     """Make sure that the line of a test step names each test with a failure.
 
-    The cases read a planted JUnit report (THE TESTS WITH A FAILURE).
+    The cases read a planted JUnit report (tests with a failure).
 
     Args:
         record_case: The recorder of one case of the self-test
@@ -1118,7 +1118,7 @@ def self_test() -> int:
 def default_work_dir() -> Path:
     """Return the work directory of a run with no --work-dir: one directory of this process in the work root.
 
-    The work root of assay.core.cache is not in a checkout (THE MEASUREMENT).  The copy of the tree then adds no
+    The work root of assay.core.cache is not in a checkout (the measurement).  The copy of the tree then adds no
     second CLAUDE.md in the repository while the gauge runs.
     """
     return cache.work_root() / f"edit-loop-gauge-{os.getpid()}"

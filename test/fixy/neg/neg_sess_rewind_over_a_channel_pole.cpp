@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit opens the producer pole of a log through the pole door, ends the
 // session by its local choice, and rewinds the handle at End to a protocol

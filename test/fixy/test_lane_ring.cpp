@@ -1,9 +1,9 @@
 // What fixy/concurrent/LaneRing.h claims, checked.
 //
-// The walks on one thread check THE ORDER of the header: the turn over the
+// The walks on one thread check the order of the header: the turn over the
 // lanes, the wait on an open lane while other lanes hold items, a full lane,
-// the end of a lane, the end of the stream and the drain.  A walk checks THE
-// ROOM: the publish of the tail of a lane at each tail_interval pops, and of
+// the end of a lane, the end of the stream and the drain.  A walk checks the
+// room: the publish of the tail of a lane at each tail_interval pops, and of
 // each lane before an Empty answer.  The threaded case runs four producers and
 // the consumer on threads of their own, under several schedules: a delay of a
 // Philox stream on each thread, of a seed of its own in each schedule.  The
@@ -13,7 +13,7 @@
 // order, item for item.  The oracle reads only the count of the items of each
 // lane.
 //
-// THE CONTROLS
+// Controls
 //   The same producers push into an MPSC ring under the same schedules.  Its
 //   stream follows the schedule, so the streams of the schedules must differ.
 //   The schedules then differ, and the equal streams of the lanes are no
@@ -183,7 +183,7 @@ static_assert(Small::tail_interval == 1);
 constexpr Wide::lane_index kWideFirst{::fixy::index<0>()};
 constexpr Wide::lane_index kWideSecond{::fixy::index<1>()};
 
-// Fills LANE of a wide ring: items from first, until the lane refuses one.
+// Fills lane of a wide ring: items from first, until the lane refuses one.
 // Gives the count of the items that went in.
 [[nodiscard]] std::uint64_t fill_lane(Wide& ring, Wide::lane_index lane, Item first) noexcept {
     std::uint64_t count = 0;
@@ -245,7 +245,7 @@ constexpr std::size_t kLaneCapacity = 16;
 using Lanes = cc::LaneRing<Item, kLaneCapacity, kLanes, LanesOwner>;
 using LaneIndex = Lanes::lane_index;
 // The consumer publishes the tail of a lane at each four pops of the lane, so
-// the runs take the deferred pops of THE ROOM.
+// the runs take the deferred pops of the room.
 static_assert(Lanes::tail_interval == 4);
 
 // The count of the items of each lane: lanes of different lengths, a lane
@@ -260,7 +260,7 @@ using Stream = ::fixy::FixedArray<Item, kTotal>;
     return (Item{lane.raw()} << 32) | place;
 }
 
-// The stream that THE ORDER gives for kLengths: in each round, the next item
+// The stream that the order gives for kLengths: in each round, the next item
 // of each lane that holds one, in the order of the lanes.  Complexity: linear
 // in the rounds times the lanes.
 [[nodiscard]] Stream oracle_stream() noexcept {
@@ -408,7 +408,7 @@ template <class Ring>
 
 // The body of the consumer.  It receives until the end of the stream, waits
 // while it gets no item, and wakes each producer after each receive.  The
-// first Empty answer after an item publishes the tail of each lane (THE ROOM
+// first Empty answer after an item publishes the tail of each lane (the room
 // of fixy/concurrent/LaneRing.h), so it wakes each producer too.
 template <class Ring>
 [[nodiscard]] auto make_consumer(Run<Ring>& run, Schedule schedule) noexcept {

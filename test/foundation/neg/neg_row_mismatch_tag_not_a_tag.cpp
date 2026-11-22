@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A type that is not a diagnostic tag in the tag slot of
 // row_mismatch_message_v.  The routed static_assert in

@@ -415,7 +415,7 @@ struct KeyedShapeBatch final {
 }
 
 // A copy from the frame of one keyed array into the frame of another: the
-// two frames have two brands, so the copy is one memcpy (THE ALIAS PROOF of
+// two frames have two brands, so the copy is one memcpy (the alias proof of
 // foundation/core/Frame.h).
 [[gnu::used]] void keyed_frame_copy(::foundation::core::FixedArray<int, 64, ShapeSourceBrand>& source,
                                     ::foundation::core::LoanKey<ShapeSourceBrand>& source_key,
@@ -708,7 +708,7 @@ struct ShapeHeapBrand final {};
     return sum;
 }
 
-// The cursor loop over a filter: a scalar loop nest (THE CURSOR LOOP of
+// The cursor loop over a filter: a scalar loop nest (the cursor loop of
 // foundation/core/Walk.h).
 [[gnu::used]] std::size_t walk_filter_count_cursor_f32(fixy::View<float const> view) noexcept {
     std::size_t kept = 0;
@@ -878,7 +878,7 @@ public:
 // The take of an owner out of its place, a read of one field, and the end of
 // the owner through a const local.  The core moves the state through a local
 // that is not const, so the state stays in registers, and no copy of it goes
-// to the stack (THE COPY OF A STATE of foundation/core/Owner.h).
+// to the stack (the copy of a state of foundation/core/Owner.h).
 [[gnu::used]] std::uint64_t owner_take_and_end(ThreeWordOwner& source) noexcept {
     ThreeWordOwner taken{std::move(source)};
     std::uint64_t const second = taken.second();
@@ -2339,7 +2339,7 @@ struct RawOwnerWords final {
 [[gnu::noipa]] void hold_block(void* /*block*/) noexcept {}
 
 // The storage of a block holds its bytes rounded up to the alignment, and
-// alignment - 1 bytes more (THE STORAGE of foundation/AlignedBytes.h).  Each
+// alignment - 1 bytes more (the storage of foundation/AlignedBytes.h).  Each
 // address goes to hold_block, so the compiler keeps the two malloc and free
 // pairs.  With no use of the addresses, it removes each pair.
 [[gnu::used]] std::size_t aligned_bytes_mint_two_raw(std::size_t first_bytes, std::size_t first_alignment,
@@ -2356,7 +2356,7 @@ struct RawOwnerWords final {
 }
 
 // The fields of a named block: its storage, its count of bytes and its
-// alignment (THE STORAGE of foundation/AlignedBytes.h).
+// alignment (the storage of foundation/AlignedBytes.h).
 struct RawBlock final {
     std::uint8_t* storage;
     std::size_t bytes;

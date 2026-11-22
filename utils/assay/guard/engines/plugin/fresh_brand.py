@@ -1,6 +1,6 @@
 """fresh-brand — no caller names or deduces the fresh brand of a mint.
 
-THE RULE
+Rule
     A mint takes its fresh brand from the default argument of a template
     parameter, a closure type that CRUCIBLE_FRESH_BRAND or
     CRUCIBLE_SCOPE_BRAND of include/foundation/Brand.h writes.  A caller that
@@ -17,7 +17,7 @@ THE RULE
     The entity is the qualified name of the template and the position of the
     parameter in its template parameter list.  The rule reads those finding
     lines in the sections of the objects of the target all of one build
-    (assay.guard.engines.plugin.runner, THE SECTIONS).
+    (assay.guard.engines.plugin.runner, the sections).
 
     The plugin makes each finding a compile error in each build and each
     mode, so no object holds a line of the rule.  The rule has no ledger, and

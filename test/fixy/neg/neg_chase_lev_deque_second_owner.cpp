@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The OwnerEnd of a work-stealing deque is the one writer of the bottom of
-// its deque (THE ENDS of fixy/concurrent/ChaseLevDeque.h).  A copy would be a
+// its deque (the ends of fixy/concurrent/ChaseLevDeque.h).  A copy would be a
 // second owner, and two owners that push at the same time lose an item, so
 // the copy is deleted.
 //

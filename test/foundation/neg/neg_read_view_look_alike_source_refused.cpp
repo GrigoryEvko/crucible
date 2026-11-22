@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // with_read_view lends only a Permission, a SharedPermissionGuard or a
 // ReadLoan.  A class that copies their member types, tag_type and

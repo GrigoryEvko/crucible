@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // PermHold and the loan markers befriend the hold factory, and
 // fixy/session/Flow.h defines the factory beside them.  A translation

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The topology graph is built once, at initialisation, and every later
 // reader holds it as `TopologyGraph const&`.  A test context carries no

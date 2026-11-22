@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An endpoint binds a channel handle to an execution context.  An int is
 // not an execution context, so mint_endpoint rejects the call.

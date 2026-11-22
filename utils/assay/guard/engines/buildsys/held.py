@@ -1,6 +1,6 @@
 """The witness of a measured rule with a holder: the judge of the holder on the planted build of each plant.
 
-THE HOLDERS
+Holders
     A measured rule with the field held-by has no run of its own
     (assay.core.registry).  Its holder judges it while a step runs, or when a
     command reads a build.  The witness of such a rule runs the judge of the
@@ -30,7 +30,7 @@ THE HOLDERS
     held rule then hold only the items that the limit of the held rule
     judges.
 
-THE RECORDS OF A FIXTURE
+Records of a fixture
     The census (assay.readers.census) gives the CPU time and the instruction
     count of the record of a fixture.  It does not give the user time and the
     system time apart, and the witness gives their sum as the user time.  The
@@ -38,16 +38,16 @@ THE RECORDS OF A FIXTURE
     each compile of a fixture to BUILD/neg-compile/NAME/NAME.sarif.  The
     regexes of the fixture are the words of its test command.
 
-THE WRITE
+Write
     `guard write` calls written() of this module for a held rule of the
     policy max or baseline.  A held rule has no module of its own, so no
     function writes its ledger, and written() refuses the call.  A measured
     rule that a step meter judges, such as step-cost, has a module, and the
     module writes its ledger (assay.guard.engines.buildsys.cost_budgets).
 
-THE FINDINGS
+Findings
     The witness of a held rule counts each finding of a plant, also a warning
-    (assay.guard.engines.meta.runner, THE WITNESS).  A plant must give a
+    (assay.guard.engines.meta.runner, the witness).  A plant must give a
     finding, and a control must give no finding.  An input of a plant that
     the holder cannot read makes the plant fail, with the reason.
 
@@ -84,7 +84,7 @@ type Judge = Callable[[rule_registry.Rule, BuildContext], list[check_report.Find
 
 
 def unreadable(what: str, problem: object) -> meta_runner.NotApplicable:
-    """Return the reason of a plant with an input that the holder cannot read (THE FINDINGS)."""
+    """Return the reason of a plant with an input that the holder cannot read (the findings)."""
     return meta_runner.NotApplicable(f"the holder cannot read {what}: {problem}")
 
 
@@ -168,7 +168,7 @@ def fixture_tests(build: Path) -> list[tuple[str, Path, list[str]]]:
 def fixture_findings(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.Finding]:
     """Return the findings of the cost and of the errors of each fixture of the planted build, as `loop fixture`.
 
-    THE RECORDS OF A FIXTURE gives the inputs.  A fixture with no record has
+    The records of a fixture give the inputs.  A fixture with no record has
     no cost to judge, and a fixture with no log has no errors to judge.
     Complexity: linear in the tests of the build and in the records of the fixtures.
 
@@ -216,7 +216,7 @@ HOLDERS: dict[str, Judge] = {
 def written(
     rule: rule_registry.Rule, context: meta_runner.RuleContext, ledger: rule_ledger.Ledger, reason: str | None
 ) -> rule_ledger.Ledger:
-    """Refuse the write of the ledger of a held rule, because no function writes it (THE WRITE).
+    """Refuse the write of the ledger of a held rule, because no function writes it (the write).
 
     Raises:
         rule_ledger.LedgerError: For each call
@@ -228,7 +228,7 @@ def written(
 
 
 def held_findings(rule: rule_registry.Rule, context: meta_runner.RuleContext) -> list[check_report.Finding]:
-    """Return the findings that the holder of a rule gives on the planted build of one plant (THE HOLDERS).
+    """Return the findings that the holder of a rule gives on the planted build of one plant (the holders).
 
     Raises:
         NotApplicable: If the rule has no holder, the witness has no judge of the holder, or an input does not read
@@ -248,7 +248,7 @@ def held_findings(rule: rule_registry.Rule, context: meta_runner.RuleContext) ->
 
 
 def witness(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> int:
-    """Run the judge of the holder of a rule on each of its plants and controls (THE FINDINGS).
+    """Run the judge of the holder of a rule on each of its plants and controls (the findings).
 
     Returns:
         The status of assay.guard.engines.meta.runner.witness()

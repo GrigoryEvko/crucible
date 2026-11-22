@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A proof of quiescence says that no thread of an owner runs.  Only the
 // OwnerThread of the owner gives one, while it holds no thread.  A copy of a

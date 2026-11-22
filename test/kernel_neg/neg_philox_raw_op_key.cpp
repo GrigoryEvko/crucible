@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Philox op_key fixture #1: the raw op_key() API is deliberately not
 // public.  Per-op keys must be minted through op_key_det(), preserving

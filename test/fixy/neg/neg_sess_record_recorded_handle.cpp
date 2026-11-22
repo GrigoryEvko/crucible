@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A recorded handle names its protocol and its Resource, but it is not a
 // plain, crash-watched or checkpoint handle.  A second recorder around it

@@ -1,6 +1,6 @@
 """layer-boundary — a base file names only its own project root and the roots below it.
 
-THE RULE
+Rule
     The tree has three project roots in three layers, and each layer can name
     only the roots at or below it:
 
@@ -11,8 +11,8 @@ THE RULE
     The layer rows of the rule table utils/rule-table.txt give the sequence.
     The rank of a root is the lowest rank of a layer row of the root.  A root
     of a quarantine row is above each layer.  The quarantine plugin gives a
-    finding of the kind `upward-name` to these items (include.cpp, THE NAMES
-    OF A HIGHER ROOT):
+    finding of the kind `upward-name` to these items (include.cpp, the names
+    of a higher root):
       * the first declaration of the namespace of a higher root in a base file
       * each reference to a declaration of a higher root that a base file
         spells.
@@ -20,7 +20,7 @@ THE RULE
     `upward-include` for an include of a higher layer, and the rule
     quarantine counts it.  The rule reads the finding lines of the kind
     `upward-name` in the sections of the objects of the target all of one build
-    (assay.guard.engines.plugin.runner, THE SECTIONS).
+    (assay.guard.engines.plugin.runner, the sections).
 
     The plugin reads only the arms of a preprocessor conditional that a build
     compiles.  The rule layer-residual of the engine tsast reads these items:

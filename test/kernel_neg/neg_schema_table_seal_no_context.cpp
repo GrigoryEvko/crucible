@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The seal of a table waits while a writer holds the write section, with no
 // exit.  A spin with no exit carries Div, so the seal takes the context of the

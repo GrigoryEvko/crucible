@@ -1,4 +1,4 @@
-// A word protocol states THE WORD OF A STATED PAYLOAD of
+// A word protocol states the word of a stated payload of
 // foundation/core/Atomic.h with a constant that is not a niche_statement.
 // The gate of the protocol refuses the statement, so the cell of the value
 // does not compile.

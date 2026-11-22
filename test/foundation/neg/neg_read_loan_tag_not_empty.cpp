@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A ReadLoan is one read right over a region, so its tag must be a
 // Permission tag: an empty class that is not a union.  A loan over int

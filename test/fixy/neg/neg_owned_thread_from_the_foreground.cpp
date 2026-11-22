@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The mint of an owned thread starts a thread only for a context that owns
 // Bg or Init, the authority to start threads.  The foreground context owns

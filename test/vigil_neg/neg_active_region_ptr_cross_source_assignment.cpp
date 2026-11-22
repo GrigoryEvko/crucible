@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Mismatch class 2 of 2 for the active region of CrucibleContext: a region
 // tagged `tags::source::Arena` cannot become one tagged
@@ -32,7 +32,7 @@ int main() {
     auto arena_tagged = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
         RegionLink{::fixy::some(::fixy::erase_brand(::fixy::to(region)))});
 
-    // Should FAIL: the two sources are distinct types, and no edge of the
+    // Should fail: the two sources are distinct types, and no edge of the
     // retag catalog carries a value from Arena to Vigil.
     VigilRegion field = arena_tagged;
     (void)field;

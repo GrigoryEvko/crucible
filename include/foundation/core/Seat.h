@@ -11,7 +11,7 @@
 //   std::move(seat).take()   the payload, out of a Seat that the caller gives
 //                            up
 //
-// THE STEP
+// Step
 //   A loop over a linear value, such as a session handle that refuses move
 //   assignment, steps the value and keeps the next value in the same place.
 //   An Option can hold the value, but each turn takes the payload out, steps
@@ -24,7 +24,7 @@
 //   gives.  The payload stays at one address for the whole loop, so a step of
 //   a session handle sees no change of its holder.
 //
-// THE RULES
+// Rules
 //   fn gives T itself, so a step cannot change the type of the payload, and fn
 //   does not throw, so the storage never stays without a payload.  A Seat has
 //   no default constructor, no copy and no assignment.  It moves, so a linear
@@ -107,7 +107,7 @@ public:
     constexpr ~Seat() = default;
 
     // One turn of the loop: fn takes the payload as an rvalue, and the Seat
-    // holds the payload that fn gives, in the same storage (THE STEP).
+    // holds the payload that fn gives, in the same storage (the step).
     template <class Fn>
         requires StepOf<Fn, T>
     constexpr void step(Fn&& fn) & noexcept {

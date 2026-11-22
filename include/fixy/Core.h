@@ -397,7 +397,7 @@ using ::foundation::core::ByteCount;
 using ::foundation::core::convert;
 
 // The layout of an allocation: a count of bytes above zero at an Alignment
-// that is a power of two (THE LAYOUT of foundation/alloc/Layout.h).
+// that is a power of two (the layout of foundation/alloc/Layout.h).
 using ::foundation::alloc::Alignment;
 using ::foundation::alloc::alignment_of;
 using ::foundation::alloc::bytes_of;
@@ -408,7 +408,7 @@ using ::foundation::alloc::mint_alignment;
 using ::foundation::alloc::mint_layout;
 
 // The 64 size classes of the allocator of the base, their slabs and their
-// bins (THE SIZE CLASSES of foundation/alloc/Layout.h).
+// bins (the size classes of foundation/alloc/Layout.h).
 using ::foundation::alloc::bin_capacity;
 using ::foundation::alloc::class_for;
 using ::foundation::alloc::is_size_class;

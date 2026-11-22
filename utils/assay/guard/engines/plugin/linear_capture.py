@@ -1,8 +1,8 @@
 """linear-capture — a closure takes a linear object by value, never by reference.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ reads the initialization of
-    each capture of each closure in a body (linear.cpp, THE SHAPES).  The kind:
+    each capture of each closure in a body (linear.cpp, the shapes).  The kind:
       reference-capture  a capture by reference of a linear object, by its name
                          or by the default capture.  No rule sees a consume
                          through such a capture, and the rule must-consume gives
@@ -14,7 +14,7 @@ THE RULE
     linear by its parts, the API that runs it takes it by value, and the call
     is std::move(closure)().
 
-THE LEDGER, THE WRITE
+Ledger, write
     assay.guard.engines.plugin.linear_family.
 
 Usage
@@ -47,5 +47,5 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family)."""
+    """Write the ledger of the rule from the lines of the builds of the request (the write of linear_family)."""
     return linear_family.write(rule, request)

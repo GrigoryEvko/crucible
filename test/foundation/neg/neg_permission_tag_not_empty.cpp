@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A permission tag is a phantom marker: an empty class that is not a
 // union.  A tag with a data member is a class, so a check for a class

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The background capability is demanded even when N is one and no thread
 // is started, so the contract does not change shape with N.  With one

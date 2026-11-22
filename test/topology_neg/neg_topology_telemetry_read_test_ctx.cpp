@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A history is read only by a context that owns it, and the test runner
 // row owns neither Init nor Bg.  A context that can reach the history

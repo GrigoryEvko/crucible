@@ -1,6 +1,6 @@
-// The layout note of the two vessel libraries (THE NOTE of layout_note.h).
+// The layout note of the two vessel libraries (the note of layout_note.h).
 //
-// THE SHARED LAYOUT
+// Shared layout
 //   The digest folds the layout of each type that the two libraries share by
 //   value or through the Vigil, and the name and the type of each C entry of
 //   vessel_api.h and dispatch_api.h:

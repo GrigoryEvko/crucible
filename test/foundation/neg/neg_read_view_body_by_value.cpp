@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A body that takes the view by value asks the door for a copy or a
 // move of the view, and ReadView has neither.  The door takes a body

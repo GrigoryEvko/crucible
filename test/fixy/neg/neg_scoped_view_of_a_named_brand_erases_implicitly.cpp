@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A view of a carrier with a named brand takes the brand of the carrier, and
 // it does not convert to the erased identity.  Each erased view of one

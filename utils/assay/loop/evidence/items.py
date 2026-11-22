@@ -1,9 +1,9 @@
 """items — the items of each class of sampled checks, and the key of each item.
 
-THE ITEMS
+Items
     tree_items() gives one item for each member of each class of TARGETS of
     assay.loop.evidence.targets.  A member is a test with the label of the
-    class in a build of the class (THE ITEMS OF A CLASS of that module):
+    class in a build of the class (the items of a class of that module):
       `stress-passes`    each test of the build of each test preset with
                          the field `repeat`, when the program of the test is
                          an ELF file of the build tree (build_program() of
@@ -26,15 +26,15 @@ THE ITEMS
     evidence applies to it: no runner can add evidence that a subsequent run
     can find.
 
-THE KEYS
+Keys
     The key of a test is its key in the shared store of `loop test`: the
-    shared fingerprint of the planner of assay.loop.affected (THE SHARED
-    STORE of that module).  It holds the record of the test, the bytes of
+    shared fingerprint of the planner of assay.loop.affected (the shared
+    store of that module).  It holds the record of the test, the bytes of
     each input and the clean environment.  It also holds the key parts of
     the read set of the test.  It holds no path of the source root or of a
     build directory.  Each work tree of the host then gives one test the same
     key.  The planner cannot key a script test or a test that always runs
-    (THE TESTS THAT ALWAYS RUN of that module).  Such a test has no key.
+    (the tests that always run of that module).  Such a test has no key.
 
     The key of a bench is the SHA-256 of BENCH_KEY_FORMAT, the tier of the
     host and the SHA-256 of the bytes of its program.  The tier of the host
@@ -44,12 +44,12 @@ THE KEYS
     bench with no program has no key.  When the compiler of a build gives no
     native tier, no bench of the build has a key.
 
-THE KEYS OF A HEADER
+Keys of a header
     The key of a header of include/ holds each input of a run of the gate
     mutants of the header (assay.mutation.run).  These are the inputs:
       * the units of the build that read the header
       * the code of the mutants
-      * the rows of ADMITTED_GATES for the header (THE ADMITTED GATES).
+      * the rows of ADMITTED_GATES for the header (the admitted gates).
     A unit is an object of the target all or a negative fixture
     (assay.readers.census).
       * The digest of a unit holds its command, the resolved path of its
@@ -77,7 +77,7 @@ THE KEYS OF A HEADER
         item.  A different compiler compiles it, and the build has no unit of
         it (assay.core.ruletable, EXEMPT_KINDS).
 
-THE ADMITTED GATES
+Admitted gates
     The file ADMITTED_GATES of the source tree of the build admits the
     invalid mutant of some gates.  It has the format of a ledger of the
     policy admit (assay.core.ledger).  A row is HEADER | GATE KIND | admit | NAME:
@@ -87,17 +87,17 @@ THE ADMITTED GATES
     gate.  A person writes each row.  A source tree with no such file admits
     no gate.
 
-THE BUILDS
+Builds
     With no build directory, the items of a class come from the builds that
     the presets file names (assay.loop.tiers).  A build directory that the
     call names replaces the builds of each class.  A build that is not
     configured gives one problem and no items.
 
-THE PENDING ITEMS
+Pending items
     pending() gives each item that a runner works on: an item with a key and
     with less evidence than the target (assay.loop.evidence.store).  It does
     not give an item with a kept failure, because a failure stays until its
-    key changes (THE FAILURE of that module).  With names, it gives only the
+    key changes (the failure of that module).  With names, it gives only the
     named items, also an item with a kept failure.  The new evidence of such
     an item adds to its record, and its failure stays.
 
@@ -127,11 +127,11 @@ from assay.readers import ctest as ctest_reader
 # The property of a disabled test.
 DISABLED = "DISABLED"
 # The format of the key of a bench, the entry of the compiler in the CMake cache, and the native flag of a processor
-# (THE KEYS).
+# (the keys).
 BENCH_KEY_FORMAT = "crucible-bench-key 1"
 COMPILER_ENTRY = "CMAKE_CXX_COMPILER"
 NATIVE_FLAGS = {"x86_64": "-march=native", "aarch64": "-mcpu=native"}
-# The format of the key of a header and the files of the code of the mutants (THE KEYS OF A HEADER).  Then the directory
+# The format of the key of a header and the files of the code of the mutants (the keys of a header).  Then the directory
 # and the suffix of a header.  Then the entry of the source tree in the CMake cache, and the digest of a file with no
 # read.
 MUTANT_KEY_FORMAT = "crucible-mutant-key 1"
@@ -140,7 +140,7 @@ HEADER_DIRECTORY = "include/"
 HEADER_SUFFIX = ".h"
 SOURCE_ENTRY = "CMAKE_HOME_DIRECTORY"
 UNREAD = "unread"
-# The file of the admitted gates in a source tree (THE ADMITTED GATES).
+# The file of the admitted gates in a source tree (the admitted gates).
 ADMITTED_GATES = "utils/assay/loop/evidence/admitted-gates.txt"
 
 
@@ -157,7 +157,7 @@ class Item:
 
 @dataclass(frozen=True, slots=True)
 class Pending:
-    """One item that a runner works on, with the record of its key or None (THE PENDING ITEMS)."""
+    """One item that a runner works on, with the record of its key or None (the pending items)."""
 
     item: Item
     record: evidence_store.Record | None = None
@@ -174,7 +174,7 @@ class Pending:
 
 
 class TestKeys:
-    """The keys of the tests of one build directory, from the planner of assay.loop.affected (THE KEYS)."""
+    """The keys of the tests of one build directory, from the planner of assay.loop.affected (the keys)."""
 
     def __init__(self, build_dir: Path) -> None:
         """Read the trees and the tests of a configured build directory.
@@ -192,7 +192,7 @@ class TestKeys:
         return self.planner.classify(test)
 
     def runs_build_program(self, test: ctest_reader.TestEntry) -> bool:
-        """Return True when the program of a test is an ELF file of the build tree (THE ITEMS)."""
+        """Return True when the program of a test is an ELF file of the build tree (the items)."""
         return self.planner.build_program(test) is not None
 
     def forget(self) -> None:
@@ -200,7 +200,7 @@ class TestKeys:
         self.planner.forget()
 
     def key_after_run(self, test: ctest_reader.TestEntry) -> tuple[str, bool]:
-        """Return the key of a test after a run, and True when the read set of the run is current (THE KEYS).
+        """Return the key of a test after a run, and True when the read set of the run is current (the keys).
 
         A traced run can give a test a new read set, and the key then changes.  A test with no key gives "".  Call
         forget() after the run first.  The key then reads each input again.
@@ -211,7 +211,7 @@ class TestKeys:
         return after.shared, after.reads is None or after.reads.is_current()
 
     def item(self, rule: str, test: ctest_reader.TestEntry) -> Item:
-        """Return the item of a test with its key, or with the reason that it has no key (THE KEYS)."""
+        """Return the item of a test with its key, or with the reason that it has no key (the keys)."""
         decision = self.decision(test)
         build = str(self.build_dir)
         if decision.kind in affected.FINGERPRINTED and decision.shared:
@@ -223,7 +223,7 @@ class TestKeys:
 class Program:
     """One bench target of a build: its item, the path of its program, and the count of the cores of a run of it.
 
-    The count is the count that the bench states (THE CORES OF A RUN of assay.loop.bench).
+    The count is the count that the bench states (the cores of a run of assay.loop.bench).
     """
 
     item: Item
@@ -232,7 +232,7 @@ class Program:
 
 
 def host_tier(build_dir: Path) -> str:
-    """Return the native tier that the compiler of a build gives on this host, or "" when it gives none (THE KEYS).
+    """Return the native tier that the compiler of a build gives on this host, or "" when it gives none (the keys).
 
     Raises:
         cmake_reader.CmakeError: If the CMake cache of the build cannot be read
@@ -243,7 +243,7 @@ def host_tier(build_dir: Path) -> str:
 
 
 def bench_key(tier: str, program: Path) -> str:
-    """Return the key of a bench: the SHA-256 of BENCH_KEY_FORMAT, the tier and the digest of the program (THE KEYS).
+    """Return the key of a bench: the SHA-256 of BENCH_KEY_FORMAT, the tier and the digest of the program (the keys).
 
     Complexity: linear in the bytes of the program.
 
@@ -256,7 +256,7 @@ def bench_key(tier: str, program: Path) -> str:
 
 
 def bench_programs(rule: str, build_dir: Path) -> list[Program]:
-    """Return the item and the program of each bench target of a build (THE ITEMS, THE KEYS).
+    """Return the item and the program of each bench target of a build (the items, the keys).
 
     Complexity: linear in the targets of the code model, and in the bytes of each program.
 
@@ -359,7 +359,7 @@ def unit_commands(build_dir: Path) -> dict[tuple[str, str], tuple[str, ...]]:
 
 
 def gate_ledger(source: Path) -> rule_ledger.Ledger | None:
-    """Return the rows of ADMITTED_GATES of a source tree, or None when the tree has no such file (THE ADMITTED GATES).
+    """Return the rows of ADMITTED_GATES of a source tree, or None when the tree has no such file (the admitted gates).
 
     Raises:
         rows_grammar.RowsError: If the file does not obey the format of a ledger of the policy admit
@@ -373,7 +373,7 @@ def gate_ledger(source: Path) -> rule_ledger.Ledger | None:
 
 
 def gate_rows(ledger: rule_ledger.Ledger | None) -> dict[str, list[str]]:
-    """Return the text of each row of ADMITTED_GATES, by its header (THE ADMITTED GATES)."""
+    """Return the text of each row of ADMITTED_GATES, by its header (the admitted gates)."""
     found: dict[str, list[str]] = {}
     for key, entry in sorted(() if ledger is None else ledger.base.items()):
         found.setdefault(key.path, []).append(f"{key.kind}\t{key.entity}\t{entry.value}")
@@ -402,7 +402,7 @@ def relocation_roots(build: str, source: str) -> list[tuple[str, str]]:
 
 
 def mutant_keys(build_dir: Path, package_root: Path = paths.REPO_ROOT) -> HeaderKeys:
-    """Return the key of each header of include/ that a unit of a build reads (THE KEYS OF A HEADER).
+    """Return the key of each header of include/ that a unit of a build reads (the keys of a header).
 
     Complexity: linear in the files of the units of the build, with one read of each file.
 
@@ -467,7 +467,7 @@ def mutant_items(rule: str, build_dir: Path, keyed: HeaderKeys) -> list[Item]:
     ]
 
 
-# The errors of a build that gives no key to its headers (THE KEYS OF A HEADER).
+# The errors of a build that gives no key to its headers (the keys of a header).
 MUTANT_ERRORS = (
     cmake_reader.CmakeError,
     build_census.NotApplicable,
@@ -486,13 +486,13 @@ def is_disabled(test: ctest_reader.TestEntry) -> bool:
 
 
 def is_member(test: ctest_reader.TestEntry, sampled: targets.Target) -> bool:
-    """Return True when a test is a member of a class: it has the label of the class, and it is a test (THE ITEMS)."""
+    """Return True when a test is a member of a class: it has the label of the class, and it is a test (the items)."""
     has_label = not sampled.label or sampled.label in test.words_of(ctest_reader.LABELS)
     return has_label and not is_disabled(test) and not affected.is_fixture(test.command)
 
 
 def repeated_builds(presets: tiers.Tiers) -> tuple[tuple[str, Path], ...]:
-    """Return the name and the build directory of each test preset with the field `repeat` (THE BUILDS).
+    """Return the name and the build directory of each test preset with the field `repeat` (the builds).
 
     Complexity: linear in the presets.
     """
@@ -503,7 +503,7 @@ def repeated_builds(presets: tiers.Tiers) -> tuple[tuple[str, Path], ...]:
 
 
 def class_builds(sampled: targets.Target, presets: tiers.Tiers) -> tuple[tuple[str, Path], ...]:
-    """Return the name of the preset and the build directory of each build of a class (THE ITEMS OF A CLASS).
+    """Return the name of the preset and the build directory of each build of a class (the items of a class).
 
     Complexity: linear in the presets.
     """
@@ -524,7 +524,7 @@ def class_builds(sampled: targets.Target, presets: tiers.Tiers) -> tuple[tuple[s
 
 
 def class_items(keys: TestKeys, sampled: targets.Target) -> list[Item]:
-    """Return an item for each member of a class in one build (THE ITEMS).
+    """Return an item for each member of a class in one build (the items).
 
     Complexity: the cost of the planner of assay.loop.affected for each member.
     """
@@ -568,7 +568,7 @@ class BuildKeys:
         return self.keys[build]
 
     def benches(self, name: str, build: Path, rule: str) -> list[Item]:
-        """Return the item of each bench target of a build, or no items with one problem (THE ITEMS)."""
+        """Return the item of each bench target of a build, or no items with one problem (the items)."""
         if not self.is_configured(name, build):
             return []
         try:
@@ -578,7 +578,7 @@ class BuildKeys:
             return []
 
     def headers(self, name: str, build: Path, rule: str) -> list[Item]:
-        """Return the item of each header of the source tree of a build, or no items with one problem (THE ITEMS)."""
+        """Return the item of each header of the source tree of a build, or no items with one problem (the items)."""
         if not self.is_configured(name, build):
             return []
         try:
@@ -591,7 +591,7 @@ class BuildKeys:
 def pending(
     found: Sequence[Item], store: evidence_store.EvidenceStore, goal: float, names: Sequence[str]
 ) -> list[Pending]:
-    """Return each item of a list with less evidence than a target, that a runner works on (THE PENDING ITEMS).
+    """Return each item of a list with less evidence than a target, that a runner works on (the pending items).
 
     Complexity: one read of the store for each item with a key.
     """
@@ -610,7 +610,7 @@ def pending(
 def tree_items(
     root: Path, directories: Sequence[Path] = (), chosen: Sequence[targets.Target] = targets.TARGETS
 ) -> tuple[list[Item], list[str]]:
-    """Return the items of each chosen class, and a problem for each build that gives no items (THE BUILDS).
+    """Return the items of each chosen class, and a problem for each build that gives no items (the builds).
 
     Complexity: the cost of the planner of assay.loop.affected for each member of each build.
     """

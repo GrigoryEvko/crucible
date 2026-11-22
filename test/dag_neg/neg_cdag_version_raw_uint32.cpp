@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Fixture 1 of 2 for CDAG_VERSION, a Tagged<uint32_t,
 // source::FormatVersion>.
@@ -16,7 +16,7 @@
 #include <cstdint>
 
 int main() {
-    // MUST fail: CDAG_VERSION carries source::FormatVersion provenance.
+    // Must fail: CDAG_VERSION carries source::FormatVersion provenance.
     std::uint32_t raw = crucible::CDAG_VERSION;
     return static_cast<int>(raw);
 }

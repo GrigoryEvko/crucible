@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A single-writer session names the brand of its writer root in its type.
 // A writer root minted at another site has another brand, so it cannot

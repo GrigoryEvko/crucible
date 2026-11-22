@@ -6,8 +6,8 @@
 //   run_of(test, alloc, arena, values...)   a new array of the arena that
 //                                            holds the values, in order
 //
-// Each operation takes a context that owns the Test capability (THE TEST
-// CONTEXT of fixy/check/Check.h), so a unit that ships calls no operation of
+// Each operation takes a context that owns the Test capability (the test
+// context of fixy/check/Check.h), so a unit that ships calls no operation of
 // this header.  The name stays qualified, as ::fixy::check::run_of, because
 // the session network and the net reflection have functions of that name.
 //

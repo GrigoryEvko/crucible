@@ -4,7 +4,7 @@
 // enforce mode and no ledger row changes such a fact.  An opt-out region
 // turns a finding of a function into opted-out.
 //
-// THE CONTRACT SEMANTIC (the rule contract-semantic)
+// Contract semantic (the rule contract-semantic)
 //     GCC uses the last -fcontract-evaluation-semantic of the command line.
 //     CRUCIBLE_PRE and CRUCIBLE_POST cannot read the semantic.  The macro
 //     CRUCIBLE_CONTRACT_SEMANTIC_IGNORE tells them the semantic (CLAUDE.md
@@ -17,7 +17,7 @@
 //     the command line and the files of -include.  The finding has the place
 //     of the main file.
 //
-// THE FAST-MATH OPTIONS (the rule fast-math-override)
+// Fast-math options (the rule fast-math-override)
 //     An optimize attribute and a GCC optimize pragma give a function options
 //     of its own (DECL_FUNCTION_SPECIFIC_OPTIMIZATION).  CLAUDE.md section V
 //     bans each option of the fast-math family and each option that cancels a
@@ -58,8 +58,8 @@ Place main_file_place() {
     return place;
 }
 
-// The names of the fast-math options that the options NODE turn on and the
-// options BASE do not: the fast-math family, and the cancel of each flag of
+// The names of the fast-math options that the options node turn on and the
+// options base do not: the fast-math family, and the cancel of each flag of
 // the floor of cmake/FpStrict.cmake.  The names are those of the
 // optimize attribute, in one order.
 std::string fast_math_options(const cl_optimization& node, const cl_optimization& base) {
@@ -85,8 +85,8 @@ std::string fast_math_options(const cl_optimization& node, const cl_optimization
     return names;
 }
 
-// The options of FUNCTION, when it has options of its own (THE FAST-MATH
-// OPTIONS).  Each function counts one time.
+// The options of function, when it has options of its own (the fast-math
+// options).  Each function counts one time.
 void check_function_options(tree function) {
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
         return;
@@ -113,8 +113,8 @@ void on_finish_function(void* gcc_data, void*) { check_function_options(static_c
 
 }  // namespace
 
-// The main file starts: read the define of the command line (THE CONTRACT
-// SEMANTIC).
+// The main file starts: read the define of the command line (the contract
+// semantic).
 void note_main_started() {
     state.is_ignore_defined =
         cpp_defined(parse_in, reinterpret_cast<const unsigned char*>(kIgnoreDefine), sizeof kIgnoreDefine - 1);

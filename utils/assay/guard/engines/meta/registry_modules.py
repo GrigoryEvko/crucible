@@ -1,6 +1,6 @@
 """The part modules of the rule registry: each rule of the registry has one function, and each function has one rule.
 
-THE PART
+Part
     A rule with no legacy module and no holder has the module
     assay/guard/engines/DIRECTORY/ID.py with the function findings.  In the
     name of the file, an underscore replaces each hyphen of the ID.  DIRECTORY
@@ -18,7 +18,7 @@ THE PART
     none.  A module with no function findings and no table RULES is a helper,
     such as the runner of an engine or a part of the rule registry.
 
-THE HOLDERS
+Holders
     A rule with held-by has no module of its own.  Its holder judges it, and
     its field holder names the function of the holder that judges it
     (assay.core.registry).  The witness of the rule runs that function
@@ -30,7 +30,7 @@ THE HOLDERS
                       its module
       unrun-holder    a function that the witness does not run
     When held-by names a command, the judge of that command in the table
-    HOLDERS of held.py must call the function.  The import table of held.py
+    holders of held.py must call the function.  The import table of held.py
     gives the name of each callee (assay.readers.python).  When held-by names
     a rule, the function must be in the module that holds that rule, because
     the witness runs that module.  No ledger row admits a finding of these
@@ -52,7 +52,7 @@ PART = "modules"
 # The module of the witness of a held rule, relative to the directory of the engines, and its table of judges.
 HELD_MODULE = "buildsys/held.py"
 HOLDERS_TABLE = "HOLDERS"
-# The kinds of THE HOLDERS.  No ledger row admits them.
+# The kinds of the holders.  No ledger row admits them.
 NO_HOLDER = "no-holder"
 MISSING_HOLDER = "missing-holder"
 UNRUN_HOLDER = "unrun-holder"
@@ -118,7 +118,7 @@ def judged_calls(root: Path) -> dict[str, frozenset[str]]:
 
 
 class Holders:
-    """The facts that THE HOLDERS reads in one tree: the module of each rule, the judges, and the holder modules.
+    """The facts that the holders read in one tree: the module of each rule, the judges, and the holder modules.
 
     The class parses held.py and each module that a field holder names one time.
     """
@@ -140,7 +140,7 @@ class Holders:
         return self.modules[path]
 
     def problem(self, rule: rule_registry.Rule) -> tuple[str, str] | None:
-        """Return the kind and the message of the error of a held rule (THE HOLDERS), or None when it has none."""
+        """Return the kind and the message of the error of a held rule (the holders), or None when it has none."""
         holder = rule.holder
         if holder is None:
             return NO_HOLDER, (

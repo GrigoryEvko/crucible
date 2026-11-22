@@ -15,7 +15,7 @@ using Sizes = ::fixy::FixedArray<std::size_t, 3>;
 // The count of the parts of the rows of the walk of rows over a dense out of
 // the sizes, a first input of the strides and a dense second input, when the
 // walk writes the sum of the inputs at each index and gives its parts by the
-// rule of THE TILES of foundation/core/StridedRows.h, and zero otherwise.  The
+// rule of the tiles of foundation/core/StridedRows.h, and zero otherwise.  The
 // strides of the first input merge no two axes of the plan, so the plan has
 // the three axes in their order, and the offset of a part in the dense out
 // gives the number of its row and its first position.  Each part has at most

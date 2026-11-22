@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The protocol receives a token of a region whose tag declares no
 // permission row.  No program can mint a token for such a tag, and the

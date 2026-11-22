@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_pipeline with a bare int where the coordinating context belongs.
 // The stage was minted under a real context; only the coordinator is

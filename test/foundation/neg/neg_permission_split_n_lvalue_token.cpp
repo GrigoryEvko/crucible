@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // split_n consumes its parent and mints one token per child.  A parent
 // passed as an lvalue would stay live beside its children, so the one

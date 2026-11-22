@@ -1,6 +1,6 @@
 """detsafe-ledger — no header on the hashing path gets to the hardware ledger.
 
-THE RULE
+Rule
     A measured verdict can change the speed of Crucible.  It must not change
     the result that Crucible calculates (axiom 8, DetSafe).  The ledger keeps
     answers such as "is AVX-512 faster than AVX2 on this part", and each
@@ -15,8 +15,8 @@ THE RULE
     The seal rows of the rule table utils/rule-table.txt give each header of
     the hashing path and the sealed directories (`seal ROOT PREFIX...`).  The
     quarantine plugin follows the include closure of each ROOT in each unit,
-    through each #include directive that the unit compiles (include.cpp, THE
-    SEALS).  The plugin gives these findings:
+    through each #include directive that the unit compiles (include.cpp, the
+    seals).  The plugin gives these findings:
       * a finding of the kind `sealed-include` for each directive of the
         closure that includes a file in a PREFIX
       * a finding of the kind `sealed-name` for each declaration of the
@@ -24,11 +24,11 @@ THE RULE
       * a finding of the kind `sealed-name` for each reference to a
         declaration of that namespace that a file of the closure spells.
     The rule reads those finding lines in the sections of the objects of the
-    target all of one build (assay.guard.engines.plugin.runner, THE
-    SECTIONS).  The sentinel unit of each header of include/ compiles the
+    target all of one build (assay.guard.engines.plugin.runner, the
+    sections).  The sentinel unit of each header of include/ compiles the
     header alone, and each ROOT is then the main file of one unit.
 
-THE SEAL ROWS
+Seal rows
     The rule also reads the seal rows.  It gives an error for each of these
     problems, at the line of the row:
       * a ROOT that the tree does not hold, because a rule with an incorrect
@@ -75,7 +75,7 @@ def ledger_directories(root: Path) -> list[str]:
 
 
 def seal_problems(root: Path) -> list[check_report.Finding]:
-    """Return an error for each problem of THE SEAL ROWS of the rule table of the tree."""
+    """Return an error for each problem of the seal rows of the rule table of the tree."""
     try:
         table = ruletable.load(root / TABLE)
     except (OSError, ruletable.TableError) as problem:

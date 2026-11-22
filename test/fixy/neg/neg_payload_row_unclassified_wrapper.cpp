@@ -10,7 +10,7 @@
 // the type arrives in the instantiation note the compiler prints beside
 // it, which is what the second regex matches.
 //
-// VIOLATION: a TU asks for the row of a wrapper the rosters do not name.
+// Violation: a TU asks for the row of a wrapper the rosters do not name.
 //
 // Expected diagnostic: the payload_row_is_classified static_assert, with
 // UnclassifiedWrapper<int> in the instantiation note.

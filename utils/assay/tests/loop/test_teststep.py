@@ -44,7 +44,7 @@ class Planted:
         self.killer = self.plant_test("test_killed", "#!/bin/sh\nkill -TERM $$\n")
         self.hard_killer = self.plant_test("test_hard_killed", "#!/bin/sh\nkill -KILL $$\n")
         # A planted emulator that is not in the build directory, as qemu-aarch64-static is.  It drops its two options
-        # and runs the program (THE EMULATOR of the launcher).
+        # and runs the program (the emulator of the launcher).
         self.emulator = root / "emulator"
         self.emulator.write_text('#!/bin/sh\nshift 2\nexec "$@"\n')
         self.emulator.chmod(0o755)
@@ -137,12 +137,12 @@ class Planted:
         return done.exit, done.err
 
     def plant_host_level(self, level: int, request: str = "") -> None:
-        """Write the cache of the level of the host of the build with the boot id of this kernel (THE LEVEL OF A HOST)."""
+        """Write the cache of the level of the host of the build with the boot id of this kernel (the level of a host)."""
         key = f"{x86level.boot_id()} {request or '-'}"
         (self.build / x86level.CACHE_FILE).write_text(f"{key} {level}\n", encoding="ascii")
 
     def level_cases(self, expect: testing.Expect) -> None:
-        """Check the skip of a test whose need is above a planted host, before its program starts (THE LEVEL)."""
+        """Check the skip of a test whose need is above a planted host, before its program starts (the level)."""
         self.budget(2000)
         marker = self.root / "started"
         program = self.plant_test("test_leveled", f'#!/bin/sh\ntouch "{marker}"\nexit 0\n')
@@ -336,7 +336,7 @@ class Planted:
         )
 
     def cpu_limit_cases(self, expect: testing.Expect) -> None:
-        """Check THE CPU LIMIT OF A TEST: a script test gets TEST_CPU_LIMIT_S for each process, a program of the build none.
+        """Check the CPU limit of a test: a script test gets TEST_CPU_LIMIT_S for each process, a program of the build none.
 
         Each test compares its own `ulimit -t` with the limit that it must have, and its status gives the verdict.  The
         limit of a program of the build is the limit of this process, because the launcher sets none for it.  A run of
@@ -367,7 +367,7 @@ class Planted:
     def launch_emulated(self, words: str, target: Path, *args: str) -> tuple[int, str]:
         """Run the launcher on one planted test behind the planted emulator, as CMake starts a test of a cross build.
 
-        CMake puts the emulator and its two options after the launcher and before the program (THE EMULATOR).
+        CMake puts the emulator and its two options after the launcher and before the program (the emulator).
         """
         done = proc.run(
             proc.Command(
@@ -390,7 +390,7 @@ class Planted:
         return done.exit, done.err
 
     def emulator_cases(self, expect: testing.Expect) -> None:
-        """Check that two tests behind one emulator get two records, each named after its program (THE EMULATOR)."""
+        """Check that two tests behind one emulator get two records, each named after its program (the emulator)."""
         self.budget(2000)
         first = self.plant_test("test_emulated_first", '#!/bin/sh\nexit "${1:-0}"\n')
         second = self.plant_test("test_emulated_second", '#!/bin/sh\nexit "${1:-0}"\n')
@@ -419,7 +419,7 @@ class Planted:
             )
 
     def emulated_count_cases(self, expect: testing.Expect) -> None:
-        """Check that the launcher judges no instruction count of a test behind an emulator (THE EMULATOR).
+        """Check that the launcher judges no instruction count of a test behind an emulator (the emulator).
 
         The count of such a run holds the instructions of the emulator, so the run fails no row and no limit of the
         kind test of step-cost, and its record keeps no count.  The peak memory of the run stays judged.
@@ -461,7 +461,7 @@ class Planted:
         )
 
     def environment_cases(self, expect: testing.Expect) -> None:
-        """Check that a test runs in the clean environment of the launcher (THE ENVIRONMENT)."""
+        """Check that a test runs in the clean environment of the launcher (the environment)."""
         self.budget(2000)
         search = test_launcher.search_path(os.environ.get("PATH", ""))
         check = (
@@ -544,7 +544,7 @@ class Planted:
         return cost.get(cost_record.TEST_COUNT_KEY) if isinstance(cost, dict) else None
 
     def count_cases(self, expect: testing.Expect) -> None:
-        """Check the kind test of step-cost (THE MEASURED RULES).
+        """Check the kind test of step-cost (the measured rules).
 
         A planted test that does more work than the limit, or than its row keeps, fails.  A run with no count, as on a
         host with no accurate counter, has no judge of its instructions.
@@ -890,7 +890,7 @@ def launched_cases(expect: testing.Expect) -> None:
 
 
 def environment_unit_cases(expect: testing.Expect) -> None:
-    """Check the clean environment that the launcher makes from its own environment (THE ENVIRONMENT)."""
+    """Check the clean environment that the launcher makes from its own environment (the environment)."""
     host = {
         "PATH": "/usr/bin::relative/bin:/bin:/usr/bin",
         "HOME": "/home/planted",
@@ -1056,7 +1056,7 @@ def level_unit_cases(expect: testing.Expect) -> None:
 
 
 def needs_cases(expect: testing.Expect) -> None:
-    """Check the needs that the configure of the build of the test wrote (THE NEED OF A TEST of TestLevel.cmake).
+    """Check the needs that the configure of the build of the test wrote (the need of a test of TestLevel.cmake).
 
     The build gives each test the level of its flags, a test with a unit of x86-64-v4 the level v4, and a test with
     -mavx2 at least v3, because AVX2 is a feature of x86-64-v3.
@@ -1078,7 +1078,7 @@ def needs_cases(expect: testing.Expect) -> None:
         needs.get("test_target_units") == 4 and needs.get("test_swiss_table_avx2", 0) >= 3,
     )
     # test_types has no -m word of its own, and it links the libraries of the build.  So its need is the need of the
-    # build, also in a build of -march=native with no level word (THE FLOOR OF A PROGRAM of TestLevel.cmake).  A build
+    # build, also in a build of -march=native with no level word (the floor of a program of TestLevel.cmake).  A build
     # at v1 writes no row of it.
     plain = needs.get("test_types", 1)
     expect(
@@ -1097,7 +1097,7 @@ def needs_cases(expect: testing.Expect) -> None:
 def planted_group(cases: Callable[[Planted, testing.Expect], None]) -> testing.Group:
     """Return a group that runs one method of Planted with a fixture of its own in its own scratch directory.
 
-    The groups can run at the same time (THE GROUPS AT THE SAME TIME of assay.core.testing).  Each one writes the
+    The groups can run at the same time (the groups at the same time of assay.core.testing).  Each one writes the
     planted registry and ledgers of its fixture.
     """
 

@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // One root site that runs two times gives two roots of one brand.  A pool
 // built from the first root gives its exclusive out as a lease, and the root
 // of the second run goes to the deposit of the same pool.  The deposit takes
-// only a lease of the pool (THE LEASE of foundation/permissions/
+// only a lease of the pool (the lease of foundation/permissions/
 // SharedPermission.h), so the second root has no door into the pool, and no
 // share of the pool can live beside the lease of the first root.
 //

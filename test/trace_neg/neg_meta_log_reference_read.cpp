@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The MetaLog gives no reference into a slot.  After the consumer releases a
 // record, the producer writes a new record into its slot, so a reader copies

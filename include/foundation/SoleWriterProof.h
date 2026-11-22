@@ -1,6 +1,6 @@
 #pragma once
 
-// THE PROOF OF THE ONE WRITER
+// Proof of the one writer
 //   A SoleWriterProof<Owner, Role> proves by type that its holder is the one
 //   writer of a counter of the role Role that Owner holds.  Only Owner makes a
 //   proof: the constructor is private, and Owner is the one friend.  An owner

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A raw operation result cannot stand in for the SdcVerified provenance
 // tag that only a completed redundant check mints.

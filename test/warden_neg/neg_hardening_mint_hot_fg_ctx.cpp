@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_hardening refuses the hot foreground context.  Its row is empty,
 // and a policy applied again from the hot path would issue every system

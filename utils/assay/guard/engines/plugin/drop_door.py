@@ -1,15 +1,15 @@
 """drop-door — each end of a linear value is a named door.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ walks each body (linear.cpp,
-    THE SHAPES).  The rule must-consume reads the tracked locals and parameters,
+    the shapes).  The rule must-consume reads the tracked locals and parameters,
     and this rule reads each other linear object.  The kinds:
       untracked-assignment  an assignment over a linear object that is no tracked
                             object of must-consume: a member, an element, or an
                             object behind a reference or a pointer.  The old
                             value drops.  A parameter of a reference that is not
-                            const is a lent object of must-consume (THE LENT
-                            PARAMETERS of linear.cpp), so must-consume reads an
+                            const is a lent object of must-consume (the lent
+                            parameters of linear.cpp), so must-consume reads an
                             assignment over it
       destroy               an explicit destructor call of a linear object that
                             is no tracked object, the clobber of a trivial
@@ -18,7 +18,7 @@ THE RULE
     with the annotation linear end or move their values by their contract, so
     the rule reads none of them (P10 of misc/12_10_2026_linear.md).
 
-THE LEDGER, THE WRITE
+Ledger, write
     assay.guard.engines.plugin.linear_family.
 
 Usage
@@ -53,5 +53,5 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family)."""
+    """Write the ledger of the rule from the lines of the builds of the request (the write of linear_family)."""
     return linear_family.write(rule, request)

@@ -15,25 +15,25 @@ CMake gives a launcher no test name, and each executable test of the tree has
 the name of its target.  The name of a test with no --name is the file name
 of its program.  In a cross build, CMake puts an emulator in front of the
 program, and cmake/TestLauncher.cmake gives the option --emulator-words
-(THE EMULATOR).  The driver of a negative fixture, `loop fixture`, writes the
+(the emulator).  The driver of a negative fixture, `loop fixture`, writes the
 same record with the same judge.  A fixture then pays no second start of
 Python.
 
-WHAT THE SUBCOMMAND DOES
+What the subcommand does
     It runs the command through utils/assay/core/meter.py, with the same
     standard streams.  It counts the user instructions of the command and of
-    each process that the command starts (meter.py, THE INSTRUCTION COUNT).
-    The command gets the clean environment of THE ENVIRONMENT, and
+    each process that the command starts (meter.py, the instruction count).
+    The command gets the clean environment of the environment, and
     CRUCIBLE_TEST_LAUNCHED with the name of the test.  A fixture driver in the
     command then gives the record and the judge to this subcommand.  It
     writes the record BUILD/test-records/NAME.test.cost (assay.core.record,
-    THE RECORDS), and it ends as the command ended: with its status, or on its
+    the records), and it ends as the command ended: with its status, or on its
     signal.  With no --build-dir, the build directory is the nearest
     directory above the program with a build-kind.txt.  With no such
     directory, the subcommand writes no record.  A failure to measure, to
     read the registry or to write the record does not change the status.
 
-THE EMULATOR
+Emulator
     A cross build runs each executable test through the emulator of
     CMAKE_CROSSCOMPILING_EMULATOR, such as qemu-aarch64-static with its
     options.  CMake puts the emulator after the launcher and before the
@@ -61,14 +61,14 @@ THE EMULATOR
     build reads no such count.  The launcher prints one line with the count
     and the reason.  The peak memory of the run stays judged.
 
-THE LEVEL
+Level
     The configure gives a test of x86_64 the option --x86-level with the
     x86-64 level that its program needs, such as v3 for each test of the
     build of the preset default, or v4 for a test with a unit of x86-64-v4
-    (THE NEED OF A TEST of cmake/TestLevel.cmake).  The value is a list of
+    (the need of a test of cmake/TestLevel.cmake).  The value is a list of
     levels with commas, and the need is the highest one.  Before the program
     starts, the subcommand reads the level of the host through the level
-    probe of the build (THE LEVEL OF A HOST of assay.core.x86level).  A host
+    probe of the build (the level OF A HOST of assay.core.x86level).  A host
     below the need ends the subcommand with the skip code SKIP_CODE of that
     module, and the test does not start, because a check in the program can
     run after code of its level.  The line of the skip names the level of the
@@ -76,7 +76,7 @@ THE LEVEL
     for a lower level of the host, so a run on this host plants a host of a
     lower level.  A need of v1 and a host other than x86_64 have no check.
 
-THE ENVIRONMENT
+Environment
     The subcommand runs the test in a clean environment
     (canonical_environment()).  The result of a test then does not change
     with a variable of the shell, such as LD_LIBRARY_PATH or a variable of a
@@ -102,20 +102,20 @@ THE ENVIRONMENT
         two name a directory that changes with the directory of the test.
       * It drops MAKEFLAGS, the jobserver that ctest gives each test.  It
         gives the value of MAKEFLAGS to the test as TEST_JOBSERVER_ENV of
-        assay.core.meter (THE JOBSERVER OF A TEST there).  The groups of a
+        assay.core.meter (the jobserver of a test there).  The groups of a
         test module then run at the same time on the free jobs.  ninja or
         make in a test does not obey the jobserver.  The clean environment
         holds no such variable, because a jobserver changes no result.
       * It gives CALL_PROFILE_ENV and LINES_ENV of assay.core.meter to the
         test with no change, and the clean environment does not hold them
-        (THE COST of assay.core.calls).
+        (the cost of assay.core.calls).
     `loop test` puts the same environment into the key of each test behind
     the launcher (assay.loop.affected).  A variable that the launcher drops
     then changes no result and no key.  A variable that a test gets from its
     property ENVIRONMENT goes through the same rules.  The rule registry
     refuses such a variable when the launcher drops it.
 
-CORE DUMPS
+Core dumps
     A death test forks a child that aborts, and the parent waits for the
     child.  The kernel writes the core dump of the child before the wait
     ends.  On the build host, kernel.core_pattern sends each core dump to
@@ -136,16 +136,16 @@ CORE DUMPS
         byte also when the test keeps its cores.  The core of the launcher
         itself has no use.
 
-THE MEASURED RULES
+Measured rules
     The launcher judges the kind test of two measured rules of
-    utils/registry.txt (assay.core.budget, THE STEP RULES).  The kind test of
+    utils/registry.txt (assay.core.budget, the step rules).  The kind test of
     step-memory is the peak resident memory of the largest process of the
     test.  The kind test of step-cost is the user instructions of the test
     and of each process that it starts.
       * The two measures are almost the same on each run of a test, so each
         rule reads the run alone.  The user instructions do not change with
-        the load of the host (utils/assay/core/meter.py, THE INSTRUCTION
-        COUNT).  The record keeps the count (key test_instructions,
+        the load of the host (utils/assay/core/meter.py, the instruction
+        count).  The record keeps the count (key test_instructions,
         assay.core.record).  A host with no accurate counter gives no count,
         and the run then has no judge of its instructions.
       * A test that waits for a different thread in a loop runs more
@@ -165,12 +165,12 @@ THE MEASURED RULES
         file of the build directory, and the record of the test for a script
         test.  At or below the limit, it prints no line.  A test whose program
         is in the directory bench of the build has no judge (assay.core.budget,
-        THE SCOPE).
+        the scope).
       * A row of the ledger utils/ledgers/RULE.txt keeps a test above the
         limit in each build: '- | test | VALUE | TEST | REASON'.  VALUE is
-        the kept value, in the unit of the rule (meter.py, THE REGISTRY AND
-        THE LEDGERS).  A kept test gives no line, up to VALUE with the noise of
-        the unit (assay.core.budget, THE NOISE).  A test above that value
+        the kept value, in the unit of the rule (meter.py, the registry and
+        the ledgers).  A kept test gives no line, up to VALUE with the noise of
+        the unit (assay.core.budget, the noise).  A test above that value
         gives an error that names the row.  The
         subcommand reads the ledger only for a measure above the limit.  A
         ledger that does not exist has no row, and the subcommand then
@@ -183,25 +183,25 @@ THE MEASURED RULES
     over its budget therefore does not fail.  No test of the tree has
     WILL_FAIL at this time.
 
-THE CPU LIMIT OF A TEST
+CPU limit of a test
     A test whose program is no file of the build, such as a script test,
-    gets TEST_CPU_LIMIT_S for each of its processes (RLIMIT_CPU, THE CPU
-    LIMIT of assay.core.meter).  Such a test starts compilers and tools,
+    gets TEST_CPU_LIMIT_S for each of its processes (RLIMIT_CPU, the CPU
+    limit of assay.core.meter).  Such a test starts compilers and tools,
     and the limit judges one that runs away, as COMPILE_CPU_LIMIT_S of
     assay.loop.step judges a compile of the build.  On 2026-11-19 the
     heaviest such test used 297 s of CPU in all of its processes together.
     A process at the limit ends on SIGKILL, the test is red, and the
     launcher writes a line.  So a command in such a test needs no wall limit
     of its own: a loaded host makes it slower, but not red, and the guard of
-    ctest bounds a hang (THE HANG GUARD of assay.loop.gate).  A program of
+    ctest bounds a hang (the hang guard of assay.loop.gate).  A program of
     the build gets no limit, because a test that waits for a different
-    thread in a loop runs more instructions on a busy host (THE MEASURED
-    RULES).  On a GitHub runner the meter sets no limit.
+    thread in a loop runs more instructions on a busy host (the measured
+    rules).  On a GitHub runner the meter sets no limit.
 
-THE VERSION
+Version
     The version of a test is a digest of the words of its command and of the
     files of the test (version_of()).  The trace of the read set uses it
-    (THE READ SET).  For each file, the digest holds its length in bytes, its
+    (the read set).  For each file, the digest holds its length in bytes, its
     change time and its inode.  The files of a command are these files:
       * each word of the command that names a file, and the VALUE of each word
         NAME=VALUE that names a file
@@ -210,13 +210,13 @@ THE VERSION
         the normal form of the word (os.path.normpath), so the word
         /ROOT/utils//bin/guard also names the master guard.
     The version holds no other input of a test, such as a data file that the
-    test opens.  The read set holds such a file (THE READ SET).
+    test opens.  The read set holds such a file (the read set).
 
-THE READ SET
+Read set
     The launcher can trace the system calls of each test with a build
     directory (assay.loop.tracer).  A rule test and a group test of the
     master guard get no trace (has_derived_inputs()).  The launcher reads
-    the normal form of the path of the master, as for THE VERSION.  `loop test` gives
+    the normal form of the path of the master, as for the version.  `loop test` gives
     such a test the inputs of its rule or its group, and it reads no read
     set of it.  The test of one module, `guard selftest MODULE`, gets the
     trace.  A module can import a module by name from a listing, and it can
@@ -226,10 +226,10 @@ THE READ SET
     run: each file that the test and its children open for read, run or list.
     The launcher writes it to BUILD/test-records/NAME.test.reads
     (assay.loop.readset).  `loop test` puts its key parts into the key of
-    the test (assay.loop.affected, THE READ SET).
+    the test (assay.loop.affected, the read set).
     The launcher traces a run when the test has no current read set
-    (assay.loop.readset, THE RETRACE).  The version of a trace is the version
-    of the run (THE VERSION) with the clean environment.  Each other run has
+    (assay.loop.readset, the retrace).  The version of a trace is the version
+    of the run (the version) with the clean environment.  Each other run has
     no trace and costs no import of the tracer.  A failure of the trace or of
     the write of the read set does not change the status of the test.
 
@@ -246,7 +246,7 @@ THE READ SET
 The variables CRUCIBLE_TEST_REGISTRY and CRUCIBLE_TEST_LEDGERS name another
 registry and another directory of ledgers, which holds RULE.txt for each
 planted ledger, for its test.
-CRUCIBLE_TEST_CORES is the variable of CORE DUMPS above.
+CRUCIBLE_TEST_CORES is the variable of core dumps above.
 
 This module holds no self-test, because each test pays the import of the
 module.  `guard selftest tests.loop.test_teststep` runs its test.
@@ -267,12 +267,12 @@ if TYPE_CHECKING:
 
     from assay.loop.readset import Plan
 
-# The two measured rules of the launcher, and the kind of their items that it judges (THE MEASURED RULES).
+# The two measured rules of the launcher, and the kind of their items that it judges (the measured rules).
 ROWS = (cost_budget.STEP_MEMORY, cost_budget.STEP_COST)
 TEST_KIND = cost_budget.TEST_KIND
 # The instructions in one G.
 GIGA = 1e9
-# The CPU limit of each process of a test whose program is no file of the build, in seconds (THE CPU LIMIT OF A TEST).
+# The CPU limit of each process of a test whose program is no file of the build, in seconds (the CPU limit of a test).
 TEST_CPU_LIMIT_S = 600
 REGISTRY_ENV = "CRUCIBLE_TEST_REGISTRY"
 LEDGERS_ENV = "CRUCIBLE_TEST_LEDGERS"
@@ -280,9 +280,9 @@ CORES_ENV = "CRUCIBLE_TEST_CORES"
 CORES_KEEP = "keep"
 # The variable that tells a fixture driver in the command that this subcommand records and judges the test.
 LAUNCHED_ENV = "CRUCIBLE_TEST_LAUNCHED"
-# The variable that tells a test that this subcommand traces its run (THE READ SET).
+# The variable that tells a test that this subcommand traces its run (the read set).
 TRACED_ENV = "CRUCIBLE_TEST_TRACED"
-# The variables that the test gets from the environment of the launcher (THE ENVIRONMENT).  The sanitizer options and
+# The variables that the test gets from the environment of the launcher (the environment).  The sanitizer options and
 # GITHUB_ACTIONS change a result.  HOME, TMPDIR and XDG_CACHE_HOME give the caches and the scratch directories.
 KEPT_NAMES = frozenset(
     {
@@ -304,27 +304,27 @@ KEPT_NAMES = frozenset(
 KEPT_PREFIXES = ("ASSAY_", "CCACHE_", "CRUCIBLE_", "SESSION_ORACLE_")
 # The variables that the launcher gives each test, with their values.
 FIXED_VALUES = (("LANG", "C.UTF-8"), ("LC_ALL", "C.UTF-8"), ("TZ", "UTC"))
-# The variable of the directory of the compiled modules of Python, and the variable that stops their writes (THE
-# ENVIRONMENT).
+# The variable of the directory of the compiled modules of Python, and the variable that stops their writes (the
+# environment).
 PYCACHE_PREFIX_ENV = "PYTHONPYCACHEPREFIX"
 NO_BYTECODE_ENV = "PYTHONDONTWRITEBYTECODE"
-# The variable that keeps the working directory and the directory of the script off sys.path (THE ENVIRONMENT).
+# The variable that keeps the working directory and the directory of the script off sys.path (the environment).
 SAFE_PATH_ENV = "PYTHONSAFEPATH"
 # The variables of the launcher that the clean environment does not hold.  The launcher gives the profile variables to
-# the test with no change (THE ENVIRONMENT).
+# the test with no change (the environment).
 PROFILE_NAMES = (cost_meter.CALL_PROFILE_ENV, cost_meter.LINES_ENV)
 PASSED_THROUGH = frozenset({LAUNCHED_ENV, TRACED_ENV, cost_meter.TEST_JOBSERVER_ENV, *PROFILE_NAMES})
 SEARCH_PATH = "PATH"
-# The options before the command, each with one value, and the one value of --trace (THE READ SET).
+# The options before the command, each with one value, and the one value of --trace (the read set).
 OPTIONS = ("--build-dir", "--name", "--emulator-words", "--trace", "--x86-level")
 TRACE_NEVER = "never"
-# The directory of the test groups of the subcommand selftest of the master guard, relative to the root (THE READ SET).
+# The directory of the test groups of the subcommand selftest of the master guard, relative to the root (the read set).
 TEST_GROUPS = "utils/assay/tests"
 # The end of the path of the master, and the subcommand that this module is.  A test command can name the master of
 # an export of the tree.  A reader then finds the master by the end of its path.
 MASTER = "utils/bin/loop"
 SUBCOMMAND = "test-step"
-# The ends of the paths of the three masters, which run the modules of the package (THE VERSION).
+# The ends of the paths of the three masters, which run the modules of the package (the version).
 GUARD_MASTER = "utils/bin/guard"
 MASTERS = (GUARD_MASTER, MASTER, "utils/bin/setup")
 PACKAGE = "assay"
@@ -380,12 +380,12 @@ def keeps_cores() -> bool:
 
 
 def is_kept(name: str) -> bool:
-    """Return True for a variable that the test gets from the environment of the launcher (THE ENVIRONMENT)."""
+    """Return True for a variable that the test gets from the environment of the launcher (the environment)."""
     return name in KEPT_NAMES or name.startswith(KEPT_PREFIXES)
 
 
 def search_path(value: str) -> str:
-    """Return each absolute directory of a search path one time, in the same sequence (THE ENVIRONMENT).
+    """Return each absolute directory of a search path one time, in the same sequence (the environment).
 
     Complexity: linear in the length of the value.
     """
@@ -397,7 +397,7 @@ def search_path(value: str) -> str:
 
 
 def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
-    """Return the clean environment of a test from the environment of the launcher, sorted by name (THE ENVIRONMENT).
+    """Return the clean environment of a test from the environment of the launcher, sorted by name (the environment).
 
     The result holds no CRUCIBLE_TEST_LAUNCHED, because the launcher sets it
     for each test.  Complexity: O(n log n) for n variables.
@@ -451,12 +451,12 @@ def program_item(program: str, build_dir: str | None) -> str:
 def judge(
     name: str, program: str, run: cost_meter.Measurement, budget: dict[str, float], ledgers: str | None = None
 ) -> list[tuple[str, str]]:
-    """Compare the measures of one test with the limits of the kind test of its measured rules (THE MEASURED RULES).
+    """Compare the measures of one test with the limits of the kind test of its measured rules (the measured rules).
 
     The witness of step-memory and step-cost judges the planted record of a
     test with this function, and with the ledgers of the copy of a plant
     (assay.guard.engines.buildsys.held).  A test of the directory bench of
-    the build has no judge (assay.core.budget, THE SCOPE).
+    the build has no judge (assay.core.budget, the scope).
 
     Args:
         name: The name of the test
@@ -522,7 +522,7 @@ def package_modules(utils: str) -> list[str]:
 
 
 def command_files(command: Sequence[str]) -> list[str]:
-    """Return each path that the words of a command name, for the version of the test (THE VERSION).
+    """Return each path that the words of a command name, for the version of the test (the version).
 
     Complexity: linear in the words, and one walk of the package for a word that names a master.
     """
@@ -539,10 +539,10 @@ def command_files(command: Sequence[str]) -> list[str]:
 
 
 def has_derived_inputs(command: Sequence[str]) -> bool:
-    """Tell if a command runs the master guard with words that `loop test` gives the inputs of (THE READ SET).
+    """Tell if a command runs the master guard with words that `loop test` gives the inputs of (the read set).
 
     The script is the first word after the options of the interpreter, in its normal form.  The words are a rule
-    test, `guard check` or `guard witness`, or a group test, `guard selftest GROUP` (assay.loop.inputs, THE TESTS).
+    test, `guard check` or `guard witness`, or a group test, `guard selftest GROUP` (assay.loop.inputs, the tests).
     GROUP names a group as the subcommand selftest reads it: a name with no dot, and a directory of TEST_GROUPS in the
     root of the master.  The test of one module, `guard selftest MODULE`, gets no such inputs.  Complexity: linear in
     the options, and one stat for a group test.
@@ -564,7 +564,7 @@ def has_derived_inputs(command: Sequence[str]) -> bool:
 
 
 def version_of(words: Sequence[str], files: Iterable[str]) -> str:
-    """Return the version of a test: a digest of the words of its command and of its files (THE VERSION).
+    """Return the version of a test: a digest of the words of its command and of its files (the version).
 
     A path that names no regular file adds nothing.  The digest is the CRC-32 of the text and the CRC-32 of the text
     in reverse.  The two detect a change, and the launcher then pays no import of hashlib.
@@ -667,7 +667,7 @@ def launched(command: list[str]) -> list[str]:
 
 
 def program_index(options: Options, command: Sequence[str]) -> int | None:
-    """Return the index in `command` of the program of the test, after the words of its emulator (THE EMULATOR).
+    """Return the index in `command` of the program of the test, after the words of its emulator (the emulator).
 
     Args:
         options: The options of the launcher
@@ -686,7 +686,7 @@ def program_index(options: Options, command: Sequence[str]) -> int | None:
 
 
 def launched_program(command: list[str]) -> str | None:
-    """Return the program of a test command behind this launcher, after the words of an emulator (THE EMULATOR).
+    """Return the program of a test command behind this launcher, after the words of an emulator (the emulator).
 
     A command with no launcher gives its first word.  The result is None for an empty command.  It is None for a
     launcher with no program, or with a value of --emulator-words that is not a count.  Complexity: linear in the
@@ -730,7 +730,7 @@ def safely[T](action: Callable[[], T], fallback: T) -> T:
 
 
 def emulated_run(name: str, emulator: str, run: cost_meter.Measurement) -> cost_meter.Measurement:
-    """Return the measurement of a test behind an emulator with no count, and print the reason (THE EMULATOR).
+    """Return the measurement of a test behind an emulator with no count, and print the reason (the emulator).
 
     The count of such a run holds the instructions of the emulator, so the judge and the record get no count.  The
     other measures do not change.
@@ -776,7 +776,7 @@ def judge_and_record(
         run: The measurement of the test, with its status
         budget: The limit of each rule, or None to read them from the registry (read_budget())
         emulator: The program of the emulator in front of the program of the test, or None for a run with no
-            emulator (THE EMULATOR)
+            emulator (the emulator)
 
     Returns:
         The status of the test, or 1 when the judge rejects a test with the status 0
@@ -803,13 +803,13 @@ def judge_and_record(
 def traced_run(
     build_dir: str, name: str, command: Sequence[str], version: str, clean: Iterable[tuple[str, str]]
 ) -> Plan | None:
-    """Return the plan of a traced run of a test, or None when its read set is current (THE READ SET).
+    """Return the plan of a traced run of a test, or None when its read set is current (the read set).
 
     Args:
         build_dir: The build directory of the test
         name: The name of the test
         command: The command of the test
-        version: The version of the run (THE VERSION)
+        version: The version of the run (the version)
         clean: The clean environment of the test
     """
     from assay.loop import readset
@@ -819,7 +819,7 @@ def traced_run(
 
 
 def level_verdict(level_text: str, build_dir: str | None, name: str) -> int | None:
-    """Return the exit of a test whose host is below its need, or None when the test runs (THE LEVEL).
+    """Return the exit of a test whose host is below its need, or None when the test runs (the level).
 
     The subcommand imports assay.core.x86level only for a test with --x86-level, because each test pays the import of
     this module.
@@ -894,7 +894,7 @@ def main(argv: list[str]) -> int:
         print(f"loop test-step: {problem}{USAGE}", file=sys.stderr)
         return 2
     options, command = parsed
-    # The program of the test is the word after its emulator (THE EMULATOR).  The full command runs.
+    # The program of the test is the word after its emulator (the emulator).  The full command runs.
     program = os.path.abspath(program_word) if os.sep in program_word else program_word
     build_dir = options.build_dir
     if build_dir is None and os.path.isabs(program):

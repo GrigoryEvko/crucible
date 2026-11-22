@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The RecipeRegistry constructor takes the pool as a branded
 // fixy::Ref<RecipePool, Brand>.  A raw RecipePool* skips the non-null

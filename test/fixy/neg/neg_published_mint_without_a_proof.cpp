@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_published takes the proof of the stage that publishes objects of the
 // type (fixy/handle/Published.h).  A proof that names no published type

@@ -10,7 +10,7 @@ Requires:
   - libcrucible_vessel.so  (C API to Vigil lifecycle)
   - libcrucible_dispatch.so (C++ fallback + TLS accessors)
   - libcrucible_level.so   (on x86_64: the level probe, which picks the
-    x86-64 level of the two libraries; THE LEVEL OF A LIBRARY below)
+    x86-64 level of the two libraries; the level of a library below)
 
 Usage:
     from crucible_native import attach
@@ -97,8 +97,8 @@ STORAGE_GENERATION_UNKNOWN_BIT = 1 << 31
 class AbiStamp(NamedTuple):
     """The ABI stamp of the level probe, and the version that this module reads.
 
-    The two vessel libraries carry a layout note in place of a stamp (THE
-    LAYOUT OF A LIBRARY).  The probe keeps its stamp, because the test
+    The two vessel libraries carry a layout note in place of a stamp (the
+    layout of a library).  The probe keeps its stamp, because the test
     launcher of the gate reads it too (utils/assay/core/x86level.py).
     """
 
@@ -251,7 +251,7 @@ class CrucibleAbiMismatchError(RuntimeError):
 
     The layout note of a vessel library differs from the layout table of its
     build, or the library has no note, or a ctypes Structure of this package
-    differs from the table (THE LAYOUT OF A LIBRARY).  The level probe has an
+    differs from the table (the layout of a library).  The level probe has an
     ABI stamp, and a probe whose stamp is not AbiStamp.expected raises it
     too.  The message names the library and the build command.
     """
@@ -324,7 +324,7 @@ def _find_lib(name: str) -> str | None:
 
 
 def sanitizer_runtime(path: str) -> SanitizerRuntime | None:
-    """Name the sanitizer runtime that the ELF library at PATH imports.
+    """Name the sanitizer runtime that the ELF library at path imports.
 
     Returns the runtime for a library built under ASan or ThreadSanitizer,
     and None for a library that needs neither. The read
@@ -362,16 +362,16 @@ def sanitizer_runtime(path: str) -> SanitizerRuntime | None:
 def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
     """Find one Crucible library and return its path once it is safe to load.
 
-    MISSING is the build command to name when no library is found. A
+    missing is the build command to name when no library is found. A
     library built under ASan or ThreadSanitizer loads only when its runtime
     is already in the process, which a preload does.  Without the runtime,
     dlopen of such a library ends the process, so the library is refused
     before it is loaded.
 
-    On x86_64 the level of the library must suit the host (THE LEVEL OF A
-    LIBRARY).  With no LIB_PATH and with CRUCIBLE_LEVEL_ROOT, the library
+    On x86_64 the level of the library must suit the host (the level of a
+    library).  With no lib_path and with CRUCIBLE_LEVEL_ROOT, the library
     comes from the directory of the picked level of that root.  A library of
-    LIB_PATH gets the level probe of named_probe().
+    lib_path gets the level probe of named_probe().
 
     Raises:
         RuntimeError: If no library is found, or if it needs a sanitizer
@@ -395,7 +395,7 @@ def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
 
 
 def _refuse_missing_runtime(path: str) -> None:
-    """Refuse the library at PATH when it needs a sanitizer runtime that the process does not hold."""
+    """Refuse the library at path when it needs a sanitizer runtime that the process does not hold."""
     runtime = sanitizer_runtime(path)
     if runtime is not None and not _is_runtime_loaded(runtime):
         raise RuntimeError(
@@ -411,9 +411,9 @@ def _refuse_missing_runtime(path: str) -> None:
 # The level of a library
 # =====================================================================
 #
-# THE LEVEL OF A LIBRARY.  The engine builds one time for each x86-64 level,
-# v1 to v4 (THE X86 LEVELS of include/foundation/os/X86Level.h).  Each
-# vessel library carries an ELF note with the level of its flags (THE NOTE of
+# The level of a library.  The engine builds one time for each x86-64 level,
+# v1 to v4 (the x86 levels of include/foundation/os/X86Level.h).  Each
+# vessel library carries an ELF note with the level of its flags (the note of
 # vessel/torch/level_note.h).  The loader reads the note from the file before
 # dlopen, because the global constructors of a library of a level above the
 # host can fault before any check after the load.  The level probe
@@ -421,7 +421,7 @@ def _refuse_missing_runtime(path: str) -> None:
 # it gives the level of the host.
 #
 # A level root (CRUCIBLE_LEVEL_ROOT) holds the probe and one directory of the
-# two vessel libraries for each level, x86-64-v1 to x86-64-v4 (THE LEVEL ROOT
+# two vessel libraries for each level, x86-64-v1 to x86-64-v4 (the level root
 # of vessel/torch/CMakeLists.txt).  The loader picks the highest level of the
 # host, and takes only exact libraries of that level.  CRUCIBLE_ISA_LEVEL (v1
 # to v4) asks for a level at or below the level of the host, so a test runs
@@ -456,7 +456,7 @@ _PAIR = ("libcrucible_vessel.so", "libcrucible_dispatch.so")
 
 
 class LevelKind(enum.IntEnum):
-    """The kind of the level of a library (THE NOTE of vessel/torch/level_note.h)."""
+    """The kind of the level of a library (the note of vessel/torch/level_note.h)."""
 
     # The flags give each feature of the level and no feature above it.
     EXACT = 1
@@ -505,7 +505,7 @@ class CrucibleNote(NamedTuple):
 
 
 def crucible_notes(path: str) -> list[CrucibleNote]:
-    """Read each note of the owner Crucible of the ELF library at PATH, in the order of the file.
+    """Read each note of the owner Crucible of the ELF library at path, in the order of the file.
 
     The read takes the ELF header, the section headers and each note
     section, and no other byte of the file.  Complexity: O(sections + bytes
@@ -540,14 +540,14 @@ def crucible_notes(path: str) -> list[CrucibleNote]:
 def _notes_of_section(notes: bytes, base: int, alignment: int, path: str) -> list[CrucibleNote]:
     """Give the notes of the owner Crucible among the notes of one section.
 
-    BASE is the offset of the section in the file, and ALIGNMENT is the
+    base is the offset of the section in the file, and alignment is the
     alignment of its notes, 4 or 8.
 
     Raises:
         RuntimeError: If a note runs past the end of the section
     """
     def aligned(offset: int) -> int:
-        """Round the OFFSET in the section up to the alignment of the notes.
+        """Round the offset in the section up to the alignment of the notes.
 
         The header of a note has 12 bytes, so a note of the alignment 8 has
         padding after the name also when the name has 4 bytes.
@@ -572,12 +572,12 @@ def _notes_of_section(notes: bytes, base: int, alignment: int, path: str) -> lis
 
 
 def level_note(path: str) -> LevelNote | None:
-    """Read the level note of the ELF library at PATH, or give None for a library with no note.
+    """Read the level note of the ELF library at path, or give None for a library with no note.
 
     Raises:
         RuntimeError: If the file is not a 64-bit little-endian ELF object,
             or if it holds a malformed note, or a level note with a size, a
-            level or a kind that THE NOTE does not give
+            level or a kind that the note does not give
     """
     for note in crucible_notes(path):
         if note.note_type != _NOTE_TYPE_LEVEL:
@@ -596,14 +596,14 @@ _PICKS: dict[tuple[str, bytes], int] = {}
 
 
 def picked_level(probe: Path) -> int:
-    """Give the level that the probe at PROBE picks: the level of the host, or the level of CRUCIBLE_ISA_LEVEL.
+    """Give the level that the probe at probe picks: the level of the host, or the level of CRUCIBLE_ISA_LEVEL.
 
     One load and one call for each probe and request of the process.  The
     probe ends the process when CRUCIBLE_ISA_LEVEL names a level above the
     host or is no level.
 
     Raises:
-        CrucibleLevelError: If no probe is at PROBE, or if its note does not
+        CrucibleLevelError: If no probe is at probe, or if its note does not
             say exact v1
         RuntimeError: If the probe needs a sanitizer runtime that the process
             does not hold
@@ -632,10 +632,10 @@ def picked_level(probe: Path) -> int:
 
 
 def level_root_path(name: str, root: Path) -> str:
-    """Give the path of the library NAME in the directory of the picked level of the level root ROOT.
+    """Give the path of the library name in the directory of the picked level of the level root root.
 
     Raises:
-        CrucibleLevelError: If ROOT holds no probe, or no library NAME at the
+        CrucibleLevelError: If root holds no probe, or no library name at the
             picked level
     """
     level = picked_level(root / PROBE_STAMP.library)
@@ -648,11 +648,11 @@ def level_root_path(name: str, root: Path) -> str:
 
 
 def named_probe(path: Path) -> Path:
-    """Give the level probe of the library at PATH that a caller names.
+    """Give the level probe of the library at path that a caller names.
 
     The probe of a build directory is beside its libraries.  A level
     directory x86-64-vN of a level root holds no probe, and the probe of the
-    root is in its parent (THE LEVEL ROOT of vessel/torch/CMakeLists.txt).
+    root is in its parent (the level root of vessel/torch/CMakeLists.txt).
     So a path that came from a root, such as a path of checked_lib_path()
     under CRUCIBLE_LEVEL_ROOT, loads again.  Only a level directory sends
     the read to its parent, and the rule of the level stays the rule of a
@@ -665,16 +665,16 @@ def named_probe(path: Path) -> Path:
 
 
 def check_level(path: str, probe: Path, source: LevelSource) -> None:
-    """Refuse the library at PATH before its load when its level note does not suit the picked level.
+    """Refuse the library at path before its load when its level note does not suit the picked level.
 
-    PROBE is the level probe that picks the level, and SOURCE gives the rule:
+    probe is the level probe that picks the level, and source gives the rule:
     a library of a level root is exact and of the picked level, and each
     other library is at or below the picked level.  The two vessel libraries
     of one directory must hold the same note.
 
     Raises:
         CrucibleLevelError: If the library has no note, or a note that breaks
-            the rule of SOURCE, or a note that differs from the note of the
+            the rule of source, or a note that differs from the note of the
             other vessel library of its directory
     """
     note = level_note(path)
@@ -713,7 +713,7 @@ def _is_runtime_loaded(runtime: SanitizerRuntime) -> bool:
 def check_abi_stamp(library: Any, path: str, stamp: AbiStamp) -> None:
     """Refuse a loaded Crucible library whose ABI stamp is not stamp.expected.
 
-    LIBRARY is the loaded library, and PATH is the file that it came from,
+    library is the loaded library, and path is the file that it came from,
     for the message.  A library from before the stamp has no stamp.symbol,
     and the check refuses it too.  The check runs before a caller declares
     any other symbol, so a stale library gives this message and not the
@@ -750,11 +750,11 @@ def check_abi_stamp(library: Any, path: str, stamp: AbiStamp) -> None:
 # The layout of a library
 # =====================================================================
 #
-# THE LAYOUT OF A LIBRARY.  The two vessel libraries compile the header-only
+# The layout of a library.  The two vessel libraries compile the header-only
 # Vigil, and each one reads values that the other one made.  Each vessel
 # library carries an ELF note with the layout digest of the types and the C
-# entries that the two share (THE NOTE of vessel/torch/layout_note.h).  The
-# build writes the layout table beside the libraries (THE TABLE of
+# entries that the two share (the note of vessel/torch/layout_note.h).  The
+# build writes the layout table beside the libraries (the table of
 # vessel/torch/layout_table.cpp): the digest of the build, and the size and
 # the member offsets of each struct of the C ABI that a ctypes Structure of
 # this package mirrors (MIRRORS).
@@ -807,11 +807,11 @@ class LayoutNote(NamedTuple):
 
 
 def read_layout_table(folder: Path) -> LayoutTable:
-    """Read the layout table of the build of the libraries in FOLDER.
+    """Read the layout table of the build of the libraries in folder.
 
     Raises:
-        CrucibleAbiMismatchError: If FOLDER holds no table, or a line of the
-            table is no line of THE TABLE
+        CrucibleAbiMismatchError: If folder holds no table, or a line of the
+            table is no line of the table
     """
     path = folder / LAYOUT_TABLE
     if not path.exists():
@@ -860,9 +860,9 @@ def layout_note(path: str) -> LayoutNote | None:
 
 
 def check_layout(path: str, rebuild: str) -> LayoutTable:
-    """Refuse the library at PATH before its load when its layout is not the layout of its build.
+    """Refuse the library at path before its load when its layout is not the layout of its build.
 
-    The table comes from the directory of the library.  REBUILD is the build
+    The table comes from the directory of the library.  rebuild is the build
     command that the message names.  Gives the table, for the second guard
     after the load.
 
@@ -923,7 +923,7 @@ def check_mirrors(table: LayoutTable) -> None:
 def check_loaded_layout(library: Any, symbol: str, path: str, table: LayoutTable) -> None:
     """Refuse a loaded library whose layout entry gives a digest other than the digest of the table.
 
-    The second guard of THE LAYOUT OF A LIBRARY, after the check of the note.
+    The second guard of the layout of a library, after the check of the note.
 
     Raises:
         CrucibleAbiMismatchError: If the library has no SYMBOL, or it gives a
@@ -945,7 +945,7 @@ def check_loaded_layout(library: Any, symbol: str, path: str, table: LayoutTable
 def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
     """Load libcrucible_vessel.so, and return it once its layout is the layout of its build.
 
-    LIB_PATH names the library, or None to search the build directories
+    lib_path names the library, or None to search the build directories
     (_find_lib).  Each wrapper of the vessel library loads it through this
     function, so no wrapper reads a library of a different layout.
 
@@ -1014,7 +1014,7 @@ def check_tls_modes(observed: dict[str, int], path: str) -> None:
 def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
     """Load libcrucible_dispatch.so, and return it once its layout is the layout of its build.
 
-    LIB_PATH names the library, or None to search the build directories
+    lib_path names the library, or None to search the build directories
     (_find_lib).  The wrapper of the dispatch library loads it through this
     function.  The load runs the global constructors of the library, and
     they register its kernels and its fallback for DispatchKey::Crucible.

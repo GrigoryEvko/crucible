@@ -1,4 +1,4 @@
-// The deaths of THE LEND COUNT of foundation/core/Grow.h.  A frame door
+// The deaths of the lend count of foundation/core/Grow.h.  A frame door
 // lends the storage of a growable owner to its body.  The rule borrow-match
 // reads the body, so each change below comes from a function that the body
 // calls, which the rule does not read.  Each such change ends the process in

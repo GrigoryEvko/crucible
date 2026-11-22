@@ -1,13 +1,13 @@
 """binding-hook — no code calls the hook get<I> of a structured binding by name.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ gives a finding of the
     kind binding-hook for each call of a function with the annotation
     foundation::linear::binding_hook of include/foundation/Linear.h outside
     the initializer of a name of a binding, in each build and each mode
     (binding.cpp).  The rule reads those finding lines in the sections of the
     objects of the target all of one build (assay.guard.engines.plugin.runner,
-    THE SECTIONS).  The same line from two objects counts one time.  The
+    the sections).  The same line from two objects counts one time.  The
     entity of a finding is the qualified name of the hook.
 
     The rule has no ledger, and each finding is an error.  A call in an

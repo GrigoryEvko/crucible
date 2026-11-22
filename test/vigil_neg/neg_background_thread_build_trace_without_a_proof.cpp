@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // build_trace_from writes the scratch buffers of the build stage.  A caller
 // outside the pipeline gives the proof that no pipeline runs

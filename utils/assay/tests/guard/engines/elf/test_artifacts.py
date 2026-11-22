@@ -3,7 +3,7 @@
 `guard selftest tests.guard.engines.elf.test_artifacts` runs the test.
 Each case writes one line.  Exit 0 when each case holds, else 1.
 
-THE CASES
+Cases
     The cases hold these parts of the rule:
       * The groups and the paths of the facts, the facts of planted
         programs, a link with no map, and the verdict of a planted ledger
@@ -47,7 +47,7 @@ VESSEL = """\
 #include <cstdio>
 int main(int count, char**) { return std::printf("%d\\n", count); }
 """
-# The rows of plant.txt that limit a plant to the facts, or to the properties (THE PLANTS).
+# The rows of plant.txt that limit a plant to the facts, or to the properties (the plants).
 FACT_ROW = f"{artifacts.KINDS_ROW} {' '.join(artifacts.FACT_KINDS)}\n"
 PROPERTY_ROW = f"{artifacts.KINDS_ROW} {' '.join(artifacts.PROPERTY_KINDS)}\n"
 MANIFEST = (
@@ -116,7 +116,7 @@ def planted_map(inputs: Iterable[str]) -> str:
 
 
 def path_cases(expect: testing.Expect) -> None:
-    """Hold the group of a source directory and the words of a run path (THE PATHS)."""
+    """Hold the group of a source directory and the words of a run path (the paths)."""
     expect(
         "the first directory of a source directory gives the group, and each other directory is tools",
         [artifacts.group_of(name) for name in ("vessel", "bench", "test", "examples", "")]
@@ -187,7 +187,7 @@ def fact_cases(expect: testing.Expect, compiler: str) -> None:
 
 
 def directory_cases(expect: testing.Expect) -> None:
-    """Hold each reason of a run path directory that the host does not give (THE RUN PATH DIRECTORIES)."""
+    """Hold each reason of a run path directory that the host does not give (the run path directories)."""
     with TemporaryDirectory(prefix="artifacts-directories-") as scratch_text:
         scratch = Path(scratch_text).resolve()
         (scratch / "bin").mkdir()
@@ -270,7 +270,7 @@ def missing_cases(expect: testing.Expect, compiler: str) -> None:
 
 
 def problem_cases(expect: testing.Expect) -> None:
-    """Hold the problems of the hardening facts of one artifact (THE PROPERTIES, THE CONTROL FLOW)."""
+    """Hold the problems of the hardening facts of one artifact (the properties, the control flow)."""
     expect("an executable with each property has no problem", kinds_of(HARDENED) == [])
     fixed = replace(HARDENED, file_type=elf.ET_EXEC, flags_1=elf.DF_1_NOW)
     expect(
@@ -342,7 +342,7 @@ def problem_cases(expect: testing.Expect) -> None:
 
 
 def input_cases(expect: testing.Expect) -> None:
-    """Hold the inputs that removed the control-flow protection, from a planted map and its inputs (THE CONTROL FLOW)."""
+    """Hold the inputs that removed the control-flow protection, from a planted map and its inputs (the control flow)."""
     with TemporaryDirectory(prefix="artifacts-inputs-") as scratch_text:
         scratch = Path(scratch_text)
         for name, word in (("good.o", 3), ("bare.o", None), ("shadowless.o", 1)):
@@ -424,7 +424,7 @@ def input_cases(expect: testing.Expect) -> None:
 
 
 def kind_cases(expect: testing.Expect) -> None:
-    """Hold the kinds of a row `kinds` of a plant (THE PLANTS)."""
+    """Hold the kinds of a row `kinds` of a plant (the plants)."""
 
     def planted(text: str) -> runner.ElfContext:
         """Return a context of a plant with the rows of a text."""
@@ -445,7 +445,7 @@ def kind_cases(expect: testing.Expect) -> None:
 
 
 def build_cases(expect: testing.Expect, compiler: str, scratch: Path) -> None:
-    """Hold the read of the linked artifacts of planted builds (THE ARTIFACTS, THE LEDGER, NOT APPLICABLE)."""
+    """Hold the read of the linked artifacts of planted builds (the artifacts, the ledger, not applicable)."""
 
     def built(name: str, manifest: str) -> runner.ElfContext:
         """Build a plant with one unit and the rows of a manifest, and return its context."""

@@ -1,13 +1,13 @@
 """lifetime-twin — each parameter that claims a lifetime bound has the deleted overload that enforces it.
 
-THE RULE
+Rule
     GCC 16 does not read clang::lifetimebound or gnu::lifetimebound, and no
     compiler checks a lifetime bound.  A deleted overload that takes an
     rvalue reference at the same index refuses a temporary at the call.  It
     is the better match for a prvalue argument.  CRUCIBLE_LIFETIMEBOUND of
     foundation/Platform.h gives the attribute quarantine::lifetimebound, and
     the quarantine plugin reads it (utils/tools/quarantine/declaration.cpp,
-    THE RULE lifetime-twin):
+    the rule lifetime-twin):
       missing-twin   a marked parameter with no twin.  The twin of the
                      parameter at index I of a function F is a deleted
                      overload of F.  It is in the scope of F and in the file
@@ -18,7 +18,7 @@ THE RULE
       missing-mark   a parameter by a const reference that a return of its
                      function borrows through a door of the base, with no
                      marker and no overload that takes an rvalue at its index
-                     (declaration.cpp, THE BORROWED PARAMETERS)
+                     (declaration.cpp, the borrowed parameters)
     A marker on a declaration that is no parameter is a compile error in
     each build.  The rule reads the lines in the scope of its row of
     utils/registry.txt.

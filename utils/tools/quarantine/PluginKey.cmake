@@ -1,4 +1,4 @@
-# The key file of the quarantine plugin (THE KEY OF THE PLUGIN of
+# The key file of the quarantine plugin (the key of the plugin of
 # utils/tools/quarantine/Quarantine.cmake).
 #
 # The key file PLUGIN.key holds two lines: the key of the plugin, and the

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A specialization of the inner loop context would send the Continue of a
 // receiving loop to a sending body.  The inner loop context is an alias

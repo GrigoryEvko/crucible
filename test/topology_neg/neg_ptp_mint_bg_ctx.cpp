@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Only an Init-row context mints a PTP handle.  A background context may
 // record status and timestamps into a handle but may not create one.

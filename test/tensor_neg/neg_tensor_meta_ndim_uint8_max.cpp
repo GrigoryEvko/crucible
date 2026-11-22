@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: the checked mint of ValidNDim receives UINT8_MAX in constant
 // evaluation.  This is the wide miss of the ndim cap.

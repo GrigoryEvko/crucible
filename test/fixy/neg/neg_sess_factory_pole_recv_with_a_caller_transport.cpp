@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The receive of the handle factory is the step that the receive of a
 // handle calls.  A session over a pole of a channel receives through the

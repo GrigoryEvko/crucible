@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A registry handle is the proof that an init context was checked, so
 // its constructor is private and mint_hot_region_registry_handle is the

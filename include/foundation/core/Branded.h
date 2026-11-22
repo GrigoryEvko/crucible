@@ -14,7 +14,7 @@
 //                       of Brand.  Only that view makes one: index(raw) gives
 //                       an Option, and indices() and enumerate() give each one
 //
-// THE OPERATIONS OF A BRANDED VIEW
+// Operations of a branded view
 //   size(), view(), for (x : view)
 //   index(raw)          Option<BrandedIndex<Brand>>: one compare
 //   indices()           each BrandedIndex<Brand>, in order

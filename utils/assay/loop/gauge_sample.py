@@ -1,13 +1,13 @@
 """gauge_sample — the compile CPU time of a fixed sample of translation units (`loop gauge --sample`).
 
-THE SAMPLE
+Sample
     The sample is fixed in SAMPLE below, so each run measures the same files.
     It holds eight translation units that cover the cost range of the tree,
     from a small foundation test to a large test of fixy, and five negative
     fixtures.  A change to the sample makes each earlier table incomparable,
     so change it only together with a new baseline.
 
-WHAT THE SCRIPT MEASURES
+What the script measures
     For each source, the script takes the command of the compile database and
     runs it two times over: with -fsyntax-only, which stops after the front
     end, and in full, which writes the object to a scratch directory.  It
@@ -41,7 +41,7 @@ WHAT THE SCRIPT MEASURES
     source path.  So two copies can run side by side, under the same load,
     for a before and after table.
 
-EXIT CODES
+Exit codes
     0  Each row has its numbers, and each command gave the expected result
     1  A source is missing from the compile database, a translation unit or
        a header did not compile, a fixture compiled, or a compare file has a

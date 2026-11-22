@@ -71,7 +71,7 @@ void test_producer_surface_takes_the_claim_context() {
 
 // record_op publishes the heads of the ring and of the log with the proof of
 // the claim, and the producer surface publishes them with the checked form
-// (THE TWO PUBLISHES of crucible/TraceRing.h).  The two forms keep one copy
+// (the two publishes of crucible/TraceRing.h).  The two forms keep one copy
 // of each head on the line of the producer, and the checked publish compares
 // the head with that copy.  A proven publish that left the copy behind ends the
 // process at the next checked publish, and the count of the ring shows a lost

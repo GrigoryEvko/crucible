@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The snapshot mint takes a TCP sample under the TcpInfo source tag.  A
 // raw congestion sample does not convert to it, so a sample reaches the

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_hardening refuses the cold init context.  That row is Init, Alloc
 // and IO, with no Block.  The choice of the hot CPU reads sysfs and

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_pipeline_dag with a bare int where the stage graph belongs.  The
 // mint gate's first clause is that the graph is a StageGraph at all,

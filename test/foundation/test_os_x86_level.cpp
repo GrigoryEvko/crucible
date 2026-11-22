@@ -75,7 +75,7 @@ constexpr std::uint64_t kXcr0Hi16Zmm = std::uint64_t{1} << 7;
 
 [[nodiscard]] constexpr X86Feature feature_at(std::uint8_t number) noexcept { return static_cast<X86Feature>(number); }
 
-// Each bit of each word, apart from the bits in REMOVED.
+// Each bit of each word, apart from the bits that were removed.
 [[nodiscard]] constexpr X86FeatureWords words_without(X86FeatureWords const& removed) noexcept {
     return X86FeatureWords{.xcr0 = ~removed.xcr0,
                            .leaf1_ecx = ~removed.leaf1_ecx,

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // An operator override comes from startup or from a test.  A background
 // context that holds the token still does not own Init or Test, so the

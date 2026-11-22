@@ -4,15 +4,15 @@
 //
 // HdrHistogram is a fixed-shape high-dynamic-range histogram: the
 // recording hot path is `counts_[counts_index(value)].fetch_add(1)`
-// with NO runtime bounds check — record() trusts the layout math
+// with no runtime bounds check — record() trusts the layout math
 // (HdrHistogram.h:158).  So `counts_index(v) < bucket_slots` for every
-// admissible value is a MEMORY-SAFETY invariant, not just a correctness
+// admissible value is a memory-safety invariant, not just a correctness
 // one: a layout-math regression that lets the index escape the array is
 // an out-of-bounds atomic write into the Keeper's metric storage.
 //
-// The existing test (test_hdr_histogram.cpp) is thorough on BEHAVIORS —
+// The existing test (test_hdr_histogram.cpp) is thorough on behaviors —
 // zero handling, concurrency/publish discipline, merge/subtract,
-// serialize, multi-tag isolation — but the core BUCKET ARITHMETIC is
+// serialize, multi-tag isolation — but the core bucket arithmetic is
 // only spot-checked: it records ~8 hand-picked values {0,10,20,100,500,
 // 777,1000,1000000} and asserts coarse `percentile() >= / <=` bounds at
 // a handful of points.  It never sweeps the full [0, MaxValue] range,
@@ -22,7 +22,7 @@
 // ── Two property runs ──────────────────────────────────────────────
 //
 // Run A (layout arithmetic, four layouts).  The reference is the inverse
-// function value_from_index — a DIFFERENT computation from counts_index
+// function value_from_index — a different computation from counts_index
 // (encode vs decode), so a divergence is a genuine bug.  For each random
 // value v ∈ [0, MaxValue], log-uniform across magnitudes so every HDR
 // bucket is hit densely, it asserts:
@@ -32,7 +32,7 @@
 //   * v < value_from_index(idx+1)             (v sits strictly below the next
 //                                              slot — pins v into exactly one
 //                                              bucket; catches any off-by-one
-//                                              AND proves value_from_index is
+//                                              and proves value_from_index is
 //                                              strictly increasing in index,
 //                                              the premise percentile() relies
 //                                              on for monotonicity)

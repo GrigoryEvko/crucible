@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Folding two tokens of one tag back into a parent would require two
 // owners of one region to have existed.  A brand names a mint site, not a

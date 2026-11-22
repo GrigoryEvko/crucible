@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The fan-out of mint_parallel_for starts one thread per shard.  That is
 // the work of the mint, so only the mint may reach it: the fan-out is a

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Every tag an n-ary combine names needs an effect row.  The parent tag
 // of the combine here declares none, so nothing says which contexts may

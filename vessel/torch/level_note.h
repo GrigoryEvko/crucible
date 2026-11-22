@@ -6,7 +6,7 @@
 // library.  The global constructors of a library of a level above the host
 // can fault, so no check after the load can come first.
 //
-// THE NOTE
+// The note
 //   The section .note.crucible holds one note in the ELF format, seven words
 //   of 32 bits: the size of the name (9), the size of the descriptor (4), the
 //   type (1), the name "Crucible" and its zero in three words, and the
@@ -36,7 +36,7 @@ namespace crucible::vessel {
 
 #if defined(__x86_64__)
 
-// The kind of the level of a library (THE NOTE).
+// The kind of the level of a library (the note).
 enum class LevelKind : std::uint8_t {
     exact = 1,
     host = 2
@@ -58,7 +58,7 @@ struct LevelNote {
     std::uint32_t descriptor = 0;
 };
 
-// The note of the flags of the unit, with the kind KIND.
+// The note of the flags of the unit, with the given kind.
 [[nodiscard]] consteval LevelNote level_note_of(LevelKind kind) noexcept {
     LevelNote note{};
     auto const level = static_cast<std::uint32_t>(::foundation::os::x86_level_of_target());

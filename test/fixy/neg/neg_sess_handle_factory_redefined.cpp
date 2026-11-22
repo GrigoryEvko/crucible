@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // HandleKey befriends the handle factory, and fixy/session/Handle.h
 // defines the factory beside the key.  A translation unit that includes

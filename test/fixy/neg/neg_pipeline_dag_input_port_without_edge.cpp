@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A plain stage feeds input 0 of a fan-in stage, and input 1 of the fan-in
 // stage has no edge.  The fan-in stage is not the first stage, so its

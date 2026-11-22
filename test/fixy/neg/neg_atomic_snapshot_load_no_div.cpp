@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // AtomicSnapshot::load spins with no exit while a write is in flight, so it
 // asks for a context that owns Div.  The foreground context of the hot path

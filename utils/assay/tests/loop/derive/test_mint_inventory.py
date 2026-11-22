@@ -7,7 +7,7 @@ planted mint records to a context of the engine plugin with a planted
 census.  The fixtures parse with the pinned tree-sitter kit.  The cases hold:
   * The layer and the section of a header path
   * The fixture directories of each layer, and the files that are not fixtures
-  * The paths whose change can change the inventory (THE INPUTS)
+  * The paths whose change can change the inventory (the inputs)
   * The count of the fixtures of a member mint of a name that two classes have
   * The rows of the records: the count of each mint, the carve-out of the
     ledger, the cx cell and the label of an overload
@@ -142,7 +142,7 @@ def fixture_cases(expect: testing.Expect) -> None:
 
 
 def input_cases(expect: testing.Expect) -> None:
-    """Hold THE INPUTS: each fixture of fixture_files() is an input, and a path of src/ or of a test is not."""
+    """Hold the inputs: each fixture of fixture_files() is an input, and a path of src/ or of a test is not."""
     with tempfile.TemporaryDirectory(prefix="mint-inventory-") as scratch_text:
         root = Path(scratch_text)
         scratch_tree(root)

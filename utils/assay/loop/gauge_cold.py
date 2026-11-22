@@ -1,6 +1,6 @@
 """gauge --cold — the cost of one clean build of the tree and of one run of each test group (`loop gauge --cold`).
 
-THE MEASUREMENT
+Measurement
     The command configures a new build directory with no compiler cache, and
     it builds `all`.  Then it runs the tests in one ctest run, the negative
     fixtures with the other tests.  The census checks depend on the
@@ -24,13 +24,13 @@ THE MEASUREMENT
     cmake and the ctest that the build directory names (`setup check`,
     utils/assay/setup/pins.py).
 
-THE BUILD DIRECTORY
+Build directory
     A clean build needs a new directory.  When DIR is a configured build
     directory, the command removes it first.  The command refuses a DIR that
     exists and is not a configured build directory, and a DIR that contains
     the tree.
 
-THE REPORT
+Report
     The report goes to standard output and to DIR/gauge-report.txt.  The
     ninja log stays in DIR, and the output of each step is in
     DIR/gauge-STEP.log.  The host can be shared.  A number from a host with
@@ -256,7 +256,7 @@ def short_commit(root: Path) -> str:
 
 
 def measure(root: Path, options: argparse.Namespace, step: Callable[..., StepCost] = timed_step) -> int:
-    """Configure, build and test in a new build directory, and report, as THE MEASUREMENT tells.
+    """Configure, build and test in a new build directory, and report, as the measurement tells.
 
     Args:
         root: The source tree

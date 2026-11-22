@@ -34,7 +34,7 @@ int main() {
             auto const ring = ::fixy::to(*ring_box);
             crucible::TraceRing::Entry e{};
             std::uint64_t h = 0;
-            // NOTE: body performs ring.reset() inside the timed region when
+            // Note: body performs ring.reset() inside the timed region when
             // the ring saturates; tail samples (p99.9, max) therefore include
             // occasional reset costs, not pure try_append cost. Label mirrors
             // this trade-off.

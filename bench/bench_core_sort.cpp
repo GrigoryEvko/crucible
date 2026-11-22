@@ -1,7 +1,7 @@
 // Microbench of the sorts and the ordered search of foundation/core/Sort.h on
 // one thread, each row of the base with the reference rows of the same input.
 //
-// THE INPUT
+// Input
 //   A pool of 2^24 floats with a random sign, a random mantissa and an
 //   exponent from -12 to 11, the data of probe E4.  Before each sample, the
 //   work buffer of a row takes the next window of the pool, so no two
@@ -13,7 +13,7 @@
 //   timed region, so the time of a row is the sort alone.  The rows of a
 //   sorted input sort one sorted window each time.
 //
-// THE ROWS OF THE BASE
+// Rows of the base
 //   sort_stably by Ascending        the radix sort of the keys from
 //                                   stable_sort_radix_count elements
 //   sort_stably by an order of the caller
@@ -26,7 +26,7 @@
 //   sort_by_network<N>              the network of N, which is not stable
 //   find_lower_bound                one search of a sorted run of 2^20
 //
-// THE REFERENCES
+// References
 //   Each reference row runs the raw form of a reference on the windows of the
 //   row of the base, in the MEASURE region of this file.  After the rows of
 //   one input, a line gives the median of a row of the base over the median
@@ -386,7 +386,7 @@ struct RawSortBody final {
 
     // The first element of the sorted run stays in memory, so its sink is the
     // sink of an object in memory, which adds no load and no store to the
-    // loop (THE SINK of bench_harness.h).
+    // loop (the sink of bench_harness.h).
     void operator()() noexcept {
         sort(work, work + Count);
         bench::mark_changed(work[0]);

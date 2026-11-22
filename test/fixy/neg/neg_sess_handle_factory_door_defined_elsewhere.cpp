@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit that includes fixy/session/Handle.h and not
 // fixy/session/Checkpoint.h defines a class with the name of the

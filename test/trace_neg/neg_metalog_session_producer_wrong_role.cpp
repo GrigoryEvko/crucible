@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_metalog_producer_session runs the appending protocol, so it takes
 // the producer handle.  This call passes the consumer handle, and the gate

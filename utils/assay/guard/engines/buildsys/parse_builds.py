@@ -1,6 +1,6 @@
 """parse-builds — each configured parse build of the tree is current, and the counted rules judge it.
 
-THE RULE
+Rule
     PARSE_PRESETS of assay.loop.syntax names the presets of the parse
     builds.  The rule does these steps on the build directory of each preset
     in the presets files of the tree:
@@ -10,7 +10,7 @@ THE RULE
          not set CRUCIBLE_SYNTAX_ONLY, gives no finding.  The rule prints the
          command that configures it.
       3. The rule builds the input targets of the parse build, and it finds
-         the units that keep their reports (assay.loop.syntax, THE CHECK).  A
+         the units that keep their reports (assay.loop.syntax, the check).  A
          step that fails gives the error parse.  A unit with no current
          report gives the error stale, and its message gives the command
          `loop syntax BUILD_DIR`, which parses the unit.  The rule parses
@@ -21,10 +21,10 @@ THE RULE
     When no preset has a configured parse build, the rule does not apply.
     The rule reads no change and no history of the tree, and it does not
     read the build of --build-dir.  `loop test` runs `loop syntax` on each
-    configured parse build after its build (assay.loop.affected, THE PARSE
-    BUILDS).  Then the test of the rule finds each report current.
+    configured parse build after its build (assay.loop.affected, the parse
+    builds).  Then the test of the rule finds each report current.
 
-THE PLANTS
+Plants
     A plant holds the presets file of its tree, and build.txt for a planted
     build (assay.guard.engines.buildsys.planted).  A plant can also hold the
     directory PROGRAMS with one Python script NAME.py for each program of
@@ -51,11 +51,11 @@ from assay.guard.engines.meta import runner as meta_runner
 from assay.loop import syntax
 
 RULE = "parse-builds"
-# The rules that judge a parse build (THE RULE, step 4).
+# The rules that judge a parse build (the rule, step 4).
 COUNTED_RULES = ("quarantine", "heavy-include", "syscalls", "door-unit")
-# The units with no current report that the message of the error stale names (THE RULE, step 3).
+# The units with no current report that the message of the error stale names (the rule, step 3).
 SHOWN_STALE_UNITS = 3
-# The directory of the scripts of the programs of a plant, and the suffix of a script (THE PLANTS).
+# The directory of the scripts of the programs of a plant, and the suffix of a script (the plants).
 PROGRAMS = "programs"
 SCRIPT_SUFFIX = ".py"
 # The file of the presets of a tree, which the findings with no line name.
@@ -68,7 +68,7 @@ def error(path: str, message: str, kind: str, entity: str) -> check_report.Findi
 
 
 def judged_build(context: BuildContext, preset: str, build: Path) -> list[check_report.Finding]:
-    """Give the findings of steps 3 and 4 of THE RULE on the configured parse build of one preset."""
+    """Give the findings of steps 3 and 4 of the rule on the configured parse build of one preset."""
     shown_build = context.shown(build)
     try:
         plan = syntax.locked_plan(build, context.root, syntax.JOBS)
@@ -103,7 +103,7 @@ def judged_build(context: BuildContext, preset: str, build: Path) -> list[check_
 
 
 def findings(context: BuildContext) -> list[check_report.Finding]:
-    """Give the findings of THE RULE on each parse build of the presets of the tree.
+    """Give the findings of the rule on each parse build of the presets of the tree.
 
     Raises:
         NotApplicable: If no preset of PARSE_PRESETS has a configured parse build, and no preset has an error
@@ -131,7 +131,7 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
 
 
 def plant_context(plant: Path, scratch: Path) -> BuildContext:
-    """Make the tree and the planted build of a plant, its programs, and the parse of its planted build (THE PLANTS).
+    """Make the tree and the planted build of a plant, its programs, and the parse of its planted build (the plants).
 
     Raises:
         NotApplicable: If build.txt does not obey its rows, or the parse of the planted build fails

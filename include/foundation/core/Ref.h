@@ -58,9 +58,9 @@
 // the caller gives up, and frees the storage.  The frame door
 // with_mut(std::move(box), body) lends the object to a body while the Box is
 // in the frame of the door, so no move or end of the Box can come while the
-// body holds the reference (THE FRAME OF A BOX below).  The read door
+// body holds the reference (the frame of a Box below).  The read door
 // with_view(box, body) lends the object as a const reference in place, and
-// the result of the body holds no borrow (THE READ FRAME OF A BOX below).
+// the result of the body holds no borrow (the read frame of a Box below).
 //
 // C++ keeps a moved-from object alive, and no type can refuse its use.  So
 // each access tests for the object in each build, and a Box with no object
@@ -68,8 +68,8 @@
 // to a cold call.  A loop that reads the object many times takes one Ref
 // with view() before the loop, and the Ref has no test.
 //
-// A Box moves to another thread through a ring of cells as a BoxWord (THE
-// WORD OF A BOX below).  release_to_word gives the object to a word of an
+// A Box moves to another thread through a ring of cells as a BoxWord (the
+// word of a Box below).  release_to_word gives the object to a word of an
 // authority, and claim_box gives the object of the word to a new Box.  Only
 // a member of the authority builds the key of the two doors.
 //
@@ -197,8 +197,8 @@ public:
     // A Ref of an object, with the key that only RefDoor builds.  A reference
     // is never null, so no key makes a null Ref.  The niche of a Ref states
     // that no door builds the null pointer, and the payload gate checks the
-    // statement against the constructors and the members of Ref (THE CHECK OF
-    // THE STATEMENT of foundation/core/Choice.h).  So the storage of a full
+    // statement against the constructors and the members of Ref (the check of
+    // the statement of foundation/core/Choice.h).  So the storage of a full
     // Option does not test the pointer.  The constructor has no [[assume]]
     // that the pointer is not null.
     // That condition reads a member through this, so GCC makes it an .ASSUME
@@ -259,8 +259,8 @@ template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
 // facts, and the full Option of the Ref takes no test of the null pointer.
 //
 // Only a niche or a plain Option gives its payload as a Ref, as only they
-// have the loop.  An owning Option counts each lend of its payload (THE LEND
-// COUNT of Choice.h), and a Ref outlives each count: a write of the Option
+// have the loop.  An owning Option counts each lend of its payload (the lend
+// count of Choice.h), and a Ref outlives each count: a write of the Option
 // would then end the object that the Ref names, with no check.
 template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
     requires(sizeof...(Refused) == 0) && (detail::option_form_of<T> != detail::OptionForm::owning)
@@ -495,7 +495,7 @@ public:
 namespace detail {
 
 struct AddressKeyDoor {
-    // The key of the address that POINTER holds.  The parameter takes each
+    // The key of the address that pointer holds.  The parameter takes each
     // pointer to an object, a const one or a volatile one.
     [[nodiscard]] static AddressKey key_of(void const volatile* pointer) noexcept {
         return AddressKey{__builtin_bit_cast(std::uintptr_t, pointer)};
@@ -504,7 +504,7 @@ struct AddressKeyDoor {
 
 }  // namespace detail
 
-// The key of the address that POINTER holds.  A null pointer gives the key
+// The key of the address that pointer holds.  A null pointer gives the key
 // of the address zero, which is equal only to the key of a null pointer.
 // The key reads no object, so a pointer whose object has ended still gives
 // its key.  The address of an object is no constant of the compile, so the
@@ -582,7 +582,7 @@ struct niche<Ref<T, Brand>> {
     }
 };
 
-// The word of a Ref in an atomic cell (THE WORD OF A VALUE of Atomic.h): the
+// The word of a Ref in an atomic cell (the word of a value of Atomic.h): the
 // pointer of its object.  No Ref holds the null pointer, so the null pointer
 // is the empty word, and the cell of an Option of a Ref holds one pointer.
 // Only a cell makes the key of from_word, and a cell holds only words that
@@ -590,7 +590,7 @@ struct niche<Ref<T, Brand>> {
 // brand of the Ref, through the door of this file.  The door takes no key of
 // the Atomic family.  The word of a Ref is the address of its object, and
 // only the null Ref of the niche holds the null pointer, so the protocol
-// states THE WORD OF A STATED PAYLOAD of Atomic.h.
+// states the word of a stated payload of Atomic.h.
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 struct atomic_word<Ref<T, Brand>> {
     using word_type = T*;
@@ -673,7 +673,7 @@ inline constexpr bool is_linear_box = is_linear_box_payload<T>();
 // payload that is not linear, because the end of a linear object drops it.
 // The mint of a Hole ends the object.  A word of a Box is not linear, and the
 // authority of a word claims each word that it still holds at its own end,
-// so the Box of that claim ends the object (THE WORD OF A BOX).
+// so the Box of that claim ends the object (the word of a Box).
 template <class T>
 concept DroppableBoxPayload = CompleteBoxPayload<T> && !is_linear_box_payload<T>();
 
@@ -777,7 +777,7 @@ struct HoleState {
 template <BoxPayload T>
 class Box;
 
-// THE WORD OF A BOX
+// Word of a Box
 //
 // A channel moves a Box from one thread to another through a ring of cells,
 // and a cell holds only a trivially copyable value, which a Box is not.  So
@@ -811,8 +811,8 @@ public:
     box_word_key& operator=(box_word_key const&) = delete("a key of a box word lives for one call of a door");
 };
 
-// The object of a Box, given to the words of one authority (THE WORD OF A
-// BOX).  Only a Box builds a word that holds an object, and only a Box reads
+// The object of a Box, given to the words of one authority (the word of a
+// Box).  Only a Box builds a word that holds an object, and only a Box reads
 // the object of a word.  The type is trivially copyable, so a ring cell
 // holds it.  A word owns the object behind its pointer, as the Box that made
 // it did, so it moves between threads as its payload does.  The authority
@@ -885,7 +885,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box<T>>]][[= 
         return object;
     }
 
-    // The object of a Box in the frame of its door (THE FRAME OF A BOX), with
+    // The object of a Box in the frame of its door (the frame of a Box), with
     // the key that only a frame door builds.  A Box with no object ends the
     // process here, because a moved-from Box can still come to the door.
     [[nodiscard]] friend T& frame_object_(detail::FrameKey const& /*key*/, Box& box) noexcept { return *box.held_(); }
@@ -914,8 +914,8 @@ public:
     explicit Box(detail::BoxKey const& /*key*/, Hole<Size, Align>&& hole, Args&&... args) noexcept
         : Core{State{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)}} {}
 
-    // A Box of the object of a word of the authority of the key (THE WORD OF
-    // A BOX).  claim_box calls it.  The empty word ends the process through
+    // A Box of the object of a word of the authority of the key (the word of
+    // a Box).  claim_box calls it.  The empty word ends the process through
     // fatal().  An explicit specialization of this constructor is a
     // specialization of Box outside its home, as above.
     template <class Authority>
@@ -923,7 +923,7 @@ public:
         : Core{State{claimed_(word.object_)}} {}
 
     // Gives the object to a word of the authority of the key, and the Box
-    // then holds no object (THE WORD OF A BOX).  A Box that holds no object
+    // then holds no object (the word of a Box).  A Box that holds no object
     // ends the process through fatal().  A word is not linear, so a Box of a
     // linear payload gives no word.
     template <class Authority>
@@ -1012,14 +1012,14 @@ template <class T, class Marker, class... Args>
     return Box<T>{detail::BoxDoor::key(), static_cast<Args&&>(args)...};
 }
 
-// The Box of the object of a word (THE WORD OF A BOX).  The authority claims
+// The Box of the object of a word (the word of a Box).  The authority claims
 // each word that it made at most one time.
 template <BoxPayload T, class Authority>
 [[nodiscard]] Box<T> claim_box(BoxWord<T, Authority> word, box_word_key<Authority> const& key) noexcept {
     return Box<T>{word, key};
 }
 
-// THE FRAME OF A BOX
+// Frame of a Box
 //   with_mut(std::move(box), body) is the frame door of a Box, in the form of
 //   the doors of the owners on the heap (foundation/core/Frame.h).  The Box
 //   moves into the frame of the door, body gets the object as T& for the time
@@ -1068,7 +1068,7 @@ concept LinearBoxBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std
 template <class Body, class T>
 using box_frame_return_t = detail::frame_return_t<detail::body_result_t<Body&&, T&>, Box<T>>;
 
-// The frame door of a Box (THE FRAME OF A BOX).  Complexity: O(1), and the
+// The frame door of a Box (the frame of a Box).  Complexity: O(1), and the
 // cost of the body.
 template <BoxPayload T, class Body>
     requires DroppableBoxPayload<T> && BoxFrameBody<Body, T>
@@ -1119,7 +1119,7 @@ void with_mut(Owner&& box, Body&& body) = delete(
     "with_mut takes the Box into its frame and gives it back: pass std::move(box), and keep the Box that the call "
     "returns");
 
-// THE READ FRAME OF A BOX
+// Read frame of a Box
 //   with_view(box, body) lends the object of a Box to body as T const& in
 //   place, for the time of the call, and gives the result of body.  The Box
 //   stays with the caller, and the door writes no byte of it and adds none to
@@ -1130,7 +1130,7 @@ void with_mut(Owner&& box, Body&& body) = delete(
 //   later move or end of the Box ends no object that a borrow names.  A Box
 //   with no object ends the process at the door, as operator* does.  A
 //   function that the body calls can still reach the Box, as it can reach an
-//   inline owner in the frame of its door (THE TWO FORMS OF AN OWNER of
+//   inline owner in the frame of its door (the two forms of an owner of
 //   foundation/core/Frame.h).  A body cannot move a linear payload out of a
 //   const reference, so the door takes a Box of each payload.
 
@@ -1146,7 +1146,7 @@ concept BoxReadCallable = std::is_nothrow_invocable_v<Body&&, T const&>
 template <class Body, class T>
 concept BoxReadBody = BoxReadCallable<Body, T> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
-// The read frame of a Box (THE READ FRAME OF A BOX).  The result holds no
+// The read frame of a Box (the read frame of a Box).  The result holds no
 // borrow, so the deduced type of a value is the result of the body.
 // Complexity: O(1), and the cost of the body.
 template <BoxPayload T, class Body>

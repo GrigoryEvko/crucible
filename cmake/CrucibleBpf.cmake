@@ -75,7 +75,7 @@ if (CRUCIBLE_HAVE_BPF)
 endif()
 
 # Push the resolved availability back into the cache so callers see
-# the FINAL state (after find_package + library detection narrowed
+# the final state (after find_package + library detection narrowed
 # it).  CACHE BOOL ... FORCE re-publishes the value on every config
 # pass so a previously-cached TRUE doesn't survive a missing-libbpf
 # rebuild on a different host.
@@ -107,17 +107,17 @@ endif()
 #
 # ─── Ordering footgun (read this before adding a new program) ──────
 #
-# The accumulator is read ONCE — by the parent CMakeLists.txt at the
+# The accumulator is read once — by the parent CMakeLists.txt at the
 # `add_library(crucible_perf STATIC ${_CRUCIBLE_BPF_EMBED_SOURCES})`
 # call site.  CMake captures the source list by value at that moment.
-# If `crucible_bpf_program(<new_name> ...)` is called AFTER that
+# If `crucible_bpf_program(<new_name> ...)` is called after that
 # add_library line, the new embed source will be silently dropped
 # from the static library — the BPF program will compile cleanly,
 # the .o will be embedded, but the userspace loader will get a link
 # error for `<new_name>_bpf_object`.
 #
-# Discipline: ALL `crucible_bpf_program(...)` calls MUST appear in
-# the root CMakeLists.txt BEFORE the `add_library(crucible_perf ...)`
+# Discipline: all `crucible_bpf_program(...)` calls must appear in
+# the root CMakeLists.txt before the `add_library(crucible_perf ...)`
 # block.  Adding a new program is a two-line edit at the existing
 # call-site cluster, not a separate per-subdirectory wiring.
 set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
@@ -135,7 +135,7 @@ set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
 # BPF compile time.  Used when a BPF program has a build-time switch
 # (e.g. SenseHub v2's `-DCRUCIBLE_SENSE_HUB_EXTENDED=1` selecting
 # 256-counter / 64-gauge debug hub vs the 128/32 default).  The same
-# definitions MUST also be applied to the userspace facade TU via
+# definitions must also be applied to the userspace facade TU via
 # `target_compile_definitions(crucible_perf PRIVATE ...)` — the
 # wire-contract `meta` map's `layout_hash` gates a runtime mismatch
 # but compile-time agreement is the primary discipline.

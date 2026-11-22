@@ -4,7 +4,7 @@ The .clang-format of the tree is explicit and not inherited.  An upgrade of
 the formatter then cannot move the style with no sign.  This rule is the
 other half: it refuses a file that the configuration changes.
 
-THE FILES
+Files
     Each file of the git index with a suffix of SUFFIXES.  A file in a
     directory papers or in a directory that starts with build is not in the
     scope.  A file that the .clang-format-ignore of the root ignores is not
@@ -17,7 +17,7 @@ THE FILES
     nearest such file, and the rule reads only the file of the root.  It
     gives the same error for a pattern that the reader refuses.
 
-THE FORMATTER
+Formatter
     The rule runs only the clang-format of its pin in utils/pins.txt.  The
     command `python3 utils/bin/setup install clang-format` installs it
     (assay.setup.install).  No formatter of PATH runs, because no pin holds a
@@ -26,7 +26,7 @@ THE FORMATTER
     clang-format 18 refuses.  With no install of the pin, the rule does not
     apply (applies()), and its test and its witness exit with 77.
 
-THE RUNS
+Runs
     The rule runs `clang-format --output-replacements-xml` on batches of
     files, and assay.readers.tool_reports reads one document for each file.
     A batch with an exit status that is not 0, or with a different number of
@@ -34,12 +34,12 @@ THE RUNS
     formatter cannot read then gets a verdict of its own.  The rule runs MAX_JOBS batches at
     the same time, and the batches have about the same bytes (batches_of()).
     Each call of the formatter reads no standard input.  The rule reads each
-    file of THE FILES in one call, and it reads no part (THE PARTS of
+    file of the files in one call, and it reads no part (the parts of
     assay.guard.engines.meta.runner).  A run on each file stays far below the
     instruction limit of a test of the rule step-cost, also with a cold
     cache.
 
-THE CACHE
+Cache
     The cache clang-format of assay.core.cache keeps one entry for each file
     that the formatter does not change.  The name of the entry is the SHA-256
     of the path and the bytes of the file, and of the identity of the run:
@@ -47,14 +47,14 @@ THE CACHE
     .clang-format-ignore.  A change of one of them gives a different name.  A
     cached result then cannot hide a change.
 
-THE KINDS
+Kinds
     `drift`       an error: the formatter changes the file.  The line of the
                   finding is the line of the first change
     `incomplete`  an error: the formatter cannot format all of the file
     `failed`      an error: the formatter exits with a status that is not 0
                   on the file alone, or its report has no valid shape.  A
-                  tree with no file of THE FILES gives this error at
-                  .clang-format, and an ignore file that THE FILES refuses
+                  tree with no file of the files gives this error at
+                  .clang-format, and an ignore file that the files section refuses
                   gives it at that file
     The entity of each finding is empty, and the path names the file.
 
@@ -75,12 +75,12 @@ RULE = "clang-format"
 SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".cc", ".cxx"})
 EXCLUDED_DIRECTORY = "papers"
 EXCLUDED_PREFIX = "build"
-# The tool of assay.setup.install that gives the formatter (THE FORMATTER).
+# The tool of assay.setup.install that gives the formatter (the formatter).
 TOOL = "clang-format"
 IGNORE_FILE = ".clang-format-ignore"
 CONFIGURATION_FILES = (".clang-format", IGNORE_FILE)
 FAILED = "failed"
-# The batches at the same time of one run on each file: the job count of the package (THE JOB COUNT of
+# The batches at the same time of one run on each file: the job count of the package (the job count of
 # assay.core.proc), and the batches of one job.
 MAX_JOBS = proc.DEFAULT_JOBS
 BATCHES_PER_JOB = 4
@@ -100,7 +100,7 @@ class Verdict:
 
 
 def formatter() -> Path:
-    """Return the pinned formatter of THE FORMATTER.
+    """Return the pinned formatter of the formatter.
 
     Raises:
         NotApplicable: If the pinned clang-format is not installed
@@ -109,7 +109,7 @@ def formatter() -> Path:
 
 
 def applies() -> None:
-    """Return when the pinned formatter of THE FORMATTER is installed.
+    """Return when the pinned formatter of the formatter is installed.
 
     Raises:
         NotApplicable: If the pinned clang-format is not installed
@@ -118,7 +118,7 @@ def applies() -> None:
 
 
 def is_in_scope(path: str) -> bool:
-    """Return True for a file with a suffix of THE FILES outside the excluded directories, before the ignore file."""
+    """Return True for a file with a suffix of the files outside the excluded directories, before the ignore file."""
     parts = Path(path).parts
     if Path(path).suffix not in SUFFIXES:
         return False
@@ -126,7 +126,7 @@ def is_in_scope(path: str) -> bool:
 
 
 def scope_of(context: MetaContext) -> tuple[list[str], list[check_report.Finding]]:
-    """Return the files of THE FILES, and the error of each ignore file that the rule cannot read.
+    """Return the files of the files, and the error of each ignore file that the rule cannot read.
 
     With an error, the scope is empty, because the rule cannot tell which files the formatter reads.  Complexity:
     linear in the tracked files and in the patterns for each file.
@@ -155,7 +155,7 @@ def scope_of(context: MetaContext) -> tuple[list[str], list[check_report.Finding
 
 
 def run_identity(root: Path, program: Path) -> bytes:
-    """Return the SHA-256 of each input of a verdict other than the file itself (THE CACHE)."""
+    """Return the SHA-256 of each input of a verdict other than the file itself (the cache)."""
     digest = hashlib.sha256(CACHE_FORMAT)
     for source in (Path(__file__), Path(tool_reports.__file__), program):
         digest.update(source.read_bytes())
@@ -168,7 +168,7 @@ def run_identity(root: Path, program: Path) -> bytes:
 
 
 def entry_name(identity: bytes, path: str, data: bytes) -> str:
-    """Return the name of the entry of one file in the cache (THE CACHE)."""
+    """Return the name of the entry of one file in the cache (the cache)."""
     digest = hashlib.sha256(identity)
     digest.update(path.encode())
     digest.update(b"\0")
@@ -209,7 +209,7 @@ def run_formatter(root: Path, program: Path, files: list[str]) -> proc.Completed
 
 
 def single_verdict(root: Path, program: Path, path: str) -> Verdict:
-    """Return the verdict of the formatter on one file alone (THE RUNS)."""
+    """Return the verdict of the formatter on one file alone (the runs)."""
     done = run_formatter(root, program, [path])
     if done is None:
         return Verdict("failed", 0, "the formatter cannot run, or it runs past its time limit")
@@ -228,7 +228,7 @@ def single_verdict(root: Path, program: Path, path: str) -> Verdict:
 
 
 def batch_verdicts(root: Path, program: Path, files: list[str]) -> dict[str, Verdict]:
-    """Return the verdict of each file of a batch, with one run for each file when the batch run fails (THE RUNS)."""
+    """Return the verdict of each file of a batch, with one run for each file when the batch run fails (the runs)."""
     done = run_formatter(root, program, files)
     documents: tuple[tool_reports.FormatDocument, ...] = ()
     if done is not None and done.exit == 0:
@@ -242,7 +242,7 @@ def batch_verdicts(root: Path, program: Path, files: list[str]) -> dict[str, Ver
 
 
 def batches_of(root: Path, files: list[str]) -> list[list[str]]:
-    """Put the files into batches (THE RUNS).
+    """Put the files into batches (the runs).
 
     The files go into BATCHES_PER_JOB times MAX_JOBS batches, or into one
     batch for each file when there are fewer files.  They go into the
@@ -279,7 +279,7 @@ def all_verdicts(root: Path, program: Path, files: list[str]) -> dict[str, Verdi
 
 
 def finding_of(path: str, verdict: Verdict) -> check_report.Finding:
-    """Return the error of a file that the formatter changes or cannot format (THE KINDS)."""
+    """Return the error of a file that the formatter changes or cannot format (the kinds)."""
     if verdict.kind == "drift":
         message = (
             f"clang-format changes {verdict.detail} place(s) of the file under the .clang-format of the tree, the "
@@ -294,7 +294,7 @@ def finding_of(path: str, verdict: Verdict) -> check_report.Finding:
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each file that the formatter changes or cannot format (THE KINDS).
+    """Give each file that the formatter changes or cannot format (the kinds).
 
     Raises:
         NotApplicable: If the pinned clang-format is not installed, or the root is not a git work tree

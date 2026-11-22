@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A counter of one writer is a cell of its value, so it is Synchronized, and
 // run_joined admits two bodies that borrow it.  Each body publishes a step
 // from the value that it read.  The publish of the one writer takes the proof
-// of that writer (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h),
+// of that writer (the proof of the one writer of foundation/SoleWriterProof.h),
 // and neither body holds one, so neither call has an overload.
 //
 // Expected diagnostic: no matching function for advance_sole_writer_from.

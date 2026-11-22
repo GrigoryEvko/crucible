@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A share carries the brand of the exclusive it came from.  A callee that
 // takes the erased spelling takes a share of any region of the tag, so a

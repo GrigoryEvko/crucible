@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The single-writer body drains a channel whose payload carries the IO row.
 // The foreground context admits no effect, so mint_swmr_stage refuses the

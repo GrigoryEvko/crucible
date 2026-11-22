@@ -3,20 +3,20 @@
 // The walk of rows of the strided views: the plan of the pointwise walk of
 // foundation/core/Pointwise.h, with a body of the caller for each row.
 //
-// THE WALK OF ROWS
+// Walk of rows
 //   mint_strided_rows(out, body, inputs...)
 //                       calls body(row, out_view, input_view...) one time for
 //                       each row of the plan of write_pointwise over out and the
-//                       inputs, or for each part of a row in THE TILES.  out
+//                       inputs, or for each part of a row in the tiles.  out
 //                       is a StridedViewMut, which the walk borrows for the
 //                       call.  Each input is a StridedView or a
 //                       StridedViewMut of the same rank parameter.  The views
 //                       must have equal sizes, else the walk gives ShapeMismatch
 //                       and calls body for no row
 //
-// THE ROW
+// Row
 // A row is the inner axis of the plan at one position of the outer axes, or
-// a part of it in THE TILES.  The row gives the number of its row in the plan
+// a part of it in the tiles.  The row gives the number of its row in the plan
 // (RowIndex), the count of its positions (RowCount), its positions as a
 // counted loop (steps(), each one a RowStep), and the offset of each view at
 // its zero position (offset(view), a RowOffset).  A view of the body reads its
@@ -24,7 +24,7 @@
 //   for (auto step : row.steps()) out_view.at(row.offset(out_view), step) = ...
 // and the optimizer can make it a vector loop.
 //
-// THE BRANDS
+// Brands
 // Each call of the mint has a fresh brand, and each view of the call has a
 // brand of its own, from the fresh brand and its place.  A RowStep, a RowIndex
 // and a RowCount carry the fresh brand, and a RowOffset carries the brand of
@@ -32,19 +32,19 @@
 // a step of one walk does not compile with the views of another walk.  The
 // body gives no value, so no index of the walk leaves it.
 //
-// THE PLAN
-// The walk takes the plan of write_pointwise (plan_pointwise_): THE ORDER and
-// THE ALIAS PROOF of Pointwise.h.  When an input can share an element with out
+// Plan
+// The walk takes the plan of write_pointwise (plan_pointwise_): the order and
+// the alias proof of Pointwise.h.  When an input can share an element with out
 // in a different place, the rows come in the row-major order of the logical
 // sizes.  Else the walk picks the order of the axes, and it merges the axes
 // that each view reads as one.  The rows come from the row loop of the lanes of
 // write_pointwise (for_each_row_).  A view with a stride of one on the inner
 // axis reads its row densely, with no product of the stride: RowRead::Unit, as
 // a template argument of the view.  So a body has 2^(1 + inputs) instances,
-// and THE TILES add 2^inputs - 1: one for each list of reads with out Unit
+// and the tiles add 2^inputs - 1: one for each list of reads with out Unit
 // and an input Strided.
 //
-// THE TILES
+// Tiles
 // A transposed input has a stride of one on an outer axis b and a larger
 // stride on the inner axis a, so a full row reads one line of the input for
 // each position, and the next row reads the same lines again.  When no input
@@ -62,7 +62,7 @@
 // target.  The loop of the body still reads the transposed input with one
 // load for each step.
 //
-// THE NAN RULE of Pointwise.h does not hold here, because the body computes
+// the NaN rule of Pointwise.h does not hold here, because the body computes
 // each value.  A body of float arithmetic that must give one NaN on each host
 // applies fp::canonicalize_nan of foundation/core/Float.h to its values.
 
@@ -78,17 +78,17 @@
 
 namespace foundation::core {
 
-// The count of the positions of a part of a row of THE TILES, and the count
+// The count of the positions of a part of a row of the tiles, and the count
 // of the rows of a block: a block of three views of floats reads 48 lines in
 // 48 pages.  A constant, so the sequence of the calls of the body is the same
 // on each target.
 inline constexpr std::size_t row_tile_extent = 16;
 
 // The least count of the positions of the plane of the two tile axes that
-// takes THE TILES: 16384 floats are 64 KB, more than the L1 of a core.
+// takes the tiles: 16384 floats are 64 KB, more than the L1 of a core.
 inline constexpr std::size_t row_tile_plane = 16384;
 
-// The lanes that the choice of the tile axis of THE TILES reads: an axis of
+// The lanes that the choice of the tile axis of the tiles reads: an axis of
 // fewer than half of them gives no tile.  A constant for the same reason.
 inline constexpr int row_tile_lanes = 16;
 
@@ -157,7 +157,7 @@ struct RowDoor {
 }  // namespace detail
 
 // The number of a row of the walk of rows of Walk, from zero.  The parts of
-// one row in THE TILES have the number of the row.
+// one row in the tiles have the number of the row.
 template <class Walk>
 class RowIndex final {
     std::size_t value_ = 0;
@@ -347,7 +347,7 @@ constexpr void run_rows_(RowReads<OutRead, InReads...> /*reads*/, std::index_seq
     });
 }
 
-// The rows of a plan in THE TILES, for the tile axis b: the axes of the plan
+// The rows of a plan in the tiles, for the tile axis b: the axes of the plan
 // other than a and b in their order, then the blocks of row_tile_extent
 // positions of b, then the parts of row_tile_extent positions of a, then the
 // rows of the block.  The number of a part is the number of its row in the
@@ -430,7 +430,7 @@ walk_rows_(Body& body, std::index_sequence<Is...> sequence, bool const (&apart)[
     if (!(same_sizes_(shape, strided_lanes_of_(sources)) && ...)) return err(ShapeMismatch{});
     if (target.count() == 0) return Unit{};
     PointwisePlan<views, Lanes::capacity> planned = plan_pointwise_(sequence, apart, target, sources...);
-    // THE TILES: a plan with no shared input whose out and an input read
+    // Tiles: a plan with no shared input whose out and an input read
     // different axes with a stride of one, on a plane of at least
     // row_tile_plane positions.  Its out reads the inner axis with a stride of
     // one and an input steps on it, so only such reads take the tiles.  A
@@ -470,7 +470,7 @@ walk_rows_(Body& body, std::index_sequence<Is...> sequence, bool const (&apart)[
 }  // namespace detail
 
 // Calls body for each row of the plan of write_pointwise over out and the
-// inputs: THE WALK OF ROWS, THE ROW, THE BRANDS and THE PLAN above.  The walk
+// inputs: the walk of rows, the row, the brands and the plan above.  The walk
 // gives ShapeMismatch, and calls body for no row, when the sizes of an input
 // differ from the sizes of out.  The pack refuses each explicit argument, so
 // no caller names the brand.  O(rows) calls of body, O(rank^2 * views) for the

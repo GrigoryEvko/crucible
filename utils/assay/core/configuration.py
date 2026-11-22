@@ -1,6 +1,6 @@
 """configuration — the name of the configuration of a build, and the test of a build that only parses.
 
-THE CONFIGURATION
+The configuration
     The name of a configuration is the build kind of a build
     (assay.core.target), for example x86_64-debug-asan.  The name adds -bench
     when CRUCIBLE_BENCH is on, -fuzz when CRUCIBLE_FUZZ is on, -vessel when
@@ -16,7 +16,7 @@ THE CONFIGURATION
     arms.  Its findings, its symbols and its totals can then be different.
     One set of rows of a counted ledger judges each build, and its count of a
     key is the largest count over the configurations of the landing gate
-    (THE REDUCE of assay.core.ledger).  A rule with rows of one configuration
+    (the reduce of assay.core.ledger).  A rule with rows of one configuration
     only, such as the rule instruction-total, reads the name.
 
 `guard selftest tests.core.test_configuration` does a test of the module.
@@ -46,7 +46,7 @@ class ConfigurationError(Exception):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class BuildConfiguration:
-    """The name of the configuration of a build (THE CONFIGURATION)."""
+    """The name of the configuration of a build (the configuration)."""
 
     name: str
 

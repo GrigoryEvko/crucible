@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A pointer of the run time can name a text that ends before the program.
 // The type cannot tell a pointer to a literal from such a pointer, so no

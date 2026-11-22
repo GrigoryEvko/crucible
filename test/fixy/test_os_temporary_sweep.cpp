@@ -1,4 +1,4 @@
-// The sweep of the temporary trees of fixy/os/Fs.h (THE SWEEP).
+// The sweep of the temporary trees of fixy/os/Fs.h (the sweep).
 //
 // The setup test test_os_temporary_sweep_setup makes the directory
 // temporary_sweep_fixture, and CMake sets TMPDIR to it.  The fixture holds a

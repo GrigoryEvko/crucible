@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A kernel context names the floating-point scope of the thread that minted
 // it.  run_joined refuses a body that captures a context (foundation/

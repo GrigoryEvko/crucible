@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_reader_runtime_session takes the reader handle by move, so the
 // session owns it.  An lvalue handle would stay usable beside the

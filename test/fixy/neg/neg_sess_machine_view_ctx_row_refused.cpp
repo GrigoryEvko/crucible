@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A machine bridge runs a protocol that sends a payload that carries IO,
 // and the context of the view holds no IO.  The gate of with_view is the

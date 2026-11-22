@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_metrics_writer takes the permission of the writer role.  The
 // permission of the reader role does not convert to it, so a reader

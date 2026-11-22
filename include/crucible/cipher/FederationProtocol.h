@@ -19,7 +19,7 @@
 //  46      2    reserved              zero
 //  48+   ...    payload               opaque bytes
 //
-// THE KEY.  A federation key is the keyed hash of its content under the
+// Key.  A federation key is the keyed hash of its content under the
 // key of the federation: BLAKE3 in its keyed mode, with its native output
 // of 32 bytes (foundation/core/KeyedHash.h).  A federation spans
 // organizations, so a member can be hostile, and a member holds the key of

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A destructor body of the owner runs before its members end, so it can end
 // state that the thread reads before the thread joins.  mint_owner_thread

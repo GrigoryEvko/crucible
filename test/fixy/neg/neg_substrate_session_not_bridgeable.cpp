@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The bridge table names the SPSC and the MPSC channel only.  A type that
 // looks like a channel, with a value type and a producer handle, still has

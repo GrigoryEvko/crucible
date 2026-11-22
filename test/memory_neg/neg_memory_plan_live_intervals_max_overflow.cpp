@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Negative-compile fixture (HS14 mandate) for crucible::
-// live_intervals_disjoint_at<MaxLive>, mismatch class #2: LIVE-SET
-// COUNT EXCEEDS MaxLive.
+// live_intervals_disjoint_at<MaxLive>, mismatch class #2: live-set
+// count exceeds MaxLive.
 //
 // `live_intervals_disjoint_at<MaxLive>` is the
 // production cite for the MemoryPlan invariant.  The MaxLive
@@ -22,7 +22,7 @@
 // principle bypass at consteval and accept a corrupt plan.
 //
 // Distinct from companion `neg_memory_plan_live_intervals_overlap`
-// which catches the OTHER mismatch class (well-formed live-set
+// which catches the other mismatch class (well-formed live-set
 // count but byte-overlapping intervals).
 //
 // In constexpr context, `live_intervals_disjoint_at<2>` returning
@@ -48,7 +48,7 @@ using crucible::Layout;
 
 // Three internal slots, all simultaneously live at op 1, byte
 // ranges chosen to be pairwise disjoint (so the predicate would
-// PASS if MaxLive were ≥ 3).  We give MaxLive=2 — the function
+// pass if MaxLive were ≥ 3).  We give MaxLive=2 — the function
 // must return false because k=3 exceeds the stack scratch.
 constexpr auto build_planted_max_overflow() {
     ::foundation::core::FixedArray<TensorSlot, 3> const s{TensorSlot{.offset_bytes = 0,

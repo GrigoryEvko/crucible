@@ -1,6 +1,6 @@
 """home — a definition or a specialization of an entity stands only in its home.
 
-THE RULE
+Rule
     C++ has no orphan rule.  Each unit can define or specialize each entity
     that it can name, also an entity of a different owner.  A specialization
     of a trait outside the file that owns the trait changes what a concept
@@ -48,13 +48,13 @@ THE RULE
     row admitted a site.  Each problem of the census of the runner is an
     error too.
 
-THE FINDINGS
+Findings
     Each finding line is one error at its file and its line.  Its kind and
     its entity are the key of a ledger row.  The entity is a name with the
-    names of its scopes, as the reader gives it (assay.readers.sections, THE
-    ENTITIES OF THE RECORDS).
+    names of its scopes, as the reader gives it (assay.readers.sections, the
+    entities of the records).
 
-THE PATHS OF A HOME ROW
+Paths of a home row
     Each path of a home row must admit a site.  The build then gives an
     at-home line for the entity of the row in a file of the path.  The check
     file of a header, test/layer/checks/LAYER/PATH.cpp, stands where
@@ -64,7 +64,7 @@ THE PATHS OF A HOME ROW
     admits no site is an error in each build that compiles a file of the
     path.  The row then lists only the paths that hold a site.
 
-THE BUILD
+Build
     A file that the build compiles is a source of the compile database, or a
     header in include/.  test/layer gives each header of include/ a sentinel
     unit in each build.  The run does not judge a ledger row of a file that
@@ -73,7 +73,7 @@ THE BUILD
     a planted census, such as the census of a plant of the witness.  The run
     then judges each path of each home row and each ledger row.
 
-THE LEDGER
+Ledger
     utils/ledgers/home.txt counts the findings of each file, kind and entity
     (the policy count).  A row with the value admit holds a reviewed
     exception, such as a second body of combine_ids, with its reason.  A
@@ -114,7 +114,7 @@ RULE = "home"
 
 
 class Kind(enum.StrEnum):
-    """The kinds of the finding lines of the rule (THE RULE)."""
+    """The kinds of the finding lines of the rule (the rule)."""
 
     OUTSIDE_HOME = "outside-home"
     FEDERATION_OUTSIDE_HOME = "federation-outside-home"
@@ -127,7 +127,7 @@ class Kind(enum.StrEnum):
     AT_HOME = "at-home"
 
 
-# The kinds that no ledger row admits (THE LEDGER, and THE REFUSED KINDS of assay.guard.engines.meta.runner).
+# The kinds that no ledger row admits (the ledger, and the refused kinds of assay.guard.engines.meta.runner).
 REFUSED_KINDS = frozenset({Kind.FEDERATION_OUTSIDE_HOME.value, Kind.OWNER_OUTSIDE_HOME.value})
 # The one body of combine_ids, which each second body must call.
 CANONICAL_COMBINE = "foundation::reflect::combine_ids"
@@ -142,7 +142,7 @@ TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Build:
-    """The source files of the compile database of a build, relative to the root of the tree (THE BUILD).
+    """The source files of the compile database of a build, relative to the root of the tree (the build).
 
     `sources` is None for a planted census with no build directory, and the run then judges each path and each row.
     """
@@ -170,7 +170,7 @@ def read_as(path: str) -> str:
 
 
 def build_of(context: runner.PluginContext) -> Build:
-    """Return the source files of the build of the context, or a planted build for a context with none (THE BUILD).
+    """Return the source files of the build of the context, or a planted build for a context with none (the build).
 
     Raises:
         BuildError: If the compile database cannot be read
@@ -235,7 +235,7 @@ def owner_message(item: quarantine_sections.Finding, homes: Sequence[ruletable.H
 
 
 def message(item: quarantine_sections.Finding, homes: Sequence[ruletable.Home]) -> str:
-    """Return the text of one finding line of the rule, for its kind (THE RULE)."""
+    """Return the text of one finding line of the rule, for its kind (the rule)."""
     match item.kind:
         case Kind.OUTSIDE_HOME:
             return trait_message(item, homes)
@@ -281,7 +281,7 @@ def message(item: quarantine_sections.Finding, homes: Sequence[ruletable.Home]) 
 
 
 def site_findings(census: runner.Census, homes: Sequence[ruletable.Home]) -> list[check_report.Finding]:
-    """Give one error for each finding line of the rule, with its kind and its entity (THE FINDINGS)."""
+    """Give one error for each finding line of the rule, with its kind and its entity (the findings)."""
     return [
         check_report.Finding(
             "error",
@@ -352,7 +352,7 @@ def is_crucible_gate(path: str) -> bool:
 def crucible_reads(
     rule: rule_registry.Rule, root: Path, found: Sequence[check_report.Finding]
 ) -> list[check_report.Finding]:
-    """Give an error for each open read of a crucible gate whose row gives no reason (THE LEDGER).
+    """Give an error for each open read of a crucible gate whose row gives no reason (the ledger).
 
     A row with its reason gives no finding.  Complexity: linear in the findings, with one read of the ledger.
     """
@@ -384,7 +384,7 @@ def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check
     """Return the findings of the rule judged against its ledger, with the rows of the files that the build compiles.
 
     A finding with no kind, such as a problem of the census or a path with no site, stays an error.  A finding of a
-    kind of REFUSED_KINDS stays an error too.  The reasons of the crucible gates come last (THE LEDGER).
+    kind of REFUSED_KINDS stays an error too.  The reasons of the crucible gates come last (the ledger).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -426,7 +426,7 @@ def build_counts(rule: rule_registry.Rule, context: runner.PluginContext) -> Cou
     """Return the count of each key of the findings of the build of the context, for a write.
 
     The counts of one build are partial, and a write from one build keeps each row that the build does not judge
-    (THE WRITE of assay.core.ledger).
+    (the write of assay.core.ledger).
 
     Raises:
         NotApplicable: If the rule does not apply to the build

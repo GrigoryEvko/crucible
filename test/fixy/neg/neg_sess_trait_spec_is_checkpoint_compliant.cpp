@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_checkpoint_compliant is an alias of the verdict of the compliance
 // walk, so no user specialization makes a pair compliant whose labels

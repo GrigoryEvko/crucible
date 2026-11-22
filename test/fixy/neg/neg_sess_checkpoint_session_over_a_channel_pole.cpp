@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit mints a checkpoint session over the producer pole of an SPSC
 // channel.  The mint names the protocol of the peer, but it mints one end,

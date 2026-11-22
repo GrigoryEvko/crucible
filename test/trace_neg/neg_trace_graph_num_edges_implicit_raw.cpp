@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // TraceGraph build counters are
 // WriteOnce<uint32_t>, so consumers must use get() after the build

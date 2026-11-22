@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // p sends to q, its channel peer, and the cell of the pair of p and q
 // counts those messages.  A third role watches p too, and the count of the

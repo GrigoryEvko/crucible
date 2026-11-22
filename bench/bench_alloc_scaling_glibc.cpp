@@ -1,4 +1,4 @@
-// The rows of glibc (THE UNITS of bench_alloc_scaling_rows.h).
+// The rows of glibc (the units of bench_alloc_scaling_rows.h).
 
 #include "bench_alloc_scaling_rows.h"
 

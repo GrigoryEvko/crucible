@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Planning takes an admitted node under the Ir001 source, and a raw comm
 // descriptor is refused.  The CogMimic arrives as a parameter, because only

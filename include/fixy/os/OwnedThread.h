@@ -9,14 +9,14 @@
 //   std::move(thread).join()
 //                       waits for the end of the body, and ends the owner
 //
-// THE FRAME
+// Frame
 //     The mint moves the body into a frame on the heap, beside the task of the
 //     thread door and a copy of the name of the thread.  The thread reads the
 //     frame, and the owner can move, so the frame has an address of its own.
 //     The frame ends after the join, on the thread that joins, so the body
 //     ends there too.
 //
-// THE OWNER
+// Owner
 //     An OwnedThread is the one owner of the join of its thread.  It has no
 //     copy and no detach.  join() consumes the owner.  The destructor of an
 //     owner that holds a thread joins the thread, so no thread outlives its
@@ -34,7 +34,7 @@
 //     owner.  The state is in the home of the owner states of fixy, so the
 //     roster of the owner probe holds it.
 //
-// THE GATE
+// Gate
 //     The mint takes a context that owns Bg or Init, the authority to start
 //     threads (CtxStartsThreads of fixy/os/ThreadTasks.h), and that owns
 //     Alloc, because the frame is heap storage.  The body is called with no
@@ -42,13 +42,13 @@
 //     are, and it does not throw.  A background body takes its context from
 //     the door of the background context on its own thread.
 //
-// THE ERRORS
+// Errors
 //     A start that the C library refuses is the error of the Result, and no
 //     thread runs then.  A join that fails ends the process.  A join of an
 //     owner that holds no thread, such as the source of a move, ends the
 //     process.
 //
-// THE THREAD OF AN OWNER
+// Thread of an owner
 //     mint_owner_thread<&Owner::thread_, &Owner::request_stop_>(ctx,
 //     options, owner, body) starts one thread that runs body(owner), and
 //     keeps the owner of that thread in owner.thread_, an OwnerThread<Owner>.
@@ -79,8 +79,8 @@
 //     static assertion of the door names the first part that refuses.  A
 //     mint while the OwnerThread holds a thread ends the
 //     process.  quiescence(owner) gives the proof that no thread of the owner
-//     runs, while the OwnerThread holds no thread (THE QUIESCENCE OF AN
-//     OWNER, at QuiescenceProof).
+//     runs, while the OwnerThread holds no thread (the quiescence of an
+//     owner, at QuiescenceProof).
 
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/ByteSeal.h>
@@ -114,7 +114,7 @@ struct owner_thread_door;
 template <typename Owner>
 class OwnerThread;
 
-// The proof that no thread of the owner runs (THE QUIESCENCE OF AN OWNER).
+// The proof that no thread of the owner runs (the quiescence of an owner).
 // It proves that its holder is the one thread that reaches the parts of the
 // owner.  Only the OwnerThread of the owner gives one: its door
 // quiescence(owner) gives it while the OwnerThread holds no thread, such as
@@ -178,7 +178,7 @@ concept CanMintOwnedThread =
 
 namespace detail {
 
-// The frame of one owned thread (THE FRAME).  The task names the frame, its
+// The frame of one owned thread (the frame).  The task names the frame, its
 // function and the copy of the name, so the thread reads no object of the
 // caller of the mint.
 template <typename Body>
@@ -247,7 +247,7 @@ struct OwnedThreadState {
 
 namespace fixy::thread {
 
-// The owner of one thread that the base started (THE OWNER).  An owner can
+// The owner of one thread that the base started (the owner).  An owner can
 // move to another thread, which then joins the thread and ends the frame and
 // its body (foundation/Transfer.h).  The body runs on the owned thread, so it
 // is on a thread other than its mint in any case.  The frame fields are
@@ -313,8 +313,8 @@ struct owned_thread_door {
     // OwnerThread starts empty with it.
     [[nodiscard]] static OwnedThread empty() noexcept { return OwnedThread{0, nullptr, nullptr}; }
 
-    // Moves the body into a frame and starts the thread of the frame (THE
-    // FRAME).  Complexity: one allocation and one start.
+    // Moves the body into a frame and starts the thread of the frame (the
+    // frame).  Complexity: one allocation and one start.
     template <typename Body>
     [[nodiscard]] static ::foundation::core::Result<OwnedThread, ::foundation::os::Errno>
     start(ThreadOptions const& options, Body&& body) noexcept {
@@ -347,7 +347,7 @@ inline constexpr ::foundation::closure::DoorPolicy escaping_body_policy{::founda
                                                                         ::foundation::closure::QttGrade::One, false};
 
 // Starts one thread with the options, which runs the body, and gives its
-// owner (THE GATE, THE ERRORS).  Complexity: one allocation and one start.
+// owner (the gate, the errors).  Complexity: one allocation and one start.
 template <typename Ctx, typename Body>
     requires CanMintOwnedThread<Ctx, Body>
 [[nodiscard]] ::foundation::core::Result<OwnedThread, ::foundation::os::Errno>
@@ -387,7 +387,7 @@ namespace detail {
 }
 
 // True when Member points at the last data member of Owner, an
-// OwnerThread<Owner> (THE THREAD OF AN OWNER).
+// OwnerThread<Owner> (the thread of an owner).
 //
 // A pointer to a data member of the type OwnerThread<Owner> names a member
 // of Owner or of one of its bases.  So when the class and its bases hold one
@@ -403,7 +403,7 @@ template <typename Owner, auto Member>
 }
 
 // True when no destructor body of Owner runs before its members end: the
-// destructor is implicit or defaulted (THE THREAD OF AN OWNER).
+// destructor is implicit or defaulted (the thread of an owner).
 template <typename Owner>
 [[nodiscard]] consteval bool ends_with_its_members_() {
     constexpr std::meta::info destructor = ^^Owner::~Owner;
@@ -412,7 +412,7 @@ template <typename Owner>
 
 // The first data member of the owner, in the order of the declarations, that
 // two threads cannot write at the same time: a reference, a const member that
-// is not Shareable, or a member that is not Synchronized (THE SHARED WRITE of
+// is not Shareable, or a member that is not Synchronized (the shared write of
 // foundation/Transfer.h).  The owner itself when no member refuses, as when a
 // base refuses.  Complexity: linear in the members, and the walk of each one.
 [[nodiscard]] consteval std::meta::info first_unsynchronized_member_(std::meta::info owner) {
@@ -432,7 +432,7 @@ template <typename Owner>
 }  // namespace detail
 
 // An owner that stays in place: it has no copy and no move, so a pointer to
-// it stays valid while it lives (THE THREAD OF AN OWNER).
+// it stays valid while it lives (the thread of an owner).
 template <typename Owner>
 concept StaysInPlace = !__is_constructible(Owner, Owner const&) && !__is_constructible(Owner, Owner&&)
                     && !__is_assignable(Owner&, Owner const&) && !__is_assignable(Owner&, Owner&&);
@@ -444,7 +444,7 @@ concept OwnerThreadBody = __is_object(Body) && !__is_const(Body) && __is_nothrow
                        && __is_nothrow_destructible(Body) && __is_nothrow_invocable(Body&, Owner&)
                        && requires(Body& body, Owner& owner) { requires __is_same(decltype(body(owner)), void); };
 
-// The fit of mint_owner_thread (THE THREAD OF AN OWNER): a context that
+// The fit of mint_owner_thread (the thread of an owner): a context that
 // starts threads and allocates, the last member of the owner for its
 // thread, a stop hook of the owner that takes no argument, gives nothing and
 // does not throw, an owner whose destructor is defaulted and that stays in
@@ -455,7 +455,7 @@ concept CanMintOwnerThread =
     && detail::is_last_owner_thread_member_<Owner, Member>() && __is_same(decltype(Hook), void (Owner::*)() noexcept)
     && detail::ends_with_its_members_<Owner>() && StaysInPlace<Owner> && OwnerThreadBody<Body, Owner>;
 
-// The owner of the thread of an owner (THE THREAD OF AN OWNER).  It is the
+// The owner of the thread of an owner (the thread of an owner).  It is the
 // last data member of Owner, and only mint_owner_thread gives it a thread.
 // Its end calls the stop hook of the owner and joins, so the thread ends
 // while each other member of the owner is alive.
@@ -492,8 +492,8 @@ public:
     // True when the OwnerThread holds a thread that it has not joined.
     [[nodiscard]] bool holds_thread() const noexcept { return thread_.holds_thread(); }
 
-    // The proof that no thread of the owner runs (THE QUIESCENCE OF AN
-    // OWNER), for a reset of a part of the owner that the
+    // The proof that no thread of the owner runs (the quiescence of an
+    // owner), for a reset of a part of the owner that the
     // thread reads.  Take it before the first mint or after stop_and_join.  A
     // call while the OwnerThread holds a thread ends the process, and so does
     // an owner that does not hold this OwnerThread.  The definition follows
@@ -517,7 +517,7 @@ private:
 namespace detail {
 
 // The door of mint_owner_thread to the private members of an OwnerThread, and
-// the one door to a proof of quiescence (THE QUIESCENCE OF AN OWNER).
+// the one door to a proof of quiescence (the quiescence of an owner).
 struct owner_thread_door {
     template <typename Owner>
     static void keep(OwnerThread<Owner>& slot, Owner& owner, void (Owner::*stop)() noexcept,
@@ -562,7 +562,7 @@ QuiescenceProof<Owner> OwnerThread<Owner>::quiescence(Owner const& owner CRUCIBL
 }
 
 // Starts one thread with the options, which runs body(owner), and keeps its
-// owner in the member of the owner (THE THREAD OF AN OWNER).  A start that
+// owner in the member of the owner (the thread of an owner).  A start that
 // fails is the error, and then the member stays empty.  Complexity: one
 // allocation and one start.
 template <auto Member, auto Hook, typename Ctx, typename Owner, typename Body>
@@ -572,8 +572,8 @@ mint_owner_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Owner& owner
     constexpr ::foundation::closure::ClosureVerdict verdict =
         ::foundation::closure::check_closure(^^Body, escaping_body_policy, "mint_owner_thread");
     static_assert(verdict.is_admitted(), verdict);
-    // The body writes the owner while the thread that starts it runs on (THE
-    // THREAD OF AN OWNER).  The three messages give the rule, the owner and
+    // The body writes the owner while the thread that starts it runs on (the
+    // thread of an owner).  The three messages give the rule, the owner and
     // its first member that two threads cannot write.
     if constexpr (!::foundation::transfer::Synchronized<Owner>) {
         static_assert(::foundation::transfer::Synchronized<Owner>,

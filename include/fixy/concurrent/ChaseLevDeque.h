@@ -20,7 +20,7 @@
 // Both CAS sites on top are seq_cst on success, so the total order
 // admits exactly one winner.
 //
-// THE ENDS
+// Ends
 //   The deque is a body that the code of its ends reads, as the Worker and
 //   the Stealer of crossbeam-deque split one deque.  The body has no public
 //   door other than its constructor and its capacity:
@@ -36,7 +36,7 @@
 //     the deque.  So a deque has one OwnerEnd, and a second mint of one
 //     deque ends the process.
 //   - The OwnerEnd is the one writer of bottom.  The cell of bottom names its
-//     writer in its type (THE CELL OF AN OWNER of foundation/core/Atomic.h),
+//     writer in its type (the cell of an owner of foundation/core/Atomic.h),
 //     and only the OwnerEnd makes that proof, so no other code stores bottom.
 //     Each deque of one type takes the same proof type.  The structure keeps
 //     two deques apart: the Ref of an OwnerEnd is const, so each OwnerEnd
@@ -87,8 +87,8 @@ template <typename T>
 concept DequeValue =
     ::foundation::core::AtomicValue<T> && std::is_trivially_destructible_v<T> && ::foundation::transfer::Sendable<T>;
 
-// The role of the cell of bottom, which the proof of its writer names (THE
-// CELL OF AN OWNER of foundation/core/Atomic.h).
+// The role of the cell of bottom, which the proof of its writer names (the
+// cell of an owner of foundation/core/Atomic.h).
 struct DequeBottom final {};
 
 template <DequeValue T, std::size_t Capacity>
@@ -98,11 +98,11 @@ class ChaseLevDeque;
 template <class Deque>
 struct DequeEndBrand final {};
 
-// The two ends that mint_chase_lev_ends gives (THE ENDS).
+// The two ends that mint_chase_lev_ends gives (the ends).
 template <DequeValue T, std::size_t Capacity>
 struct DequeEnds;
 
-// The one door to the ends of a deque (THE ENDS).  It takes the claim of the
+// The one door to the ends of a deque (the ends).  It takes the claim of the
 // owner for the life of the deque, so a second mint of one deque ends the
 // process.  Complexity: O(1).
 template <DequeValue T, std::size_t Capacity>
@@ -262,7 +262,7 @@ private:
     ::foundation::EndpointClaim owner_claim_{};
 };
 
-// The end of the owner of a deque (THE ENDS).  Its Ref is const, so it
+// The end of the owner of a deque (the ends).  Its Ref is const, so it
 // reaches only the deque of its mint, and each proof of bottom that it makes
 // writes that deque.
 template <DequeValue T, std::size_t Capacity>
@@ -309,7 +309,7 @@ public:
     }
 };
 
-// The end of a thief (THE ENDS).  It copies, and two threads can use one at
+// The end of a thief (the ends).  It copies, and two threads can use one at
 // the same time.
 template <DequeValue T, std::size_t Capacity>
 class [[nodiscard]] ChaseLevDeque<T, Capacity>::StealerEnd {

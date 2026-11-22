@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit plants a pole table in a probe region that the plugin rules admit.
 // The table names the template of the bridge, which stands in

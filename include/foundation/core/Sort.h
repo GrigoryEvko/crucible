@@ -31,7 +31,7 @@
 // it takes by value, so the run has one writer by its type.  A search reads
 // a View.
 //
-// THE ORDER
+// Order
 //   A less function is a strict weak order on the elements: irreflexive,
 //   transitive, and with an equivalence that is transitive.  For such an
 //   order, the stable sort of a run is one permutation: the elements in the
@@ -59,13 +59,13 @@
 //   one sign by their payloads.  So a NaN has one place, and -0 and +0 are not
 //   equivalent.
 //
-// THE COSTS
+// Costs
 //   sort_by_network of N makes the comparators of its plan: about
 //   P * log2(P)^2 / 4 for P the next power of two.  sort_stably by Ascending
 //   or by an order by a key of at most eight bytes, of at least
 //   stable_sort_radix_count elements, reads the elements one time for the
 //   counts of each digit of the keys: a byte, or 11 bits of a key of four
-//   bytes in a middle range of counts (THE DIGITS).  Then it moves them one
+//   bytes in a middle range of counts (the digits).  Then it moves them one
 //   time for each digit in which two keys differ.  At run time a float or a
 //   double first takes the bits of its key in its place, and the bits of the
 //   float come back after the last pass.  Each other sort_stably is driftsort
@@ -177,7 +177,7 @@ concept KeyProjection =
 // order_by_key_descending make one.  From stable_sort_radix_count elements,
 // sort_stably sorts by the bytes of the keys when a key has at most eight
 // bytes, as it does for Ascending, and it gives the bits of the comparator
-// form of the same order (THE ORDER).
+// form of the same order (the order).
 template <class Project, KeyDirection Direction>
 class KeyOrder final {
 public:
@@ -271,7 +271,7 @@ template <std::size_t N>
     requires NetworkCount<N>
 inline constexpr std::size_t sort_network_size = detail::write_network_(N, nullptr);
 
-// The comparators of the network of N elements, in the order of THE ORDER.
+// The comparators of the network of N elements, in the order of the order.
 // A step reads the elements after each earlier step that shares a position
 // with it.
 template <std::size_t N>
@@ -288,7 +288,7 @@ namespace detail {
 template <std::size_t N>
 inline constexpr FixedArray<Comparator, sort_network_size<N>> network_of = plan_sort_network<N>();
 
-// THE SELECTS.  Each compare-exchange, merge and small sort below picks a
+// Selects. Each compare-exchange, merge and small sort below picks a
 // position by a mask: `left + ((right - left) & (0 - bit))` is left when the
 // bit is 0 and right when it is 1, with unsigned arithmetic that wraps.  The
 // compiler then emits an and, and no branch on an element.  A select of a
@@ -317,7 +317,7 @@ template <std::same_as<bool> Bit>
 
 // One compare-exchange.  The one compare gives the two selects, so the two
 // outputs agree also for an order that a NaN breaks.  Each select picks the
-// position of its element by a mask (THE SELECTS), so the exchange has no
+// position of its element by a mask (the selects), so the exchange has no
 // branch on an element.
 template <class T, class Less>
 CRUCIBLE_INLINE constexpr void compare_exchange_(T* elements, Comparator step, Less& less) noexcept {
@@ -606,7 +606,7 @@ class SortRunDoor final : ::foundation::NoObject<SortRunDoor> {
 
 namespace detail {
 
-// THE STABLE SORT OF AN ORDER OF THE CALLER is driftsort, the stable sort of
+// The stable sort of an order of the caller is driftsort, the stable sort of
 // the Rust standard library (Orson Peters and Lukas Bergdoll, 2024).
 //   - A run of up to stable_sort_insertion_count elements takes an insertion
 //     sort.
@@ -1158,7 +1158,7 @@ template <AscendingElement T>
     }
 }
 
-// THE DIGITS.  The radix sort takes a digit of 8 bits of the key in each
+// Digits. The radix sort takes a digit of 8 bits of the key in each
 // pass, or a digit of 11 bits for a key of four bytes: three passes of 2048
 // buckets in place of four passes of 256.  The buckets of a pass cost a prefix
 // sum, which a small run does not repay, and a large run scatters into more
@@ -1223,7 +1223,7 @@ constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& 
 }
 
 // Sorts a run by the Bytes low bytes of the key of each element, with the
-// digits of its count (THE DIGITS).
+// digits of its count (the digits).
 template <std::size_t Bytes, class T, class KeyOf>
 constexpr void radix_sort_by_count_(View<T> run, Side<side::SortScratch, View<T>> const& scratch,
                                     KeyOf const& key_of) noexcept {
@@ -1282,7 +1282,7 @@ inline constexpr bool is_radix_order_by_key_v<KeyOrder<Project, Direction>, T> =
 // element.  With the order Ascending, or an order by a key of at most eight
 // bytes (KeyOrder), and at least stable_sort_radix_count elements, the sort
 // is the radix sort of the keys of the elements.  Each other sort is
-// driftsort (detail::StableSort).  The two give the same bits (THE ORDER).
+// driftsort (detail::StableSort).  The two give the same bits (the order).
 // Complexity: O(n) for the radix sort, with one pass for each digit of the
 // key, and O(n log n) compares and copies for driftsort.
 template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::size_t ScratchExtent,

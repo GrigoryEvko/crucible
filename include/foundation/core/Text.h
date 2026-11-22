@@ -32,7 +32,7 @@
 // each full owner of the Region family.  A FixedText never holds more than N
 // characters, and no operation reads past its count.
 //
-// THE READS OF THE CHARACTERS
+// Reads of the characters
 //   A TextView gives the reads of a View: size(), the loop
 //   `for (char c : text)` and window(offset, count), which gives the count
 //   characters from offset, or no value when they do not fit.  The free
@@ -48,7 +48,7 @@
 //   this header, so no other file can define one with the access of the
 //   class.
 //
-// THE NAME OF AN ENUMERATOR
+// Name of an enumerator
 //   enum_name_text(value) gives the identifier of the enumerator that holds
 //   value, and enum_words_text<E, Separator>(value) gives it in lower-case
 //   words.  A value that no enumerator holds gives unknown_enum_text<E>,

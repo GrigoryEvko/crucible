@@ -6,7 +6,7 @@
 // caller.  A stage that spins then keeps a CPU of its own, and no other stage
 // of a pipeline spins on that CPU.
 //
-// THE ORDER OF THE CANDIDATES
+// Order of the candidates
 //     The candidates of a run are the CPUs of the mask, in the order of the
 //     cache clusters of the host.  The cluster with the most CPUs of the mask
 //     comes first, so the stages of a small run share one last-level cache.
@@ -15,7 +15,7 @@
 //     last, in increasing order.  A CPU id past AffinityMask::kMaxCore is no
 //     candidate.
 //
-// THE CLAIMS
+// Claims
 //     Each stage claims its CPU in a table of claimed CPUs, and the run gives
 //     each claim back after its join.  A stage takes the first candidate that
 //     no live stage holds.  So two stages never share a pinned CPU, in one run
@@ -27,7 +27,7 @@
 //     give-back is an acquire-release fetch-and.  A claim that takes a CPU
 //     thus sees each write of the run that gave the CPU back.
 //
-// THE TABLE OF THE PROCESS
+// Table of the process
 //     process_stage_cpu_claims() gives the one table of the process, a
 //     ProcessStageCpuClaims with a brand of its own.  The
 //     table is an object of src/fixy/concurrent/StageCpus.cpp with the marker
@@ -80,14 +80,14 @@ public:
     struct brand_type {};
 };
 
-// The one table of the process (THE TABLE OF THE PROCESS).
+// The one table of the process (the table of the process).
 [[nodiscard]] ::foundation::core::Ref<ProcessStageCpuClaims, ProcessStageCpuClaims::brand_type>
 process_stage_cpu_claims() noexcept;
 
 namespace detail {
 
 // The candidates of one run in their order, each CPU of the mask at most one
-// time (THE ORDER OF THE CANDIDATES).
+// time (the order of the candidates).
 //
 // The members that read the mask are in this header.  AffinityMask::contains
 // has a contract precondition, and a contract in an object of libfixy makes
@@ -158,8 +158,8 @@ private:
 }  // namespace detail
 
 // Writes the CPU of each stage of one run into cpus, in the order of the
-// stages, or -1 for a stage with no free candidate (THE ORDER OF THE
-// CANDIDATES, THE CLAIMS).  allowed is the mask of the caller, and an empty
+// stages, or -1 for a stage with no free candidate (the order of the
+// candidates, the claims).  allowed is the mask of the caller, and an empty
 // mask gives -1 to each stage.  clusters lists the cache clusters, each one a
 // list of CPU ids, as Topology::cache_clusters() gives them.  Complexity:
 // O(K * E + B) for K clusters, E CPU entries in all clusters and

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A view that a body stores by value in an object outside the frame of
 // the door outlives its source.  std::optional::emplace builds the stored

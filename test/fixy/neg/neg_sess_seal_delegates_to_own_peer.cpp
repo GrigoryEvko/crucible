@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit says that a protocol which hands an endpoint to a
 // peer of its own session does not, so that a mint admits it.  The query

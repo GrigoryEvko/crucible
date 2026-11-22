@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The stage body drains its first handle and fills its second.  Passing the
 // producer endpoint first and the consumer endpoint second swaps the two

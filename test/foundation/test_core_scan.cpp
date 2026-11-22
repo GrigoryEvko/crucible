@@ -87,7 +87,7 @@ void write_window(Owner& owner, std::size_t offset, std::size_t count, Write wri
     });
 }
 
-// The naive form of THE ORDER: the blocks of k from the largest, each a tree
+// The naive form of the order: the blocks of k from the largest, each a tree
 // sum, folded from the left.  The prefix of no element is +0.
 [[nodiscard]] float naive_prefix(View<float const> run, std::size_t position) noexcept {
     float fold = 0.0f;
@@ -103,7 +103,7 @@ void write_window(Owner& owner, std::size_t offset, std::size_t count, Write wri
     return fold;
 }
 
-// Each output of the two sum scans is the naive fold of THE ORDER, for each
+// Each output of the two sum scans is the naive fold of the order, for each
 // count to 300 and for the counts around 1024, 2048 and 4096.
 void test_sum_scans_agree_with_the_naive_fold() {
     HeapArray<float> const run = draw_floats(4200, 0x5CA40001u);

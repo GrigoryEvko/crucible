@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // HS14 fixture 2 of 2 for fixy::mint_view.
 //
@@ -8,7 +8,7 @@
 // witnesses nothing: this carrier is viewable, just not as Closed.
 //
 // Without CarrierDeclaresViewState, `requires { mint_view<Closed>(c) }`
-// would answer TRUE for this carrier, because the tag would reach only
+// would answer true for this carrier, because the tag would reach only
 // the contract predicate and not the signature.  The clause refuses the
 // pair, so a caller can ask which states a carrier serves and get an
 // answer per tag.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A single-writer stage drains a consumer endpoint.  A producer endpoint
 // has no pop, so it cannot feed the stage, and mint_swmr_stage_from_endpoint

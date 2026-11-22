@@ -5,16 +5,16 @@ entry of the admitted list and each candidate of its appendix A.  The audit
 table gives one row for each name.  The flag matrix gives a static_assert for
 each property of each name.  The rule keeps the three sources in step.
 
-THE INPUTS
+Inputs
     utils/rule-table.txt                 the rule table.  Its admit rows are
                                          the admitted list, and
                                          assay.core.ruletable reads them.
     utils/admitted-audit.txt             the audit table.  This module is its
-                                         schema module (THE AUDIT TABLE).
+                                         schema module (the audit table).
     test/layer/admitted_flag_matrix.cpp  the flag matrix.  The rule reads its
                                          comments from the parse tree.
 
-THE AUDIT TABLE
+Audit table
     The table obeys the rows grammar of assay.core.rows.  Each row has the
     name as its one word and eight cells:
         NAME | ORIGIN | FLAGS | PREDICTABLE | SAFE | USES | COST | VERDICT | REASON
@@ -34,13 +34,13 @@ THE AUDIT TABLE
     KEEP-RESTRICTED verdict has a minimum of one word.  RESTRICTION tells the
     limit in words, and WORDS give the restrictions that the plugin enforces.
 
-THE FLAG MATRIX
+Flag matrix
     Each row has one section in the matrix.  A run of comments "// name: NAME"
     on lines one after the other starts one section for each name.  A comment
     "// varies: MACRO" belongs to the section of the last run.  The row of
     such a section has FLAGS that start with "varies:" and name the macro.
 
-THE KINDS
+Kinds
     table      the audit table or the rule table does not obey its schema.
                Examples are a row with no nine fields, an empty cell, a second
                row of one name and a cell with an incorrect shape
@@ -62,7 +62,7 @@ THE KINDS
                and a macro of a section that FLAGS does not name
     The entity of a finding is the name of the row or of the section, or "-".
 
-THE PLANTS
+Plants
     The control control-clean holds a full tree: the two admitted entries,
     each candidate and a section of each.  The copy of each other plant
     starts with that tree.  A file of the plant then replaces its file in
@@ -82,7 +82,7 @@ from assay.guard.engines.meta.runner import MetaContext, copy_overlay
 from assay.readers import tsast
 
 RULE = "admitted-audit"
-# The control that gives the first tree of each plant (THE PLANTS).
+# The control that gives the first tree of each plant (the plants).
 BASE = "control-clean"
 ADMITTED = "utils/rule-table.txt"
 TABLE = "utils/admitted-audit.txt"
@@ -157,7 +157,7 @@ NO_ENTITY = "-"
 
 @dataclass(frozen=True, slots=True)
 class AuditRow:
-    """One row of the audit table (THE AUDIT TABLE): its line, its name and its eight cells after the name."""
+    """One row of the audit table (the audit table): its line, its name and its eight cells after the name."""
 
     line: int
     name: str
@@ -192,7 +192,7 @@ def starts_with_word(text: str, word: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
-    """The parts of one verdict (THE AUDIT TABLE).
+    """The parts of one verdict (the audit table).
 
     `head` is KEEP, DROP, KEEP-RESTRICTED or REPLACE.  `words` is the text in the brackets, or None for a verdict
     with no brackets.  `text` is the text after the colon, or an empty text for KEEP and DROP.
@@ -204,7 +204,7 @@ class Verdict:
 
 
 def parse_verdict(verdict: str) -> Verdict | None:
-    """Return the parts of a verdict, or None for a text with none of the shapes of THE AUDIT TABLE."""
+    """Return the parts of a verdict, or None for a text with none of the shapes of the audit table."""
     if verdict in (KEEP, DROP):
         return Verdict(verdict, None, "")
     for head in (RESTRICTED, REPLACE):
@@ -242,7 +242,7 @@ def family_of(verdict: str) -> str | None:
 
 
 def is_verdict(verdict: str) -> bool:
-    """Return True for a verdict of one of the shapes of THE AUDIT TABLE."""
+    """Return True for a verdict of one of the shapes of the audit table."""
     parsed = parse_verdict(verdict)
     if parsed is None:
         return False
@@ -316,7 +316,7 @@ def read_table(root: Path, table: str) -> tuple[dict[str, AuditRow] | None, list
 
 
 def shape_findings(table: str, row: AuditRow) -> list[check_report.Finding]:
-    """Return the findings of the cells of one row that do not have their shape (THE AUDIT TABLE)."""
+    """Return the findings of the cells of one row that do not have their shape (the audit table)."""
     found: list[check_report.Finding] = []
     if row.origin not in ORIGINS:
         message = f"the ORIGIN of {row.name} is `{row.origin}`.  It is `admitted`, `candidate` or `dropped`"
@@ -368,7 +368,7 @@ def read_admitted(root: Path, admitted: str) -> tuple[dict[str, ruletable.Admit]
 
 
 def read_matrix(root: Path, matrix: str) -> tuple[dict[str, Section], list[check_report.Finding]]:
-    """Read the sections of the flag matrix from the comments of its parse tree (THE FLAG MATRIX).
+    """Read the sections of the flag matrix from the comments of its parse tree (the flag matrix).
 
     Complexity: linear in the comments of the matrix.
 
@@ -411,7 +411,7 @@ def read_matrix(root: Path, matrix: str) -> tuple[dict[str, Section], list[check
 def list_findings(
     admitted: str, table: str, rows: dict[str, AuditRow], entries: dict[str, ruletable.Admit]
 ) -> list[check_report.Finding]:
-    """Return the findings of the kind list: the admitted list does not apply the audit (THE KINDS).
+    """Return the findings of the kind list: the admitted list does not apply the audit (the kinds).
 
     Complexity: linear in the rows and the entries.
     """
@@ -467,7 +467,7 @@ def list_findings(
 
 
 def word_findings(admitted: str, name: str, row: AuditRow, entry: ruletable.Admit) -> list[check_report.Finding]:
-    """Return the finding of an admit row with restrictions that are not the words of its verdict (THE KINDS).
+    """Return the finding of an admit row with restrictions that are not the words of its verdict (the kinds).
 
     Words that do not obey the grammar give a finding of the kind table, and they give no finding here.
     """
@@ -489,7 +489,7 @@ def word_findings(admitted: str, name: str, row: AuditRow, entry: ruletable.Admi
 def matrix_findings(
     table: str, matrix: str, rows: dict[str, AuditRow], sections: dict[str, Section]
 ) -> list[check_report.Finding]:
-    """Return the findings of the kind matrix that compare the rows and the sections (THE FLAG MATRIX)."""
+    """Return the findings of the kind matrix that compare the rows and the sections (the flag matrix)."""
     found: list[check_report.Finding] = []
     for name, row in rows.items():
         section = sections.get(name)
@@ -515,7 +515,7 @@ def matrix_findings(
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each row, entry and section that the three sources do not keep in step (THE KINDS).
+    """Give each row, entry and section that the three sources do not keep in step (the kinds).
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -542,7 +542,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
 
 
 def plant_context(plant: Path, scratch: Path) -> MetaContext:
-    """Copy the tree of the base control and then the files of a plant to a throwaway repository (THE PLANTS).
+    """Copy the tree of the base control and then the files of a plant to a throwaway repository (the plants).
 
     Complexity: linear in the bytes of the files of the base and of the plant.
     """

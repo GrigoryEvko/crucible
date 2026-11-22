@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The session owns the channel handle, so the mint takes it by move.  A
 // handle passed as an lvalue would leave the caller and the session both

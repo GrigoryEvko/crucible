@@ -1,11 +1,11 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A proof of quiescence names the counter, but each thread that holds the
 // counter can make one, so the proof does not tell which thread owns the
 // counter.  Two bodies of run_joined that each make a proof and call bump
 // would race, as the plant of BackgroundThread::set_numerics did with no
 // proof.  The proof carries no authority and is not bound to a thread, so it
-// is no proof of a door (THE PROOF OF A DOOR of foundation/Transfer.h).
+// is no proof of a door (the proof of a door of foundation/Transfer.h).
 //
 // Expected diagnostic: a door is not const and takes no proof, and the
 // diagnostic names the door bump with the proof of quiescence.

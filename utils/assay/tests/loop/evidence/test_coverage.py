@@ -36,7 +36,7 @@ def ledger_of(*keys: rule_ledger.Key) -> rule_ledger.Ledger:
 
 
 def judged_cases(expect: testing.Expect) -> None:
-    """Hold the judgment of the run of one header (THE RUN OF A HEADER)."""
+    """Hold the judgment of the run of one header (the run of a header)."""
     killed = coverage.judged([outcome("killed", 10), outcome("killed", 20)], None)
     expect(
         "a run with each mutant killed adds one unit, with the count of the gates and of the kills",
@@ -64,7 +64,7 @@ def judged_cases(expect: testing.Expect) -> None:
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Run three planted headers through the runner with a planted run of the mutants (THE BUDGET)."""
+    """Run three planted headers through the runner with a planted run of the mutants (the budget)."""
     keyed = evidence_items.HeaderKeys(Path("/planted"), (), {}, {}, None)
     statuses = {"include/a/Covered.h": "killed", "include/b/Survivor.h": "survived", "include/c/Long.h": "killed"}
 

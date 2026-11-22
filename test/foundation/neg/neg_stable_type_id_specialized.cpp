@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The row hash folds the stable id of each lattice, and a cache key reads
 // the row hash.  A unit that could specialize the id would give a forged

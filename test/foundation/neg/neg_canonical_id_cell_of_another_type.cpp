@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The row hash keeps the identity of a type in a cell, and the cell holds
 // the type that it answers.  A unit cannot build a cell or copy one, but it

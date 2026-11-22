@@ -3,7 +3,7 @@
 // A borrow that names what has to be presented before it can be read.
 //
 // A View of the Region family (foundation/core/Region.h) borrows a run of
-// elements, and it does not say WHEN the borrow may be read.  Its element
+// elements, and it does not say when the borrow may be read.  Its element
 // accessors are callable from anywhere the value is in scope, and lexical
 // scope is the only thing standing between a borrow and a read.  That is
 // the guarantee Rust gives, and it is the whole of it.
@@ -28,7 +28,7 @@
 // Two kinds ship, and the two that do not are named rather than
 // implied:
 //
-//   AtProtocol<Handle> — TEMPORAL.  A borrow minted at one session
+//   AtProtocol<Handle> — temporal.  A borrow minted at one session
 //     handle is read only against that handle, still where it stood.
 //     The witness names the full type of the handle: its protocol
 //     position, Resource, loop context, policy and permission set.  So
@@ -41,7 +41,7 @@
 //     handle differs in one of them.  Validity is one handle at one time,
 //     not lexical scope.
 //
-//   UnderRow<Tag> — EFFECT.  The mint takes the permission tag of the
+//   UnderRow<Tag> — effect.  The mint takes the permission tag of the
 //     region that the borrow views, and permission_row<Tag> says what
 //     touching that region costs: DiskSpilledRegionTag is Row<IO, Block>,
 //     GpuMemoryTag is Row<Alloc>.  A plain borrow does not check that row.
@@ -49,11 +49,11 @@
 //     admits the tag's, which is the same Subrow test the permission pool
 //     applies to a lend.
 //
-//   EPOCH is not built.  It needs an advance that mints a fresh epoch
+//   The epoch is not built.  It needs an advance that mints a fresh epoch
 //     brand and consumes the old one, and neither include/foundation
 //     nor include/fixy has a replay engine to drive that advance.
 //
-//   RESIDENCY is not built.  It needs the execution context to carry a
+//   The residency is not built.  It needs the execution context to carry a
 //     node, a heat and a residency, and foundation::effects::ExecCtx
 //     has two axes, a capability source and a row.  So a borrow here
 //     has no node to inherit and no node to compare against.
@@ -108,14 +108,14 @@ namespace fixy::session {
 // parameter of the kind, and a caller reads it only through Discharges.
 namespace witness {
 
-// TEMPORAL.  The obligation is one session handle at one time.  The type
+// Temporal.  The obligation is one session handle at one time.  The type
 // names the handle, and the carrier keeps the time.
 template <typename Handle>
 struct AtProtocol {
     using handle_type = Handle;
 };
 
-// EFFECT.  The obligation is the row the region's tag carries.
+// Effect.  The obligation is the row the region's tag carries.
 template <typename Tag>
 struct UnderRow {
     using tag_type = Tag;
@@ -328,7 +328,7 @@ public:
 
 // ── The mints ────────────────────────────────────────────────────────
 
-// TEMPORAL.  The handle is taken by const reference: reading its
+// Temporal.  The handle is taken by const reference: reading its
 // position is not advancing it, and a mint that consumed the handle
 // would leave nothing to present.  The witness names the full type of the
 // handle, and the carrier keeps its time.
@@ -356,7 +356,7 @@ constexpr auto mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource,
                                                    "protocol position the borrow would name is already gone; give the "
                                                    "handle a name that outlives the borrow");
 
-// EFFECT.  The caller names the permission tag of the region that the
+// Effect.  The caller names the permission tag of the region that the
 // borrow views: mint_witnessed_under<Tag>(view).
 template <typename Tag, typename UBorrow>
     requires WitnessableUnder<UBorrow, Tag>

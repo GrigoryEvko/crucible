@@ -8,7 +8,7 @@
 //   allow_growth(rule, reason)
 //                           the growth door: the only way to a rule whose
 //                           right side has more agents than its pair
-//   StepWeight, KindWeight  the step weight of a kind (THE WEIGHTS)
+//   StepWeight, KindWeight  the step weight of a kind (the weights)
 //   RuleTable<T, K, R>      a signature, R rules, and the step weights of the
 //                           kinds
 //   check_rules(table)      the check of the table, with its class of growth
@@ -17,7 +17,7 @@
 //   weight_of(table, net)   the weight of a net: a bound of the steps and of
 //                           the agents of each reduction of the net
 //
-// A RULE
+// A rule
 //   A rule fires where the principal ports of an agent of the left kind and
 //   an agent of the right kind meet.  The right side replaces the two agents.
 //   The interface of the pair is its free ports: the auxiliary ports of the
@@ -25,7 +25,7 @@
 //   the right side joins two ends.  An end is a port of a new agent
 //   (point_at_agent), or a port of the interface (point_at_interface).
 //
-// THE CHECKS
+// Checks
 //   check_rules refuses, with one line that names the rule, the agent and the
 //   port:
 //   - a rule whose principal ports are not duals, because it never fires
@@ -50,11 +50,11 @@
 //     results for one net (an inference from the commutation of the steps)
 //   - a right side of more than 2 agents with no growth door, and a growth
 //     door on a rule that does not grow
-//   - a dataflow rule whose step can make a deadlock (THE PRESERVATION)
+//   - a dataflow rule whose step can make a deadlock (the preservation)
 //   - a rule whose step does not lower the weight of the net, and a step
-//     weight that names no kind or a kind for the second time (THE WEIGHTS).
+//     weight that names no kind or a kind for the second time (the weights).
 //
-// THE PRESERVATION
+// Preservation
 //   A check of a net holds for each net that a reduction makes, when each
 //   step keeps it.  Lafont 1990 gives this form of proof: one test of each
 //   rule, and no test of each net.
@@ -82,7 +82,7 @@
 //   closes no cycle.  A user that reduces forests writes
 //   static_assert(verdict.keeps_forest()).
 //
-// THE WEIGHTS
+// Weights
 //   Each kind has a step weight, 0 when the table names no weight for it.  An
 //   agent weighs 1 plus the step weight of its kind, and the weight of a net
 //   is the sum of the weights of its agents.  check_rules asks that each step
@@ -101,7 +101,7 @@
 //   it never stops.  The commutation of the interaction combinators makes 4
 //   agents from 2 of the same kinds, so no step weights admit it either.
 //
-// THE CLASS OF GROWTH
+// Class of growth
 //   A rule that adds agents allocates: the commutation of a duplicator and a
 //   constructor makes 4 agents from 2 (Lafont 1997), and HVM2 asks for 4 new
 //   nodes in that rule.  The class of an admitted table:
@@ -117,7 +117,7 @@
 //   A user that must not allocate writes
 //   static_assert(verdict.allocates_nothing(), verdict).
 //
-// THE COSTS
+// Costs
 //   R rules and K kinds.  check_rules is O(K^2 + R * I * E) for I the ports
 //   of the interface of a pair and E the ends of a right side, with a table
 //   of K * K pairs.  This header reads plain arrays.  The check of the value
@@ -125,7 +125,7 @@
 //   compile instructions and 40 ms of wall time together.  The checks of the
 //   preservation are about 30 M and 10 ms of it.  A table that reflection
 //   reads costs more, because of the constant arrays and strings of
-//   foundation/algebra/net/Reflect.h (THE COSTS there).
+//   foundation/algebra/net/Reflect.h (the costs there).
 
 #include <foundation/algebra/net/Net.h>
 
@@ -215,7 +215,7 @@ public:
     return rule;
 }
 
-// The step weight of a kind (THE WEIGHTS).  An agent weighs 1 plus the step
+// The step weight of a kind (the weights).  An agent weighs 1 plus the step
 // weight of its kind.
 enum class StepWeight : std::uint32_t {
 };
@@ -244,7 +244,7 @@ enum class NetGrowth : std::uint8_t {
     GrowsWithinCredit = 2,
 };
 
-// The forest of a net under the steps of a table (THE PRESERVATION): each
+// The forest of a net under the steps of a table (the preservation): each
 // step keeps a forest, or some step can close a cycle.
 enum class ForestKeeping : std::uint8_t {
     CanCloseCycle = 0,
@@ -454,7 +454,7 @@ template <std::size_t Types, std::size_t Kinds>
     return true;
 }
 
-// The checks of a dataflow rule (THE PRESERVATION), on a right side whose
+// The checks of a dataflow rule (the preservation), on a right side whose
 // ports passed their checks: no wire of no direction between new agents, no
 // cycle of waits among the new agents, and no path from an input of the pair
 // to an output that the pair does not reach from it.  Complexity: O(I * E)
@@ -592,7 +592,7 @@ template <std::size_t Types, std::size_t Kinds>
     return NetVerdict{};
 }
 
-// The step of the rule keeps a forest (THE PRESERVATION): no new agent has a
+// The step of the rule keeps a forest (the preservation): no new agent has a
 // par group, and the right side has no cycle with each port of the interface
 // as a vertex of its own.  Complexity: O(E a(E)).
 template <std::size_t Types, std::size_t Kinds>
@@ -925,7 +925,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
         }
     }
 
-    // The step weights (THE WEIGHTS).
+    // The step weights (the weights).
     std::uint64_t weight[Kinds]{};
     bool is_weighed[Kinds]{};
     for (std::uint32_t entry = 0; entry < Kinds; ++entry) {
@@ -977,7 +977,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
                        forest};
 }
 
-// The weight of a net under the step weights of a table (THE WEIGHTS).
+// The weight of a net under the step weights of a table (the weights).
 enum class NetWeight : std::uint64_t {
 };
 

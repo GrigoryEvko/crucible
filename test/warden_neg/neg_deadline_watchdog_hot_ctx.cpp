@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // DeadlineWatchdog::observe asks for a context that owns Bg, Init or
 // Test (CtxFitsDeadlineWatchdog).  The hot foreground context owns none

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Only an Init-row context mints the health scorer.  A background
 // context may feed it samples but may not create the policy carrier.

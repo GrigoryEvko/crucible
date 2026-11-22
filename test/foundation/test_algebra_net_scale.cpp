@@ -388,7 +388,7 @@ enum class NetCheck : std::uint8_t {
 
 // The fault of one check of a net at run time.  The net is a parameter, so
 // the compiler does not fold the call into a second constant evaluation
-// (THE RUN-TIME FORM of Net.h).  noinline keeps the arrays of each check in
+// (the run-time form of Net.h).  noinline keeps the arrays of each check in
 // a frame of its own.
 template <NetCheck Check, class Graph>
 [[gnu::noinline]] NetFault find_at_run_time(Graph const& graph) noexcept {

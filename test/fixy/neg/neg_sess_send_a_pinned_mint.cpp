@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A session that opens under check::Pinned keeps each of its handles on the
 // thread of the mint: the pinned policy is thread_bound (foundation/Transfer.h),

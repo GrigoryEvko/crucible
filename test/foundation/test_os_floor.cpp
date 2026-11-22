@@ -201,7 +201,7 @@ void test_derives_the_floor() {
     CRUCIBLE_FATAL_INVARIANT(std::is_eq(floor <=> os::KernelVersion{5, 6, 0}));
 }
 
-// The count of the rows of the flags that break a rule of THE FLAGS of
+// The count of the rows of the flags that break a rule of the flags of
 // foundation/os/KernelFloor.h: a row with no word, a fallback row with no
 // fallback text, a row of the need each_call with a fallback text, a row of
 // a word that came before 2.6.0, or a row that a release far in the future
@@ -220,7 +220,7 @@ consteval std::size_t count_rows_that_break_a_rule() {
     return broken;
 }
 
-// Each row obeys the rules of THE FLAGS.
+// Each row obeys the rules of the flags.
 void test_each_flag_row_obeys_the_rules() {
     static_assert(count_rows_that_break_a_rule() == 0, "a row of flag_floor breaks a rule of THE FLAGS");
     CRUCIBLE_FATAL_INVARIANT(count_rows_that_break_a_rule() == 0);

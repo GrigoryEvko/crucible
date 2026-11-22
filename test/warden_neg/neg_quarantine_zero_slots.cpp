@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A policy with no Cog slot can hold no state.  The constraint of the class
 // refuses a zero slot count.  The event count is explicit, because its

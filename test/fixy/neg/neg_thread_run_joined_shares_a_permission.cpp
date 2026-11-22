@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A Permission proves that its holder owns a region alone.  Two bodies of
 // run_joined that read one token through a reference to const would each show

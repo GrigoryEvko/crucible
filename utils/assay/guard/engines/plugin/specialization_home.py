@@ -1,6 +1,6 @@
 """specialization-home — each specialization of a template of the tree stands in the home of its template.
 
-THE RULE
+Rule
     C++ has no orphan rule, so each unit can specialize each template that it
     can name.  A specialization of a trait in a different file changes what
     each gate that reads the trait admits, and an explicit specialization of a
@@ -19,7 +19,7 @@ THE RULE
                         file that does not define each top-level template
                         argument.  The mark opens a template to each file for
                         its own types only, as the orphan rule of Rust does
-                        (THE COHERENCE of specialization.cpp)
+                        (the coherence of specialization.cpp)
       forward-declaration
                         a variable template that a unit declares with extern
                         before its definition.  GCC keeps the place of that
@@ -37,13 +37,13 @@ THE RULE
     finding of the rule base-namespace.
 
     The plugin makes each line of the first three kinds a compile error in
-    each build and each mode (THE ERRORS of specialization.cpp), so no object
+    each build and each mode (the errors of specialization.cpp), so no object
     holds such a line.  A test of a forged specialization puts it in an
     opt-out region of the reason class PROBE:, and the rule quarantine counts
     the opted-out finding.  This rule still refuses each such line that a
     report holds.
 
-THE LEDGER
+Ledger
     A row of utils/ledgers/specialization-home.txt admits the records of one
     file and template: `PATH | open-extension | admit | TEMPLATE | REASON`.
     The row names the home of a marked template.  A row of a different kind

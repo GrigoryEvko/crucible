@@ -1,6 +1,6 @@
 """The test of the runner of the engine elf (assay.guard.engines.elf.runner).
 
-THE CASES
+Cases
     The cases hold these parts of the runner:
       * The facts of a planted build and of a planted build directory
       * The file plant.txt of a plant

@@ -2,14 +2,14 @@
 //
 // Validates the claim of the batch push of the ring:
 //
-//   "Real win for THIS API: multi-producer contention.
+//   "Real win for this API: multi-producer contention.
 //    Single FAA(tail, N) replaces N × FAA(tail, 1)."
 //
 // A single-thread measurement showed a ~4.5× speedup from the batched
 // API.  This bench shows the multi-thread story:
 //   • Without batched API: every try_push contends on head_ via CAS.
 //     Per-call cost grows with producer count.
-//   • With batched API: each batch contends on head_ ONCE per N items
+//   • With batched API: each batch contends on head_ once per N items
 //     (single CAS claims N tickets).  Contention reduction = N×.
 //
 // Harness discipline (canonical bench/bench_harness.h):
@@ -30,7 +30,7 @@
 //   • max_wall_ms(60_000) — generous wall budget; cap protects CI
 //   • per_producer = 5'000 — keeps each iteration ≈ 1-50 ms
 //
-// THE CORES OF A CYCLE
+// Cores of a cycle
 //   The bench states 10 cores in bench/CMakeLists.txt: the measuring thread,
 //   the eight producers of the largest row and the consumer.  The thread door
 //   of fixy/os/ThreadTasks.h gives each thread of a cycle one core of the
@@ -40,7 +40,7 @@
 //   spin of one of them then holds the core until its time slice ends, and the
 //   row measures the slices of the scheduler and not the contention.
 //
-// THE GATE
+// Gate
 //   Each thread of a cycle arrives at the gate, and it waits until each
 //   thread of the cycle has arrived.  So the producers and the consumer start
 //   their work at the same time, also when the starts of the threads take
@@ -79,13 +79,13 @@ struct RingOwner final {
 
 using Ring = MpscRing<Item, kCap, RingOwner>;
 // The count of the threads of a cycle: the producers and the consumer.  Each
-// thread takes one core of the claim (THE CORES OF A CYCLE).
+// thread takes one core of the claim (the cores of a cycle).
 using ThreadCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
 
 // The allocation capability of the ring of each cycle.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
-// The gate of a cycle (THE GATE).  The gate holds the count of the threads
+// The gate of a cycle (the gate).  The gate holds the count of the threads
 // that arrived, and the gate is open when the count is the count of the
 // threads of the cycle.
 struct alignas(64) StartGate {
@@ -181,7 +181,7 @@ struct DrainWorker {
     }
 };
 
-// The options of the threads of a row (THE CORES OF A CYCLE): one core of
+// The options of the threads of a row (the cores of a cycle): one core of
 // the claim for each thread, apart from the core of the measuring thread.
 // With no claim, as under ctest, the threads keep the affinity of the process.
 [[nodiscard]] ::fixy::thread::ThreadOptions cycle_options(crucible::warden::CpuSet const& cpus) noexcept {

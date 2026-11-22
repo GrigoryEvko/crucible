@@ -60,7 +60,7 @@ constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
         .expect("the auxiliary vector gives the size of a page");
 }
 
-// THE FRESH PAGES.  A case that counts the pages with no frame takes an
+// Fresh pages.  A case that counts the pages with no frame takes an
 // anonymous mapping of the kernel.  Each page holds zero, and no page has a
 // frame before a write or a populate.  No allocator touches the mapping, so
 // this holds in each build: the allocator of ThreadSanitizer writes each
@@ -82,7 +82,7 @@ using Anonymous = ::fixy::atom::mmap::with_share<::fixy::mmap::share::Anonymous>
 // The count of the fresh pages of one mapping.
 constexpr std::size_t kFreshPageCount = 8;
 
-// The fresh pages of a case (THE FRESH PAGES), for the permission of the
+// The fresh pages of a case (the fresh pages), for the permission of the
 // case.
 template <class Owner>
 [[nodiscard]] auto map_fresh_pages(Owner const& owner) {

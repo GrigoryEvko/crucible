@@ -15,8 +15,8 @@
 // so their result would move with the register width.  The DetSafeSimd
 // concept keeps them out of every reduction here.
 //
-// The facade is in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
-// NAMESPACE of foundation/Platform.h), so each target has its own vec, its
+// The facade is in the inline namespace CRUCIBLE_SIMD_TARGET (the target
+// namespace of foundation/Platform.h), so each target has its own vec, its
 // own mask and its own body of each operation.  The rule for new code:
 //   - An inline function or template of the base whose body uses the facade,
 //     or reads a target macro or a constant such as native_lanes, is in the

@@ -106,7 +106,7 @@ struct ListReports final {
     bench::Report spilled_appends;
 };
 
-// THE MEASURES.  GCC compiles main and each lambda in it for size, as code
+// Measures.  GCC compiles main and each lambda in it for size, as code
 // that runs one time, so a loop in main keeps the step of its cursor as a
 // call.  Each measure of a container and of its reference is a function of
 // its own, which main does not inline.
@@ -215,7 +215,7 @@ struct ListReports final {
     };
 }
 
-// THE REFERENCES.  Each one is the raw form of the state of the art for the
+// References.  Each one is the raw form of the state of the art for the
 // verbs of one container.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw forms of the state of the art are the references of the containers")
 

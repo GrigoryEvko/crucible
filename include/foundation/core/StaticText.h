@@ -34,7 +34,7 @@ void static_text_holds_a_zero_before_its_end() noexcept;
 
 }  // namespace detail
 
-// The word of a StaticText in an atomic cell (THE WORD OF A VALUE of
+// The word of a StaticText in an atomic cell (the word of a value of
 // foundation/core/Atomic.h): the pointer of its first character.  No
 // StaticText holds the null pointer, so the null pointer is the empty word,
 // and the cell of an Option of a StaticText holds one pointer.  Only a cell

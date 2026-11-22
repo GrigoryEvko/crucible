@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A door that runs its body past the end of the frame of the call refuses a
 // body that holds a borrow, because the borrow dangles after the frame ends

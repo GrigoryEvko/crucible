@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // An OpRecordFrame holds the slots of one op until the end of the scope of
 // that op.  A copy would give the same slots back two times, and the stack

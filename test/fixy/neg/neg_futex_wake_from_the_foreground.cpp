@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A futex wake serves the waiters of a blocking protocol, so the futex door
 // takes a context that owns Block for a wake too.  The foreground context

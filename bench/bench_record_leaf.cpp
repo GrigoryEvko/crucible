@@ -117,7 +117,7 @@ static_assert(RECORD_BODIES < RING_CAPACITY,
               "A recording case must finish before the ring fills, or it measures the reject path "
               "instead of an append. Lower RECORD_SAMPLES or drain between samples.");
 
-// The cores of the threads of a Vigil row (THE CORES OF A RUN of
+// The cores of the threads of a Vigil row (the cores of a run of
 // bench/bench_harness.h).  A Vigil runs five background threads: the thread
 // of its pipeline and the four stages of the pipeline, which drain, detect,
 // build and publish.  The bench states six threads with CORES 6 in
@@ -331,7 +331,7 @@ constexpr double kTolerance = 1.30;
 // in the baseline so a person can see it move; it just does not vote.
 constexpr bool kGateOnP99 = false;
 
-// Within-run cv is NOT the criterion, though it is the obvious one to reach
+// Within-run cv is not the criterion, though it is the obvious one to reach
 // for. Measured across ten runs of each case: the recording leaf held its
 // p50 to a 0.0% run-to-run spread while its within-run cv read 483%. A
 // bimodal operation — an append that crosses a cache line against one that

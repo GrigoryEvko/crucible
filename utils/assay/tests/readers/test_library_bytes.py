@@ -3,7 +3,7 @@
 `guard selftest tests.readers.test_library_bytes` runs the test.
 Each case writes one line.  Exit 0 when each case holds, else 1.
 
-THE CASES
+Cases
     The class cases hold the class of each kind of declaring file.  The
     compile case compiles two units with one template, with the compiler that
     ASSAY_TEST_CXX names, and holds the count of a COMDAT group.  The
@@ -29,7 +29,7 @@ int {name}(std::string_view left, std::string_view right) {{ return planted_comp
 
 
 def class_cases(expect: testing.Expect) -> None:
-    """Hold the class of each kind of declaring file (THE MEASURE)."""
+    """Hold the class of each kind of declaring file (the measure)."""
     files = [
         ("", True),
         ("relative.h", False),

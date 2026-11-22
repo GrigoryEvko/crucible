@@ -1,6 +1,6 @@
 """view-escape — a function returns no borrow of an object that ends with its frame.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ reads each return of each
     function whose return type holds a borrow, and gives a finding of the kind
     escaped-borrow for a return whose borrow names a local, a parameter by
@@ -8,7 +8,7 @@ THE RULE
     each build and each mode (escape.cpp).  A read of the result reads a dead
     stack frame.  The rule reads those finding lines in the sections of the
     objects of the target all of one build (assay.guard.engines.plugin.runner,
-    THE SECTIONS).  The same line from two objects counts one time.
+    the sections).  The same line from two objects counts one time.
 
     A View with a brand or a lifetime parameter would carry the fact in its
     type.  C++ gives neither, so the plugin holds it.

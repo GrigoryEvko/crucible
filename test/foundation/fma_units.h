@@ -2,7 +2,7 @@
 
 // The two other units of test_core_fma.  On x86_64 the build compiles
 // fma_unit_wide.cpp for x86-64-v3, so fp::fma there is the fused
-// multiply-add instruction (THE FMA of foundation/core/Float.h).  It compiles
+// multiply-add instruction (the FMA of foundation/core/Float.h).  It compiles
 // fma_unit_baseline.cpp for x86-64, so fp::fma there is the exact form in
 // integers, the fp::fma of a build at x86-64 or x86-64-v2.  The unit of the
 // test takes the target of its preset: x86-64-v3 in the build of the preset

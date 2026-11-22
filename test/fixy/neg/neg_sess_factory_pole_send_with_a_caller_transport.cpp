@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The send of the handle factory is the step that the send of a handle
 // calls.  A session over a pole of a channel sends through the write that

@@ -1,6 +1,6 @@
 """The inputs of a test of the master guard: the files and the texts that its result reads, for `loop test`.
 
-THE TESTS
+Tests
     `loop test` (assay.loop.affected) gives this module the words of each
     test that runs the master guard of the source tree, after the master.
     Two kinds of such a test get their inputs:
@@ -10,27 +10,27 @@ THE TESTS
         GROUP of utils/assay/tests/.
     A test of the master with other words, such as `guard selftest MODULE`,
     gets no inputs.  The test launcher then traces it, and `loop test` reads
-    its read set (assay.loop.affected, THE SCRIPT TEST).  A rule test
+    its read set (assay.loop.affected, the script test).  A rule test
     that reads a build gets its inputs in the source tree, and the reason
-    that it reads the build (THE BUILD).
+    that it reads the build (the build).
 
-THE INPUTS OF A RULE
+Inputs of a rule
     Each rule of a rule test gives these inputs:
       * the three masters of utils/bin/
-      * the modules of the import closure (THE IMPORT CLOSURE)
+      * the modules of the import closure (the import closure)
       * each file that the search of the module of the rule reads, and the
-        names of the modules that it compares (THE SEARCH)
+        names of the modules that it compares (the search)
       * the ledger utils/ledgers/ID.txt, also when it is not a file
       * each file of the plants utils/plants/ID/
       * the rule table utils/rule-table.txt
-      * the files of the scope and of the field inputs of the row (THE SCOPE)
+      * the files of the scope and of the field inputs of the row (the scope)
       * the data files of the modules of the closure (MODULE_DATA)
       * the text of the row of the rule, with no line number
       * the text of each row that the rule holds (the field held-by)
-      * the texts and the files of git (THE TEXTS OF GIT).
+      * the texts and the files of git (the texts of git).
     A change of the row of a different rule then changes no input of the rule.
 
-THE BUILD
+Build
     A check of a rule with the scope word builddir reads the build directory
     of its configuration.  A check of an engine, such as `guard check
     --engine plugin`, reads the objects of the build.  The inputs of such a
@@ -39,7 +39,7 @@ THE BUILD
     files of the source tree.  `loop test` then runs such a test on each
     call.
 
-THE SEARCH
+Search
     A rule with no module of its own is a member of a family module.
     module_search() of assay.guard.engines.meta.runner finds that module.  It
     parses the modules of the engine directory in the sequence of the names,
@@ -50,16 +50,16 @@ THE SEARCH
     new module that sorts before the match then changes the inputs.  A module
     after the match is no input.
 
-THE INPUTS OF A GROUP
+Inputs of a group
     The inputs of a group test are the masters and the modules of the import
     closure of its test modules and of assay.guard.selftest.  The data files
     of the modules of the closure are inputs too.  When the closure holds
     assay.core.registry, the registry is an input too.  The texts and the
     files of git apply as for a rule.
 
-THE TEXTS OF GIT
+Texts of git
     Two texts of a test come from the functions of assay.core.git that the
-    test can call (THE CALLS).  A function of assay.core.git.READS_HISTORY
+    test can call (the calls).  A function of assay.core.git.READS_HISTORY
     reads the history.  A test that can call one gets the HEAD commit as a
     text.  A function of assay.core.git.READS_NAMES lists the files of the
     tree.  A test that can call one gets the list of the files as a text.  It
@@ -68,7 +68,7 @@ THE TEXTS OF GIT
     read the history.  A new file runs again only the tests that list the
     files.
 
-THE CALLS
+Calls
     The calls of a test are the top-level functions and classes of the
     modules of its closure that its code can call.  The walk starts at the
     code that runs at the import of each module of the closure.  It also
@@ -84,7 +84,7 @@ THE CALLS
     An attribute of an object, such as context.tracked, gives nothing.  The
     class of the object is a call when a code makes such an object.
 
-THE PROGRAMS
+Programs
     A test that runs a compiler gets each file of include/ too, because a
     compile can read each header.  The option --cxx and the variable
     ASSAY_TEST_CXX give a compiler.  A witness with --build-dir DIR gets the
@@ -92,20 +92,20 @@ THE PROGRAMS
     the flags of the build there.  `loop test` adds the bytes of each program
     that the command or the environment names.
 
-THE IMPORT CLOSURE
+Import closure
     The closure holds the module of the subcommand, the runner of the engine
     of the rule and the module of the rule.  A measured rule with a holder
     has no module of its own, and the closure holds the module of the judges
     of the holders (HELD_WITNESS).  It follows each import of a
     module of the package, also an import in a function.  It also holds the
     file __init__.py of each package of a module.  assay.readers.python reads
-    the imports of each module one time (THE PARSE CACHE).  The modules of DISPATCH import the
+    the imports of each module one time (the parse cache).  The modules of DISPATCH import the
     runner of each engine in the function of that engine.  The closure then
     does not follow an import of a module of assay/guard/engines/ from these
     modules, other than the runner of the engine meta.  Each run imports
     that runner.
 
-THE PARSE CACHE
+Parse cache
     The parse of a module gives its imports and its shape.  The cache
     SHAPES_CACHE of assay.core.cache keeps that result.  A call of `loop
     test` then parses only a module with a new text.  The name of an entry
@@ -117,15 +117,15 @@ THE PARSE CACHE
     not hold an earlier result.  On 2026-10-17, the parse of the 227 modules of
     the closures took 1.79 s, and the read of their entries took 0.03 s.
 
-THE FACTS OF A CALL
+Facts of a call
     A Deriver reads the registry, the rule table, the list of the files and
     the HEAD commit one time, and its inputs come from them.  is_current()
     tells if each fact that it read is the same at this time.  `loop test`
-    keeps a current Deriver after the tests (THE DIGEST MEMO of
+    keeps a current Deriver after the tests (the digest memo of
     assay.loop.affected).  A changed module of a closure changes no fact,
     because each module is a file of the inputs, and its hash changes.
 
-THE SCOPE
+Scope
     A path of a scope that ends with "/" names each file in it.  A path with
     no "/" at its end names one file, whatever its suffix, because the rule
     reads that file by its name.  The word `tracked` names each file of the
@@ -141,7 +141,7 @@ THE SCOPE
     engine then names only the C and C++ files (COMPILED_SUFFIXES).  The
     context of each other engine gives each file, also a plant.
 
-THE METERS OF A TEST
+Meters of a test
     Two step meters of the master loop run in front of each test of a build:
     the test launcher (assay.loop.teststep) and the fixture driver
     (assay.loop.fixture.store).  meter_inputs() gives the inputs of one
@@ -149,9 +149,9 @@ THE METERS OF A TEST
     its module.  The ledger and the row of each rule that it judges are
     inputs too.
 
-THE TOUCH
+Touch
     The gate of `loop land` must know the tests of a build that a change can
-    change (assay.loop.gate, THE SELECTION).  read_change() reads the change
+    change (assay.loop.gate, the selection).  read_change() reads the change
     of a tree against a commit.  Inputs.is_touched() tells if the change
     touches the inputs of a test.  It does when one of these facts holds:
       * a changed path is a file of the inputs
@@ -191,8 +191,8 @@ from assay.core import rows as rows_grammar
 from assay.readers import compdb
 from assay.readers import python as python_reader
 
-# The masters of utils/bin/, relative to the root of the tree, and the master loop of the step meters (THE METERS OF A
-# TEST).
+# The masters of utils/bin/, relative to the root of the tree, and the master loop of the step meters (the meters of a
+# test).
 MASTERS = ("utils/bin/guard", "utils/bin/loop", "utils/bin/setup")
 LOOP_MASTER = "utils/bin/loop"
 UTILS = "utils"
@@ -208,7 +208,7 @@ WITNESS = "assay.guard.witness"
 SELFTEST = "assay.guard.selftest"
 DISPATCH = frozenset({CHECK, WITNESS})
 ENGINES = "assay.guard.engines."
-# The directory of the modules of the engines, relative to the root of the tree (THE TOUCH).
+# The directory of the modules of the engines, relative to the root of the tree (the touch).
 ENGINE_DIRECTORY = "utils/assay/guard/engines"
 META_RUNNER = "assay.guard.engines.meta.runner"
 PLUGIN_WITNESS = "assay.guard.engines.plugin.witness"
@@ -224,7 +224,7 @@ MODULE_DATA = {
 # The fixture of the parse trees.  The tree cache holds a parse of the files of the tree.  A test with the fixture
 # then reads no input other than the files of its scope.
 TREE_FIXTURE = "tsast_trees"
-# The marks of a test that runs a compiler (THE PROGRAMS).
+# The marks of a test that runs a compiler (the programs).
 COMPILER_OPTION = "--cxx"
 COMPILER_VARIABLE = "ASSAY_TEST_CXX"
 # The options of the subcommands check and witness, each with the count of its words after it.
@@ -245,23 +245,23 @@ TRACKED_SCOPE = "tracked"
 BASE_SCOPE = "base"
 QUARANTINED_SCOPE = "quarantined"
 PACKAGE_SCOPE = "package"
-# The suffixes of a C or C++ file.  A compile reads such a file, and a change of one can change each build (THE SCOPE,
-# THE TOUCH).
+# The suffixes of a C or C++ file.  A compile reads such a file, and a change of one can change each build (the scope,
+# the touch).
 COMPILED_SUFFIXES = (".h", ".hh", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx", ".inc", ".ipp", ".tpp")
-# The names of the files of the tree that git reads when it lists the files (THE TEXTS OF GIT).
+# The names of the files of the tree that git reads when it lists the files (the texts of git).
 GIT_FILES = (".gitattributes", ".gitignore")
-# The words that start the texts of git and the text of the search (THE TEXTS OF GIT, THE SEARCH).
+# The words that start the texts of git and the text of the search (the texts of git, the search).
 HEAD_TEXT = "head"
 FILES_TEXT = "files"
 SEARCH_TEXT = "modules"
-# The cache of the imports and the shapes of the modules, and the format of its entries (THE PARSE CACHE).
+# The cache of the imports and the shapes of the modules, and the format of its entries (the parse cache).
 SHAPES_CACHE = "python-shapes"
 SHAPES_FORMAT = b"python-shapes-1"
 
 
 @dataclass(frozen=True, slots=True)
 class Change:
-    """The change of a tree against a commit, as the touch reads it (THE TOUCH).
+    """The change of a tree against a commit, as the touch reads it (the touch).
 
     `paths` holds the absolute path of each changed file, also of a file that the change deletes.  `deleted` holds the
     paths of `paths` that the tree does not hold.  `rows` holds each rule with a row of the registry that the change
@@ -279,8 +279,8 @@ class Inputs:
 
     `files` and `texts` are sorted.  A path that is not a file is an input too, and a new file changes the inputs.
     `always` is empty for a test that the inputs judge.  `build` tells why the test reads the build directory of its
-    configuration, and it is empty for a test that reads no build (THE BUILD).  `directories` holds the absolute path of
-    each directory with files that the test reads, and `rules` holds each rule with a row that is a text (THE TOUCH).
+    configuration, and it is empty for a test that reads no build (the build).  `directories` holds the absolute path of
+    each directory with files that the test reads, and `rules` holds each rule with a row that is a text (the touch).
     """
 
     files: tuple[str, ...] = ()
@@ -291,7 +291,7 @@ class Inputs:
     rules: tuple[str, ...] = ()
 
     def is_touched(self, change: Change) -> bool:
-        """Tell if a change touches the inputs (THE TOUCH).
+        """Tell if a change touches the inputs (the touch).
 
         Complexity: linear in the files, and O(d * p) for d directories and p deleted paths.
         """
@@ -314,7 +314,7 @@ def directory_of(item: str) -> str | None:
     """Return the directory, relative to the root, of the files that one item of a scope names, or None for one file.
 
     A word names files anywhere in the tree, and its directory is the root, "".  The word package names the files of
-    utils/ (THE TOUCH).
+    utils/ (the touch).
     """
     if item == PACKAGE_SCOPE:
         return UTILS
@@ -324,7 +324,7 @@ def directory_of(item: str) -> str | None:
 
 
 def read_change(root: Path, base: str, changed: Iterable[str]) -> Change:
-    """Return the change of some paths of a tree against the commit `base` (THE TOUCH).
+    """Return the change of some paths of a tree against the commit `base` (the touch).
 
     Args:
         root: The tree, which holds the change
@@ -368,7 +368,7 @@ class Call:
 
 
 def parsed_call(words: Sequence[str], variables: Collection[str]) -> Call | None:
-    """Return the call of the words after the master guard, or None when the words are no rule test (THE TESTS).
+    """Return the call of the words after the master guard, or None when the words are no rule test (the tests).
 
     Args:
         words: The subcommand and its words
@@ -446,7 +446,7 @@ type Parsed = tuple[tuple[str, ...], python_reader.Shape | None]
 
 @functools.cache
 def shapes_identity() -> bytes:
-    """Return the digest of the code that makes an entry of THE PARSE CACHE, one time for each process.
+    """Return the digest of the code that makes an entry of the parse cache, one time for each process.
 
     The digest holds SHAPES_FORMAT, the version of Python and the bytes of this module and of assay.readers.python.
     """
@@ -458,7 +458,7 @@ def shapes_identity() -> bytes:
 
 
 def shape_record(parsed: Parsed) -> bytes:
-    """Return the bytes of an entry of THE PARSE CACHE for the imports and the shape of one module."""
+    """Return the bytes of an entry of the parse cache for the imports and the shape of one module."""
     imports, shape = parsed
     document: dict[str, object] = {"imports": list(imports), "shape": None}
     if shape is not None:
@@ -473,7 +473,7 @@ def shape_record(parsed: Parsed) -> bytes:
 
 
 def parsed_of(data: bytes) -> Parsed | None:
-    """Return the imports and the shape of an entry of THE PARSE CACHE, or None for an entry with a different shape."""
+    """Return the imports and the shape of an entry of the parse cache, or None for an entry with a different shape."""
     try:
         document = json.loads(data)
         imports = tuple(str(item) for item in document["imports"])
@@ -495,7 +495,7 @@ def parsed_of(data: bytes) -> Parsed | None:
 
 
 def stored_parse(directory: Path | None, name: str, file: str, text: str) -> Parsed:
-    """Return the imports and the shape of a module from its entry of THE PARSE CACHE, or parse it and write the entry.
+    """Return the imports and the shape of a module from its entry of the parse cache, or parse it and write the entry.
 
     `directory` is the cache, or None when the caches are off.  Complexity: one read of one entry, or one parse.
     """
@@ -561,7 +561,7 @@ class Deriver:
         # The text of the HEAD commit and the text of the list of the files, by the word that starts each one.
         self._git_texts: dict[str, str] = {}
         self._git_files: tuple[str, ...] | None = None
-        # The facts of the table RULES of each module that a search of a module read (THE SEARCH).
+        # The facts of the table RULES of each module that a search of a module read (the search).
         self._declared: dict[Path, tuple[bool, list[str]]] = {}
         # The modules of the package that each module imports, and its shape (assay.readers.python), or None.
         self._parsed: dict[str, tuple[tuple[str, ...], python_reader.Shape | None]] = {}
@@ -569,9 +569,9 @@ class Deriver:
         self._files: dict[str, tuple[str, ...]] = {}
         self._scopes: dict[tuple[str, Callable[[str], bool] | None], tuple[str, ...]] = {}
         self._closures: dict[frozenset[str], frozenset[str]] = {}
-        # The directory of THE PARSE CACHE, or None when the caches are off, in a tuple after the first parse.
+        # The directory of the parse cache, or None when the caches are off, in a tuple after the first parse.
         self._shapes: tuple[Path | None] | None = None
-        # The SHA-256 of the registry and of the rule table at their first read (THE FACTS OF A CALL).
+        # The SHA-256 of the registry and of the rule table at their first read (the facts of a call).
         self._seen: dict[str, str] = {}
 
     def table_digest(self, relative: str) -> str:
@@ -580,7 +580,7 @@ class Deriver:
         return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
 
     def is_current(self) -> bool:
-        """Tell if each fact of the tree that this Deriver read is the same at this time (THE FACTS OF A CALL).
+        """Tell if each fact of the tree that this Deriver read is the same at this time (the facts of a call).
 
         A fact that the Deriver did not read counts as the same.  A tree that cannot be read is not current.
         Complexity: one read of each table that the Deriver read, and one listing of git when it read the files.
@@ -616,7 +616,7 @@ class Deriver:
         return self._tracked
 
     def head_text(self) -> str:
-        """Return the text of the HEAD commit of the tree (THE TEXTS OF GIT).
+        """Return the text of the HEAD commit of the tree (the texts of git).
 
         Raises:
             git.GitError: If the root is not a git work tree, or it has no commit
@@ -626,7 +626,7 @@ class Deriver:
         return self._git_texts[HEAD_TEXT]
 
     def files_text(self) -> str:
-        """Return the text of the digest of the list of the files of the tree (THE TEXTS OF GIT).
+        """Return the text of the digest of the list of the files of the tree (the texts of git).
 
         Raises:
             git.GitError: If the root is not a git work tree
@@ -675,7 +675,7 @@ class Deriver:
         return self._parsed[name]
 
     def shapes_directory(self) -> Path | None:
-        """Return the directory of THE PARSE CACHE, or None when the caches are off.
+        """Return the directory of the parse cache, or None when the caches are off.
 
         The first call holds the cache in its row of LIMITS of assay.core.cache.
         """
@@ -698,7 +698,7 @@ class Deriver:
     def targets(
         self, reference: str, modules: frozenset[str], depth: int = 0
     ) -> tuple[list[tuple[str, str]], set[str]]:
-        """Return the functions and the classes of the closure that a reference names, and the functions of git (THE CALLS).
+        """Return the functions and the classes of the closure that a reference names, and the functions of git (the calls).
 
         The function of assay.core.git is a name of the second item, also when the closure does not hold that module.
         A name that a module imports from a second module names the definition of the second module, at most 8 steps.
@@ -724,7 +724,7 @@ class Deriver:
         return self.targets(".".join([imported, *attributes[1:]]), modules, depth + 1)
 
     def git_functions(self, modules: frozenset[str], roots: Iterable[str]) -> set[str]:
-        """Return each function of assay.core.git that a test can call (THE CALLS).
+        """Return each function of assay.core.git that a test can call (the calls).
 
         Complexity: linear in the names of the definitions of the closure, with one parse of each module.
         """
@@ -756,7 +756,7 @@ class Deriver:
     def git_texts(self, modules: frozenset[str], roots: Iterable[str]) -> tuple[list[str], list[str]]:
         """Return the texts and the files of git of a test with a closure and the modules that it starts with.
 
-        THE TEXTS OF GIT gives the rules.  Complexity: the cost of git_functions().
+        The texts of git give the rules.  Complexity: the cost of git_functions().
 
         Raises:
             git.GitError: If the root is not a git work tree, or it has no commit
@@ -772,7 +772,7 @@ class Deriver:
         return texts, files
 
     def closure(self, roots: Iterable[str]) -> frozenset[str]:
-        """Return the modules of the import closure of the roots that have a file (THE IMPORT CLOSURE).
+        """Return the modules of the import closure of the roots that have a file (the import closure).
 
         Complexity: one parse of each module of the closure, one time for each call of `loop test`.
         """
@@ -806,7 +806,7 @@ class Deriver:
         return self._table.class_of(path)[0]
 
     def scope_files(self, item: str, predicate: Callable[[str], bool] | None = None) -> tuple[str, ...]:
-        """Return the files of the tree that one item of a scope or of the field inputs names (THE SCOPE).
+        """Return the files of the tree that one item of a scope or of the field inputs names (the scope).
 
         A path with no "/" at its end names its one file, also when the tree does not hold it.  For a directory and a
         word, `predicate` gives the files that the runner of the engine of the rule gives it, and None gives each file.
@@ -877,7 +877,7 @@ class Deriver:
 
         The roots are the subcommand, the runners and the module that the search finds.  The module of the field legacy
         or the witness of a holder is a root too.  The runner of each rule runs the search, also for a rule with the
-        field legacy or held-by (THE SEARCH).
+        field legacy or held-by (the search).
         """
         from assay.guard.engines.meta import runner as meta_runner
 
@@ -906,7 +906,7 @@ class Deriver:
         """Return the predicate of the files that the runner of the engine of a rule gives it, or None for each file.
 
         The runner of the engine tsast gives a rule only the C++ files that are not plants.  The runner of the engine
-        plugin reads only the findings of the C and C++ files that a compile reads (THE SCOPE).
+        plugin reads only the findings of the C and C++ files that a compile reads (the scope).
         """
         if rule.engine == rule_registry.Engine.PLUGIN:
             return is_compiled_file
@@ -917,7 +917,7 @@ class Deriver:
         return tree_runner.is_candidate
 
     def rule_inputs(self, rule_id: str, subcommand: str) -> Inputs:
-        """Return the inputs of one rule for the subcommand check or witness (THE INPUTS OF A RULE).
+        """Return the inputs of one rule for the subcommand check or witness (the inputs of a rule).
 
         The Deriver calculates the inputs of each rule and subcommand one time.
 
@@ -932,7 +932,7 @@ class Deriver:
     def warm(self) -> None:
         """Calculate the inputs of each rule of the registry for the subcommands check and witness, and keep them.
 
-        `loop test` calls it while the build runs (THE WARM START of assay.loop.affected).  A tree that cannot be read
+        `loop test` calls it while the build runs (the warm start of assay.loop.affected).  A tree that cannot be read
         stops the warm start with no error, and test_inputs() then reports the problem.  Complexity: the cost of
         rule_inputs() for each rule, with one parse of each module.
         """
@@ -987,7 +987,7 @@ class Deriver:
         return tuple(sorted(row_text(self.registry.rules.get(rule_id), rule_id) for rule_id in rule_ids))
 
     def meter_inputs(self, module: str, rule_ids: Iterable[str]) -> Inputs:
-        """Return the inputs of a step meter of the master loop that runs in front of each test (THE METERS OF A TEST).
+        """Return the inputs of a step meter of the master loop that runs in front of each test (the meters of a test).
 
         Args:
             module: The module of the meter, such as assay.loop.teststep
@@ -1004,7 +1004,7 @@ class Deriver:
         return Inputs(self.absolute(files), self.row_texts(rules), rules=rules)
 
     def call_inputs(self, call: Call) -> Inputs:
-        """Return the inputs of a rule test: the union of the inputs of its rules (THE TESTS).
+        """Return the inputs of a rule test: the union of the inputs of its rules (the tests).
 
         Raises:
             git.GitError: If the root is not a git work tree
@@ -1050,7 +1050,7 @@ class Deriver:
         )
 
     def group_inputs(self, group: str, runs_compiler: bool) -> Inputs:
-        """Return the inputs of a group test (THE INPUTS OF A GROUP).
+        """Return the inputs of a group test (the inputs of a group).
 
         Raises:
             git.GitError: If the root is not a git work tree, or it has no commit
@@ -1083,7 +1083,7 @@ class Deriver:
             variables: The names of the variables of the environment of the test
 
         Returns:
-            The inputs, an Inputs with a reason to run on each call, or None (THE TESTS)
+            The inputs, an Inputs with a reason to run on each call, or None (the tests)
         """
         try:
             if len(words) in (2, 4) and words[0] == "selftest":

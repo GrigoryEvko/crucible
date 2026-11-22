@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_keeper_metrics_reader has no overload without the metrics
 // channel, so a call with no argument finds no function to call.

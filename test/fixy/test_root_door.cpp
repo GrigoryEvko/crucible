@@ -1,5 +1,5 @@
-// Tests of the root doors (THE KEYS OF A BODY of fixy/os/ThreadTasks.h, THE
-// BORROW OF A ROOT DOOR of foundation/core/Frame.h): run_joined and run_beside
+// Tests of the root doors (the keys of a body of fixy/os/ThreadTasks.h, the
+// borrow of a root door of foundation/core/Frame.h): run_joined and run_beside
 // mint the keys that a body names, a body that owns its holder by value opens
 // its frames with them, and the walk refuses each shape that reaches an owner
 // of the brand through a borrow.
@@ -120,7 +120,7 @@ static_assert(std::is_same_v<fc::root_key_brands_t<ContextBody, 1>, fc::KeyBrand
 static_assert(!fc::NamesRootKeys<ContextBody, 0>);
 static_assert(!fc::NamesRootKeys<GenericBody, 0>);
 
-// THE WALK, on a shape that the closure check of a door refuses first: a value
+// The walk, on a shape that the closure check of a door refuses first: a value
 // that holds a Ref of a holder.  The walk refuses it too.  An SPSC ring takes a
 // trivially copyable payload (RingValue), and no borrow of the base is one, so
 // no ring of base types carries a borrow of a holder.
@@ -136,7 +136,7 @@ static_assert(!::fixy::concurrent::RingValue<HeldRef>);
 
 // A holder by value is admitted, and so is a consumer handle of a channel of
 // holders: the channel states synchronized{}, so the walk reads its payload as
-// held (THE BORROW OF A ROOT DOOR).
+// held (the borrow of a root door).
 static_assert(fc::BorrowsNoKeyOwner<Holder, HolderBrand>);
 struct ChannelTag final {};
 struct ChannelBrand final {};

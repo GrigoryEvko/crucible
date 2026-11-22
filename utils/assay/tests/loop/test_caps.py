@@ -36,7 +36,7 @@ def planted_launcher(directory: Path, mode: int) -> Path:
 
 
 def text_cases(expect: testing.Expect) -> None:
-    """Hold the names that a text of getcap puts in the effective and the permitted sets (THE CHECK)."""
+    """Hold the names that a text of getcap puts in the effective and the permitted sets (the check)."""
     expect("the text of the launcher of the build host gives the three names", caps.held_capabilities(READY) == ALL)
     expect("a name in the permitted set only is not held", caps.held_capabilities("cap_bpf=p") == frozenset())
     expect(
@@ -56,7 +56,7 @@ def text_cases(expect: testing.Expect) -> None:
 
 
 def launcher_cases(expect: testing.Expect) -> None:
-    """Hold the problem of a planted launcher with a planted getcap (THE CHECK)."""
+    """Hold the problem of a planted launcher with a planted getcap (the check)."""
     with tempfile.TemporaryDirectory(prefix="loop-caps-") as work:
         directory = Path(work)
         ready = planted_getcap(directory, READY)
@@ -85,7 +85,7 @@ def launcher_cases(expect: testing.Expect) -> None:
 
 
 def words_cases(expect: testing.Expect) -> None:
-    """Hold the words of a command through the launcher, and the line of the fix (THE LAUNCHER, THE FIX)."""
+    """Hold the words of a command through the launcher, and the line of the fix (the launcher, the fix)."""
     path = Path("/planted/crucible-caps")
     raised = "+bpf,+perfmon,+dac_read_search"
     expect(

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // compute_fusion_benefit is pure arithmetic over costs the caller already
 // has, and CtxFitsCostModel admits only a context whose row is empty.  This

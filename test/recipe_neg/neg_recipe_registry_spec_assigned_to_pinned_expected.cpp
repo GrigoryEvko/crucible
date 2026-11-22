@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A consumer calls by_name_spec, which gives the RecipeSpec of the two
 // axes, but it types the result as the NumericalTier of by_name_pinned.

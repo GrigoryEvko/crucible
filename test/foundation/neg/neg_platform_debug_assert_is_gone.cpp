@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The base has no CRUCIBLE_DEBUG_ASSERT.  NDEBUG removed its check, so a
 // Release library kept no check.  A precondition is CRUCIBLE_PRE, and a

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A graph of two stages with one edge.  The source stage writes channel
 // A, and the sink stage drains channel B.  Both channels carry int, so

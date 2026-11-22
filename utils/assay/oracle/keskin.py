@@ -77,7 +77,7 @@ def _switch() -> list[str]:
     """Return the prefix that runs a command in the opam switch of the development.
 
     SESSION_ORACLE_KESKIN_SWITCH names the switch.  The default is
-    sessoracle25 (THE TOOLCHAINS of utils/assay/oracle/runner.py says how to make it).
+    sessoracle25 (the toolchains of utils/assay/oracle/runner.py says how to make it).
     """
     opam = shutil.which("opam") or str(Path.home() / ".local" / "bin" / "opam")
     if not Path(opam).is_file() and shutil.which(opam) is None:

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A keyed send puts the label word of its key on the wire.  The key is a
 // class in an anonymous namespace, so it has no stable identity and no

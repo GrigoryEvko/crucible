@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: the checked mint of ValidScalarType receives int8_t{14} in
 // constant evaluation.  14 is an interior gap of the sparse ScalarType set:

@@ -7,20 +7,20 @@ nothing new.  This subcommand builds the tree, and then it runs only these tests
 
 - Each negative-compile fixture.  The result store of `loop fixture` decides if
   the fixture compiles again.
-- Each test of the master guard with changed inputs (THE TESTS OF THE MASTER
-  GUARD).
+- Each test of the master guard with changed inputs (the tests of the master
+  guard).
 - Each other script test with a change of its read set after its last pass
-  (THE SCRIPT TEST).  A script test is a self-test of a module, or another
+  (the script test).  A script test is a self-test of a module, or another
   test whose program is not an executable of the build tree.
 - Each executable test whose fingerprint is not the fingerprint of its last
   pass.
 
-THE EXECUTABLE TEST
+Executable test
     The program of an executable test is an ELF file of the build tree, after
     the wrappers: the test launcher of the tree (`python3 -S utils/bin/loop
     test-step` and its options, which CMake puts in front of each executable
     target, and crucible_script_test() in front of each script test), the
-    emulator of a cross build (assay.loop.teststep, THE EMULATOR), `cmake -E
+    emulator of a cross build (assay.loop.teststep, the emulator), `cmake -E
     env` and `valgrind`.  Its fingerprint is a hash of these items:
     - The ctest record of the test: the command and each property.
     - The bytes of each file of the build tree that the command names.
@@ -37,14 +37,14 @@ THE EXECUTABLE TEST
       utils/registry.txt.  The launcher reads these files and rows, and the
       result of a test changes with them.  A ledger that the tree does not
       hold is an input too.  A new ledger then makes the test run.
-    - The environment of the test (THE ENVIRONMENT).
-    - The key parts of the read set of the test (THE READ SET), or a mark
+    - The environment of the test (the environment).
+    - The key parts of the read set of the test (the read set), or a mark
       that the test has no read set.
     The scan of an ELF file reads its section headers, so it finds a name in
     .rodata, .data or .dynstr, and it does not read the code or the debug
     information.
 
-THE READ SET
+Read set
     The test launcher can trace a run of each test with a build directory.
     It then writes the read set of the run (assay.loop.readset).  The
     read set holds each file that the test and its children opened for read,
@@ -65,7 +65,7 @@ THE READ SET
     part has a different signature than at the end of the run.  The file then
     changed after the test read it.
 
-THE SCRIPT TEST
+Script test
     A script test has no program in the build tree, and it is no test of
     the master guard with known inputs.  With a usable read set, it has the
     kind KIND_TRACED.  Its fingerprint holds these items:
@@ -82,19 +82,19 @@ THE SCRIPT TEST
     package, `guard selftest MODULE`, is a script test too, because
     assay.loop.inputs gives it no inputs.  A script test with the launcher
     option `--trace never` gets no read set, and it runs on each call
-    (assay.loop.teststep, THE READ SET).
+    (assay.loop.teststep, the read set).
 
     A traced script test is free of the build when its read set is current
     and holds no key part in the build tree.  A path with no file in the
     build tree counts, because a file there in a different configuration
     can change the run.  Its command after the launcher and its property
     ENVIRONMENT must also name no path of the build tree.  The trace does
-    not stop a stat or an access (assay.loop.tracer, THE CALLS).  A test
+    not stop a stat or an access (assay.loop.tracer, the calls).  A test
     that knows the build directory can then probe a file of it with no open.
     Such a test reads no file of a build, and it gives the same result in
     each configuration.
 
-THE TESTS OF THE MASTER GUARD
+Tests of the master guard
     A test can start the master guard of the source tree with a Python
     interpreter.  assay.loop.inputs gives the inputs of two kinds of such a
     test.  A rule test runs `guard check --rule ID`, `guard witness --rule
@@ -105,7 +105,7 @@ THE TESTS OF THE MASTER GUARD
     are inputs too.  Only a test that can read the history gets the HEAD
     commit.  Only a test that can list the files of the tree gets the list
     of the files, and each .gitignore and .gitattributes (assay.loop.inputs,
-    THE TEXTS OF GIT).
+    the texts of git).
 
     The fingerprint is a hash of the ctest record of the test, of these
     inputs and of the inputs of the test launcher.  It also holds the bytes
@@ -120,14 +120,14 @@ THE TESTS OF THE MASTER GUARD
     last fill.  The parts of the rule parse-clean run only when a C++ file
     changes.
 
-THE TESTS THAT READ THE BUILD
+Tests that read the build
     The gate of `loop land` runs the full suite in some configurations.  In
     each other configuration, it runs only the tests that the change can
-    change there (assay.loop.gate, THE SELECTION).  A test that reads no
+    change there (assay.loop.gate, the selection).  A test that reads no
     build gives the same result in each configuration.  build_tests() gives
     each test of the master guard of a build directory that reads the build.
     It gives the inputs of the test in the source tree too (assay.loop.inputs,
-    THE BUILD).  These tests read the build:
+    the build).  These tests read the build:
       * a test with a reason for the build from assay.loop.inputs
       * a group test that names a directory of the build tree
       * a test with an input file in the build tree, such as the compile
@@ -136,10 +136,10 @@ THE TESTS THAT READ THE BUILD
     The model does not hold the inputs of a test with a different reason to
     run on each call.  Each change touches such a test (Inputs.is_touched()).
     An executable test reads the build too, and build_tests() does not give
-    it (assay.loop.gate, THE SELECTION).
+    it (assay.loop.gate, the selection).
 
     meter_inputs() gives the inputs of the test launcher and of the fixture
-    driver (assay.loop.inputs, THE METERS OF A TEST).  These run in front of
+    driver (assay.loop.inputs, the meters of a test).  These run in front of
     each test.  A change of one of their inputs can then change each test of
     each build.
 
@@ -156,16 +156,16 @@ THE TESTS THAT READ THE BUILD
 
     `--build-only` skips each test of the kind KIND_GUARD: a test of the
     master guard with known inputs that reads no build.  It also skips each
-    traced script test that is free of the build (THE SCRIPT TEST).  Such a
+    traced script test that is free of the build (the script test).  Such a
     test gives the same result in each configuration, and no file of a build
     is in its shared key.  The gate gives the option to each configuration other than
-    default, and default runs each such test (assay.loop.gate, THE
-    SELECTION).  The script skips such a test with no change to its record,
+    default, and default runs each such test (assay.loop.gate, the
+    selection).  The script skips such a test with no change to its record,
     also with --all.
 
-THE ENVIRONMENT
+Environment
     The test launcher gives each test a clean environment
-    (assay.loop.teststep, THE ENVIRONMENT).  The fingerprint of a test
+    (assay.loop.teststep, the environment).  The fingerprint of a test
     behind the launcher holds the clean environment that the launcher makes
     from the environment of this script.  ctest gives the test the
     environment of this script, and the property ENVIRONMENT of the test is
@@ -173,12 +173,12 @@ THE ENVIRONMENT
     changes no fingerprint.  The fingerprint of a test with no launcher holds
     each variable of the environment of this script.
 
-THE TESTS THAT ALWAYS RUN
+Tests that always run
     The script cannot see each input of these tests, so they always run:
     - A test with the property FIXTURES_REQUIRED, FIXTURES_SETUP,
       FIXTURES_CLEANUP or REQUIRED_FILES.
     - A test whose ELF file the script cannot read as an ELF64 file.
-    - A test with a read set that is not usable (THE READ SET).
+    - A test with a read set that is not usable (the read set).
     These tests always run too, unless they have a usable read set:
     - A test whose command, environment or working directory names a path of
       the source tree that is not in the build tree.
@@ -187,20 +187,20 @@ THE TESTS THAT ALWAYS RUN
     The read set holds each file of the source tree that such a test opened,
     and the key of the test then holds those files.
 
-THE PARSE BUILDS
+Parse builds
     After the build, the script runs `loop syntax` on each configured parse
     build of PARSE_PRESETS of assay.loop.syntax.  The parse keeps the report
-    of each unit that the tree did not change (THE KEPT REPORTS of
+    of each unit that the tree did not change (the kept reports of
     assay.loop.syntax), so it parses only what changed.  The parse of a
-    parse build is a build, and its time goes into the build time of THE
-    LOOP HISTORY.  The test guard_parse_builds then only judges the reports.
+    parse build is a build, and its time goes into the build time of the
+    loop history.  The test guard_parse_builds then only judges the reports.
     A unit that does not parse stops the call before the tests, as a build
     with an error does.  The change of the tree selects only one line: for
     a change of an arm, the script prints the command that configures each
-    parse build that is not configured (THE CHANGE OF AN ARM of
+    parse build that is not configured (the change of an arm of
     assay.loop.syntax).
 
-THE LAYERS
+Layers
     ctest runs a test after each test that its property DEPENDS names.  In a
     run with such a property, ctest puts the tests in levels.  The deepest
     level holds each test that the DEPENDS of a different test names, and
@@ -252,7 +252,7 @@ THE LAYERS
     last layer, `ctest --rerun-failed` then does not see a failure of an
     earlier layer.  The merged junit.xml holds each failure.
 
-THE SHARDS
+Shards
     One ctest run starts its tests one after the other.  On 2026-10-17, one
     ctest run started approximately 250 tests in each second at the maximum.
     It ran the 2,151 negative fixtures of the Debug build in 8.4 s, with 10
@@ -272,14 +272,14 @@ THE SHARDS
     write the same file, and each shard keeps the cost data of its tests.
 
     A shard directory with no cost data gets a copy of the cost data of the
-    build.  The runs use one jobserver (THE JOBSERVER).  Each ctest run uses
+    build.  The runs use one jobserver (the jobserver).  Each ctest run uses
     one job of its own.  For this reason, the first run takes the implicit
     slot of the script, and each other run takes a token.  With no jobserver
     in MAKEFLAGS, the script makes one of the jobs of the call.  ctest keeps
     a test with the property RUN_SERIAL apart only from the tests of its own
     run.  Such a test then goes into a last layer of its own (serial_last()).
 
-THE JOBSERVER
+Jobserver
     A parent make, or a different program that operates a GNU make jobserver,
     gives its children the variable MAKEFLAGS with a word
     `--jobserver-auth=AUTH`.  Then the children use the jobs of the parent
@@ -294,11 +294,11 @@ THE JOBSERVER
     run of ctest keeps its -j.
 
     A run with no FIFO in MAKEFLAGS and no --plan takes a lease of the slot
-    pool of the host, with a slice of -j and SLICE as the most (THE POOL of
+    pool of the host, with a slice of -j and SLICE as the most (the pool of
     assay.loop.heavy).  The run then gets MAKEFLAGS of the jobserver of the
     lease, and its build and its tests obey it.
 
-THE WARM START
+Warm start
     The inputs of the tests of the master guard come from the source tree
     only: the parse of each module of the package, the import closures and
     the scopes (assay.loop.inputs).  The build does not change these files.
@@ -312,7 +312,7 @@ THE WARM START
     drops the other facts of a tree.  The decision after the tests then
     parses only a module with a changed text.
 
-THE LOOP HISTORY
+Loop history
     After each call that builds or runs tests, the script appends one line to
     BUILD_DIR/loop-history/history.jsonl: the commit, the job count, the host
     load, the wall time, the CPU time and the critical path of the build, the
@@ -320,7 +320,7 @@ THE LOOP HISTORY
     the tests.  `loop history BUILD_DIR` prints the last lines as a table.
     utils/assay/loop/history.py gives the rules.
 
-THE RECORD
+Record
     After a test of FINGERPRINTED passes, the script records its fingerprint
     in BUILD_DIR/affected-tests/state.json.  A test that ctest does not run
     gets no record, and a test whose inputs changed while it ran gets none.
@@ -331,17 +331,17 @@ THE RECORD
     BUILD_DIR/affected-tests/lock keeps two calls on one build directory
     apart.
 
-THE DIGEST MEMO
+Digest memo
     A fingerprint holds the SHA-256 of each input file.  The planner reads
     each hash through a memo of the stat fields of the file
     (assay.core.digests).  The state keeps the memo of the files of the last
     call.  The next call then hashes only a file with different stat fields.
-    After the tests, the record of THE RECORD compares the stat fields of
+    After the tests, the record of the record compares the stat fields of
     each input again.  It then hashes only a file that a test changed.  On
     2026-10-17, the decision of 2861 tests took 2.47 s and the record took
     3.85 s with no memo.
 
-THE PLAN
+Plan
     After its decision, each call writes its plan,
     BUILD_DIR/affected-tests/plan.json (write_plan()).  It holds one entry
     for each registered test.  An entry holds the name, the kind, the reason
@@ -351,7 +351,7 @@ THE PLAN
     with the tests that ran (assay.loop.audit).  read_plan() is the one
     reader of the file.
 
-THE SHARED STORE
+Shared store
     The result of each run with the status 0 also goes into one store: the
     cache STORE_NAME of assay.core.cache.  The warm trees of the gate of `loop land`, the copy of
     `loop gauge` and each build directory of a developer then share them.  A
@@ -378,7 +378,7 @@ THE SHARED STORE
         status 0.
       * hold_bound() of assay.core.cache keeps the store in its row of LIMITS
         after each call.  It also keeps the cache of the rows of the measured
-        ledgers there (THE MEMO OF THE ROWS of assay.core.meter).
+        ledgers there (the memo of the rows of assay.core.meter).
     The judge of the launcher is lenient in a build of a kind with tsan.  A
     ledger row keeps a test only in its configuration.  The result of such a
     build then stands for each build directory with the same key.  The key of
@@ -394,7 +394,7 @@ THE SHARED STORE
 The script is for the inner loop only.  CI and the checks before a landing
 run the full suite.
 
-THE PROGRAMS
+Programs
     The script builds with the cmake and runs the tests with the ctest that
     the CMake cache of BUILD_DIR names (utils/assay/setup/pins.py).  It runs
     no cmake and no ctest of PATH, because PATH can hold a ctest of another
@@ -406,8 +406,8 @@ Usage:
 
 --no-build  Do not build first.  Then a stale executable can look unchanged.
 --all       Run each executable test, and record each pass.
---only      Select only the tests that FILE names (THE TESTS THAT READ THE BUILD).
---build-only  Skip each test of the master guard that reads no build (THE TESTS THAT READ THE BUILD).
+--only      Select only the tests that FILE names (the tests that read the build).
+--build-only  Skip each test of the master guard that reads no build (the tests that read the build).
 --plan      Print what the script would run, and run nothing.
 --ctest     The ctest of the fake build tree of the self-test.  The default
             is the ctest of PATH, when it gives the pinned version.
@@ -461,7 +461,7 @@ from assay.setup import pins as cmake_pin
 STATE_VERSION = 3
 STATE_DIRECTORY = "affected-tests"
 # The name of the shared store in the root of the caches and in LIMITS of assay.core.cache.  Then the format of an
-# entry and of a key, and the verdict of an entry (THE SHARED STORE).
+# entry and of a key, and the verdict of an entry (the shared store).
 STORE_NAME = "test-results"
 STORE_FORMAT = "crucible-test-result 1"
 VERDICT_PASSED = "passed"
@@ -473,7 +473,7 @@ LAUNCHER_SUBCOMMAND = "test-step"
 # The master of the checks.  A test that runs it can get its inputs from assay.loop.inputs.
 GUARD_MASTER = "guard"
 # The module of the test launcher.  Then the module of the fixture driver, and the holding command of the rules that
-# the driver judges with the rules of the launcher (assay.core.registry, THE METERS OF A TEST of assay.loop.inputs).
+# the driver judges with the rules of the launcher (assay.core.registry, the meters of a test of assay.loop.inputs).
 LAUNCHER_MODULE = "assay.loop.teststep"
 FIXTURE_MODULE = "assay.loop.fixture.store"
 FIXTURE_HOLDER = "loop-fixture"
@@ -483,22 +483,22 @@ ALWAYS_RUN_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP", "FIXTURES_CLEANU
 # The properties of a fixture.  A test of the master guard can hold the fixture of the parse trees.
 FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
-# The property that names the tests that a test runs after (THE LAYERS).
+# The property that names the tests that a test runs after (the layers).
 DEPENDS_PROPERTY = "DEPENDS"
-# The plan of the last call in the state directory, and its format (THE PLAN).
+# The plan of the last call in the state directory, and its format (the plan).
 PLAN_FILE = "plan.json"
 PLAN_FORMAT = 1
-# The property of a test that runs alone (THE SHARDS).
+# The property of a test that runs alone (the shards).
 SERIAL_PROPERTY = "RUN_SERIAL"
 # The ctest runs of one layer at the same time, and the directory of their test directories in the state directory
-# (THE SHARDS).
+# (the shards).
 SHARDS = 8
 SHARD_DIRECTORY = "shards"
-# The time of one poll of one ctest run, while other runs wait for a slot (THE SHARDS).
+# The time of one poll of one ctest run, while other runs wait for a slot (the shards).
 SHARD_POLL_S = 0.05
 # The number of names of selected tests that ctest did not run, in the error line of a run (dropped_tests()).
 DROPPED_SHOWN = 10
-# The variable that gives `cmake --build` a job count when its command gives none (THE JOBSERVER).
+# The variable that gives `cmake --build` a job count when its command gives none (the jobserver).
 BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The words in uppercase of a boolean property of ctest, such as WILL_FAIL, that give the value yes.
 TRUE_WORDS = frozenset({"1", "ON", "YES", "TRUE", "Y"})
@@ -565,10 +565,10 @@ class Trees:
 class Decision:
     """What the script does with one test, and why.
 
-    `static` is the fingerprint with no read set (THE READ SET).  An executable test, a script test and a test of the
+    `static` is the fingerprint with no read set (the read set).  An executable test, a script test and a test of the
     master guard have it.  A test that always runs for a reason that a read set can lift has it too.  `reads` is the
     usable read set of an executable test or a script test, or None.  `is_build_free` tells that a traced script test
-    reads no file of a build (THE SCRIPT TEST).
+    reads no file of a build (the script test).
     """
 
     test: ctest_reader.TestEntry
@@ -584,7 +584,7 @@ class Decision:
 
 @dataclass(frozen=True, slots=True)
 class GuardFacts:
-    """The facts of one test of the master guard (THE TESTS OF THE MASTER GUARD, THE TESTS THAT READ THE BUILD).
+    """The facts of one test of the master guard (the tests of the master guard, the tests that read the build).
 
     `found` holds the inputs that assay.loop.inputs gives.  `always` tells why the test runs on each call, `unknown`
     tells why the inputs do not hold each file that the test reads, and `build` tells why it reads its build directory.
@@ -608,7 +608,7 @@ class Scan:
     """The names that one ELF file holds: input files, input directories, and the reasons to always run.
 
     `always_reason` holds a reason that no read set lifts, and `source_reason` holds a name of the source tree that
-    is not a file, which a usable read set lifts (THE TESTS THAT ALWAYS RUN).
+    is not a file, which a usable read set lifts (the tests that always run).
     """
 
     files: list[str] = field(default_factory=list)
@@ -734,7 +734,7 @@ def launcher_prefix(command: tuple[str, ...]) -> tuple[int, str]:
 def program_index(command: tuple[str, ...]) -> int | None:
     """Return the index of the program after the test launcher, its emulator, `cmake -E env` and `valgrind`, or None.
 
-    The option --emulator-words of the launcher gives the words of the emulator (assay.loop.teststep, THE EMULATOR).
+    The option --emulator-words of the launcher gives the words of the emulator (assay.loop.teststep, the emulator).
     A value that is not a count gives no emulator, and the launcher then refuses the test.
     """
     if not command:
@@ -829,7 +829,7 @@ def scan_elf(path: str, trees: Trees) -> Scan:
 
 
 def environment_text(is_launched: bool) -> str:
-    """Return the text of the environment that a test gets, for its fingerprint (THE ENVIRONMENT).
+    """Return the text of the environment that a test gets, for its fingerprint (the environment).
 
     The text holds no MAKEFLAGS: the jobserver of a run names a new FIFO each time, and it does not change the result
     of a test.  Complexity: O(n log n) for n variables.
@@ -852,7 +852,7 @@ def shared_libraries(directory: str) -> list[str]:
 
 
 class ResultStore:
-    """The results of the runs with the status 0 that each build directory and each work tree share (THE SHARED STORE).
+    """The results of the runs with the status 0 that each build directory and each work tree share (the shared store).
 
     With the caches off, the store holds nothing and writes nothing.
     """
@@ -932,7 +932,7 @@ def empty_state(trees: Trees) -> dict[str, object]:
 
 
 def kept_digests(state: Mapping[str, object]) -> dict[str, list[object]]:
-    """Return the kept hashes of the files of the last call of a state (THE DIGEST MEMO), or none.
+    """Return the kept hashes of the files of the last call of a state (the digest memo), or none.
 
     A state of an earlier script has no such field, and each file then gets its hash again.
     """
@@ -984,7 +984,7 @@ class Planner:
         self.used_scans: dict[str, object] = {}
         self.launcher_files: dict[str, tuple[list[str], tuple[str, ...]]] = {}
         self.derivers: dict[str, guard_inputs.Deriver] = {}
-        # The parse of each module, for each Deriver of the planner.  forget() keeps it (THE WARM START).
+        # The parse of each module, for each Deriver of the planner.  forget() keeps it (the warm start).
         self.parses: guard_inputs.ParseCache = {}
         # The roots of the shared key, the longest first.  A build directory in the source tree then gets its own mark.
         given = ((trees.build_root, cost_store.BUILD_MARK), (trees.source_root, cost_store.ROOT_MARK))
@@ -993,9 +993,9 @@ class Planner:
     def forget(self) -> None:
         """Forget each digest of this call and each changed fact of a tree.  The next decision compares each input again.
 
-        The next answer for a file compares its stat fields with the kept hash (THE DIGEST MEMO).  A Deriver with a
-        changed fact goes, with the inputs of the launchers (THE FACTS OF A CALL of assay.loop.inputs).  The parse of
-        a module stays, by its text.  A module with a new text gets a new parse (THE WARM START).
+        The next answer for a file compares its stat fields with the kept hash (the digest memo).  A Deriver with a
+        changed fact goes, with the inputs of the launchers (the facts of a call of assay.loop.inputs).  The parse of
+        a module stays, by its text.  A module with a new text gets a new parse (the warm start).
         """
         self.digests.forget()
         changed = [root for root, deriver in self.derivers.items() if not deriver.is_current()]
@@ -1011,7 +1011,7 @@ class Planner:
         return self.derivers[root]
 
     def warm(self) -> None:
-        """Calculate the inputs of each rule of the source tree, and keep them for the decision (THE WARM START)."""
+        """Calculate the inputs of each rule of the source tree, and keep them for the decision (the warm start)."""
         self.deriver(self.trees.source_root).warm()
 
     def scan(self, path: str) -> Scan:
@@ -1025,7 +1025,7 @@ class Planner:
         return result
 
     def build_program(self, test: ctest_reader.TestEntry) -> str | None:
-        """Return the program of a test when it is an ELF file of the build tree, else None (THE EXECUTABLE TEST).
+        """Return the program of a test when it is an ELF file of the build tree, else None (the executable test).
 
         A fixture, a test of the master guard and a script test have no such program.  A program of the build tree
         that is not there at this time counts as an ELF file, because the build makes it.
@@ -1084,7 +1084,7 @@ class Planner:
         return Decision(test, KIND_EXECUTABLE, "", fingerprint=fingerprint, shared=shared, static=static, reads=reads)
 
     def script_decision(self, test: ctest_reader.TestEntry) -> Decision:
-        """Return the decision for a script test: KIND_TRACED with a usable read set, else KIND_SCRIPT (THE SCRIPT TEST).
+        """Return the decision for a script test: KIND_TRACED with a usable read set, else KIND_SCRIPT (the script test).
 
         Complexity: one read of the read set, and one signature of each key part.  The digest cache gives the digest of
         each input and key part, or the call reads the file one time.
@@ -1114,7 +1114,7 @@ class Planner:
                         is_build_free=is_build_free)
 
     def read_set(self, test: ctest_reader.TestEntry, start: int) -> tuple[bool, readset.ReadSet | None]:
-        """Return True when a test has no read set or a usable one, and its usable read set or None (THE READ SET).
+        """Return True when a test has no read set or a usable one, and its usable read set or None (the read set).
 
         `start` is the index of the command after the test launcher.  Complexity: one read of the read set.
         """
@@ -1128,7 +1128,7 @@ class Planner:
 
     @staticmethod
     def is_pass_at_zero(test: ctest_reader.TestEntry) -> bool:
-        """Return True when ctest accepts a run of a test only with the exit status 0 (THE READ SET).
+        """Return True when ctest accepts a run of a test only with the exit status 0 (the read set).
 
         The property PASS_REGULAR_EXPRESSION, or the value yes of WILL_FAIL, gives the verdict of a test.
         """
@@ -1139,8 +1139,8 @@ class Planner:
     def guard_facts(self, test: ctest_reader.TestEntry, index: int) -> GuardFacts | None:
         """Return the facts of a test of the master guard with inputs, or None for each other test.
 
-        `index` is the index of the program of the command.  THE TESTS OF THE MASTER GUARD and THE TESTS THAT READ THE
-        BUILD give the rules.  Complexity: the cost of assay.loop.inputs for the words of the test.
+        `index` is the index of the program of the command.  The tests of the master guard and the tests that read the
+        build give the rules.  Complexity: the cost of assay.loop.inputs for the words of the test.
         """
         command = test.command
         if not os.path.basename(command[index]).startswith("python"):
@@ -1175,8 +1175,8 @@ class Planner:
     def guard_decision(self, test: ctest_reader.TestEntry, index: int) -> Decision | None:
         """Return the decision of a test of the master guard with inputs, or None for each other test.
 
-        `index` is the index of the program of the command.  THE TESTS OF THE
-        MASTER GUARD gives the rules.  Complexity: the cost of
+        `index` is the index of the program of the command.  The tests of the
+        master guard gives the rules.  Complexity: the cost of
         assay.loop.inputs for the words of the test, and one digest of each
         input that the digest cache does not hold.
         """
@@ -1200,8 +1200,8 @@ class Planner:
     def launcher_inputs(self, launcher: str) -> tuple[list[str], tuple[str, ...]]:
         """Return the files and the texts that the test launcher reads.
 
-        The files are the inputs of the launcher (assay.loop.inputs, THE
-        METERS OF A TEST).  The texts are the rows of the rules of the launcher in the registry, and
+        The files are the inputs of the launcher (assay.loop.inputs, the
+        meters of a test).  The texts are the rows of the rules of the launcher in the registry, and
         the clean environment of the test (environment_text()).  A change of
         a different row then changes no input.  One time for each call of the
         script.
@@ -1215,7 +1215,7 @@ class Planner:
         return self.launcher_files[launcher]
 
     def property_reason(self, test: ctest_reader.TestEntry, fixtures: frozenset[str] = frozenset()) -> str:
-        """Return the property that makes a test always run, or an empty string (THE TESTS THAT ALWAYS RUN).
+        """Return the property that makes a test always run, or an empty string (the tests that always run).
 
         A property of a fixture with only the names of `fixtures` gives no reason.
         """
@@ -1230,7 +1230,7 @@ class Planner:
     def source_reason(self, test: ctest_reader.TestEntry, start: int, master: int = -1) -> str:
         """Return the path of the source tree that makes a test always run, or an empty string.
 
-        A usable read set lifts this reason for an executable test (THE TESTS THAT ALWAYS RUN).  `start` is the index
+        A usable read set lifts this reason for an executable test (the tests that always run).  `start` is the index
         after the test launcher prefix.  The launcher is a file of the source tree by design, and its files are
         inputs of the fingerprint.  The check of the command then starts after it.  The word at `master` is an input
         too: the master guard of a test of that master.
@@ -1254,7 +1254,7 @@ class Planner:
         """Return the fingerprint of a test in this build directory, and its key in the shared store.
 
         The fingerprint is the SHA-256 of the record of the test, of the bytes of each of its inputs and of its texts.
-        It also holds the key parts of the read set of the test (THE READ SET).  THE SHARED STORE gives the rules of
+        It also holds the key parts of the read set of the test (the read set).  The shared store gives the rules of
         the key.  Complexity: O(n log n) for n input files and key parts, with one digest of each file that the
         digest cache does not hold.
         """
@@ -1294,10 +1294,10 @@ class Planner:
     def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool,
                only: frozenset[str] | None = None, is_build_only: bool = False,
                unsettled: frozenset[str] = frozenset()) -> list[Decision]:
-        """Return the decision for each test (THE RECORD, THE SHARED STORE).
+        """Return the decision for each test (the record, the shared store).
 
-        With `only`, each test that it does not name gets the kind KIND_UNNAMED, and the script skips it (THE TESTS
-        THAT READ THE BUILD).  A fixture of `unsettled` runs also when `only` does not name it.  Complexity: classify()
+        With `only`, each test that it does not name gets the kind KIND_UNNAMED, and the script skips it (the tests
+        that read the build).  A fixture of `unsettled` runs also when `only` does not name it.  Complexity: classify()
         for each test that `only` names.  For each test of FINGERPRINTED with no record of its own, one open of one
         entry of the store.
         """
@@ -1341,7 +1341,7 @@ class Planner:
 def build_tests(build_dir: Path) -> dict[str, guard_inputs.Inputs]:
     """Return the inputs in the source tree of each test of the master guard of a build that reads the build.
 
-    THE TESTS THAT READ THE BUILD gives the rules.  A test with a different reason to run on each call gets inputs with
+    The tests that read the build give the rules.  A test with a different reason to run on each call gets inputs with
     that reason.  Complexity: the cost of assay.loop.inputs for the words of each test of the master guard, with no
     digest of a file.
 
@@ -1362,7 +1362,7 @@ def build_tests(build_dir: Path) -> dict[str, guard_inputs.Inputs]:
 
 
 def meter_inputs(root: Path) -> tuple[guard_inputs.Inputs, ...]:
-    """Return the inputs of the test launcher and of the fixture driver of a tree (THE TESTS THAT READ THE BUILD).
+    """Return the inputs of the test launcher and of the fixture driver of a tree (the tests that read the build).
 
     The driver judges the rules of the launcher and the rules that FIXTURE_HOLDER holds.  Complexity: one parse of each
     module of the two closures.
@@ -1396,7 +1396,7 @@ def write_list(path: Path, names: list[str]) -> None:
 
 @dataclass(frozen=True, slots=True)
 class PlannedTest:
-    """One entry of the plan of a call (THE PLAN): the name, the kind, the reason, the shared key and the skip."""
+    """One entry of the plan of a call (the plan): the name, the kind, the reason, the shared key and the skip."""
 
     name: str
     kind: str
@@ -1406,7 +1406,7 @@ class PlannedTest:
 
 
 def write_plan(path: Path, decisions: list[Decision]) -> None:
-    """Write the plan of a call: one entry for each decision, in the sequence of the decisions (THE PLAN)."""
+    """Write the plan of a call: one entry for each decision, in the sequence of the decisions (the plan)."""
     entries = [
         {
             "name": decision.test.name,
@@ -1421,7 +1421,7 @@ def write_plan(path: Path, decisions: list[Decision]) -> None:
 
 
 def read_plan(path: Path) -> tuple[PlannedTest, ...]:
-    """Return the entries of the plan of a call (THE PLAN).
+    """Return the entries of the plan of a call (the plan).
 
     Raises:
         RunnerError: If the plan cannot be read, or it is not a plan of PLAN_FORMAT
@@ -1478,7 +1478,7 @@ def dropped_tests(selected: Sequence[str], statuses: Mapping[str, ctest_reader.T
 
 
 def test_layers(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], jobs: int) -> list[list[str]]:
-    """Return the selected tests in layers of the property DEPENDS (THE LAYERS).
+    """Return the selected tests in layers of the property DEPENDS (the layers).
 
     The dependencies of a test are the tests of `names` that its DEPENDS names.  A test is wide when it has `jobs`
     dependencies or more.  A test with no dependency is in layer 0.  Each other test is in the highest layer of its
@@ -1508,7 +1508,7 @@ def test_layers(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], job
 
 
 def serial_last(tests: tuple[ctest_reader.TestEntry, ...], layers: list[list[str]]) -> list[list[str]]:
-    """Move each test with the property RUN_SERIAL to a last layer of its own (THE SHARDS).
+    """Move each test with the property RUN_SERIAL to a last layer of its own (the shards).
 
     The shards of a layer are different ctest runs, and ctest keeps a RUN_SERIAL test apart only from the tests of its
     own run.  The last layer then runs in one ctest run, after each other layer.  Complexity: O(n) for n tests.
@@ -1520,7 +1520,7 @@ def serial_last(tests: tuple[ctest_reader.TestEntry, ...], layers: list[list[str
 
 
 def test_shards(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], count: int) -> dict[int, list[str]]:
-    """Return the tests of one layer in at most `count` shards, by the number of each shard (THE SHARDS).
+    """Return the tests of one layer in at most `count` shards, by the number of each shard (the shards).
 
     Each group of tests that DEPENDS connects goes into one shard.  ctest then runs a dependency and its test in the
     same run.  The CRC-32 of the first name of the group in the sequence of `names` gives the shard.  Each shard keeps
@@ -1553,7 +1553,7 @@ def test_shards(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], cou
 
 
 def shard_directory(build_dir: Path, state_dir: Path, number: int) -> Path:
-    """Return the test directory of one shard, in which ctest reads the tests of the build directory (THE SHARDS).
+    """Return the test directory of one shard, in which ctest reads the tests of the build directory (the shards).
 
     Raises:
         RunnerError: If the test directory cannot be written
@@ -1567,13 +1567,13 @@ def shard_directory(build_dir: Path, state_dir: Path, number: int) -> Path:
 
 
 def give_slots(client: jobserver.Client, slots: Mapping[int, jobserver.Slot]) -> None:
-    """Give each slot that a shard still holds back to the jobserver (THE SHARDS)."""
+    """Give each slot that a shard still holds back to the jobserver (the shards)."""
     for slot in list(slots.values()):
         client.give(slot)
 
 
 def shard_exit(item: proc.Running) -> int | None:
-    """Poll one ctest run for SHARD_POLL_S, and return its exit code when it ended, else None (THE SHARDS).
+    """Poll one ctest run for SHARD_POLL_S, and return its exit code when it ended, else None (the shards).
 
     A run that ends on its time limit gives the exit code of that end.
     """
@@ -1586,7 +1586,7 @@ def shard_exit(item: proc.Running) -> int | None:
 
 
 def run_shards(commands: list[list[str]], jobs: int) -> list[int]:
-    """Run the ctest runs of one layer at the same time with one jobserver, and return the exit code of each (THE SHARDS).
+    """Run the ctest runs of one layer at the same time with one jobserver, and return the exit code of each (the shards).
 
     A run holds one slot of the jobserver that MAKEFLAGS names, and it gives the slot back at its end.  The first
     slot is the implicit slot of this process, and each other slot is a token.  A run starts when a slot is free.
@@ -1641,7 +1641,7 @@ def run_shards(commands: list[list[str]], jobs: int) -> list[int]:
 def run_tests(build_dir: Path, layers: list[list[str]], state_dir: Path, jobs: int, ctest_arguments: list[str],
               tests: tuple[ctest_reader.TestEntry, ...] = (),
               shard_count: int = SHARDS) -> tuple[int, dict[str, ctest_reader.TestStatus]]:
-    """Run each layer of the selected tests, one layer after the other (THE LAYERS), in shards (THE SHARDS).
+    """Run each layer of the selected tests, one layer after the other (the layers), in shards (the shards).
 
     A layer of two tests or more for each shard runs as `shard_count` ctest runs at the same time, or fewer.  A smaller
     layer runs in one ctest run of the build directory.  `tests` gives the DEPENDS of the tests.  Return the
@@ -1697,7 +1697,7 @@ def run_tests(build_dir: Path, layers: list[list[str]], state_dir: Path, jobs: i
 
 def _build_command(cmake_program: str, build_dir: Path, jobs: int,
                    environment: Mapping[str, str]) -> tuple[list[str], dict[str, str]]:
-    """Return the words and the environment of the build of a build directory (THE JOBSERVER).
+    """Return the words and the environment of the build of a build directory (the jobserver).
 
     With no FIFO jobserver, the build gets -j with `jobs`, and the environment unchanged.  With a FIFO jobserver, the
     build gets no -j, and an environment with no BUILD_PARALLEL_VARIABLE.  Ninja then takes its jobs from the jobserver.
@@ -1709,16 +1709,16 @@ def _build_command(cmake_program: str, build_dir: Path, jobs: int,
 
 
 def build(build_dir: Path, jobs: int) -> int:
-    """Build the tree with the cmake of the build directory, and return the exit code of the build (THE JOBSERVER)."""
+    """Build the tree with the cmake of the build directory, and return the exit code of the build (the jobserver)."""
     words, environment = _build_command(build_program(build_dir, "cmake"), build_dir, jobs, proc.environment())
     return _run_inherited(words, environment)
 
 
 def has_arm(source_root: Path) -> bool:
-    """Tell if the change of the tree holds an arm (THE CHANGE OF AN ARM of assay.loop.syntax).
+    """Tell if the change of the tree holds an arm (the change of an arm of assay.loop.syntax).
 
     A change that the script cannot read holds no arm for this choice, because the choice selects only one line of
-    advice (THE PARSE BUILDS).
+    advice (the parse builds).
     """
     from assay.loop import syntax
 
@@ -1730,7 +1730,7 @@ def has_arm(source_root: Path) -> bool:
 
 
 def parse_configured(source_root: Path, jobs: int) -> int:
-    """Run `loop syntax` on each configured parse build of the tree (THE PARSE BUILDS).
+    """Run `loop syntax` on each configured parse build of the tree (the parse builds).
 
     Complexity: one run of `loop syntax` for each configured parse build, and one read of the change when a parse
     build is not configured.
@@ -1768,8 +1768,8 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
     """Record the result of each run of a test of FINGERPRINTED, in the state and in the shared store.
 
     A run with the status 0 and with unchanged inputs gives the fingerprint to the state and the entry to the store.
-    A failure gives the fingerprint to the failures of the state, and it removes the entry of the store (THE RECORD,
-    THE SHARED STORE).  A test of the kind KIND_UNNAMED keeps its record, and the state keeps the scans that this call
+    A failure gives the fingerprint to the failures of the state, and it removes the entry of the store (the record,
+    the shared store).  A test of the kind KIND_UNNAMED keeps its record, and the state keeps the scans that this call
     did not read.
     """
     passed, failed = state["passed"], state["failed"]
@@ -1792,7 +1792,7 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
             continue
         after = planner.classify(decision.test)
         # The run can give a new read set.  The script then compares the inputs with no read set.  It compares the
-        # read set with the signatures at the end of the run (THE READ SET).
+        # read set with the signatures at the end of the run (the read set).
         is_same = (
             after.kind in FINGERPRINTED
             and after.static == decision.static
@@ -1831,8 +1831,8 @@ def save_history(recorder: loop_history.Recorder, build_dir: Path) -> None:
 
 def unsettled_fixtures(build_dir: Path, source_root: Path,
                        tests: tuple[ctest_reader.TestEntry, ...]) -> frozenset[str]:
-    """Return each fixture that --only must run, because the census check refuses its record (THE TESTS THAT READ THE
-    BUILD).
+    """Return each fixture that --only must run, because the census check refuses its record (the tests that read the
+    build).
 
     A census that cannot be read gives each fixture of the build.  Complexity: the cost of unsettled_fixtures() of
     assay.guard.engines.plugin.fixtures.
@@ -1852,7 +1852,7 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
     """Build, decide, run and record.  Return the exit code of the script.
 
     With `only`, the script selects only the tests that it names.  With `is_build_only`, it skips each test of the
-    kind KIND_GUARD (THE TESTS THAT READ THE BUILD).
+    kind KIND_GUARD (the tests that read the build).
     """
     if not build_dir.is_dir():
         raise RunnerError(f"{build_dir} is not a directory.  Give the path of a configured build directory.")
@@ -2198,7 +2198,7 @@ class GuardFake:
 
 
 def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
-    """Check the tests of the master guard (THE TESTS OF THE MASTER GUARD) on a fake git work tree."""
+    """Check the tests of the master guard (the tests of the master guard) on a fake git work tree."""
     with tempfile.TemporaryDirectory(prefix="affected-guard-") as directory:
         fake = GuardFake(Path(directory), ctest)
         ran, output = fake.ran()
@@ -2242,7 +2242,7 @@ def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
 
 
 def only_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
-    """Check build_tests() and --only (THE TESTS THAT READ THE BUILD) on the fake tree."""
+    """Check build_tests() and --only (the tests that read the build) on the fake tree."""
     found = build_tests(fake.build_dir)
     gamma = found.get("guard_gamma")
     module = str(fake.source_dir / "utils/assay/guard/engines/meta/gamma.py")
@@ -2271,7 +2271,7 @@ def only_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> Non
 
 
 def store_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
-    """Check THE SHARED STORE with a second build tree of the fake tree, after a run of each guard test in the first."""
+    """Check the shared store with a second build tree of the fake tree, after a run of each guard test in the first."""
     second = fake.add_build("build-second")
     ran, output = fake.ran(build_dir=second)
     expect("a second build directory with the same inputs runs only the test that reads its build directory",
@@ -2293,15 +2293,15 @@ def store_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> No
 
 
 def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
-    """Check the keys of the read set (THE READ SET) with the test launcher of the tree, on a fake build tree.
+    """Check the keys of the read set (the read set) with the test launcher of the tree, on a fake build tree.
 
     The program of each exe_ test is a copy of sh.  exe_traced reads a file by a path that its script makes at run time.
     exe_named names a file of the source tree, and it always runs with no read set.  exe_verdict exits with the status
     1, and its property PASS_REGULAR_EXPRESSION makes ctest accept that status.  The program of each script_ test is sh
-    of the host (THE SCRIPT TEST).  script_source reads a file of the source tree, and script_build reads a file of
+    of the host (the script test).  script_source reads a file of the source tree, and script_build reads a file of
     the build tree.  The trees are in the work root of assay.core.cache.  A path in /tmp is a fact of a read set and not a key part.  On a host that refuses the filter
     of the trace, the launcher writes no read set.  The function then writes a note and checks nothing.  A traced test
-    cannot hold a listener of its own (assay.loop.teststep, THE READ SET).  The cases then fail when a launcher
+    cannot hold a listener of its own (assay.loop.teststep, the read set).  The cases then fail when a launcher
     traces this self-test.
     """
     if os.environ.get(test_launcher.TRACED_ENV):
@@ -2380,7 +2380,7 @@ ARM_UNIT = "int lanes() {\n#if defined(__AVX2__)\n    return 16;\n#else\n    ret
 
 
 def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
-    """Check parse_configured (THE PARSE BUILDS) on a fake git work tree, first with no configured parse build.
+    """Check parse_configured (the parse builds) on a fake git work tree, first with no configured parse build.
 
     The last case configures one parse build with no cmake in its cache.  The script then parses that build with no
     change of the tree, and the parse fails.
@@ -2436,7 +2436,7 @@ def planted_entry(name: str, *depends: str) -> ctest_reader.TestEntry:
 
 
 def layer_cases(expect: Callable[[str, bool, str], None]) -> None:
-    """Check test_layers() (THE LAYERS) on planted tests: a chain, a dependency that is not selected, and a cycle."""
+    """Check test_layers() (the layers) on planted tests: a chain, a dependency that is not selected, and a cycle."""
     planted = (planted_entry("alpha"), planted_entry("beta", "alpha"), planted_entry("gamma", "beta", "alpha"),
                planted_entry("epsilon", "gamma"), planted_entry("delta", "outside"),
                planted_entry("cycle_one", "cycle_two"), planted_entry("cycle_two", "cycle_one"))
@@ -2459,7 +2459,7 @@ def layer_cases(expect: Callable[[str, bool, str], None]) -> None:
 
 
 def shard_cases(expect: Callable[[str, bool, str], None]) -> None:
-    """Check test_shards() and serial_last() (THE SHARDS) on planted tests."""
+    """Check test_shards() and serial_last() (the shards) on planted tests."""
     planted = (planted_entry("alpha"), planted_entry("beta", "alpha"), planted_entry("gamma", "beta"),
                *(planted_entry(f"single_{index}") for index in range(40)))
     names = [test.name for test in planted]
@@ -2485,7 +2485,7 @@ def shard_cases(expect: Callable[[str, bool, str], None]) -> None:
 
 
 def run_shard_cases(expect: Callable[[str, bool, str], None]) -> None:
-    """Check run_shards() (THE SHARDS) with a jobserver of two slots and three runs.
+    """Check run_shards() (the shards) with a jobserver of two slots and three runs.
 
     The first run waits for a mark file that only the third run writes.  The third run can start only with the slot
     of the second run.  Thus the case holds only if a run gives its slot back at its end, while the first run goes on.
@@ -2508,7 +2508,7 @@ def run_shard_cases(expect: Callable[[str, bool, str], None]) -> None:
 
 
 def jobserver_cases(expect: Callable[[str, bool, str], None]) -> None:
-    """Check _build_command() (THE JOBSERVER): the words and the environment of the build, with and with no jobserver."""
+    """Check _build_command() (the jobserver): the words and the environment of the build, with and with no jobserver."""
     fifo = f"{jobserver.AUTH_PREFIX}{jobserver.FIFO_PREFIX}/s/jobserver"
     plain = {BUILD_PARALLEL_VARIABLE: "3", jobserver.VARIABLE: f"-j{proc.DEFAULT_JOBS}"}
     served = plain | {jobserver.VARIABLE: f"-j{proc.DEFAULT_JOBS} {fifo}"}
@@ -2774,7 +2774,7 @@ def missing_build_cases(expect: DetailedExpect) -> None:
 def self_test(ctest: str) -> int:
     """Run each group of plants with `ctest` as the ctest of the fake build tree, and return 0 when each case holds.
 
-    The groups run at the same time on the jobs of the test run (THE GROUPS AT THE SAME TIME of assay.core.testing).
+    The groups run at the same time on the jobs of the test run (the groups at the same time of assay.core.testing).
     The longest groups come first.  They then start first.
     """
 
@@ -2839,7 +2839,7 @@ def main(argv: list[str]) -> int:
         try:
             ctest = options.ctest or cmake_pin.pinned_program("ctest")
             # The self-test starts with an empty shared store, and it writes nothing into the store of the user.  Its
-            # runs take their slots from a private pool, not from the pool of the host (THE POOL of assay.loop.heavy).
+            # runs take their slots from a private pool, not from the pool of the host (the pool of assay.loop.heavy).
             with cache.scratch_root(), heavy.private_pool():
                 return self_test(ctest)
         except (RunnerError, cmake_pin.PinError) as error:

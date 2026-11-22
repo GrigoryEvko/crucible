@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Opening /dev/ptpN is a file system call that can hold the caller, so the
 // context must admit IO and Block.  The background drain context admits

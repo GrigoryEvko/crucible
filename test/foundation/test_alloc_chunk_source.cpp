@@ -1,4 +1,4 @@
-// The chunk source of a window (THE CHUNK SOURCE of foundation/alloc/Window.h),
+// The chunk source of a window (the chunk source of foundation/alloc/Window.h),
 // with eight threads that claim and commit chunks at the same time.
 //
 //   - Eight threads claim each chunk of a window of 4 GiB that is not a

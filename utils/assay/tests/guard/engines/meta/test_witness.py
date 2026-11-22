@@ -1,4 +1,4 @@
-"""The test of the witness of the meta runner: the four prefixes of a plant and its environment (THE WITNESS).
+"""The test of the witness of the meta runner: the four prefixes of a plant and its environment (the witness).
 
 `guard selftest tests.guard.engines.meta.test_witness` runs the test.  Each
 case writes planted plants of a rule in a scratch tree, and runs the witness
@@ -116,7 +116,7 @@ def environment_cases(expect: testing.Expect) -> None:
 
 
 def witness_cases(expect: testing.Expect) -> None:
-    """Run the witness on plants of each prefix, also on a host with GITHUB_ACTIONS (THE WITNESS)."""
+    """Run the witness on plants of each prefix, also on a host with GITHUB_ACTIONS (the witness)."""
     with tempfile.TemporaryDirectory(prefix="test-witness-") as scratch:
         root = Path(scratch)
         plant(root, "plant-error", "error")

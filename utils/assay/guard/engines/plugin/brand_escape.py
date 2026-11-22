@@ -1,6 +1,6 @@
 """brand-escape — a fresh brand stays in the scope that made it.
 
-THE RULE
+Rule
     A fresh brand is the closure type of a lambda with no capture and no
     parameter, such as CRUCIBLE_FRESH_BRAND of include/foundation/Brand.h in a
     template argument.  Two runs of one mint site share one brand, so a brand
@@ -9,7 +9,7 @@ THE RULE
     argument of the function or of its class gave came from outside, so it is
     no escape.  The type of a value argument, such as a function pointer, gives
     a brand too.  The quarantine plugin of utils/tools/quarantine/ reads each
-    leaf (linear.cpp, THE SHAPES).  The kinds:
+    leaf (linear.cpp, the shapes).  The kinds:
       escaped-return            a return type
       escaped-member            a data member of a class that is no closure
       escaped-static            an object with static or thread storage
@@ -22,12 +22,12 @@ THE RULE
     The entity names the place of the lambda of the brand, because GCC prints
     each brand as <lambda()>.
 
-THE SCOPE BRANDS
+Scope brands
     A scope brand names one call of a scope mint, such as mint_branded_scope
     of include/foundation/core/Branded.h, and CRUCIBLE_SCOPE_BRAND writes it
     with the annotation foundation::brand::scope_brand.  A value of it leaves
     no call of the mint, also when a template argument gave the brand
-    (linear.cpp, THE SCOPE BRANDS).  The two kinds:
+    (linear.cpp, the scope brands).  The two kinds:
       scope-static              an object with static or thread storage
                                 duration that holds a scope brand, also a
                                 static data member or a variable template
@@ -37,7 +37,7 @@ THE SCOPE BRANDS
     and each mode, so no object holds one.  No ledger row admits such a line,
     and a write refuses a build that holds one.
 
-THE LEDGER, THE WRITE
+Ledger, write
     assay.guard.engines.plugin.linear_family.
 
 Usage
@@ -68,7 +68,7 @@ ACTIONS = {
         "escaped-alias",
     )
 }
-# The kinds of THE SCOPE BRANDS.  Each line is a compile error, and no ledger row admits one.
+# The kinds of the scope brands.  Each line is a compile error, and no ledger row admits one.
 SCOPE_KINDS = ("scope-static", "scope-return")
 ACTIONS["scope-static"] = (
     "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call "
@@ -91,7 +91,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family).
+    """Write the ledger of the rule from the lines of the builds of the request (the write of linear_family).
 
     A line of a kind of SCOPE_KINDS is a problem of the build, so the write refuses the build.
     """

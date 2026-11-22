@@ -1,6 +1,6 @@
 """must-consume — each path of a body uses a linear value exactly one time.
 
-THE RULE
+Rule
     A class that carries the annotation foundation::linear::linear of
     include/foundation/Linear.h is linear, and so is a class that can move and
     holds a linear part by value.  The quarantine plugin of
@@ -25,8 +25,8 @@ THE RULE
       unanalyzed            a function with a goto or a label
       borrow-move-out       a function moves a linear value out of a
                             parameter that its caller lends, and a path
-                            leaves the parameter spent (linear.cpp, THE LENT
-                            PARAMETERS)
+                            leaves the parameter spent (linear.cpp, the lent
+                            parameters)
       closure-move-out      a call of a closure whose call operator moves a
                             linear capture out, outside the once door
                             call_once of include/foundation/Linear.h, so a
@@ -47,9 +47,9 @@ THE RULE
     that ends a different type at one line gives its own line, and the ledger
     counts it.
 
-THE SUMS
+Sums
     A linear sum, an Option, a Result or a OneOf of a linear alternative,
-    gives its alternative out only through a consumer (linear.cpp, THE SUMS).
+    gives its alternative out only through a consumer (linear.cpp, the sums).
     The plugin reads the empty state of an Option through the annotations of
     include/foundation/Linear.h, so an Option that is empty on each path to
     its end needs no consume.  The four kinds:
@@ -65,14 +65,14 @@ THE SUMS
     and each mode, so no object holds one.  No ledger row admits such a line,
     and a write refuses a build that holds one.
 
-THE FIELDS, THE ACCESSORS, THE CAPTURES
+Fields, accessors, captures
     An object of a class that is linear by its parts gets one slot for each
     linear field, so a move of each field consumes the object.  The move of
     the reference that an accessor such as operator* gives consumes its
     object.  A capture by reference hides each later consume, so the object
     gives no line, and the rule linear-capture reports the capture.
 
-THE DOORS
+Doors
     A door ends each linear value of its frame (P10 of
     misc/12_10_2026_linear.md).  A function that carries the annotation
     drop_door or detach_door is a door, and so is each function that a
@@ -82,15 +82,15 @@ THE DOORS
     kind stale-door, which no ledger row admits (REFUSED_KINDS).  A tree with
     no utils/rule-table.txt, such as the tree of a plant, has no stale row.
 
-THE LEDGER
+Ledger
     utils/ledgers/must-consume.txt counts the findings of each directory and
-    kind, and each count row gives a reason (THE LEDGER of
+    kind, and each count row gives a reason (the ledger of
     assay.guard.engines.plugin.linear_family).
 
-THE WRITE
-    A write counts the lines of the rule in each build (THE WRITE of
+Write
+    A write counts the lines of the rule in each build (the write of
     assay.guard.engines.plugin.linear_family).  A stale linear-door row and a
-    line of a kind of THE SUMS stop the write.
+    line of a kind of the sums stop the write.
 
 Usage
     guard check --rule must-consume --build-dir DIR [--warnings-dir DIR]
@@ -110,7 +110,7 @@ from assay.core.paths import REPO_ROOT
 from assay.guard.engines.plugin import linear_family, runner
 
 RULE = "must-consume"
-# The record of a linear-door row that a unit read (THE DOORS).
+# The record of a linear-door row that a unit read (the doors).
 DOOR_RECORD = "door"
 # The kind of a stale linear-door row.  No ledger row admits it, nor a count row with no reason.
 STALE_DOOR_KIND = "stale-door"
@@ -149,12 +149,12 @@ ACTIONS = {
     "on a path, so the end of the closure drops it.  Consume each such capture on each path of the body, or capture "
     "the value by reference and consume it in the caller",
 }
-# The kinds of THE SUMS.  Each line is a compile error, and no ledger row admits one.
+# The kinds of the sums.  Each line is a compile error, and no ledger row admits one.
 SUM_KINDS = ("option-unconsumed", "option-discarded", "option-known-full", "option-known-empty")
 
 
 def stale_doors(root: Path, records: set[str]) -> list[check_report.Finding]:
-    """Give an error for each linear-door row with no record in the build (THE DOORS).
+    """Give an error for each linear-door row with no record in the build (the doors).
 
     Raises:
         BuildError: If the rule table cannot be read
@@ -195,9 +195,9 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def build_counts(rule: rule_registry.Rule, context: runner.PluginContext) -> Counter[rule_ledger.Key]:
-    """Return the count of each key of the lines of the rule in the build of the context (THE WRITE).
+    """Return the count of each key of the lines of the rule in the build of the context (the write).
 
-    A line of a kind of SUM_KINDS is a problem of the build, so the write refuses the build (THE SUMS).
+    A line of a kind of SUM_KINDS is a problem of the build, so the write refuses the build (the sums).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -207,7 +207,7 @@ def build_counts(rule: rule_registry.Rule, context: runner.PluginContext) -> Cou
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE).
+    """Write the ledger of the rule from the lines of the builds of the request (the write).
 
     Returns:
         0 when the ledger is written.  1 when a build has a problem, a count rose in the mode lower or an input cannot

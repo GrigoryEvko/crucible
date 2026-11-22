@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An attach plan takes an admitted interface index.  A raw integer does not
 // convert to the refined index, so the mint refuses it.  The context fits

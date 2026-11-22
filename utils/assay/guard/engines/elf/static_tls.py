@@ -1,6 +1,6 @@
 """static-tls — each object and each shared library puts at most a small block in the static thread-local storage.
 
-THE RULE
+Rule
     Rule R19 of misc/01_10_2026_quarantine.md gives the base a budget of
     static TLS.  A shared library with a variable of the initial-exec model
     needs its full TLS block in the static TLS of the process.  dlopen finds
@@ -13,18 +13,18 @@ THE RULE
     block of 64 times the limit does not load.
 
     The rule judges two kinds of items against one limit:
-      * Each member of each static library of the root (THE MEMBERS)
-      * Each shared library and each module of the target all (THE SHARED
-        LIBRARIES).
+      * Each member of each static library of the root (the members)
+      * Each shared library and each module of the target all (the shared
+        libraries).
 
-THE MEMBERS
+Members
     The rule reads each member of each static library of the root
-    (assay.guard.engines.elf.runner, THE BUILD).  The value of a member is
+    (assay.guard.engines.elf.runner, the build).  The value of a member is
     the sum of the bytes of its base thread-local variables:
       * Each thread-local variable of a member of the library foundation or
         fixy (BASE_LIBRARIES).
       * Each thread-local variable of a different member with a name in the
-        scope foundation or fixy (assay.readers.elf, THE MANGLED SCOPE).  An
+        scope foundation or fixy (assay.readers.elf, the mangled scope).  An
         example is the storage of foundation/ThreadLocalRef.h in an object of
         crucible.
     A thread-local variable is a symbol with a section and the type STT_TLS.
@@ -34,7 +34,7 @@ THE MEMBERS
     start of the block of a library.  The item of a member is
     ARCHIVE(MEMBER).
 
-THE SHARED LIBRARIES
+Shared libraries
     The rule reads each shared library and each module of the target all
     (runner.ElfContext.linked_artifacts()).  It reads no program, because
     the loader makes the static TLS of a program and of its needed libraries
@@ -62,28 +62,28 @@ THE SHARED LIBRARIES
 
     The item of a library is its path relative to the build directory.  A
     planted build keeps the archive of each library of the root in its build
-    directory (runner, THE PLANTS).  For a planted build, the build directory
+    directory (runner, the plants).  For a planted build, the build directory
     is thus the directory of the archive of the library foundation.
 
-THE JUDGE
+Judge
     assay.core.budget judges the value of each item against the limit of the
     measured rule, with the ledger rows.  An item above the limit that no row
     keeps is an error.  An item with no value gets no finding.
 
-THE LEDGER
+Ledger
     utils/ledgers/static-tls.txt has the policy max.  A row keeps one member
-    or one library in each build, up to VALUE (assay.core.budget, THE
-    VERDICT):
+    or one library in each build, up to VALUE (assay.core.budget, the
+    verdict):
         @build/ARCHIVE(MEMBER) | - | VALUE | - | REASON
         @build/PATH | - | VALUE | - | REASON
     `guard write --rule static-tls --build-dir DIR --reason TEXT` writes a
     row for each item above the limit that no row keeps (assay.core.budget,
-    THE WRITE).  It removes no row and lowers no kept value.  written() gives
+    the write).  It removes no row and lowers no kept value.  written() gives
     the new ledger from the items and the ledger, and it reads no build.
     write() reads the build and stores the ledger, and it tells when the
     ledger has no change.
 
-THE ERRORS
+Errors
     The rule fails closed.  These builds are errors, because the rule cannot
     read each item:
       * A root with no library foundation
@@ -94,7 +94,7 @@ THE ERRORS
       * A shared library outside the build directory, because its item then
         has no path in the build.
 
-NOT APPLICABLE
+Not applicable
     The rule does not apply (exit 77) to a build that has not made each
     library of the root and each shared library of the target all.
 
@@ -125,11 +125,11 @@ BASE_SCOPES = frozenset({"foundation", "fixy"})
 # The library that the root must make.  Without it, the rule reads no member of the base.
 REQUIRED_LIBRARY = "foundation"
 # The types of a relocation that puts the TLS block of its symbol into the static TLS of the process, for each machine
-# (THE SHARED LIBRARIES): R_X86_64_TPOFF64 and R_X86_64_TPOFF32, and R_AARCH64_TLS_TPREL64.
+# (the shared libraries): R_X86_64_TPOFF64 and R_X86_64_TPOFF32, and R_AARCH64_TLS_TPREL64.
 INITIAL_EXEC_TYPES = {elf.EM_X86_64: frozenset({18, 23}), elf.EM_AARCH64: frozenset({1030})}
 # The bit of DT_FLAGS that puts the TLS block of a library into the static TLS of the process.
 DF_STATIC_TLS = 0x10
-# The head comment that each write gives the ledger (assay.core.ledger, THE HEAD COMMENT).
+# The head comment that each write gives the ledger (assay.core.ledger, the head comment).
 LEDGER_COMMENT = (
     "# The ledger of the rule static-tls of utils/registry.txt: the members of the static libraries with base\n"
     "# thread-local variables and the shared libraries with a block in the static TLS that can be more than the\n"
@@ -163,7 +163,7 @@ class MemberTls:
 
 @dataclass(frozen=True, slots=True)
 class LibraryRead:
-    """The TLS facts of one shared library of the build (THE SHARED LIBRARIES).
+    """The TLS facts of one shared library of the build (the shared libraries).
 
     `item` is its path relative to the build directory.  `value` is the size of its block rounded up to the
     alignment, or 0 with no segment PT_TLS.  `variables` holds the name of each thread-local variable of its table
@@ -219,7 +219,7 @@ class Reading:
 
 
 def member_tls(member: elf.Member, is_base_library: bool) -> tuple[int, tuple[str, ...]]:
-    """Return the bytes and the names of the base thread-local variables of one member (THE MEMBERS).
+    """Return the bytes and the names of the base thread-local variables of one member (the members).
 
     With is_base_library True, each thread-local variable of the member counts.  Complexity: linear in the symbols of
     the member.
@@ -245,7 +245,7 @@ def aligned_size(size: int, align: int) -> int:
 
 
 def library_read(member: elf.Member, item: str) -> LibraryRead:
-    """Read the TLS facts of one shared library (THE SHARED LIBRARIES).
+    """Read the TLS facts of one shared library (the shared libraries).
 
     Complexity: linear in the program headers, the dynamic entries, the symbols and the relocations of the library.
 
@@ -276,7 +276,7 @@ def library_read(member: elf.Member, item: str) -> LibraryRead:
 
 
 def library_items(reads: Sequence[LibraryRead]) -> tuple[LibraryTls, ...]:
-    """Give each library with a block that goes into the static TLS of the process (THE SHARED LIBRARIES).
+    """Give each library with a block that goes into the static TLS of the process (the shared libraries).
 
     Complexity: linear in the defined and the referenced symbols of the libraries.
     """
@@ -297,7 +297,7 @@ def library_items(reads: Sequence[LibraryRead]) -> tuple[LibraryTls, ...]:
 
 
 def build_of(context: runner.ElfContext, libraries: dict[str, Path]) -> Path:
-    """Return the build directory that gives the item of a library (THE SHARED LIBRARIES)."""
+    """Return the build directory that gives the item of a library (the shared libraries)."""
     directory = context.build_dir if context.build_dir is not None else libraries[REQUIRED_LIBRARY].parent
     return directory.resolve()
 
@@ -356,7 +356,7 @@ def measured(context: runner.ElfContext) -> Reading:
 
     Raises:
         runner.NotApplicable: If the build has not made each library
-        runner.BuildError: If the build cannot be read (THE ERRORS)
+        runner.BuildError: If the build cannot be read (the errors)
     """
     libraries = context.libraries()
     if REQUIRED_LIBRARY not in libraries:
@@ -388,11 +388,11 @@ def budget_of(rule: rule_registry.Rule) -> check_report.Budget:
 
 
 def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> tuple[list[check_report.Finding], Reading]:
-    """Return the findings of the build judged against the limit and the ledger rows, and the items (THE JUDGE).
+    """Return the findings of the build judged against the limit and the ledger rows, and the items (the judge).
 
     Raises:
-        runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
-        runner.BuildError: If the build cannot be read (THE ERRORS)
+        runner.NotApplicable: If the rule does not apply to the build (not applicable)
+        runner.BuildError: If the build cannot be read (the errors)
     """
     budget = budget_of(rule)
     reading = measured(context)
@@ -407,11 +407,11 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> tuple[list[
 
 
 def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the limit and the ledger rows (THE JUDGE).
+    """Return the findings of the build judged against the limit and the ledger rows (the judge).
 
     Raises:
-        runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
-        runner.BuildError: If the build cannot be read (THE ERRORS)
+        runner.NotApplicable: If the rule does not apply to the build (not applicable)
+        runner.BuildError: If the build cannot be read (the errors)
     """
     return examine(rule, context)[0]
 
@@ -456,7 +456,7 @@ def written(
     ledger: rule_ledger.Ledger,
     reason: str | None,
 ) -> rule_ledger.Ledger:
-    """Return the ledger with a row for each item of the build above the limit that no row keeps (THE LEDGER).
+    """Return the ledger with a row for each item of the build above the limit that no row keeps (the ledger).
 
     Each row stays, with its kept value.  Complexity: linear in the items and the rows.
 
@@ -468,7 +468,7 @@ def written(
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest, context: runner.ElfContext | None = None) -> int:
-    """Write a row for each item of the build above the limit that no row keeps (THE LEDGER).
+    """Write a row for each item of the build above the limit that no row keeps (the ledger).
 
     Args:
         rule: The rule static-tls of the registry

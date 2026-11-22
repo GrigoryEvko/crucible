@@ -9,7 +9,7 @@ trace: the seccomp filter, the calls that it stops and the supervisor that
 answers them.  This module holds the read set: the classes of a read, the
 signatures, the record and the decision to trace.
 
-THE CLASSES OF A READ
+Classes of a read
     The read set holds each path with its kind (read, exec or list) and its
     role: a key part of the test, or a fact of the run.
       * A path in a runtime root is a fact.  The runtime roots are /proc,
@@ -36,7 +36,7 @@ THE CLASSES OF A READ
         and at the end of the run is a key part too.  A file there can change
         the result of the next run.
 
-THE SIGNATURE
+Signature
     signature() gives the state of a path in one word.  A regular file gives
     its length, its modification time and its inode.  A directory gives a
     digest of the sorted names in it.  Each other file gives its type.  A path
@@ -46,7 +46,7 @@ THE SIGNATURE
     equal, the file changed while the test ran.  The read set is then not
     settled, and `loop test` records no result of the run.
 
-THE RECORD
+Record
     The read set of the test NAME is BUILD_DIR/test-records/NAME.test.reads.
     The cost record of the test (assay.core.record) is in the same directory.
     The read set is text in UTF-8 with surrogate escapes.  Its lines are, in
@@ -57,13 +57,13 @@ THE RECORD
         settled yes|no
         command<TAB>WORD<TAB>WORD...
         KIND<TAB>ROLE<TAB>FIRST<TAB>END<TAB>PATH
-    The version is the version of the traced run (THE RETRACE).  The status is
+    The version is the version of the traced run (the retrace).  The status is
     the exit status of the program, or minus its signal.  Each word and each
     path escapes a backslash, a tab and a line break with a backslash.  The
     entries are sorted by kind and path.  read() refuses a record of a
     different shape, and the launcher then traces the test again.
 
-THE RETRACE
+Retrace
     plan() gives the plan of a traced run, or no plan.  The launcher traces a
     run in these conditions:
       * The test has no read set.
@@ -74,11 +74,11 @@ THE RETRACE
       * A key part has a different signature at this time.
     The version holds the words of the command and the clean environment.  It
     also holds the length, the time and the inode of each file that the
-    command names (assay.loop.teststep, THE VERSION).  A new build of the
+    command names (assay.loop.teststep, the version).  A new build of the
     program then makes the next run a traced run.  A change of a file that the
     test read has the same effect.  On 2026-10-14, three traced runs of each
     of 349 tests of the build directory gave the same key parts.  A host with
-    no trace (assay.loop.tracer, THE TRACE) gets no plan.  The launcher then
+    no trace (assay.loop.tracer, the trace) gets no plan.  The launcher then
     removes the read set of an earlier run, because that read set can be
     stale.
 
@@ -99,7 +99,7 @@ if TYPE_CHECKING:
 
     from assay.loop.tracer import Tracer
 
-# The suffix and the first line of a read set (THE RECORD).
+# The suffix and the first line of a read set (the record).
 SUFFIX = ".test.reads"
 FORMAT = "crucible-read-set 1"
 # The kinds of an entry.
@@ -107,13 +107,13 @@ READ = "read"
 EXEC = "exec"
 LIST = "list"
 KINDS = frozenset({READ, EXEC, LIST})
-# The roles of an entry (THE CLASSES OF A READ).
+# The roles of an entry (the classes of a read).
 KEY = "key"
 FACT = "fact"
 ROLES = frozenset({KEY, FACT})
-# The variable of the directory of ccache (THE CLASSES OF A READ).
+# The variable of the directory of ccache (the classes of a read).
 CCACHE_DIR = "CCACHE_DIR"
-# The signature of a path with no file, and of a path that the launcher cannot stat (THE SIGNATURE).
+# The signature of a path with no file, and of a path that the launcher cannot stat (the signature).
 ABSENT = "-"
 UNKNOWN = "?"
 # The signature of a path in a runtime root.  The launcher does not stat such a path.
@@ -122,10 +122,10 @@ NOT_MEASURED = "."
 FILE_SIGNATURE = "f:"
 DIRECTORY_SIGNATURE = "d:"
 OTHER_SIGNATURE = "o:"
-# The runtime roots of each host (THE CLASSES OF A READ).
+# The runtime roots of each host (the classes of a read).
 RUNTIME_ROOTS = ("/proc", "/sys", "/dev", "/run", "/tmp", "/var/tmp")
 TMPDIR = "TMPDIR"
-# The escape of each character that a word or a path of a read set escapes (THE RECORD).
+# The escape of each character that a word or a path of a read set escapes (the record).
 ESCAPES = {"\\": "\\", "t": "\t", "n": "\n"}
 
 
@@ -145,7 +145,7 @@ class Entry(Value):
 
 
 class ReadSet(Value):
-    """The read set of one traced run of a test (THE RECORD)."""
+    """The read set of one traced run of a test (the record)."""
 
     __match_args__ = ("version", "status", "is_settled", "command", "entries")
     version: str
@@ -192,7 +192,7 @@ def listing_digest(path: str) -> str:
 
 
 def signature(path: str) -> str:
-    """Return the state of a path in one word (THE SIGNATURE).
+    """Return the state of a path in one word (the signature).
 
     Complexity: one stat, and one listing for a directory.
     """
@@ -213,7 +213,7 @@ def signature(path: str) -> str:
 
 
 def is_runtime(path: str, roots: Sequence[str]) -> bool:
-    """Return True when a path is a runtime root, or a path in one (THE CLASSES OF A READ)."""
+    """Return True when a path is a runtime root, or a path in one (the classes of a read)."""
     return path in roots or path.startswith(tuple(f"{root}/" for root in roots))
 
 
@@ -237,7 +237,7 @@ def runtime_roots(environment: Mapping[str, str]) -> tuple[str, ...]:
 
 
 def classify(events: Mapping[tuple[str, str], str], roots: Sequence[str]) -> tuple[tuple[Entry, ...], bool]:
-    """Return the entries of the paths of a trace, and True when each key part is settled (THE CLASSES OF A READ).
+    """Return the entries of the paths of a trace, and True when each key part is settled (the classes of a read).
 
     Args:
         events: The signature at its first stop of each kind and path of the trace
@@ -272,7 +272,7 @@ def classify(events: Mapping[tuple[str, str], str], roots: Sequence[str]) -> tup
 
 
 def escaped(text: str) -> str:
-    """Return a word or a path of a read set with each backslash, tab and line break escaped (THE RECORD)."""
+    """Return a word or a path of a read set with each backslash, tab and line break escaped (the record)."""
     return text.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
 
 
@@ -301,7 +301,7 @@ def unescaped(text: str) -> str | None:
 
 
 def record_text(read_set: ReadSet) -> str:
-    """Return the text of a read set (THE RECORD)."""
+    """Return the text of a read set (the record)."""
     lines = [
         FORMAT,
         f"version {read_set.version}",
@@ -316,7 +316,7 @@ def record_text(read_set: ReadSet) -> str:
 
 
 def write(path: str, read_set: ReadSet) -> None:
-    """Write a read set at a path, through a scratch file and a rename (assay.core.record, THE WRITE).
+    """Write a read set at a path, through a scratch file and a rename (assay.core.record, the write).
 
     Raises:
         OSError: If the read set cannot be written
@@ -331,7 +331,7 @@ def head_value(line: str, word: str) -> str | None:
 
 
 def entry_of(line: str) -> Entry | None:
-    """Return the entry of one line of a read set, or None for a line that is not an entry (THE RECORD)."""
+    """Return the entry of one line of a read set, or None for a line that is not an entry (the record)."""
     cells = line.split("\t")
     if len(cells) != 5 or cells[0] not in KINDS or cells[1] not in ROLES:
         return None
@@ -340,7 +340,7 @@ def entry_of(line: str) -> Entry | None:
 
 
 def read(path: str) -> ReadSet | None:
-    """Return the read set at a path, or None when the file is not there or does not have the shape of THE RECORD.
+    """Return the read set at a path, or None when the file is not there or does not have the shape of the record.
 
     Complexity: linear in the length of the file.
     """
@@ -390,7 +390,7 @@ class Plan:
     def save(self, status: int) -> None:
         """Write the read set of the run, or remove the read set when the trace is not complete.
 
-        assay.loop.tracer gives the conditions of a trace that is not complete (THE END).
+        assay.loop.tracer gives the conditions of a trace that is not complete (the end).
 
         Raises:
             OSError: If the read set cannot be written
@@ -403,7 +403,7 @@ class Plan:
 
 
 def plan(build_dir: str, name: str, command: Sequence[str], version: str) -> Plan | None:
-    """Return the plan of a traced run of a test, or None when its read set is current (THE RETRACE).
+    """Return the plan of a traced run of a test, or None when its read set is current (the retrace).
 
     Args:
         build_dir: The build directory of the test

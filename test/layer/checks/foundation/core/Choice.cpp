@@ -1030,7 +1030,7 @@ static_assert(!std::is_copy_constructible_v<Result<HoldsToken, Code>>);
 // A linear payload has no value_or().  The loop of a niche or a plain Option
 // takes the const cursor, also of an Option that is not const.  An owning
 // Option, of a linear payload or of an owner, has no loop, because a cursor
-// counts no lend of its payload (THE LEND COUNT).
+// counts no lend of its payload (the lend count).
 template <class O, class T>
 concept GivesValueOr =
     requires(O option, T fallback) { static_cast<O&&>(option).value_or(static_cast<T&&>(fallback)); };
@@ -1260,7 +1260,7 @@ public:
 
 static_assert(NicheRead<TrustedMemberSlot>::is_empty_never_built() && !NicheRead<MemberSlot>::is_empty_never_built());
 
-// The payload gate holds the three checks of THE CHECK OF THE STATEMENT, so
+// The payload gate holds the three checks of the statement, so
 // a false statement does not compile.  An aggregate builds the empty value
 // from its member, and a constructor from a pointer with no key builds the
 // empty value from the null pointer.  The two trusted slots pass the two
@@ -1271,7 +1271,7 @@ static_assert(WritesNoEmptyValue<TrustedSlot> && WritesNoEmptyValue<TrustedMembe
 static_assert(!StatedInBase<TrustedSlot> && !StatedInBase<TrustedMemberSlot>);
 static_assert(!ChoicePayload<TrustedSlot> && !ChoicePayload<TrustedMemberSlot>);
 
-// The walk of the constructors (1 of THE CHECK OF THE STATEMENT).  A raw
+// The walk of the constructors (1 of the check of the statement).  A raw
 // value is a scalar, or a class that holds one at some depth, also through a
 // reference member such as the one of HoldsReference above.  An empty tag and
 // a key carry none.  A key has no public constructor, so a public class that
@@ -1323,7 +1323,7 @@ static_assert(!vouches_each_raw_parameter(^^PairStatedSlot) && !BuildsNoEmptyVal
 static_assert(vouches_each_raw_parameter(^^KeyedPairSlot) && BuildsNoEmptyValue<KeyedPairSlot>);
 static_assert(vouches_each_raw_parameter(^^TagSlot) && BuildsNoEmptyValue<TagSlot>);
 
-// The walk of the members (2 of THE CHECK OF THE STATEMENT).  Each class
+// The walk of the members (2 of the check of the statement).  Each class
 // below has one member that can write a value in place: a member function
 // that is not const, a member function template, a public data member, a
 // mutable member, a static member function with a parameter that can write,
@@ -1382,7 +1382,7 @@ static_assert(!WritesNoEmptyValue<PublicFieldSlot> && !WritesNoEmptyValue<Mutabl
 static_assert(!WritesNoEmptyValue<StaticWriterSlot> && !WritesNoEmptyValue<BasedSlot>);
 static_assert(WritesNoEmptyValue<ReaderSlot>);
 
-// The place of the statement (3 of THE CHECK OF THE STATEMENT).  A header of
+// The place of the statement (3 of the check of the statement).  A header of
 // the two layers below the include root of the anchor holds a statement, and
 // a path that leaves the layers through a segment that starts with a dot
 // holds none.  An anchor with a different path admits no file.  The unary

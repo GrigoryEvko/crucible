@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The foreground hot-path context cannot change the status or the
 // timestamp of a PTP handle.  A foreground context is built only from the

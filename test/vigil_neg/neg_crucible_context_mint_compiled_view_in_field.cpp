@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: a class type that stores a CrucibleContext::CompiledView
 // as a non-static data member.  Fires the Tier-2 reflection audit
@@ -14,15 +14,15 @@
 // CrucibleContext itself opts in to this audit at CrucibleContext.h:497
 // with
 //     static_assert(::fixy::no_scoped_view_field_check<CrucibleContext>());
-// — that asserts CrucibleContext itself does NOT store a view.  This
-// fixture asserts the AUDIT is also live for INDEPENDENT carrier
+// — that asserts CrucibleContext itself does not store a view.  This
+// fixture asserts the audit is also live for independent carrier
 // types that try to embed a CrucibleContext::CompiledView.
 //
 // HS14 — paired with neg_crucible_context_mint_compiled_view_cross_carrier:
 //   * That one catches typed-overload resolution at call time
 //     (cross-carrier ScopedView mismatch).
-//   * THIS one catches structural lifetime escape at field-storage time.
-// Together they pin BOTH soundness gates of CrucibleContext::mint_compiled_view.
+//   * This one catches structural lifetime escape at field-storage time.
+// Together they pin both soundness gates of CrucibleContext::mint_compiled_view.
 
 #include <crucible/CrucibleContext.h>
 

@@ -15,7 +15,7 @@ a member of a template.  Then only a translation unit that reads it
 evaluates it.  A static_assert in a class or in a template stays in the
 header, because it applies to each instantiation.
 
-THE CHECK FILE
+Check file
     The check file of include/LAYER/PATH.h is test/layer/checks/LAYER/PATH.cpp.
     Its first line of code includes its own header, and the file then also
     shows that the header compiles alone.  It holds the self-test namespaces
@@ -24,7 +24,7 @@ THE CHECK FILE
     as before.  In each build, test/layer/CMakeLists.txt compiles the check
     file in the position of the one-line sentinel of its header.
 
-THE SIX KINDS
+Six kinds
     The rule reads the parse tree of each header of its scope, include/,
     and of each file in test/layer/checks/.  An item of work that a header
     does in each includer has one of these kinds:
@@ -67,7 +67,7 @@ THE SIX KINDS
         alignof, decltype, noexcept, a `requires` expression or a different
         lambda body.  A plain call, a cast, a cheap constructor and a `^^X`
         alone are no reflection query.  The compiler sees the cost of a
-        plain call accurately (WHAT THE RULE CANNOT SEE).  This kind reads
+        plain call accurately (what the rule cannot see).  This kind reads
         only the work that the operation count of GCC does not see:
         template instantiation and reflection queries.
         A const variable counts only when the object itself is const:
@@ -129,15 +129,15 @@ THE SIX KINDS
     It is the device that makes a macro end in a semicolon at its call
     site, and it does not count.
 
-THE OTHER FINDINGS
+Other findings
     The rule also refuses these, and no row of the ledger admits them:
       check-file  a check file that is not a .cpp file, that has no
                   header, or that does not include its header first
       unread      a tree with no directory include/
-      ledger      a row of the ledger that the rule refuses (THE LEDGER)
+      ledger      a row of the ledger that the rule refuses (the ledger)
     A file that does not parse gives the kind parse (the engine runner).
 
-THE ENTITY
+Entity
     The entity of an item is its key, and the message of its finding gives
     the key.  The key of a namespace is its full name.  The key of a
     static_assert is the spelling of its condition.  The key of an eager
@@ -147,7 +147,7 @@ THE ENTITY
     spelling of the invocation, and one invocation can make more than one
     item.
 
-THE LEDGER
+Ledger
     utils/ledgers/header-checks.txt has the policy count (assay.core.ledger).
     A row `PATH | KIND | COUNT | KEY | REASON` holds the items of one key
     that stay in their header.  Its reason is necessary.  A reason of one
@@ -160,7 +160,7 @@ THE LEDGER
       - a row with a path that is not in include/
       - a row with no reason.
 
-WHAT THE RULE CANNOT SEE
+What the rule cannot see
     A macro body has no scope until the macro expands.  The rule then
     counts the checks of a macro at each invocation and not at its
     `#define`.  A macro of a file that is not in the scope, and a name that
@@ -354,7 +354,7 @@ REPAIR = (
 
 @dataclass(frozen=True, slots=True)
 class Item:
-    """One item of compile-time work that a header does in each includer (THE SIX KINDS, THE ENTITY).
+    """One item of compile-time work that a header does in each includer (the six kinds, the entity).
 
     `via` names the macro with the invocation that makes the item, or is
     empty for an item that the header writes itself.  `made` is the number of
@@ -1317,7 +1317,7 @@ def namespace_items(tree: tsast.Tree, path: str) -> list[Item]:
 
 
 def header_items(tree: tsast.Tree, macros: dict[str, MacroChecks], exits: frozenset[str]) -> list[Item]:
-    """Return each item of compile-time work that one header does in each includer (THE SIX KINDS).
+    """Return each item of compile-time work that one header does in each includer (the six kinds).
 
     Complexity: linear in the number of nodes of the file, times the depth of each candidate.
     """
@@ -1397,7 +1397,7 @@ def describe(item: Item) -> str:
 
 
 def item_finding(item: Item) -> check_report.Finding:
-    """Return the error of one item, with its key as the entity (THE ENTITY)."""
+    """Return the error of one item, with its key as the entity (the entity)."""
     return check_report.Finding(
         "error", item.path, item.line, RULE, f"{describe(item)}.  {REPAIR}", item.kind, item.key
     )

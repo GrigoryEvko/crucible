@@ -181,7 +181,7 @@ read_clock_nanos(ClockId clock) noexcept {
     return nanos_from_timespec(reading);
 }
 
-// Reads the PTP hardware clock behind the /dev/ptpN descriptor DESCRIPTOR,
+// Reads the PTP hardware clock behind the /dev/ptpN file that descriptor names,
 // as read_clock_nanos does.  A descriptor below zero, the descriptor of a
 // reader that a move emptied, gives ebadf and reads no clock.  Its clock id
 // names no PTP clock: the id of descriptor -1 is CLOCK_THREAD_CPUTIME_ID.
@@ -492,7 +492,7 @@ struct PtpClockCaps {
 namespace detail {
 
 // The capabilities of the PTP hardware clock behind the /dev/ptpN descriptor
-// DESCRIPTOR (the ioctl PTP_CLOCK_GETCAPS2), or the error of the query.  The
+// descriptor (the ioctl PTP_CLOCK_GETCAPS2), or the error of the query.  The
 // body is in src/fixy/os/Time.cpp, the one includer of <linux/ptp_clock.h>.
 // PtpClockReader::caps is its caller.
 [[nodiscard]] ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno> read_ptp_caps_(int descriptor) noexcept;

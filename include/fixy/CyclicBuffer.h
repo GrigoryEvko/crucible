@@ -8,7 +8,7 @@
 // once it laps, `raw < N` becomes true again and a derived size would
 // under-report a full ring.
 //
-// THE SLOTS
+// Slots
 //   A slot is an Index<N> into the storage.  The next claim writes
 //   next_slot(), and slot_back(back) names the slot of the element that the
 //   claim before the last back claims wrote: slot_back(index<0>()) is the
@@ -16,7 +16,7 @@
 //   default element.  The mask keeps each slot inside the storage, so that
 //   bound is a bound of logic and not of safety.
 //
-// THE DOORS
+// Doors
 //   The ring gives no reference to an element out.  A body borrows one
 //   element for the time of a call, and its result holds no borrow:
 //     with_claim(body)        the slot of the next claim, with its old element
@@ -27,9 +27,9 @@
 //   a later element.  pass_slot() claims a slot and keeps its element, and push
 //   writes the slot of the next claim.
 //
-// THE KEY
+// Key
 //   A ring of a key brand, from mint_cyclic_buffer, opens a door that writes
-//   only with its LoanKey (THE LOAN KEY of foundation/core/Frame.h), by move
+//   only with its LoanKey (the loan key of foundation/core/Frame.h), by move
 //   or by a borrow, and it refuses a body that reaches that key.  So no code
 //   inside a body opens a second door of the ring that writes: not a nested
 //   door, not a helper, and not a Ref of the ring.  A ring of Unkeyed, the
@@ -172,7 +172,7 @@ public:
     [[nodiscard]] constexpr Cyclic<std::size_t, N> cursor() const noexcept { return cursor_; }
 
     // The slot of the next claim, and the slot of the element back places
-    // before the newest (THE SLOTS).
+    // before the newest (the slots).
     [[nodiscard]] constexpr Index<N> next_slot() const noexcept { return prove_slot_(cursor_.index()); }
     [[nodiscard]] constexpr Index<N> slot_back(Index<N> back) const noexcept {
         return prove_slot_(cursor_.index_back(back.raw()));
@@ -190,7 +190,7 @@ public:
         return static_cast<Body&&>(body)(storage_.at(slot));
     }
 
-    // ── The doors of a ring of Unkeyed (THE KEY) ───────────────────────────
+    // ── The doors of a ring of Unkeyed (the key) ───────────────────────────
 
     // Body gets the slot of the next claim with its old element, which it
     // writes.  Complexity: O(1), and the cost of body.
@@ -228,7 +228,7 @@ public:
         slot_at_(claim_slot_()) = std::move(value);
     }
 
-    // ── The doors of a ring of a key brand (THE KEY) ───────────────────────
+    // ── The doors of a ring of a key brand (the key) ───────────────────────
 
     // The three doors that write, in the two forms of a keyed door: the key
     // moves into the door and comes back, alone for a body that gives void
@@ -376,8 +376,8 @@ template <class T, std::size_t N, class... Refused>
 concept CanMintCyclicBuffer =
     (sizeof...(Refused) == 0) && N > 0 && (N & (N - 1)) == 0 && std::is_nothrow_default_constructible_v<T>;
 
-// A keyed CyclicBuffer of N value-initialized elements and its LoanKey (THE
-// KEY): auto [ring, key] = mint_cyclic_buffer<T, N>().  The brand is the fresh
+// A keyed CyclicBuffer of N value-initialized elements and its LoanKey (the
+// key): auto [ring, key] = mint_cyclic_buffer<T, N>().  The brand is the fresh
 // brand of the call site, in undeducible_brand_t, so no caller names it.
 // Complexity: O(N) for the value-initialization.
 template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>

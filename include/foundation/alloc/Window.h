@@ -2,15 +2,15 @@
 
 // The window door of the allocator of the base: the reservation of a window
 // and of its metadata region, the ladder of sizes, and the commits of an
-// extent and of the records (foundation/alloc/ChunkMap.h, THE WINDOW).
+// extent and of the records (foundation/alloc/ChunkMap.h, the window).
 //
 //   reserve_window(diagnostic)       the window of the first size of the
 //                                    ladder that the kernel gives, or
 //                                    WindowFull with the remedy in the
-//                                    diagnostic (THE FULL WINDOW)
+//                                    diagnostic (the full window)
 //   reserve_window(cap, diagnostic)  the same, with each reserve above cap
 //                                    refused with no call (the test door of
-//                                    THE LADDER)
+//                                    the ladder)
 //   window.record()                  the WindowRecord of the window
 //   window.layout()                  the MetadataLayout of its region
 //   window.slab_records_at()         the address of the record of the slab
@@ -19,7 +19,7 @@
 //                                    that many threads change: the bit of
 //                                    each committed extent, the front of
 //                                    each section of records, and the claim
-//                                    index of chunks (THE CHUNK SOURCE)
+//                                    index of chunks (the chunk source)
 //   window.claim_chunk(commits)      the next chunk that no thread claimed,
 //                                    or none past the last chunk
 //   window.claimed_chunks(commits)   the chunks below the claim index
@@ -28,7 +28,7 @@
 //                                    the chunk, with no record started
 //   window.commit_extent_of(commits, chunk)
 //                                    commits the extent of the chunk, one
-//                                    time (THE COMMITS)
+//                                    time (the commits)
 //   window.start_chunk_meta(commits, chunk)
 //                                    the ChunkMeta of the chunk, in zero
 //                                    bytes, after the commit of its step
@@ -42,18 +42,18 @@
 //                                    device into the first empty slot of a
 //                                    device, or gives table_full
 //
-// THE LADDER
+// Ladder
 //   The sizes are 1 TiB, 256 GiB, 64 GiB, 16 GiB, 4 GiB and 1 GiB.  A build
 //   with ThreadSanitizer starts at 64 GiB.  For each size, the door reserves
 //   the window at the alignment of a chunk, and then its region.  When the
 //   kernel refuses one of the two, the door unmaps the other and takes the
 //   next size.  When the kernel refuses each size, the door gives
-//   WindowFull (THE FULL WINDOW).
+//   WindowFull (the full window).
 //
-// THE FULL WINDOW
+// Full window
 //   The window is the address-space limit of the allocator, as the memory of
 //   the host is the limit of its heap.  When the kernel refuses each size of
-//   THE LADDER, the door gives WindowFull::no_address_space, and it writes
+//   the ladder, the door gives WindowFull::no_address_space, and it writes
 //   the remedy into the WindowDiagnostic of the caller: the sizes that the
 //   page source refused, the name of the error of the last refusal, and the
 //   limits of the process to raise.  The Result holds only the small kind,
@@ -61,7 +61,7 @@
 //   CRUCIBLE_TRY.  Each call empties the diagnostic first, so a call that
 //   succeeds leaves it empty, and no text stays in a state of the thread.
 //
-// THE COMMITS
+// Commits
 //   Each commit is one mprotect of a range that is next to a range with the
 //   same access, so the count of mappings of the process grows with the
 //   count of extents and sections, and not with the count of chunks.  The
@@ -80,7 +80,7 @@
 //   constructs it again, so only the thread that claimed the chunk calls it,
 //   one time for the chunk and one time for each unit.
 //
-// THE CHUNK SOURCE
+// Chunk source
 //   Many heaps take chunks of one window at the same time, so each word that
 //   a commit changes is an atomic word of WindowCommits, and no step takes a
 //   lock.  A claim moves the claim index past the next chunk that is not a
@@ -128,9 +128,9 @@ namespace foundation::alloc {
 // each extent of a window of 1 TiB.
 inline constexpr std::size_t kExtentMapWords = ((std::size_t{1} << 40) >> kExtentShift) / 64;
 
-// The reason that the window door gives no room (THE FULL WINDOW).
+// The reason that the window door gives no room (the full window).
 enum class WindowFull : std::uint8_t {
-    // The page source refused each size of THE LADDER: the process has no
+    // The page source refused each size of the ladder: the process has no
     // free range of address space for the smallest window and its region.
     no_address_space,
 };
@@ -138,7 +138,7 @@ enum class WindowFull : std::uint8_t {
 // The largest count of the characters of the text of a WindowDiagnostic.
 inline constexpr std::size_t kWindowDiagnosticBytes = 384;
 
-// The remedy of the last refusal of the window door (THE FULL WINDOW).
+// The remedy of the last refusal of the window door (the full window).
 class WindowDiagnostic final {
 public:
     // The empty diagnostic.
@@ -156,8 +156,8 @@ private:
     ::foundation::core::FixedText<kWindowDiagnosticBytes> text_{};
 };
 
-// The words of the commits of one window that many threads change (THE CHUNK
-// SOURCE).  It starts as zero words: no chunk claimed, no extent committed,
+// The words of the commits of one window that many threads change (the chunk
+// source).  It starts as zero words: no chunk claimed, no extent committed,
 // and each section of records at its first byte.  The owner of a window keeps
 // one beside it for the life of the window.
 class WindowCommits final {
@@ -178,7 +178,7 @@ private:
     ::foundation::core::Atomic<std::uint32_t> next_chunk_{0};
 };
 
-// One window and its metadata region (THE WINDOW).  The window owns the two
+// One window and its metadata region (the window).  The window owns the two
 // reservations, and its end unmaps them.
 class [[nodiscard]] Window final {
 public:
@@ -199,7 +199,7 @@ public:
     }
 
     // The next chunk that no claim took, past each guard chunk, or none when
-    // each chunk of the window has a claim (THE CHUNK SOURCE).  Complexity:
+    // each chunk of the window has a claim (the chunk source).  Complexity:
     // O(1) compare-and-swap steps for each thread that claims at the same
     // time.
     [[nodiscard]] ::foundation::core::Option<ChunkIndex> claim_chunk(WindowCommits& commits) const noexcept;
@@ -215,7 +215,7 @@ public:
     [[nodiscard]] bool is_extent_committed(WindowCommits const& commits, ChunkIndex chunk) const noexcept;
 
     // Commits the section of slab records up to the end of the records of
-    // the 32 units of the chunk, with no record started (THE COMMITS).  A
+    // the 32 units of the chunk, with no record started (the commits).  A
     // heap calls it when it takes the chunk, so a read of the record of each
     // unit of the chunk reads a committed page, and a record that no slab
     // started reads zero.
@@ -223,18 +223,18 @@ public:
     commit_slab_records_of(WindowCommits& commits, ChunkIndex chunk) noexcept;
 
     // Commits the extent of the chunk, less its guard chunk, when it is not
-    // committed (THE COMMITS).  The chunk is not a guard chunk.  The error is
+    // committed (the commits).  The chunk is not a guard chunk.  The error is
     // the refusal of the kernel, such as enomem under strict overcommit.
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
     commit_extent_of(WindowCommits& commits, ChunkIndex chunk) noexcept;
 
     // Writes the entry of a chunk in the chunk map.  Only the thread that
-    // takes or gives back the chunk calls it (THE MAP READ of
+    // takes or gives back the chunk calls it (the map read of
     // foundation/alloc/ChunkMap.h).  Complexity: O(1), one store.
     void set_owner(ChunkIndex chunk, ChunkOwner owner) noexcept;
 
     // The record of a chunk, constructed in zero bytes after the commit of
-    // its step (THE COMMITS).  The Ref has the fresh brand of the call, and
+    // its step (the commits).  The Ref has the fresh brand of the call, and
     // the pack refuses each explicit template argument.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
@@ -274,8 +274,8 @@ private:
         slab_records,
     };
 
-    // Commits the bytes of a section from its front up to END, a count of
-    // bytes from the first byte of the section (THE CHUNK SOURCE).
+    // Commits the bytes of a section from its front up to end, a count of
+    // bytes from the first byte of the section (the chunk source).
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
     grow_section_(WindowCommits& commits, RecordSection section, ::foundation::core::ByteCount end) noexcept;
 
@@ -287,15 +287,15 @@ private:
 
 namespace detail {
 
-// The cold body of the two doors below: the climb of THE LADDER.  On a
+// The cold body of the two doors below: the climb of the ladder.  On a
 // refusal it writes the remedy into the diagnostic.
 [[nodiscard]] ::foundation::core::Result<Window, WindowFull> reserve_window_(::foundation::os::ReserveCap cap,
                                                                              WindowDiagnostic& diagnostic) noexcept;
 
 }  // namespace detail
 
-// The window of the first size of THE LADDER that the kernel gives, or
-// WindowFull with the remedy in the diagnostic (THE FULL WINDOW).
+// The window of the first size of the ladder that the kernel gives, or
+// WindowFull with the remedy in the diagnostic (the full window).
 template <class Brand>
 [[nodiscard]] ::foundation::core::Result<Window, WindowFull>
 reserve_window(::foundation::core::Ref<WindowDiagnostic, Brand> diagnostic) noexcept {
@@ -303,7 +303,7 @@ reserve_window(::foundation::core::Ref<WindowDiagnostic, Brand> diagnostic) noex
 }
 
 // The same, with each reserve above the cap refused with enomem and with no
-// call: the test door of THE LADDER.
+// call: the test door of the ladder.
 template <class Brand>
 [[nodiscard]] ::foundation::core::Result<Window, WindowFull>
 reserve_window(::foundation::os::ReserveCap cap, ::foundation::core::Ref<WindowDiagnostic, Brand> diagnostic) noexcept {

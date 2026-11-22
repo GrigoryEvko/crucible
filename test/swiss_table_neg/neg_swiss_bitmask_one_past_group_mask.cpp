@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // BitMask stores a refined mask whose ceiling is ((1 << kGroupWidth) - 1).
 // This boundary fixture constructs the value one above the ceiling.  Such a
@@ -7,7 +7,7 @@
 
 #include <crucible/SwissTable.h>
 
-// ISA DEPENDENCE.  kGroupWidth is 64 on AVX512BW, 32 on AVX2 and 16 on the
+// ISA dependence.  kGroupWidth is 64 on AVX512BW, 32 on AVX2 and 16 on the
 // other arms.  At width 64 the ceiling is UINT64_MAX, so no uint64_t value is
 // out of range and the premise of this fixture cannot hold.  A build with
 // -march=native on an AVX512BW host would compile the body below clean.  That

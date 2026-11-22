@@ -88,7 +88,7 @@ void sum_segments_into_elements() {
 }
 
 // The type route: elements that are a ViewMut of another frame prove by their
-// brand that they share no element with the sums (THE ALIAS PROOF of
+// brand that they share no element with the sums (the alias proof of
 // foundation/core/Frame.h), so the segmented sum makes no test of the overlap.
 // The sums have the bits of sum_segments_by_tree of one thread.
 [[nodiscard]] bool segments_of_branded_elements_match() {

@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: passing the result of ReplayEngine::mint_active_view() to
 // a helper that expects a CKernelTable::MutableView.  Both are
 // ScopedView<Carrier, Tag> instantiations but they parametrize on
-// DIFFERENT Carriers (ReplayEngine vs CKernelTable) — the type system
+// different Carriers (ReplayEngine vs CKernelTable) — the type system
 // rejects the conversion at overload resolution before runtime is
 // reached.
 //
@@ -23,7 +23,7 @@
 
 // A fixture-local helper that consumes a CKernelTable::MutableView.
 // The point is not the CKernelTable role — it's that this is a
-// DIFFERENT ScopedView<Carrier, Tag> instantiation, so the conversion
+// different ScopedView<Carrier, Tag> instantiation, so the conversion
 // from ActiveView must fail.
 static void requires_ckernel_mutable_view(crucible::CKernelTable::MutableView const&) noexcept {}
 
@@ -35,6 +35,6 @@ int main() {
     // GCC type-checks the requires_ckernel_mutable_view call below
     // and rejects the cross-carrier conversion at parse time.
     auto av = engine.mint_active_view(::foundation::effects::testing::foreground<crucible::Vigil>());
-    requires_ckernel_mutable_view(av);  // ERROR: cross-carrier mismatch
+    requires_ckernel_mutable_view(av);  // Error: cross-carrier mismatch
     return 0;
 }

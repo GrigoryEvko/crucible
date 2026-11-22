@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The context that a Vigil's claim mints names the Vigil.  A gate that
 // asks for the context with no brand names no single-producer state, and

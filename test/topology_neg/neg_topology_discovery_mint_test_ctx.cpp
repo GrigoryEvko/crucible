@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A discovery snapshot owns the storage behind the fleet's topology graph,
 // so only an initialisation context mints one.  A test context carries no

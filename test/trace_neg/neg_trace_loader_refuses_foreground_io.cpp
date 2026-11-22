@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A load reads a file, so it asks for a context that owns IO and Block.
 // The foreground context of a Vigil's producer claim owns neither, so the

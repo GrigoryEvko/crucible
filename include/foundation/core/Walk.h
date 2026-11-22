@@ -35,21 +35,21 @@
 // a View borrows the elements of the View: a step gives T& or T const&, and
 // it consumes nothing.  A walk lives no longer than the run that it walks.
 //
-// THE PUSH
+// Push
 //   Each terminal pushes each element through the nest, as Iterator::fold of
 //   Rust does: the root stage runs the counted loop of its run, and each
 //   stage calls the next stage for each element.  The optimizer inlines the
 //   nest, so a chain compiles to the loop of the raw form.  The probes walk_*
 //   of test/shape/core_shapes.cpp compare each shape with its raw loop.
 //
-// THE COUNT
+// Count
 //   A stage of a known count is exact: the root, map, limit, skip and zip.  An
 //   exact walk gives size() and no count().  A walk with a filter or a
 //   flat_map has an unknown count, and it gives count() and no size(), so the
 //   cost is in the name.  A limit of an exact walk keeps the counted loop.  A
 //   limit of a walk of unknown count stops the walk after count elements.
 //
-// THE ORDER
+// Order
 //   fold runs left to right, always.  No adapter changes the order of a float
 //   sum.  The tree order is reduce_by_tree and sum_by_tree of
 //   foundation/core/Reduce.h, and a parallel fold exists only through those
@@ -59,14 +59,14 @@
 //   give a NaN states its rule, such as the canonical NaN quiet_nan_of<T> of
 //   foundation/core/Number.h.
 //
-// THE FUNCTIONS
+// Functions
 //   map, filter, flat_map, fold, any_of and all_of call their function
 //   through a const reference, and the function does not throw.  So a
 //   function holds no state that changes along the walk: such a state goes
 //   into the accumulator of fold.  filter, any_of and all_of read each
 //   element through a const reference.
 //
-// THE CURSOR LOOP
+// Cursor loop
 //   `for (x : walk)` gives the cursor of the root stage, wrapped by each
 //   stage.  A cursor of a map or a zip is the counted loop.  A cursor of a
 //   filter skips the refused elements in its step, so a loop over it is a
@@ -78,7 +78,7 @@
 //   points into its walk, so the cursor of such a temporary walk is refused.
 //   A cursor of a root stage holds only places of the run.
 //
-// THE STAGES
+// Stages
 //   A stage is a value of detail that gives its elements in two ways:
 //
 //     for_each_(sink)   pushes each element to sink, in order, with no stop.
@@ -177,7 +177,7 @@ class MapStage;
 template <class First, class Second, class Brand>
 class ZipStage;
 
-// The key of at_(key, position) of each stage (THE STAGES).  at_ reads no
+// The key of at_(key, position) of each stage (the stages).  at_ reads no
 // bound of its own, so only the map and the zip stages, which prove the
 // position below size_(), build the key.  The friends are in this header,
 // and the root stages of foundation/core/Region.h take the key with no
@@ -210,7 +210,7 @@ public:
     static constexpr bool cursor_borrows_stage = true;
 
     // The element at position through fn, which the caller proves below
-    // size_() (THE STAGES).
+    // size_() (the stages).
     [[nodiscard]] constexpr element_reference at_(StageKey const& key, std::size_t position) const noexcept
         requires Inner::is_exact
     {
@@ -325,7 +325,7 @@ public:
     }
 
     // The cursor of `for (x : walk)`.  Each step skips the refused elements,
-    // so a loop over it is a loop nest (THE CURSOR LOOP).
+    // so a loop over it is a loop nest (the cursor loop).
     class Cursor final {
         decltype(std::declval<Inner const&>().begin_()) at_;
         decltype(std::declval<Inner const&>().end_()) end_;
@@ -525,8 +525,8 @@ public:
     static constexpr std::size_t extent = First::extent != dynamic_extent ? First::extent : Second::extent;
     static constexpr bool cursor_borrows_stage = true;
 
-    // The pair at position, which the caller proves below size_() (THE
-    // STAGES).
+    // The pair at position, which the caller proves below size_() (the
+    // stages).
     [[nodiscard]] constexpr element_reference at_(StageKey const& key, std::size_t position) const noexcept {
         return element_reference{part_<FirstElement>(first_.at_(key, position)),
                                  part_<SecondElement>(second_.at_(key, position))};
@@ -613,7 +613,7 @@ public:
 
 // The elements of the walks that fn gives, one for each element of Inner, one
 // walk after the other.  The count is not known.  The stage has no cursor
-// (THE CURSOR LOOP).
+// (the cursor loop).
 template <class Inner, class Fn>
 class FlatMapStage final {
     Inner inner_;
@@ -782,7 +782,7 @@ public:
 
     // ── The terminals ──
 
-    // step(... step(step(init, x0), x1) ..., xn-1), left to right (THE ORDER).
+    // step(... step(step(init, x0), x1) ..., xn-1), left to right (the order).
     // The step takes the accumulator and an element, in the order of
     // std::ranges::fold_left and of Iterator::fold of Rust.  The two can have
     // one type, such as the floats of a sum: the stated exception of the rule
@@ -855,7 +855,7 @@ public:
         return stage_.try_each_(probe) == detail::Flow::go;
     }
 
-    // The loop `for (x : walk)` (THE CURSOR LOOP).
+    // The loop `for (x : walk)` (the cursor loop).
     [[nodiscard]] constexpr auto begin() const& noexcept
         requires detail::CursorStage<Stage>
     {

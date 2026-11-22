@@ -4,7 +4,7 @@
 
 The cases plant a presets file with the preset vessel and the four level presets in a scratch tree.  They read the
 levels from it, and they run the steps of each level with a planted runner that records each command and its
-variables, and with a planted level of the host.  They hold the words of each step in each share of THE JOBS, the share
+variables, and with a planted level of the host.  They hold the words of each step in each share of the jobs, the share
 that each environment gives, the level above the host with no test run, a step that fails, each level that fails, and
 the presets that do not read.  One case runs a real command through the runner of a call.
 """

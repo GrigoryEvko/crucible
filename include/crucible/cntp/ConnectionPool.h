@@ -94,7 +94,7 @@ mint_connection(SocketFd socket, cog::CogIdentity const& remote, PositiveConnect
 // end and the id its owner gave it.  The constructor is private and
 // mint_connection is its only caller, so every connection holds an open
 // socket and names a remote whose UUID is not zero.  The owner of the socket
-// keeps it open while the connection lives (THE FOREIGN SOCKET of
+// keeps it open while the connection lives (the foreign socket of
 // fixy/os/Socket.h).  A copy of a connection is the same connection.
 // Health is pool state, so it lives in the pool slot and not here.
 template <TransportClass T>

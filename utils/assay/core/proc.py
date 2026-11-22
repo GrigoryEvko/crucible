@@ -1,6 +1,6 @@
 """proc — the one module of the package that starts a process.
 
-THE TOOL RUN
+The tool run
     run(command) starts one Command and waits for its end.  A Command holds
     the program and its arguments as a list of words, which no shell reads.
     It also holds the time limit, the working directory, the environment,
@@ -13,7 +13,7 @@ THE TOOL RUN
     its time limit.  require(completed) raises ToolFailed when the exit is
     not 0, and else it returns the completed run.
 
-THE TIME LIMIT
+The time limit
     Each Command has a time limit, timeout_s, which counts from the start.
     The command runs in a process group of its own.  At the limit, the
     module sends the stop signal to the group and waits grace_s for the end
@@ -27,7 +27,7 @@ THE TIME LIMIT
     reaps the command only after its last signal, so the process group keeps
     its identity while the module can send a signal to it.
 
-AN INTERRUPT
+An interrupt
     The terminal sends SIGINT only to its foreground process group, and the
     command runs in a group of its own.  So a KeyboardInterrupt in the wait
     sends SIGINT to the group of the command, and the wait goes on.  The
@@ -37,7 +37,7 @@ AN INTERRUPT
     applies.  A second KeyboardInterrupt, or another exception in the wait,
     sends SIGKILL to the group, and then the exception goes on.
 
-THE ENVIRONMENT
+The environment
     A child gets the environment of this process with no change, or the full
     mapping of its Command.  The module removes each variable of
     REPOSITORY_VARIABLES from that environment.  Such a variable tells git
@@ -47,7 +47,7 @@ THE ENVIRONMENT
     emptied its main branch.  environment(overrides) gives the environment of
     this process with the overrides, for a Command that needs more variables.
 
-THE STREAMS
+The streams
     stdin    The bytes of the Command go to the standard input of the command,
              which then ends.  With no bytes, the standard input is /dev/null.
     stdout   Output.CAPTURE keeps the bytes in the result.  Output.INHERIT
@@ -59,7 +59,7 @@ THE STREAMS
     U+FFFD in place of a byte that is not UTF-8, and they change \\r\\n and
     \\r to \\n, as the text mode of subprocess does.
 
-A LONG RUN
+A long run
     start(command) starts one Command and returns a Running.  A loop over
     the Running gives the lines of the standard output, each with its \\n,
     when the stdout of the Command is Output.STREAM.  Running.wait() waits
@@ -80,7 +80,7 @@ A LONG RUN
     5.3) tells the loop the end of the command, and the loop reaps the
     command only at the end.
 
-A FORKED GROUP
+A forked group
     forked(actions, slots) runs each action of a list in a child process of
     its own.  It gives the end of each action in the sequence of the list.
     The slots are the slots of a jobserver, such as a Client of
@@ -103,7 +103,7 @@ A FORKED GROUP
         and no finalizer of the parent, such as the removal of a temporary
         directory of the parent.  An action that raises an exception writes
         its traceback, and its child ends with ExitCode.TOOL_FAILED.  A child
-        writes its call profile first (THE FORK of assay.core.calls).
+        writes its call profile first (the fork of assay.core.calls).
       * One poll(2) waits for a pidfd of each child (Linux 5.3) and for a
         byte of the jobserver.  The function then starts a child when a slot
         becomes free, and it reaps a child when the child ends.
@@ -111,7 +111,7 @@ A FORKED GROUP
         function sends SIGKILL to each child that runs.  Then it reaps the
         child and gives its slot back.
 
-THE THREE STARTS OUTSIDE THIS MODULE
+The three starts outside this module
     loop step, loop test-step and loop meter-compiler put a meter in front of
     one compile, one link or one test.  measure() of assay.core.meter starts
     that command with os.posix_spawnp and reads its usage with os.wait4, and
@@ -132,7 +132,7 @@ THE THREE STARTS OUTSIDE THIS MODULE
     module can install the filter between the fork and the exec.  It keeps
     the environment and the process group of the meter, as the spawn does.
 
-THE JOB COUNT
+The job count
     DEFAULT_JOBS is the one default count of the parallel work of the package.
     That work is a build, a test run, a parse build and the compiles of a
     measure.  The count is the number of CPUs that the process can use
@@ -142,7 +142,7 @@ THE JOB COUNT
     the count, also with a larger -j N.  A heavy step of a gate or an entry
     decreases its jobs to the free memory (assay.loop.heavy).
 
-WHY THE MODULE IMPORTS LITTLE
+Why the module imports little
     loop fixture runs for each negative fixture of each test run, and it
     imports this module.  So the module imports only os and time at its top,
     and start() imports subprocess, selectors and signal when it runs.  The
@@ -163,7 +163,7 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     class SlotPool[SlotT](Protocol):
-        """The slots of a jobserver that forked() uses (A FORKED GROUP)."""
+        """The slots of a jobserver that forked() uses (a forked group)."""
 
         def try_take(self) -> SlotT | None:
             """Return a free slot with no wait, or None."""
@@ -175,10 +175,10 @@ if TYPE_CHECKING:
             """Return a descriptor that select(2) calls readable when a slot can be free."""
 
 
-# The default count of parallel jobs of a build, a test run or a measure: one for each CPU of the process (THE JOB
-# COUNT).
+# The default count of parallel jobs of a build, a test run or a measure: one for each CPU of the process (the job
+# count).
 DEFAULT_JOBS = os.process_cpu_count() or 1
-# The time limits of three classes of work, in seconds (THE TIME LIMIT).
+# The time limits of three classes of work, in seconds (the time limit).
 QUICK_S = 120.0
 TOOL_S = 900.0
 BUILD_S = 7200.0
@@ -193,7 +193,7 @@ STDIN_CHUNK = 4096
 # The bytes of one read of an output pipe.
 READ_CHUNK = 65536
 # Each variable that tells git which repository, index or object store to use, whatever directory it runs in
-# (THE ENVIRONMENT).
+# (the environment).
 REPOSITORY_VARIABLES = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -209,7 +209,7 @@ RUNNING, TERMINATED, KILLED = 0, 1, 2
 
 
 class Stop:
-    """The words of the first signal that stops the group of a command (THE TIME LIMIT)."""
+    """The words of the first signal that stops the group of a command (the time limit)."""
 
     TERMINATE = "terminate"
     INTERRUPT = "interrupt"
@@ -219,7 +219,7 @@ STOP_WORDS = frozenset({Stop.TERMINATE, Stop.INTERRUPT})
 
 
 class Output:
-    """The words of the destination of an output of a command (THE STREAMS)."""
+    """The words of the destination of an output of a command (the streams)."""
 
     CAPTURE = "capture"
     INHERIT = "inherit"
@@ -312,12 +312,12 @@ class Completed:
 
     @property
     def out(self) -> str:
-        """The captured standard output as text (THE STREAMS)."""
+        """The captured standard output as text (the streams)."""
         return decoded(self.stdout)
 
     @property
     def err(self) -> str:
-        """The captured standard error as text (THE STREAMS)."""
+        """The captured standard error as text (the streams)."""
         return decoded(self.stderr)
 
     @property
@@ -394,7 +394,7 @@ def require(completed: Completed) -> Completed:
 
 
 def run(command: Command) -> Completed:
-    """Start one command, wait for its end, and return its result (THE TOOL RUN).
+    """Start one command, wait for its end, and return its result (the tool run).
 
     Raises:
         ValueError: If the stdout of the command is Output.STREAM, which only start() reads
@@ -407,7 +407,7 @@ def run(command: Command) -> Completed:
 
 
 def start(command: Command) -> "Running":
-    """Start one command and return the Running (A LONG RUN).
+    """Start one command and return the Running (a long run).
 
     Raises:
         CannotStart: If the program cannot start, an output file cannot open, or the kernel gives no pidfd
@@ -435,7 +435,7 @@ def start(command: Command) -> "Running":
 
 
 class Running:
-    """A started command: its pid, its pipes, its time limit and the lines that it gave (A LONG RUN)."""
+    """A started command: its pid, its pipes, its time limit and the lines that it gave (a long run)."""
 
     __slots__ = ("command", "pid", "_popen", "_started", "_deadline", "_pidfd", "_selector", "_has_exited",
                  "_reads", "_chunks", "_stdout_fd", "_stderr_fd", "_input", "_input_offset", "_lines", "_next_line",
@@ -523,7 +523,7 @@ class Running:
         """Wait for the end of the command and of its outputs, and return its result.
 
         Raises:
-            KeyboardInterrupt: If an interrupt came in the wait (AN INTERRUPT).  The command ended first
+            KeyboardInterrupt: If an interrupt came in the wait (an interrupt).  The command ended first
             TimedOut: If the command runs past its limit
         """
         while self._completed is None:
@@ -531,10 +531,10 @@ class Running:
         return self._result(self._completed)
 
     def poll(self, within_s: float) -> Completed | None:
-        """Do the loop for at most within_s seconds, and return the result when the command ended, else None (A LONG RUN).
+        """Do the loop for at most within_s seconds, and return the result when the command ended, else None (a long run).
 
         Raises:
-            KeyboardInterrupt: If an interrupt came in the loop (AN INTERRUPT).  The command ended first
+            KeyboardInterrupt: If an interrupt came in the loop (an interrupt).  The command ended first
             TimedOut: If the command runs longer than its limit
         """
         until = time.monotonic() + within_s
@@ -567,7 +567,7 @@ class Running:
         """Do one step of the loop, which waits at most until the monotonic time `until` when it is given.
 
         The first KeyboardInterrupt sends SIGINT to the group, and the loop
-        goes on (AN INTERRUPT).  A second one, an interrupt after the limit,
+        goes on (an interrupt).  A second one, an interrupt after the limit,
         or another exception sends SIGKILL to the group, and then it goes on.
         """
         try:
@@ -728,7 +728,7 @@ class Running:
 
 
 class Forked:
-    """The end of one action of forked(): its status and the bytes of its two standard streams (A FORKED GROUP).
+    """The end of one action of forked(): its status and the bytes of its two standard streams (a forked group).
 
     The status is the ExitCode of the action, ExitCode.TOOL_FAILED after an exception, or minus the number of the
     signal that ended its child.
@@ -747,7 +747,7 @@ class Forked:
 
 
 def forked[SlotT](actions: Sequence[Callable[[], int]], slots: SlotPool[SlotT]) -> list[Forked]:
-    """Run each action in a child process of its own on a free slot, and return each end in sequence (A FORKED GROUP).
+    """Run each action in a child process of its own on a free slot, and return each end in sequence (a forked group).
 
     Complexity: one fork and one wait for each action, and one poll(2) for each start or end of a child.
 
@@ -798,7 +798,7 @@ def forked[SlotT](actions: Sequence[Callable[[], int]], slots: SlotPool[SlotT]) 
 
 
 def _fork_action(action: Callable[[], int], *streams: object) -> tuple[int, int, int]:
-    """Fork one child that runs an action into a memory file, and return its pid, its pidfd and the file (A FORKED GROUP)."""
+    """Fork one child that runs an action into a memory file, and return its pid, its pidfd and the file (a forked group)."""
     for stream in streams:
         flush = getattr(stream, "flush", None)
         if flush is not None:
@@ -818,7 +818,7 @@ def _fork_action(action: Callable[[], int], *streams: object) -> tuple[int, int,
 
 
 def _run_child(action: Callable[[], int], output: int) -> None:
-    """Run an action in a forked child with its two streams in a memory file, and end the child (A FORKED GROUP).
+    """Run an action in a forked child with its two streams in a memory file, and end the child (a forked group).
 
     An action that raises, or that returns a status that is not a member of ExitCode, writes its traceback.  The child
     then ends with ExitCode.TOOL_FAILED.  The exception goes on to the finally block, which ends the child.
@@ -857,7 +857,7 @@ def _run_child(action: Callable[[], int], output: int) -> None:
 
 
 def _reaped(pid: int, pidfd: int, output: int) -> Forked:
-    """Wait for one child, close its pidfd, and return its status and the bytes of its memory file (A FORKED GROUP)."""
+    """Wait for one child, close its pidfd, and return its status and the bytes of its memory file (a forked group)."""
     _, wait_status = os.waitpid(pid, 0)
     os.close(pidfd)
     try:
@@ -896,7 +896,7 @@ def child_environment(env: dict[str, str] | None) -> dict[str, str]:
 
 
 def main(argv: list[str]) -> int:
-    """Print DEFAULT_JOBS for cmake/JobPools.cmake (`loop jobs`, THE JOB COUNT).
+    """Print DEFAULT_JOBS for cmake/JobPools.cmake (`loop jobs`, the job count).
 
     Returns:
         0, or 2 when the call gives an argument

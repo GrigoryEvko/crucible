@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A zero byte inside the literal of a thread name would cut the name at
 // that byte with no error.  The constructor of ThreadName reads each byte

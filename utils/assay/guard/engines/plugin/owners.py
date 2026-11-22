@@ -1,9 +1,9 @@
 """owners — only a site of the owner row of a name can use the name.
 
-THE RULE
+Rule
     An owner row of utils/rule-table.txt gives the sites of an entity: the
     files under its paths, and the body of its function when the row names
-    one (utils/tools/quarantine/owner.cpp, THE OWNER ROWS).  The quarantine
+    one (utils/tools/quarantine/owner.cpp, the owner rows).  The quarantine
     plugin gives each other use the kind of the row.  The kinds are:
       * lifetime-start: a use of std::start_lifetime_as or
         std::start_lifetime_as_array outside include/foundation/Lifetime.h
@@ -13,17 +13,17 @@ THE RULE
       * detail-use: a use of a detail namespace of foundation or fixy outside
         the base and the check files of its headers
       * unchecked-use and the five kinds that the row of the unchecked
-        function gives (THE UNCHECKED WALKS).
+        function gives (the unchecked walks).
     The walk of a body gives the kind lifetime-start: a call, an address, or
     a candidate of a dependent call.  The events of the parser give each
     other kind: a name, a using form, a member access, a friend or a
-    reflection (owner.cpp, THE NAMES OF THE SOURCE).  A comment and a literal
-    are no use.  The entity of a finding is HOLDER: SHAPE (THE PLACE AND THE
-    ENTITY of owner.cpp).  The holder is the function that holds the use,
+    reflection (owner.cpp, the names of the source).  A comment and a literal
+    are no use.  The entity of a finding is HOLDER: SHAPE (the place and the
+    entity of owner.cpp).  The holder is the function that holds the use,
     with the types of its parameters, "macro NAME" for a use that a macro
     body spells, or namespace-scope.
 
-THE PROOFS
+Proofs
     A proof type, such as a mint key, a context, a capability or a
     permission, is not trivially copyable, and it is not an implicit-lifetime
     type.  Three calls of the lifetime start can still give a pointer to a
@@ -46,13 +46,13 @@ THE PROOFS
     member of a class of a `detail` namespace through a type that the source
     does not spell, such as a constructor or a member function of a stage that
     decltype or a template parameter gives, is the kind detail-use with the
-    shape "deduced HEAD" (THE DEDUCED USES of owner.cpp).
+    shape "deduced HEAD" (the deduced uses of owner.cpp).
 
-THE UNCHECKED WALKS
+Unchecked walks
     In GCC 16, a splice of a nonstatic data member has no access check, and
     only a walk with std::meta::access_context::unchecked() gives the
     reflection of a private member.  The owner row of that function gives
-    these kinds (owner.cpp, THE WALKED RETURN):
+    these kinds (owner.cpp, the walked return):
       * unchecked-use: a name or a member access of the function, through
         each qualifier, alias and object
       * access-alias: a using-declaration, an alias declaration or a typedef
@@ -69,18 +69,18 @@ THE UNCHECKED WALKS
     A use of such a kind that a macro body spells counts in the macro body
     and at the expansion point.
 
-THE SCOPE
+Scope
     The rule reads each file that a build compiles.  test/ and bench/ use the
     test door on purpose, so the kinds door-use and testing-use count only in
     the trees of production code (PRODUCTION_TREES).  A check file of
     test/layer/checks/ is test code too.
 
-THE LEDGER
+Ledger
     utils/ledgers/owners.txt counts the reviewed uses of each file, kind and
     entity (the policy count), and each row gives a reason:
         PATH | KIND | COUNT | HOLDER: SHAPE | REASON
-    A row of a reviewed walk of unchecked has the value admit (AN ADMIT ROW
-    OF A COUNT LEDGER of assay.core.ledger).  A new use is more than its
+    A row of a reviewed walk of unchecked has the value admit (an admit row
+    of a count ledger of assay.core.ledger).  A new use is more than its
     count and fails.  These rows are errors:
       * A row with no reason
       * A row of the kinds lifetime-start, open-static-member and
@@ -91,7 +91,7 @@ THE LEDGER
         build directory, such as the roster of a test, can take a row.
     Each problem of the census of the runner is an error too.
 
-REVIEW RULE FOR THE ADMITTED WALKS
+Review rule for the admitted walks
     A file with a row of a reviewed walk does not publish a reflection of a
     nonstatic data member through a different path.  A public constexpr
     verdict with a field that names a private member opens the door again.
@@ -111,7 +111,7 @@ from assay.guard.engines.plugin import declarations, names, runner
 from assay.readers import sections as plugin_sections
 
 RULE = "owners"
-# The kinds of the uses of the two doors, which count only in the trees of production code (THE SCOPE).
+# The kinds of the uses of the two doors, which count only in the trees of production code (the scope).
 PRODUCTION_KINDS = frozenset({"door-use", "testing-use"})
 PRODUCTION_TREES = (
     "include/foundation/",
@@ -123,12 +123,12 @@ PRODUCTION_TREES = (
     "examples/",
 )
 DETAIL_KIND = "detail-use"
-# The kinds that no ledger row admits (assay.guard.engines.meta.runner, THE REFUSED KINDS).
+# The kinds that no ledger row admits (assay.guard.engines.meta.runner, the refused kinds).
 REFUSED_KINDS = frozenset({"lifetime-start", "open-static-member", "walked-return"})
 # The files of TEST_TREE can take a row of the kind detail-use, and the files of FUZZ_TREE, in TEST_TREE, cannot.
 TEST_TREE = "test/"
 FUZZ_TREE = "test/fuzz/"
-# The prefix of the path of a file that the build writes (utils/tools/quarantine/plugin.h, THE FILES).
+# The prefix of the path of a file that the build writes (utils/tools/quarantine/plugin.h, the files).
 BUILD_PREFIX = "@build/"
 ADVICE = "Use the public door, or give the use a ledger row with the reason"
 ACTIONS = {

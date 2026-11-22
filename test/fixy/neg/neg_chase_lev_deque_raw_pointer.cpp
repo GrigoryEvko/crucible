@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A raw pointer fits a lock-free cell, but a thief that steals it reads the
 // object behind it on another thread, with no transfer check.  So DequeValue

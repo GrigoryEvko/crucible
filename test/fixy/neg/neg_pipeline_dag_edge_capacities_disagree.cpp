@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A graph of two stages with one edge.  The build stage sends into edge 3
 // through a handle of eight values, and the last stage receives from it

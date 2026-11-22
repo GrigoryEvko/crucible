@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The protocol receives a token of a region whose touch does IO.  The
 // background context holds Bg and Alloc, and no IO.  The context must

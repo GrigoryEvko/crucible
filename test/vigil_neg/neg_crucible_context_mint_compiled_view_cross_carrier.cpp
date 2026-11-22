@@ -1,21 +1,21 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: passing the result of CrucibleContext::mint_compiled_view()
 // to a helper that expects a CKernelTable::MutableView.  The two views
 // share the underlying `ScopedView<Carrier, Tag>` shape but parametrize
-// it on DIFFERENT Carriers (CrucibleContext vs CKernelTable) — the
+// it on different Carriers (CrucibleContext vs CKernelTable) — the
 // type system rejects the conversion at overload resolution.
 //
 // CrucibleContext has only one typed view (CompiledView; no companion
 // "RecordingView") so the intra-carrier per-state mismatch pattern used
 // for CKernelTable/SchemaTable doesn't apply here.  The
 // cross-carrier mismatch is the equivalent type-system gate: the type
-// system distinguishes carriers AND states, both layers of the lock
+// system distinguishes carriers and states, both layers of the lock
 // must reject independently.
 //
 // The mint_compiled_view's pre `mode_ == ContextMode::COMPILED` would
 // fire at runtime on a default-constructed context, but this fixture
-// is a COMPILE-time test — we never reach the runtime pre.  GCC
+// is a compile-time test — we never reach the runtime pre.  GCC
 // rejects at overload resolution before the body of main() can ever
 // execute.
 //
@@ -28,7 +28,7 @@
 
 // A fixture-local helper that consumes a CKernelTable::MutableView.
 // The point is not the CKernelTable role — it's that this is a
-// DIFFERENT ScopedView<Carrier, Tag> instantiation, so the conversion
+// different ScopedView<Carrier, Tag> instantiation, so the conversion
 // from CompiledView must fail.
 static void requires_ckernel_mutable_view(crucible::CKernelTable::MutableView const&) noexcept {}
 
@@ -40,6 +40,6 @@ int main() {
     // GCC type-checks the requires_ckernel_mutable_view call below
     // and rejects the cross-carrier conversion at parse time.
     auto cv = ctx.mint_compiled_view(::foundation::effects::testing::foreground<crucible::Vigil>());
-    requires_ckernel_mutable_view(cv);  // ERROR: cross-carrier mismatch
+    requires_ckernel_mutable_view(cv);  // Error: cross-carrier mismatch
     return 0;
 }

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: calling .bump() on IterationDetector::OpsSinceBoundary when
 // the value is numeric_limits<uint32_t>::max(), which fires Monotonic's

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The base has no CRUCIBLE_ASSERT.  It was a raw contract_assert, which the
 // ignore semantic removes with no assumption.  A precondition is

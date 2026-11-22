@@ -165,7 +165,7 @@ int main() {
     fixy::View<float const, kElements> const right_run = right.view();
 
     // Each body takes its runs through the input sink, so each call computes
-    // its result again (THE SINK of bench_harness.h).  Each function of a row
+    // its result again (the sink of bench_harness.h).  Each function of a row
     // is pure, so with no sink the optimizer calls it one time before the
     // timed loop.
     bench::Report const raw_map =

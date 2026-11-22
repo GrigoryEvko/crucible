@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Fixture 2 of 2 for CDAG_VERSION, a Tagged<uint32_t,
 // source::FormatVersion>.
@@ -20,7 +20,7 @@
 int main() {
     using ExternalVersion = ::fixy::Tagged<std::uint32_t, ::fixy::tags::source::External>;
 
-    // MUST fail: source::FormatVersion is not source::External.
+    // Must fail: source::FormatVersion is not source::External.
     ExternalVersion disk = crucible::CDAG_VERSION;
     return static_cast<int>(disk.value());
 }

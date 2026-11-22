@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The name id of a function reads the identity of the function and the
 // name of the pointer from the two template arguments of a holder.  Here a

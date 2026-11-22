@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The Swiss table group width is a fixy::PowerOfTwo<size_t>, and the
 // checked mint is its only door.  A width that is not a power of two

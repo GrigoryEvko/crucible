@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // log_poly accepts a positive normal float.  Zero has an exponent field of
 // zero, so without the precondition the reduction would read it as 2^-127

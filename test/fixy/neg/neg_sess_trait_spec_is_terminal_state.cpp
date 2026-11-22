@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_terminal_state is an alias template over the terminal algebra of
 // the registry, so no user specialization lets a handle close before the

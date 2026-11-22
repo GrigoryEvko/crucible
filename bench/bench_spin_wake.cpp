@@ -1,7 +1,7 @@
 // The wake latency of each spin wait of the base, and the cost of a spin for
 // the writer of its cache line, with the ratio of each row to its reference.
 //
-// THE WAKE
+// Wake
 //   A waiter on the core of slot 0 waits with one form until a word holds
 //   the number of its round.  A writer on the core of slot 1 waits until the
 //   waiter starts the round, spins for a delay of about 1 to 3 microseconds,
@@ -20,7 +20,7 @@
 //   reference runs again at the end, and its ratio to the first run gives
 //   the drift of the host.
 //
-// THE PARK
+// Park
 //   A row of a park waits with an event count of fixy/concurrent/EventCount.h,
 //   and its writer notifies the count after each store.  The delay of the
 //   writer is about 18 to 53 microseconds, so a waiter with the budget 0 sleeps
@@ -29,27 +29,27 @@
 //   the least work of a park on Linux.  A second row spins for 1 ms before its
 //   park, so it never parks, and its reference is the plain pause loop.
 //
-// THE NOTIFY
+// Notify
 //   A notify of an event count with no waiter is a fence and a load.  The
 //   reference is the notify of folly, a fetch-add of the epoch and a test of
 //   the bits of the waiters, and the signal of the park of the pipeline
 //   before the event count, an exchange of a word.  bench::run gives the
 //   percentiles of one call.
 //
-// THE WRITER
+// Writer
 //   The writer adds to a second word in the cache line of the word of the
 //   wait, while a reader waits on that word with one arm of the spin-hint
 //   door.  A reader that reads the line often takes the line from the writer.
 //   bench::run gives the percentiles of one add.  The reference is the same
 //   add with no reader.
 //
-// THE RATE
+// Rate
 //   The bench prints the ticks of one second at the rate of the spin budget,
 //   and the ticks of one second of the calibration of the harness, which
 //   reads the clock for 200 milliseconds.  The difference is the error of the
 //   rate of the budget, in parts per million.
 //
-// THE CORES
+// Cores
 //   The bench states CORES 2 in bench/CMakeLists.txt.  loop bench gives it two
 //   isolated cores, and each thread pins itself to the core of its slot.  A run
 //   with no claim, such as a run under ctest, pins no thread.
@@ -171,7 +171,7 @@ void spin_for(spin::CounterTicks delay) noexcept {
     }
 }
 
-// THE FORMS of a wake row.  Each waits until the word of LINE holds ROUND.
+// Forms of a wake row.  Each waits until the word of LINE holds ROUND.
 // Each wait is a function of its own, aligned to 64 bytes and not inlined.
 // The code layout of the bench then moves no row against another: with the
 // forms inlined, one form changed its ratio by up to 70 thousandths from one
@@ -226,7 +226,7 @@ struct ArmWait final {
     }
 };
 
-// wait_for of an event count with the policy POLICY (THE PARK).
+// wait_for of an event count with the policy POLICY (the park).
 template <class Policy>
 struct EventCountWait final {
     ::fixy::BgLoadCtx const& ctx;
@@ -239,7 +239,7 @@ struct EventCountWait final {
 };
 
 // The reference of a park: a futex wait on the word itself through the futex
-// door (THE PARK).
+// door (the park).
 struct FutexWait final {
     ::fixy::BgLoadCtx const& ctx;
 
@@ -508,7 +508,7 @@ struct MeasureWriter {
 };
 
 // The percentiles of one add of the writer to the neighbor word, with a
-// reader that waits on the word with ARM, or with no reader (THE WRITER).
+// reader that waits on the word with ARM, or with no reader (the writer).
 [[nodiscard]] bench::Report measure_writer(::fixy::BgLoadCtx const& ctx, RowCores const& cores, ReaderPresence presence,
                                            ArmWait const& reader_form) noexcept {
     Line line{};
@@ -564,7 +564,7 @@ void print_call_row(CallPair const& pair) noexcept {
                  static_cast<std::uint64_t>(pair.measured.pct.max * 1000.0 + 0.5), pair.reference_name, ratio);
 }
 
-// THE NOTIFY: a notify of an event count with no waiter, the notify of folly
+// Notify: a notify of an event count with no waiter, the notify of folly
 // with no waiter, and the signal of the park before the event count.
 void report_notify_rows(::fixy::BgLoadCtx const& ctx) noexcept {
     // The bits of the waiters in the word of folly, below the epoch.
@@ -596,7 +596,7 @@ void report_notify_rows(::fixy::BgLoadCtx const& ctx) noexcept {
                             .reference = folly});
 }
 
-// THE RATE: the ticks of one second at the rate of the budget and at the
+// Rate: the ticks of one second at the rate of the budget and at the
 // calibration of the harness, and their difference in parts per million.
 void report_rate(::fixy::BgLoadCtx const& ctx) noexcept {
     eff::cap::Nondet const nondet = eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx);
@@ -632,7 +632,7 @@ int main() {
         RowMedians const of_arm = report_wake_row(ctx, row_cores, name_of(arm), ArmWait{.arm = arm}, NoNotify{});
         print_ratio(RowPair{.row = of_arm, .reference = plain});
     }
-    // THE PARK.
+    // Park.
     cc::EventCount events{};
     RowMedians const event_spin =
         report_wake_row(ctx, row_cores, "EventCount spin then park, 1 ms",

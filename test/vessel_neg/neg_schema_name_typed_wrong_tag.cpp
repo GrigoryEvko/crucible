@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // schema_name_typed(...) returns an Option of
 // Tagged<CText, source::Interned>.  This fixture puts that value in a slot

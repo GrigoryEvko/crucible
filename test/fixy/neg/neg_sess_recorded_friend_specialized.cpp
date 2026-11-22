@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit specializes the recorder and takes, from the
 // specialization, the inner handle out of a live recorder.  The steps of

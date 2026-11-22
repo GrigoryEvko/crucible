@@ -9,7 +9,7 @@
 //
 // The fork is not decoration, and what it checks is not a compile-time
 // property.  Whether a policy claims to check is compile-time —
-// Policy::checks_abandonment, asserted above.  Whether the DESTRUCTOR
+// Policy::checks_abandonment, asserted above.  Whether the destructor
 // acts on that claim is runtime, and the two can disagree silently.  A
 // tracker that returns a hardcoded "consumed", or a destructor body
 // inside `#ifndef NDEBUG`, leaves a build whose constant says
@@ -192,7 +192,7 @@ static_assert(!HeapNewable<AtSend>);
 static_assert(!HeapNewable<OffHandle>);
 static_assert(std::is_constructible_v<std::optional<AtSend>, AtSend&&>);
 
-// The policy is IN THE TYPE.  These two are different types, so a
+// The policy is in the type.  These two are different types, so a
 // Debug object and a Release object that disagree about the layout
 // cannot silently share one definition — the mismatch is a diagnostic
 // at the boundary instead.
@@ -395,7 +395,7 @@ static_assert(!s::SessionResource<PinnedWire&&>);
 // The mint's gate is a concept, so a downstream requires-expression can
 // ask whether a handle is mintable and get an answer instead of a hard
 // error at instantiation.  Each rejection is paired with the nearest
-// protocol that IS accepted, so a negative fixture is not the only thing
+// protocol that is accepted, so a negative fixture is not the only thing
 // standing between a broken gate and a green build: a gate that grew too
 // broad breaks the accepting line here instead.
 static_assert(s::WellFormedRunnableProtocol<Once>);
@@ -1074,7 +1074,7 @@ void policy_runs(::fixy::TestRunnerCtx const& test) {
                                    std::move(handle).detach(s::detach_reason::TestInstrumentation{});
                                }).is_exit_with(0));
 
-    // Moving marks the SOURCE consumed.  Without that, every step
+    // Moving marks the source consumed.  Without that, every step
     // through a protocol would leave a moved-from handle behind whose
     // destructor reports an abandonment that did not happen.
     CRUCIBLE_TEST_ASSERT(test, run_in_child(test, [] {
@@ -1101,7 +1101,7 @@ void cancel_session(CancelWire&) noexcept { static_cast<void>(g_cancellations.fe
 static_assert(s::CancellableResource<CancelWire>);
 static_assert(!s::CancellableResource<ValueWire>);
 
-// The exit code of a child that counted COUNT cancellations: 0 when the
+// The exit code of a child that counted its cancellations: 0 when the
 // count is the expected one, and 3 when it is not.
 [[nodiscard]] std::uint8_t exit_code_of_cancellations(int expected) noexcept {
     return g_cancellations.load_acquire() == expected ? std::uint8_t{0} : std::uint8_t{3};

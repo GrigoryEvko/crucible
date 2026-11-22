@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A timing sink belongs to one owner thread (thread_bound{} of
 // foundation/Transfer.h), so run_joined refuses a body that writes it through

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The input payload is a computation engaged at Row<IO>, and the
 // foreground context admits no effect at all.

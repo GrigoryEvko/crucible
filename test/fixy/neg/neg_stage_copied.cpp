@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A stage holds its handles, and a handle holds a linear token; a copy
 // would be a second token.  The copy constructor is deleted with that

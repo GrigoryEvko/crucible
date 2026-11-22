@@ -626,7 +626,7 @@ template <class Fake>
                                           "(seed, per-op mix, finalizer, recipe fold)\n");
     }
 
-    // REGRESSION PIN for the absorbing-element collapse, fixed 2026-09-15.
+    // Regression pin for the absorbing-element collapse, fixed 2026-09-15.
     //
     // The per-tensor step used to be
     //     state = wymix(state ^ dim_hash, meta_packed)

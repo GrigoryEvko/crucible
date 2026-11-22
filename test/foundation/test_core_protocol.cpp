@@ -181,7 +181,7 @@ using Image = FixedArray<std::byte, encoded_size_v<Sample>>;
     return left.address <=> right.address;
 }
 
-// The hand fold of THE HASH of foundation/core/Protocol.h over the bytes of
+// The hand fold of the hash of foundation/core/Protocol.h over the bytes of
 // an image: blocks of 16 bytes, the last one filled with zero bytes, each
 // block as two little-endian words.
 constexpr std::uint64_t kFoldSeed = 0x243f6a8885a308d3ULL;
@@ -510,7 +510,7 @@ void test_hash_of_a_leaf() {
 
 // ── foldhash-f ──────────────────────────────────────────────────────────
 
-// The integer path of foldhash-f of Orson Peters with the seeds of THE HASH:
+// The integer path of foldhash-f of Orson Peters with the seeds of the hash:
 // each integer goes into a sponge of 128 bits at the count of bits that the
 // sponge holds, and a sponge that the next integer would pass folds first.
 class Foldhash final {
@@ -1209,7 +1209,7 @@ using OracleImage = FixedArray<std::byte, kOracleBytes>;
 }
 
 // The first fault of an image in the order of the parts, read byte by byte
-// by the rules of THE SUMS and THE BOUNDED LISTS with no call of decode, or
+// by the rules of the sums and the bounded lists with no call of decode, or
 // a fault at 9999 when the image holds a value.
 [[nodiscard]] DecodeFault first_oracle_fault(OracleImage const& image) noexcept {
     auto const byte = [&image](std::size_t offset) noexcept { return oracle_byte(image, offset); };

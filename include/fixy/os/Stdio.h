@@ -6,7 +6,7 @@
 //                          buffer of its own that holds a line of at most
 //                          Capacity characters
 //
-// THE LINES
+// Lines
 //   next_line(ctx) gives the next line of standard input as a TextView,
 //   without its newline.  The view borrows the buffer of the reader, and
 //   the next call writes that buffer, so a caller copies a line that it
@@ -63,7 +63,7 @@ read_standard_input_(char* first, std::size_t count) noexcept;
 
 }  // namespace detail
 
-// A reader of the lines of standard input (THE LINES).  It does not copy
+// A reader of the lines of standard input (see the lines).  It does not copy
 // and does not move, because a line that it gave borrows its buffer.
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity < static_cast<std::size_t>(__PTRDIFF_MAX__))
@@ -110,7 +110,7 @@ public:
     LineReader& operator=(LineReader&&) = delete("a line that the reader gave borrows its buffer");
     ~LineReader() = default;
 
-    // The next line of standard input (THE LINES).
+    // The next line of standard input (see the lines).
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::fs::CtxAdmitsFs<Ctx>
     [[nodiscard]] LineResult next_line(Ctx const&) & noexcept {

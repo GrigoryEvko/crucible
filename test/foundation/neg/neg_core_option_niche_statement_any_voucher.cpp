@@ -2,8 +2,8 @@
 // public constructor takes a raw word and a voucher, and the voucher is a
 // public class that does not copy, which each caller can build.  So the raw
 // word of the empty value comes in.  A voucher is a key of the base with no
-// public constructor, or a payload whose statement passes the check (THE
-// CHECK OF THE STATEMENT of foundation/core/Choice.h).  So the walk of the
+// public constructor, or a payload whose statement passes the check (the
+// check of the statement of foundation/core/Choice.h).  So the walk of the
 // constructors refuses the class, and the Option of the class does not
 // compile.
 

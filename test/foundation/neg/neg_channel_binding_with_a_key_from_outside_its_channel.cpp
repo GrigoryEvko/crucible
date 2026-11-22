@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A ChannelBinding refers to a channel that the handles on several threads
 // use at once.  Its constructor takes the key of the channel, and only the

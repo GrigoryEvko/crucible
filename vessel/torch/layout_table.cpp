@@ -2,7 +2,7 @@
 // build to its standard output, and the build puts the table beside the two
 // vessel libraries (lib/crucible_layout_digest.txt).
 //
-// THE TABLE
+// Table
 //   One fact on each line, as words that one space divides:
 //     digest DIGEST              the layout digest of the build in decimal,
 //                                which the layout note of each library of

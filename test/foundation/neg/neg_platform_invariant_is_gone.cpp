@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The base has no CRUCIBLE_INVARIANT.  Under NDEBUG it was an [[assume]],
 // so a false condition was undefined behavior in a Release library.  A

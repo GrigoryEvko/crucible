@@ -35,8 +35,8 @@ class WriteOnce;
 template <typename Ptr>
 class WriteOnceNonNull;
 
-// The type of an AtomicMonotonic names the writer of the counter (THE WRITER
-// OF A COUNTER, at AtomicMonotonic).  void names a counter that each thread
+// The type of an AtomicMonotonic names the writer of the counter (the writer
+// of a counter, at AtomicMonotonic).  void names a counter that each thread
 // can advance.  A SoleWriterProof<Owner, Role> names a counter of one writer.
 //
 // Monotonic names AtomicMonotonic as a friend, for the checked publish that
@@ -354,7 +354,7 @@ mint_ordered_append_only() noexcept(std::is_nothrow_default_constructible_v<Stor
     return OrderedAppendOnly<T, KeyFn, Cmp, Storage>{};
 }
 
-// The limits of a WideMonotonic (THE WIDE COUNTER below): its start is below
+// The limits of a WideMonotonic (the wide counter below): its start is below
 // 2^62, and its bound of one step is at most 2^32.
 inline constexpr std::uint64_t wide_start_limit = std::uint64_t{1} << 62;
 inline constexpr std::uint64_t wide_step_limit = std::uint64_t{1} << 32;
@@ -578,7 +578,7 @@ mint_bounded_monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<
     return BoundedMonotonic<T, Max, Cmp>{std::move(initial)};
 }
 
-// THE WIDE COUNTER
+// Wide counter
 //   A WideMonotonic is a count of 64 bits that only goes up, and its step
 //   holds no check.  Two facts carry the order of the step:
 //     - The count starts below wide_start_limit (2^62).  A start is a
@@ -652,7 +652,7 @@ public:
     [[nodiscard]] constexpr const std::uint64_t& get() const noexcept { return inner_.get(); }
     [[nodiscard]] constexpr const std::uint64_t& current() const noexcept { return inner_.current(); }
 
-    // A step of one.  THE WIDE COUNTER proves that the step does not wrap,
+    // A step of one.  the wide counter proves that the step does not wrap,
     // so the step is one add, with no compare.
     CRUCIBLE_INLINE constexpr void bump() noexcept {
         inner_.impl_ = Monotonic<std::uint64_t>::graded_type{inner_.get() + std::uint64_t{1}};
@@ -842,22 +842,22 @@ template <typename Ptr>
 // the class states payload_cell{} (foundation/Transfer.h), and it holds each
 // transfer property, the shared write included, exactly when T is Sendable.
 //
-// THE WRITER OF A COUNTER
+// Writer of a counter
 //   The second type argument names the writer.  void names a counter that
 //   each thread can advance, with a compare-and-swap.  A SoleWriterProof<
 //   Owner, Role> names a counter of one writer, the holder of that proof
-//   (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).  The
+//   (the proof of the one writer of foundation/SoleWriterProof.h).  The
 //   publishes of the one writer take exactly that proof type, and only Owner
 //   makes it, so a proof of another owner or another role has no overload.
 //   The writer of a counter of one writer reads its own value with relaxed
 //   order (peek_relaxed).  A counter of many writers has no such read,
 //   because a writer there reads values that a different thread stored.
 
-// The proof of the one writer of a counter (THE PROOF OF THE ONE WRITER of
+// The proof of the one writer of a counter (the proof of the one writer of
 // foundation/SoleWriterProof.h).
 using ::foundation::SoleWriterProof;
 
-// True when the writer of a counter is the proof of one writer (THE WRITER OF
+// True when the writer of a counter is the proof of one writer (the writer of
 // A COUNTER).
 template <typename Writer>
 inline constexpr bool names_sole_writer_v = false;
@@ -985,7 +985,7 @@ public:
 
     // For the one thread that writes this counter, such as the producer
     // of a single-producer ring.  The proof is the writer that the type of
-    // the counter names (THE WRITER OF A COUNTER), so a thread that holds no
+    // the counter names (the writer of A COUNTER), so a thread that holds no
     // such proof has no overload.  current is the value that the counter
     // holds, from that thread's own load or its own copy of its last store.
     // The precondition compares two values in registers, so it folds to one
@@ -1039,7 +1039,7 @@ public:
              "follow.  Use advance, or name the proof of the one writer as the writer of a counter of one writer");
 
     // The publish of the one writer that holds the proof that the type of the
-    // counter names (THE WRITER OF A COUNTER).  own is the copy of the
+    // counter names (the writer of A COUNTER).  own is the copy of the
     // counter that the
     // writer keeps on a line of its own, and it holds the value of the
     // counter.  The step check compares own and new_value in registers, in
@@ -1128,7 +1128,7 @@ public:
     // precondition, because the type system cannot prove it.
     void reset_under_quiescence(T value = T{}) noexcept { value_.store(value, std::memory_order_release); }
 
-    // THE COMPARE-AND-SWAP FORMS.  Each advances the counter from EXPECTED
+    // Compare-and-swap forms.  Each advances the counter from EXPECTED
     // to DESIRED, and DESIRED must be ahead of EXPECTED under Cmp.  A
     // failure writes the value that it read into EXPECTED.  The order of
     // each form is in its name, so no caller gives an order, and no form

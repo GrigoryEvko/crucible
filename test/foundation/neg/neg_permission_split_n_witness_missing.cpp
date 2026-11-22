@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A pack manifest needs its authoring witness beside it.  The manifest
 // here is written alone, and the witness check in the body of split_n

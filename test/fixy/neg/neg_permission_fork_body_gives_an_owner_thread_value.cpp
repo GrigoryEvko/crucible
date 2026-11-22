@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
-// The fork on threads gives the value of each body back to its caller (THE
-// VALUE OF A BODY of foundation/permissions/PermissionFork.h).  The value
+// The fork on threads gives the value of each body back to its caller (the
+// value of a body of foundation/permissions/PermissionFork.h).  The value
 // crosses from the thread of the body to the caller, so it is Sendable.  A
 // value of a class of one owner thread is not Sendable, so the fork refuses
 // a body that gives one.

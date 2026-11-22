@@ -1,6 +1,6 @@
 """types — a clean run of the pinned mypy in strict mode on the modules of the package and the masters.
 
-THE RUN
+Run
     The rule starts the pinned mypy (`setup install mypy`, assay.setup.install)
     through assay.core.proc, in the directory utils/ of the tree, on each file
     of the scope (assay.guard.engines.meta.package).  The options are
@@ -13,7 +13,7 @@ THE RUN
     time increased these log files to 1 GiB in all, and the files of the
     cache took 9 MB.
 
-THE ONE RUN AT A TIME
+One run at a time
     mypy keeps a module in a meta file and a data file.  It writes the two
     files one after the other.  The meta file holds the time of the data
     file in full seconds.  A run can do a check of a module again with no
@@ -31,17 +31,17 @@ THE ONE RUN AT A TIME
     time on a planted cache read the interface of the other tree.  20 pairs
     of runs one after the other gave none.
 
-THE BOUND
+Bound
     Before its run, the rule keeps the cache in its row of LIMITS at its turn
-    (assay.core.cache, A TREE OF FILES).  An entry is a file with a suffix of
+    (assay.core.cache, a tree of files).  An entry is a file with a suffix of
     ENTRY_SUFFIXES.  The turn also removes each file with a suffix of
     UNREAD_SUFFIXES.  These files are the databases of the SQLite cache, and
     no run with --no-sqlite-cache reads them.  mypy reads the data file of a
     module after its meta file.  A data file that goes between the two reads
     stops the run.  The rule holds the lock of the cache for the run.  No
-    eviction takes its turn during the run (THE ONE RUN AT A TIME).
+    eviction takes its turn during the run (the one run at a time).
 
-THE BROKEN CACHE
+Broken cache
     A rename puts each cache file at its path, but no run calls fsync.  A
     host that stops before the kernel writes the bytes can then keep an empty
     cache file.  mypy stops with an internal error on such a file, in each
@@ -52,13 +52,13 @@ THE BROKEN CACHE
     with a cold cache, which costs one cold run.  A second internal error is
     a failure of mypy, and the rule gives it.
 
-THE RULE
+Rule
     Each error of mypy is a finding.  The kind is the error code of mypy,
     such as type-arg, and the entity is the function or the class that holds
     the line.  A note of mypy is no finding.  assay.readers.tool_reports reads
     the report.
 
-THE TOOL
+Tool
     A tree with no installed mypy at the pin gives NotApplicable, and the test
     of the rule then gives the skip status.  `python3 utils/bin/setup install
     mypy` installs it.
@@ -92,12 +92,12 @@ OPTIONS = (
     "--no-error-summary",
     "--no-sqlite-cache",
 )
-# The words that mypy writes to its standard error for an internal error (THE BROKEN CACHE).
+# The words that mypy writes to its standard error for an internal error (the broken cache).
 CRASH_WORDS = "INTERNAL ERROR"
 CACHE_NAME = "mypy"
-# The suffixes of the files of the cache of mypy: the format ff of mypy, and the format JSON (THE BOUND).
+# The suffixes of the files of the cache of mypy: the format ff of mypy, and the format JSON (the bound).
 ENTRY_SUFFIXES = (".ff", ".json")
-# The suffixes of the files of the SQLite cache of mypy, which no run with --no-sqlite-cache reads (THE BOUND).
+# The suffixes of the files of the SQLite cache of mypy, which no run with --no-sqlite-cache reads (the bound).
 UNREAD_SUFFIXES = (".db", ".db-wal", ".db-shm", ".db-journal")
 # The cache of mypy when the caches are off: mypy writes no cache to /dev/null.
 NO_CACHE = "/dev/null"
@@ -106,15 +106,15 @@ CLEAN, ERRORS = 0, 1
 
 
 def run_mypy(context: MetaContext, files: list[str], site: Path | None = None) -> str:
-    """Run the pinned mypy on files of the directory utils/ of a tree, and return its report (THE RUN).
+    """Run the pinned mypy on files of the directory utils/ of a tree, and return its report (the run).
 
-    The run waits for each other run of the rule on the same cache (THE ONE RUN AT A TIME).  `site` is the site
+    The run waits for each other run of the rule on the same cache (the one run at a time).  `site` is the site
     directory of a mypy, and the pinned mypy when it is None.  A test gives a planted mypy.
 
     Raises:
         NotApplicable: If mypy is not installed at its pin
         proc.ToolFailed: If mypy cannot start, runs longer than its time limit, or ends with a status that is not 0
-            or 1.  A crash on a broken cache gives the status of the run with a cold cache (THE BROKEN CACHE)
+            or 1.  A crash on a broken cache gives the status of the run with a cold cache (the broken cache)
     """
     from assay.setup import install
 
@@ -137,7 +137,7 @@ def run_mypy(context: MetaContext, files: list[str], site: Path | None = None) -
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each error of mypy in strict mode on the package and the masters of the tree (THE RULE)."""
+    """Give each error of mypy in strict mode on the package and the masters of the tree (the rule)."""
     scope = package_scope.read_package(context)
     found = package_scope.parse_findings(RULE, scope)
     by_path = {item.path: item for item in scope.files}

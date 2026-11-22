@@ -11,7 +11,7 @@
 // ended, with a synchronization between the two, such as the claim of a role
 // of fixy/concurrent/PermissionedChannel.h.
 //
-// THE CACHES
+// Caches
 //   Each side keeps the last value of the index of the other side that it
 //   loaded, on a cache line that only it touches.  A push reads the tail
 //   of the consumer only when the cached tail says that the ring is full,
@@ -26,14 +26,14 @@
 //   function out of line, so the path of a push with room and a pop with an
 //   item holds no call.
 //
-// THE OWN INDEX
+// Own index
 //   Each side also keeps its own index on the same private line, and it
 //   reads its position there.  The other side polls the published index, so
 //   each load of that line by its writer can wait for a transfer of the
 //   line.  A checked publish still loads the published index one time, for
 //   its check.
 //
-// THE PROVEN FORM
+// Proven form
 //   A ring with an Owner also gives try_push_proven and try_pop_proven.
 //   Each takes a SoleWriterProof of foundation/SoleWriterProof.h for its side, and only
 //   Owner makes one: the type proves the one writer, so the publish loads
@@ -45,7 +45,7 @@
 //   the throughput in one L3 cache by approximately 14%.  The checked calls
 //   showed no such loss, so the compiler decides for them.
 //
-// THE DEFERRED TAIL
+// Deferred tail
 //   try_pop_deferred moves only the copy of the tail of the consumer, and it
 //   counts its pops on the private line of the consumer.  The pop that makes
 //   the count reach or pass its Interval publishes the tail with one release
@@ -94,7 +94,7 @@ struct spsc_ring;
 
 namespace fixy::concurrent {
 
-// The roles of the two proofs of the one writer of a ring (THE PROVEN FORM).
+// The roles of the two proofs of the one writer of a ring (the proven form).
 struct SpscProducerRole final {};
 struct SpscConsumerRole final {};
 
@@ -106,7 +106,7 @@ public:
     using row_discipline = ::fixy::row_discipline::spsc_ring;
     using row_payload = T;
     using owner_type = Owner;
-    // The proofs of the two sides, which only Owner makes (THE PROVEN FORM).
+    // The proofs of the two sides, which only Owner makes (the proven form).
     using producer_proof = ::fixy::SoleWriterProof<Owner, SpscProducerRole>;
     using consumer_proof = ::fixy::SoleWriterProof<Owner, SpscConsumerRole>;
 
@@ -128,7 +128,7 @@ public:
     // has moved past it.  So (h & MASK) and (t & MASK) never name the
     // same slot while both are in flight, and the non-atomic cell write
     // races with nothing.  The cached tail is at most the tail, so the
-    // test on the cached tail implies the test on the tail (THE CACHES).
+    // test on the cached tail implies the test on the tail (the caches).
     [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
         const std::uint64_t h = own_head_.get();
         if (h - cached_tail_.get() >= Capacity) [[unlikely]] {
@@ -140,7 +140,7 @@ public:
         return true;
     }
 
-    // The push of the one producer that the proof names (THE PROVEN FORM).
+    // The push of the one producer that the proof names (the proven form).
     [[nodiscard]] CRUCIBLE_HOT bool try_push_proven(producer_proof const& /*proof*/, const T& item) noexcept
         requires(!std::is_void_v<Owner>)
     {
@@ -169,7 +169,7 @@ public:
         return ::foundation::core::Option<T>::some(result);
     }
 
-    // The pop of the one consumer that the proof names (THE PROVEN FORM).
+    // The pop of the one consumer that the proof names (the proven form).
     [[nodiscard]] CRUCIBLE_HOT ::foundation::core::Option<T> try_pop_proven(consumer_proof const& /*proof*/) noexcept
         requires(!std::is_void_v<Owner>)
     {
@@ -182,7 +182,7 @@ public:
         return ::foundation::core::Option<T>::some(result);
     }
 
-    // The pop of THE DEFERRED TAIL.  It reads the cell as try_pop does, and it
+    // The pop of the deferred tail.  It reads the cell as try_pop does, and it
     // moves only the copy of the tail.  It publishes the tail when the count
     // of the deferred pops reaches Interval or passes it, so the producer
     // waits for at most Interval - 1 pops that the consumer took.  A count
@@ -204,7 +204,7 @@ public:
     }
 
     // Publishes the copy of the tail, when a deferred pop moved it since the
-    // last publish (THE DEFERRED TAIL).  The producer then sees each cell that
+    // last publish (the deferred tail).  The producer then sees each cell that
     // the consumer freed.  Only the consumer calls it.
     void publish_tail() noexcept { publish_deferred_<TailPublish::checked>(); }
 
@@ -223,7 +223,7 @@ public:
     // caller gives its first element through the door of the base.  The
     // push reads the tail again only when the cached tail leaves less room
     // than the batch asks, so it takes the same count as a read of the tail
-    // at that point (THE CACHES).  The batch is visible to the consumer at
+    // at that point (the caches).  The batch is visible to the consumer at
     // the one release store of the head.
     [[nodiscard, gnu::hot]] std::size_t try_push_batch(::foundation::core::View<T const> items) noexcept {
         if (items.size() == 0) [[unlikely]]
@@ -315,7 +315,7 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    // The writers of the two published indexes (THE WRITER OF A COUNTER of
+    // The writers of the two published indexes (the writer of a counter of
     // fixy/Mutation.h).  The ring is the owner of each proof, so only the ring
     // publishes an index.  Each call of a side makes the proof of that side:
     // a proven call after its Owner gave the proof of the side, and a checked
@@ -412,8 +412,8 @@ private:
     // the step check compares registers.
     //
     // The own index and the cache of each side are plain values on one line
-    // of their own, next to the index of their side (THE CACHES, THE OWN
-    // INDEX).  Only their side reads and writes them, so the other core
+    // of their own, next to the index of their side (the caches, the own
+    // index).  Only their side reads and writes them, so the other core
     // never pulls that line.
 
     ::fixy::AtomicMonotonic<std::uint64_t, head_writer_> head_ =
@@ -425,7 +425,7 @@ private:
         ::fixy::mint_atomic_monotonic<std::uint64_t, tail_writer_>(0);
     // The consumer is the one reader and the one writer of the three.  The
     // count of the deferred pops is the copy of the tail minus the published
-    // tail (THE DEFERRED TAIL), and it is zero after each pop of another form.
+    // tail (the deferred tail), and it is zero after each pop of another form.
     alignas(64)::fixy::Monotonic<std::uint64_t> own_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     ::fixy::Monotonic<std::uint64_t> cached_head_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     std::uint64_t deferred_pops_ = 0;

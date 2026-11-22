@@ -27,8 +27,8 @@
 // static_assert conditions, in helper types, in helper concepts and in one
 // helper function.  The front end evaluates a static_assert at namespace scope
 // outside a template and keeps no tree of it.  The quarantine plugin reads each
-// library name of such a condition from the event of the parser (THE FOLDED
-// NAMES of utils/tools/quarantine/owner.cpp).  Each name of the file is the
+// library name of such a condition from the event of the parser (the folded
+// names of utils/tools/quarantine/owner.cpp).  Each name of the file is the
 // subject of a check against the standard library, so one ORACLE region holds
 // the file, and the ledger counts each name that the rule table does not admit
 // under that region.

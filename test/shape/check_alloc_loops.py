@@ -2,10 +2,10 @@
 
 usage: check_alloc_loops.py BUILD_DIR SOURCE_ROOT [--source PATH=COPY]...
 
-THE CLAIMS
+Claims
     refill  take_slots_ of src/foundation/alloc/Refill.cpp takes one free
             slot of a bitmap word in each turn of its inner loop, with one
-            compare for each branch (THE FAST PATHS of
+            compare for each branch (the fast paths of
             foundation/alloc/HeapState.h).  -fharden-compares turns a
             compound condition such as "taken < count && bits != 0" into
             set-on-condition values with a second test of each: 26
@@ -14,16 +14,16 @@ THE CLAIMS
             instructions.
     flush   give_back_run_ of src/foundation/alloc/Flush.cpp checks the owner
             entry of the chunk and the class of the slab one time for each
-            slab, before the loop of the blocks of the slab (THE GIVE-BACK OF
-            A RUN there).  So the loop of one block reads one word of memory,
+            slab, before the loop of the blocks of the slab (the give-back of
+            a run there).  So the loop of one block reads one word of memory,
             the block of the run, and calls nothing.  A read of the owner
             entry, of the class or of a record of the slab in that loop is a
             refusal.  One product gives the slot of a block and the check of
-            its first byte (THE SLOT OF AN OFFSET of
+            its first byte (the slot of an offset of
             foundation/alloc/Metadata.h), so the loop holds at most
             FLUSH_BLOCK_MULTIPLIES multiplies.
 
-THE COMPILE
+Compile
     Each source compiles with its own command of the compile database of the
     build, into an object in a scratch directory.  The command drops the
     words of the quarantine plugin and of a sanitizer, because the check
@@ -32,7 +32,7 @@ THE COMPILE
     refuses an older form.  A build at a level below -O2 gives the exit
     SKIPPED.
 
-THE STEADY PATH
+Steady path
     GCC puts the likely path of a loop in one run of the hot part, and each
     unlikely branch out of it.  The steady path of a loop is the run of the
     hot part from the target of a backward jump to that jump.  The loop of one
@@ -40,7 +40,7 @@ THE STEADY PATH
     it: that run is the control, so a check cannot pass on code that it does
     not read.  For the flush, the outer loop reads the records of the slab.
 
-THE VERDICT
+Verdict
     Exit 0 when each claim holds.  Exit 1 when one does not hold or a source
     does not compile, 2 on a usage error, 77 for a skip.  Complexity: one
     compile and one disassembly for each source, and a walk linear in the
@@ -107,7 +107,7 @@ def compile_source(build: Path, source: str, copy: Path | None, obj: Path) -> No
 def loop_runs(flow, include_jmp: bool) -> list[tuple[int, int]]:
     """Return the run (first, last) of the hot part of each loop, shortest first: a backward jump and its target.
 
-    With include_jmp False, only a conditional jump ends a loop (THE STEADY PATH).
+    With include_jmp False, only a conditional jump ends a loop (the steady path).
     """
     runs: list[tuple[int, int]] = []
     for place, targets in flow.successors.items():
@@ -138,7 +138,7 @@ def function_flow(build: Path, source: str, copy: Path | None, part: str):
 
 
 def check_refill(flow) -> list[str]:
-    """Return the problems of the loop of one block of take_slots_ (THE CLAIMS, refill)."""
+    """Return the problems of the loop of one block of take_slots_ (the claims, refill)."""
     block_runs = loop_runs(flow, include_jmp=False)
     if len(loop_runs(flow, include_jmp=True)) < 2 or not block_runs:
         return [f"{REFILL_PART} has fewer than two loops, and the check needs the block loop and the word loop"]
@@ -159,7 +159,7 @@ def check_refill(flow) -> list[str]:
 
 
 def check_flush(flow) -> list[str]:
-    """Return the problems of the loop of one block of give_back_run_ (THE CLAIMS, flush)."""
+    """Return the problems of the loop of one block of give_back_run_ (the claims, flush)."""
     from check_session_send import reads_memory
 
     block_runs = loop_runs(flow, include_jmp=False)

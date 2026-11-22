@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A wait policy that parks sleeps on a futex after its spin budget, and a
 // futex wait blocks the thread.  The foreground context owns no Block, so

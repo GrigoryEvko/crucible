@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // GCC prints a union template argument as the value of its active
 // member, without the member.  Two values of one union that differ only

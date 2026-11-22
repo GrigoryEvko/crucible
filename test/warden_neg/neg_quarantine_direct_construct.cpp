@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The constructor of QuarantinePolicy is private, and
 // mint_quarantine_policy is its one friend.  A policy built from a

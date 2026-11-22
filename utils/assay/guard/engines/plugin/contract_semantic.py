@@ -1,6 +1,6 @@
 """contract-semantic — the contract semantic of each unit agrees with the macro CRUCIBLE_CONTRACT_SEMANTIC_IGNORE.
 
-THE RULE
+Rule
     GCC uses the last -fcontract-evaluation-semantic of a compile line.
     CRUCIBLE_PRE and CRUCIBLE_POST (include/foundation/contracts/Pre.h,
     Post.h) cannot read the semantic.  The macro
@@ -11,8 +11,8 @@ THE RULE
     assumption is then undefined behavior.  Without the macro, the ignore
     semantic keeps no hint for the optimizer.
 
-    The quarantine plugin reads the semantic of the unit (unit.cpp, THE
-    CONTRACT SEMANTIC).  It also reads the macro of the command line and of
+    The quarantine plugin reads the semantic of the unit (unit.cpp, the
+    contract semantic).  It also reads the macro of the command line and of
     the files of -include.  The plugin gives a finding of the kind
     contract-semantic at the main file of each of these units:
       * a unit with the macro and with a semantic that is not ignore
@@ -21,7 +21,7 @@ THE RULE
     unit does not build.  The configure step also rejects a scope that has
     only the flag or only the macro (cmake/ContractSemantic.cmake).  The rule
     reads the finding lines in the sections of the objects of the target all
-    of one build (assay.guard.engines.plugin.runner, THE SECTIONS).
+    of one build (assay.guard.engines.plugin.runner, the sections).
 
 The rule has no ledger, and each finding is an error.
 

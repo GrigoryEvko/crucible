@@ -62,7 +62,7 @@ def coqc() -> list[str]:
     """Return the coqc command of the Coq 8.20 toolchain that the development builds with.
 
     SESSION_ORACLE_COQC20 names it.  The default runs coqc in the opam
-    switch sessoracle20 (THE TOOLCHAINS of utils/assay/oracle/runner.py says how to make it).
+    switch sessoracle20 (the toolchains of utils/assay/oracle/runner.py says how to make it).
     """
     env = os.environ.get("SESSION_ORACLE_COQC20")
     if env:

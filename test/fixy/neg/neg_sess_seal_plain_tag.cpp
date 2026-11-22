@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit says that a loan state is a plain tag, so that a
 // hold hands out the parked token of a region that it lent.  The

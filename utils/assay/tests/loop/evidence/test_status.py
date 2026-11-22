@@ -41,7 +41,7 @@ def planted_rows(store: evidence_store.EvidenceStore) -> list[evidence_status.Ro
 
 
 def row_cases(expect: testing.Expect) -> None:
-    """Hold the rows of planted items, the remaining work and the judgment (THE ROWS, THE TARGETS, THE JUDGMENT)."""
+    """Hold the rows of planted items, the remaining work and the judgment (the rows, the targets, the judgment)."""
     with tempfile.TemporaryDirectory(prefix="evidence-status-") as directory:
         rows = planted_rows(evidence_store.EvidenceStore(Path(directory)))
     by_item = {row.item: row for row in rows}
@@ -75,7 +75,7 @@ def row_cases(expect: testing.Expect) -> None:
 
 
 def json_cases(expect: testing.Expect) -> None:
-    """Hold the JSON object of the rows: its format, a row and the problems of the builds (THE OUTPUT)."""
+    """Hold the JSON object of the rows: its format, a row and the problems of the builds (the output)."""
     with tempfile.TemporaryDirectory(prefix="evidence-status-") as directory:
         rows = planted_rows(evidence_store.EvidenceStore(Path(directory)))
     found = json.loads(evidence_status.status_json(rows, ("a planted problem",)))

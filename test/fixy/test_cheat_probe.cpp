@@ -2,7 +2,7 @@
 //
 // Every fixture below is a class built to look like it satisfies a
 // wrapper concept while violating exactly one structural property.
-// Each one is then inverted into an assertion that it is NOT admitted,
+// Each one is then inverted into an assertion that it is not admitted,
 // so the file compiles only while every cheat is still rejected.  A
 // change that weakens a concept starts admitting its cheat and the
 // build stops.
@@ -15,7 +15,7 @@
 // tell a wrapper from a cheat.  Detection here is a concept over a
 // reflection query, and its opt-ins are members of the wrapper's own
 // class body, so a specialization written here reaches no gate.  Each
-// cheat that specializes a detection trait is asserted REJECTED below,
+// cheat that specializes a detection trait is asserted rejected below,
 // and each is paired with an assertion that the specialization did take
 // on the variable it named, so the rejection is shown to be the
 // concept's and not a typo's.  The one cheat that cannot be written at
@@ -402,16 +402,16 @@ static_assert(!fixy::IsBand<::Cheat23_FakeBand>, "[CHEAT 23 ADMITTED] is_band_v 
 // Everything from here on attacks the per-wrapper detection concepts,
 // and each wrapper gets the same three:
 //
-//   - a class derived from the wrapper, which must be REJECTED: the
+//   - a class derived from the wrapper, which must be rejected: the
 //     concept matches the exact specialization, so a subclass does not
 //     match it.  Were it to match, a boundary that demands a wrapper
 //     would silently accept any subclass, along with whatever extra
 //     state and invariants the subclass carries.
 //   - an unrelated class with the wrapper's is_*_v specialized for it,
-//     which must be REJECTED: the value is derived from the concept and
+//     which must be rejected: the value is derived from the concept and
 //     read by no gate.
 //   - an unrelated class with the shape of the wrapper, which must be
-//     REJECTED by the instance query.  The query has no value spelling,
+//     rejected by the instance query.  The query has no value spelling,
 //     so no specialization can mark the class.
 
 struct FakeOwnedTag {};

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A producer claim belongs to the thread that holds it, so run_joined refuses
 // a body that uses an object of the claim through a reference from another

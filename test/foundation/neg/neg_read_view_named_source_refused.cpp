@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // with_read_view keeps its source in its own frame while the body runs.
 // A source passed by name stays with the caller, so a body could move it

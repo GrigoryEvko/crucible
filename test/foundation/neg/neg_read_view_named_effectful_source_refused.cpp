@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A named source of a region with an effectful row fails two rules: it is
 // named, and the door reads no context.  The deleted twin, which tells the

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Vigil owns the publication slot, ModeCell, foreground
 // context, and background thread. Copying it would duplicate those process-local

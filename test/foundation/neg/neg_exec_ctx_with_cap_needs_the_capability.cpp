@@ -7,14 +7,14 @@
 // can turn a foreground context into one that claims a background
 // effect.
 //
-// with_cap takes a NewCap VALUE.  Cap's own default constructor is
+// with_cap takes a NewCap value.  Cap's own default constructor is
 // private and passkey-gated, so a caller holding one obtained it from
 // mint_context — the rule that a gate must consume what it authorises.
 //
 // Sibling of neg_exec_ctx_forged_specialization.cpp, which closes the
 // specialization route.  Both are required.
 //
-// VIOLATION: a TU promotes to an init context by naming the type.
+// Violation: a TU promotes to an init context by naming the type.
 //
 // Expected diagnostic: no matching call to with_cap taking no argument.
 

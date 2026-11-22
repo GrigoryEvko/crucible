@@ -4,7 +4,7 @@
 one line.  Exit 0 when each case holds, else 1.
 
 The planted cases read lines of the maps that mold 3.0.0 wrote of links of
-the tree, with each kind of line of THE MAP.  They also read lines with
+the tree, with each kind of line of the map.  They also read lines with
 each shape error.  The link case links a small program with the compiler that
 ASSAY_TEST_CXX names and the pinned mold (assay.setup.install), with
 -Wl,-Map, and reads the map.  The registration of the test in
@@ -21,9 +21,9 @@ from assay.readers import linkmap
 
 ARCHIVE = "/toolchain/lib/gcc/x86_64-pc-linux-gnu/16.2.1/libgcc.a"
 UNIT = "CMakeFiles/crucible_hwprobe.dir/utils/tools/crucible_hwprobe.cpp.o"
-# Lines of mold maps of the tree (THE MAP).  The output chunks have the address 0 or an address.  The input sections
+# Lines of mold maps of the tree (the map).  The output chunks have the address 0 or an address.  The input sections
 # name plain files and members of archives, and the symbols hold spaces and parentheses.  One output section has an
-# `Align` of 2 MiB, which follows its `Size` with no space (THE COLUMNS).
+# `Align` of 2 MiB, which follows its `Size` with no space (the columns).
 PLANTED = (
     linkmap.HEADING,
     "                 0         64     8 EHDR",
@@ -73,7 +73,7 @@ def with_line(text: str) -> tuple[str, ...]:
 
 
 def planted_cases(expect: testing.Expect) -> None:
-    """Read PLANTED, and hold each kind of line and each shape error (THE MAP, THE INPUTS)."""
+    """Read PLANTED, and hold each kind of line and each shape error (the map, the inputs)."""
     inputs = linkmap.inputs_of(PLANTED, "planted.map")
     expect(
         "the inputs are the files of the input sections, each one time, in the sequence of their first section",

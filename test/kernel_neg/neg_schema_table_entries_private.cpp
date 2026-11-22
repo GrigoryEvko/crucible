@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Readers on other threads read a sealed schema table with no lock.  A write
 // to the entry array that does not go through register_name has no view to

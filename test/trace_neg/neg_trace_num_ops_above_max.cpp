@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Fixture 1 of 2 for kTraceNumOpsBound, the typed gate of the .crtrace
 // header op count.  The gate is bounded_above<MAX_OPS>, and MAX_OPS is

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // ValidRegsPerThread is a fixy::Refined over valid_regs_per_thread, a
 // ceiling of 255, and the checked mint is its only door.  This fixture

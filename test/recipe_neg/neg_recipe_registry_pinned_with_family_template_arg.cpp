@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // by_name_pinned is declared template <fixy::Tolerance T>.  A consumer
 // that wants to admit by recipe family must not reach for it with a

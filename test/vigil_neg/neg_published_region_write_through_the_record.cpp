@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The publish stage gives the record of a region to the region callback, and
 // the owner hands the record to its foreground through a slot.  No code

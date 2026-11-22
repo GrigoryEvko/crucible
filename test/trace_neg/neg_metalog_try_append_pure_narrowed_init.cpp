@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // MetaLog::try_append_pure promises a pure caller.  A startup step narrows its
 // init context to the empty row with in_row, and the narrowed context keeps

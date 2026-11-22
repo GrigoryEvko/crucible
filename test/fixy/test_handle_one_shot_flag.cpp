@@ -109,9 +109,9 @@ public:
     ~SignalOwner() = default;
 
     // The key of the door that starts the thread.  The key stays on the thread
-    // that claimed it (THE PROOF OF A DOOR of foundation/Transfer.h).  Its
-    // constructor is private, so only claim_starter builds one (THE BUILD OF
-    // A TOKEN).
+    // that claimed it (the proof of a door of foundation/Transfer.h).  Its
+    // constructor is private, so only claim_starter builds one (the build of
+    // a token).
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {
         StarterKey() noexcept {}
         friend class SignalOwner;
@@ -125,7 +125,7 @@ public:
     // Gives the key to the calling thread.  One atomic exchange gives it to
     // one thread for the life of the owner, and a second claim ends the
     // process.  A claim door: only the thread that won the exchange starts
-    // the thread (THE DOORS OF A SYNCHRONIZED CLASS of foundation/Transfer.h).
+    // the thread (the doors of a synchronized class of foundation/Transfer.h).
     [[nodiscard]] StarterKey claim_starter() noexcept {
         if (is_starter_claimed_.exchange_acq_rel(true)) {
             ::foundation::core::fatal("a second claim of the starter key of one owner");

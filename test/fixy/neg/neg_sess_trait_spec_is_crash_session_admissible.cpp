@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_crash_session_admissible is an alias template over a function that
 // is not a template, so no user specialization admits a reception with no

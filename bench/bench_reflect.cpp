@@ -16,7 +16,7 @@
 //                             into a record of fixed size, and one copy of
 //                             its words into a new HeapArray
 //
-// THE REFERENCES.  foldhash-f of Orson Peters (2024, the default hasher of
+// References.  foldhash-f of Orson Peters (2024, the default hasher of
 // hashbrown and of the Rust standard tables) packs the fields into a 128-bit
 // sponge and runs one folded 64x64 multiply for each 16 bytes.  The bench
 // holds a port of its integer path with a fixed seed, so a run is

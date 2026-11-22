@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A thread that loses the race of Once::call spins until the winner ends,
 // with no exit.  A spin with no exit carries Div, so the call takes the

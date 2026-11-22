@@ -53,7 +53,7 @@ enum class CcError : std::uint8_t {
 [[nodiscard]] ::fixy::TextView cc_algorithm_name(CcAlgorithm algorithm) noexcept;
 [[nodiscard]] ::fixy::TextView link_class_name(LinkClass link) noexcept;
 
-// A TCP socket of the tables of cntp, which store it by value (THE FOREIGN
+// A TCP socket of the tables of cntp, which store it by value (the foreign
 // SOCKET of fixy/os/Socket.h), and the identity of a socket for a table that
 // only keys or compares sockets.
 using SocketFd = ::fixy::net::ForeignSocketRef<::fixy::net::socket_kind::TcpStream, ::fixy::net::socket_rights>;

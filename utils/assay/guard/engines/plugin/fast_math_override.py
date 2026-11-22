@@ -1,6 +1,6 @@
 """fast-math-override — no function turns on a fast-math option that the command line of its unit does not turn on.
 
-THE RULE
+Rule
     CLAUDE.md section V bans the fast-math family, because each option breaks
     one of the numerical invariants of replay.  It also bans each option that
     cancels a flag of the floor of cmake/FpStrict.cmake, because GCC uses the
@@ -9,7 +9,7 @@ THE RULE
     does not hold these options.
 
     The quarantine plugin reads each function of a file of the source root
-    (unit.cpp, THE FAST-MATH OPTIONS).  It compares the options of the
+    (unit.cpp, the fast-math options).  It compares the options of the
     function with the options of the command line of its unit.  The plugin
     gives a finding of the kind fast-math-override to each function that
     turns on such an option with its own options.  The finding holds the
@@ -21,7 +21,7 @@ THE RULE
     such function gets a finding.  A pragma that no function follows changes
     no code and is no finding.  The rule reads the finding lines in the
     sections of the objects of the target all of one build
-    (assay.guard.engines.plugin.runner, THE SECTIONS).
+    (assay.guard.engines.plugin.runner, the sections).
 
     The rule no-ffast-math reads the flags of the compile database, of the
     link lines and of the presets.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A ctx-bound combine rebuilds the parent under its context, so the
 // context must admit the rows of the parent and of both children.  The

@@ -24,7 +24,7 @@
 // a value, because each of those doors claims a pin that nobody
 // performed.
 //
-// THE AFFINITY DOOR
+// Affinity door
 //   detail::sched_setaffinity_sys sets the affinity mask of the calling
 //   thread and records the pin event of the change, and
 //   detail::sched_getaffinity_sys reads the mask.  Their bodies are in
@@ -33,8 +33,8 @@
 //   foundation::os::raw_syscall, and the kernel reads or writes the words of
 //   an AffinityMask.  So the door includes no header of the kernel and no
 //   header of the C library.  A door function that issues one system call
-//   NAME out of line has the name NAME_sys, so the rule
-//   syscalls counts a call of it as a call of NAME.
+//   name out of line has the name name_sys, so the rule
+//   syscalls counts a call of it as a call of name.
 //
 // A pin that does not go through the door is not recorded.  A
 // sched_setaffinity call around the door, a call from another thread that
@@ -131,7 +131,7 @@ CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread
     no_pin_event;
 
 // Sets the affinity mask of the calling thread to the mask, and records a
-// new pin event (THE AFFINITY DOOR).  Returns the event, or the error of the
+// new pin event (the affinity door).  Returns the event, or the error of the
 // kernel.  A failed call leaves the affinity as it was, so the event in force
 // stays.  An empty mask is EINVAL of the kernel.
 //
@@ -144,7 +144,7 @@ CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread
 [[nodiscard]] ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
 sched_setaffinity_sys(AffinityMask const& mask) noexcept;
 
-// The affinity mask of the calling thread (THE AFFINITY DOOR), or the error
+// The affinity mask of the calling thread (the affinity door), or the error
 // of the kernel.  The kernel writes the bits of each CPU that it knows, and
 // each other bit of the mask stays zero.  A kernel with more CPUs than the
 // mask holds gives EINVAL.  The gated callers are read_affinity and
@@ -226,7 +226,7 @@ private:
     // detail::sched_setaffinity_sys returned a pin event for this same Mask,
     // so a proof in force names a pin of the thread that asks.
     //
-    // Keep this friend a function that PERFORMS AND CHECKS the syscall.
+    // Keep this friend a function that performs and checks the syscall.
     // A friend that merely forwards an argument proves nothing.
     // The trailing return type is not a style choice.  Written the other
     // way round the declaration ends `..., Errno> ::fixy::sched::...`, and

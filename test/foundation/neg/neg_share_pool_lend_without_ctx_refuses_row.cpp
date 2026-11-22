@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The schedule decides whether a lend gives a share, so a lend takes a
 // context that holds Nondet and admits the row of the tag.  A lend with no

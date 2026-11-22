@@ -23,10 +23,10 @@ The compile database of a build holds about 3,500 compiles in 18 MB, and its
 parse takes about 100 ms.  A configure writes the database again.  Each
 fixture of each build of the gate then parsed the database: 11,025 parses in
 one gate, in the call profiles of assay.core.calls on 2026-10-17.  The first
-fixture after a change of the database then writes the command index (THE
-COMMAND INDEX).  Each other fixture reads one small file of it.
+fixture after a change of the database then writes the command index (the
+command index).  Each other fixture reads one small file of it.
 
-THE COMMAND INDEX
+Command index
     The index of a database is the directory .command-index/DIGEST in the
     fixture directory of the build.  DIGEST is the hash of the device, the
     inode, the size and the two change times of the database.  The directory
@@ -72,7 +72,7 @@ and the driver holds it (held-by=loop-fixture).  A ledger that does not
 exist has no row, and the driver then imports no ledger module.  A listed
 fixture gives no finding, because its row admits its errors, and a row that
 admits a finding gives no output.  A listed fixture with no such error gives
-no finding too, because a row that admits nothing passes (THE POLICIES of
+no finding too, because a row that admits nothing passes (the policies of
 assay.core.ledger).  A run removes the old warnings file of its fixture
 (`fixture-own-reason.NAME.txt`) from the warnings directory.
 CRUCIBLE_NEG_REASON_LEDGER names a different ledger in the same format, for
@@ -88,8 +88,8 @@ Each region of the unit is a note too, at the macro that opens it.  The
 census then gives each opted-out finding the reason of its region.  A
 fixture stops on its own error, and the
 compile writes no object.  The plugin then gives each finding as a result
-"quarantine: KIND ENTITY" of the SARIF log (assay.readers.sarif, THE
-DIAGNOSTICS OF THE PLUGIN).
+"quarantine: KIND ENTITY" of the SARIF log (assay.readers.sarif, the
+diagnostics of the plugin).
 
 The regexes and the rule of the reason read the log with no result of the
 plugin: the driver renders the log with sarif.is_plugin_result as `hidden`.
@@ -130,7 +130,7 @@ with 1 for the two.  After an earlier error, GCC prints "confused by earlier
 errors, bailing out", and its SARIF log holds no record of the internal
 compiler error.  The exit status is then the only sign of the internal
 compiler error.  With no earlier error, the log holds a record of it
-(assay.readers.sarif, THE INTERNAL COMPILER ERROR), and the message of the
+(assay.readers.sarif, the internal compiler error), and the message of the
 fixture gives its text.  A signal that stops the driver of a compile is the
 same case.  So is a signal that stops the compiler that the driver started,
 such as the kill of the CPU limit of run_compile(): the driver then exits 1
@@ -352,7 +352,7 @@ resource use of its child processes.  It runs one compile at a time, so the
 CPU time that its waited children gain during the call is the time of the
 compiler driver, cc1plus and the assembler.  It also counts the user
 instructions of the compile, when the host gives an exact count
-(utils/assay/core/meter.py, THE INSTRUCTION COUNT).  The kernel measures the
+(utils/assay/core/meter.py, the instruction count).  The kernel measures the
 CPU time of a process exactly, and it divides that time between the user time
 and the system time from the samples of the timer tick.  A compile of a few
 milliseconds whose samples all fall in the kernel gets a user time of 0 s.
@@ -370,8 +370,8 @@ The ledger utils/ledgers/step-cost.txt keeps the fixtures above the limit,
 `- | fixture | VALUE | FIXTURE | REASON`, with VALUE the count of the compile
 when the row was written, in G.  A row of a different kind of the rule is for
 a different judge, and the driver skips it.  A row applies to each build.  A kept fixture
-gives no output up to VALUE with the noise of the unit (assay.core.budget, THE
-NOISE).  A count above that gives the error of a fixture with no row.  A
+gives no output up to VALUE with the noise of the unit (assay.core.budget, the
+noise).  A count above that gives the error of a fixture with no row.  A
 ledger that does not exist has no row.  A registry that cannot be read stays
 an error.  CRUCIBLE_NEG_REGISTRY and CRUCIBLE_NEG_INSTRUCTIONS_LEDGER name a
 different registry and a different ledger in the same format, for the tests
@@ -390,7 +390,7 @@ The record of a run
 -------------------
 After each run, from a compile or from the store, the driver writes the
 fixture record `NAME.inputs` in the scratch directory of the fixture
-(assay.core.record, THE RECORDS): the result, the CPU times, the instruction
+(assay.core.record, the records): the result, the CPU times, the instruction
 count, and each file that the compile read.  The list is the dependency file
 of GCC, the list of the `-M -MG` pass after a fatal error, or the list of the
 stored result, with the path of `realpath()` of each file (real_inputs).  A
@@ -411,7 +411,7 @@ of this process and of each process that it waited for.  The third is the
 peak memory of the largest of these processes.  The fourth is the user
 instructions of this process from the start of main() and of each process
 that it started.  A host with no accurate count gives no count
-(assay.core.meter, THE OWN RUN).
+(assay.core.meter, the own run).
 
 The judge holds the kind test of the measured rules step-memory and
 step-cost, with the limits of the registry of the launcher
@@ -867,18 +867,18 @@ def compile_argv(command: list[str], output: Path, depfile: Path, sarif_log: Pat
 
 
 def command_index(build_dir: Path, fields: list[int]) -> Path:
-    """Return the directory of the index of the compile database with the stat fields `fields` (THE COMMAND INDEX)."""
+    """Return the directory of the index of the compile database with the stat fields `fields` (the command index)."""
     digest = _short_digest(json.dumps(fields).encode("ascii"))
     return build_dir / cost_record.FIXTURE_DIRECTORY / _COMMAND_INDEX / digest
 
 
 def indexed_file(index: Path, source_text: str) -> Path:
-    """Return the file of one source in an index of the compile database (THE COMMAND INDEX)."""
+    """Return the file of one source in an index of the compile database (the command index)."""
     return index / f"{_short_digest(source_text.encode('utf-8', 'surrogateescape'))}.json"
 
 
 def read_index(index: Path, source: Path) -> tuple[list[str], Path, Roots] | None | Literal[False]:
-    """Return the command, the working directory and the roots of `source` from an index (THE COMMAND INDEX).
+    """Return the command, the working directory and the roots of `source` from an index (the command index).
 
     The result is False with no complete index that can be read.  It is None when a complete index holds no compile
     of the source.  Complexity: two reads of small files.
@@ -905,7 +905,7 @@ def read_index(index: Path, source: Path) -> tuple[list[str], Path, Roots] | Non
 def write_index(build_dir: Path, fields: list[int]) -> None:
     """Write the index of the compile database with the stat fields `fields`, and remove each other index of the build.
 
-    The caller holds the lock of the index (THE COMMAND INDEX).  The function writes nothing when the database changed
+    The caller holds the lock of the index (the command index).  The function writes nothing when the database changed
     in the settle period or during the parse.  Complexity: linear in the compiles of the database, with one resolve of
     each path of a source.
 
@@ -948,7 +948,7 @@ def find_compile_command(build_dir: Path, source: Path) -> tuple[list[str], Path
     """Return the command and the working directory of `source` in the compile database, and the roots of the build.
 
     The function reads the command index of the database, and the first
-    fixture after a change of the database writes it (THE COMMAND INDEX).  With
+    fixture after a change of the database writes it (the command index).  With
     no index, it reads the database.  The search compares the file names as
     text first, and it resolves each name only when no name is equal.  The
     cost is O(1) with an index, and O(n) in the rows of the database without
@@ -1033,7 +1033,7 @@ def run_compile(argv: list[str], directory: Path, env: Mapping[str, str]) -> Com
     driver has one thread, so the limit of the process is the limit of the
     driver, and the driver itself uses less than a second.  The compile has
     no wall limit of its own: proc.BUILD_S only bounds a hang, above the wall
-    guard of each test (THE HANG GUARD of assay.loop.gate).  A loaded host
+    guard of each test (the hang guard of assay.loop.gate).  A loaded host
     makes a compile slower, but it does not make a fixture red.
 
     Raises:
@@ -2616,7 +2616,7 @@ class CostBudget:
     `problems` gives, for each check whose rule or ledger cannot be read, the
     reason.  A budget with a problem fails the test.  `test_rows` gives the
     limit of each rule of the test launcher, from the registry of the
-    launcher (assay.loop.teststep, THE MEASURED RULES).  The launcher reads
+    launcher (assay.loop.teststep, the measured rules).  The launcher reads
     their ledgers itself.
     """
 
@@ -2634,7 +2634,7 @@ class CostBudget:
 
         A compile with no count has no cost judge.  A ledger row keeps the
         count up to its kept value with the noise of its unit
-        (assay.core.budget, THE NOISE).
+        (assay.core.budget, the noise).
         """
         if self.problems or result.instructions is None:
             return False
@@ -2821,10 +2821,10 @@ def read_cost_budget(memo_dir: Path | None) -> CostBudget:
 
 
 def _row_verdict(row: BudgetRow, fixture_name: str, value: float) -> str:
-    """Return the verdict of one measure against one measured rule and its ledger (assay.core.budget, THE VERDICT).
+    """Return the verdict of one measure against one measured rule and its ledger (assay.core.budget, the verdict).
 
     A ledger row keeps the measure up to its kept value with the noise of the unit of the rule (assay.core.budget,
-    THE NOISE).
+    the noise).
     """
     kept = row.ledger.get(fixture_name)
     return cost_budget.verdict(value, row.limit, None if kept is None else kept[0],
@@ -2923,7 +2923,7 @@ def _record_compile(store: ResultStore, key: str, result: CompileResult, missing
 
 
 # The directory of the indexes of the compile database in the fixture directory of a build, its lock, the marker of a
-# complete index, and the format of the marker (THE COMMAND INDEX).
+# complete index, and the format of the marker (the command index).
 _COMMAND_INDEX = ".command-index"
 _INDEX_LOCK = "lock"
 _INDEX_COMPLETE = "complete.json"
@@ -2936,7 +2936,7 @@ def real_inputs(inputs: tuple[str, ...] | None, directory: Path) -> tuple[str, .
     A name of the dependency file is the path that the compile opened.  A
     relative path is relative to the directory of the compile.  A path
     through a link names the link.  The record of the run names each file of
-    the tree by one path (assay.core.record, THE FORMAT).  The function
+    the tree by one path (assay.core.record, the format).  The function
     resolves each directory one time, and a name that is a link itself gets
     a `realpath()` of its own.  The cost is one `lstat()` for each name and
     one `realpath()` for each directory.  For the 704 names of the largest
@@ -2961,7 +2961,7 @@ def write_run_record(build_dir: Path, fixture_name: str, result: CompileResult, 
     """Write the record of a run of the fixture: the cost of its compile, each file that it read, and its census.
 
     The record is BUILD_DIR/neg-compile/NAME/NAME.inputs (assay.core.record,
-    THE RECORDS).  It names each file by the path of `realpath()` in
+    the records).  It names each file by the path of `realpath()` in
     `directory`, the directory of the compile (real_inputs).  The rule
     instruction-total reads its cost, and the rule quarantine reads
     its files and the census of fixture_census().  A failure to
@@ -3118,7 +3118,7 @@ def own_reason_findings(fixture_name: str, source: Path, unmatched: list[str], i
     """Return the findings of each error of the compile that no regex matches, against the ledger at `path`.
 
     A run with no such error gives no finding, also when the ledger has a row
-    of the fixture.  A row that admits nothing passes (THE POLICIES of
+    of the fixture.  A row that admits nothing passes (the policies of
     assay.core.ledger).  A row of the fixture admits each such error, and the
     run then gives no finding.  In these two cases the call does not import
     the report module.  A ledger that cannot be read gives an error on each

@@ -33,11 +33,11 @@ namespace detail {
 
 // Gives back the storage that heap_allocate_ or heap_allocate_zeroed_ gave,
 // with the same layout.  storage must not be null.  A Layout passes in two
-// registers (THE LAYOUT of foundation/alloc/Layout.h), so each door takes it
+// registers (the layout in foundation/alloc/Layout.h), so each door takes it
 // by value.
 void heap_release_(void* storage, ::foundation::alloc::Layout layout) noexcept;
 
-// THE WORDS OF A LAYOUT.  The two bodies below take the two words of a
+// Words of a layout.  The two bodies below take the two words of a
 // Layout as two numbers, because the attributes alloc_size and alloc_align
 // name parameters of an integer type.  With them GCC and _FORTIFY_SOURCE know
 // the size and the alignment of each block that the door gives.  Only the two
@@ -77,7 +77,7 @@ template <class T>
     return heap_take_zeroed_words_(layout.bytes().raw(), static_cast<std::size_t>(layout.alignment()));
 }
 
-// THE SPARE STORAGE.  An owner that holds storage past its elements, such as
+// Spare storage.  An owner that holds storage past its elements, such as
 // a GrowList between its count and its capacity, tells AddressSanitizer which
 // slots hold no element.  heap_poison_ marks a run of bytes as not
 // addressable, and heap_unpoison_ marks it as addressable again before the
@@ -96,7 +96,7 @@ inline void heap_poison_(void const* /*first*/, std::size_t /*bytes*/) noexcept 
 inline void heap_unpoison_(void const* /*first*/, std::size_t /*bytes*/) noexcept {}
 #endif
 
-// Poisons the count slots from first (THE SPARE STORAGE).  A constant
+// Poisons the count slots from first (the spare storage).  A constant
 // evaluation has no sanitizer, and a count of zero names no slot, so neither
 // calls the door.
 template <class T>
@@ -107,7 +107,7 @@ constexpr void poison_slots_(T const* first, std::size_t count) noexcept {
 }
 
 // Unpoisons the count slots from first, before the owner writes them or
-// gives them back (THE SPARE STORAGE).
+// gives them back (the spare storage).
 template <class T>
 constexpr void unpoison_slots_(T const* first, std::size_t count) noexcept {
     if !consteval {

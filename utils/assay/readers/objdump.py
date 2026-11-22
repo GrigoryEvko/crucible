@@ -1,6 +1,6 @@
 """objdump — the one reader of a disassembly: the line grammar of objdump -d -r and the operands of each instruction.
 
-THE COMMAND
+Command
     functions() starts objdump one time for an object:
 
         objdump -d -r --no-show-raw-insn -M intel OBJECT
@@ -10,7 +10,7 @@ THE COMMAND
     structured shape.  This module holds its grammar and its test.  No other
     module of the package starts objdump.
 
-THE LINES
+Lines
     The module reads these lines of the text, and it ignores each other line.
     The head of the file, an empty line and the line "..." of zero bytes that
     objdump does not print are such lines:
@@ -25,7 +25,7 @@ THE LINES
     " <SYMBOL+0xN>".  An instruction line with no words after the offset is
     no instruction.
 
-THE INSTRUCTION
+Instruction
     The prefixes of an instruction are the words before its mnemonic: each
     word of PREFIXES, each REX prefix ("rex" or "rex." and its bits) and each
     pseudo-prefix such as `{vex}`.  When each word is a prefix, the last
@@ -33,7 +33,7 @@ THE INSTRUCTION
     with no comment and no annotation.  The relocation of an instruction is
     the last relocation line after it.
 
-THE OPERANDS
+Operands
     objdump divides two operands with a comma and no space.  parse_operands()
     gives each operand one record:
       `Register`   a register of NAMES, with the marks `{kN}` and `{z}` of an
@@ -55,7 +55,7 @@ THE OPERANDS
     then keeps each part of the line.  A caller gives spelling() a function
     for the names of the registers, such as the class of a register.
 
-THE NAMES
+Names
     The symbol of a function or of a relocation is the text of objdump, and
     its name is the text that c++filt gives for it.  A symbol of a section,
     such as .text.unlikely.NAME, and a name that is not mangled give their own
@@ -70,14 +70,14 @@ from collections.abc import Callable
 from assay.core import proc
 from assay.readers import elf
 
-# The command of THE COMMAND, before the object.
+# The command of the command, before the object.
 COMMAND = ("objdump", "-d", "-r", "--no-show-raw-insn", "-M", "intel")
 SECTION_HEAD = "Disassembly of section "
 SEGMENTS = frozenset({"cs", "ds", "es", "fs", "gs", "ss"})
 # The words that objdump prints before a mnemonic: the prefixes lock, rep and its variants, the branch and segment
 # prefixes, data16 and addr32.
 PREFIXES = frozenset({"lock", "rep", "repz", "repe", "repnz", "repne", "notrack", "bnd", "data16", "addr32"}) | SEGMENTS
-# A REX prefix: "rex" alone, or "rex." and the letters of its bits (THE INSTRUCTION).
+# A REX prefix: "rex" alone, or "rex." and the letters of its bits (the instruction).
 REX = "rex"
 REX_BITS = frozenset("WRXB")
 RELOCATION_MARK = "R_"
@@ -87,7 +87,7 @@ OPERAND_SEPARATOR = ","
 HEX_DIGITS = frozenset("0123456789abcdef")
 DECIMAL_DIGITS = frozenset("0123456789")
 HEX_MARK = "0x"
-# The mnemonics with a number operand that is the address of the target, with no 0x (THE OPERANDS).
+# The mnemonics with a number operand that is the address of the target, with no 0x (the operands).
 TARGET_MNEMONICS = frozenset({"call", "jmp", "loop", "loope", "loopne", "loopz", "loopnz", "xbegin"})
 TARGET_MNEMONIC_START = "j"
 # The width words of a memory operand, and the two words after a width word.
@@ -102,7 +102,7 @@ SCALES = frozenset({1, 2, 4, 8})
 
 
 def register_names() -> frozenset[str]:
-    """Return each register name that objdump prints for x86-64 (THE OPERANDS).
+    """Return each register name that objdump prints for x86-64 (the operands).
 
     The names are the general registers of each width, also r16 to r31 of APX, rip and the index pseudo-registers.
     They are also the segment registers and the registers of the vector unit, AVX-512, MMX, x87, MPX and AMX.
@@ -167,7 +167,7 @@ class Register(elf.Record):
 
 
 class Memory(elf.Record):
-    """One memory operand: its width, its segment, its address and its AVX-512 marks (THE OPERANDS).
+    """One memory operand: its width, its segment, its address and its AVX-512 marks (the operands).
 
     `size` is a width word of SIZES, and `size_mark` is PTR or BCST.  `scale` is 0 when the address has no index.
     `displacement` is the signed number that objdump prints, or None when it prints none.  `is_bracketed` is False
@@ -242,7 +242,7 @@ class Memory(elf.Record):
 
 
 class Immediate(elf.Record):
-    """One number operand: its value, and True when objdump prints it in decimal digits (THE OPERANDS)."""
+    """One number operand: its value, and True when objdump prints it in decimal digits (the operands)."""
 
     __slots__ = ("is_decimal", "value")
 
@@ -257,7 +257,7 @@ class Immediate(elf.Record):
 
 
 class Target(elf.Record):
-    """The address of the target of a jump, a call, a loop or xbegin, in its section (THE OPERANDS)."""
+    """The address of the target of a jump, a call, a loop or xbegin, in its section (the operands)."""
 
     __slots__ = ("address",)
 
@@ -271,7 +271,7 @@ class Target(elf.Record):
 
 
 class Opaque(elf.Record):
-    """An operand that no other record of THE OPERANDS reads: its text."""
+    """An operand that no other record of the operands reads: its text."""
 
     __slots__ = ("text",)
 
@@ -393,7 +393,7 @@ def is_target_mnemonic(mnemonic: str) -> bool:
 
 
 def operand_of(text: str, mnemonic: str) -> Operand:
-    """Return the record of one operand of an instruction with the mnemonic (THE OPERANDS)."""
+    """Return the record of one operand of an instruction with the mnemonic (the operands)."""
     split = split_marks(text)
     if split is None:
         return Opaque(text)
@@ -418,7 +418,7 @@ def operand_of(text: str, mnemonic: str) -> Operand:
 
 
 def parse_operands(text: str, mnemonic: str) -> tuple[Operand, ...]:
-    """Return the record of each operand of the operand text of an instruction (THE OPERANDS).
+    """Return the record of each operand of the operand text of an instruction (the operands).
 
     The text has no comment and no annotation, and one space divides two words.  Complexity: linear in the length of
     the text.
@@ -448,7 +448,7 @@ class Relocation(elf.Record):
 class Instruction(elf.Record):
     """One instruction: its offset, its prefixes, its mnemonic, its operands, its comment and its relocations.
 
-    `operands` holds the record of each operand (THE OPERANDS).  `lines` holds the instruction line and each
+    `operands` holds the record of each operand (the operands).  `lines` holds the instruction line and each
     relocation line after it, as objdump prints them.
     """
 
@@ -475,7 +475,7 @@ class Instruction(elf.Record):
 
     @property
     def relocation(self) -> Relocation | None:
-        """The last relocation of the instruction, or None (THE INSTRUCTION)."""
+        """The last relocation of the instruction, or None (the instruction)."""
         return self.relocations[-1] if self.relocations else None
 
     @property
@@ -489,7 +489,7 @@ class Instruction(elf.Record):
 
 
 class Function(elf.Record):
-    """One function of a disassembly: its section, its symbol, its name and its instructions (THE NAMES)."""
+    """One function of a disassembly: its section, its symbol, its name and its instructions (the names)."""
 
     __slots__ = ("instructions", "name", "section", "symbol")
 
@@ -502,7 +502,7 @@ class Function(elf.Record):
 
 
 def is_prefix(word: str) -> bool:
-    """Tell if a word before a mnemonic is a prefix (THE INSTRUCTION)."""
+    """Tell if a word before a mnemonic is a prefix (the instruction)."""
     if word in PREFIXES:
         return True
     if word == REX or (word.startswith(f"{REX}.") and set(word[len(REX) + 1 :]) <= REX_BITS):
@@ -546,7 +546,7 @@ class Builder:
         )
 
     def read_line(self, line: str) -> None:
-        """Read one line of the text (THE LINES)."""
+        """Read one line of the text (the lines)."""
         if line.startswith(SECTION_HEAD) and line.endswith(":"):
             self.section = line[len(SECTION_HEAD) : -1]
             self.instructions = None
@@ -585,7 +585,7 @@ class Builder:
 
 
 def parse(text: str, where: str) -> tuple[Function, ...]:
-    """Return each function of the text of objdump -d -r, with the names that c++filt gives (THE NAMES).
+    """Return each function of the text of objdump -d -r, with the names that c++filt gives (the names).
 
     Complexity: linear in the lines of the text, and one run of c++filt.
 
@@ -634,7 +634,7 @@ def parse(text: str, where: str) -> tuple[Function, ...]:
 
 
 def functions(path: str | os.PathLike[str]) -> tuple[Function, ...]:
-    """Disassemble one object (THE COMMAND), and return each function of it.
+    """Disassemble one object (the command), and return each function of it.
 
     Raises:
         ObjdumpError: If objdump cannot start, runs longer than its limit or fails, or c++filt does not give the names

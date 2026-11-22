@@ -108,8 +108,8 @@ template <UnsignedInteger Count, class... Runs>
     requires(sizeof...(Runs) > 0 && (detail::is_run_of_<Runs> && ...))
 class RunSet;
 
-// The door of a RunSet to the raw constructors of a View (THE DOORS OF THE
-// OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The set keeps the
+// The door of a RunSet to the raw constructors of a View (the doors of the
+// owners above this header of foundation/core/Region.h).  The set keeps the
 // first element of each run beside one table of counts, so its layout holds
 // one pointer for each run, and a View for each run would move it.  The
 // invariant: set<I> takes the first element of a View whose count is the count

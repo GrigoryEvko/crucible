@@ -4,14 +4,14 @@
 // ends or changes the payload while the arm holds that reference: a use after
 // free in code that compiles.  The rule refuses each such write.
 //
-// THE BORROW MATCH
+// Borrow match
 //     A borrow match is a member function that carries the P3394 annotation
 //     foundation::linear::borrow_match of include/foundation/Linear.h, also an
 //     instance of a member template whose pattern carries it.  The match of a
 //     const lvalue of Option, Result and OneOf carries it.  The rule reads the
 //     annotation, and it names no function.
 //
-// THE RECEIVER AND THE ARMS
+// Receiver and the arms
 //     The receiver is the object of a call of a borrow match.  An arm is an
 //     argument of the call that is an object of a class with a call operator
 //     of at least one parameter: a lambda expression, a braced object of a
@@ -21,7 +21,7 @@
 //     parameter by value is an arm as well.  The arm on_none of an Option has
 //     no parameter and gets no payload, so a write there is no finding.
 //
-// THE LOOP
+// Loop
 //     A range loop over a sum lends the payload too: its cursor and its
 //     reference name the payload for the whole body.  The loop door begin() of
 //     an Option carries the annotation, so the rule reads such a loop as a
@@ -35,7 +35,7 @@
 //     join.  A write after the end of the loop is no finding.  The entity of a
 //     finding of a loop starts with "loop".
 //
-// THE PATHS
+// Paths
 //     A path names an object: a variable or a parameter, and then a field or a
 //     dereference for each step.  The receiver is a path.  In the body of an
 //     arm, the use of a capture names a field of the closure, and the call
@@ -50,7 +50,7 @@
 //     object of its initializer, as the range of a loop over the sum does.  A
 //     static variable is the root of its own path.
 //
-// THE WRITES
+// Writes
 //     In the body of an arm, these writes are findings:
 //       assignment     an assignment of the receiver or of an object that holds
 //                      it, also through an assignment operator
@@ -61,7 +61,7 @@
 //                      parameter is not const
 //     The entity of a finding is the kind of the write and the receiver.
 //
-// THE CALLS
+// Calls
 //     The front end gives a call as a CALL_EXPR, but a call whose result is a
 //     class that a call cannot pass in registers (a class with a destructor, or
 //     with a copy or a move that is not trivial) as an AGGR_INIT_EXPR.  The rule
@@ -69,7 +69,7 @@
 //     arm.  So a take of an Option of a payload with a destructor in a cast to
 //     void, or in the initializer of a local, is a mutating call too.
 //
-// THE JOIN
+// Join
 //     PLUGIN_PRE_GENERICIZE gives the body of each arm before the body of the
 //     function with the call, and the instance of a generic arm can come after
 //     it.  So the rule records the writes of each arm at the event of its call
@@ -79,12 +79,12 @@
 //     only identifiers, locations and text, so no collection can free a tree
 //     that it holds.
 //
-// THE BODIES
+// Bodies
 //     The rule reads the bodies that is_body_read_here of plugin.h gives, as
-//     the rule binding-hook does (binding.cpp, THE BODIES), for the arms and
+//     the rule binding-hook does (binding.cpp, the bodies), for the arms and
 //     for the calls.  The place of a finding is the place of the write.
 //
-// THE LIMITS
+// Limits
 //     The rule reads the body of the arm only.  A write in a function that the
 //     arm calls, such as a free function that takes the sum by a reference that
 //     is not const, a write through a pointer or a second reference parameter
@@ -97,7 +97,7 @@
 //     lend, so an owning Option has no loop, and the limits of the body of a
 //     loop over a niche or a plain Option are those of an arm.
 //
-// THE ERRORS
+// Errors
 //     Each finding is a compile error in each build and each mode
 //     (is_each_mode_kind of plugin.h), and an opt-out region covers it.  The
 //     message does not start with "quarantine: ", so the driver of the
@@ -116,7 +116,7 @@ constexpr int kDereference = -1;
 // The root of a path that names no object.  A DECL_UID is never negative.
 constexpr int kNoRoot = -1;
 
-// A path (THE PATHS).  ROOT is the DECL_UID of the variable or the parameter,
+// A path (the paths).  ROOT is the DECL_UID of the variable or the parameter,
 // or kNoRoot.  IS_CLOSURE is true when the root is the object parameter of the
 // call operator of an arm.
 struct Path {
@@ -171,7 +171,7 @@ struct Names {
 
 Names names;
 
-// A write of the body of a loop to the sum that the loop reads (THE LOOP):
+// A write of the body of a loop to the sum that the loop reads (the loop):
 // its place, and the entity of its finding.
 struct LoopWrite {
     location_t location = UNKNOWN_LOCATION;
@@ -179,8 +179,8 @@ struct LoopWrite {
 };
 
 // The writes of each arm that holds a reference, by the TYPE_UID of its
-// closure, each call of a borrow match (THE JOIN), and each write of the body
-// of a loop over a sum (THE LOOP).
+// closure, each call of a borrow match (the join), and each write of the body
+// of a loop over a sum (the loop).
 std::unordered_map<unsigned, std::vector<ArmWrite>> arm_writes;
 std::vector<MatchCall> match_calls;
 std::vector<LoopWrite> loop_writes;
@@ -234,7 +234,7 @@ std::string name_text(tree decl) {
 
 Path pointee_path(tree node, tree closure, int depth);
 
-// The path of the lvalue NODE (THE PATHS), or a path with no root.  CLOSURE is
+// The path of the lvalue NODE (the paths), or a path with no root.  CLOSURE is
 // the object parameter of the call operator of an arm, or null.  Complexity:
 // linear in the depth of the expression.
 Path lvalue_path(tree node, tree closure, int depth) {
@@ -314,7 +314,7 @@ Path pointee_path(tree node, tree closure, int depth) {
 // ── The arms ────────────────────────────────────────────────────────────
 
 // True when FUNCTION is the call operator of an arm: a member operator() of a
-// class, with at least one parameter (THE RECEIVER AND THE ARMS).
+// class, with at least one parameter (the receiver and the arms).
 bool is_arm_operator(tree function) {
     if (DECL_LANG_SPECIFIC(function) == nullptr || !DECL_OVERLOADED_OPERATOR_IS(function, CALL_EXPR)
         || !DECL_FUNCTION_MEMBER_P(function)) {
@@ -353,7 +353,7 @@ bool is_mutable_object_parameter(tree type) {
 }
 
 // CALL is a CALL_EXPR, or the AGGR_INIT_EXPR of a call whose result is a
-// class with a destructor or a copy that is not trivial (THE CALLS).
+// class with a destructor or a copy that is not trivial (the calls).
 void record_call_write(ArmWalk& walk, tree call) {
     tree callee = cp_get_callee_fndecl_nofold(call);
     if (callee == NULL_TREE || argument_count(call) < 1) {
@@ -377,7 +377,7 @@ void record_call_write(ArmWalk& walk, tree call) {
     record_write(walk, pointee_path(argument_at(call, 0), walk.closure, 0), kind, call);
 }
 
-// The callback of cp_walk_tree over the body of an arm (THE WRITES).
+// The callback of cp_walk_tree over the body of an arm (the writes).
 tree walk_arm_writes(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
     auto& walk = *static_cast<ArmWalk*>(data);
@@ -438,12 +438,12 @@ void record_arm(tree function) {
 
 // The value of each field of a pointer or a reference type of one arm object:
 // the path of the object that the value points at, by the DECL_UID of the
-// field (THE PATHS).
+// field (the paths).
 using Pointees = std::unordered_map<int, Path>;
 
 // The state of the walk of the calls of one function: the pointees of each
 // local variable of a class type, and the receiver of each cursor of a loop
-// door (THE LOOP), by the DECL_UID of the variable.  The walk visits an
+// door (the loop), by the DECL_UID of the variable.  The walk visits an
 // initializer before a later call that names the variable.
 struct CallWalk {
     std::unordered_map<int, Pointees> named;
@@ -470,7 +470,7 @@ Path receiver_of(tree call) {
 }
 
 // The call of a loop door that initializes a cursor: a call of a borrow match
-// whose one argument is the receiver (THE LOOP), or null.
+// whose one argument is the receiver (the loop), or null.
 tree loop_door_call(tree initializer) {
     for (int depth = 0; initializer != NULL_TREE && depth < kTypeDepth; ++depth) {
         initializer = strip_wrappers(initializer);
@@ -505,8 +505,8 @@ void record_cursor(CallWalk& walk, tree left, tree right) {
 }
 
 // True when TYPE can be the type of an arm: a class.  The join reads only the
-// classes whose call operator recorded the writes of an arm (THE RECEIVER AND
-// THE ARMS, THE JOIN).
+// classes whose call operator recorded the writes of an arm (the receiver and
+// the arms, the join).
 bool is_arm_class(tree type) { return type != NULL_TREE && CLASS_TYPE_P(type); }
 
 // The pointees of the CONSTRUCTOR of an arm object.
@@ -578,7 +578,7 @@ void record_initializer(CallWalk& walk, tree left, tree right) {
     }
 }
 
-// CALL is a CALL_EXPR or an AGGR_INIT_EXPR of a borrow match (THE CALLS).
+// CALL is a CALL_EXPR or an AGGR_INIT_EXPR of a borrow match (the calls).
 void record_call(const CallWalk& walk, tree call) {
     MatchCall record;
     record.receiver = receiver_of(call);
@@ -610,7 +610,7 @@ void record_call(const CallWalk& walk, tree call) {
 }
 
 // The callback of cp_walk_tree over the initializer of a loop: it records
-// each cursor of a loop door (THE LOOP) and nothing else.
+// each cursor of a loop door (the loop) and nothing else.
 tree walk_cursors(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
     auto& walk = *static_cast<CallWalk*>(data);
@@ -659,7 +659,7 @@ tree find_cursor(tree* node_pointer, int* walk_subtrees, void* data) {
 }
 
 // The receiver of the loop LOOP when its increment or its condition names a
-// cursor of a loop door, or null (THE LOOP).
+// cursor of a loop door, or null (the loop).
 const Path* loop_receiver(CallWalk& walk, tree loop) {
     tree init = FOR_INIT_STMT(loop);
     if (init != NULL_TREE) {
@@ -680,7 +680,7 @@ const Path* loop_receiver(CallWalk& walk, tree loop) {
 
 bool reaches(const Path& written, WriteKind kind, const Path& receiver);
 
-// Records each write of the body of a loop over a sum to that sum (THE LOOP).
+// Records each write of the body of a loop over a sum to that sum (the loop).
 // Complexity: linear in the body, times the length of a path.
 void record_loop(CallWalk& walk, tree loop) {
     const Path* receiver = loop_receiver(walk, loop);
@@ -741,7 +741,7 @@ tree walk_calls(tree* node_pointer, int* walk_subtrees, void* data) {
 // ── The join ────────────────────────────────────────────────────────────
 
 // The path in the frame of the call that the write WRITE of ARM names, or a
-// path with no root (THE PATHS).  A closure path starts with the dereference
+// path with no root (the paths).  A closure path starts with the dereference
 // of the object parameter and a field of the closure.  Only a dereference of
 // a field of a pointer or a reference type reaches an object of the caller.
 Path resolve(const ArmWrite& write, const CallArm& arm) {
@@ -761,8 +761,8 @@ Path resolve(const ArmWrite& write, const CallArm& arm) {
     return resolved;
 }
 
-// True when the write of the kind KIND to WRITTEN reaches RECEIVER (THE
-// WRITES): an assignment or a move of the receiver or of an object that holds
+// True when the write of the kind KIND to WRITTEN reaches RECEIVER (the
+// writes): an assignment or a move of the receiver or of an object that holds
 // it, or a mutating call of the receiver itself.
 bool reaches(const Path& written, WriteKind kind, const Path& receiver) {
     if (written.root == kNoRoot || written.root != receiver.root || written.steps.size() > receiver.steps.size()) {
@@ -774,7 +774,7 @@ bool reaches(const Path& written, WriteKind kind, const Path& receiver) {
     return std::equal(written.steps.begin(), written.steps.end(), receiver.steps.begin());
 }
 
-// The join of the arms and the calls (THE JOIN).  Complexity: linear in the
+// The join of the arms and the calls (the join).  Complexity: linear in the
 // writes of the arms of each call, times the length of a path.
 void finish_borrow_matches_now() {
     for (const MatchCall& call : match_calls) {

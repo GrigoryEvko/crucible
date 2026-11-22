@@ -4,7 +4,7 @@
 // and refuses the wrapper, and the diagnostic names the wrapper, which the
 // instantiation note for payload_row<T> does not.
 //
-// VIOLATION: a TU asks for the row of a class whose member is an
+// Violation: a TU asks for the row of a class whose member is an
 // unrostered wrapper around an engaged computation.
 
 #include <fixy/concurrent/PayloadRow.h>

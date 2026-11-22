@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Violation: minting ValidContentHash from a default ContentHash, whose
 // NSDMI is zero, during constant evaluation.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The write borrow door takes its token by rvalue reference, keeps the
 // token in its own frame while the body runs, and hands the token back.

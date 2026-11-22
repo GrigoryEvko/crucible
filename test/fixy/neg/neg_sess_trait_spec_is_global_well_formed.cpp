@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_global_well_formed is an alias template over the concept that the
 // projection gate reads, so no user specialization makes a global type

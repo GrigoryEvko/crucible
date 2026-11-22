@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A counter tag names one axis, and it adds no storage, so two counts of
 // one axis differ only in their value.  The tag below states a name and

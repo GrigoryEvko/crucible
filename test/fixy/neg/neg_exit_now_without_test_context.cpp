@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // exit_now ends the process with no exit hook, which only the child of a
 // test does.  The foreground context owns no Test capability, so the gate

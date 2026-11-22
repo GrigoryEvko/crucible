@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A stage graph whose edges must run in topological order, given an edge
 // from a later stage back to an earlier one.  That edge is a cycle

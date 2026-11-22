@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Two stages that are each well formed and do not chain: the first
 // produces int and the second consumes float.  Each mints on its own;

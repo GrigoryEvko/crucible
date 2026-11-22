@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The bitwise compare of the detector reads each byte of a result.  No
 // replica writes a padding byte, so two equal results can differ there and

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Fixture 2 of 2 for the loaded-region door of deserialize_region.
 //
@@ -22,7 +22,7 @@ int main() {
     // The payload is the payload of a loaded region, so only the tag differs.
     using ExternalRegion = ::fixy::Tagged<::fixy::Ref<crucible::RegionNode>, ::fixy::tags::source::External>;
 
-    // MUST fail: source::Loaded is not source::External.
+    // Must fail: source::Loaded is not source::External.
     ExternalRegion wrong = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena)
                                .expect("the fixture names the type of a loaded region");
     return wrong.value()->content_hash ? 0 : 1;

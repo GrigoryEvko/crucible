@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_lock_contention rejects BgDrainCtx.  That context claims
 // Row<Bg, Alloc> and carries neither IO nor Block, and the gate demands

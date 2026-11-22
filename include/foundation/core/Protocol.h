@@ -20,11 +20,11 @@
 // derive_protocol, local_part and pad_part, and the rules of the walk: the
 // parts of a class are its bases and then its members, in declaration order.
 //
-// THE IMAGE
+// Image
 //   A value has a byte image when each part has one: an integer, a bool, a
 //   character, an enumeration, a float or a double, a bounded C array or a
-//   FixedArray of such parts, a sum of such parts (THE SUMS), a FixedList of
-//   such parts and a FixedText (THE BOUNDED LISTS), and a class with the
+//   FixedArray of such parts, a sum of such parts (the sums), a FixedList of
+//   such parts and a FixedText (the bounded lists), and a class with the
 //   annotation derive_protocol.  The walk refuses a pointer, a reference, a union, a
 //   named bit-field and each other class, as decode of the Scalar family
 //   does.  A local part has no place in the image.  The image holds no
@@ -34,11 +34,11 @@
 //   its underlying integer, and a float or a double its IEEE 754 bits.  So
 //   one value gives the same image on each target.
 //
-// THE HASH
+// Hash
 //   hash gives 64 bits with no key.  It is an id inside one process, and a
 //   hash of the store that the format version of the store pins, such as
 //   the hash of a guard in the merkle hash of a branch.  The hash is a
-//   function of the image of THE IMAGE: a pad part takes part, and a local
+//   function of the image: a pad part takes part, and a local
 //   part does not.  The fold divides the image into blocks of 16 bytes and
 //   fills the last block with zero bytes.  Each block is two words, low and
 //   high, each of 8 bytes in little-endian order:
@@ -61,7 +61,7 @@
 //   keyed hash of the bytes of encode, with its width and its key in its
 //   type, and never this hash.
 //
-// THE SUMS
+// Sums
 //   An Option, a Result or a OneOf (foundation/core/Choice.h and OneOf.h)
 //   whose alternatives have an image has an image too: one tag byte, and then
 //   room for the largest image of its alternatives.  The tag of an Option is 0
@@ -74,7 +74,7 @@
 //   constructor with no throw, and it refuses a tag of no alternative and a
 //   byte after the active alternative that is not zero.
 //
-// THE BOUNDED LISTS
+// Bounded lists
 //   A FixedList of N elements with an image, and a FixedText of N characters
 //   (foundation/core/List.h and Text.h), have an image too: the count, and
 //   then room for N elements.  The count takes the smallest width of 1, 2, 4
@@ -88,7 +88,7 @@
 //   An image holds at most 2^32 - 1 bytes, so the offset of each fault fits
 //   the 32 bits of a DecodeFault.
 //
-// THE HEAP PARTS
+// Heap parts
 //   A HeapArray of elements with an image of one byte or more, and a
 //   HeapText (foundation/core/Array.h and Grow.h), have an image whose size
 //   is known only at run time: the count of the elements in 8 bytes, in
@@ -96,14 +96,14 @@
 //   class with the annotation derive_protocol whose parts have an image, and
 //   whose parts hold one or more heap parts, is HeapEncodable.  It is not
 //   Encodable, so each type has one image.  Its image holds its parts one
-//   after the other, in the order of THE IMAGE, and a part with an image of
-//   fixed size takes the bytes of THE IMAGE.
+//   after the other, in the order of the image, and a part with an image of
+//   fixed size takes the bytes of the image.
 //
 //   encoded_size(value) gives the count of bytes of the image.  encode writes
 //   the image into a View of exactly that count, and an image of more than
 //   2^32 - 1 bytes or a View of a different size ends the process.  decode
 //   takes the allocation capability, a budget of bytes of storage, and the
-//   bytes.  It refuses each fault of THE CODEC, bytes that end inside a part,
+//   bytes.  It refuses each fault of the codec, bytes that end inside a part,
 //   bytes after the end of the image, more than 2^32 - 1 bytes, and heap
 //   parts that need more storage than the budget.  An element needs a
 //   default constructor with no throw, and no element is linear.
@@ -123,18 +123,18 @@
 //   holds more than one allocation can hold, so decode reads it as that
 //   count.
 //
-//   The hash folds the image as THE HASH folds an image, and then one block
+//   The hash folds the image as the hash folds an image, and then one block
 //   with the count of the bytes of the image in its low word.  A GrowList
 //   and a GrowText are builders, and no part: freeze a GrowText into a
 //   HeapText first.
 //
-// THE CODEC
+// Codec
 //   encode writes the image into a View of exactly encoded_size_v<T> bytes,
 //   so it cannot fail.  decode reads such a View into a T.  It refuses a
 //   bool byte other than 0 and 1, an enumeration value that names no
 //   enumerator, a byte of a pad part that is not zero, a part that declares a
-//   niche and holds its empty value, a sum of THE SUMS with a tag or a tail
-//   byte that holds no value, and a list of THE BOUNDED LISTS with a count or
+//   niche and holds its empty value, a sum of the sums with a tag or a tail
+//   byte that holds no value, and a list of the bounded lists with a count or
 //   a tail byte that holds no value.  The DecodeFault names the
 //   reason and the byte offset of the part in the image.  The first fault in
 //   the order of the parts wins.  A local part of the result keeps the value
@@ -142,7 +142,7 @@
 //   member and a class that carries the annotation no_start_over_bytes,
 //   whose values only its own constructors make.
 //
-// THE FORMAT
+// Format
 //   format writes `{name = value, name = value}`, with the parts of each base
 //   first.  An integer is written in decimal, a bool as true or false, a
 //   float as the text of report(), an enumerator of a scoped enumeration as
@@ -188,24 +188,24 @@ enum class DecodeRefusal : std::uint8_t {
     pad_byte,
     // A part that declares a niche holds its empty value.
     empty_niche,
-    // The tag byte of a sum names no alternative (THE SUMS).
+    // The tag byte of a sum names no alternative (the sums).
     sum_tag,
     // A byte after the active alternative of a sum, or after the last
-    // element of a bounded list, is not zero (THE SUMS, THE BOUNDED LISTS).
+    // element of a bounded list, is not zero (the sums, the bounded lists).
     tail_byte,
-    // The count of a bounded list is more than its capacity (THE BOUNDED
-    // LISTS).
+    // The count of a bounded list is more than its capacity (the bounded
+    // lists).
     list_count,
-    // The bytes end inside a part of an image of run-time size (THE HEAP
-    // PARTS).
+    // The bytes end inside a part of an image of run-time size (the heap
+    // parts).
     image_end,
-    // A byte follows the end of an image of run-time size (THE HEAP PARTS).
+    // A byte follows the end of an image of run-time size (the heap parts).
     trailing_byte,
-    // An image of run-time size holds more than 2^32 - 1 bytes (THE HEAP
-    // PARTS).
+    // An image of run-time size holds more than 2^32 - 1 bytes (the heap
+    // parts).
     image_size,
     // The storage of a heap part needs more bytes than remain in the budget
-    // of the decode (THE HEAP PARTS).
+    // of the decode (the heap parts).
     allocation_budget,
 };
 
@@ -251,7 +251,7 @@ namespace detail {
         std::meta::template_arguments_of(std::meta::remove_cv(std::meta::dealias(spelled)))[1]);
 }
 
-// True for a sum of THE SUMS: an Option, a Result or a OneOf.  An alias
+// True for a sum (see the sums): an Option, a Result or a OneOf.  An alias
 // reads as the type that it names.
 [[nodiscard]] consteval bool is_sum_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
@@ -271,7 +271,7 @@ namespace detail {
     return std::meta::template_arguments_of(std::meta::remove_cv(std::meta::dealias(spelled)))[index];
 }
 
-// True for a list of THE BOUNDED LISTS: a FixedList or a FixedText.  An
+// True for a bounded list: a FixedList or a FixedText.  An
 // alias reads as the type that it names.
 [[nodiscard]] consteval bool is_bounded_list_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
@@ -303,7 +303,7 @@ namespace detail {
     return 8;
 }
 
-// True when a value of the type has a byte image (THE IMAGE).  Linear in the
+// True when a value of the type has a byte image (the image).  Linear in the
 // number of parts that the walk reaches.
 [[nodiscard]] consteval bool has_image_at(std::meta::info spelled, int depth) {
     if (depth > max_protocol_depth) return false;
@@ -372,7 +372,7 @@ namespace detail {
     return true;
 }
 
-// An image holds at most this count of bytes (THE BOUNDED LISTS).  The walk
+// An image holds at most this count of bytes (the bounded lists).  The walk
 // keeps each count above it at max_image_bytes + 1, so no sum and no product
 // of two counts wraps.
 inline constexpr std::size_t max_image_bytes = 0xFFFFFFFFU;
@@ -525,7 +525,7 @@ template <class T>
 
 // ── The walk of the heap parts ──────────────────────────────────────────
 
-// The bytes of the count of a heap part (THE HEAP PARTS).
+// The bytes of the count of a heap part (the heap parts).
 inline constexpr std::size_t heap_count_bytes = 8;
 
 // True for a HeapArray and for a HeapText.  An alias reads as the type that
@@ -622,7 +622,7 @@ template <class T>
 constexpr void encode_part_(T const& part, std::byte* first) noexcept;
 
 // Writes the tag of a sum at first and zero bytes in the room after it, so
-// each byte after the active alternative is zero (THE SUMS).
+// each byte after the active alternative is zero (the sums).
 template <class Sum>
 constexpr void put_sum_tag_(std::byte* first, std::size_t tag) noexcept {
     first[0] = static_cast<std::byte>(static_cast<std::uint8_t>(tag));
@@ -691,7 +691,7 @@ void list_first_(FixedText<N> const&&) =
     delete("the address names a character of the text, and a temporary text ends with the full expression");
 
 // The image of a bounded list: its count, the image of each element, and
-// zero bytes in each other room (THE BOUNDED LISTS).  The loop runs over the
+// zero bytes in each other room (the bounded lists).  The loop runs over the
 // rooms of the capacity, a bound that the compiler knows, and it reads no
 // element past the count.  Complexity: one store for each byte of the image.
 template <class List>
@@ -821,7 +821,7 @@ template <class T, std::size_t Index>
 
 // Reads the alternative Alt of a sum from the bytes after its tag into value,
 // and refuses a byte after its image in the room of the sum that is not zero
-// (THE SUMS).  first is the tag byte of the sum, at offset in the image.
+// (the sums).  first is the tag byte of the sum, at offset in the image.
 template <class Sum, class Alt>
 [[nodiscard]] constexpr bool decode_alternative_(Alt& value, std::byte const* first, std::size_t offset,
                                                  DecodeFault& fault) noexcept {
@@ -932,7 +932,7 @@ constexpr void put_element_(FixedText<N>& text, char&& element) noexcept {
 }
 
 // Reads a bounded list: its count, each element in order, and zero bytes in
-// each other room (THE BOUNDED LISTS).  The list grows through its append,
+// each other room (the bounded lists).  The list grows through its append,
 // and part takes it at the end.  Complexity: one load for each byte of the
 // image, and one append for each element.
 template <class List>
@@ -1161,7 +1161,7 @@ constexpr void fill_block_(HashState& state, Element const* first, std::index_se
      ...);
 }
 
-// True for a leaf of THE IMAGE: an integer, a bool, a character, a float, a
+// True for a leaf of the image: an integer, a bool, a character, a float, a
 // double or an enumeration.  Each other part with an image is an array, a
 // sum, a list or a class, and its bytes are no leaf word.
 template <class T>
@@ -1203,7 +1203,7 @@ constexpr void hash_array_(HashState& state, Element const* first) noexcept {
     }
 }
 
-// The fold of one part at the byte Offset of the image (THE HASH).
+// The fold of one part at the byte Offset of the image (the hash).
 template <std::size_t Offset, class T>
 constexpr void hash_part_(HashState& state, T const& part) noexcept {
     using Bare = std::remove_cv_t<T>;
@@ -1231,7 +1231,7 @@ constexpr void hash_part_(HashState& state, T const& part) noexcept {
 }
 
 // The fold of count elements from first as one image, and then one block
-// with the count in its low word (THE HASH of a run).  An element whose
+// with the count in its low word (the hash of a run).  An element whose
 // image holds a whole number of blocks folds at the start of its block.
 // When 16 is a multiple of the size of an image, each group of elements
 // that fills a block folds with the offsets of its elements.  Each other
@@ -1270,7 +1270,7 @@ constexpr void hash_run_(HashState& state, T const* first, std::size_t count) no
 // ── The heap parts ──────────────────────────────────────────────────────
 
 // The count of bytes of the image of one part of a value with an image of
-// run-time size (THE HEAP PARTS).  Complexity: one step for each part of
+// run-time size (the heap parts).  Complexity: one step for each part of
 // the walk, and none for each element.
 template <class T>
 [[nodiscard]] constexpr std::size_t heap_size_(T const& part) noexcept;
@@ -1300,7 +1300,7 @@ template <class T>
 }
 
 // Writes the image of one part from first, and gives the first byte after
-// it.  A part with an image of fixed size writes THE IMAGE.  Complexity: one
+// it.  A part with an image of fixed size writes the image.  Complexity: one
 // store for each byte of the image.
 template <class T>
 constexpr std::byte* encode_heap_part_(T const& part, std::byte* first) noexcept;
@@ -1361,7 +1361,7 @@ struct HeapCursor final {
 };
 
 // The budget of a decode as a count of bytes, at most the largest count of a
-// View of bytes (THE HEAP PARTS).  A larger budget holds more bytes than one
+// View of bytes (the heap parts).  A larger budget holds more bytes than one
 // allocation can give, so the mint of a part that fits it never ends the
 // process for its size.
 [[nodiscard]] constexpr std::size_t heap_budget_of_(Quantity<unit::Byte, std::size_t> budget) noexcept {
@@ -1503,8 +1503,8 @@ template <class T, class Marker>
     }
 }
 
-// The fold of an image of run-time size (THE HEAP PARTS): the state of THE
-// HASH, the position in its block, and the count of the bytes that it took.
+// The fold of an image of run-time size (the heap parts): the state of the
+// hash, the position in its block, and the count of the bytes that it took.
 struct HeapFold final {
     HashState state{};
     std::size_t position = 0;
@@ -1700,7 +1700,7 @@ template <std::size_t Capacity, class T, std::size_t... Bases, std::size_t... Me
         && (detail::put_member_<Capacity, T, Members>(out, object, is_first) && ...);
 }
 
-// The text of a sum (THE FORMAT): some(value) or none, ok(value) or
+// The text of a sum (the format): some(value) or none, ok(value) or
 // err(error), and the index of the alternative of a OneOf before its value,
 // as #1(value).
 template <std::size_t Capacity, class T>
@@ -1745,7 +1745,7 @@ template <std::size_t Capacity, class T>
 }
 
 // The characters of a text between two quotes, with a backslash before each
-// quote and each backslash (THE FORMAT).
+// quote and each backslash (the format).
 template <std::size_t Capacity>
 [[nodiscard]] bool put_quoted_(FixedText<Capacity>& out, TextView text) noexcept {
     if (!detail::put_text_(out, "\"")) return false;
@@ -1757,7 +1757,7 @@ template <std::size_t Capacity>
     return detail::put_text_(out, "\"");
 }
 
-// The text of a bounded list (THE FORMAT): the elements of a FixedList as
+// The text of a bounded list (the format): the elements of a FixedList as
 // [a, b], and the characters of a FixedText between two quotes.
 template <std::size_t Capacity, class T, std::size_t N>
 [[nodiscard]] bool put_list_(FixedText<Capacity>& out, FixedList<T, N> const& part) noexcept {
@@ -1769,7 +1769,7 @@ template <std::size_t Capacity, std::size_t Size>
     return detail::put_quoted_(out, part.view());
 }
 
-// Writes one part (THE FORMAT).  Complexity: linear in the length of the
+// Writes one part (the format).  Complexity: linear in the length of the
 // text.
 template <std::size_t Capacity, class T>
 [[nodiscard]] bool put_part_(FixedText<Capacity>& out, T const& part) noexcept {
@@ -1810,7 +1810,7 @@ template <std::size_t Capacity, class T>
 }  // namespace detail
 
 // A class with the annotation derive_protocol whose value has a byte image
-// (THE IMAGE) of at most max_image_bytes bytes.  hash, encode and format
+// (the image) of at most max_image_bytes bytes.  hash, encode and format
 // take it.
 template <class T>
 concept Encodable = detail::derives_protocol_at(^^T) && detail::has_image_at(^^T, 0)
@@ -1826,7 +1826,7 @@ concept Decodable = Encodable<T> && std::is_nothrow_default_constructible_v<T> &
 template <Encodable T>
 inline constexpr std::size_t encoded_size_v = detail::image_bytes_at(^^T);
 
-// A type that hash takes: an Encodable class, and a leaf of THE IMAGE that
+// A type that hash takes: an Encodable class, and a leaf of the image that
 // is no class: an integer, a bool, a character, an enumeration, a float or a
 // double.  The image of a leaf is its bytes, so its hash is one fold.  A
 // pointer, a C array and a floating type other than float and double have
@@ -1834,7 +1834,7 @@ inline constexpr std::size_t encoded_size_v = detail::image_bytes_at(^^T);
 template <class T>
 concept Hashable = Encodable<T> || (!std::is_class_v<T> && !std::is_array_v<T> && detail::has_image_at(^^T, 0));
 
-// The hash of the value (THE HASH): 64 bits with no key, the same on each
+// The hash of the value (the hash): 64 bits with no key, the same on each
 // target.  Complexity: one fold for each 16 bytes of the image.
 template <Hashable T>
 [[nodiscard]] constexpr Digest<T> hash(T const& value) noexcept {
@@ -1844,14 +1844,14 @@ template <Hashable T>
     return Digest<T>{state.accumulator};
 }
 
-// Writes the image of the value into out (THE IMAGE).  Complexity: one pass
+// Writes the image of the value into out (the image).  Complexity: one pass
 // over the parts.
 template <Encodable T>
 constexpr void encode(T const& value, View<std::byte, encoded_size_v<T>> out) noexcept {
     detail::encode_part_(value, first_of_(detail::BaseLayerRead{}, out));
 }
 
-// The hash of a run of values (THE HASH of a run): the fold of the images of
+// The hash of a run of values (the hash of a run): the fold of the images of
 // the elements one after the other as one image, and then of one block with
 // the count of the elements.  The count keeps two runs apart when one is the
 // other with zero values after it.  The order of the elements takes part.
@@ -1863,7 +1863,7 @@ template <Encodable T>
     return Digest<View<T const>>{state.accumulator};
 }
 
-// The T of an image, or the first fault of the image (THE CODEC).
+// The T of an image, or the first fault of the image (the codec).
 // Complexity: one pass over the parts.
 template <Decodable T>
 [[nodiscard]] constexpr Result<T, DecodeFault> decode(View<std::byte const, encoded_size_v<T>> bytes) noexcept {
@@ -1876,7 +1876,7 @@ template <Decodable T>
 }
 
 // A class with the annotation derive_protocol whose image has a run-time
-// size (THE HEAP PARTS): one or more of its parts is a HeapArray or a
+// size (the heap parts): one or more of its parts is a HeapArray or a
 // HeapText, and each other part has an image.  No type is Encodable and
 // HeapEncodable at the same time.
 template <class T>
@@ -1889,14 +1889,14 @@ concept HeapEncodable = detail::derives_protocol_at(^^T) && detail::has_heap_ima
 template <class T>
 concept HeapDecodable = HeapEncodable<T> && std::is_nothrow_default_constructible_v<T> && detail::heap_decodes_at(^^T);
 
-// The count of bytes of the image of the value (THE HEAP PARTS).
+// The count of bytes of the image of the value (the heap parts).
 // Complexity: one step for each part, and none for each element.
 template <HeapEncodable T>
 [[nodiscard]] constexpr std::size_t encoded_size(T const& value) noexcept {
     return detail::heap_size_(value);
 }
 
-// Writes the image of the value into out (THE HEAP PARTS).  out holds
+// Writes the image of the value into out (the heap parts).  out holds
 // exactly encoded_size(value) bytes, and the image holds at most
 // max_image_bytes bytes, or the process ends.  Complexity: one store for
 // each byte of the image.
@@ -1909,7 +1909,7 @@ constexpr void encode(T const& value, View<std::byte> out) noexcept {
     if (needed != 0) detail::encode_heap_part_(value, first_of_(detail::BaseLayerRead{}, out));
 }
 
-// The hash of the value (THE HEAP PARTS): the fold of its image, and then
+// The hash of the value (the heap parts): the fold of its image, and then
 // one block with the count of the bytes of the image.  Complexity: one step
 // for each leaf, and one fold for each 16 bytes of the image.
 template <HeapEncodable T>
@@ -1922,8 +1922,8 @@ template <HeapEncodable T>
     return Digest<T>{fold.state.accumulator};
 }
 
-// The T of an image of run-time size, or the first fault of the bytes (THE
-// HEAP PARTS).  Each heap part allocates through the capability, and the
+// The T of an image of run-time size, or the first fault of the bytes (the
+// heap parts).  Each heap part allocates through the capability, and the
 // storage of all the heap parts takes at most budget bytes.  Complexity: one
 // pass over the bytes, and one allocation for each heap part.
 template <HeapDecodable T, class Marker>
@@ -1943,7 +1943,7 @@ template <HeapDecodable T, class Marker>
 }
 
 // Writes each part of the value with its name into out, from its start
-// (THE FORMAT).  Gives the text, or Full<char> when the text needs more than
+// (the format).  Gives the text, or Full<char> when the text needs more than
 // the capacity of out.  On Full<char>, out holds a prefix of the text.
 template <std::size_t Capacity, class T>
     requires(Encodable<T> || HeapEncodable<T>)

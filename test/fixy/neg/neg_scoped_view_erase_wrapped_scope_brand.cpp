@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A brand that names a scope brand as a type argument, such as the brand of
 // a view of a walk of rows, carries the scope as the scope brand does.  The

@@ -77,9 +77,9 @@ inline constexpr std::uint64_t kRounds = (2 * kDirectRounds) + (kSessions * kRou
 class[[= ::foundation::transfer::synchronized{}]] Shared {
 public:
     // The key of the writer of the plain value.  The key stays on the thread
-    // that claimed it (THE PROOF OF A DOOR of foundation/Transfer.h).  Its
-    // constructor is private, so only claim_writer builds one (THE BUILD OF A
-    // TOKEN).
+    // that claimed it (the proof of a door of foundation/Transfer.h).  Its
+    // constructor is private, so only claim_writer builds one (the build of a
+    // token).
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriterKey final {
         WriterKey() noexcept {}
         friend class Shared;
@@ -93,7 +93,7 @@ public:
     // Gives the key to the calling thread.  One atomic exchange gives it to
     // one thread for the life of the state, and a second claim ends the
     // process.  A claim door: only the thread that won the exchange writes
-    // the plain value (THE DOORS OF A SYNCHRONIZED CLASS of
+    // the plain value (the doors of a synchronized class of
     // foundation/Transfer.h).
     [[nodiscard]] WriterKey claim_writer() noexcept {
         if (is_writer_claimed_.exchange_acq_rel(true)) {

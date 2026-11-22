@@ -18,7 +18,7 @@
 // encode, decode and format.  This header is below the sums and the records,
 // so Option, Result, OneOf and Record compare their parts with equal.
 //
-// THE PARTS
+// Parts
 //   A class that carries the annotation derive_protocol takes the operations
 //   from its parts: each direct base in declaration order, and then each
 //   non-static data member in declaration order.  The walk reads the private
@@ -34,7 +34,7 @@
 //   gives a weak or a partial order does not agree with ==, so it is no order
 //   of this family.
 //
-// THE LEAVES
+// Leaves
 //   An integer, a bool, a character and an enumeration compare with == and
 //   order with <=>.  A plain char and a wchar_t have a sign on x86_64 and no
 //   sign on aarch64, so they order, hash and format by their bits as a value
@@ -43,7 +43,7 @@
 //   order, because the order of two addresses changes from run to run.  A
 //   reference is no part.
 //
-// THE FLOAT RULE
+// Float rule
 //   equal of a float or a double is the identity of its bits: +0 and -0
 //   differ, and two NaNs are equal only when they have the same bits.  The
 //   base gives a canonical NaN at the output of its arithmetic, so a NaN of
@@ -56,7 +56,7 @@
 //   base, never through this family.  A floating type other than float and
 //   double is refused: long double holds padding bits on x86_64.
 //
-// THE MARKS OF A MEMBER
+// Marks of a member
 //   equal and order read each part, a local part and a pad part too.  hash,
 //   encode and format skip a local part, because its value has no meaning
 //   outside the process.  encode writes a pad part, and decode refuses a pad
@@ -314,8 +314,8 @@ template <std::size_t Part, std::size_t Count, class T>
 }  // namespace detail
 
 // True when left and right hold the same value: each part, in declaration
-// order, equals the part of the other.  A float compares by its bits (THE
-// FLOAT RULE).  Complexity: one compare for each leaf.
+// order, equals the part of the other.  A float compares by its bits (the
+// float rule).  Complexity: one compare for each leaf.
 template <class T>
     requires Equatable<T>
 [[nodiscard]] constexpr bool equal(T const& left, T const& right) noexcept {
@@ -338,7 +338,7 @@ template <class T>
 
 // The order of left and right: the order of the first part that differs, in
 // declaration order, or equal.  A float orders by the totalOrder of IEEE 754
-// (THE FLOAT RULE).  Complexity: one compare for each leaf up to the first
+// (the float rule).  Complexity: one compare for each leaf up to the first
 // part that differs.
 template <class T>
     requires Orderable<T>

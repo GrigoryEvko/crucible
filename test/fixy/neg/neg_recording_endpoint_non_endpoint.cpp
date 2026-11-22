@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_recording_endpoint wraps an endpoint.  A bare channel handle is not
 // an endpoint: it was never bound to a context, so no gate has admitted

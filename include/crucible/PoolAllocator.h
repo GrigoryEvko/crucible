@@ -14,7 +14,7 @@
 // them. The device is read at the start of a plan or at a check, and one
 // branded index reads the two columns with one bound check.
 //
-// THE COLUMN OF BYTES
+// Column of bytes
 //   The bytes of each slot as a View: the window of the pool for a pooled
 //   slot, the View that its owner registered for an external slot, or the
 //   empty View for an external slot with no registered View.  The address of
@@ -479,7 +479,7 @@ private:
     // True when the address is the first byte of the bytes, or the bytes are
     // empty.  A View of no byte has no first byte, so a pooled slot of no
     // byte and an external slot that its owner registered by its address
-    // alone both agree (THE COLUMN OF BYTES).
+    // alone both agree (the column of bytes).
     [[nodiscard]] static constexpr bool is_address_of_bytes_(::fixy::Option<::fixy::RunAddress> address,
                                                              ::fixy::View<uint8_t> bytes) noexcept {
         return bytes.size() == 0 || address == ::fixy::mint_run_address(bytes, 0);
@@ -510,7 +510,7 @@ private:
     // its owner.
     ::fixy::HeapArray<TensorDevice> devices_{};
     // The bytes of each slot, with the length of the column of addresses
-    // (THE COLUMN OF BYTES).
+    // (the column of bytes).
     ::fixy::HeapArray<::fixy::View<uint8_t>> views_{};
     uint32_t num_external_ = 0;
     [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad_{};

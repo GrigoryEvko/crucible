@@ -1,10 +1,10 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A nested handle of a class that states synchronized{} writes the plain
 // count of the class through its reference member.  It holds the guard of a
 // share of another tag, which the class does not declare as its own, so the
 // guard proves nothing about the class, and the door bump of the handle
-// stays a door with no proof (THE NESTED CLASSES of foundation/Transfer.h).
+// stays a door with no proof (the nested classes of foundation/Transfer.h).
 //
 // Expected diagnostic: a door of a nested class can write the class, and the
 // diagnostic names the door bump of the handle.

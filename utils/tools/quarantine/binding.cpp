@@ -5,13 +5,13 @@
 // product and drops the other parts with no report.  The rule refuses each
 // call of a hook outside the initializer of a binding.
 //
-// THE HOOKS
+// Hooks
 //     A hook is a function that carries the P3394 annotation
 //     foundation::linear::binding_hook of include/foundation/Linear.h, also an
 //     instance of such a function template.  The rule reads the annotation,
 //     and it names no function.
 //
-// THE PERMITTED CALL
+// Permitted call
 //     The front end gives each name of a binding of a tuple-like type a
 //     variable of its own, with the flag DECL_DECOMPOSITION_P, and a reference
 //     type.  Its initializer is the call of the hook, through conversions
@@ -20,32 +20,32 @@
 //     wrap(get<0>(record)), is a finding, because that variable is no name of
 //     the binding.
 //
-// THE BODIES
+// Bodies
 //     PLUGIN_PRE_GENERICIZE gives the body of each function that is not a
 //     template, and of each instance of a template.  The rule reads the bodies
-//     that the rule must-consume reads (linear.cpp, THE BODIES): each body of
+//     that the rule must-consume reads (linear.cpp, the bodies): each body of
 //     a quarantined file, a body of a base file in its sentinel unit, and an
 //     instance of a template of a base or a quarantined file in each unit that
 //     makes it.  The place of a finding is the place of the call.
 //
-// THE FOLDS
+// Folds
 //     The front end replaces an initializer whose value is a constant with
 //     that value, and the call goes from the tree.  A call of the hook of a
 //     Record of empty tokens folds in this way.  The event
 //     PLUGIN_FOLDED_INITIALIZER of the fifth patch of GCC gives the
-//     initializer before the fold (linear.cpp, THE FOLDS), and the rule reads
+//     initializer before the fold (linear.cpp, the folds), and the rule reads
 //     each hook call in it.  The event of the initializer of a name of a
 //     binding permits its call.  The rule reads the fold of each initializer,
 //     also of a variable of namespace scope.
 //
-// THE LIMITS
+// Limits
 //     The front end folds a constant expression while it parses, with no
 //     event of the initializer: the condition of a static_assert, a template
 //     argument and a bound of an array.  The rule does not see a hook call in
 //     these places.  The control control-known-gaps of
 //     utils/plants/binding-hook/ pins each of them.
 //
-// THE ERRORS
+// Errors
 //     Each finding is a compile error in each build and each mode
 //     (is_each_mode_kind of plugin.h), and an opt-out region covers it.  The
 //     message does not start with "quarantine: ", so the driver of the
@@ -72,7 +72,7 @@ Names names;
 // address.
 std::unordered_map<tree, bool> hook_answers;
 
-// True when FUNCTION is a hook (THE HOOKS): it carries the annotation, or it
+// True when FUNCTION is a hook (the hooks): it carries the annotation, or it
 // is an instance of a template whose pattern carries it.  Complexity: linear
 // in the attributes of the function and of its template, one time for each
 // function.
@@ -89,7 +89,7 @@ bool is_hook(tree function) {
     return answer;
 }
 
-// True when DECL is the variable of a name of a binding (THE PERMITTED CALL).
+// True when DECL is the variable of a name of a binding (the permitted call).
 bool is_binding_name(tree decl) {
     return decl != NULL_TREE && VAR_P(decl) && DECL_LANG_SPECIFIC(decl) != nullptr && DECL_DECOMPOSITION_P(decl)
         && !DECL_DECOMP_IS_BASE(decl);
@@ -204,7 +204,7 @@ void on_pre_genericize(void* gcc_data, void*) {
     cp_walk_tree_without_duplicates(&body, walk_hook_calls, &walk);
 }
 
-// PLUGIN_FOLDED_INITIALIZER (THE FOLDS).  The event comes while the front end
+// PLUGIN_FOLDED_INITIALIZER (the folds).  The event comes while the front end
 // parses or instantiates the function current_function_decl, or a variable of
 // namespace scope.
 void on_folded_initializer(void* gcc_data, void*) {

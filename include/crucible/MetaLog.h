@@ -9,7 +9,7 @@
 // contents belong to a different op.
 //
 // Vigil owns the enforcement, and TraceRing.h states the rule in full.  The
-// log has the two publishes of the ring (THE TWO PUBLISHES of TraceRing.h):
+// log has the two publishes of the ring (the two publishes of TraceRing.h):
 // try_append checks the head at each publish, and try_append_proven takes the
 // proof of the record path and loads nothing from the head.
 
@@ -53,7 +53,7 @@ struct CRUCIBLE_OWNER MetaLog {
     static constexpr uint32_t CAPACITY = 1 << 20;
     static constexpr uint32_t MASK = CAPACITY - 1;
 
-    // The writers of the two counters (THE WRITER OF A COUNTER of
+    // The writers of the two counters (the writer of a counter of
     // fixy/Mutation.h): the producer writes head, and the consumer writes
     // tail.  The log is the owner of each proof, so only the doors of the log
     // publish a counter.

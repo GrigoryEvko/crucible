@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The handle's constructor is private: mint_ptp_handle, gated on an
 // Init-row context, is the only way to build one.

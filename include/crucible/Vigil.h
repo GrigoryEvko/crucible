@@ -101,7 +101,7 @@ namespace crucible {
 }
 
 // Records one op as record_into above does, with the proof of the record path.
-// The two publishes load nothing from the heads (THE TWO PUBLISHES of
+// The two publishes load nothing from the heads (the two publishes of
 // crucible/TraceRing.h).  Only the producer claim of the Vigils makes the
 // proof, so Vigil is the one caller.
 [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing& ring, MetaLog& log,

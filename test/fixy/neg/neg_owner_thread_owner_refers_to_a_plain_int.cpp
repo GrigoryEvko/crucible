@@ -1,8 +1,8 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_owner_thread asks that two threads can write the owner, because its
-// thread writes the owner while the thread that starts it runs on (THE
-// SHARED WRITE of foundation/Transfer.h).  An owner that holds a reference
+// thread writes the owner while the thread that starts it runs on (the
+// shared write of foundation/Transfer.h).  An owner that holds a reference
 // to a plain int of the caller gives the body a write of that int, and the
 // caller writes it too.  A member that is a reference makes the class not
 // Synchronized, so the door refuses the owner.

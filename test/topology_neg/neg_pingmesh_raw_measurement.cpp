@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // record_measurement takes only a measurement tagged with the Pingmesh
 // source.  A raw probe outcome cannot update the latency matrix.

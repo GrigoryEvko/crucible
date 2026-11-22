@@ -680,7 +680,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         ::fixy::mint_heap_array_written<std::byte>(io.cap().alloc, file_bytes, write_image);
 
     // The door writes a temporary file beside the target, syncs it, renames
-    // it onto the target and syncs the directory (THE DURABLE REPLACE of
+    // it onto the target and syncs the directory (the durable replace of
     // fixy/os/Fs.h).  So a crash or a full disk leaves the old trace whole, and
     // each error of a step gives 0.
     const ::fixy::View<std::byte const> file_image = image.view();

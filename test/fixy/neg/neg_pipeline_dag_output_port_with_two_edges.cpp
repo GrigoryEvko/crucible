@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The output of stage 0 has two edges, to stage 1 and to input 0 of the
 // fan-in stage 2.  A port is one end of one channel, so two edges on one

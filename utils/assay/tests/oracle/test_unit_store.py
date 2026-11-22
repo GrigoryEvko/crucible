@@ -1,6 +1,6 @@
 """The test of assay.oracle.unit_store: each rule of the store, on scratch units in a scratch store.
 
-THE CASES
+Cases
     The cases build static units and programs with the patched compiler of
     assay.core.testing.  A wrapper of the compiler logs each command, and a
     case can then count the compiles and the links of a lookup.  In some
@@ -12,7 +12,7 @@ THE CASES
     give a miss, or a result with the inputs of a stored result.  The time of
     the change then has no effect on the verdict.
 
-THE SPELLED ROOTS
+Spelled roots
     The commands of one program give a library directory and an include
     directory with "..", as GCC gives its own directories.  A library in a
     directory that is a parent of these spellings makes that directory a
@@ -22,25 +22,25 @@ THE SPELLED ROOTS
     store then kept no result.  `guard selftest oracle` runs the module with
     the other modules of its group.
 
-THE ARCHIVE CASES
+Archive cases
     A program links a static archive through a -L directory.  The loader
     does not read the archive.  Only the dependency file of the link then
-    makes a new archive a miss (THE LINKER of assay.oracle.unit_store).  The
+    makes a new archive a miss (the linker of assay.oracle.unit_store).  The
     cases link with the default linker of the compiler.  When
     ASSAY_TEST_BUILD_DIR names a build, they also link with the -fuse-ld and
     -B words of the link line of that build.  These words name the linker of
     the tree.
 
-THE NAMED ARCHIVE
+Named archive
     A program names the scratch archive by its path on the link command.  A
     program unit of the group oracle names the archives of a build in the
     same way.  A new name adjacent to the archive or below its directory
-    keeps the stored result.  A changed archive makes the program miss (THE
-    KEY OF A PROGRAM of assay.oracle.unit_store).
+    keeps the stored result.  A changed archive makes the program miss (the
+    key of a program of assay.oracle.unit_store).
 
-THE PARTS
+Parts
     With `--part K/N`, the part of STORE_PART runs the cases of the store.
-    The part of ROOTS_PART runs the cases of the spelled roots (THE PARTS of
+    The part of ROOTS_PART runs the cases of the spelled roots (the parts of
     assay.tests.oracle).  Part N - 1 runs the cases of sweep_sources() and
     of the compile slots.
     Each of the first two groups waits one time for the settle period of the
@@ -69,7 +69,7 @@ from assay.oracle import unit_store as unit_store_module
 from assay.oracle.unit_store import USE_LINKER, UnitStore, linker_of, program_flags, source_lock
 from assay.tests import oracle as oracle_parts
 
-# The group oracle gives this module the part of the call (THE PARTS).
+# The group oracle gives this module the part of the call (the parts).
 PARTED = True
 
 # The wait after the setup.  Each file of the setup is then older than the settle period of the store.
@@ -79,7 +79,7 @@ SLOTS = 2
 SLOT_UNITS = 6
 SLOT_WAIT_S = 0.3
 # The variable that names the build of the group oracle.  The archive cases also link with the linker of that build
-# (THE ARCHIVE CASES).
+# (the archive cases).
 BUILD_DIR_VARIABLE = "ASSAY_TEST_BUILD_DIR"
 
 
@@ -125,7 +125,7 @@ def build_archive(cxx: str, directory: Path, value: int) -> bool:
 
 
 def linker_words() -> list[list[str]]:
-    """Return the linker words of each link of the archive cases (THE ARCHIVE CASES).
+    """Return the linker words of each link of the archive cases (the archive cases).
 
     The first list is empty, for the default linker of the compiler.  When
     ASSAY_TEST_BUILD_DIR names a build, a second list holds the -fuse-ld and
@@ -140,7 +140,7 @@ def linker_words() -> list[list[str]]:
 
 
 def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
-    """Run each case of the rules of the store in ``root`` (THE CASES)."""
+    """Run each case of the rules of the store in ``root`` (the cases)."""
     include, early, library, early_library, archives, scratch = (
         root / name for name in ("include", "early", "library", "early_library", "archives", "scratch")
     )
@@ -216,7 +216,7 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
         "a new source does not wait for the settle period: its first build stores the result",
         not renamed_first.is_stored and unit_store().static(renamed).is_stored,
     )
-    # An empty element of LD_LIBRARY_PATH names the working directory of the loader (THE RUN ENVIRONMENT of the
+    # An empty element of LD_LIBRARY_PATH names the working directory of the loader (the run environment of the
     # store).  The first build of a new program then also stores its result.
     with testing.environment_variable("LD_LIBRARY_PATH", f"{early_library}{os.pathsep}"):
         new_program = [("new_main.cpp", program[0][1])]
@@ -317,7 +317,7 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
     variants = linker_words()
 
     def archive_store(words: Sequence[str]) -> UnitStore:
-        """Return a store of the archive cases, with the linker words ``words`` (THE ARCHIVE CASES).
+        """Return a store of the archive cases, with the linker words ``words`` (the archive cases).
 
         The compile reads no include directory of the cases above, because
         those cases changed them less than one settle period before.
@@ -344,7 +344,7 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
         )
 
     def named_store() -> UnitStore:
-        """Return a store of a program, and its link command names the scratch archive by its path (THE NAMED ARCHIVE)."""
+        """Return a store of a program, and its link command names the scratch archive by its path (the named archive)."""
         return UnitStore(cxx, ["-std=c++20"], [*variants[0], str(archives / "libarchived.a")], scratch, store_root)
 
     cold_named = named_store().program(archived)
@@ -373,7 +373,7 @@ def store_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
 
 
 def spelled_root_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
-    """A change of the directory above the spelled roots stops no record of their program (THE SPELLED ROOTS)."""
+    """A change of the directory above the spelled roots stops no record of their program (the spelled roots)."""
     directories = root / "gcc" / "lib" / "x", root / "gcc" / "lib64", root / "gcc" / "include", root / "deep" / "one"
     spelled_lib, lib64, include, deep = directories
     scratch = root / "scratch"
@@ -457,7 +457,7 @@ def sweep_cases(expect: testing.Expect) -> None:
 
 
 def held_sweep_cases(expect: testing.Expect) -> None:
-    """A sweep in a run keeps each source directory that a store of the run holds (THE LOCK OF A SOURCE DIRECTORY).
+    """A sweep in a run keeps each source directory that a store of the run holds (the lock of a source directory).
 
     The run takes the sources of one unit of 40 KB.  Then the time of its directory goes five hours back, as when the
     sweep read the time before the run used the directory again.  A sweep of a second store with a limit of 1 KB then
@@ -486,7 +486,7 @@ def held_sweep_cases(expect: testing.Expect) -> None:
 
 
 def orphan_sweep_cases(expect: testing.Expect) -> None:
-    """A sweep removes each lock file with no source directory that no store holds (THE LOCK OF A SOURCE DIRECTORY).
+    """A sweep removes each lock file with no source directory that no store holds (the lock of a source directory).
 
     A sweep of an earlier copy of the module removes a directory and leaves its lock file of 0 bytes.  The case plants
     two such lock files and holds one of them in the shared mode, as a store does in the step from the lock to the
@@ -527,7 +527,7 @@ def orphan_sweep_cases(expect: testing.Expect) -> None:
 
 
 def slot_cases(expect: testing.Expect, cxx: str, root: Path) -> None:
-    """Hold the compiles of many threads to the slots of one store (THE COMPILE SLOTS of assay.oracle.unit_store).
+    """Hold the compiles of many threads to the slots of one store (the compile slots of assay.oracle.unit_store).
 
     A wrapper of the compiler marks each compile while it runs, and it logs the count of marks at its start.  Each
     compile waits SLOT_WAIT_S.  The compiles of the threads then overlap when no slot holds them.
@@ -595,7 +595,7 @@ def spelled_root_group(expect: testing.Expect) -> None:
 
 
 def storable_cases(expect: testing.Expect) -> None:
-    """Hold WHAT THE STORE DOES NOT STORE for a compile or a link that a signal stopped, with planted results.
+    """Hold what the store does not store for a compile or a link that a signal stopped, with planted results.
 
     When the CPU limit of a test kills cc1plus or ld, the driver or collect2 exits 1, as for an error of the source.  The
     store must keep no such result, because the next run can give a different one.
@@ -621,7 +621,7 @@ def storable_cases(expect: testing.Expect) -> None:
 
 
 def main(argv: list[str]) -> int:
-    """Run the cases of one part, and write one line for each (THE PARTS)."""
+    """Run the cases of one part, and write one line for each (the parts)."""
     module = __name__.removeprefix("assay.")
     part = selftest.parsed_part(argv)
     if part is None:

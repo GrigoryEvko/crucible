@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_swmr_reader lends a share of the channel's reader pool, which
 // changes the pool.  A const channel cannot lend a share, so the mint

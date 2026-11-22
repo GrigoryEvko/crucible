@@ -9,7 +9,7 @@
 // kernel in its Result.  A call that a signal interrupts runs again.  A
 // descriptor below zero gives EBADF and makes no system call.
 //
-// THE KERNEL WORDS
+// Kernel words
 //   The socket calls need words and structs of <sys/socket.h>,
 //   <linux/netlink.h>, <linux/net_tstamp.h>, <linux/sockios.h> and
 //   <net/if.h>.  No door file and no door header includes them, so this
@@ -239,48 +239,48 @@ read_timestamp_control_(::foundation::core::View<std::byte const> control) noexc
     return NoTimestampMessage{};
 }
 
-// Opens a socket of DOMAIN, TYPE and PROTOCOL with socket_close_on_exec_flag
+// Opens a socket of domain, type and protocol with socket_close_on_exec_flag
 // in its type, and gives its descriptor.  The kernel answers socket(2) at
 // once, so the call does not wait.
 [[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> open_socket_(int domain, int type,
                                                                                     int protocol) noexcept;
 
-// Sets the TCP option option of SOCKET to the SIZE bytes at VALUE.
+// Sets the TCP option option of socket to the size bytes at value.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_tcp_option_(int socket, TcpOption option, void const* value, std::uint32_t size) noexcept;
 
-// Reads the TCP option option of SOCKET into the CAPACITY bytes at VALUE,
+// Reads the TCP option option of socket into the capacity bytes at value,
 // and gives the count of the bytes that the kernel wrote.
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 read_tcp_option_(int socket, TcpOption option, void* value, std::uint32_t capacity) noexcept;
 
-// Sets the option NAME of LEVEL of SOCKET to the SIZE bytes at VALUE.
-// fixy/os/Socket.h gives LEVEL and NAME from THE KERNEL WORDS above.
+// Sets the option name of level of socket to the size bytes at value.
+// fixy/os/Socket.h gives level and name from the kernel words above.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_option_(int socket, int level, int name, void const* value, std::uint32_t size) noexcept;
 
-// Binds SOCKET to the SIZE bytes of the address at ADDRESS.
+// Binds socket to the size bytes of the address at address.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 bind_address_(int socket, void const* address, std::uint32_t size) noexcept;
 
-// Sends the COUNT bytes at FIRST with the flags FLAGS and send_no_signal_flag,
+// Sends the count bytes at first with the given flags and send_no_signal_flag,
 // and gives the count that the kernel took (sendto with no address).
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 send_with_flags_(int socket, void const* first, std::size_t count, int flags) noexcept;
 
-// Receives at most COUNT bytes at FIRST with the flags FLAGS, and gives the
+// Receives at most count bytes at first with the given flags, and gives the
 // count of the bytes (recvfrom with no address).
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 receive_with_flags_(int socket, void* first, std::size_t count, int flags) noexcept;
 
-// Sets the hardware stamps of the NIC of the interface INTERFACE_NAME
+// Sets the hardware stamps of the NIC of the interface interface_name
 // (SIOCSHWTSTAMP with HWTSTAMP_TX_ON and HWTSTAMP_FILTER_ALL).  A name of
 // interface_name_capacity characters or more gives ENAMETOOLONG and makes no
 // system call.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_hardware_timestamping_(int socket, ::foundation::core::TextView interface_name) noexcept;
 
-// Receives at most COUNT bytes at FIRST with the flags FLAGS, and reads the
+// Receives at most count bytes at first with the given flags, and reads the
 // stamps of the control data (recvmsg with one buffer and no address).
 [[nodiscard]] ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
 receive_with_timestamps_(int socket, void* first, std::size_t count, int flags) noexcept;

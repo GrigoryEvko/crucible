@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit specializes SessionHandleBase and marks the base of
 // a live handle consumed from the specialization.  The handle would then

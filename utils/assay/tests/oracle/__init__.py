@@ -1,6 +1,6 @@
 """assay.tests.oracle — the tests of the session oracle: its sources, its unit store and its emitted tests.
 
-THE PARTS
+Parts
     test/CMakeLists.txt gives the group oracle of `guard selftest`
     SESSION_ORACLE_SELF_TEST_PARTS parts, and each part is one test.  Each
     part holds one kind of work.  A part then takes a short time, with or
@@ -28,7 +28,7 @@ FIRST_UNIT_PART = 3
 
 
 def role_part(role: int, count: int) -> int:
-    """Return the part of a kind of work of THE PARTS, such as STORE_PART, in a group of `count` parts."""
+    """Return the part of a kind of work of the parts, such as STORE_PART, in a group of `count` parts."""
     return role % count
 
 
@@ -41,7 +41,7 @@ def unit_part(position: int, count: int) -> int:
     """Return the part of the unit at a position of the list of units of test_runner, in a group of `count` parts.
 
     With more than FIRST_UNIT_PART parts, the units go to the parts from FIRST_UNIT_PART on, one unit in each part in
-    turn.  Else they go to each part in turn (THE PARTS).
+    turn.  Else they go to each part in turn (the parts).
     """
     if count <= FIRST_UNIT_PART:
         return position % count

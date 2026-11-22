@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit specializes the classification of a payload that
 // holds a live endpoint, to let the payload travel.  The predicate is a

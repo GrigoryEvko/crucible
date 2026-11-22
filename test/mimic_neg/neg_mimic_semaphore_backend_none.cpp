@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The backend None names no kernel, so a semaphore on it has no device to
 // signal.  SemaphoreBackend refuses it in the clause of the mint.

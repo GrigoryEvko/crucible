@@ -492,7 +492,7 @@ public:
 
     // A nested handle that holds the exclusive token by value is a proof
     // holder, so its door writes the count with no parameter of its own, also
-    // through a const door (THE NESTED CLASSES).
+    // through a const door (the nested classes).
     class Handle {
         PermittedCount& count_;
         Permission<Region, CountBrand> token_;

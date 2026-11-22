@@ -38,7 +38,7 @@
 // the call takes by value, so the output has one writer by its type.  The
 // inputs are Views.
 //
-// THE ORDER
+// Order
 //   The tree of a run of n elements splits the run at p, the largest power of
 //   two below n.  The left part holds the elements [0, p), and the right part
 //   holds the elements [p, n).  Each part splits by the same rule, down to one
@@ -59,7 +59,7 @@
 //   the grains.  A thread count, a schedule and a grain change no operand of
 //   any combine.
 //
-// THE LANES
+// Lanes
 //   sum_by_tree loads L consecutive elements into one vector, with L the count
 //   of lanes of one register of the target (foundation/Simd.h).  A merge of
 //   two vectors adds the even lanes and the odd lanes of the two
@@ -70,7 +70,7 @@
 //   compute nodes of the tree and no other sum, and 4, 8 or 16 lanes give the
 //   same bits.  A test compares each count of lanes with the scalar tree.
 //
-// THE ERROR BOUND
+// Error bound
 //   The tree has the depth d = count_tree_depth(n) = ceil(log2 n).  With the round
 //   to nearest of IEEE 754, the computed sum s' of the elements x_i holds
 //   |s' - s| <= gamma(d) * sum |x_i|, with gamma(d) = d * u / (1 - d * u), and
@@ -81,7 +81,7 @@
 //   the bound needs no term for an underflow.  sum_runs_by_tree has the depth
 //   count_tree_depth(K) at each element, and a segment has the depth of its count.
 //
-// THE VALUES OUTSIDE THE BOUND
+// Values outside the bound
 //   A NaN element or an overflow gives a NaN or an infinity.  An infinity has
 //   the same bits on each host, but a NaN does not.  x86 keeps the payload of
 //   one operand and gives 0xFFC00000 for inf + -inf, aarch64 gives its default
@@ -94,7 +94,7 @@
 //   combine, so the caller states the rule of its combine.  A select or a
 //   copy of the base keeps the bits of its value.
 //
-// THE COSTS
+// Costs
 //   reduce_by_tree makes one combine for each element after the first, with a
 //   recursion of depth ceil(log2 n) + popcount(n).  For a value that copies as
 //   bytes and has a default value (TreeLeafValue), each aligned block of a
@@ -106,17 +106,17 @@
 //   one add for each vector.  No operation allocates, and each split form
 //   takes its partials from the caller.
 //
-// THE CALLS OF A COMBINE
+// Calls of a combine
 //   The tree states the two operands of each combine, and not the sequence of
 //   the calls: a leaf makes the combines of one level before the next level.
 //   So a combine gives a value that depends only on its two operands, and a
 //   state of the combine must not change its result.
 //
-// THE TARGET
+// Target
 //   sum_by_tree, sum_by_tree_in_lanes, sum_runs_by_tree, sum_segments_by_tree and
 //   sum_grains_by_tree read the vector width of the target.  So they and their
-//   SIMD helpers are in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
-//   NAMESPACE of foundation/Platform.h).  The forms with the combine of a
+//   SIMD helpers are in the inline namespace CRUCIBLE_SIMD_TARGET (the target
+//   namespace of foundation/Platform.h).  The forms with the combine of a
 //   caller, the types and the plans read no target, and they stay outside it.
 
 #include <foundation/Simd.h>
@@ -214,7 +214,7 @@ template <std::size_t Width, class T, class Combine>
 // to tree_leaf_count, level by level.  The first level combines each adjacent
 // pair of elements, and each later level combines each adjacent pair of the
 // level below it, with the lower value as the left operand.  Each value of a
-// level is the node of THE ORDER over its aligned block, so the last value is
+// level is the node of the order over its aligned block, so the last value is
 // the tree of the run.  Count - 1 combines.
 template <std::size_t Count, class T, class Combine>
 [[nodiscard]] constexpr T tree_of_leaf_(T const* first, Combine& combine) noexcept {
@@ -234,7 +234,7 @@ enum class TreeLeaves : std::uint8_t {
     Blocked,
 };
 
-// The tree of the count elements from first, by the rule of THE ORDER.  The
+// The tree of the count elements from first, by the rule of the order.  The
 // count is at least 1.  A run of up to four elements has its tree inline.
 // With the Blocked leaves, a part of a TreeLeafValue of a power of two from 8
 // to tree_leaf_count takes the leaf of its count, so a long run makes about
@@ -353,7 +353,7 @@ template <class T, int Lanes>
 // The tree sum of the count elements from first, with vectors of Lanes
 // lanes.  The count is at least 1.  A part of fewer than Lanes elements takes
 // the scalar tree.  A part of a power of two takes a block of vectors.  Each
-// other part splits by the rule of THE ORDER, so the recursion follows the
+// other part splits by the rule of the order, so the recursion follows the
 // right edge of the tree, with a depth of at most popcount(count).
 template <class T, int Lanes>
 [[nodiscard]] T sum_run_by_tree_(T const* first, std::size_t count) noexcept {
@@ -376,7 +376,7 @@ concept TreeLanes = Lanes >= 2 && Lanes <= 64 && has_single_bit(static_cast<unsi
 
 }  // namespace detail
 
-// The tree of the elements, by the rule of THE ORDER, with the combine of
+// The tree of the elements, by the rule of the order, with the combine of
 // the caller, or no value for an empty View.  The combine runs one time for
 // each element after the first.  Complexity: O(n) combines.
 template <class T, std::size_t Extent, class Combine>
@@ -392,7 +392,7 @@ template <class T, std::size_t Extent, class Combine>
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the elements with Lanes lanes in each vector.  The count
-// of lanes changes no bit (THE LANES), so a test compares each count.  An
+// of lanes changes no bit (the lanes), so a test compares each count.  An
 // empty View gives +0.  Complexity: O(n).
 template <int Lanes, class T>
     requires TreeSumElement<T> && detail::TreeLanes<Lanes>
@@ -475,7 +475,7 @@ enum class RunsError : std::uint8_t {
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the runs element by element: sums[i] is the tree of the
-// elements at i of the runs, in run order, by the rule of THE ORDER.  So a
+// elements at i of the runs, in run order, by the rule of the order.  So a
 // sum of K producers into one result has a fixed topology, and the order in
 // which the producers finish changes no bit.  No run gives +0 in each sum.
 //
@@ -748,7 +748,7 @@ namespace detail {
 
 }  // namespace detail
 
-// Writes the tree of steps.size() + 1 leaves, by the rule of THE ORDER, as
+// Writes the tree of steps.size() + 1 leaves, by the rule of the order, as
 // steps.size() combine steps.  Each step comes after the steps of its
 // operands, and the last step gives the root.  A net check reads the plan as
 // the specification of the order.  A plan of more than max_plan_leaves

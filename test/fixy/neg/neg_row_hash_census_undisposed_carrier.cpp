@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The class below stands for a decorator or a door that a new header of
 // the session layer declares.  It is in a censused namespace, and the

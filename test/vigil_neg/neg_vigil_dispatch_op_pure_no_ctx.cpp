@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Vigil::dispatch_op_pure asks for the context of the Vigil's producer
 // claim as its first argument.  A call without a context is refused.  The

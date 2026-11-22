@@ -1,6 +1,6 @@
 """The directory of the content-keyed caches that the guards share, and the bound on each cache.
 
-THE ROOT
+The root
     Each cache is a subdirectory of one root.  The root is $CRUCIBLE_CACHE_DIR
     when it is set, else $XDG_CACHE_HOME/crucible, else ~/.cache/crucible.
     The value "off" turns every cache off.  assay.core.cache_root holds this
@@ -10,7 +10,7 @@ THE ROOT
     negative fixtures, in utils/assay/loop/fixture/store.py, is the cache
     "neg".
 
-THE TOOLS
+The tools
     The pinned tools (the tree-sitter kit and cmake) live in the
     tools subdirectory of the default root, tools_root(), and
     utils/assay/setup/install.py owns them.  $CRUCIBLE_CACHE_DIR does not
@@ -18,7 +18,7 @@ THE TOOLS
     "off" turns each cache off.  No eviction of this module reads that
     subdirectory.
 
-THE WORK ROOT
+The work root
     A long measurement, such as `loop gauge`, makes a copy of the tree with a
     build directory of its own.  work_root() gives the directory of these
     work directories: $XDG_CACHE_HOME/crucible-work, else
@@ -33,24 +33,24 @@ THE WORK ROOT
     and its owner removes it.  $CRUCIBLE_CACHE_DIR does not move it, because
     a measurement points that variable at a scratch root of its own.
 
-THE LIMITS
+The limits
     LIMITS gives the size limit of each subdirectory of the root, in
     allocated bytes.  It is the one place that declares a limit.  The
     eviction of each cache reads its row.  A size in this module is the space
     that a file takes on the disk (st_blocks), so a lock or a small file
     counts with its block.
 
-THE COMPILED MODULES
+The compiled modules
     Each master of utils/bin sets sys.pycache_prefix to the cache "pycache",
     so Python writes the compiled form of each module of the package there,
     and no __pycache__ directory goes into the tree.  Python names each
     compiled file after the absolute path of its source, so each checkout and
     each work tree adds its own files.  hold_compiled_bound() holds the cache
     under its row of LIMITS: `guard check` calls it on each run, and it takes
-    the eviction turn of THE TURN.  A removed file costs one compile of its
+    the eviction turn of the section below.  A removed file costs one compile of its
     module on the next import, so the eviction is safe at each time.
 
-A TREE OF FILES
+A tree of files
     The compiled modules and the cache "mypy" of the rule types keep each
     entry as a file at a depth of their tool.  files_below() gives each such
     file.  hold_tree_bound() keeps such a cache in its limits at its turn.  It
@@ -62,16 +62,16 @@ A TREE OF FILES
 
     A tool that also writes more than one file for one entry holds the lock
     in the exclusive mode for the run (exclusive_use()).  mypy is such a tool
-    (assay.guard.engines.meta.types, THE ONE RUN AT A TIME).
+    (assay.guard.engines.meta.types, the one run at a time).
 
-THE ENTRIES
+The entries
     An entry is a file whose name is the SHA-256 of each input that its
     contents depend on.  A changed input gives a different name, so an entry
     is never stale.  A write goes to a temporary file in the directory of the
     entry and then renames it.  A reader in another process sees all of the
     entry or none of it.  The name of a temporary file starts with a dot.
 
-THE BOUND
+The bound
     The mtime of an entry is the time of its last use.  A run that uses an
     entry touches it when the mtime is older than TOUCH_INTERVAL
     (assay.core.cache_root), so a warm run
@@ -80,7 +80,7 @@ THE BOUND
     of its size limit.  A temporary file or an empty directory with no change
     for STALE_AFTER goes too: a writer that stopped left it.
 
-THE TURN
+The turn
     One process at a time evicts a cache: the process that gets the eviction
     lock at once.  The turn is due when the last eviction is older than
     EVICT_INTERVAL, or when a sample of the cache is over its size limit.  A
@@ -88,7 +88,7 @@ THE TURN
     cache that grows fast gets its turn within PROBE_INTERVAL, and a cache
     that grows slowly gets one turn each day for its age limit.
 
-THE SAMPLE
+The sample
     estimated_bytes() gives the size of a directory with no walk of each file.
     A fan-out directory is a directory whose subdirectories are named with
     two hexadecimal digits, as the first two digits of a SHA-256 name.  The
@@ -133,7 +133,7 @@ EVICT_TO = 0.75
 SAMPLE_FANS = 16
 # A sample that shows this many files or fewer gives way to a walk of each file.
 FULL_WALK = 60_000
-# The size limit of each subdirectory of the root, in allocated bytes (THE LIMITS).
+# The size limit of each subdirectory of the root, in allocated bytes (the limits).
 LIMITS: dict[str, int] = {
     "tsast": 2 << 30,
     "neg": 1 << 30,
@@ -149,14 +149,14 @@ LIMITS: dict[str, int] = {
     "rows-reader": 16 << 20,
     # The cache of mypy for the rule types.  The run of the package wrote 7.3 MB on 2026-10-08.
     "mypy": 128 << 20,
-    # The compiled modules of the package (THE COMPILED MODULES): about 6 MB for each checkout or work tree.
+    # The compiled modules of the package (the compiled modules): about 6 MB for each checkout or work tree.
     "pycache": 256 << 20,
     # The cost blocks of the compiles through ccache (utils/assay/core/cost_store.py), one file of one block of
     # ENTRY_BYTES for each object and command.  An entry that the store drops while ccache keeps its object costs one
-    # more compile (A HIT WITH NO COST of assay.loop.step).  So the limit holds an entry for each result that ccache
+    # more compile (a hit with no cost of assay.loop.step).  So the limit holds an entry for each result that ccache
     # holds at its limit, also after an eviction to EVICT_TO (CCACHE_RESULTS).
     "compile-cost": 8 << 30,
-    # The results of the runs of `loop test` with the status 0 (utils/assay/loop/affected.py, THE SHARED STORE).  Each
+    # The results of the runs of `loop test` with the status 0 (utils/assay/loop/affected.py, the shared store).  Each
     # test and set of inputs has one file of one 4 KB block.  The limit holds 32,768 results: 64 sets of inputs of each
     # of the 506 tests with a key of the Debug build on 2026-10-14.
     "test-results": 128 << 20,
@@ -165,10 +165,10 @@ LIMITS: dict[str, int] = {
     # approximately 7 blocks of 4 KB.  The limit holds approximately 2,300 full records: four keys of each of the 507
     # tests with a key of the Debug build on 2026-10-14.
     "evidence": 64 << 20,
-    # The rows of the ledgers of the measured rules (THE MEMO OF THE ROWS of assay.core.meter).  An entry of a ledger
+    # The rows of the ledgers of the measured rules (the memo of the rows of assay.core.meter).  An entry of a ledger
     # of 78 rows holds 9 KB.  Each change of a ledger or of a module of the parse adds one entry for each rule.
     "ledger-rows": 16 << 20,
-    # The imports and the shapes of the modules of the package (THE PARSE CACHE of assay.loop.inputs).  Each module has
+    # The imports and the shapes of the modules of the package (the parse cache of assay.loop.inputs).  Each module has
     # one file of one 4 KB block.  On 2026-10-17, the entries of one tree held 1.6 MB.  Each change of a module adds one
     # entry.
     "python-shapes": 64 << 20,
@@ -185,7 +185,7 @@ CCACHE_RESULTS = 1_114_000
 COMPILED_CACHE = root_rule.COMPILED_CACHE
 # The suffix of a compiled module of the package.
 COMPILED_SUFFIXES = (".pyc",)
-# The lock of the eviction of a cache.  An eviction holds it alone, and a reader of a long run shares it (THE TURN).
+# The lock of the eviction of a cache.  An eviction holds it alone, and a reader of a long run shares it (the turn).
 EVICT_LOCK = "evict.lock"
 
 
@@ -216,7 +216,7 @@ def base_root() -> Path | None:
 
 
 def tools_root() -> Path:
-    """Return the directory of the pinned tools (THE TOOLS).  The function makes no directory.
+    """Return the directory of the pinned tools (the tools).  The function makes no directory.
 
     The directory is $XDG_CACHE_HOME/crucible/tools, else ~/.cache/crucible/tools.
     $CRUCIBLE_CACHE_DIR does not move it, and "off" does not hide it.
@@ -225,7 +225,7 @@ def tools_root() -> Path:
 
 
 def work_root() -> Path:
-    """Return the directory of the work directories of a long measurement (THE WORK ROOT).  It makes no directory.
+    """Return the directory of the work directories of a long measurement (the work root).  It makes no directory.
 
     The directory is $XDG_CACHE_HOME/crucible-work, else ~/.cache/crucible-work.  $CRUCIBLE_CACHE_DIR does not move
     it, and "off" does not hide it.
@@ -480,7 +480,7 @@ def _walk(directory: str, sample: int | None, rng) -> tuple[float, float]:
 
 
 def estimated_bytes(directory: Path, rng=None, full_walk: int = FULL_WALK) -> int:
-    """Return the allocated bytes under a directory, from a sample of its fan-out directories (THE SAMPLE).
+    """Return the allocated bytes under a directory, from a sample of its fan-out directories (the sample).
 
     Complexity: about n * SAMPLE_FANS / 256 stat calls for n files under fan-out
     directories, and n calls when the sample shows full_walk files or fewer.
@@ -506,7 +506,7 @@ def estimated_bytes(directory: Path, rng=None, full_walk: int = FULL_WALK) -> in
 def eviction_turn(
     directory: Path, interval: float = EVICT_INTERVAL, max_bytes: int | None = None, stamp_name: str = "evicted"
 ) -> Iterator[bool]:
-    """Yield True when this process holds the eviction turn of a cache, else False (THE TURN).
+    """Yield True when this process holds the eviction turn of a cache, else False (the turn).
 
     The turn is due when the stamp is older than the interval, or when
     max_bytes is given and a sample of the directory is over it.  A process
@@ -552,7 +552,7 @@ def eviction_turn(
 
 @contextlib.contextmanager
 def shared_use(directory: Path) -> Iterator[None]:
-    """Hold the lock of the eviction of a cache in the shared mode for the block (A TREE OF FILES).
+    """Hold the lock of the eviction of a cache in the shared mode for the block (a tree of files).
 
     No eviction of the cache takes its turn in the block.  A tool that reads a
     set of entries during one long run then keeps each entry of the set.  The
@@ -565,7 +565,7 @@ def shared_use(directory: Path) -> Iterator[None]:
 
 @contextlib.contextmanager
 def exclusive_use(directory: Path) -> Iterator[None]:
-    """Hold the lock of the eviction of a cache in the exclusive mode for the block (A TREE OF FILES).
+    """Hold the lock of the eviction of a cache in the exclusive mode for the block (a tree of files).
 
     No eviction and no other user of the cache runs in the block.  A tool
     can write more than one file for an entry, with no lock of its own.
@@ -598,7 +598,7 @@ def hold_bound(directory: Path, max_bytes: int, max_age: float = MAX_AGE) -> boo
 
 
 def files_below(directory: Path, suffixes: tuple[str, ...]) -> list[Entry]:
-    """Return each file at each depth below a cache, when its name ends with one of the suffixes (A TREE OF FILES).
+    """Return each file at each depth below a cache, when its name ends with one of the suffixes (a tree of files).
 
     The time of the last use of a file is the time of its last write.  Complexity: one stat of each file below the
     directory, O(n log n) for n files and directories because of the sort of the walk.
@@ -618,7 +618,7 @@ def files_below(directory: Path, suffixes: tuple[str, ...]) -> list[Entry]:
 def hold_tree_bound(
     directory: Path, max_bytes: int, suffixes: tuple[str, ...], unread: tuple[str, ...] = (), max_age: float = MAX_AGE
 ) -> bool:
-    """Keep a cache of files at each depth in its limits at its turn, and remove each unread file (A TREE OF FILES).
+    """Keep a cache of files at each depth in its limits at its turn, and remove each unread file (a tree of files).
 
     A tool writes such a file again only when its input changes.  The time of
     the write is then the time of the last use, and a file in use can go.  It
@@ -643,7 +643,7 @@ def hold_tree_bound(
 
 
 def hold_compiled_bound(max_age: float = MAX_AGE) -> bool:
-    """Keep the cache of the compiled modules in the limit of its row of LIMITS, at its turn (THE COMPILED MODULES).
+    """Keep the cache of the compiled modules in the limit of its row of LIMITS, at its turn (the compiled modules).
 
     Args:
         max_age: The age limit of a compiled module

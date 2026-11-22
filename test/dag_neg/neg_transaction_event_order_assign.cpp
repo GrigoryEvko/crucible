@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Transaction::event_order is the place of the last event of a transaction
 // in the order of the events of its log.  The log advances it, and the place

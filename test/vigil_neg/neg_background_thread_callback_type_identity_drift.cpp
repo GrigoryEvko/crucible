@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // BackgroundThread::RegionReadyCall is the CallRef of the noexcept
 // signature, and not the CallRef of the same signature without noexcept.

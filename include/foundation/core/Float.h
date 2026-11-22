@@ -41,7 +41,7 @@
 // NaN raises no flag, and GCC removes the call.  sqrt(-0) is -0, as IEEE
 // 754 states.
 //
-// THE FMA
+// fma
 //   fma gives a * b + c with one round to nearest even, on each target.  A
 //   target with a fused multiply-add, such as x86-64-v3, x86-64-v4 and
 //   aarch64, runs the instruction.  Each other target, such as x86-64 and
@@ -56,7 +56,7 @@
 //   NaN can differ between the two forms.
 //
 //   The body reads the target, so fma is in the inline namespace
-//   CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of foundation/Platform.h).  A
+//   CRUCIBLE_SIMD_TARGET (the target namespace in foundation/Platform.h).  A
 //   constant evaluation runs the exact form.  The exact form is an
 //   out-of-line function, and its parts compile to different instructions
 //   at each level, such as LZCNT for __builtin_clzll at x86-64-v3.  So the
@@ -151,7 +151,7 @@ template <Float T>
 
 namespace foundation::core::detail {
 
-// The exact form of THE FMA and its parts, in the namespace of the target.
+// The exact form of the fma and its parts, in the namespace of the target.
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 __extension__ using FmaWord = unsigned __int128;
@@ -225,7 +225,7 @@ template <Float T>
         T, static_cast<Word>(sign | (static_cast<Word>(biased) << Layout::fraction_bits) | fraction));
 }
 
-// The exact form of THE FMA: a * b + c with one round to nearest even, in
+// The exact form of the fma: a * b + c with one round to nearest even, in
 // integers.  Each significand moves to the bit 125 of a 128-bit word.  The
 // smaller term moves right to the exponent of the larger term, and an or into
 // its bit 0 (the sticky bit) keeps each bit that the move drops.  A move drops
@@ -308,7 +308,7 @@ namespace foundation::core::fp {
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
-// a * b + c with one round (THE FMA).
+// a * b + c with one round (the fma).
 template <Float T>
 [[nodiscard]] constexpr T fma(T left, T right, T addend) noexcept {
     if consteval {

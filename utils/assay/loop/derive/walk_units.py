@@ -19,7 +19,7 @@ it writes the list.  The rule derived-files
 (assay.guard.engines.meta.derived_files) compares the list with the tree
 through drift().
 
-THE DRIFT
+Drift
     A walk is a call of members_of on the reflection of a namespace.  A
     check file joins the walk units when one of its checks can walk a
     namespace that a header in include/ opens.  Each header can add a member
@@ -31,18 +31,18 @@ THE DRIFT
                        the tree gives
       `extra-row`      a row of a file that does not join, or that is not a
                        check file
-      `malformed-row`  a row that does not have the shape of THE LIST, also a
+      `malformed-row`  a row that does not have the shape of the list, also a
                        weight that is not a number with one decimal
       `second-row`     a second row of one check file
       `no-list`        a tree with no list
-      `free-operator`  a free operator that can walk a namespace (THE WALKS)
+      `free-operator`  a free operator that can walk a namespace (the walks)
       `parse`          a header or a check file that the kit cannot parse.
                        The analysis cannot read the walks of such a file
-    A row with the weight unmeasured gives no finding (THE WEIGHTS).  The
+    A row with the weight unmeasured gives no finding (the weights).  The
     entity of a finding is the check file of its row, the text of a
     malformed row, or the signature of a free operator.
 
-THE ANALYSIS
+Analysis
     The analysis reads the parse tree of each header in include/ and of each
     check file.  It gives a summary to each function, function template,
     variable, concept, alias, class and macro:
@@ -53,7 +53,7 @@ THE ANALYSIS
     A check file is one entity, and each function that it declares is one
     more entity.
 
-THE WALKS
+Walks
     A summary starts at the calls of members_of in the body.  The first
     argument of each call gives the namespace:
       * `^^name` gives the namespace that the name resolves to, in the
@@ -76,7 +76,7 @@ THE WALKS
     with a summary that is not empty makes each check file join, and the
     rule refuses it.
 
-THE NAMES
+Names
     The summaries flow through the names, until no summary changes.  An
     entity that names an entity with a namespace in its summary gets that
     namespace.  An entity that calls an entity with a parameter in its
@@ -103,7 +103,7 @@ THE NAMES
         from the other names.  Then a member function with a name that many
         classes use cannot move a walk from one class to a different class.
 
-THE CLASSES
+Classes
     A class template gets the walks of its own body: its static_asserts,
     its bases and its member aliases.  A use that makes an instance of the
     class runs these.  The body of a class that is not a template runs
@@ -126,7 +126,7 @@ THE CLASSES
     alias and a class that are not templates run there too.  They give no
     walk to the entities that name them.
 
-WHY THE SHAPE IS A DERIVED LIST
+Why the shape is a derived list
     A marker in each check file is not sufficient.  A check of the markers
     must do the same analysis to find a check file that walks a namespace
     with no marker.  The marker adds a hand step and no safety.  The list is
@@ -141,7 +141,7 @@ WHY THE SHAPE IS A DERIVED LIST
       * a member access
       * a macro body that does not parse.
 
-THE LIST
+List
     test/layer/walk-checks.txt holds one row for each selected check file,
     in the rows grammar of assay.core.rows:
 
@@ -153,7 +153,7 @@ THE LIST
     file of one line.  A line that does not obey the grammar is then one
     malformed row.
 
-THE WEIGHTS
+Weights
     The weight of a row is the share of its check file in a walk unit.  It
     counts the user instructions that the check file adds to a unit that
     holds only walk_headers.h.  Its unit is 10^9 instructions, with one
@@ -168,7 +168,7 @@ THE WEIGHTS
     unmeasured gets the mean weight of the measured rows, and it gives no
     finding, because the rule step-cost holds the cost of each unit.
 
-WHAT THE ANALYSIS CANNOT SEE
+What the analysis cannot see
     With no types, the analysis does not follow these paths.  A walk that
     only such a path gets to does not make a check file join:
       * a member call in a header, on an object or through a template
@@ -185,7 +185,7 @@ WHAT THE ANALYSIS CANNOT SEE
     follow a value through a function return.  It gives unknown for that
     value, and the path then makes more files join, and not fewer.
 
-THE MODES
+Modes
     --write     write the list again from the tree.  The write keeps the
                 weight of each row that stays, and it gives a new row the
                 weight unmeasured.  It writes nothing while a file of the
@@ -205,7 +205,7 @@ THE MODES
     --explain   print the path of each walk of one check file, from the
                 check to the call of members_of.
 
-THE MEASURE
+Measure
     Each compile runs through assay.core.proc in a thread of its own.  A
     counter of assay.core.meter counts the user instructions of the compiler
     and of each process that it starts.  The counter of one thread counts only
@@ -1218,7 +1218,7 @@ class Analysis:
     def candidates(self, entity: Entity, leaf: tsast.Node, name: str) -> tuple[list[Entity], bool]:
         """Return the entities that a leaf can name, and if the name gets to them through a member edge.
 
-        THE NAMES in the docstring of this module gives the rules.
+        The names in the docstring of this module give the rules.
         """
         key = (id(entity), id(leaf.tree), leaf.index, name)
         found = self.resolve_memo.get(key)
@@ -1873,7 +1873,7 @@ def evaluate(analysis: Analysis, entity: Entity, is_full: bool) -> None:
 
 
 def follow_leaf(analysis: Analysis, entity: Entity, leaf: tsast.Node, name: str, is_full: bool) -> None:
-    """Add to the summary of an entity what each candidate of one leaf gives (THE NAMES and THE CLASSES)."""
+    """Add to the summary of an entity what each candidate of one leaf gives (the names and the classes)."""
     found, is_member_edge = analysis.candidates(entity, leaf, name)
     if is_member_edge:
         if not (is_full and entity.is_local):
@@ -2096,7 +2096,7 @@ def select(universe: Universe) -> dict[str, list[NsTag]]:
 
 
 def derive(context: TsastContext) -> Derivation:
-    """Collect, summarize and select (THE ANALYSIS).
+    """Collect, summarize and select (the analysis).
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -2218,7 +2218,7 @@ def free_operator_finding(entity: Entity) -> check_report.Finding:
 
 
 def drift(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each difference between the list and the tree (THE DRIFT).
+    """Give an error for each difference between the list and the tree (the drift).
 
     Complexity: the cost of derive(), and linear in the length of the list.
 
@@ -2422,7 +2422,7 @@ def measure_unit(command: UnitCommand, work: Path, checks: list[str]) -> int | N
 
 
 def median_weights(runs: Sequence[Mapping[str, int]], rows: Iterable[str]) -> dict[str, int]:
-    """Return the weight of each row: the median of its weights in the runs (THE MODES, --runs).
+    """Return the weight of each row: the median of its weights in the runs (the modes, --runs).
 
     The weight of a row in one run is its count less the count of the base unit "" of the same run, and 0 or more.
     When two divides the number of runs, the median is the lower of the two middle weights.  Complexity: O(n * r log
@@ -2531,7 +2531,7 @@ def explained(root: Path, target: str) -> ExitCode:
 
 
 def checked(root: Path) -> ExitCode:
-    """Compare the list with the tree, as the rule derived-files does (drift()), and write nothing (THE MODES).
+    """Compare the list with the tree, as the rule derived-files does (drift()), and write nothing (the modes).
 
     Returns:
         ExitCode.OK when the list agrees with the tree, ExitCode.FINDINGS when drift() gives an error
@@ -2545,7 +2545,7 @@ def checked(root: Path) -> ExitCode:
 
 
 def main(argv: list[str]) -> int:
-    """Run one mode (THE MODES).
+    """Run one mode (the modes).
 
     Args:
         argv: The words after `loop derive walk-units`

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Negative-compile fixture (HS14 mandate) for crucible::
-// live_intervals_disjoint_at<MaxLive>, mismatch class #1: LIVE-SET
-// BYTE OVERLAP.
+// live_intervals_disjoint_at<MaxLive>, mismatch class #1: live-set
+// byte overlap.
 //
 // `live_intervals_disjoint_at<MaxLive>` is the
 // production cite for the MemoryPlan invariant: at every op
 // boundary `t`, the simultaneously-live TensorSlots must have
 // pairwise-disjoint byte ranges `[offset_bytes, offset_bytes +
 // nbytes)`.  This fixture pins that the helper rejects two
-// internal slots whose live ranges intersect AND whose byte
+// internal slots whose live ranges intersect and whose byte
 // ranges overlap — the canonical sweep-line offset-assignment
 // bug where the planner forgets to bump `next_offset` past the
 // previous live slot's nbytes.
@@ -22,7 +22,7 @@
 // from slot A's earlier compute trampling slot B's bytes.
 //
 // Distinct from companion `neg_memory_plan_live_intervals_max_overflow`
-// which catches the OTHER mismatch class (live-set count exceeds
+// which catches the other mismatch class (live-set count exceeds
 // the caller's compile-time MaxLive bound — predicate cannot
 // safely build the live span and returns false).
 //
@@ -49,7 +49,7 @@ using crucible::Layout;
 
 // Two internal slots, simultaneously live at op 3, byte-overlapping
 // on `[64, 128)`.  Slot A: offset 0, 128 bytes, live [0, 5].  Slot
-// B: offset 64, 128 bytes, live [2, 7].  At op 3 BOTH are live AND
+// B: offset 64, 128 bytes, live [2, 7].  At op 3 both are live and
 // their byte intervals `[0, 128)` and `[64, 192)` share `[64, 128)`
 // — the planner's invariant is broken at op 3.
 constexpr auto build_planted_overlap() {

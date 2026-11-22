@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A wait policy that parks spins for its budget first, and the spin reads the
 // counter of the core, a source of nondeterminism.  A background context that

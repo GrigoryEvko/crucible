@@ -37,19 +37,19 @@
 // ── What the Policy parameter is for ────────────────────────────────
 //
 // Stepping.h explains the decision; this header is where it lands.  The
-// abandonment policy is a TEMPLATE PARAMETER of SessionHandle, not a
+// abandonment policy is a template parameter of SessionHandle, not a
 // preprocessor branch inside it.  Under the two checking policies, a
 // handle destroyed before its protocol ends aborts or sends a
 // cancellation, in Release as in Debug.  Every operation also checks
 // that the handle is live, so a moved-from handle aborts on its first
 // use and cannot step a protocol a second time.
 //
-// ── What a handle does NOT do ───────────────────────────────────────
+// ── What a handle does not do ───────────────────────────────────────
 //
 // It does not move bytes.  Every consumer method takes a Transport
 // callable and invokes it against the Resource; the handle's job is to
-// decide WHETHER the operation is legal at this protocol position and
-// WHAT position follows it.  A session over a socket, over an in-memory
+// decide whether the operation is legal at this protocol position and
+// What position follows it.  A session over a socket, over an in-memory
 // ring and over a mock all use the same handle and differ only in the
 // callable they pass.  A callable has one of the shapes of
 // fixy/session/Transport.h, and no shape waits where the watch of
@@ -480,7 +480,7 @@ concept CancellableResource = requires(std::remove_reference_t<Resource>& resour
 // Carries the lifetime contract for every handle specialization: a
 // handle destroyed at a non-terminal protocol state without having been
 // consumed is a dropped protocol, and under the Enforced policy that
-// aborts.  Moving marks the SOURCE consumed, so a moved-from handle
+// aborts.  Moving marks the source consumed, so a moved-from handle
 // does not fire the check.
 //
 // Inheritance is public so that `.detach()` is callable on a derived
@@ -1543,7 +1543,7 @@ public:
         "table of its channel (fixy/session/Admission.h) moves no label word.  Call select<I>(no_label) on a pole that "
         "states the Local network.  A select with a label needs a pole table that moves the label word.");
 
-    // Enters branch I of a Select WITHOUT telling the peer which branch was
+    // Enters branch I of a Select without telling the peer which branch was
     // picked.  The context holds the Test capability.
     template <std::size_t I, typename Ctx, typename... Branches, typename Resource, typename LoopCtx,
               AbandonmentPolicy Policy, typename PS>
@@ -1624,7 +1624,7 @@ public:
         "channel (fixy/session/Admission.h) moves no label word: a select over a pole puts no label on the wire.  The "
         "branch needs a pole table that moves the label word.  A test picks a branch with pick_local<I>(ctx).");
 
-    // Enters branch I of an Offer WITHOUT receiving the peer's label.  The
+    // Enters branch I of an Offer without receiving the peer's label.  The
     // context holds the Test capability.
     template <std::size_t I, typename Ctx, typename... Branches, typename Resource, typename LoopCtx,
               AbandonmentPolicy Policy, typename PS>
@@ -2273,7 +2273,7 @@ public:
         "table of its channel (fixy/session/Admission.h) moves no label word.  Call select<I>(no_label) on a pole that "
         "states the Local network.  A select with a label needs a pole table that moves the label word.");
 
-    // Advances the local handle WITHOUT telling the peer which branch
+    // Advances the local handle without telling the peer which branch
     // was picked.  The context holds the Test capability: a test that
     // drives the two ends of a channel on one thread picks the branch on
     // each end.
@@ -2390,7 +2390,7 @@ public:
                                                 "of another shape can wait where the watch of fixy/session/Watch.h "
                                                 "does not see it.");
 
-    // Assumes branch I WITHOUT receiving the peer's label.  The context
+    // Assumes branch I without receiving the peer's label.  The context
     // holds the Test capability: a test that drives the two ends of a
     // channel on one thread picks the branch on each end.
     template <std::size_t I, typename Ctx>

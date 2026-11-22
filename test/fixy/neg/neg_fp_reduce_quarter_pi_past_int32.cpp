@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The nearest multiple of pi/2 for -1e10 is about -6.4e9, which int32
 // cannot hold, so the conversion in the reduction would be undefined

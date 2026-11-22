@@ -1,4 +1,4 @@
-// A file of a write-only open holds no map right (THE SOURCE OF A MAP of
+// A file of a write-only open holds no map right (the source of a map of
 // fixy/os/OwnedMmap.h), because a map reads the file.  So the map of a file
 // takes no borrow of it, and the error is at the call and not in the kernel.
 

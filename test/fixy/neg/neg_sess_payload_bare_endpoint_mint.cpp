@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A plain session carries a live handle as a bare payload.  The handle
 // sits inside a Loop and holds a region, so a hand-off could not

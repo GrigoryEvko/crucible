@@ -29,7 +29,7 @@
 # bench whose threads run at the same time states their count with CORES.
 # The definition CRUCIBLE_BENCH_CORES=COUNT then tells `loop bench` to claim
 # that many isolated cores for each run, one for each thread, and the harness
-# pins each thread to one of them (THE CORES OF A RUN of
+# pins each thread to one of them (the cores of a run of
 # utils/assay/loop/bench.py).  A bench with no CORES gets one core.
 function(crucible_bench name)
   cmake_parse_arguments(PARSE_ARGV 1 _bench "" "CORES" "")
@@ -72,7 +72,7 @@ endfunction()
 # crucible_bench_reference(TARGET TOOL DEFINITION SOURCE...) gives the bench
 # TARGET a pinned source of the state of the art: the pin TOOL of
 # utils/pins.txt, which `python3 utils/bin/setup install TOOL` puts into the
-# tools directory (THE SOURCES OF THE BENCH of utils/assay/setup/install.py).
+# tools directory (the sources of the bench of utils/assay/setup/install.py).
 # The configure asks the install module for the directory src of the source,
 # with no network.  When the source is at its pin, TARGET gets that
 # directory as a system include directory, the compile definition
@@ -271,7 +271,7 @@ endfunction()
 # the module ExternalProject come here, before the call.
 enable_language(C)
 include(ExternalProject)
-# Each allocator has its own unit (THE UNITS of bench_alloc_scaling_rows.h).
+# Each allocator has its own unit (the units of bench_alloc_scaling_rows.h).
 crucible_bench(bench_alloc_scaling CORES 9)
 target_sources(bench_alloc_scaling PRIVATE bench_alloc_scaling_base.cpp bench_alloc_scaling_glibc.cpp)
 crucible_alloc_references(bench_alloc_scaling)
@@ -493,10 +493,10 @@ endif()
 # The scan of the timed windows of each bench.  test/bench_windows/check_windows.py
 # reads each bench, and it refuses a timed window whose loops hold no
 # instruction of the body of the row: the optimizer moved the work of the
-# body out of the timed loop, and the row measures nothing (THE COUNTER).  It
+# body out of the timed loop, and the row measures nothing (the counter).  It
 # also refuses a timed window in cold code, or a loop of one that calls a
 # timed body in cold code: GCC took the row for unlikely executed and
-# optimized it for size (THE PLACEMENT).  The
+# optimized it for size (the placement).  The
 # gate does not build a bench preset, so `loop nightly` runs the scan, and
 # the probe of test/CMakeLists.txt is the control that the gate runs.  The
 # scan reads the code of a Release build, so each configuration that disables

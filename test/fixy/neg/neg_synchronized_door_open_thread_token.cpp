@@ -1,11 +1,11 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The counter states synchronized{} and holds a plain private count.  Its door
 // bump takes a key that states thread_bound{} and is a member class of the
 // counter, so the key is tied to the counter.  But the key has a public
 // constructor, so each thread builds one.  Two bodies of run_joined each build
 // a key and call bump at the same time, and the two writes of the count race.
-// So the check refuses the key as a proof (THE BUILD OF A TOKEN of
+// So the check refuses the key as a proof (the build of a token of
 // foundation/Transfer.h).
 //
 // Expected diagnostic: a door takes a token of the class that each thread can

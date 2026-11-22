@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // An all-pairs pingmesh needs at least two peers.  A one-peer matrix has
 // no source and destination pair to measure.

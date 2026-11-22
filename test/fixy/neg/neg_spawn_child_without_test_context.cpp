@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // spawn_child starts a child process, and only a test starts one.  A
 // background context owns no Test capability, so the gate

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // HS14 fixture #1 of 2 for the hash-family gate of TensorMeta::grad_fn_hash
 // (Tagged<uint64_t, hash_family::FamilyB>).
@@ -16,7 +16,7 @@
 int main() {
     crucible::TensorMeta meta{};
 
-    // MUST fail: grad_fn_hash is GradFnHash, not a raw uint64_t.
+    // must fail: grad_fn_hash is GradFnHash, not a raw uint64_t.
     meta.grad_fn_hash = 0x1234ULL;
     return 0;
 }

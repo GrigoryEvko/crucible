@@ -16,13 +16,13 @@
 // keeps one region for many calls.  A form with the allocation capability
 // takes its slots from a HeapArray of its own, so the allocation shows at
 // the call.
-// THE SPLIT
+// Split
 //   The run divides into grains of parallel_tree_grain elements, and the
 //   last grain holds the rest.  The caller gives a region of one slot for
 //   each grain (count_parallel_tree_partials).  mint_parallel_for of
 //   fixy/concurrent/Spawn.h cuts the region into Shards shards in proportion
 //   to the count of the slots, and each shard computes the grains of its
-//   slots.  A grain is a node of the tree (THE ORDER of
+//   slots.  A grain is a node of the tree (the order of
 //   foundation/core/Reduce.h), so the cut of the shards and the thread of
 //   each shard change no operand.  The calling thread then combines the
 //   slots by the tree of the same rule, and the result has the bits of
@@ -33,10 +33,10 @@
 //   for the size of the run.  WaitOnEachOther gives each shard its own
 //   thread, and a test uses it to run a stated count of threads.
 //
-// THE WRITES OF A SCAN
+// Writes of a scan
 //   A scan takes three phases: the tree sum of each grain into its slot, the
 //   exclusive scan of the slots on the calling thread, which makes each slot
-//   the carry of its grain (THE GRAINS of foundation/core/Scan.h), and the
+//   the carry of its grain (the grains of foundation/core/Scan.h), and the
 //   scan of each grain with its carry.  In the third phase each shard writes
 //   the outputs of its grains.  Before the third phase, split_at of
 //   foundation/core/Region.h divides the ViewMut out at the cut of the shards
@@ -45,13 +45,13 @@
 //   part by the index of its place, and the place gives the first slot of
 //   the shard by the cut of the split.
 //
-// THE INPUT OF A SCAN
+// Input of a scan
 //   An input that shares elements with the output at a shift lets a shard
 //   read an element that another shard writes, such as in[16383] of shard 0
 //   and out[16384] of shard 1 over one run.  The input of a scan or of a
 //   segmented sum is a View, or a ViewMut through a const reference.  A
 //   ViewMut of a brand other than the brand of the output names the run of
-//   another frame (THE ALIAS PROOF of foundation/core/Frame.h), so its type
+//   another frame (the alias proof of foundation/core/Frame.h), so its type
 //   proves that the runs do not overlap, and the form makes no test.  A View
 //   has no brand and proves nothing.  So for a View the form asks
 //   classify_overlap of foundation/core/Region.h one time, on the calling
@@ -63,7 +63,7 @@
 //   the caller through the door of a raw address, which states that the
 //   region owns its storage, so no form tests the slots.
 //
-// THE SCRATCH
+// Scratch
 //   A form with a region gives the region back, and the values of its slots
 //   after the call have no meaning.  A region of a different count of slots
 //   ends the process.  The sums of segments wrap the run of the ViewMut of the
@@ -74,9 +74,9 @@
 //   Scan.h, which take the first element of the run.  The place of the shard
 //   gives the position of its first slot in the region.
 //
-// THE TARGET
+// Target
 //   The sum forms call the SIMD kernels of foundation/core, so they are in
-//   the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of
+//   the inline namespace CRUCIBLE_SIMD_TARGET (the target namespace of
 //   foundation/Platform.h).  The reduce forms with the combine of a caller
 //   read no target, and they stay outside it.
 
@@ -148,7 +148,7 @@ template <typename Run>
     return first_of_(::foundation::core::detail::BaseLayerRead{}, run);
 }
 
-// An input of a scan or of a segmented sum (THE INPUT OF A SCAN): a View, or a
+// An input of a scan or of a segmented sum (the input of a scan): a View, or a
 // ViewMut through a const reference, of the elements T, with or without a
 // const.
 template <class In, class T>
@@ -219,7 +219,7 @@ split_by_shards_(::foundation::core::ViewMut<T, Brand, Extent> out, std::size_t 
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
-// The tree sum of the elements, by the grains of THE SPLIT, with the bits of
+// The tree sum of the elements, by the grains of the split, with the bits of
 // foundation::core::sum_by_tree.  An empty run gives +0.  Complexity: O(n), in
 // Shards shards, then O(slots) on the calling thread.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename Whole, typename Brand>
@@ -242,7 +242,7 @@ sum_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elemen
 }  // namespace CRUCIBLE_SIMD_TARGET
 
 // The tree of the elements with the combine of the caller, by the grains of
-// THE SPLIT, with the value of foundation::core::reduce_by_tree.  Each shard
+// Split, with the value of foundation::core::reduce_by_tree.  Each shard
 // takes a copy of the combine.  Complexity: O(n) combines, in Shards shards,
 // then O(slots) on the calling thread.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename Whole, typename Brand,
@@ -267,10 +267,10 @@ reduce_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> ele
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
-// The sum scan of input into out, by the three phases of THE WRITES OF A
-// SCAN, with the bits of scan_inclusive_sums or scan_exclusive_sums of
+// The sum scan of input into out, by the three phases of the writes of a
+// scan, with the bits of scan_inclusive_sums or scan_exclusive_sums of
 // foundation/core/Scan.h.  input and out hold one count.  input is the run of
-// out, or it shares no element with out (THE INPUT OF A SCAN).  Two counts
+// out, or it shares no element with out (the input of a scan).  Two counts
 // that differ, and an input that shares elements with out at a shift, end the
 // process before a shard starts.  Complexity: O(n) in Shards shards, two
 // times, and O(slots) on the calling thread.

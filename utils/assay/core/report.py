@@ -1,6 +1,6 @@
 """One format for the warnings and errors of the compile-time checks, and the measured rules they read.
 
-THE FORMAT
+The format
     A check reports each finding on one line of its standard output:
 
         PATH:LINE: warning: [CHECK] MESSAGE
@@ -12,7 +12,7 @@ THE FORMAT
     A warning does not fail the check.  With warnings only, the exit status
     is 0.
 
-THE WARNINGS DIRECTORY
+The warnings directory
     ctest shows no output of a test that passes, so the ctest output does not
     show the warnings of a check that passes.  A check that gets
     --warnings-dir DIR also writes its warning lines to DIR/CHECK.txt.  It
@@ -29,32 +29,32 @@ THE WARNINGS DIRECTORY
     between that '.' and the suffix .txt.  ctest permits a '.' in the name of
     a test, such as the name of a program.
 
-THE NUMBERS FILES
+The numbers files
     A measure that cannot fail is a plain number, and not a warning.  A
     check that gets --warnings-dir writes its plain lines of numbers to
     DIR/CHECK.numbers (write_numbers()).  It removes that file when it has
     no such line.  `guard warnings` prints each line of each numbers file
     after the totals of the build.  A line of a numbers file fails nothing.
 
-GITHUB ANNOTATIONS
+GitHub annotations
     When the environment sets GITHUB_ACTIONS to "true", the check also prints
     each finding as a workflow command.  The CI run then shows the finding as
     an annotation on its file.
 
-A CI RUNNER
+A CI runner
     A check makes the finding of a judgment of a measured value with
     judged().  No measured rule judges a time, so a finding has the same
     level on a GitHub runner and on the build host (utils/assay/core/meter.py,
-    A CI RUNNER).  github_actions() sets or removes GITHUB_ACTIONS for the
+    a CI runner).  github_actions() sets or removes GITHUB_ACTIONS for the
     cases of a self-test.
 
-THE KIND AND THE ENTITY
+The kind and the entity
     A finding of a rule with a ledger also has a kind and an entity, and
     assay.core.ledger keys its row by the path, the kind and the entity.  The
     entity holds no line, so a change that only moves code keeps each row.
     The text of the finding does not show the two fields.
 
-THE MEASURED RULES
+The measured rules
     A measured rule of utils/registry.txt gives the limit and the unit of a
     quantity, or one limit for each kind of item (assay.core.registry).
     read_budgets() reads the measured rules with one limit, budget_of() gives
@@ -95,7 +95,7 @@ NUMBERS_SUFFIX = ".numbers"
 LEVELS: tuple[Level, ...] = ("warning", "error")
 # A check name is lowercase words with hyphens, so it is also a safe file name.
 CHECK_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
-# The key of one writer of a check, for example the name of one test (THE WARNINGS DIRECTORY).  A key that starts
+# The key of one writer of a check, for example the name of one test (the warnings directory).  A key that starts
 # with '.' gives a hidden file, and a key that starts with '-' looks like an option.  The pattern refuses the two.
 WRITER_KEY = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 WRITER_KEY_TEXT = "a word of letters, digits, '_', '.' and '-' that starts with a letter, a digit or '_'"
@@ -429,7 +429,7 @@ def replace_lines(target: Path, lines: Sequence[str]) -> None:
 
 
 def write_numbers(warnings_dir: Path, check: str, lines: Sequence[str]) -> None:
-    """Write the numbers file of one check, or remove it when the check has no line of numbers (THE NUMBERS FILES).
+    """Write the numbers file of one check, or remove it when the check has no line of numbers (the numbers files).
 
     Args:
         warnings_dir: The warnings directory
@@ -447,7 +447,7 @@ def write_numbers(warnings_dir: Path, check: str, lines: Sequence[str]) -> None:
 
 
 def read_numbers_dir(warnings_dir: Path) -> list[tuple[str, str]]:
-    """Read each numbers file of one warnings directory (THE NUMBERS FILES).
+    """Read each numbers file of one warnings directory (the numbers files).
 
     Complexity: O(n) in the number of lines of the files.
 

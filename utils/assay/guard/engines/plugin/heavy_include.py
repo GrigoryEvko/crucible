@@ -1,6 +1,6 @@
 """heavy-include — a header in include/ does not include a heavy library header.
 
-THE RULE
+Rule
     Each translation unit that includes a header compiles each header that it
     includes again.  A standard header such as <chrono> or <thread> costs up
     to 1 s of front-end time alone.  Then one include of it in a base header
@@ -13,27 +13,27 @@ THE RULE
     heavy when its compile alone costs more than the compile alone of <meta>
     times the limit of this rule in utils/registry.txt.  The
     quarantine plugin gives these findings to the includes of a file in
-    include/ (include.cpp, THE HEAVY HEADERS):
+    include/ (include.cpp, the heavy headers):
       * a finding of the kind `heavy-include` for each include of a header
         with a heavy row
       * a finding of the kind `unmeasured-header` for each include of a
         library header that no heavy row and no light row gives.
     The rule reads those finding lines in the sections of the objects of the
-    target all of one build (assay.guard.engines.plugin.runner, THE
-    SECTIONS).  The entity of a finding is the header in angle brackets.  The
+    target all of one build (assay.guard.engines.plugin.runner, the
+    sections).  The entity of a finding is the header in angle brackets.  The
     plugin reads only the arms of a preprocessor conditional that a build
     compiles.  An include in a different arm counts only in a build that
     compiles that arm.
 
-THE LEDGER
+Ledger
     utils/ledgers/heavy-include.txt counts the includes of each file and
-    header (assay.guard.engines.plugin.counted, THE COUNTED RULES).  The count
+    header (assay.guard.engines.plugin.counted, the counted rules).  The count
     of a key is its largest count over the configurations of the landing gate.
     A row with no reason is an include that the tree holds at this time.  A
     row with a reason is a header that owns the heavy header on purpose, such
     as the one door of a system header.  `guard write --rule heavy-include
     --admit --reason TEXT` writes such a row.  A reason row of a prefix also
-    gives the reason of a row (assay.core.ledger, THE REASON OF A PREFIX).
+    gives the reason of a row (assay.core.ledger, the reason of a prefix).
     A row gives no output, with a reason or with none.
     The plugin reads an include only in the arms that a build compiles, so
     the write of one build keeps a row that the build does not count.  But
@@ -44,10 +44,10 @@ THE LEDGER
     holds such an include.  A text of the header in a comment keeps the
     row, which is the safe side.
 
-THE VERDICT
+Verdict
     * A count more than its ledger count is an error: a new include of a heavy
       header.
-    * A count less than its ledger count gives no finding (THE POLICIES of
+    * A count less than its ledger count gives no finding (the policies of
       assay.core.ledger).  The landing gate writes the lower count.
     * An include of an unmeasured header is an error in each case: measure the
       header.  The plugin then gives `heavy-include` or no finding.
@@ -90,7 +90,7 @@ Key = rule_ledger.Key
 
 
 def cost_problems(root: Path) -> list[check_report.Finding]:
-    """Return a problem for each heavy or light row of the rule table that does not agree with its measure (THE ROWS).
+    """Return a problem for each heavy or light row of the rule table that does not agree with its measure (the rows).
 
     A table with no heavy row and no light row is a problem too, because the plugin then gives no finding of the
     rule (assay.loop.derive.header_costs).
@@ -133,7 +133,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 def evaluate(
     counts: Mapping[Key, int], ledger: rule_ledger.Ledger, _inputs: None, build_shown: str
 ) -> list[check_report.Finding]:
-    """Compare each count of the build with its ledger count (THE VERDICT).
+    """Compare each count of the build with its ledger count (the verdict).
 
     Complexity: O(k log k) for k counts of the build and the ledger.
     """
@@ -176,7 +176,7 @@ def evaluate(
 def is_gone(root: Path, key: Key) -> bool:
     """Tell that no build can give a finding of a row: its file is gone, or its text holds no text of its header.
 
-    The entity of a row is the header in angle brackets, and an include of it holds that text (THE LEDGER).  A file
+    The entity of a row is the header in angle brackets, and an include of it holds that text (the ledger).  A file
     that cannot be read keeps its row.  Complexity: one read of the file.
     """
     path = root / key.path
@@ -198,7 +198,7 @@ SPEC = counted.CountedRule(
 
 
 def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the ledger of the tree of the context (THE VERDICT).
+    """Return the findings of the build judged against the ledger of the tree of the context (the verdict).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -217,7 +217,7 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the counts of the builds of the request (THE LEDGER).
+    """Write the counts of the builds of the request (the ledger).
 
     Returns:
         0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be

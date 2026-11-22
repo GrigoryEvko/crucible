@@ -265,13 +265,13 @@ void child_aborts(::fixy::TestRunnerCtx const& test) {
     fp::ChildReport const report = run_child(test, [] noexcept { ::fixy::fatal("the child ends here"); });
     CRUCIBLE_TEST_ASSERT(test, report.is_signaled_by(::foundation::os::kAbortSignal));
     CRUCIBLE_TEST_ASSERT(test, ::fixy::find(report.output(), ::fixy::TextView{"the child ends here"}).is_some());
-    // THE CORE DUMP of foundation/os/ChildProcess.h: the kernel writes no
+    // The core dump of foundation/os/ChildProcess.h: the kernel writes no
     // core dump of a child of the door, also with no core limit.
     CRUCIBLE_TEST_ASSERT(test, !report.end().has_core_dump);
 }
 
 // A child of the door is not dumpable, so no host writes a core dump of it
-// (THE CORE DUMP of foundation/os/ChildProcess.h).  The child exits with the
+// (the core dump of foundation/os/ChildProcess.h).  The child exits with the
 // dumpable flag that the kernel gives it.
 void child_is_not_dumpable(::fixy::TestRunnerCtx const& test) {
     fp::ChildReport const report = run_child(
@@ -521,7 +521,7 @@ void empty_traced_child_names_no_process(::fixy::TestRunnerCtx const& test) {
                   == ::foundation::os::Errno::echild);
 }
 
-// THE PROCESS PROBE of fixy/os/Process.h.  A child that ended holds its id
+// The process probe of fixy/os/Process.h.  A child that ended holds its id
 // until its wait, so it is alive.  After the wait the kernel frees the id, and
 // it gives the ids in a sequence up to 4194304, so no other process takes the
 // id before the next probe.
@@ -583,7 +583,7 @@ void probe_judges_each_error(::fixy::TestRunnerCtx const& test) {
     });
 }
 
-// THE IDENTITY DOOR of fixy/os/Process.h: the effective user id of the door is
+// The identity door of fixy/os/Process.h: the effective user id of the door is
 // the effective user id of the status of the process in /proc.
 void current_user_is_the_effective_user(::fixy::TestRunnerCtx const& test) {
     ::fixy::Option<std::uint32_t> oracle = status_effective_user(test);

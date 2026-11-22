@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The sampling rate is in parts per million.  The door into
 // SdcSamplingRatePpm must refuse 1,000,001, the value immediately above

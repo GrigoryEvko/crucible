@@ -17,14 +17,14 @@
 // indexes of a view with a stride of zero, or with strides that overlap, read
 // one element.  The view of a broadcast thus has a const element.
 //
-// THE DOOR
+// Door
 //   mint_strided_view(run, sizes, strides, offset)
 //                       the view of the elements of the View run from the
 //                       position offset, or no value.  The rank is the fixed
 //                       extent of sizes or of strides, or a dynamic rank when
 //                       the two have a dynamic extent
 //
-// THE INVARIANT OF A VIEW
+// Invariant of a view
 //   - The count of the elements, the product of the sizes, is at most
 //     max_strided_count, and so is each size.
 //   - When the view holds an element, each element lies inside the run of
@@ -33,7 +33,7 @@
 //     makes it smaller.
 // So a read at an index below the sizes needs no check.
 //
-// THE READS
+// Reads
 //   rank(), count()     the rank, and the count of the elements
 //   sizes(), strides()  the View of the sizes and of the strides, of rank()
 //                       elements
@@ -43,7 +43,7 @@
 //                       row-major order of the sizes, for each axis with a
 //                       size above one
 //
-// THE OPERATIONS
+// Operations
 // Each operation makes a view of the same run, changes only the sizes, the
 // strides and the element at the zero index, and costs O(rank).  An axis of a
 // static rank is an Index<Rank>, so an axis past the rank does not compile.
@@ -73,7 +73,7 @@
 // A view of a static rank converts to a view of a dynamic rank, and a view of
 // T converts to a view of T const.
 //
-// THE RULE OF RESHAPE
+// Rule of reshape
 // The rule is the rule of computeStride of PyTorch.  The walk reads the axes
 // of this view from the last axis, in groups.  A group is a run of axes in
 // which each axis with a size above one has the stride of the axis after it
@@ -86,7 +86,7 @@
 // are the offsets of a strided view of the new sizes.  The test file holds
 // that proof as a property test with a naive oracle.
 //
-// THE UNIQUE VIEW
+// Unique view
 //   mint_strided_view_mut(run, sizes, strides, offset)
 //                       the StridedViewMut<T, Rank, Brand> of the elements of
 //                       the ViewMut run of a frame (foundation/core/Frame.h),
@@ -99,7 +99,7 @@
 // has the reads of a view, the plain view(), and a transpose of a static
 // rank.  The pointwise walk of foundation/core/Pointwise.h writes through it.
 //
-// THE WALK
+// Walk
 //   walk(body, views...)
 //                       calls body(element, ...) one time for each index of
 //                       the sizes, with the element at that index of each
@@ -120,7 +120,7 @@
 // as consecutive elements too, and steps only over the elements of the
 // others.
 //
-// THE SCOPE
+// Scope
 //   mint_strided_scope(view, body)
 //                       calls body with the BrandedStridedView of view, with
 //                       the fresh brand of the instance of the mint, and
@@ -146,7 +146,7 @@
 //                       parallel view with no check
 // The walk over the views of a scope:
 //   walk(body, first, rest...)
-//                       THE WALK over branded views of one brand, with the
+//                       the walk over branded views of one brand, with the
 //                       plan and the loops of the walk.  The brand proves the
 //                       sizes equal, so the walk has no compare and gives no
 //                       error
@@ -159,7 +159,7 @@
 // brand-escape of the quarantine plugin refuses an object of static or
 // thread storage duration that holds it.
 //
-// THE TRANSFER
+// Transfer
 //   A StridedView refers to its elements as a reference does (refers of
 //   foundation/Transfer.h).  So a StridedView<T const, Rank> moves to another
 //   thread and two threads read it when T is Shareable.  A StridedView<T, Rank>
@@ -410,7 +410,7 @@ template <class Lanes>
 // and the kernels of the base layer: the element at the zero index, and the
 // lanes.  A reader takes a view that a mint made, so it makes no view.  Only
 // the two mints and the operations of a view make a view, through the private
-// constructors (THE DOORS OF THE PARTS below).  The rule owners keeps each
+// constructors (the doors of the parts below).  The rule owners keeps each
 // caller outside the base out of detail.
 template <class T, std::size_t Rank>
 [[nodiscard]] constexpr T* strided_first_of_(StridedView<T, Rank> const& view) noexcept;
@@ -450,7 +450,7 @@ inline constexpr std::size_t minted_rank = SizesExtent != dynamic_extent ? Sizes
 
 }  // namespace detail
 
-// THE DOORS OF THE PARTS
+// Doors of the parts
 //   A view and a unique view of raw parts check nothing, so their
 //   constructors from parts are private.  The friends that make a view are
 //   the two mints below, which check the parts, and the views themselves,
@@ -499,7 +499,7 @@ class[[= ::foundation::transfer::refers{}]] StridedView {
     detail::strided_lanes_of_(StridedView<U, OtherRank> const& view) noexcept;
 
     // The view of the lanes with the element at the zero index at first, with
-    // no check (THE DOORS OF THE PARTS).
+    // no check (the doors of the parts).
     constexpr StridedView(T* first, Lanes const& lanes) noexcept : first_{first}, lanes_{lanes} {}
 
     // The number of an axis.  An Index<Rank> proves its bound.
@@ -740,7 +740,7 @@ public:
     }
 
     // The view of the same elements in the same row-major order with the new
-    // sizes, by THE RULE OF RESHAPE.  The error is CountMismatch when the
+    // sizes, by the rule of reshape.  The error is CountMismatch when the
     // counts differ, NotAView when the strides give no view, and
     // RankPastLimit when sizes has more than max_strided_rank axes.  O(rank +
     // the new rank).
@@ -917,7 +917,7 @@ template <class Lanes>
 // ViewMut of foundation/core/Region.h.  No two indexes of the view name one
 // element, so a write at one index changes no other index.  The brand is the
 // brand of the frame, so two unique views of two brands name runs that do not
-// overlap (THE ALIAS PROOF of foundation/core/Frame.h).  A StridedViewMut does
+// overlap (the alias proof in foundation/core/Frame.h).  A StridedViewMut does
 // not copy.  A move leaves the source with its parts, and the rule
 // use-after-move refuses a later use of the source.
 //
@@ -946,7 +946,7 @@ class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] StridedViewMut 
     core::mint_strided_view_mut(ViewMut<U, OtherBrand, RunExtent> run, View<S, SizesExtent> sizes,
                                 View<D, StridesExtent> strides, std::size_t offset) noexcept;
 
-    // The unique view of view, with no check (THE DOORS OF THE PARTS).  The
+    // The unique view of view, with no check (the doors of the parts).  The
     // mint proves that no two indexes of view name one element and that the
     // run of view belongs to the frame of Brand.
     constexpr explicit StridedViewMut(StridedView<T, Rank> view) noexcept : view_{view} {}
@@ -1272,7 +1272,7 @@ concept CanWalk = std::is_nothrow_invocable_v<Body&, Ts&...>;
 
 namespace detail {
 
-// THE WALK over views whose sizes the caller proved equal: the plan, then
+// The walk over views whose sizes the caller proved equal: the plan, then
 // the loops.  O(count) calls of body, and O(rank * views) for the plan.
 template <class Body, class First, class... Rest, std::size_t Rank>
 constexpr void walk_equal_views_(Body& body, StridedView<First, Rank> const& first,
@@ -1288,7 +1288,7 @@ constexpr void walk_equal_views_(Body& body, StridedView<First, Rank> const& fir
 }  // namespace detail
 
 // Calls body one time for each index of the sizes of the views, in row-major
-// order, with the element at that index of each view: THE WALK.  The views
+// order, with the element at that index of each view: the walk.  The views
 // have one rank parameter.  The walk gives ShapeMismatch, and calls body for
 // no index, when the sizes of a view differ from the sizes of first.
 // O(count) calls of body, and O(rank * views) for the plan.
@@ -1556,7 +1556,7 @@ constexpr auto mint_strided_scope(StridedView<T, Rank> view, Body&& body) noexce
 }
 
 // Calls body one time for each index of the branded views of one scope, in
-// row-major order, with the element at that index of each view: THE WALK,
+// row-major order, with the element at that index of each view: the walk,
 // with its plan and its loops.  Each branded view of a brand has the sizes of
 // the view of the scope, because parallel() compared them, so the walk has no
 // compare and gives no error.  O(count) calls of body, and O(rank * views)

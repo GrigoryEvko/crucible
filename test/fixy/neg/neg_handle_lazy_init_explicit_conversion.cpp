@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Lazy<T>::get_or_init builds its T from what the initializer returns,
 // so the initializer must return a T or a type that converts to T

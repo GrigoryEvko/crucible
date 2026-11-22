@@ -29,7 +29,7 @@ static_assert(qtt_consume_tracked || sizeof(Affine<long long>) == sizeof(long lo
 static_assert(qtt_consume_tracked || std::is_trivially_destructible_v<Linear<int>>);
 static_assert(qtt_consume_tracked || std::is_trivially_move_constructible_v<Linear<int>>);
 
-// THE CONSUME STATE of fixy/Qtt.h: a T that declares a niche holds the
+// The consume state of fixy/Qtt.h: a T that declares a niche holds the
 // state in its own bytes in the tracked build, so the wrapper has the size of
 // T in each build.  Its destructor reads the state only in the tracked build.
 static_assert(sizeof(Linear<::foundation::core::Index<8>>) == sizeof(::foundation::core::Index<8>));

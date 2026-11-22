@@ -1,6 +1,6 @@
 #pragma once
 
-// The image of a value of fixed size (THE CODEC of foundation/core/Protocol.h).
+// The image of a value of fixed size (the codec of foundation/core/Protocol.h).
 // The harness reads the first bytes of the input as the image of a record
 // whose parts hold each kind of part of the family: the leaves, a pad part, a
 // base, a FixedArray, the three sums and the two bounded lists.  A short

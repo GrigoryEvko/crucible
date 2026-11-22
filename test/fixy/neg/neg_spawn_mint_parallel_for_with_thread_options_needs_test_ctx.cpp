@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_parallel_for_with_thread_options gives the worker threads the
 // options of a test, so its second context must own Test.  Only the

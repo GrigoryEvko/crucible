@@ -1,6 +1,6 @@
 """history — the record of each edit-build-test loop of `loop test` (utils/assay/loop/affected.py).
 
-THE HISTORY
+History
     After each call that builds or runs tests, `loop test` appends
     one JSON object on one line to BUILD_DIR/loop-history/history.jsonl.  A
     line holds:
@@ -26,7 +26,7 @@ THE HISTORY
     When the file grows past TRIM_BYTES, the next append keeps the newer half
     of its lines.
 
-THE EDGES OF ONE BUILD
+Edges of one build
     Ninja can write its log again at the start of a build, with one record
     for each output in no order (utils/assay/readers/ninja.py), so an offset
     into the log does not find the records of one build.  The recorder reads
@@ -36,7 +36,7 @@ THE EDGES OF ONE BUILD
     build whose edges are only of the kind "cmake" did no work.  The time of
     a CMake run inside the build is the field reconfigure_s.
 
-THE CRITICAL PATH
+Critical path
     The critical path is the longest chain of edges that ran, where each edge
     of the chain is an input or an order-only input of the next one, through
     phony edges.  Its length is the sum of the durations of its edges, the
@@ -49,12 +49,12 @@ THE CRITICAL PATH
     it reads build.ninja again only when the inode, the size or the time of
     build.ninja changes, after a configure.
 
-THE COST RECORDS
+Cost records
     For each compile and each link that ran, the recorder reads the record
     OUTPUT.cost of `loop step` with assay.core.record, when the build wrote
     it.  The CPU time and the instructions of a compile come from its cost
     block.  The instructions are those of the compiler run, also for a
-    ccache miss (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).  A ccache hit
+    ccache miss (utils/assay/core/meter.py, a compile through ccache).  A ccache hit
     holds no cost.  The instructions of the compiles are a sum
     only when each compile that did not hit has an exact count.  The peak
     concurrent memory is the largest sum of the peak memory of the steps
@@ -62,7 +62,7 @@ THE COST RECORDS
     block.  Each step reaches its peak at a different time, so the sum is an
     upper bound.
 
-THE HOST LOAD
+Host load
     The CPU time of a step comes from getrusage of the children of this
     process, so it holds the step and each process that it waited for.
     /proc/stat gives the busy time of all CPUs of the host.  The busy time
@@ -71,7 +71,7 @@ THE HOST LOAD
     step.  A wall time is comparable with another one only when others_pct
     is small for the two.
 
-THE CONFIGURE TIME
+Configure time
     The root CMakeLists.txt writes the start and the end of each configure to
     BUILD_DIR/configure-time.txt, and CMake then writes build.ninja.  When a
     query of the CMake file API exists, CMake writes the reply after
@@ -80,18 +80,18 @@ THE CONFIGURE TIME
     start is the first line of the root CMakeLists.txt, approximately 0.5 s
     after the start of the cmake process.
 
-THE PLUGIN BUILD
+Plugin build
     A configure that builds the quarantine plugin writes the start and the
     end of that build to PLUGIN_BUILD_TIME_FILE of the build directory.
-    utils/tools/quarantine/Quarantine.cmake writes the file (THE TIME OF THE
-    BUILD).  configure_time() gives that wall time as plugin_build_s.
+    utils/tools/quarantine/Quarantine.cmake writes the file (the time of the
+    build).  configure_time() gives that wall time as plugin_build_s.
 
     The configure and the sum of configure_time() do not hold the plugin
     build.  A plugin build counts for one configure only when its start and
     its end are in that configure.  plugin_build_since() gives the plugin
     build of a CMake run in a build or of a step of the gauge.
 
-THE TABLE
+Table
     `loop history BUILD_DIR [-n N]` prints the last N lines (20 by default)
     as a table.  Each measure is a plain number with its unit, and no rule
     judges it.  Examples are the wall time of the build, the CMake run in it,
@@ -123,7 +123,7 @@ from assay.core import record as cost_record
 from assay.readers import ninja as ninja_files
 
 CONFIGURE_TIME_FILE = "configure-time.txt"
-# The start and the end of the last plugin build, in the directory of the plugin (THE PLUGIN BUILD).
+# The start and the end of the last plugin build, in the directory of the plugin (the plugin build).
 PLUGIN_BUILD_TIME_FILE = Path("quarantine") / "plugin-build-time.txt"
 # The end of the configure can be a few milliseconds after the time that the file system gives build.ninja.
 CONFIGURE_SLACK_S = 0.05
@@ -555,7 +555,7 @@ def summarize_build(build: Path, graph: CompactGraph | None, before: dict[str, n
 
 
 def plugin_build_span(build: Path) -> tuple[float, float] | None:
-    """Return the start and the end of the last plugin build of a build directory (THE PLUGIN BUILD).
+    """Return the start and the end of the last plugin build of a build directory (the plugin build).
 
     Args:
         build: The build directory
@@ -589,7 +589,7 @@ def plugin_build_since(build: Path, since_epoch: float) -> float | None:
 
 
 def configure_time(build: Path) -> dict[str, object] | None:
-    """Return the times of the last configure of a build directory (THE CONFIGURE TIME, THE PLUGIN BUILD).
+    """Return the times of the last configure of a build directory (the configure time, the plugin build).
 
     Args:
         build: The build directory

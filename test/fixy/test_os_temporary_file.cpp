@@ -1,4 +1,4 @@
-// The temporary file door of fixy/os/Fs.h (THE TEMPORARY FILE):
+// The temporary file door of fixy/os/Fs.h (the temporary file):
 // mint_temporary_file_at opens a regular file with no name under a
 // directory, for reading and writing.
 //

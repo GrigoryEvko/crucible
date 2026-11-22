@@ -98,16 +98,16 @@ inline constexpr std::uint32_t ring_setup_single_issuer = 1U << 12;
 inline constexpr std::uint32_t ring_setup_defer_taskrun = 1U << 13;
 
 // The transfers of the door file src/fixy/os/Io.cpp.  Each one moves at most
-// LENGTH bytes, asks again after a short transfer or EINTR, and stops at the
+// length bytes, asks again after a short transfer or EINTR, and stops at the
 // end of the source.  It gives the count that it moved, or the first other
 // error of the kernel.
 
-// sendfile from SOURCE_OFFSET of SOURCE to the file position of DESTINATION.
+// sendfile from source_offset of source to the file position of destination.
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 send_file_(int destination, int source, std::int64_t source_offset, std::size_t length) noexcept;
 
-// copy_file_range from SOURCE_OFFSET of SOURCE to DESTINATION_OFFSET of
-// DESTINATION.
+// copy_file_range from source_offset of source to destination_offset of
+// destination.
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 copy_file_range_(int source, std::int64_t source_offset, int destination, std::int64_t destination_offset,
                  std::size_t length) noexcept;
@@ -237,7 +237,7 @@ using zerocopy_of_t = typename zerocopy_of<Atoms...>::type;
 // contribute zero, so the fold is a sum.
 //
 // A partial specialization rather than a ternary over is_*_atom_v: a
-// ternary instantiates BOTH arms, so `A::value` would be looked up on
+// ternary instantiates both arms, so `A::value` would be looked up on
 // an atom that has no such member and the read would be a hard error
 // rather than a zero.
 template <typename A>
@@ -355,7 +355,7 @@ struct RingParts {
 
 // The door of the setup, in src/fixy/os/Io.cpp.  It makes a ring with
 // SQ_ENTRIES submission entries, CQ_ENTRIES completion entries or the
-// default of the kernel for zero, and the IORING_SETUP_* bits FLAGS.  It maps
+// default of the kernel for zero, and the IORING_SETUP_* bits flags.  It maps
 // the submission ring, the completion ring and the submission entries, and
 // it gives only what the kernel gave.  On an error it releases each part that
 // it made, and it gives the error.
@@ -395,7 +395,7 @@ public:
     IoUringRing&
     operator=(const IoUringRing&) = delete("io_uring fd + mmaps are unique; copy would double-close/unmap");
 
-    // A move takes the parts of OTHER and leaves OTHER the empty handle.
+    // A move takes the parts of other and leaves other the empty handle.
     IoUringRing(IoUringRing&& other) noexcept : parts_{other.parts_} { other.parts_ = detail::RingParts{}; }
 
     IoUringRing& operator=(IoUringRing&& other) noexcept {
@@ -486,7 +486,7 @@ mint_io_uring_ring(Ctx const&) noexcept {
 // so this form takes no destination offset.  It reads the source from
 // source_offset and does not move the file position of the source.  The
 // destination is a file or a socket.  A sendfile to a socket or a pipe with no
-// reader gives epipe, and the thread gets no SIGPIPE (THE PIPE SIGNAL of
+// reader gives epipe, and the thread gets no SIGPIPE (the pipe signal of
 // foundation/os/PipeSignal.h).
 template <typename... Atoms, ::fixy::os::RightSet SourceRights, class DestinationKind,
           ::fixy::os::RightSet DestinationRights, ::foundation::effects::IsExecCtx Ctx>

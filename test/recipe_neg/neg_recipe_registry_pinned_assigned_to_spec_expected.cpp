@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A consumer calls by_name_pinned<BITEXACT>, which gives the
 // NumericalTier of one axis, but it types the result as the RecipeSpec of

@@ -1,6 +1,6 @@
 """The part ledgers of the rule registry: each file of utils/ledgers/ is the ledger of one rule, and obeys its policy.
 
-THE PART
+Part
     The file utils/ledgers/RULE.txt is the ledger of the rule RULE of the
     registry (assay.core.ledger).  The part refuses:
       ledger-owner   a file of utils/ledgers/ whose name is not RULE.txt for a
@@ -13,10 +13,10 @@ THE PART
                      key, and a row of the policy admit or max with no reason
     No ledger row admits a finding of the two kinds (KINDS).
 
-WHY
+Why
     A ledger that no rule reads, or that its rule cannot read, judges
     nothing.  A row of a file that the tree does not hold gives no finding.
-    A ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A file that moves with no row is a new file of
+    A ledger fails only on a growth (the policies of assay.core.ledger).  A file that moves with no row is a new file of
     the rule that owns the ledger, and that rule refuses its findings.  A
     write of the rule removes the rows of the file that went.
 

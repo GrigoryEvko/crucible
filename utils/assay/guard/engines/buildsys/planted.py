@@ -1,6 +1,6 @@
 """The planted build of a plant of a build rule: build.txt tells what the build directory of the plant holds.
 
-THE FILE
+File
     A plant of a rule of the engine build holds the file build.txt in the
     rows grammar of assay.core.rows.  plant_context() copies the plant to a
     throwaway repository (assay.guard.engines.meta.runner.copy_plant).  It
@@ -9,8 +9,8 @@ THE FILE
 
         format 1
         kind KIND                         the build kind of build-kind.txt, and the
-                                          configuration KIND (BuildContext, THE
-                                          CONFIGURATION)
+                                          configuration KIND (BuildContext, the
+                                          configuration)
         configuration NAME                the name of build-configuration.txt.  A
                                           build with a kind row and no such row has
                                           the name KIND there
@@ -59,7 +59,7 @@ THE FILE
     can also hold the directory planted-build/, such as a build.ninja.
     plant_context() copies its files into the build directory first.
 
-THE TOOLS
+Tools
     The build gets a ninja and a ctest of its own.  They print the inputs of
     the target all, the lists of the dependency log and the list of the tests
     of the rows.  The CMake cache names them, as it names the tools of a
@@ -151,7 +151,7 @@ sys.stdout.write(Path(__file__).with_name("ctest.json").read_text(encoding="utf-
 
 
 class PlantError(ValueError):
-    """The file build.txt of a plant does not obey its rows (THE FILE)."""
+    """The file build.txt of a plant does not obey its rows (the file)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,7 +185,7 @@ class Planted:
 
 
 def expanded(text: str, root: Path, build: Path) -> str:
-    """Return a word or a cell with each placeholder of THE FILE replaced."""
+    """Return a word or a cell with each placeholder of the file replaced."""
     return (
         text.replace("{root}", str(root))
         .replace("{build}", str(build))
@@ -195,7 +195,7 @@ def expanded(text: str, root: Path, build: Path) -> str:
 
 
 def file_path(text: str, root: Path, build: Path) -> str:
-    """Return the absolute path of a FILE of a list (THE FILE)."""
+    """Return the absolute path of a FILE of a list (the file)."""
     named = expanded(text, root, build)
     if named.startswith("@build/"):
         return str(build / named.removeprefix("@build/"))
@@ -295,7 +295,7 @@ def write_record(
 
 
 def spoil_record(output: Path, how: str) -> None:
-    """Make the record of an output a stale record or a record of a different format (THE FILE, the field record)."""
+    """Make the record of an output a stale record or a record of a different format (the file, the field record)."""
     if how == "stale":
         output.write_bytes(output.read_bytes() + b"\0" * 8)
     elif how == "format":
@@ -552,7 +552,7 @@ def _ctest_document(tests: Sequence[Mapping[str, object]], root: Path) -> dict[s
 
 
 def read_rows(plant_file_path: Path, root: Path, build: Path) -> Planted:
-    """Read build.txt, and write each file that its rows give in the tree and in the build directory (THE FILE).
+    """Read build.txt, and write each file that its rows give in the tree and in the build directory (the file).
 
     Complexity: linear in the rows and the bytes that they write.
 
@@ -627,7 +627,7 @@ def write_build(planted: Planted, root: Path, build: Path) -> None:
 
 
 def plant_context(plant: Path, scratch: Path) -> BuildContext:
-    """Copy a plant to a throwaway repository, make its planted build, and give the context of the engine (THE FILE).
+    """Copy a plant to a throwaway repository, make its planted build, and give the context of the engine (the file).
 
     A plant with no build.txt and no planted-build/ gives a context with no
     build directory.  A plant that holds utils/registry.txt gives the

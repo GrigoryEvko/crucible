@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A registry of the transfer facts of classes that are only declared counts
-// its statements in its seal (THE OPAQUE TYPES of foundation/Transfer.h).  A
+// its statements in its seal (the opaque types of foundation/Transfer.h).  A
 // statement that the seal does not count stands outside the seal, and the
 // first read of the registry stops the build.  So no translation unit reads a
 // statement that another one does not see.

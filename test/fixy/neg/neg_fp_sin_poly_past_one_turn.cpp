@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // sin_poly accepts an angle within one turn of zero.  The argument here is
 // the first float above 2*pi, so the precondition of sin_poly refuses it.

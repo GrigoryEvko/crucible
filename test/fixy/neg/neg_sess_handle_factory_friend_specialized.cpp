@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit specializes a class template that sits beside the
 // handle factory, DelegatedSession, and calls a builder of the factory

@@ -1,6 +1,6 @@
 // A class states that no door builds the empty value, and its public default
 // constructor builds the empty value.  The payload gate checks the statement
-// against the constructors of the class (THE CHECK OF THE STATEMENT of
+// against the constructors of the class (the check of the statement of
 // foundation/core/Choice.h), so the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

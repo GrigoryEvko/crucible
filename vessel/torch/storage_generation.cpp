@@ -102,13 +102,13 @@ c10::Allocator* g_prior = nullptr;
 uint8_t g_priority = 0;
 
 // Ends the process when the calling thread is not the thread of the sessions:
-// a claim of a Vigil lives, and another thread holds it (THE THREADS of
+// a claim of a Vigil lives, and another thread holds it (the threads of
 // storage_generation.h).  A linear scan of the records of the brands.
 void require_session_thread() noexcept {
     CRUCIBLE_FATAL_INVARIANT(::foundation::effects::host::ProducerClaim<crucible::Vigil>::can_caller_use_brand());
 }
 
-// Starts a new period of the allocator (THE PERIODS of storage_generation.h).
+// Starts a new period of the allocator (the periods of storage_generation.h).
 void begin_period() noexcept { g_allocator_follow.epoch.store_release(g_allocator_follow.epoch.load_acquire() + 1); }
 
 // The next change of the CPU allocator comes at an op of a Vigil in the mode

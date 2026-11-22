@@ -1,8 +1,8 @@
 #pragma once
 
 // The records of the metadata region of a window: one ChunkMeta for each
-// chunk, one SlabMeta for each unit, and the layout of the region (THE
-// REGION).
+// chunk, one SlabMeta for each unit, and the layout of the region (the
+// region).
 //
 //   ChunkMeta                  the owner, the placement, the partition, the
 //                              page kind, the state, the unit map, the decay
@@ -17,9 +17,9 @@
 //                              a window of that many chunks, and of each
 //                              record
 //   slot_at(class, offset)     the slot that starts at an offset of a slab,
-//                              with no division (THE SLOT OF AN OFFSET)
+//                              with no division (the slot of an offset)
 //
-// THE REGION
+// Region
 //   No block holds a header, a link or a canary.  Each fact of the allocator
 //   about a block is in one region of its own, beside the window, so a write
 //   past a block cannot change the state of the allocator, and a device
@@ -34,7 +34,7 @@
 //   1 MiB, chunk records of 32 MiB and slab records of 9 GiB of address
 //   space.  The kernel gives a page frame only at the first write.
 //
-// THE RECORDS
+// Records
 //   A record starts as zero bytes, which is the state of a chunk or a unit
 //   that no heap took: no owner, the placement 0, the partition data, base
 //   pages, never written, and no class.  Each padding byte is a named member
@@ -116,7 +116,7 @@ enum class SourceWord : std::uint64_t {
 enum class MarkStamp : std::uint64_t {
 };
 
-// The record of one chunk (THE RECORDS): one cache line.  Each read gives a
+// The record of one chunk (the records): one cache line.  Each read gives a
 // field by value, and each write sets one field, so no caller holds the
 // address of a field.
 class alignas(64) ChunkMeta final {
@@ -146,7 +146,7 @@ public:
     constexpr void set_mark_stamp(MarkStamp mark_stamp) noexcept { mark_stamp_ = mark_stamp; }
 
     // True when each field is at its offset, so each byte of the line is a
-    // named field (THE RECORDS).  The check file of this header holds it.
+    // named field (the records).  The check file of this header holds it.
     [[nodiscard]] static consteval bool has_named_bytes() noexcept {
         return offsetof(ChunkMeta, owner_) == 0 && offsetof(ChunkMeta, placement_) == 2
             && offsetof(ChunkMeta, partition_) == 4 && offsetof(ChunkMeta, page_kind_) == 5
@@ -211,7 +211,7 @@ enum class SlabLink : std::uint32_t {
 
 [[nodiscard]] constexpr SlabLink link_of(SlabNumber slab) noexcept { return SlabLink{slab.raw() + 1}; }
 
-// The record of one unit (THE RECORDS): a header of one cache line and a
+// The record of one unit (the records): a header of one cache line and a
 // bitmap of 512 bytes.  A set bit is a free slot.  Bit k of the summary word
 // is set when word k of the bitmap holds a free slot.  The class of a unit
 // with no slab is zero, which names no class.
@@ -244,7 +244,7 @@ public:
     constexpr void set_heap_prev(SlabLink prev) noexcept { heap_prev_ = prev; }
 
     // True when each field is at its offset, so each byte of the header is a
-    // named field and the bitmap starts at the second line (THE RECORDS).
+    // named field and the bitmap starts at the second line (the records).
     // The check file of this header holds it.
     [[nodiscard]] static consteval bool has_named_bytes() noexcept {
         return offsetof(SlabMeta, size_class_) == 0 && offsetof(SlabMeta, class_padding_) == 1
@@ -272,7 +272,7 @@ inline constexpr std::size_t kSlabMetaBytes = 576;
 
 // ── The slot of an offset ──────────────────────────────────────────────
 //
-// THE SLOT OF AN OFFSET
+// Slot of an offset
 //   The flush of a bin finds the slot of each address that it gives back: the
 //   offset of the address from the first byte of its slab, over the bytes of
 //   the slot of the class.  A slot is not a power of two above 128 bytes, so
@@ -292,8 +292,8 @@ inline constexpr std::size_t kSlabMetaBytes = 576;
 //   in each case.  The check file of this header holds the bounds on c for
 //   each class.  A second test refuses an index past the slots of the slab.
 
-// The bits of the fraction of the reciprocal of a slot (THE SLOT OF AN
-// OFFSET), and their mask.
+// The bits of the fraction of the reciprocal of a slot (the slot of an
+// offset), and their mask.
 inline constexpr std::uint32_t kSlotFractionBits = 47;
 inline constexpr std::uint64_t kSlotFractionMask = (std::uint64_t{1} << kSlotFractionBits) - 1;
 
@@ -331,7 +331,7 @@ struct SlotFactTable final {
 inline constexpr SlotFactTable kSlotFacts = build_slot_facts_();
 
 // The product of an offset below one chunk and the reciprocal of the slot of
-// a class (THE SLOT OF AN OFFSET): the index of the slot that holds the
+// a class (the slot of an offset): the index of the slot that holds the
 // offset, and the test of its first byte.  slot_product makes one.  The word
 // proves nothing, so the type has no door: a word that slot_product did not
 // make gives a wrong slot, and no path reads memory through it.
@@ -352,8 +352,8 @@ private:
     std::uint64_t word_ = 0;
 };
 
-// The product of OFFSET, below one chunk, and the reciprocal of the slot of
-// FACTS.  The flush calls it with the facts of its class in registers.
+// The product of offset, below one chunk, and the reciprocal of the slot of
+// facts.  The flush calls it with the facts of its class in registers.
 // Complexity: O(1), one multiply.
 [[nodiscard]] constexpr SlotProduct slot_product(SlotFacts const& facts,
                                                  ::foundation::core::ByteCount offset) noexcept {
@@ -362,9 +362,9 @@ private:
 
 }  // namespace detail
 
-// The slot whose first byte is OFFSET bytes after the first byte of a slab of
+// The slot whose first byte is offset bytes after the first byte of a slab of
 // the class, or none for an offset that is not the first byte of a slot of
-// the slab (THE SLOT OF AN OFFSET).  The flush of a bin in the static library
+// the slab (the slot of an offset).  The flush of a bin in the static library
 // foundation calls it, so the check of the class is a fatal invariant, as in
 // MetadataLayout.  Complexity: O(1), one multiply and three compares, with no
 // division.
@@ -380,12 +380,12 @@ slot_at(SizeClass size_class, ::foundation::core::ByteCount offset) noexcept {
 }
 
 // The guard before the first section and after the last section of the
-// region, and the step of each commit of a section (THE REGION).
+// region, and the step of each commit of a section (the region).
 inline constexpr std::size_t kMetadataGuardBytes = std::size_t{2} << 20;
 inline constexpr std::size_t kMetadataStepBytes = std::size_t{2} << 20;
 
 // The offsets of the sections of the region of one window, and of each
-// record (THE REGION).  Each offset counts from the first byte of the
+// record (the region).  Each offset counts from the first byte of the
 // reservation of the region, the first byte of its first guard.  A wrong
 // offset would write outside the region, so each check is a fatal invariant
 // that holds in each build and under each contract semantic, and the window
@@ -398,7 +398,7 @@ public:
     constexpr MetadataLayout& operator=(MetadataLayout&&) noexcept = default;
     ~MetadataLayout() = default;
 
-    // The layout of the region of a window of CHUNKS chunks, which is at most
+    // The layout of the region of a window of a given number of chunks, which is at most
     // the chunks of a window of 1 TiB.  Complexity: O(1).
     [[nodiscard]] static constexpr MetadataLayout of(::foundation::core::ElementCount chunks) noexcept {
         CRUCIBLE_FATAL_INVARIANT(chunks.raw() != 0);

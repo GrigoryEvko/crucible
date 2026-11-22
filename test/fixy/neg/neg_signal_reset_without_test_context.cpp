@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // reset_to_default changes a signal disposition in a child of the child
-// door, and only a test calls it (THE CHILD RESET of fixy/os/Signal.h).  A
+// door, and only a test calls it (the child reset of fixy/os/Signal.h).  A
 // background context owns no Test capability, so the concept
 // CtxFitsChildProcess refuses it at the call, also with the proof of a child.
 //

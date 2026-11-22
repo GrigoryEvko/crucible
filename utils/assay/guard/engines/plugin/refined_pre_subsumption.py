@@ -1,22 +1,22 @@
 """refined-pre-subsumption — a precondition does not test again the predicate of a Refined parameter.
 
-THE RULE
+Rule
     A parameter of type fixy::Refined<Pred, T> or fixy::SealedRefined<Pred,
     T> carries a proof: the predicate held when the value was built.  The
     quarantine plugin of utils/tools/quarantine/ reads each call of
     decide::NAME in a CRUCIBLE_PRE, CRUCIBLE_PRE_FAST or CRUCIBLE_PRE_MSG of
     the same function.  When NAME tests that predicate and the arguments name
-    the parameter, the call is a finding of the kind `retest` (THE REFINED
-    PARAMETERS in expression.cpp).  A cite row of the rule table gives the
+    the parameter, the call is a finding of the kind `retest` (the refined
+    parameters in expression.cpp).  A cite row of the rule table gives the
     procedures that test each predicate.  The entity of a finding is
     `FUNCTION: PARAMETER: decide::NAME`.
 
     The rule reads the finding lines in the sections of the objects of the
-    target all of one build (assay.guard.engines.plugin.runner, THE
-    SECTIONS).  It keeps the files in the scope of its row of the registry,
+    target all of one build (assay.guard.engines.plugin.runner, the
+    sections).  It keeps the files in the scope of its row of the registry,
     because a test spells the pattern on purpose.
 
-THE LEDGER
+Ledger
     utils/ledgers/refined-pre-subsumption.txt admits a deliberate test with a
     count and a reason (assay.core.ledger).  Each problem of the census of
     the runner is an error too.

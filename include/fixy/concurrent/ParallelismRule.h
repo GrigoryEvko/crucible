@@ -54,7 +54,7 @@
 //  3. is_core_private_tier and is_core_resident name the one question the
 //     callers ask, so no caller writes its own comparison.
 //
-//  4. THE START COST.  mint_parallel_for starts and joins one thread for
+//  4. Start cost.  mint_parallel_for starts and joins one thread for
 //     each unit of the factor in each call, and the caller runs no shard.
 //     The cost of one start and join, in the bytes that one core walks in
 //     the same time, is HostFacts::thread_start_bytes.  A factor f then
@@ -143,7 +143,7 @@ inline constexpr std::size_t kMaxFactor = 16;
 inline constexpr std::size_t kL3ResidentMaxFactor = 4;
 
 // The cost of the start and the join of one thread of mint_parallel_for, in
-// the bytes that one core walks in the same time (THE START COST).  The
+// the bytes that one core walks in the same time (the start cost).  The
 // rows of bench/bench_parallel_pointwise.cpp on the isolated cores of the
 // bench VM luks-a, on 2026-11-18, two runs: 2 threads with an empty body
 // start and join in 151.4 to 151.7 us, so 75.7 us for each thread.  The
@@ -179,7 +179,7 @@ struct HostFacts {
     std::size_t largest_l3_group_cpus = 1;
     std::size_t numa_nodes = 1;
     // The cost of the start and the join of one thread, in the bytes that one
-    // core walks in the same time (THE START COST).  Zero gives the factor of
+    // core walks in the same time (the start cost).  Zero gives the factor of
     // the tier alone.
     std::size_t thread_start_bytes = 0;
 };
@@ -266,7 +266,7 @@ public:
         // The factor of the ladder up to the cap of the tier with the least
         // cost: ws / factor for the work of each thread and factor times the
         // start cost for the starts, and ws for the calling thread alone.  Of
-        // two factors with one cost, the smaller one (THE START COST).
+        // two factors with one cost, the smaller one (the start cost).
         const std::size_t ceiling = parallelism_rule_detail::round_to_factor_ladder(want);
         std::size_t factor = 1;
         std::size_t least_cost = ws;

@@ -1,6 +1,6 @@
 """The pin table: the pinned tools of the tree (utils/pins.txt), and the platform of a host.
 
-THE ROWS
+The rows
     The pin table obeys the rows grammar of assay.core.rows.  It has a head
     comment, a format row and one row kind:
 
@@ -21,7 +21,7 @@ THE ROWS
     what the tool is.  The key of a row is its name and its platform, so a
     second row with the same key is an error.
 
-THE PLATFORM
+The platform
     host_platform() gives the system and the machine of a host in the words
     of the table: the system in lowercase (linux, darwin), and the machine
     x86_64 or aarch64.  A machine that calls itself arm64 is aarch64.
@@ -50,7 +50,7 @@ MACHINES = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64"
 
 
 class Via(enum.StrEnum):
-    """How a pinned tool comes to the host (THE ROWS)."""
+    """How a pinned tool comes to the host (the rows)."""
 
     ARCHIVE = "archive"
     PIP = "pip"
@@ -161,7 +161,7 @@ def load(path: Path = PINS, shown: str = PINS_PATH) -> tuple[Pin, ...]:
 
 
 def host_platform(system: str | None = None, machine: str | None = None) -> str:
-    """Return the platform of a host in the words of the table (THE PLATFORM), by default of this host.
+    """Return the platform of a host in the words of the table (the platform), by default of this host.
 
     A machine that the table does not name stays as the kernel gives it, so no
     row serves it.

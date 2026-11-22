@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The ring is single-producer, and ring() hands out its producer surface.
 // So ring() asks for the context of this Vigil's producer claim, and a

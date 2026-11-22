@@ -1,8 +1,8 @@
 """The witness of the engine plugin: each plant and each control of a rule, compiled with the quarantine plugin of GCC.
 
-THE PLANTS
+Plants
     The plants of a rule of the engine plugin are in utils/plants/RULE/
-    (assay.guard.engines.meta.runner, THE WITNESS).  A plant is a tree that
+    (assay.guard.engines.meta.runner, the witness).  A plant is a tree that
     the rule must refuse, and a control is a tree that the rule must accept.
     Each one is complete in its own directory.  Its manifest witness.txt
     gives its compiles and the full result of each compile.  Its directory
@@ -12,7 +12,7 @@ THE PLANTS
     NAME.planted gets the name NAME there, and no rule of the tree reads the
     C++ of a plant.
 
-THE MANIFEST
+Manifest
     The manifest is a rows file (assay.core.rows).  Each path in it is
     relative to the tree.  A path that starts with {repo}/ is relative to the
     root of the repository of the plants.  The rows are:
@@ -28,20 +28,20 @@ THE MANIFEST
       table-unit UNIT                        the unit of each compile of the table rows
       table FILE accepted                    the two readers of the rule table read FILE
       table FILE refused LINE | MESSAGE      the two readers refuse FILE at LINE
-      white-space accepted|refused           the tables of THE WHITE SPACE
+      white-space accepted|refused           the tables of the white space
       reads PATH                             assay.core.ruletable reads the table PATH
-      procedure WORD                         one procedure of THE PROCEDURES
+      procedure WORD                         one procedure of the procedures
       judge NAME                             the module of the rule judges the finding lines of NAME
-                                             (THE KINDS OF A PLANT)
+                                             (the kinds of a plant)
       fixtures FILE                          the module of the rule judges the planted fixtures of FILE
-                                             (THE KINDS OF A PLANT)
+                                             (the kinds of a plant)
       link PATH TARGET                     the path PATH of the tree is a symbolic link to the path
-                                             TARGET of the tree (THE LINKS)
+                                             TARGET of the tree (the links)
     A LOCATION is FILE:LINE, FILE:* for each line of FILE, or "-" for a
     diagnostic with no file.  The cell "-" of a finding row is an empty
     entity.  Each compile has one exit row.
 
-THE KEYS OF A COMPILE
+Keys of a compile
       root=PATH     the plugin argument root.  The default is ".", the tree
       rules=PATH    the plugin argument rules.  The default is rules.txt
       mode=WORD     the plugin argument mode.  The default is report
@@ -69,11 +69,11 @@ THE KEYS OF A COMPILE
       timeout=SECONDS   the time limit of the compile
       findings=OTHER    the finding rows of the compile OTHER are rows of
                     this compile too, for a second stage of one unit
-      errors=OTHER, notes=OTHER    THE DERIVED DIAGNOSTICS
+      errors=OTHER, notes=OTHER    the derived diagnostics
     Each compile gets -std=c++26, the include directories include/ of the
     tree and of the repository, and a SARIF log (assay.readers.sarif).
 
-THE JUDGEMENT
+Judgement
     * The exit row gives the status.
     * A compile with a report has one report file, unless its row
       `missing NAME report` says that it writes none.  The lines of the
@@ -95,13 +95,13 @@ THE JUDGEMENT
     repository as {repo}.  It also writes an ASCII quotation mark for each
     typographic quotation mark of GCC.
 
-THE LINKS
+Links
     A row `link PATH TARGET` makes the path PATH of the work copy of tree/ a
     symbolic link to the path TARGET of the same tree.  The copy of a plant
     copies the target of each link, and the witness makes each link after the
     copy.  A compile can then open a file through a link, as a compile
     through the include directories of links of layer-roots/ of a build does.
-    The plugin names each file by the path of `realpath()` (THE FILES of
+    The plugin names each file by the path of `realpath()` (the files of
     utils/tools/quarantine/plugin.h), and the witness reads the file of a
     result of the plugin in the log with sarif.plugin_path().  A finding row
     then names the file of the tree, and not the path through the link.  The
@@ -109,7 +109,7 @@ THE LINKS
     the tree.  A diagnostic of GCC itself keeps the path that the compile
     opened.
 
-THE DERIVED DIAGNOSTICS
+Derived diagnostics
     In the mode error, each finding that no region opts out is an error at
     its location.  The key errors=OTHER says that the errors of the compile
     are the finding rows of the compile OTHER.  In the mode report, only a
@@ -139,7 +139,7 @@ THE DERIVED DIAGNOSTICS
     macro that opens the region, on the line of the region line.  OTHER has
     the root ".", and its paths are paths of the tree.
 
-THE TABLES
+Tables
     The quarantine plugin and assay.core.ruletable read the rule table, and
     they must give the same verdict at the same line.  The witness compiles
     the table-unit with each table of a table row.  The plugin refuses a
@@ -148,7 +148,7 @@ THE TABLES
     no other error.  ruletable.load() refuses the table at the same line.
     Each reader accepts an accepted table, and the compile has no error.
 
-THE WHITE SPACE
+White space
     Python str.isspace() gives the white-space characters.  Each one other
     than the space, the tab and the line break gets three tables.  Each
     reader refuses the character between two words and the character in a
@@ -158,13 +158,13 @@ THE WHITE SPACE
     \\r\\n is refused too.  The row white-space refused gives each refused
     table, and the row white-space accepted gives each accepted table.
 
-THE PROCEDURES
+Procedures
     A procedure is a mechanism that rows cannot state, such as a chain of
     compiles through ccache.  Its function in this module holds the results
     that it must give.  A procedure that cannot run on the host, as with no
     ccache or no build directory, writes "skip" and gives no failure.
 
-THE KINDS OF A PLANT
+Kinds of a plant
     A plant has a compile with the exit fail, a refused table, a procedure, a
     judge row or a fixtures row.  A control has no compile with the exit
     fail, no error row and no refused table.
@@ -177,14 +177,14 @@ THE KINDS OF A PLANT
     compiles of a plant give a minimum of one error, and the judged compiles
     of a control give none.
 
-    A fixtures row names a file of the tree with planted fixtures (THE
-    PLANTS of assay.guard.engines.plugin.fixtures).  Then the function
+    A fixtures row names a file of the tree with planted fixtures (the
+    plants of assay.guard.engines.plugin.fixtures).  Then the function
     judge(rule, context) of the module judges the lines of the judged
     compiles and the planted fixtures together, as a run of the rule does
     (assay.guard.engines.meta.runner.module_judged).  The same verdict of a
     plant and of a control applies.
 
-THE ENVIRONMENT
+Environment
     The witness runs the plants of a rule at one time, in the threads of one
     process.  It removes each variable of PLANTED_VARIABLES of
     assay.guard.engines.meta.runner from the environment for the run, and it
@@ -194,7 +194,7 @@ THE ENVIRONMENT
     plant of this witness then sets no variable, and a plant with the file
     environment.txt fails.
 
-THE STATUS
+Status
     witness() returns 0 when each plant and each control holds, and 1 when
     one fails.  It returns 77 when the witness cannot run: no compiler, no
     plugin, or a plugin path with no file.
@@ -225,7 +225,7 @@ from assay.readers import sections as plugin_sections
 
 MANIFEST = "witness.txt"
 TREE = "tree"
-# The failure of a plant that sets a variable (THE ENVIRONMENT).
+# The failure of a plant that sets a variable (the environment).
 ENVIRONMENT_REFUSAL = (
     f"the plant holds {meta_runner.ENVIRONMENT_FILE}, and this witness runs its plants at one time in one process.  A "
     f"plant of this witness sets no variable: remove the file"
@@ -266,23 +266,23 @@ STAGES = ("S", "c", "syntax", "E")
 EXITS = ("pass", "fail")
 OUTPUTS = ("report", "object")
 VERDICTS = ("accepted", "refused")
-# The start of the message of each note of the plugin (assay.readers.sarif, THE DIAGNOSTICS OF THE PLUGIN).
+# The start of the message of each note of the plugin (assay.readers.sarif, the diagnostics of the plugin).
 QUARANTINE_PREFIX = sarif.PLUGIN_PREFIX
 OPTED_OUT = plugin_sections.OPTED_OUT
 REGION = plugin_sections.REGION
 QUARANTINE_RULE = "quarantine"
 CONTRACT_RULE = "contract-specifier"
-# The rule binding-hook, and the start of its error (THE ERRORS of utils/tools/quarantine/binding.cpp).
+# The rule binding-hook, and the start of its error (the errors of utils/tools/quarantine/binding.cpp).
 BINDING_RULE = "binding-hook"
 BINDING_ERROR = "this call names the hook '{entity}' of a structured binding"
-# The rule borrow-match, and the start of its error (THE ERRORS of utils/tools/quarantine/borrow.cpp).
+# The rule borrow-match, and the start of its error (the errors of utils/tools/quarantine/borrow.cpp).
 BORROW_RULE = "borrow-match"
 BORROW_ERROR = "this arm of a borrow match writes the sum that the match reads ({entity})"
-# The entity of a finding of a loop over a sum starts with this mark, and its error starts with this text (THE LOOP
+# The entity of a finding of a loop over a sum starts with this mark, and its error starts with this text (the loop
 # of borrow.cpp).
 BORROW_LOOP_MARK = "loop "
 BORROW_LOOP_ERROR = "this body of a loop over a sum writes the sum that the loop reads ({entity})"
-# The rule view-escape, and the start of its error (THE ERRORS of utils/tools/quarantine/escape.cpp).
+# The rule view-escape, and the start of its error (the errors of utils/tools/quarantine/escape.cpp).
 ESCAPE_RULE = "view-escape"
 ESCAPE_ERROR = "this function gives back a {entity}, and that object ends with the frame of the function"
 # The rules that give an error in each mode for each finding: the contract rule, the rules binding-hook,
@@ -291,7 +291,7 @@ EACH_MODE_RULES = frozenset(
     (CONTRACT_RULE, BINDING_RULE, BORROW_RULE, ESCAPE_RULE, "contract-semantic", "fast-math-override")
 )
 # The rule specialization-home, and the start of the error of each of its kinds that is an error in each mode
-# (THE DERIVED DIAGNOSTICS, and THE ERRORS of utils/tools/quarantine/specialization.cpp).  The record open-extension
+# (the derived diagnostics, and the errors of utils/tools/quarantine/specialization.cpp).  The record open-extension
 # is no error.
 SPECIALIZATION_RULE = "specialization-home"
 SPECIALIZATION_ERRORS = {
@@ -299,7 +299,7 @@ SPECIALIZATION_ERRORS = {
     "orphan": "this file specializes the extension point '{entity}' for a type that a different file defines",
     "forward-declaration": "this file declares the variable template '{entity}' with 'extern' before its definition",
 }
-# The rule base-namespace, and the start of the error of each of its kinds (THE ERRORS of
+# The rule base-namespace, and the start of the error of each of its kinds (the errors of
 # utils/tools/quarantine/namespace.cpp).
 BASE_NAMESPACE_RULE = "base-namespace"
 BASE_NAMESPACE_ERRORS = {
@@ -309,14 +309,14 @@ BASE_NAMESPACE_ERRORS = {
 # The record of the rule specialization-home.  A record is no finding, so it gives no error in each mode.
 SPECIALIZATION_RECORD = "open-extension"
 # The rule brand-escape, and the start of the error of each of its kinds that is an error in each mode: the escapes of
-# a scope brand (THE SCOPE BRANDS of utils/tools/quarantine/linear.cpp).  Its other kinds are lines of a ledger.
+# a scope brand (the scope brands of utils/tools/quarantine/linear.cpp).  Its other kinds are lines of a ledger.
 BRAND_ESCAPE_RULE = "brand-escape"
 SCOPE_ERRORS = {
     "scope-static": "an object of static or thread storage duration holds a value of a scope brand",
     "scope-return": "a scope mint gives a result that holds its own scope brand",
 }
 # The rule must-consume, and the start of the error of each of its kinds that is an error in each mode: the end of a
-# linear sum with its payload (THE SUMS of utils/tools/quarantine/linear.cpp).  Its other kinds are lines of a ledger.
+# linear sum with its payload (the sums of utils/tools/quarantine/linear.cpp).  Its other kinds are lines of a ledger.
 MUST_CONSUME_RULE = "must-consume"
 SUM_ERRORS = {
     "option-unconsumed": "a linear sum can end with a payload that no consumer took: {entity}",
@@ -326,7 +326,7 @@ SUM_ERRORS = {
 }
 # The rule process-wide-state, and the start of the error of each of its kinds that are errors in each mode: an object
 # with static storage duration that holds a thread_bound class, and an object with static or thread storage duration
-# that reaches a loan key or a keyed owner (THE THREAD-BOUND STATICS and THE LOAN-KEY STATICS of
+# that reaches a loan key or a keyed owner (the thread-bound statics and the loan-key statics of
 # utils/tools/quarantine/declaration.cpp).  Its other kinds are lines of a ledger.
 PROCESS_WIDE_RULE = "process-wide-state"
 STATIC_ERRORS = {
@@ -335,7 +335,7 @@ STATIC_ERRORS = {
     "loan-key-static": "an object with static or thread storage duration reaches a loan key or a keyed owner "
     "through a path that is not const, so a body with no capture reaches it: {entity}",
 }
-# The rule fresh-brand, and the start of the error of each of its kinds (THE ERRORS of
+# The rule fresh-brand, and the start of the error of each of its kinds (the errors of
 # utils/tools/quarantine/fresh_brand.cpp).  Each finding of the rule is an error in each mode.
 FRESH_BRAND_RULE = "fresh-brand"
 FRESH_ERRORS = {
@@ -435,7 +435,7 @@ class Manifest:
 
     @property
     def is_refused(self) -> bool:
-        """True when the manifest states that the rule refuses the plant (THE KINDS OF A PLANT)."""
+        """True when the manifest states that the rule refuses the plant (the kinds of a plant)."""
         return (
             any(item.exit == "fail" for item in self.expected.values())
             or any(case.line > 0 for case in self.tables)
@@ -488,7 +488,7 @@ def tree_path(text: str, row: rows_grammar.Row) -> str:
     """Return the path of a link row or a fixtures row with each `.` part and `..` part removed, a path in the tree.
 
     Raises:
-        rows_grammar.RowsError: If the path is absolute, is not in the tree or names the tree itself (THE LINKS)
+        rows_grammar.RowsError: If the path is absolute, is not in the tree or names the tree itself (the links)
     """
     normal = os.path.normpath(text)
     if os.path.isabs(normal) or normal == "." or normal == ".." or normal.startswith("../"):
@@ -530,7 +530,7 @@ def with_limit(arguments: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str],
 
 
 def compile_of(row: rows_grammar.Row) -> Compile:
-    """Read one compile row (THE KEYS OF A COMPILE).
+    """Read one compile row (the keys of a compile).
 
     Raises:
         rows_grammar.RowsError: If a key or a value is not permitted
@@ -567,7 +567,7 @@ def compile_of(row: rows_grammar.Row) -> Compile:
 
 
 def parse_manifest(text: str, path: str) -> Manifest:
-    """Read the rows of a manifest (THE MANIFEST).  Complexity: linear in the rows.
+    """Read the rows of a manifest (the manifest).  Complexity: linear in the rows.
 
     Raises:
         rows_grammar.RowsError: If a row does not obey the grammar or the schema
@@ -832,8 +832,8 @@ def is_each_mode(finding: plugin_sections.Finding) -> bool:
     """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, a kind of
     SPECIALIZATION_ERRORS of the rule specialization-home, a kind of BASE_NAMESPACE_ERRORS of the rule
     base-namespace, a kind of SCOPE_ERRORS of the rule brand-escape, a kind of SUM_ERRORS of the rule must-consume,
-    a kind of STATIC_ERRORS of the rule process-wide-state, or a kind of FRESH_ERRORS of the rule fresh-brand (THE
-    DERIVED DIAGNOSTICS)."""
+    a kind of STATIC_ERRORS of the rule process-wide-state, or a kind of FRESH_ERRORS of the rule fresh-brand (the
+    derived diagnostics)."""
     return (
         finding.rule in EACH_MODE_RULES
         or (finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS)
@@ -848,7 +848,7 @@ def is_each_mode(finding: plugin_sections.Finding) -> bool:
 def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: bool) -> list[tuple[str, str]]:
     """Return the error of each finding that no region opts out and that the mode makes an error.
 
-    In the mode report, only a finding of is_each_mode() gives an error (THE DERIVED DIAGNOSTICS).  The record
+    In the mode report, only a finding of is_each_mode() gives an error (the derived diagnostics).  The record
     open-extension gives no error in each mode.
     """
     errors: list[tuple[str, str]] = []
@@ -888,7 +888,7 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
 def derived_notes(findings: Iterable[plugin_sections.Finding]) -> list[tuple[str, str]]:
     """Return the note of each finding that the mode report makes a note, also of each opted-out one and each region.
 
-    A finding of is_each_mode() gives an error in each mode and no note (THE DERIVED DIAGNOSTICS).
+    A finding of is_each_mode() gives an error in each mode and no note (the derived diagnostics).
     """
     return [
         (f"{finding.file}:{finding.line}", f"{QUARANTINE_PREFIX}{finding.kind} {finding.entity}")
@@ -919,7 +919,7 @@ def normalized(text: str, work: Path, plugin: Path, repo: Path) -> str:
 
 
 def white_space_cases(verdict: str) -> list[TableCase]:
-    """Return the tables of THE WHITE SPACE with the verdict VERDICT.  Complexity: linear in the code points."""
+    """Return the tables of the white space with the verdict VERDICT.  Complexity: linear in the code points."""
     cases: list[TableCase] = []
     for code in range(0x110000):
         character = chr(code)
@@ -1069,7 +1069,7 @@ class Compiler:
         return os.path.normpath(work / TREE / value)
 
     def command(self, item: Compile, work: Path, launcher: Sequence[str] = ()) -> list[str]:
-        """Return the words of one compile (THE KEYS OF A COMPILE), with LAUNCHER before the compiler."""
+        """Return the words of one compile (the keys of a compile), with LAUNCHER before the compiler."""
         argv = [*launcher, self.cxx, "-std=c++26", "-I", str(work / TREE / "include"), "-I", str(self.repo / "include")]
         if item.has_plugin:
             argv += ["-DCRUCIBLE_QUARANTINE_ACTIVE", f"-fplugin={self.plugin}"]
@@ -1127,7 +1127,7 @@ class Compiler:
             """Return the location of a record relative to the tree, or NO_VALUE for a record with no file.
 
             A result of the plugin names its file by the path of `realpath()`, and each compile runs in the tree
-            (THE LINKS).
+            (the links).
             """
             if not record.path:
                 return NO_VALUE
@@ -1151,7 +1151,7 @@ class Compiler:
 
 
 def judge(item: Compile, expected: Expected, outcome: Outcome, manifest: Manifest) -> list[str]:
-    """Return each difference between the result of one compile and its rows (THE JUDGEMENT)."""
+    """Return each difference between the result of one compile and its rows (the judgement)."""
     failures: list[str] = []
     name = item.name
     if (outcome.exit == 0) != (expected.exit == "pass"):
@@ -1686,7 +1686,7 @@ def copy_plant(plant: Path, work: Path) -> None:
 
 
 def make_links(work: Path, links: Sequence[tuple[str, str]]) -> None:
-    """Make each link of a manifest in the tree of WORK, with a relative target (THE LINKS).
+    """Make each link of a manifest in the tree of WORK, with a relative target (the links).
 
     Complexity: linear in the links.
 
@@ -1710,7 +1710,7 @@ def given_lines(outcome: Outcome) -> tuple[plugin_sections.Finding, ...]:
 
 
 def module_errors(rule_id: str, tree: Path, lines: Sequence[plugin_sections.Finding], fixtures: str = "") -> list[str]:
-    """Return the errors that the module of a rule gives on the finding lines of a plant (THE KINDS OF A PLANT).
+    """Return the errors that the module of a rule gives on the finding lines of a plant (the kinds of a plant).
 
     The module judges the lines against the ledger of the tree of the plant.  With `fixtures`, the file of planted
     fixtures of the tree, judge() of the module judges the lines and the planted fixtures together.  Complexity:
@@ -1822,7 +1822,7 @@ def witness(
     build_dir: Path | None = None,
     jobs: int = proc.DEFAULT_JOBS,
 ) -> int:
-    """Run each plant and each control of a rule of the engine plugin, and print each verdict (THE STATUS).
+    """Run each plant and each control of a rule of the engine plugin, and print each verdict (the status).
 
     Args:
         rule_id: The rule.  Its plants are in utils/plants/RULE/

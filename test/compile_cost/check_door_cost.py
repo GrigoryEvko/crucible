@@ -2,7 +2,7 @@
 
 usage: check_door_cost.py BUILD_DIR SOURCE_ROOT [--measure]
 
-THE PROBE
+Probe
     door_cost_with_mut.cpp of this directory gives four writers: a raw loop
     on a C array of 16 words, the member frame door with_mut of a
     FixedArray<uint64_t, 16> with the same loop in its body, and the same two
@@ -11,23 +11,23 @@ THE PROBE
     cost of the door for each call is a cost of each unit that calls it.  The
     raw loop is the floor, and no door of an owner changes it.
 
-THE COMPILE
+Compile
     The compile of the probe is the compile of REFERENCE_UNIT, the check of
     foundation/core/Scan.h, in the compile database of the build, with the
     probe as its source and the object in a temporary directory.  The compile
     is full: the door and the loop differ in the front end, in the code and in
     the debug information, and a parse alone counts only the first.
 
-THE COUNT
+Count
     The count is the user instructions of the compiler and of each process
-    that it starts, from a hardware counter (THE INSTRUCTION COUNT of
+    that it starts, from a hardware counter (the instruction count of
     utils/assay/core/meter.py), as check_ceilings.py counts.  The cost of one
     call of a form is the count of the unit with CALLS instantiations of the
     form, minus the count of the unit with none, divided by CALLS.  The count
     of the headers then cancels.  A host with no exact counter, and a build
     with no REFERENCE_UNIT, give the exit SKIPPED.
 
-THE CEILINGS
+Ceilings
     The kind of the build comes from the words of its compile (kind_of).
       asan       a word -fsanitize=address, as in the presets default and
                  bench-fuzz.  The sanitizer and the debug code make the loop
@@ -66,14 +66,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-# The unit of the compile database whose flags the probe gets (THE COMPILE).
+# The unit of the compile database whose flags the probe gets (the compile).
 REFERENCE_UNIT = "test/layer/checks/foundation/core/Scan.cpp"
 PROBE_NAME = "door_cost_with_mut.cpp"
-# The instantiations of a form in the counted unit (THE COUNT).
+# The instantiations of a form in the counted unit (the count).
 CALLS = 32
-# Each door form and the raw loop form of its body (THE PROBE).
+# Each door form and the raw loop form of its body (the probe).
 DOORS = {"DoorWriter": "RawWriter", "DoorSummer": "RawSummer"}
-# The most that one call of a door costs, as a multiple of one call of the loop on the array (THE CEILINGS).
+# The most that one call of a door costs, as a multiple of one call of the loop on the array (the ceilings).
 CEILING_RATIO = 1.10
 # The loop on the FixedArray against the raw loop, in the asan kind, on main df8fb4e97: 0.0972 G against
 # 0.0074 G for the writer, and 0.1132 G against 0.0230 G for the summer.  The doors measured 0.1014 G and
@@ -95,7 +95,7 @@ MEASURED_CALLS = {
 ABSOLUTE_CEILINGS = {kind: {door: MARGIN * value for door, value in doors.items()}
                      for kind, doors in MEASURED_CALLS.items()}
 # The words of a compile whose cost no ceiling measured: the profile of the presets pgo-generate, pgo and
-# pgo-release, and the analyzer of the preset analyzer.  Such a build has no kind (THE CEILINGS).
+# pgo-release, and the analyzer of the preset analyzer.  Such a build has no kind (the ceilings).
 UNMEASURED_PREFIXES = ("-fprofile-", "-fanalyzer", "-fauto-profile")
 GIGA = 1e9
 # The exits of the check.
@@ -118,7 +118,7 @@ def reference_command(build: Path) -> tuple[list[str], str, str] | None:
 
 
 def kind_of(words: list[str]) -> str | None:
-    """Return the kind of the build of a compile (THE CEILINGS), or None for a kind with no ceiling."""
+    """Return the kind of the build of a compile (the ceilings), or None for a kind with no ceiling."""
     if any(word.startswith(UNMEASURED_PREFIXES) for word in words):
         return None
     if "-fsanitize=address" in words:
@@ -167,7 +167,7 @@ def verdict(kind: str, door: str, per_call: dict[str, float]) -> bool:
 
 
 def main(argv: list[str]) -> int:
-    """Compile the probe in each form, and judge the cost of each door (THE CEILINGS)."""
+    """Compile the probe in each form, and judge the cost of each door (the ceilings)."""
     if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] != "--measure"):
         print(__doc__.splitlines()[2], file=sys.stderr)
         return USAGE

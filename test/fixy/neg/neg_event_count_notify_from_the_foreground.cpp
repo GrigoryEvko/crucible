@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A notify that finds a waiter wakes it with a futex call.  The foreground
 // context owns no Block, so the event count refuses its notify and names the

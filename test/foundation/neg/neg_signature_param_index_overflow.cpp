@@ -4,7 +4,7 @@
 // rather than at the call, and the caller cannot see which index was
 // wrong.
 //
-// VIOLATION: a TU asks a binary function for its third parameter.
+// Violation: a TU asks a binary function for its third parameter.
 //
 // Expected diagnostic: the bound constraint on param_type_t fails.
 

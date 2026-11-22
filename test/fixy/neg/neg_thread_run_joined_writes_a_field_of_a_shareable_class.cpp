@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A class that states shareable{} states that two threads can read an object
 // of it through a reference to const.  It does not state that two threads can

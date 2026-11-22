@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Per-link aggregation takes samples tagged as coming from TCP_INFO.  A
 // view of raw CongestionSample values does not convert to a view of

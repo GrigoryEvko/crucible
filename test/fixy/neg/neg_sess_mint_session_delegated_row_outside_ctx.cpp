@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The protocol sends an int and no computation, but it delegates an
 // endpoint whose protocol sends a computation that needs IO.  The

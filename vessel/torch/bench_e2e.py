@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end cost of the PyTorch vessel on a real training loop.
 
-WHAT THIS MEASURES, AND WHY IT IS NOT THE SAME AS THE C++ BENCHES
+What this measures, and why it is not the same as the C++ benches
 
 `bench/baselines/<tier>/record_leaf.json` times `Vigil::dispatch_op` with the ring and
 the metadata already in hand.  That is the last step of the per-op path.  The
@@ -10,7 +10,7 @@ recording kernel and the metadata bridge -- are the rest of it, and no figure in
 the tree covered them.  This file covers the whole path, from the step a user
 writes to the values coming back.
 
-THE WORKLOADS ARE MODELS, NOT ONE OPERATOR
+The workloads are models, not one operator
 
 A loop over one tiny operator measures the harness more than the vessel, and it
 puts the runtime in a state no user reaches: the Vigil sees a five-op signature,
@@ -29,7 +29,7 @@ to measure. A model gives the runtime the shape it was built for.
                 machinery. A cost that stays a flat fraction of a growing add
                 is in the kernel's arithmetic itself
 
-RECORDING IS A STARTUP COST, REPLAY IS THE STEADY STATE
+Recording is a startup cost, replay is the steady state
 
 A real loop holds its shapes constant, so the Vigil records the first few
 iterations, builds a region, and replays it for the rest of the run. That is why
@@ -51,13 +51,13 @@ therefore cannot beat PyTorch, and a shadow tensor type is what would let a
 replayed op return a handle without reaching the kernel. The vessel has no such
 type. Nothing here approximates the arm that needs one.
 
-THREE ARMS, SEPARATE PROCESSES
+Three arms, separate processes
 
 The dispatch library's schema table is a process-global static, so an arm that
 ran after another in one process would read a table the earlier arm filled.
 Every (workload, arm) pair runs in a process of its own.
 
-THE CORES OF THE THREADS
+The cores of the threads
 
 A Vigil runs five background threads: the thread of its pipeline and the four
 stages that drain, detect, build and publish.  The main thread takes the first
@@ -69,7 +69,7 @@ a thread between isolated cores, so with fewer cores some threads share one,
 and with one core all of them share it.  An arm prints the cores of its threads
 on standard error, and its host facts hold them.
 
-THE LOST TIME
+The lost time
 
 Each timed run of an attached arm reads the wall time and the CPU time of the
 main thread around its loop.  The thread CPU time of the kernel leaves out the
@@ -78,7 +78,7 @@ lost: steal, interrupts and waits behind another thread of its core.  A run
 that lost more than LOST_BOUND_NS is not valid.  The arm prints it, and its
 report gives the count of such runs and the largest loss.
 
-USAGE
+Usage
 
     python3 utils/bin/loop bench --cores 6 --command -- \
         .venv-torch/bin/python vessel/torch/bench_e2e.py --workload add1 --arm compiled --emit-json
@@ -158,7 +158,7 @@ ADD_CHUNKED = {"add1", "add1k"}
 VARIANCE_GATE = 0.05
 
 # The time that the main thread can lose in one timed run, in nanoseconds,
-# before the run is not valid (THE LOST TIME).  The bound of the pause check of
+# before the run is not valid (the lost time).  The bound of the pause check of
 # bench/bench_harness.h.
 LOST_BOUND_NS = 1_000_000
 
@@ -169,7 +169,7 @@ LOST_BOUND_NS = 1_000_000
 
 @dataclasses.dataclass(frozen=True)
 class Placement:
-    """The core of the main thread and the cores of the background threads of each Vigil (THE CORES OF THE THREADS).
+    """The core of the main thread and the cores of the background threads of each Vigil (the cores of the threads).
 
     main_cpu is None for a process with no CPU in its affinity.  vigil_cpus is empty when the affinity holds one CPU.
     """
@@ -202,7 +202,7 @@ def pin_main_thread() -> None:
 
 @contextlib.contextmanager
 def attached(model, optimizer):
-    """Attach a Vigil whose background threads start on the cores after the first (THE CORES OF THE THREADS).
+    """Attach a Vigil whose background threads start on the cores after the first (the cores of the threads).
 
     The main thread holds those cores while the Vigil starts, and then it goes back to its own core.
 
@@ -229,7 +229,7 @@ def attached(model, optimizer):
 
 
 class LostTime:
-    """The lost time of the main thread in each timed run of an arm (THE LOST TIME)."""
+    """The lost time of the main thread in each timed run of an arm (the lost time)."""
 
     def __init__(self, label: str) -> None:
         """Hold no run yet."""
@@ -952,7 +952,7 @@ def host_fingerprint() -> dict:
         "isolated_cpus": _read("/sys/devices/system/cpu/isolated"),
         "affinity": affinity if len(affinity) <= 8 else f"{len(affinity)} cpus",
         "pinned_cpu": cpu,
-        # The cores of the threads (THE CORES OF THE THREADS): the main thread,
+        # The cores of the threads: the main thread,
         # and the background threads of each Vigil.
         "main_cpu": PLACEMENT.main_cpu,
         "vigil_cpus": list(PLACEMENT.vigil_cpus),

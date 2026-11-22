@@ -1,5 +1,5 @@
 // A file of an append open holds the write and the sync rights, and no read
-// right and no seek right (THE RIGHTS of fixy/os/Handle.h).  A read at an
+// right and no seek right (the rights of fixy/os/Handle.h).  A read at an
 // offset asks for the read and the seek rights, so read_full_at takes no
 // borrow of such a file.  A reader of the file opens it again for reading.
 

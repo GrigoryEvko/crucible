@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The compile-time inline claim, asked of a stated cache size, over a
 // pipeline whose working set exceeds it.  Five stages of ten mebibytes
 // per handle sum to one hundred mebibytes, above both the 32 KiB L1d and
-// the 1 MiB L2 the claim states.  The stages ARE opted in to inline
+// the 1 MiB L2 the claim states.  The stages are opted in to inline
 // dispatch, so the refusal is the size and not the missing opt-in, which
 // is the sibling fixture's axis.  The claim is the constraint of a
 // function template, so the compiler spells the pipeline and the two

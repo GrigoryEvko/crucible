@@ -145,7 +145,7 @@ template <class T>
                      })};
 }
 
-// The value of op on one element of each input under THE NAN RULE of
+// The value of op on one element of each input under the NaN rule of
 // foundation/core/Pointwise.h: the bits of op for an op that states
 // NanRule::KeepBits, and the canonical NaN in place of a NaN for each other
 // op.

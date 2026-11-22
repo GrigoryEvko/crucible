@@ -4,7 +4,7 @@ usage: loop derive row-hashes --write [--build-dir DIR]
        loop derive row-hashes --stdout [--build-dir DIR]
        loop derive row-hashes --check [--build-dir DIR]
 
-THE GOLDEN
+Golden
     utils/tools/dump_row_hashes.cpp prints a head with the toolchain tag.
     Then it prints one line for each entry of its matrix: the row hash of
     foundation/diag/RowHash.h of the entry.  The golden is that output, byte
@@ -13,7 +13,7 @@ THE GOLDEN
     A moved line is a moved row hash, and the commit that writes the golden
     again names the cause.
 
-THE BUILD
+Build
     The code model of the build directory (assay.readers.cmake) gives the file
     of the target dump_row_hashes.  The command runs that program with no
     argument through assay.core.proc.  DIR is the build directory, with
@@ -21,7 +21,7 @@ THE BUILD
     does not apply.  When the build has not made the program, or when its
     run does not give the status 0, the command gives an error.
 
-THE MACHINE
+Machine
     The payload lines fold display_string_of, and a reflected name can change
     with the machine.  The golden holds the values of one machine, x86_64
     (GOLDEN_MACHINE).  A program of a different
@@ -30,7 +30,7 @@ THE MACHINE
     rows R**.  But the compare reads each line, and the gate applies to all
     lines of the file.
 
-THE CHECK
+Check
     --check compares the golden with the output of the program of the build.
     The rule derived-files (assay.guard.engines.meta.derived_files) reads the
     same finding (drift()).  For a build that does not apply, it gives no
@@ -57,7 +57,7 @@ CHECK = "derived-files"
 GOLDEN = "utils/tools/row_hash_golden.txt"
 TARGET = "dump_row_hashes"
 DEFAULT_BUILD = "build"
-# The machine of the values of the golden (THE MACHINE).
+# The machine of the values of the golden (the machine).
 GOLDEN_MACHINE = elf.EM_X86_64
 GOLDEN_MACHINE_NAME = "x86_64"
 WRITER = "python3 utils/bin/loop derive row-hashes --write"
@@ -70,7 +70,7 @@ class GoldenError(Exception):
 
 
 def program_of(build_dir: Path) -> Path:
-    """Return the program of the target dump_row_hashes of a build (THE BUILD, THE MACHINE).
+    """Return the program of the target dump_row_hashes of a build (the build,the machine).
 
     Complexity: one read of the code model, linear in its targets.
 
@@ -101,7 +101,7 @@ def program_of(build_dir: Path) -> Path:
 
 
 def output_of(build_dir: Path) -> bytes:
-    """Return the standard output of the program of the target dump_row_hashes of a build (THE BUILD).
+    """Return the standard output of the program of the target dump_row_hashes of a build (the build).
 
     Raises:
         NotApplicable: If the build does not apply (program_of())
@@ -118,7 +118,7 @@ def output_of(build_dir: Path) -> bytes:
 
 
 def compared(root: Path, output: bytes) -> list[check_report.Finding]:
-    """Return an error when the golden of the tree is not the output, byte for byte (THE CHECK)."""
+    """Return an error when the golden of the tree is not the output, byte for byte (the check)."""
     path = root / GOLDEN
     if path.is_file() and path.read_bytes() == output:
         return []
@@ -130,7 +130,7 @@ def compared(root: Path, output: bytes) -> list[check_report.Finding]:
 
 
 def drift(root: Path, build_dir: Path) -> list[check_report.Finding]:
-    """Return an error when the golden of the tree is not the output of the program of the build (THE CHECK).
+    """Return an error when the golden of the tree is not the output of the program of the build (the check).
 
     Raises:
         NotApplicable: If the build does not apply (program_of())

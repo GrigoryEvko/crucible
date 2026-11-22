@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // TransactionLog::commit takes the region as Transaction::ArenaRegion,
 // which is fixy::Tagged<Ref<RegionNode>, source::Arena>.  A raw RegionNode*

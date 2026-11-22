@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // permission_row_t is the public name of a tag's effect row.  A tag with
 // no edge and no permission_row member has no row, so the alias refuses

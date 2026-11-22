@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_metalog_consumer_session asks for a permissioned MetaLog as its
 // first template argument.  An int has none of the tags or handles, so the

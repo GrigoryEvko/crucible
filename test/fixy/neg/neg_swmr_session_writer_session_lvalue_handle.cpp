@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_writer_runtime_session takes the writer handle by move, so the
 // session owns it.  An lvalue handle would stay usable beside the

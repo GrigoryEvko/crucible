@@ -12,12 +12,12 @@
 //                       the object that holds the array holds only a pointer
 //                       and a count
 //
-// THE MINT
+// Mint
 //   mint_fixed_heap_array<T, N, Align>(alloc, fill)
 //                       N copies of fill.  The allocation capability comes
 //                       first, so the allocation shows at its call
 //
-// THE READS
+// Reads
 //   size()              N, a constant
 //   view()              the View<T const, N> of the elements.  A View of a
 //                       temporary array is refused
@@ -25,7 +25,7 @@
 //   at(index)           the element at an Index<N> or at index<I>(), with no
 //                       check: the type of the index proves the bound
 //
-// THE WRITES
+// Writes
 //   array.with_element(index, body)
 //                       body gets the element at an Index<N> in place, as
 //                       T&, and the door gives the result of body
@@ -37,11 +37,11 @@
 // The result of each body holds no borrow.  The two doors carry the
 // annotation borrow_match, as the doors of a FixedArray do, so the rule
 // borrow-match refuses a second door of the same array in a body
-// (foundation/core/Frame.h, THE TWO FORMS OF AN OWNER).
+// (the two forms of an owner in foundation/core/Frame.h).
 //
-// THE KEYED ARRAY
+// Keyed array
 //   FixedHeapArray<T, N, Align, KeyBrand> with a key brand opens its frames
-//   only with a LoanKey<KeyBrand> (THE LOAN KEY of foundation/core/Frame.h),
+//   only with a LoanKey<KeyBrand> (the loan key in foundation/core/Frame.h),
 //   as a keyed FixedArray does:
 //     key = array.with_mut(std::move(key), body)
 //     array.with_mut(key, body)
@@ -52,7 +52,7 @@
 //   the brand with no key.  The spelling with no key brand has the brand
 //   Unkeyed and the doors above with no key.
 //
-// THE OWNER
+// Owner
 //   The array does not copy and does not move.  The mint gives a prvalue, so
 //   the initializer of a member or of a local takes the array with no move.
 //   Thus an array holds its storage from its mint to its end, and no door
@@ -89,8 +89,8 @@ template <class T, std::size_t N, std::size_t Align, ::foundation::brand::IsBran
           && DroppablePayload<T>
 class FixedHeapArray;
 
-// The door of a FixedHeapArray to the raw constructors of a View (THE DOORS OF
-// THE OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant:
+// The door of a FixedHeapArray to the raw constructors of a View (the doors of
+// the owners above this header in foundation/core/Region.h).  The invariant:
 // the array builds its HeapArray with N elements at its mint, it neither moves
 // nor resizes it, and it holds it to its end.  So the first element starts a
 // run of N live elements, and the View of a fixed extent N holds live
@@ -116,8 +116,8 @@ class [[nodiscard]][[= ::foundation::transfer::by_arguments{}]][[= loan_key_mark
     FixedHeapArray final {
     HeapArray<T, Align> storage_;
 
-    // An array of a key brand opens its frames only with its LoanKey (THE
-    // KEYED ARRAY).  An array of Unkeyed, the default, has the doors with no key.
+    // An array of a key brand opens its frames only with its LoanKey (the
+    // keyed array).  An array of Unkeyed, the default, has the doors with no key.
     static constexpr bool is_keyed_ = IsKeyBrand<KeyBrand>;
 
     // The first element.  The mint gives storage of N elements, and the array
@@ -254,11 +254,11 @@ public:
         delete("a keyed FixedHeapArray opens a frame only with its LoanKey: call with_mut(std::move(key), body) or "
                "with_mut(key, body)");
 
-    // THE KEYED ARRAY: the frame door with the key of the brand of the array,
+    // Keyed array: the frame door with the key of the brand of the array,
     // as the keyed frame door of a FixedArray (foundation/core/Array.h).  The
     // key moves into the door and comes back, alone for a body that gives
     // void, and after the result in a Record for each other body.  The body
-    // reaches no key of the brand (THE GATE of foundation/core/Frame.h).  The
+    // reaches no key of the brand (the gate in foundation/core/Frame.h).  The
     // frame brand is the scope brand of the call, so copy() takes its memcpy
     // and write_each its restrict loop.  Complexity: O(1), and the cost of body.
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
@@ -299,7 +299,7 @@ public:
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedLinearFrameBody<Body, T, KeyBrand, Fresh, N>
     void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
-    // THE KEYED ARRAY: the element door with the key, as the keyed element
+    // Keyed array: the element door with the key, as the keyed element
     // door of a FixedArray.  Complexity: O(1), and the cost of body.
     template <class Body>
         requires is_keyed_ && KeyedElementBody<Body, T, KeyBrand>
@@ -351,7 +351,7 @@ public:
 // in new storage of the allocation door.  The allocation capability comes
 // first, so the allocation shows at its call.  The result is a prvalue, so
 // its holder takes it with no move.  A key brand gives a keyed array with no
-// key: its holder gets the key from a root door (THE KEYED ARRAY).
+// key: its holder gets the key from a root door (the keyed array).
 // Complexity: one allocation and N copies.
 template <class T, std::size_t N, std::size_t Align = alignof(T), ::foundation::brand::IsBrand KeyBrand = Unkeyed,
           class Marker>

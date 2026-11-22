@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A graph of one stage.  Its input is an input end of the graph, and the
 // handle of that end states no capacity.  The gate of the graph holds, but

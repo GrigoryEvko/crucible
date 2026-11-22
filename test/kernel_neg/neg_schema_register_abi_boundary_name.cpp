@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A name that comes through the C ABI is tagged ABIBoundary.  The C ABI
 // entry checks the length and the terminator, and then retags the name to

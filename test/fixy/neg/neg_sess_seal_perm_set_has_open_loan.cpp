@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit says that a set with a region lent out holds no open
 // loan, so that a handle closes and a hold ends while the loan is out.

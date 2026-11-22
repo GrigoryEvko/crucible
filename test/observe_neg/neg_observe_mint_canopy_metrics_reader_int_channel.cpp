@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_canopy_metrics_reader binds its argument to a metrics channel.
 // An int does not bind to that reference, so the call finds no

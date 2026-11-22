@@ -3,7 +3,7 @@
 `guard selftest tests.guard.engines.meta.test_types` runs the test.  Each
 case writes one line.  Exit 0 when each case holds, else 1.  The witness of
 the rule holds the verdicts on a tree with the pinned mypy.  This test holds
-THE BROKEN CACHE with a planted mypy, which gives an internal error while a
+the broken cache with a planted mypy, which gives an internal error while a
 mark file is in its cache.
 """
 

@@ -2,7 +2,7 @@
 
 // The slab heap of the allocator of the base: a pairing heap of the slabs of
 // one heap, keyed by the number of a slab, with the removal of each slab
-// (THE SLAB HEAP).
+// (the slab heap).
 //
 //   SlabRecords                 the slab records of one window, read through
 //                               the link of a slab
@@ -12,7 +12,7 @@
 //   heap.pop_min(records)       the lowest slab, out of the heap, or none
 //   heap.remove(records, slab)  takes a slab of the heap out of the heap
 //
-// THE SLAB HEAP
+// Slab heap
 //   A refill takes the slab with the lowest address first, so the live
 //   blocks pack toward the low slabs, and the high slabs and chunks can empty
 //   (design 5.8).  The partial slabs of each class and the empty slabs of
@@ -60,7 +60,7 @@ namespace foundation::alloc {
 // The slab records of one window: the address of the record of the slab 0.
 // The empty records name no window: the sentinel heap holds them, and no
 // path of the sentinel reads a record.  A record lives at its place in the
-// region (THE RECORDS of foundation/alloc/Metadata.h), so the engine reads
+// region (the records of foundation/alloc/Metadata.h), so the engine reads
 // and writes it through the accessor at, and a test reads the links of a
 // slab by value.
 class SlabRecords final {
@@ -104,7 +104,7 @@ private:
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
-// The root of one slab heap (THE SLAB HEAP).  A new heap is empty.
+// The root of one slab heap (the slab heap).  A new heap is empty.
 class SlabHeap final {
 public:
     constexpr SlabHeap() noexcept = default;

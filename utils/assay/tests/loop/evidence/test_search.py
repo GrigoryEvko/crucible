@@ -28,7 +28,7 @@ FAILING = "exit 3"
 
 
 def slice_cases(expect: testing.Expect) -> None:
-    """Hold the parts of a slice: the count, the rate, the seed and the command (THE SLICES)."""
+    """Hold the parts of a slice: the count, the rate, the seed and the command (the slices)."""
     test = ctest_reader.TestEntry("prop_one", ("/build/prop_one", "--iters=500", "--seed=7", "--verbose"))
     expect("the count of the command of a test gives the first count", search.command_iterations(test.command) == 500)
     expect(
@@ -87,7 +87,7 @@ def planted_tree(directory: Path, ctest: str) -> affected.SelfTest | None:
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Run the slices on the planted property tests (THE SELECTION, THE SLICES, THE BUDGET)."""
+    """Run the slices on the planted property tests (the selection, the slices, the budget)."""
     ctest = ctest_program()
     expect("ASSAY_TEST_CTEST or the pinned ctest of PATH gives the ctest of the fake build tree", bool(ctest))
     if not ctest:

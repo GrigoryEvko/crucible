@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_stage_from_endpoints consumes its endpoints.  An endpoint passed as
 // an lvalue would be moved from without a std::move at the call site, so

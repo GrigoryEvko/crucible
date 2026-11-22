@@ -5,7 +5,7 @@
 // huge page.  A HeapArray of foundation/core/Array.h fixes its alignment in
 // its type and holds typed elements.
 //
-// THE TWO STATES
+// Two states
 //   UnwrittenBytes  a block whose bytes hold no value.  It has no view, so no
 //                   code reads a byte before its write.  Two doors write each
 //                   byte and give the block as an AlignedBytes.  fill(value)
@@ -17,7 +17,7 @@
 //   AlignedBytes    a block whose bytes each hold a value.  view() lends them
 //                   as a View, and no member gives a raw pointer
 //
-// THE MINTS
+// Mints
 //   mint_aligned_bytes(alloc, layout)
 //                   a new UnwrittenBytes.  No operation writes a byte, so the
 //                   mint of a block of many gigabytes writes no page
@@ -34,7 +34,7 @@
 // empty block is the default constructor of each state.  The allocation door
 // ends the process when the memory is exhausted, as for mint_heap_array.
 //
-// THE STORAGE
+// Storage
 //   A block takes its bytes rounded up to the alignment, and alignment - 1
 //   bytes more, at the alignment of the allocator of the C library.  Its
 //   first byte is the first address at the alignment in that storage.  So the
@@ -45,7 +45,7 @@
 // the source empty, and the destructor gives them back to the allocation
 // door.
 //
-// THE WINDOWS
+// Windows
 //   with_mut_windows<T>(block, windows, body)
 //                   the frame door of some windows of a named block, as
 //                   slice::get_disjoint_mut of Rust (1.86) gives one unique
@@ -176,7 +176,7 @@ struct AlignedBytesDoor {
     return std::move(rounded).value_or(0);
 }
 
-// The bytes that the storage of a block holds (THE STORAGE): the block
+// The bytes that the storage of a block holds (the storage): the block
 // rounded up to the alignment, and alignment - 1 bytes more.  The caller
 // gives a power of two.  The rounded count is a multiple of the alignment,
 // so it is at most SIZE_MAX + 1 - alignment, and the sum does not wrap.
@@ -185,7 +185,7 @@ struct AlignedBytesDoor {
     return aligned_block_bytes(bytes, alignment) + (alignment - 1);
 }
 
-// The layout of the storage of a block from its two fields (THE STORAGE): the
+// The layout of the storage of a block from its two fields (the storage): the
 // unaligned storage of the layout of the block, as the two doors of a block
 // take it.  The fields come from a Layout, so the one check of the layout
 // holds.  The check stays a call of its own, so a unit at its inline budget
@@ -205,8 +205,8 @@ enum class BlockStorage : std::uint8_t {
 };
 
 // The count of bytes from the first byte of the storage to the first byte of
-// the block: the distance to the first address at the alignment (THE
-// STORAGE).  The caller gives a power of two, and the count is below it.  The
+// the block: the distance to the first address at the alignment (the
+// storage).  The caller gives a power of two, and the count is below it.  The
 // supported targets are 64-bit, so an address is a size_t.  Complexity: O(1).
 [[nodiscard]] inline std::size_t block_lead_bytes(void const* storage, std::size_t alignment) noexcept {
     std::size_t const address = __builtin_bit_cast(std::size_t, storage);
@@ -231,8 +231,8 @@ struct AlignedBytesState {
         return AlignedBytesState{};
     }
 
-    // The storage of a block of the layout, from the door of the kind (THE
-    // STORAGE).  The layout of the caller holds each fact, so its unaligned
+    // The storage of a block of the layout, from the door of the kind (the
+    // storage).  The layout of the caller holds each fact, so its unaligned
     // storage needs no check.  The take and the release of a block are
     // always inline (foundation/core/Owner.h).  Complexity: one allocation.
     [[nodiscard]] CRUCIBLE_INLINE static AlignedBytesState allocated(::foundation::alloc::Layout layout,
@@ -329,7 +329,7 @@ class [[nodiscard]] UnwrittenBytes final : public core::OwnerCore<core::detail::
     using State = core::detail::owner::AlignedBytesState;
 
     // The View of the count bytes from the first byte of the block of the
-    // fields, for a door that writes each byte (THE STORAGE).  The View is no
+    // fields, for a door that writes each byte (the storage).  The View is no
     // part of the surface, so no read reaches a byte with no value.
     // Complexity: O(1).
     [[nodiscard]] static core::View<std::uint8_t> written_run_(State const& given) noexcept {
@@ -348,7 +348,7 @@ public:
     // constructor is always inline, as the moves are.  A constructor out of
     // line writes the three fields to memory one word at a time, and a caller
     // that reads two of them with one 16-byte load waits for a store forward
-    // that cannot occur (THE COPY OF A STATE of foundation/core/Owner.h).
+    // that cannot occur (the copy of a state of foundation/core/Owner.h).
     // Complexity: one allocation.
     CRUCIBLE_INLINE UnwrittenBytes(detail::AlignedBytesKey const& /*key*/, ::foundation::alloc::Layout layout) noexcept
         : core::OwnerCore<State>{State::allocated(layout, detail::BlockStorage::unwritten)} {}
@@ -370,7 +370,7 @@ public:
 
     // Writes value into each byte, and gives the block as an AlignedBytes.
     // This block is then empty.  The local state of fill and of write is not
-    // const, so it stays in registers (THE COPY OF A STATE of
+    // const, so it stays in registers (the copy of a state of
     // foundation/core/Owner.h).  Complexity: O(size()).
     [[nodiscard]] AlignedBytes fill(std::uint8_t value) && noexcept {
         State given = take_state_();
@@ -425,7 +425,7 @@ template <class Marker>
 // A block of the layout, in new storage of the zeroed allocation door, whose
 // bytes each read zero.  Complexity: one allocation.  A large block comes
 // from fresh pages of the kernel, so the mint writes no page of it, except
-// under ThreadSanitizer (THE MINTS).
+// under ThreadSanitizer (the mints).
 template <class Marker>
     requires CanMintAlignedBytes<Marker>
 [[nodiscard]] CRUCIBLE_INLINE AlignedBytes mint_aligned_bytes_zeroed(Marker /*allocation*/,
@@ -508,7 +508,7 @@ lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& 
 namespace core {
 
 // The door of a tested window of a block to the raw constructors of a View
-// (THE DOORS OF THE OWNERS ABOVE THIS HEADER of foundation/core/Region.h).
+// (the doors of the owners above this header of foundation/core/Region.h).
 // The invariant: each window that reaches the door passed the tests of one
 // window for T against the View of its block.  It lies inside the bytes of
 // the block, its bytes hold a whole count of T, and its first byte is aligned
@@ -546,7 +546,7 @@ class TestedWindowDoor final : ::foundation::NoObject<TestedWindowDoor> {
 namespace detail {
 
 // The windows of the form of a list, each tested, then each pair, and the
-// views lent to body (THE WINDOWS).  The doors of a block and of a keyed block
+// views lent to body (the windows).  The doors of a block and of a keyed block
 // call it with the brand of their frame.  Complexity: O(W) for the windows and
 // O(W^2) for the check of overlap, and the cost of the body.
 template <class T, class Fresh, std::size_t N, class Body>
@@ -607,7 +607,7 @@ lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& 
 
 }  // namespace detail
 
-// The frame door of some windows of a named block (THE WINDOWS).  body gets
+// The frame door of some windows of a named block (the windows).  body gets
 // a reference to a FixedList of one ViewMut<T, Fresh> for each window, in the
 // order of the windows, and the door gives its result, or Unit for a body
 // that gives void.  A ViewMut does not copy, so a body that takes the list by
@@ -812,8 +812,8 @@ template <class T, ::foundation::brand::IsBrand Fresh, std::size_t Position, std
 
 }  // namespace detail
 
-// The frame door of a static count of windows of a named block (THE
-// WINDOWS).  The count N is a template parameter, and the windows are a
+// The frame door of a static count of windows of a named block (the
+// windows).  The count N is a template parameter, and the windows are a
 // FixedArray of N, so the door tests each window and each pair at a fixed
 // position, with no loop over a run-time count.  body gets N arguments, one
 // ViewMut<T, Fresh> for each window, in the order of the windows, so it
@@ -865,8 +865,8 @@ void with_mut_windows(AlignedBytes& block, Windows const& windows, Body&& body) 
 
 // ── The keyed block ────────────────────────────────────────────────────────
 
-// A block that opens the frames of its windows only with its LoanKey (THE
-// LOAN KEY of foundation/core/Frame.h).  It holds an AlignedBytes by value, so
+// A block that opens the frames of its windows only with its LoanKey (the
+// loan key of foundation/core/Frame.h).  It holds an AlignedBytes by value, so
 // a move takes three words.  It reads its bytes through view() const&, and it
 // gives no View that writes them, so a body of a frame of its windows writes
 // the bytes only through the ViewMuts of the frame.
@@ -931,7 +931,7 @@ void mint_keyed_bytes(Block&& block) =
 namespace detail {
 
 // The body of a keyed frame of the windows of the form of a list: the body
-// of the door of a block, which reaches no key of the brand (THE GATE).
+// of the door of a block, which reaches no key of the brand (the gate).
 template <class Body, class T, class Brand, class Fresh, std::size_t N>
 concept KeyedListedWindowBody = std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
                              && core::FrameResult<listed_body_result_t<Body, T, Fresh, N>, Fresh>
@@ -950,11 +950,11 @@ concept KeyedWindowElement =
 
 }  // namespace detail
 
-// The keyed frame door of some windows of a keyed block (THE WINDOWS, THE
-// LOAN KEY).  It gives the views as with_mut_windows of an AlignedBytes does,
+// The keyed frame door of some windows of a keyed block (the windows, the
+// loan key).  It gives the views as with_mut_windows of an AlignedBytes does,
 // and its tests and refusals are those of that door.  The key moves into the
 // door, and the door gives it back with the Result, also after a refused
-// window.  The body reaches no key of the brand of the block (THE GATE), so
+// window.  The body reaches no key of the brand of the block (the gate), so
 // no code inside the frame opens a second frame of the windows of the block.
 // Complexity: as with_mut_windows of an AlignedBytes.
 template <class T, class... Refused, std::size_t N, class Brand, class Body,
@@ -984,8 +984,8 @@ with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>& /*key*/, core::
                                                   static_cast<Body&&>(body));
 }
 
-// The keyed frame door of a static count of windows (THE WINDOWS, THE LOAN
-// KEY): the door of the static count of an AlignedBytes, with the key moved in
+// The keyed frame door of a static count of windows (the windows, the loan
+// key): the door of the static count of an AlignedBytes, with the key moved in
 // and given back.
 template <class T, class... Refused, std::size_t N, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>

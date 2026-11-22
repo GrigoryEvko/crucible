@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // run_beside runs its body on another thread while the continuation runs on
 // the calling thread.  A body that owns a View of const ints of the frame

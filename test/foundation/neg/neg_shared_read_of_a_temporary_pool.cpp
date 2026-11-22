@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // with_shared_read lends from the pool it is given, and the guard of that
 // lend points into the pool.  A pool passed as an rvalue is one the

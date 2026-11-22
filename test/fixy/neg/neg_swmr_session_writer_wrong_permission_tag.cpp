@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_swmr_writer takes the writer permission of its channel.  A
 // permission of the reader tag is not the writer permission, so the mint

@@ -1,4 +1,4 @@
-// The fixed map of the guarded memory door (THE FIXED MAP of
+// The fixed map of the guarded memory door (the fixed map of
 // foundation/os/GuardedRegion.h).
 //
 // The range of a region that ended maps again at the same address, and its

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit specializes PermHold for a set of its own, and reads
 // the tokens that a real hold keeps from the specialization.  A hold

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit says that an endpoint with an empty set can send a
 // token of a region, so that a send moves a region that the sender does

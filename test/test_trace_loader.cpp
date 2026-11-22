@@ -338,7 +338,7 @@ static void test_encoders_round_trip_through_the_loader() {
     ::fixy::check::pass(kTest, "  test_encoders_round_trip:       PASSED\n");
 }
 
-// A trace of the first format (THE FIRST FORMAT of crucible/TraceLoader.h):
+// A trace of the first format (the first format of crucible/TraceLoader.h):
 // an op record of 80 bytes with no depth, no tags and no data slots, and a
 // metadata record of 168 bytes with a storage size of 32 bits at byte 156 and
 // the hash of the gradient function at byte 160.  The image writes each field
@@ -711,7 +711,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
     append_le<uint64_t>(buf, 0xDEADBEEFCAFEBABEULL);  // schema_hash
-    append_le<uint16_t>(buf, 0);  // CORRUPT name_len
+    append_le<uint16_t>(buf, 0);  // Corrupt name_len
 
     constexpr ::fixy::CText kFileName{"crtrace-zero-len.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(buf.view(), kFileName);
@@ -743,7 +743,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
     append_le<uint64_t>(buf, 0xFEEDFACEBAADF00DULL);  // schema_hash
-    append_le<uint16_t>(buf, kOversize);  // CORRUPT name_len
+    append_le<uint16_t>(buf, kOversize);  // Corrupt name_len
     // A recognizable byte, so it stands out in a buffer that should
     // never hold it.
     for (std::size_t filler = 0; filler < kOversize; ++filler) {

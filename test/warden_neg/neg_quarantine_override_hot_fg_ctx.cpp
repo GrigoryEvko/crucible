@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // An operator override comes from startup or from a test.  The hot
 // foreground context has an empty row, so the gate refuses it.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_swmr_writer asks for a channel of the SWMR shape.  A type that
 // names the channel's member types but has no writer() and no reader()

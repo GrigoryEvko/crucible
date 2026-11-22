@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // DeadlineWatchdog::observe is constrained on IsExecCtx.  A bare int is
 // not an execution context, so the constrained template parameter

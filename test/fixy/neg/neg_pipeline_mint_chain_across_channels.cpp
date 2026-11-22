@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The first stage writes channel A, and the second stage drains channel B.
 // The two channels carry int, so the payloads agree, and no value goes from

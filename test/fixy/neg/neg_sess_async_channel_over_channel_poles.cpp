@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit forks an asynchronous channel whose two Resources each hold a pole
 // of an SPSC channel of int, and state a capacity.  mint_forked_async_channel

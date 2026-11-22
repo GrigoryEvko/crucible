@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The content key of the computation cache folds the name id of its
 // function.  A unit that could specialize the name id would give one

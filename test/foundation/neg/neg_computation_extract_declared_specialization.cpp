@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The gate of extract in foundation/effects/Computation.h reads the
 // annotation authority, and it reads an annotation only on a complete
@@ -29,7 +29,7 @@ using PureOverDeclaredToken = fe::Computation<fe::Row<>, Phantom<DeclaredToken>>
 int main() {
     PureOverDeclaredToken pure = PureOverDeclaredToken::mint_computation(Phantom<DeclaredToken>{});
 
-    // THE LOAD-BEARING LINE: must FAIL to compile.
+    // The load-bearing line: must fail to compile.
     auto escaped = pure.extract();
     static_cast<void>(escaped);
     return 0;

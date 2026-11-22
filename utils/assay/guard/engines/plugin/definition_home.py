@@ -1,6 +1,6 @@
 """definition-home — each entity that a header of the base declares has its definition in that header.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ reads the header of each
     sentinel unit of include/foundation/ and include/fixy/ (definition.cpp).
     A header that declares an entity and leaves its definition to a different
@@ -18,13 +18,13 @@ THE RULE
                  unit, other than a class of a namespace and an out-of-line
                  entity
     An out-of-line entity, with its one body in a source file of
-    src/foundation/ or src/fixy/, is no finding (definition.cpp, THE
-    OUT-OF-LINE ENTITIES).
+    src/foundation/ or src/fixy/, is no finding (definition.cpp, the
+    out-of-line entities).
 
-THE JOIN
+Join
     A unit cannot see a definition in a file that it does not include, so the
     plugin gives five records, and this module joins them over the census of
-    the build (definition.cpp, THE CLASSES):
+    the build (definition.cpp, the classes):
       declared  a class that a header declares and its unit does not define.
                 The word template after the name marks a class template
       defined   a class that a header or a base source file defines
@@ -41,7 +41,7 @@ THE JOIN
     record header is a problem: the rule has not read that header.  A planted
     census with no build directory has no such problem.
 
-THE LEDGER, THE WRITE
+Ledger, write
     assay.guard.engines.plugin.linear_family: the ledger counts the findings
     of each directory and kind, and each count row gives a reason.
 
@@ -73,7 +73,7 @@ BODY = "body"
 HEADER = "header"
 HOMED = "homed"
 RECORDS = frozenset({DECLARED, DEFINED, BODY, HEADER, HOMED})
-# The word after the name of a declared class template (THE JOIN).
+# The word after the name of a declared class template (the join).
 TEMPLATE_MARK = " template"
 # The trees of the headers that the rule reads, and the trees of the base source files.
 HEADER_TREES = ("include/foundation", "include/fixy")
@@ -91,7 +91,7 @@ ACTIONS = {
 
 
 def finding_of(item: quarantine_sections.Finding) -> check_report.Finding:
-    """Return the error of one finding line of the plugin, at the directory of its file (THE LEDGER)."""
+    """Return the error of one finding line of the plugin, at the directory of its file (the ledger)."""
     return check_report.Finding(
         "error",
         directory_of(item.file),
@@ -177,7 +177,7 @@ def duplicate_findings(names: dict[str, list[tuple[str, int]]], what: str) -> li
 
 
 def header_problems(root: Path, headers: Iterable[str]) -> list[check_report.Finding]:
-    """Give one problem for each header of the two layers with no record header (THE JOIN).
+    """Give one problem for each header of the two layers with no record header (the join).
 
     Complexity: linear in the headers of the two layers.
     """
@@ -222,5 +222,5 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the findings of the builds of the request (THE WRITE of linear_family)."""
+    """Write the ledger of the rule from the findings of the builds of the request (the write of linear_family)."""
     return linear_family.write(rule, request)

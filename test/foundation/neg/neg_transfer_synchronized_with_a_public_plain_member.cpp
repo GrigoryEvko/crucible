@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A class that states synchronized{} states that two threads can write an
-// object of it at the same time (THE SHARED WRITE of foundation/Transfer.h).
+// object of it at the same time (the shared write of foundation/Transfer.h).
 // Its own code orders each private member, but a holder of a reference that
 // is not const writes a public plain member with no order.  The walk checks
 // the statement each time that it reads it, so the first question of a

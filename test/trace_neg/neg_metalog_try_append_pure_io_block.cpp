@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // MetaLog::try_append_pure reads the row of the context of the caller, and
 // the gate IsPure asks that the row is empty.  A context whose row holds IO

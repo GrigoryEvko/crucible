@@ -1,6 +1,6 @@
 # cmake/FpStrict.cmake — `crucible_fp_strict` INTERFACE library.
 #
-# THE FLOOR for FP discipline across every consumer of
+# The floor for FP discipline across every consumer of
 # `crucible`.  Once linked, the target propagates a strict-IEEE-754
 # compile-options pack that makes the Crucible numerical invariants
 # (DetSafe / BITEXACT recipe tier / merkle-hash-safe canonicalize)
@@ -15,21 +15,21 @@
 #      seed, different bits.  Collision rule F101 refuses FP
 #      reassociation for a replay-deterministic payload.
 #
-#   2. FTZ / DENORMAL FLUSH (under -funsafe-math-optimizations) — NV
+#   2. FTZ / denormal flush (under -funsafe-math-optimizations) — NV
 #      silicon treats denormals as zero by default at MMA throughput,
-#      AMD/CPU oracle keeps them; without strict-FP the C++ side ALSO
+#      AMD/CPU oracle keeps them; without strict-FP the C++ side also
 #      flushes, mismatching the recipe's declared denormal policy.
 #
-#   3. NAN / INF ELIMINATION (-ffinite-math-only) — turns
+#   3. NaN / inf elimination (-ffinite-math-only) — turns
 #      `std::isnan(x)` into `constexpr false`, dead-codes the NaN branch
 #      of fixy/fp/Canonicalize.h, breaks merkle-hash convergence for
 #      every double that ever transits a NaN bit pattern.
 #
-# THE FLOOR is `PUBLIC` on the `crucible` target — every test / bench
+# The floor is `PUBLIC` on the `crucible` target — every test / bench
 # / vessel / tool / example consuming `crucible` automatically links
 # `crucible_fp_strict` transitively.  Opt-out is deliberate and
 # review-discoverable: a target documents the engagement and links
-# `crucible_fp_permissive` instead.  That target is NOT shipped.  It
+# `crucible_fp_permissive` instead.  That target is not shipped.  It
 # waits on an explicit `grant::fp_mode<Permissive>` mechanism.
 #
 # Flag rationale (every flag closes a documented hardening hole):
@@ -44,7 +44,7 @@
 #   -ffp-contract=off             — STRICT no-FMA-contraction.  GCC
 #                                   default is `=fast` (?!) in some
 #                                   configurations; the project
-#                                   default is `=on` (FMA WITHIN a
+#                                   default is `=on` (FMA within a
 #                                   statement, the IEEE-defined
 #                                   case).  We tighten to `=off`
 #                                   here because cross-vendor SASS /
@@ -68,20 +68,20 @@
 #                                   work — otherwise the optimizer
 #                                   may already have collapsed sNaN
 #                                   bit patterns at construction.
-#   -frounding-math               — codegen MUST respect rounding-
+#   -frounding-math               — codegen must respect rounding-
 #                                   mode register state (default
 #                                   assumes RN; under `-frounding-
 #                                   math` the optimizer DOESN'T fold
 #                                   FP expressions speculatively).
 #   -ftrapping-math               — keep FP exception status flags
-#                                   alive (the GCC default IS this,
+#                                   alive (the GCC default is this,
 #                                   but explicit pinning prevents a
 #                                   `-fno-trapping-math` further
 #                                   down the flag-chain from
 #                                   stripping the discipline).
 #
-# Two flags from CLAUDE.md §V "NEVER" list are NOT in our SET but
-# ARE in the deny-lists of the rules no-ffast-math and fast-math-override
+# Two flags from CLAUDE.md §V "NEVER" list are not in our SET but
+# are in the deny-lists of the rules no-ffast-math and fast-math-override
 # because they would break the floor if applied per-TU:
 #
 #   -funsafe-math-optimizations   — global blanket disable; one flag
@@ -95,7 +95,7 @@
 # (or transitively via the `crucible` PUBLIC link) inherits the
 # INTERFACE_COMPILE_OPTIONS for every TU compiled for that consumer.
 #
-# Ordering: this module MUST be `include()`d AFTER `project()` (the
+# Ordering: this module must be `include()`d after `project()` (the
 # compiler probe runs at project time and would inherit our flags
 # during its own internal compile, which can fail because the probe
 # uses no fp-strict math).  We add to a target, not CMAKE_CXX_FLAGS,

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The metadata log is single-producer, and meta_log() hands out its
 // producer surface.  So meta_log() asks for the context of this Vigil's

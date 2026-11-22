@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Admitting a report from the PTP daemons is background work.  The
 // foreground hot-path context is refused.  A foreground context is built

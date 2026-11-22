@@ -1,9 +1,9 @@
 """The ledgers of the rules: utils/ledgers/RULE.txt, one reader and one writer for each policy.
 
-THE FILE
+File
     A ledger obeys the rows grammar of assay.core.rows:
 
-        # The head comment (THE HEAD COMMENT).
+        # The head comment (see the head comment).
         format 1
         rule RULE
         reason PREFIX | REASON
@@ -19,7 +19,7 @@ THE FILE
     with the prefix @build/, or "-" for a row that names no file.  Key.path
     is "" for such a row.
 
-THE HEAD COMMENT
+Head comment
     The writer of a ledger owns its head comment.  A writer with a head
     text of its own gives the ledger that text on each write, with
     replace(ledger, comment=TEXT).  A head with an incorrect fact then
@@ -29,11 +29,11 @@ THE HEAD COMMENT
     (assay.guard.engines.buildsys.cost_budgets) and of the rule
     instruction-total (assay.guard.engines.buildsys.cost_totals).
 
-THE POLICIES
+Policies
     A ledger fails only on a growth.  A value above its row is an error, and a
-    value below its row passes.  A complete write lowers such a row (THE
-    WRITE), and the landing gate makes the complete write of each counted
-    ledger (THE REDUCE of assay.loop.gate).
+    value below its row passes.  A complete write lowers such a row (see the
+    write), and the landing gate makes the complete write of each counted
+    ledger (the reduce in assay.loop.gate).
     count     VALUE is a positive count.  A key with more findings than its
               row, or a file with a finding and no row, is an error.  A key
               with fewer findings than its row gives no finding.  REASON is
@@ -52,7 +52,7 @@ THE POLICIES
     output.  `guard list --path FILE` prints the rows of a file.  A count row
     with a reason is a keep row: its reason tells why its findings stay.
 
-THE REASON OF A PREFIX
+Reason of a prefix
     A row `reason PREFIX | REASON` gives the reason of each count row of a
     path that PREFIX holds, in a ledger of the policy count.  A PREFIX with
     "/" as its last character holds each path that starts with it.  Each
@@ -67,19 +67,19 @@ THE REASON OF A PREFIX
     an error.  A write removes each reason row that holds no count row of its
     result.  The reason rows are header rows.
 
-A MODULE OUTSIDE THE ENGINES
+A module outside the engines
     A legacy module that reads its own ledger gets its rule with rule_of(),
     reads the rows with read() and writes them with store().  A self-test
     gives read() and store() the path of a planted ledger.
 
-AN ADMIT ROW OF A COUNT LEDGER
+An admit row of a count ledger
     A row of a count ledger can have the value admit.  It admits each
     finding of its key, as a row of the policy admit does, and its REASON is
     necessary.  A row that admits no finding of the build gives no finding.
     A complete write removes such a row.  A write keeps each other row with
     the value admit, and it adds no such row.
 
-THE WRITE
+The write
     write() gives the ledger of a set of findings in one mode:
       lower   the default.  It refuses a count above its row, and a finding
               with no row.
@@ -91,7 +91,7 @@ THE WRITE
               with no row, each with the reason of the call.
     The counts of a write are complete or partial.  The counts of a rule that
     reads the tree are complete.  The largest count of each key over the
-    builds of a reduce is complete too (THE REDUCE).  A complete write lowers
+    builds of a reduce is complete too (the reduce).  A complete write lowers
     each count to its new value, and it removes each row that admits nothing.
 
     The counts of one build are partial, because one build cannot see the
@@ -105,7 +105,7 @@ THE WRITE
     Write it with the mode raise for the policy count, or with the mode
     admit and a reason for the policy admit.  Give the reason in the commit.
 
-THE PATHS
+The paths
     A write can take a set of paths (`guard write --path PATH`).  It then
     writes only the rows of those paths, and it keeps each other row as it
     is: rows_of_paths() gives the rows that the write reads, and
@@ -113,7 +113,7 @@ THE PATHS
     a reason gives each row of the paths that it keeps that reason, and the
     count of the row does not change.
 
-THE REASON OF A ROW
+The reason of a row
     reasoned() gives the named rows of a ledger a new reason, and it changes
     no value and no other row (`guard write --row ITEM --reason TEXT`).
     Each item names exactly one row (named_keys()):
@@ -133,7 +133,7 @@ THE REASON OF A ROW
     entity.  The write reads no build and no finding, so it applies to each
     policy with a ledger, also to a row whose value holds.
 
-THE REDUCE
+The reduce
     The count of a key of a ledger that a build gives is the largest count of
     the key over the configurations of the landing gate.  The gate gives one
     write a build of each such configuration (assay.loop.gate).  The write
@@ -141,10 +141,10 @@ THE REDUCE
     and it is a complete write.  It lowers each row above that count, and it
     removes each row whose largest count is 0.
 
-THE MERGE
+The merge
     merge() gives the ledger of two changes of one base: the change of the
     main branch (ours) and the change of a landing (theirs).  The landing
-    gate calls it for a patch that does not apply as text (THE MERGE of
+    gate calls it for a patch that does not apply as text (the merge of
     assay.loop.land).  It reads the three ledgers, and it refuses a ledger
     that is not in the form of render().  It takes the side that changed
     the head comment, each reason row and each entry row, by its key.  Two
@@ -157,7 +157,7 @@ THE MERGE
     when the two changes are independent.  A fall of main can remove the
     findings that a rise of the landing counted, so the merged count can be
     too high, and a count below its row gives no error.  merge() thus gives
-    each such key, and the gate then runs the complete write of THE REDUCE.
+    each such key, and the gate then runs the complete write of the reduce.
     A merged count of 0 or less removes the row.
 
     Two sides that change one count to the same value are one change or two
@@ -171,7 +171,7 @@ THE MERGE
     (joined_reason()).  The rows then compose with no conflict.
 
     A row of a max ledger keeps the largest value of its item: a write of
-    the policy max lowers no kept value and removes no row (THE WRITE of
+    the policy max lowers no kept value and removes no row (the write of
     assay.core.budget).  When the two sides change one such row, each side
     keeps a row with a value at or above the value of the base, and one
     side or the two raise the value, the merged row is the row of the
@@ -210,7 +210,7 @@ NEW_COMMENT = (
     "# The ledger of the rule {rule}.  `python3 utils/bin/guard explain {rule}` tells the rule and its "
     "policy,\n# and `python3 utils/bin/guard write --rule {rule}` writes this file.\n"
 )
-# The first word of a row that gives the reason of each count row that a prefix holds (THE REASON OF A PREFIX).
+# The first word of a row that gives the reason of each count row that a prefix holds (the reason of a prefix).
 REASON_WORD = "reason"
 
 
@@ -219,7 +219,7 @@ class LedgerError(ValueError):
 
 
 class WriteMode(enum.StrEnum):
-    """The mode of a write (THE WRITE)."""
+    """The mode of a write (the write)."""
 
     LOWER = "lower"
     RAISE = "raise"
@@ -227,7 +227,7 @@ class WriteMode(enum.StrEnum):
 
 
 class EqualChange(enum.StrEnum):
-    """How merge() reads two sides that change one count to the same value (THE MERGE).
+    """How merge() reads two sides that change one count to the same value (the merge).
 
     AGREE reads them as one change, which the two sides hold.  SUM reads them as two changes, so the merged count is
     the base plus the change of each side.
@@ -258,7 +258,7 @@ class Entry:
 
 @dataclass(frozen=True, slots=True)
 class RowReason:
-    """A write of the reason of named rows (THE REASON OF A ROW).
+    """A write of the reason of named rows (the reason of a row).
 
     `items` names the rows by their path or their entity, `kind` narrows them to one kind or is "" for each kind, and
     `reason` is the new reason of each named row.
@@ -271,14 +271,14 @@ class RowReason:
 
 @dataclass(frozen=True, slots=True)
 class PrefixReason:
-    """One row `reason PREFIX | REASON`: the prefix, the reason and the line (THE REASON OF A PREFIX)."""
+    """One row `reason PREFIX | REASON`: the prefix, the reason and the line (the reason of a prefix)."""
 
     prefix: str
     reason: str
     line: int = 0
 
     def holds(self, path: str) -> bool:
-        """Return True when the prefix holds a path (THE REASON OF A PREFIX)."""
+        """Return True when the prefix holds a path (the reason of a prefix)."""
         return path.startswith(self.prefix) if self.prefix.endswith("/") else path == self.prefix
 
 
@@ -286,7 +286,7 @@ class PrefixReason:
 class Ledger:
     """The rows of the ledger of one rule.
 
-    `base` holds the entry rows by their keys, and `reasons` holds the reason rows (THE REASON OF A PREFIX).
+    `base` holds the entry rows by their keys, and `reasons` holds the reason rows (the reason of a prefix).
     """
 
     rule: str
@@ -296,12 +296,12 @@ class Ledger:
     reasons: tuple[PrefixReason, ...] = ()
 
     def expected(self) -> dict[Key, int]:
-        """Return the count of each row of a count ledger, with no row of the value admit (AN ADMIT ROW OF A COUNT
-        LEDGER).  Complexity: linear in the rows."""
+        """Return the count of each row of a count ledger, with no row of the value admit (an admit row of a count
+        ledger).  Complexity: linear in the rows."""
         return base_counts(self.base)
 
     def admits(self) -> dict[Key, Entry]:
-        """Return each row with the value admit of a count ledger (AN ADMIT ROW OF A COUNT LEDGER)."""
+        """Return each row with the value admit of a count ledger (an admit row of a count ledger)."""
         if self.policy != Policy.COUNT:
             return {}
         return {key: entry for key, entry in self.base.items() if entry.value == ADMIT_VALUE}
@@ -316,7 +316,7 @@ class Ledger:
         return set(base_counts(self.base)) if self.policy == Policy.COUNT else set()
 
     def idle_reasons(self) -> list[PrefixReason]:
-        """Return each reason row that holds no count row (THE REASON OF A PREFIX).
+        """Return each reason row that holds no count row (the reason of a prefix).
 
         Complexity: linear in the reason rows times the count rows.
         """
@@ -357,7 +357,7 @@ def base_counts(base: Mapping[Key, Entry]) -> dict[Key, int]:
 def parse_value(policy: Policy, text: str, row: rows_grammar.Row) -> int | float | str:
     """Read the VALUE cell of an entry row for a policy.
 
-    A row of the policy count can also have the value admit (AN ADMIT ROW OF A COUNT LEDGER).
+    A row of the policy count can also have the value admit (an admit row of a count ledger).
 
     Raises:
         rows_grammar.RowsError: If the value does not have the form of the policy
@@ -442,10 +442,10 @@ def parse(text: str, shown: str, rule_id: str, policy: Policy) -> Ledger:
 
 
 def reasons_row(row: rows_grammar.Row, policy: Policy, is_header: bool, reasons: dict[str, PrefixReason]) -> None:
-    """Read one row `reason PREFIX | REASON` into `reasons` (THE REASON OF A PREFIX).
+    """Read one row `reason PREFIX | REASON` into `reasons` (the reason of a prefix).
 
     Raises:
-        rows_grammar.RowsError: If the row does not obey THE REASON OF A PREFIX.  The ledger must have the policy
+        rows_grammar.RowsError: If the row does not obey the reason of a prefix.  The ledger must have the policy
             count, and the row must come before the first entry row.  It must have one reason, and a new prefix
     """
     if policy != Policy.COUNT:
@@ -577,11 +577,11 @@ def described(key: Key) -> str:
 
 
 def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]) -> list[check_report.Finding]:
-    """Judge the findings of a rule against its ledger (THE POLICIES).
+    """Judge the findings of a rule against its ledger (the policies).
 
     The errors of the rule are its violations.  A warning of the rule passes
     with no change.  A finding that a row admits, a count below its row and a
-    row that admits no finding give no finding (THE POLICIES).  Complexity:
+    row that admits no finding give no finding (the policies).  Complexity:
     O(f log f + r) for f findings and r rows.
 
     Raises:
@@ -620,7 +620,7 @@ def compare(rule: Rule, ledger: Ledger, findings: Sequence[check_report.Finding]
 
 
 def largest_counts(builds: Iterable[Mapping[Key, int]]) -> dict[Key, int]:
-    """Return the largest count of each key over the counts of some builds, with no zero count (THE REDUCE).
+    """Return the largest count of each key over the counts of some builds, with no zero count (the reduce).
 
     Complexity: linear in the counts of the builds.
     """
@@ -640,7 +640,7 @@ def write(
     reason: str | None = None,
     is_partial: bool = False,
 ) -> Ledger:
-    """Return the ledger that admits the error findings of a rule (THE WRITE).
+    """Return the ledger that admits the error findings of a rule (the write).
 
     Args:
         rule: The rule
@@ -648,7 +648,7 @@ def write(
         findings: The findings of the rule
         mode: The mode of the write
         reason: The reason of each new row and each raised count, necessary in the mode admit
-        is_partial: The findings are those of one build, and the write lowers no row (THE WRITE)
+        is_partial: The findings are those of one build, and the write lowers no row (the write)
 
     Raises:
         LedgerError: If the mode refuses a finding, the policy has no write here, or a necessary reason is missing
@@ -671,7 +671,7 @@ def write_counts(
 
     A module that counts its findings itself, such as the rule quarantine,
     writes its ledger with this function.  A partial write keeps each row,
-    and it raises a row only in the mode raise or admit (THE WRITE).
+    and it raises a row only in the mode raise or admit (the write).
 
     Raises:
         LedgerError: If the mode refuses a count, the policy has no write here, or a necessary reason is missing
@@ -694,7 +694,7 @@ def write_counts(
         kept = {key: entry for key, entry in base.items() if is_partial or key in counts}
         kept.update({key: Entry(key, ADMIT_VALUE, reason or "") for key in new_keys})
         return needed_reasons(replace(ledger, base=kept))
-    # The rows with the value admit have no count (AN ADMIT ROW OF A COUNT LEDGER).  A write adds no such row, and a
+    # The rows with the value admit have no count (an admit row of a count ledger).  A write adds no such row, and a
     # complete write keeps each one that admits a finding.
     admits = {key: entry for key, entry in base.items() if entry.value == ADMIT_VALUE}
     kept_admits = {key: entry for key, entry in admits.items() if is_partial or counts.get(key, 0) > 0}
@@ -724,7 +724,7 @@ def write_counts(
 
 
 def rows_of_paths(ledger: Ledger, paths: Collection[str]) -> Ledger:
-    """Return the ledger with only the rows of the paths, or the ledger itself for no path (THE PATHS).
+    """Return the ledger with only the rows of the paths, or the ledger itself for no path (the paths).
 
     Complexity: linear in the rows.
     """
@@ -736,7 +736,7 @@ def rows_of_paths(ledger: Ledger, paths: Collection[str]) -> Ledger:
 def merged_paths(
     ledger: Ledger, written: Ledger, paths: Collection[str], mode: WriteMode, reason: str | None
 ) -> Ledger:
-    """Return the rows of the paths from a write of rows_of_paths(), and each other row of the ledger (THE PATHS).
+    """Return the rows of the paths from a write of rows_of_paths(), and each other row of the ledger (the paths).
 
     A write of the mode lower with a reason gives each row of the paths that reason, and its value does not change.
     No path gives the written ledger itself.  Complexity: linear in the rows.
@@ -810,7 +810,7 @@ def reasoned(ledger: Ledger, request: RowReason) -> Ledger:
 
 
 def needed_reasons(ledger: Ledger) -> Ledger:
-    """Return the ledger with no reason row that holds no count row (THE REASON OF A PREFIX)."""
+    """Return the ledger with no reason row that holds no count row (the reason of a prefix)."""
     idle = ledger.idle_reasons()
     return replace(ledger, reasons=tuple(item for item in ledger.reasons if item not in idle)) if idle else ledger
 
@@ -824,7 +824,7 @@ class Merged:
 
 
 def three_way[Item](base: Item, ours: Item, theirs: Item, what: str) -> Item:
-    """Return the side that changed an item, or the item that the two sides agree on (THE MERGE).
+    """Return the side that changed an item, or the item that the two sides agree on (the merge).
 
     Raises:
         LedgerError: If the two sides change the item differently
@@ -851,7 +851,7 @@ def row_counts(entries: RowSides) -> tuple[int, int, int] | None:
 def joined_reason(ours: str, theirs: str) -> str:
     """Return the reason of a summed count row whose reasons the two sides change differently: ours, then theirs.
 
-    A side with no reason gives no part (THE MERGE).
+    A side with no reason gives no part (the merge).
     """
     if not ours or not theirs:
         return ours or theirs
@@ -859,7 +859,7 @@ def joined_reason(ours: str, theirs: str) -> str:
 
 
 def summed_entry(key: Key, entries: RowSides, where: str, equal: EqualChange) -> Entry | None:
-    """Return the row of two changes of one count: ours plus theirs less the base, or None for 0 or less (THE MERGE).
+    """Return the row of two changes of one count: ours plus theirs less the base, or None for 0 or less (the merge).
 
     A side with no row has the count 0.  In the mode SUM, two reasons that the two sides change differently join.
 
@@ -882,13 +882,13 @@ def summed_entry(key: Key, entries: RowSides, where: str, equal: EqualChange) ->
 
 
 def is_equal_count_change(entries: RowSides) -> bool:
-    """Tell if the two sides change the count of a row from the base to one value (EqualChange of THE MERGE)."""
+    """Tell if the two sides change the count of a row from the base to one value (EqualChange of the merge)."""
     counts = row_counts(entries)
     return counts is not None and counts[1] == counts[2] != counts[0]
 
 
 def largest_entry(key: Key, entries: RowSides, where: str) -> Entry:
-    """Return the row of the larger value of two changes of one row of a max ledger (THE MERGE).
+    """Return the row of the larger value of two changes of one row of a max ledger (the merge).
 
     Each side keeps a row with a value at or above the value of the base, and one side or the two raise the value.  On
     equal values, ours gives the row.
@@ -916,10 +916,10 @@ def largest_entry(key: Key, entries: RowSides, where: str) -> Entry:
 def merged_entry(rule: Rule, key: Key, entries: RowSides, equal: EqualChange) -> tuple[Entry | None, bool]:
     """Return the merged row of one key from its base, ours and theirs rows, and tell if two counts merged by a sum.
 
-    The row is None for no row (THE MERGE).
+    The row is None for no row (the merge).
 
     Raises:
-        LedgerError: If the two sides change the row differently, and THE MERGE gives no row of the two changes
+        LedgerError: If the two sides change the row differently, and the merge gives no row of the two changes
     """
     base, ours, theirs = (None if item is None else (item.value, item.reason) for item in entries)
     where = f"the row {described(key)} of {key.path or '-'}"
@@ -942,7 +942,7 @@ def merge(
     shown: str,
     equal: EqualChange = EqualChange.AGREE,
 ) -> Merged:
-    """Return the ledger of two changes of one base: the base, ours and theirs texts (THE MERGE).
+    """Return the ledger of two changes of one base: the base, ours and theirs texts (the merge).
 
     A text of None is a ledger with no file.  `equal` tells how two sides that change one count to one value merge.
 

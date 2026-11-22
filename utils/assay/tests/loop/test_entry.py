@@ -67,7 +67,7 @@ def planted_plan(presets: tiers.Tiers) -> plan.Plan:
 
 
 def scope_cases(expect: testing.Expect) -> None:
-    """Hold the scope of each entry: each tier of ORDER up to its own tier (THE SCOPE)."""
+    """Hold the scope of each entry: each tier of ORDER up to its own tier (the scope)."""
     expect(
         "the nightly entry runs the items of the gate and of the nightly tier",
         entry.scope_of(NIGHTLY) == (GATE, NIGHTLY),
@@ -76,7 +76,7 @@ def scope_cases(expect: testing.Expect) -> None:
 
 
 def jobs_cases(expect: testing.Expect) -> None:
-    """Hold the jobs of a planted plan in their sequence (THE WORK)."""
+    """Hold the jobs of a planted plan in their sequence (the work)."""
     presets = planted_presets()
     nightly = entry.jobs_of(planted_plan(presets), presets, NIGHTLY)
     release = entry.jobs_of(planted_plan(presets), presets, RELEASE)
@@ -139,7 +139,7 @@ def tree_jobs_cases(expect: testing.Expect) -> None:
 
 
 def build_step_cases(expect: testing.Expect, directory: Path) -> None:
-    """Hold a step of cmake: blocked with no build, else `cmake --build BUILD` in a lease, with no test (THE BUILD STEPS).
+    """Hold a step of cmake: blocked with no build, else `cmake --build BUILD` in a lease, with no test (the build steps).
 
     The build has a graph of Ninja, and its cmake is a planted program that writes its words, MAKEFLAGS and
     CMAKE_BUILD_PARALLEL_LEVEL into a file.  The run of the step must not wait for the lease of a different job, as an
@@ -204,7 +204,7 @@ def row(item: str, value: float, unit_wall_s: float | None, key: str = "key") ->
 
 
 def budget_cases(expect: testing.Expect) -> None:
-    """Hold the time of a runner of evidence (THE BUDGET)."""
+    """Hold the time of a runner of evidence (the budget)."""
     known = [row("one", 4.0, 2.0), row("two", 10.0, 2.0)]
     expect(
         "a runner gets the time of the remaining units with the margin, when it is less than its part",
@@ -241,7 +241,7 @@ def budget_cases(expect: testing.Expect) -> None:
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Hold the stop of a run at its deadline, and a step that cannot run (THE BUDGET, THE WORK)."""
+    """Hold the stop of a run at its deadline, and a step that cannot run (the budget, the work)."""
     now = [0.0]
 
     def planted_run(_index: int, job: entry.Job, _deadline: float) -> entry.Outcome:
@@ -322,7 +322,7 @@ def run_cases(expect: testing.Expect) -> None:
 
 
 def tests_lock_cases(expect: testing.Expect) -> None:
-    """Hold a job of tests in its heavy step: its `loop test` does not wait for the lock of the job (THE WORK, 2).
+    """Hold a job of tests in its heavy step: its `loop test` does not wait for the lock of the job (the work, 2).
 
     The job holds the lock of the heavy steps in the exclusive mode.  A lease of the slot pool asks for the same lock in
     the shared mode, so a `loop test` with a lease waits until the budget ends.  The case runs the real `loop test`
@@ -363,7 +363,7 @@ def tests_lock_cases(expect: testing.Expect) -> None:
 
 
 def report_cases(expect: testing.Expect) -> None:
-    """Hold the text of the report of a run, and the removal of each report other than the last ones (THE REPORT)."""
+    """Hold the text of the report of a run, and the removal of each report other than the last ones (the report)."""
     failing = evidence_status.Row(
         evidence_targets.MEASUREMENT.rule,
         "measurement",

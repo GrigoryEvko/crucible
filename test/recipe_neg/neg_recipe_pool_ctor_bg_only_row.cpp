@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Background work can intern recipes later through intern(Alloc, ...),
 // but the construction of the pool is initialization work.  A CallerRow

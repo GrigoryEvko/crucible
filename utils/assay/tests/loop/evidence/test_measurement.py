@@ -40,7 +40,7 @@ def tail(cv: float, spread: float = 0.0) -> str:
 
 
 def judged_cases(expect: testing.Expect) -> None:
-    """Hold the judgment of one run (THE RUN)."""
+    """Hold the judgment of one run (the run)."""
 
     def judge(result: proc.Completed | None, share: float | None) -> measurement.Judged:
         return measurement.judged(measurement.Ran(("planted",), result, 1.0, share), CORE_FACTS)
@@ -114,7 +114,7 @@ def judged_cases(expect: testing.Expect) -> None:
 
 
 def selection_cases(expect: testing.Expect) -> None:
-    """Hold the selection of the next bench: the minimum runs of the call, then the minimum evidence (THE BUDGET)."""
+    """Hold the selection of the next bench: the minimum runs of the call, then the minimum evidence (the budget)."""
     first = measurement.Measured("bench_a", Path("a"), "key-a", 0.0, 3.0, 1.0)
     second = measurement.Measured("bench_b", Path("b"), "key-b", 2.0, 3.0, 1.0)
     first.runs_now = 4
@@ -141,7 +141,7 @@ def planted_bench(directory: Path, name: str, script: str, shell: str) -> Path:
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Run three planted benches through the runner with a quiet planted host (THE SELECTION, THE BUDGET).
+    """Run three planted benches through the runner with a quiet planted host (the selection, the budget).
 
     The planted host has a share of 1 % and no steal time, so a loaded host of the test does not change a verdict.
     """

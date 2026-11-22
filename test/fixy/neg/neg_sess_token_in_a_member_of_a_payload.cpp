@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The payload of a send holds a token of Region in a member.  The payload
 // walk sees the token, so the set of the sender must hold Region.  But the

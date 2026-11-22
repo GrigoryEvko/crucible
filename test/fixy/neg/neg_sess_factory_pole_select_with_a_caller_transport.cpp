@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The select of the handle factory is the step that the select of a handle
 // calls.  A select over a pole of a channel puts no word on the wire, so the

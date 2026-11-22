@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // HS14 fixture 1 of 2 for fixy::mint_view.
 //
@@ -10,7 +10,7 @@
 // The contract predicate inside mint_view also names view_ok.  Without
 // the clause, the carrier would be rejected on that call, inside the
 // header, after the call site had already chosen this factory.  Then
-// `requires { mint_view<Tag>(c) }` would answer TRUE for this carrier,
+// `requires { mint_view<Tag>(c) }` would answer true for this carrier,
 // and a caller dispatching on that answer would pick a factory that
 // cannot serve it.
 //

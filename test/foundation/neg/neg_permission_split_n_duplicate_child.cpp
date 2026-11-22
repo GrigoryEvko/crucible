@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // An n-ary split hands out one token per child, so two children of one
 // tag would be two owners of one region.  The manifest here names the

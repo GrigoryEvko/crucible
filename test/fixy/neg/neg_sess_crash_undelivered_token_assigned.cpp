@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A crash send gives a payload to a crashed peer back in `undelivered`.
 // The payload can be a token, which is linear.  An assignment over

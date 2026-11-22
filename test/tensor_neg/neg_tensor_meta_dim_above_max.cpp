@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // tensor_dim gates every size and stride by bounded_above<kMaxTensorDimExtent>,
 // where the bound is INT64_MAX / 16 for the widest element.  It states the

@@ -16,7 +16,7 @@
 // process.  This header includes it.  format() of foundation/core/Format.h
 // writes a text into a FixedText.
 //
-// THE ARGUMENTS
+// Arguments
 //   An argument is an integer, a bool, a TextView, a float, a double, a
 //   Hex, a HexBytes, a Fixed or a Padded.  An integer is written in decimal,
 //   and a bool as true or false.  A TextView is written as its characters,
@@ -26,7 +26,7 @@
 //   double has 80 value bits on x86_64 and 128 on aarch64, so one value
 //   would have two texts.
 //
-// THE HEXADECIMAL TEXT
+// Hexadecimal text
 //   Hex<Width>{value} writes an unsigned integer as Width hexadecimal
 //   digits: lower case, the most significant digit first, with the zeros
 //   that lead, and with no prefix.  Width is 2 to 16, and it holds each
@@ -38,7 +38,7 @@
 //   foundation/core/Text.h, the digit writer of append_hex, so a report and
 //   append_hex write the same digits for one value.
 //
-// THE TEXT OF A FLOAT
+// Text of a float
 //   A float and a double are written as the text of std::to_chars(first,
 //   last, value) with no format, which std::format("{}") also writes:
 //     - The shortest digits that read back to the value with round to
@@ -53,7 +53,7 @@
 //   formatter does integer arithmetic on the bits of the value only, so the
 //   rounding mode and the floating environment do not change the text.
 //
-// THE FIXED TEXT OF A FLOAT
+// Fixed text of a float
 //   Fixed<Decimals, Width, Side, Sign>{value} writes a double, or a float as
 //   the double of the same value, with Decimals digits after the point: the
 //   exact decimal value of the binary value, rounded to that count of
@@ -69,7 +69,7 @@
 //   from integer arithmetic on the bits of the value, so the rounding mode,
 //   the locale and the floating environment do not change the text.
 //
-// THE PADDED TEXT
+// Padded text
 //   Padded<Width, Side>{value} writes a TextView or an integer, and blanks
 //   to Width bytes on the side that Side gives, as "%Ns", "%Nd" and "%Nu" of
 //   printf do, and Align::Left as the flag - of printf does.  The width
@@ -77,7 +77,7 @@
 //   bytes of UTF-8 counts two.  A longer text is not cut.  Width is at most
 //   255.
 //
-// THE OUTPUT
+// Output
 //   The formatter uses no locale, no allocation and no global state, so one
 //   text with the same arguments gives the same bytes in each build.
 //   report(), fatal() and unreachable() write through the sink write of
@@ -89,7 +89,7 @@
 // fatal() and unreachable() end the process in each build, with each
 // contract semantic.  They are [[noreturn]], so the optimizer knows that
 // control does not continue after them.  The fatal() with arguments is
-// itself a cold function (THE TWO FORMS below).  So the hot path keeps only
+// itself a cold function (the two forms below).  So the hot path keeps only
 // the branch to the cold call.
 //
 // The cold functions are in src/foundation/core/Report.cpp and
@@ -106,7 +106,7 @@
 
 namespace foundation::core {
 
-// An unsigned integer as Width hexadecimal digits (THE HEXADECIMAL TEXT).
+// An unsigned integer as Width hexadecimal digits (the hexadecimal text).
 // The width is a template argument, so it is part of the type and of the
 // call, and a check at compile time proves that the width holds each value
 // of the type.  The smallest type takes two digits, so the width is 2 to 16.
@@ -137,16 +137,16 @@ public:
     [[nodiscard]] constexpr std::uint64_t get() const noexcept { return value_; }
 };
 
-// The side of a text in its width (THE FIXED TEXT OF A FLOAT and THE PADDED
-// TEXT): Right puts the blanks before the text, and Left after it.
+// The side of a text in its width (the fixed text of a float and the padded
+// text): Right puts the blanks before the text, and Left after it.
 enum class Align : std::uint8_t {
     Left,
     Right,
 };
 
 // The sign of a fixed text: a minus sign for a value whose sign bit is set,
-// and for Always also a plus sign before each other value (THE FIXED TEXT OF
-// A FLOAT).
+// and for Always also a plus sign before each other value (the fixed text of
+// a float).
 enum class SignMark : std::uint8_t {
     NegativeOnly,
     Always,
@@ -155,7 +155,7 @@ enum class SignMark : std::uint8_t {
 namespace detail {
 
 // The mark of HexBytes, the bytes of a View as two hexadecimal digits each
-// (THE HEXADECIMAL TEXT).  foundation/core/Region.h defines HexBytes beside
+// (the hexadecimal text).  foundation/core/Region.h defines HexBytes beside
 // the View that it holds, because that header includes this one, so this
 // header knows the class only by its mark.  Only HexBytes names the mark.
 struct HexBytesMark final {};
@@ -201,8 +201,8 @@ concept HexByteRun = requires {
     requires std::is_same_v<T, std::remove_cv_t<T>> && std::is_same_v<typename T::report_mark, detail::HexBytesMark>;
 };
 
-// A float or a double with a fixed count of decimals (THE FIXED TEXT OF A
-// FLOAT).  The counts are template arguments, so they are part of the type
+// A float or a double with a fixed count of decimals (the fixed text of a
+// float).  The counts are template arguments, so they are part of the type
 // and of the call, and a check at compile time bounds them.  The class holds
 // the bits of the double, so a float costs one exact conversion.
 template <std::size_t Decimals, std::size_t Width = 0, Align Side = Align::Right,
@@ -235,7 +235,7 @@ public:
     [[nodiscard]] constexpr std::uint64_t get() const noexcept { return bits_; }
 };
 
-// A text or an integer with blanks to a width (THE PADDED TEXT).  The width
+// A text or an integer with blanks to a width (the padded text).  The width
 // is a template argument, so it is part of the type and of the call.
 template <std::size_t Width, Align Side = Align::Right>
     requires(Width <= detail::padded_width_max)
@@ -388,7 +388,7 @@ void write_sink_(Sink sink, char const* bytes, std::size_t count) noexcept;
 
 }  // namespace detail
 
-// THE FORMS OF report() AND fatal()
+// Forms of report() and fatal()
 //   The fatal() with no argument is inline (foundation/core/Fatal.h).  It
 //   loads the parts of its text into registers and calls one cold function,
 //   and the caller builds no object on its stack.

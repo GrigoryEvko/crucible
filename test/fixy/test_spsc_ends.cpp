@@ -101,7 +101,7 @@ public:
     ~OrderLog() { g_owner_end_place = ++g_end_place; }
 };
 
-// THE SPLIT holds the Box first, so its two ends end before the owner that
+// The split holds the Box first, so its two ends end before the owner that
 // their Ref names: the consumer end, then the producer end, then the owner.
 // The order is in the type of the split, and no holder can change it.
 int check_the_ends_end_before_the_owner() {

@@ -10,7 +10,7 @@
 # word about the cause.  Each toolchain file of the tree calls
 # crucible_refuse_stale_compilers for its C++ compiler and its C compiler
 # after it resolves them.  The gate heals its own build directories before
-# this check (THE COMPILER HEAL of utils/assay/loop/gate.py, and `loop heal`).
+# this check (the compiler heal of utils/assay/loop/gate.py, and `loop heal`).
 #
 # The function compares real paths, with each symlink resolved, in two ways:
 #   * the compiler of the cache with the resolved compiler.  A cached compiler

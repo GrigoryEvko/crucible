@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Only the producer claim of the Vigils makes the proof of the record path
 // (RecordProof of crucible/ForegroundCtx.h).  A caller outside the claim that

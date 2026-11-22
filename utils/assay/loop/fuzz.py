@@ -1,6 +1,6 @@
 """fuzz — run one coverage-guided AFL++ campaign on one boundary harness (`loop fuzz`).
 
-THE ARGUMENTS
+Arguments
     loop fuzz BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS
 
     BUILD_DIR  The instrumented build.  When BUILD_DIR is not configured, the
@@ -26,10 +26,10 @@ THE ARGUMENTS
                runs on each core.  The first one is the main instance.  The
                command refuses a list that names a reserved CPU of the host.
                read_reserved() of assay.loop.bench reads these CPUs, for
-               `loop bench` too (THE RESERVED CPUS of that module).
+               `loop bench` too (the reserved CPUs of that module).
     SECONDS    The time limit of each instance.
 
-THE ENVIRONMENT
+Environment
     CRUCIBLE_BENCH_SLICE         The slice of the reserved partition when the host has more than one
     AFL_BIN                      The directory of the AFL++ tools.  The default is the bin directory of the install
                                  of the pin aflplusplus for the patched GCC (`setup install aflplusplus`)
@@ -46,7 +46,7 @@ THE ENVIRONMENT
     The core dumps of this host go to the system handler, so afl-fuzz does
     not wait for them.
 
-THE FINDINGS
+Findings
     afl-fuzz ends with the status 0 also when it saved a crash or a hang, so
     the status of the instances is not the verdict of a campaign.  After the
     instances end, the command counts the files of OUT_DIR/afl/*/crashes and
@@ -221,7 +221,7 @@ def harness_binary(build_dir: Path, harness: str) -> Path:
 
 
 def campaign_findings(out_dir: Path) -> Findings:
-    """Return the inputs that the instances of a campaign saved (THE FINDINGS).
+    """Return the inputs that the instances of a campaign saved (the findings).
 
     Each file of OUT_DIR/afl/*/crashes and OUT_DIR/afl/*/hangs is a saved input, except the README.txt of afl-fuzz.
     A campaign with no output directory saved no input.  Complexity: linear in the files of those directories.
@@ -244,7 +244,7 @@ def replay_command(binary: Path, saved_input: Path) -> str:
 
 
 def campaign_verdict(statuses: Sequence[int], findings: Findings, binary: Path) -> tuple[int, tuple[str, ...]]:
-    """Return the exit status of a campaign and the lines of its report (THE FINDINGS).
+    """Return the exit status of a campaign and the lines of its report (the findings).
 
     The status is 0 only when each instance ended with status 0 and the campaign saved no crash and no hang.  A
     saved input fails the campaign, and the report names the counts, the first input and its replay command.

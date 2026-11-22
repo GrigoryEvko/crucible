@@ -42,7 +42,7 @@ struct ThrowingStep final {
 }  // namespace seat_check
 
 // A Seat is full from its mint: it has no default constructor, no copy and no
-// assignment, and it moves (THE RULES).
+// assignment, and it moves (the rules).
 static_assert(!std::is_default_constructible_v<Seat<std::uint64_t>>);
 static_assert(!std::is_copy_constructible_v<Seat<std::uint64_t>>);
 static_assert(!std::is_copy_assignable_v<Seat<std::uint64_t>>);

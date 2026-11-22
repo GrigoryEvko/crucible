@@ -30,7 +30,7 @@
 // a live Hole.  The count live_nodes holds the number of live nodes, so a
 // lost tail or a second end shows as a wrong count.
 //
-// THE ROSTER
+// Roster
 // Each owner keeps its fields in a state with the marker of the core of
 // foundation/core/Owner.h, in the home of its layer: detail::owner of
 // foundation::core, or fixy::detail::owner.  count_owner_roster_gaps
@@ -99,7 +99,7 @@ template <class Owner>
 concept MoveAssignable = requires(Owner& target, Owner&& source) { target = static_cast<Owner&&>(source); };
 
 // The owner that a call gives back by reference.  The rule use-after-move
-// does not read through it, so the hazard EMPTY reaches a moved-from owner.
+// does not read through it, so the hazard empty reaches a moved-from owner.
 // Each door of the hazard that ends the process runs in a child through
 // expect_dies of the Check family.
 template <class Owner>
@@ -194,7 +194,7 @@ struct BoxProbe {
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    // MOVED-FROM: a new value in the source ends no node of the target.
+    // Moved-from: a new value in the source ends no node of the target.
     static void moved_from() {
         {
             Box<BoxNode> target = make_chain(1, 2);
@@ -213,7 +213,7 @@ struct BoxProbe {
 
     static void linear();
 
-    // EMPTY: a read and a borrow of a moved-from Box end through fatal().
+    // Empty: a read and a borrow of a moved-from Box end through fatal().
     static void empty() {
         {
             ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
@@ -359,7 +359,7 @@ struct ElementArms {
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    // MOVED-FROM: a new value in the source ends no element of the target.
+    // Moved-from: a new value in the source ends no element of the target.
     static void moved_from() {
         using Owner = Probe::Owner;
         {
@@ -398,7 +398,7 @@ template <class Owner>
     return ::foundation::linear::is_linear_v<Owner> && !MoveAssignable<Owner>;
 }
 
-// LINEAR: a Box of a linear payload is linear and has no move assignment.
+// Linear: a Box of a linear payload is linear and has no move assignment.
 void BoxProbe::linear() {
     CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<Box<LinearElement>>());
     CRUCIBLE_FATAL_INVARIANT(!::foundation::linear::is_linear_v<Box<BoxNode>>);
@@ -431,7 +431,7 @@ struct HeapArrayProbe : ElementArms<HeapArrayProbe> {
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<HeapArray<LinearElement>>()); }
 
-    // EMPTY: a moved-from HeapArray gives no element and an empty View.
+    // Empty: a moved-from HeapArray gives no element and an empty View.
     static void empty() {
         {
             Owner source = make(2);
@@ -467,7 +467,7 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<MaskedArray<LinearElement>>()); }
 
-    // EMPTY: an element of a moved-from MaskedArray or of a default one ends
+    // Empty: an element of a moved-from MaskedArray or of a default one ends
     // through fatal(), and its View is empty.
     static void empty() {
         {
@@ -524,7 +524,7 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<GrowList<LinearElement>>()); }
 
-    // EMPTY: a moved-from GrowList gives no element, and an append takes new
+    // Empty: a moved-from GrowList gives no element, and an append takes new
     // storage below the maximum that the list keeps.
     static void empty() {
         {
@@ -569,7 +569,7 @@ struct SlotMapProbe : ElementArms<SlotMapProbe> {
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<LinearOwner>()); }
 
-    // EMPTY: a moved-from SlotMap holds no slot: a read of a key finds no
+    // Empty: a moved-from SlotMap holds no slot: a read of a key finds no
     // value, its walk gives nothing, and an insert gives Full.
     static void empty() {
         {
@@ -599,7 +599,7 @@ struct HoleProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: new storage in the source is a second allocation, and the
+    // Moved-from: new storage in the source is a second allocation, and the
     // ASan run finds a second release if the source kept the first one.
     static void moved_from() {
         Owner source = ::foundation::core::mint_hole<16, 8>(kAlloc);
@@ -611,7 +611,7 @@ struct HoleProbe {
 
     static void linear() {}
 
-    // EMPTY: a consume of a moved-from Hole ends through fatal().  The body of
+    // Empty: a consume of a moved-from Hole ends through fatal().  The body of
     // the death test takes a Ref of the spent Hole by value, so no closure
     // captures the linear Hole.
     static void empty() {
@@ -655,7 +655,7 @@ struct GrowTextProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: a new value in the source leaves the characters of the
+    // Moved-from: a new value in the source leaves the characters of the
     // target in place, and the ASan run finds a read of freed storage if the
     // source kept them.
     static void moved_from() {
@@ -671,7 +671,7 @@ struct GrowTextProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from GrowText gives an empty view, and an append takes
+    // Empty: a moved-from GrowText gives an empty view, and an append takes
     // new storage below the maximum that the text keeps.
     static void empty() {
         Owner source = make('a');
@@ -710,7 +710,7 @@ struct HeapTextProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: a new value in the source leaves the characters of the
+    // Moved-from: a new value in the source leaves the characters of the
     // target in place, and the ASan run finds a read of freed storage if the
     // source kept them.
     static void moved_from() {
@@ -726,7 +726,7 @@ struct HeapTextProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from HeapText gives an empty view and no character.
+    // Empty: a moved-from HeapText gives an empty view and no character.
     static void empty() {
         Owner source = make('a');
         Owner const target{static_cast<Owner&&>(through(source))};
@@ -755,7 +755,7 @@ struct AlignedBytesProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: a new block in the source is a second allocation, and the
+    // Moved-from: a new block in the source is a second allocation, and the
     // ASan run finds a second release if the source kept the first one.
     static void moved_from() {
         Owner target = zeroed(::foundation::core::ByteCount{32}, ::foundation::alloc::Alignment{8});
@@ -771,7 +771,7 @@ struct AlignedBytesProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from AlignedBytes gives an empty View.
+    // Empty: a moved-from AlignedBytes gives an empty View.
     static void empty() {
         Owner source = zeroed(::foundation::core::ByteCount{64}, ::foundation::alloc::Alignment{64});
         Owner const target{static_cast<Owner&&>(through(source))};
@@ -820,7 +820,7 @@ struct SmallListProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: a new value in the source leaves the elements of the target
+    // Moved-from: a new value in the source leaves the elements of the target
     // in place, and the ASan run finds a read of freed storage or a second
     // release if the source kept the heap storage.
     static void moved_from() {
@@ -836,7 +836,7 @@ struct SmallListProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from SmallList holds no element, and an append takes the
+    // Empty: a moved-from SmallList holds no element, and an append takes the
     // inline slots again below the maximum that the list keeps.
     static void empty() {
         Owner source = make(1, 5);
@@ -871,7 +871,7 @@ struct HeapBitSetProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: new words in the source are a second allocation, and the
+    // Moved-from: new words in the source are a second allocation, and the
     // ASan run finds a second release if the source kept the first one.
     static void moved_from() {
         Owner target = make(8);
@@ -886,7 +886,7 @@ struct HeapBitSetProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from HeapBitSet holds no id, its walk gives nothing, and
+    // Empty: a moved-from HeapBitSet holds no id, its walk gives nothing, and
     // a verb with an id ends through fatal().
     static void empty() {
         ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
@@ -913,7 +913,7 @@ struct SwissTableBufferProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: a new value in the source is a second allocation, and the
+    // Moved-from: a new value in the source is a second allocation, and the
     // ASan run finds a second release if the source kept the first one.
     static void moved_from() {
         Owner target = Owner::allocate(16);
@@ -928,7 +928,7 @@ struct SwissTableBufferProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from SwissTableBuffer has no slot and no storage.
+    // Empty: a moved-from SwissTableBuffer has no slot and no storage.
     static void empty() {
         Owner source = Owner::allocate(16);
         Owner const target{static_cast<Owner&&>(through(source))};
@@ -977,7 +977,7 @@ struct OwnedMmapProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from OwnedMmap holds no address, and its View is empty.
+    // Empty: a moved-from OwnedMmap holds no address, and its View is empty.
     static void empty() {
         Owner source{};
         Owner const target{static_cast<Owner&&>(through(source))};
@@ -1014,7 +1014,7 @@ struct OwnedThreadProbe {
 
     static void child_move() {}
 
-    // MOVED-FROM: the target takes the thread and joins it.
+    // Moved-from: the target takes the thread and joins it.
     static void moved_from() {
         Owner source = start_idle_thread();
         Owner taken{static_cast<Owner&&>(source)};
@@ -1024,7 +1024,7 @@ struct OwnedThreadProbe {
 
     static void linear() {}
 
-    // EMPTY: a moved-from owner holds no thread, and its join ends the
+    // Empty: a moved-from owner holds no thread, and its join ends the
     // process.
     static void empty() {
         ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};

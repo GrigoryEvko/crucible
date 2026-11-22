@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The schema names come from the ops that a Vigil records, so the mutable
 // view of the schema table asks for the context of a Vigil's producer claim.

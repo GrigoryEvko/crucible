@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A sealed schema table mints no mutable view, so mint_mutable_view
 // returns an optional view.  A registration that skips the check and

@@ -4,24 +4,24 @@
 //
 // IterationDetector watches the background thread's stream of op
 // schema-hashes and reports an iteration boundary once a K=5 signature
-// matches twice (two-match warmup confirmation).  That boolean GATES
-// COMPILED-mode activation: a FALSE POSITIVE compiles a non-repeating
-// trace (→ guaranteed divergence on the next op); a FALSE NEGATIVE
+// matches twice (two-match warmup confirmation).  That boolean gates
+// COMPILED-mode activation: a false positive compiles a non-repeating
+// trace (→ guaranteed divergence on the next op); a false negative
 // leaves the model stuck in RECORD mode forever.  It had only
 // scenario-based unit coverage, no randomized fuzzer.
 //
 // The detection heuristic is bespoke, so re-implementing it as an
 // oracle would be a tautology, not a test.  Instead this fuzzer asserts
-// BLACK-BOX properties that need zero knowledge of the K-signature
+// black-box properties that need zero knowledge of the K-signature
 // internals:
 //
 //   (P1) No false positive: an all-distinct (never-repeating) stream
-//        must NEVER report a boundary — no K-window can recur, so no
+//        must never report a boundary — no K-window can recur, so no
 //        match can complete twice.
 //   (P2) Determinism (DetSafe): two detectors fed the same stream emit
 //        identical boolean sequences.
 //   (P3) True positive: a clean period-P (P>=K, distinct-within-period)
-//        stream repeated >=4 times MUST report at least one boundary —
+//        stream repeated >=4 times must report at least one boundary —
 //        otherwise COMPILED mode could never engage.
 //   (P4) Reset fidelity: after reset(), re-feeding the same stream
 //        reproduces the from-fresh sequence (behavioral witness of the
@@ -31,7 +31,7 @@
 //        exists.
 //
 // P1 and P3 are opposite-direction, so a vacuous check cannot satisfy
-// both: the fuzzer passing on BOTH the distinct and periodic modes is
+// both: the fuzzer passing on both the distinct and periodic modes is
 // itself the proof that the detector genuinely distinguishes repeating
 // from non-repeating input.
 // ═══════════════════════════════════════════════════════════════════
@@ -117,7 +117,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     break;
                 }
                 case Mode::Periodic: {
-                    // Period P in [K, K+8], distinct WITHIN a period so the
+                    // Period P in [K, K+8], distinct within a period so the
                     // signature (first K) recurs only at period starts.
                     const uint32_t period = kK + rng.next_below(9u);
                     const uint32_t reps = 4u + rng.next_below(4u);  // [4,7]

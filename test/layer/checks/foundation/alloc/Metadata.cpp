@@ -40,7 +40,7 @@ static_assert(link_of(SlabNumber{0}) != SlabLink::none);
 static_assert(slab_number_of(ChunkIndex{1}, UnitIndex{core::StaticIndex<0>{}}).raw()
               == slab_number_of(ChunkIndex{0}, UnitIndex{core::StaticIndex<kUnitsPerChunk - 1>{}}).raw() + 1);
 
-// THE SLOT OF AN OFFSET: the first byte of a slot gives its index, a byte
+// The slot of an offset: the first byte of a slot gives its index, a byte
 // inside a slot and the first byte past the slots of a slab give none, and
 // the reciprocal of each class fits the bound of its proof.
 static_assert(slot_at(SizeClass{9}, core::ByteCount{320}).value_or(SlabSlotIndex{core::StaticIndex<0>{}}).raw() == 2);

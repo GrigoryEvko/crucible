@@ -188,7 +188,7 @@ template <class T>
     return ::fixy::fp::is_nan(value) ? ::fixy::quiet_nan_of<T> : value;
 }
 
-// The scalar model of the tree of THE ORDER over count leaves: split at the
+// The scalar model of the tree of the order over count leaves: split at the
 // largest power of two below the count, found with a loop, and the lower part
 // as the left operand.
 template <class T, class Leaf>

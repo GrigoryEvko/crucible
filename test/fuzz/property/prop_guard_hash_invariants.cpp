@@ -4,14 +4,14 @@
 // Guard is the branch-discriminator at every BranchNode in the Merkle
 // DAG: its hash is the primary key for routing to compiled arms.  A
 // hash-function regression here corrupts the entire guard system —
-// two semantically-distinct guards colliding leads to WRONG-ARM
+// two semantically-distinct guards colliding leads to wrong-arm
 // dispatch, which produces silently wrong answers in compiled mode.
 // This file drives the hash of a Guard at stress volume.
 //
 // Guard is 12 bytes, laid out (see MerkleDag.h:302–332):
 //
 //     Guard::Kind    kind      (1B, 5 variants)
-//     FixedArray<uint8_t, 3> pad (3B — STILL hashed, as its elements)
+//     FixedArray<uint8_t, 3> pad (3B — still hashed, as its elements)
 //     OpIndex        op_index  (4B, default UINT32_MAX)
 //     uint16_t       arg_index (2B)
 //     uint16_t       dim_index (2B)
@@ -20,22 +20,22 @@
 // of the Guard at compile time and folds via fmix64.  The
 // documented safety claim is "adding a field is a hash-format break
 // caught by CDAG_VERSION" — this fuzzer enforces the same claim at
-// the value level: every existing field MUST contribute entropy.
+// the value level: every existing field must contribute entropy.
 //
 // ── Properties checked per random Guard ─────────────────────────────
 //
-//   P1. DETERMINISM      — hash(g) is a pure function; 8 back-to-back
+//   P1. Determinism      — hash(g) is a pure function; 8 back-to-back
 //                          invocations on the same Guard all equal.
-//   P2. FIELD-DISAMBIG   — perturbing EXACTLY one field (kind / pad[i]
+//   P2. Field-disambig   — perturbing exactly one field (kind / pad[i]
 //                          / op_index / arg_index / dim_index) changes
 //                          the hash.  Any field not contributing to
 //                          the fold is a silent collision class.
-//   P3. EQUALITY CONCORD — memcmp-equal Guards produce equal hashes.
-//                          (The reverse is NOT required — two distinct
-//                          guards COULD collide at ~2⁻⁶⁴ probability;
+//   P3. Equality concord — memcmp-equal Guards produce equal hashes.
+//                          (The reverse is not required — two distinct
+//                          guards could collide at ~2⁻⁶⁴ probability;
 //                          we treat any collision as a real bug since
 //                          100K iterations × 5e-15 → negligible.)
-//   P4. NONZERO OUTPUT   — the hash of a non-default Guard is
+//   P4. Nonzero output   — the hash of a non-default Guard is
 //                          overwhelmingly non-zero.  A stuck-zero
 //                          output (e.g., refactor folding all fields
 //                          via XOR with no seed) is caught directly.
@@ -48,7 +48,7 @@
 //     SCALAR_VALUE guards sharing the remaining fields).
 //   - A refactor that leaves the pad[] array uninitialized on some
 //     paths: two Guards constructed via different ctors with the
-//     same semantic fields produce DIFFERENT hashes (a false branch
+//     same semantic fields produce different hashes (a false branch
 //     miss on replay).
 //   - A change to fmix64 or the hash seed that stuck-zeros
 //     some inputs.
@@ -76,7 +76,7 @@ using crucible::OpIndex;
 
 // Number of Guard::Kind variants, read from the enumerators.
 // The hash folds the enum as an integer, so any out-of-range
-// value is still HASHABLE; we stay in-range for P2 field-disambiguation
+// value is still hashable; we stay in-range for P2 field-disambiguation
 // to be statistically sound (two out-of-range enums would collide on
 // the same underlying uint8_t, and the "different field → different
 // hash" property would spuriously fail).
@@ -90,7 +90,7 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 // ─── Guard generator ───────────────────────────────────────────────
 //
 // Generates every Guard field with random in-range values.  pad[3] is
-// RANDOMIZED (not zero-filled) because the hash treats those 3
+// Randomized (not zero-filled) because the hash treats those 3
 // bytes as hashed members — a future bug that fails to zero pad[]
 // would produce different hashes for two Guards intended to be equal,
 // which is the exact class P3 enforces.  We intentionally drive the
@@ -118,8 +118,8 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 
 // ─── Perturbation helpers ──────────────────────────────────────────
 //
-// Each helper returns a Guard that differs from `base` in EXACTLY
-// ONE field.  Indices map 1:1 to kGuardPerturbSites sites below.
+// Each helper returns a Guard that differs from `base` in exactly
+// One field.  Indices map 1:1 to kGuardPerturbSites sites below.
 //
 // kind is perturbed by (kind + 1) mod kGuardKindCount — stays in
 // range, always differs.  Integer fields use XOR-with-1 which always
@@ -234,7 +234,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 if (::fixy::hash(read_at_run_time(p.base)).raw() != h0) return false;
             }
 
-            // P2. Field-disambiguation — perturbed differs in EXACTLY
+            // P2. Field-disambiguation — perturbed differs in exactly
             //                          one field; hashes must differ.
             //     (A collision here at ~2⁻⁶⁴ per iter is statistically
             //     impossible at 10⁵ iters; any observed failure is a
@@ -243,7 +243,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             if (h0 == hp) return false;
 
             // P3. Equality concordance — a fresh Guard byte-identical
-            //     to base MUST hash to the same value.  Constructed
+            //     to base must hash to the same value.  Constructed
             //     from the bytes of base through decode, to bypass any
             //     compiler-elision of the copy path and to guarantee
             //     byte equality including pad[].
@@ -254,7 +254,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             // P4. Non-zero output — a hash of a Guard stuck at zero is
             //     a degenerate fold.  Random Guards hash to zero at
             //     ~2⁻⁶⁴ probability; treat any observation as a bug.
-            //     (The default-constructed all-zero Guard is NOT
+            //     (The default-constructed all-zero Guard is not
             //     exercised here since our generator always
             //     randomizes fields; the test is specifically on
             //     the random population.)

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A caller that holds the context of the drain stage of the background
 // thread, whose row holds Bg and Alloc, calls TraceRing::drain_pure and names

@@ -5,12 +5,12 @@
 // stage over such a handle would silently carry a void element type.
 //
 // The probe is the hybrid rather than a plain int, which is the sharper
-// case: it HAS a try_pop of exactly the right signature, and is refused
+// case: it has a try_pop of exactly the right signature, and is refused
 // only because it also has a try_push, so nothing decides its pole.  A
 // plain int would be refused by the shape match alone and would not
 // witness the exclusion.
 //
-// VIOLATION: a TU asks a type with both channel members for its consumer
+// Violation: a TU asks a type with both channel members for its consumer
 // payload.
 //
 // Expected diagnostic: the is_consumer_handle_v constraint on

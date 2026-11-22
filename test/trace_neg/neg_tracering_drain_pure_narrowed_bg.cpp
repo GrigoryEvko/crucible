@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // TraceRing::drain_pure promises a pure caller.  The background thread
 // narrows its context to the empty row with in_row, and the narrowed context

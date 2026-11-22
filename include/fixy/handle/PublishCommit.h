@@ -9,7 +9,7 @@
 // WriteAuth names the token of the stage that publishes.  Each write and the
 // read of the writer take the token.  The token is closed and states
 // thread_bound{} and not_shareable{}, so only a mint of its owner builds one,
-// and no other thread holds it or reads it (THE BUILD OF A TOKEN of
+// and no other thread holds it or reads it (the build of a token of
 // foundation/Transfer.h).  The alias write_auth_type ties the token to the
 // cell, so the door check of synchronized{} reads the token as the proof of
 // the one writer.

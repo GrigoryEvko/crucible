@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The home of the registration of a class is the file of its definition
 // (fixy/session/Registry.h).  A class that is only declared has no

@@ -51,7 +51,7 @@
 # defines into each shared library, as an instrumenting wrapper does.  The
 # configure builds the plugin with no copy, and the build of the probe loads it.
 # The two steps pass only when the plugin is built with the compiler of the
-# toolchain file and not with the wrapper (THE COMPILER OF THE PLUGIN in
+# toolchain file and not with the wrapper (the compiler of the plugin in
 # utils/tools/quarantine/Quarantine.cmake).
 cmake_minimum_required(VERSION 3.27)
 

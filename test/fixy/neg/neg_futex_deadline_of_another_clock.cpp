@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The kernel reads the deadline of a futex wait as a time of
 // CLOCK_MONOTONIC, so Deadline::after takes only a reader of that clock.  A

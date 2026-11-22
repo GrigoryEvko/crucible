@@ -1,18 +1,18 @@
 """The Python of the utils system in a tree: the modules of the package and the masters, each read one time.
 
-THE SCOPE
+Scope
     The rules of the engineering bar read the modules of the package, the
     files utils/assay/**/*.py, and the masters of utils/bin/.  The plants of
     utils/plants/ are not in the scope.  The list holds the files of git and
     the new files of the tree (MetaContext.tracked), sorted.
 
-THE NAMES
+Names
     The name of a file is its dotted path from utils/.  The module
     utils/assay/core/rows.py has the name assay.core.rows, the file
     utils/assay/core/__init__.py has the name assay.core, and the master
     utils/bin/guard has the name bin.guard.
 
-THE READ
+Read
     read_package() reads and parses each file one time.  A file that does not
     parse is a problem of the package.  A rule cannot read such a file, and
     parse_findings() gives the error of the kind parse for each problem.
@@ -68,7 +68,7 @@ def is_in_scope(path: str) -> bool:
 
 
 def dotted_name(path: str) -> str:
-    """Return the dotted name of a file of the scope (THE NAMES)."""
+    """Return the dotted name of a file of the scope (the names)."""
     pure = PurePosixPath(path.removeprefix("utils/"))
     parts = pure.parent.parts if pure.name == INIT else (*pure.parent.parts, pure.name.removesuffix(".py"))
     return ".".join(parts)

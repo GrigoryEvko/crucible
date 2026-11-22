@@ -21,15 +21,15 @@ static_assert(HeapState::has_probe_shape());
 static_assert(!std::is_copy_constructible_v<HeapState> && !std::is_copy_assignable_v<HeapState>);
 
 // A new state names no window and owns no chunk, so the sentinel starts with
-// no map and the entry none (THE SENTINEL).
+// no map and the entry none (the sentinel).
 static_assert(HeapState{}.chunk_map().is_empty());
 static_assert(HeapState{}.self() == ChunkOwner::none);
 static_assert(std::is_trivially_destructible_v<HeapState>);
 
-// The cell of a thread is one word (THE CELL).
+// The cell of a thread is one word (the cell).
 static_assert(sizeof(tls_heap_) == 8);
 
-// THE BINS: 128 addresses for each class to 128 bytes, 632 for the classes 9
+// The bins: 128 addresses for each class to 128 bytes, 632 for the classes 9
 // to 32, and 2 for each class of 10 KiB and more: 1,720 addresses.
 static_assert(detail::kBinStacks.first[1] == 0 && detail::kBinStacks.first[9] == 8 * 128);
 static_assert(detail::kBinStacks.first[33] - detail::kBinStacks.first[9] == 632);

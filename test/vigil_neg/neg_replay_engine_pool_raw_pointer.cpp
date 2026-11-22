@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // ReplayEngine::init takes the pool as a fixy::Ref of a PoolAllocator.  A
 // raw PoolAllocator* must not cross the init boundary.

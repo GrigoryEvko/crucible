@@ -752,7 +752,7 @@ static_assert(merge_kinds.kinds[1].merge.is_open() && !merge_kinds.kinds[0].merg
 static_assert(merge_kinds.kinds[1].merge.reason() == NetName{"the items come in their push order"});
 static_assert(MergeDoor{}.reason().is_empty());
 
-// The merge door belongs to the form of a kind (THE CANONICAL FORM).  The two
+// The merge door belongs to the form of a kind (the canonical form).  The two
 // nets have the same agents and wires, and only the doors of their consumers
 // differ, so they are two nets with two hashes.
 static_assert(!is_same_net(merged_items, ordered_items) && !is_same_net(ordered_items, merged_items));

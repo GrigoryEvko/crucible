@@ -6,7 +6,7 @@
 // and the producer side.  The consumer handle, the tags, the splits and the
 // end of the stream are written one time for each form.
 //
-// THE FORMS
+// Forms
 //     wire    One linear producer token and one linear consumer token, over
 //             the SPSC ring of fixy/concurrent/SpscRing.h.  In the net of a
 //             program the channel is a plain wire.  The producer handle is
@@ -25,7 +25,7 @@
 //     lanes   Producer shares that a pool lends, each with one lane of the
 //             ring of lanes of fixy/concurrent/LaneRing.h, and one linear
 //             consumer token.  The consumer reads the lanes in one fixed
-//             order (THE ORDER of that header): the items of a lane in the
+//             order (the order of that header): the items of a lane in the
 //             order of their pushes, and one item of each lane in turn, in
 //             the order of the lane indexes.  So the merged stream is a
 //             function of the items of each lane, and a pop takes no tag of
@@ -35,12 +35,12 @@
 //             The caller names the lane of each producer handle, so the lane
 //             of a producer is an input of the program, and not a result of
 //             the schedule.  A claim of each lane keeps one live producer of
-//             a lane.  The consumer waits for the lane of its turn (THE STALL
+//             a lane.  The consumer waits for the lane of its turn (the stall
 //             of LaneRing.h), so each lane needs a producer that ends it.
 //     In each form the consumer side is linear, because the pop of each ring
 //     assumes one consumer: the tail has one writer and no synchronization.
 //
-// THE BRAND
+// Brand
 //     A channel has the brand of the root that its permissions grow from.
 //     The caller mints the whole root, names its brand in the channel type,
 //     and splits the root into the producer token and the consumer token.  A
@@ -56,13 +56,13 @@
 //     role ends the process, and a handle takes the role again after the last
 //     one ended.
 //
-// THE END OF THE STREAM
+// End of the stream
 //     The end of the last live producer handle with its token closes the
 //     channel, and try_receive of the consumer then gives NoItem::Closed after
 //     the last item (fixy/concurrent/ChannelEnd.h).  A release does not close
 //     the channel, and the next producer handle opens it again.  A channel of
 //     lanes closes when each lane ended: the end of a producer handle ends
-//     its lane (THE END OF A LANE of fixy/concurrent/LaneRing.h).  A lane
+//     its lane (the end of a lane of fixy/concurrent/LaneRing.h).  A lane
 //     ends one time in a stream, so the producer door refuses a lane that
 //     ended, and the drain of the channel opens each lane again.
 //
@@ -116,7 +116,7 @@ struct lanes_consumer;
 
 namespace fixy::concurrent {
 
-// The form of a permissioned channel (THE FORMS).  A planned form, such as
+// The form of a permissioned channel (the forms).  A planned form, such as
 // a queue of many producers and many consumers or a broadcast channel, adds
 // a value here and a specialization of detail::channel_form_parts.
 enum class ChannelForm : std::uint8_t {
@@ -259,7 +259,7 @@ public:
     }
 
     // The oldest item, NoItem::Empty, or NoItem::Closed after the last item
-    // of a closed channel (THE END OF THE STREAM of fixy/concurrent/
+    // of a closed channel (the end of the stream of fixy/concurrent/
     // ChannelEnd.h).
     [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive() noexcept {
         return static_cast<Handle&>(*this).receive_();
@@ -267,7 +267,7 @@ public:
 };
 
 // The pops of the lanes form take no tag, as the pops of a wire do: the
-// order of the items is a function of the items of each lane (THE ORDER of
+// order of the items is a function of the items of each lane (the order of
 // fixy/concurrent/LaneRing.h).
 template <typename T, typename Handle>
 class consumer_pops<ChannelForm::lanes, T, Handle> {
@@ -360,7 +360,7 @@ public:
     using producer_tag = channel_tag::Producer<Form, UserTag>;
     using consumer_tag = channel_tag::Consumer<Form, UserTag>;
     // The producer root of a merge or a lanes channel while it is out of the
-    // pool of the channel (THE LEASE of foundation/permissions/
+    // pool of the channel (the lease of foundation/permissions/
     // SharedPermission.h).
     using producer_lease = ::foundation::permissions::ExclusiveLease<producer_tag, Brand>;
     using ring_type = typename parts::ring_type;
@@ -568,7 +568,7 @@ public:
         // hides the pole, and no stage can then feed the channel.  The handle
         // of a wire holds the linear producer token and the claim of its
         // role, so the channel gives it the proof of the one producer of the
-        // ring (THE PROVEN FORM of fixy/concurrent/SpscRing.h).
+        // ring (the proven form of fixy/concurrent/SpscRing.h).
         [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept {
             if constexpr (Form == ChannelForm::wire) {
                 return ring_of_().try_push_proven(PermissionedChannel::prove_producer_(), item);
@@ -715,7 +715,7 @@ public:
 
         // The oldest item, or NoItem::Closed after the last item of a closed
         // channel.  While the channel is empty and open, the call waits by
-        // Policy (THE POLICY of fixy/concurrent/EventCount.h): Spin spins, and
+        // Policy (the policy of fixy/concurrent/EventCount.h): Spin spins, and
         // SpinThenPark spins for its budget and then parks on events.  The
         // condition of the wait is a receive, so the receive after the entry
         // of a park in the count takes each item and the end that came before
@@ -756,7 +756,7 @@ public:
     // handles coexist, which is the point of the fractional side.  A lent
     // handle opens the channel.
     //
-    // A claim door (THE DOORS OF A SYNCHRONIZED CLASS of foundation/
+    // A claim door (the doors of a synchronized class of foundation/
     // Transfer.h): one compare-exchange of the pool makes the share, and the
     // handle holds it.  After the compare-exchange the door writes only the
     // count of the producers, an atomic cell, and the handle.
@@ -771,14 +771,14 @@ public:
     }
 
     // The producer door of a lanes channel.  It lends a pool share for the
-    // producer of LANE, and it refuses while the producer root is out of the
+    // producer of lane, and it refuses while the producer root is out of the
     // pool.  It takes the claim of the lane, so a second live producer handle
     // of one lane ends the process here.  A lane ends one time in a stream, so
     // a producer handle of a lane that ended ends the process too.  The claim
     // of the lane orders the read of its end after the end of its last
     // producer handle, so the read is no snapshot.
     //
-    // A claim door (THE DOORS OF A SYNCHRONIZED CLASS of foundation/
+    // A claim door (the doors of a synchronized class of foundation/
     // Transfer.h): one compare-exchange of the pool makes the share, and the
     // handle holds it.  After the compare-exchange the door takes the atomic
     // claim of the lane, reads the end of the lane under that claim, and
@@ -816,8 +816,8 @@ public:
     // lives.  The two do not combine into a whole: the whole would hold no
     // identity of the pool, so a whole of a second root of one call site could
     // stand in for it.  The class conveys the authority of its two tokens, and
-    // it does not copy, so it is a token of the doors of the channel (THE
-    // PROOF OF A DOOR of foundation/Transfer.h).
+    // it does not copy, so it is a token of the doors of the channel (the
+    // proof of a door of foundation/Transfer.h).
     struct[[= ::foundation::linear::authority{}]] RecombinedParts final {
         producer_lease root;
         [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> consumer;
@@ -960,14 +960,14 @@ public:
     }
 
     // The claim of a drain: the claim of each role of this channel, which a
-    // drain takes as its proof (THE PROOF OF A DOOR of foundation/Transfer.h).
+    // drain takes as its proof (the proof of a door of foundation/Transfer.h).
     // The constructor takes the two claims, so a live handle of a role ends
     // the process there, and no handle starts while the claim lives.  Its end
     // gives the two claims back.  The claim belongs to the thread that took
     // it, and no two threads read it, so it states thread_bound{} and
     // not_shareable{}.  The constructor is private, and the claim door
     // claim_drain is its one caller, so no thread builds a claim past the two
-    // claims (THE BUILD OF A TOKEN of foundation/Transfer.h).  A holder of the
+    // claims (the build of a token of foundation/Transfer.h).  A holder of the
     // channel with no token, such as the end of a Box channel, takes one.
     class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]]
         DrainClaim {
@@ -1014,7 +1014,7 @@ public:
     // of a role, a recombined access, a deposit or a second drain claim ends
     // the process here.  A claim door: its result is the claim, which the two
     // atomic exchanges of the claims make, and only the thread that holds the
-    // claim drains until the claim ends (THE DOORS OF A SYNCHRONIZED CLASS of
+    // claim drains until the claim ends (the doors of a synchronized class of
     // foundation/Transfer.h).
     [[nodiscard]] DrainClaim claim_drain() noexcept { return DrainClaim{*this}; }
 

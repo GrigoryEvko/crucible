@@ -9,8 +9,8 @@
 // wide unit.  If the two units shared one body, the link could keep the body
 // of AVX-512 for the unit of the baseline target.  Only a processor of
 // x86-64-v4 runs the bodies of the wide unit, and each body gives the bits of
-// the body of the unit of the test (THE LANES of foundation/core/Reduce.h,
-// THE DISPATCH of foundation/core/StorageFloat.h).
+// the body of the unit of the test (the lanes of foundation/core/Reduce.h,
+// The dispatch of foundation/core/StorageFloat.h).
 //
 // The foundation library compiles for the level of the build, x86-64-v3 in
 // the build of the preset default, so each of the two units has another level

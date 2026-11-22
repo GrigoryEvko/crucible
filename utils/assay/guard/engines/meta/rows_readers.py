@@ -1,6 +1,6 @@
 """rows-readers — the C++ and the Python readers of the rows grammar give the same rows and refuse at the same line.
 
-THE TWO READERS
+Two readers
     assay.core.rows reads the rows grammar for the package.  The quarantine
     plugin of GCC reads the same grammar through utils/tools/quarantine/rows.h.
     The host program utils/tools/quarantine/rows_reader.cpp reads each file
@@ -8,7 +8,7 @@ THE TWO READERS
     each file.  The rule gives the same files to the two readers, and it
     compares their results.
 
-THE HOST PROGRAM
+Host program
     The rule compiles rows_reader.cpp with the C++ compiler of the patched GCC
     (assay.setup.gcc.toolchain_compilers) and the flags of the plugin.  The
     program links libstdc++ statically, and it runs with no library path.  The
@@ -19,7 +19,7 @@ THE HOST PROGRAM
     directory for one run.  With no compiler, the rule does not apply to the
     tree.
 
-THE FILES
+Files
     The rule reads each rows file of the tree that is on the disk.  These are
     the registry, the pin table, the rule table, the audit table and each
     ledger of utils/ledgers/.  The two readers must accept each one with the
@@ -34,7 +34,7 @@ THE FILES
     PATH is relative to the root.  The two readers must give that verdict, and
     for a refused file the line of the row.
 
-THE KINDS
+Kinds
     disagree  the two readers give different rows, one reader refuses a file
               that the other accepts, or the two refuse a file at different
               lines
@@ -153,7 +153,7 @@ def compile_program(compiler: Path, output: Path) -> None:
 
 @contextlib.contextmanager
 def host_program() -> Iterator[Path]:
-    """Give the path of the host program, and compile it when the cache has no entry (THE HOST PROGRAM).
+    """Give the path of the host program, and compile it when the cache has no entry (the host program).
 
     A compile writes a file with a dot at the start of its name, and then renames it.  A run in a different process
     then sees all of the program or none of it.  The eviction of the cache does not read a part of a program.
@@ -358,7 +358,7 @@ def verdict_findings(path: str, verdict: Verdict, result: Result) -> list[check_
 
 
 def files_of(context: MetaContext) -> dict[str, Verdict]:
-    """Return each file that the rule reads and its verdict (THE FILES), sorted by path.
+    """Return each file that the rule reads and its verdict (the files), sorted by path.
 
     Raises:
         rows_grammar.RowsError: If verdicts.txt does not obey its schema
@@ -375,7 +375,7 @@ def files_of(context: MetaContext) -> dict[str, Verdict]:
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each file that the two readers read differently, or that does not get its verdict (THE KINDS).
+    """Give each file that the two readers read differently, or that does not get its verdict (the kinds).
 
     Complexity: linear in the number of bytes of the files.
     """

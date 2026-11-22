@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A keyed reception comes from the role that its PeerMsg names.  Here the
 // message comes from q, the cell watches r, and q is not reliable, so a

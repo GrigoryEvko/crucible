@@ -7,7 +7,7 @@
 //
 // The proof of the record path comes from the same claim.  The trace ring
 // and the metadata log of a Vigil take it to publish their heads with no
-// check load (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).
+// check load (the proof of the one writer of foundation/SoleWriterProof.h).
 
 #include <foundation/SoleWriterProof.h>
 #include <foundation/effects/Ctx.h>

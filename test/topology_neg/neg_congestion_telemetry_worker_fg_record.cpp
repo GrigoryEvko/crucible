@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Recording congestion telemetry is background work.  The foreground
 // hot-path context cannot update a per-link slot.  A foreground context is

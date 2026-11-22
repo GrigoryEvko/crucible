@@ -145,7 +145,7 @@ void rollback_while_regions_are_in_flight() {
 // rollback gives its region to the foreground between two publications.  Each
 // round feeds a region, so the stage publishes and sweeps while the
 // foreground rolls back, and then the foreground reads each op of the region
-// that it holds.  THE LIFE OF A REGION of BackgroundThread.h keeps the region
+// that it holds.  The life of a region of BackgroundThread.h keeps the region
 // in the store until the foreground writes its holders again.  A read of a
 // freed region shows under the address sanitizer, and a race of the sweep and
 // the read shows under the thread sanitizer preset.

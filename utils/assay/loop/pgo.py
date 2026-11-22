@@ -1,6 +1,6 @@
 """pgo — collect a profile for profile-guided optimization on the hardware tier of this host (`loop pgo`).
 
-THE COLLECTION
+Collection
     1. The command configures the preset pgo-generate in ROOT/build-pgo-generate.
        The root CMakeLists.txt gives the CMake file API the query of the cache
        and the code model, and CMake writes them as JSON.  Step 2 reads the
@@ -22,7 +22,7 @@ THE COLLECTION
     5. It runs each bench, with its output in BUILD_DIR/pgo-run/NAME.log.  The
        process group of a bench that runs for longer than its time limit gets
        SIGTERM, and SIGKILL after TERMINATE_GRACE_S.  A bench whose x86-64
-       level is above the level of the host does not start (THE CHECK of
+       level is above the level of the host does not start (the check of
        assay.core.x86level).  It goes to the skipped benches, and a line names
        the two levels.
     6. It writes the record COLLECTION beside the counters: the commit, the
@@ -38,7 +38,7 @@ THE COLLECTION
     runs too long gives no counters, and COLLECTION names it.  The command
     fails only when no counter file exists at the end.
 
-THE ENVIRONMENT
+Environment
     CRUCIBLE_PGO_DIR            The profile root.  The preset value is ROOT/pgo
     CRUCIBLE_PGO_JOBS           The build parallelism.  The default is DEFAULT_JOBS of assay.core.proc
     CRUCIBLE_PGO_BENCH_TIMEOUT  The time limit of each bench, in seconds.  The default is 900
@@ -292,7 +292,7 @@ def positive_number(name: str, default: int) -> int:
 
 
 def collect(root: Path) -> int:
-    """Configure, build, run and record, as THE COLLECTION tells.
+    """Configure, build, run and record, as the collection tells.
 
     Args:
         root: The source tree

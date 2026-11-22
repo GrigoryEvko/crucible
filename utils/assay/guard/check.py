@@ -13,24 +13,24 @@ through the runner of its engine, which judges its findings against its ledger
 (assay.core.ledger).  The engines meta, tsast, plugin, elf and build have a
 runner.
 The tsast rules of one call share the trees that they read
-(assay.guard.engines.tsast.runner, THE SHARED TREES).  --part K/N gives a
+(assay.guard.engines.tsast.runner, the shared trees).  --part K/N gives a
 tsast rule part K of N of its files, and only a tsast rule whose module
-sets READS_PARTS takes it (assay.guard.engines.meta.runner, THE PARTS).
+sets READS_PARTS takes it (assay.guard.engines.meta.runner, the parts).
 The plugin rules of one call
 read the sections of the objects of the build one time
-(assay.guard.engines.plugin.runner, THE SECTIONS).  The elf rules of one call
-read each fact of the build one time (assay.guard.engines.elf.runner, THE
-BUILD).  A plugin rule or an elf rule with no --build-dir is a usage error.
+(assay.guard.engines.plugin.runner, the sections).  The elf rules of one call
+read each fact of the build one time (assay.guard.engines.elf.runner, the
+build).  A plugin rule or an elf rule with no --build-dir is a usage error.
 The build rules of one call read each input of the build one time
-(assay.guard.engines.buildsys.runner, THE CONTEXT).  --path names the paths
-that a build rule reads, and the run then judges only their ledger rows (THE
-PATHS of that module).  A rule with a holder has no run of its own: the
+(assay.guard.engines.buildsys.runner, the context).  --path names the paths
+that a build rule reads, and the run then judges only their ledger rows (the
+paths of that module).  A rule with a holder has no run of its own: the
 holder applies it.
 
 Each run also holds the cache of the compiled modules of the package in its
-limit, when its turn is due (assay.core.cache, THE COMPILED MODULES).  It
+limit, when its turn is due (assay.core.cache, the compiled modules).  It
 holds the cost store of the build launcher in its limit in the same way
-(assay.core.cost_store, THE STORE).  A failure of that work changes no
+(assay.core.cost_store, the store).  A failure of that work changes no
 verdict of a rule.
 """
 
@@ -55,7 +55,7 @@ RUNNERS = (rule_registry.Engine.META, rule_registry.Engine.TSAST, rule_registry.
            rule_registry.Engine.ELF, rule_registry.Engine.BUILD)
 # The engines of the rules that read the objects of a build.
 BUILD_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
-# The engines of the rules that can read a part of their files (THE PARTS of assay.guard.engines.meta.runner).
+# The engines of the rules that can read a part of their files (the parts of assay.guard.engines.meta.runner).
 PART_ENGINES = (rule_registry.Engine.TSAST,)
 
 
@@ -105,8 +105,8 @@ def rule_context(rule: rule_registry.Rule, root: Path, build_dir: Path | None,
 
     A rule of the engine tsast or build gets the context of its engine, with
     the rule that its scope reads.  A rule of the engine build also gets the
-    paths that the command names (assay.guard.engines.buildsys.runner, THE
-    PATHS).  Each other rule gets the context of the engine meta.
+    paths that the command names (assay.guard.engines.buildsys.runner, the
+    paths).  Each other rule gets the context of the engine meta.
     """
     from assay.guard.engines.meta import runner
 

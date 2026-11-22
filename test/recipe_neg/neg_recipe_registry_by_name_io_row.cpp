@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // by_name(ctx, name) is a pure projection over registry state that does not
 // change.  A context whose row holds IO fails the Subrow gate on the row of

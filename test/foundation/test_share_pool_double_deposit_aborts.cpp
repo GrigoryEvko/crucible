@@ -1,4 +1,4 @@
-// A pool takes back only its own lease (THE LEASE of
+// A pool takes back only its own lease (the lease of
 // foundation/permissions/SharedPermission.h).
 //
 // A brand names a mint site, so two root mints through one site are two

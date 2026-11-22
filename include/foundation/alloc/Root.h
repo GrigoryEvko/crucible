@@ -1,15 +1,15 @@
 #pragma once
 
 // The one state of the allocator of the base for the process: the root
-// (THE ROOT).
+// (the root).
 //
 //   AllocRoot        the state word, the table of the windows, the host
-//                    window and the heap table (THE HEAP TABLE)
+//                    window and the heap table (the heap table)
 //   alloc_root_      the root of the process
 //   ensure_root()    initializes the root at its first use, and reads one
 //                    state word after it
 //
-// THE ROOT
+// Root
 //   libfoundation.a links into each shared library of the product, and the
 //   tree hides each symbol, so a variable of a source file would exist one
 //   time in each library.  So the allocator keeps no state in a source file.
@@ -26,7 +26,7 @@
 //   the host window to its end: it is in an Immortal of foundation/core, so
 //   no destructor unmaps it while code at the end of the process still frees
 //   blocks.  A full window ends the process with the remedy text of the
-//   window door (THE FULL WINDOW of foundation/alloc/Window.h).
+//   window door (the full window of foundation/alloc/Window.h).
 //
 //   No fast path reads the window through the root.  A heap holds a copy of
 //   the chunk map, the base and the slab records in its HeapState, and the
@@ -34,7 +34,7 @@
 //   window of foundation/alloc/HeapState.h: the take of a chunk, the start of
 //   a slab record, and the claim index for the census.
 //
-// THE HEAP TABLE
+// Heap table
 //   The root owns one reservation for the HeapState of each heap, apart from
 //   the metadata region of each window (the decision of 2026-11-20): one
 //   table and one id space hold the host heaps and the device heaps, with no
@@ -54,7 +54,7 @@
 //   holds 102 slots.  A slot is a whole count of pages, so no two heaps share
 //   a page, and the first touch of the owner thread puts each page of its
 //   heap on its node.  Under AddressSanitizer the page source maps the table
-//   through the C library (THE SANITIZERS of foundation/os/PageSource.h), and
+//   through the C library (the sanitizers of foundation/os/PageSource.h), and
 //   the table lives in an Immortal, so no end of the process unmaps it.
 //
 //   A claim takes the next slot with one atomic add.  The slots commit from
@@ -90,7 +90,7 @@
 namespace foundation::alloc {
 
 // The bytes of one slot of the heap table, the guard on each side of it, and
-// the step of a commit of its slots (THE HEAP TABLE).  The slot is 20 KiB
+// the step of a commit of its slots (the heap table).  The slot is 20 KiB
 // (the decision of 2026-11-21), and this constant is its one place.
 inline constexpr std::size_t kHeapSlotBytes = std::size_t{20} << 10;
 inline constexpr std::size_t kHeapTableGuardBytes = std::size_t{2} << 20;
@@ -100,7 +100,7 @@ inline constexpr std::size_t kHeapTableStepBytes = std::size_t{2} << 20;
 inline constexpr std::size_t kHeapTableSlotsBytes =
     (kHeapCount * kHeapSlotBytes + (kHeapTableStepBytes - 1)) & ~(kHeapTableStepBytes - 1);
 
-// The state word of the root (THE ROOT).
+// The state word of the root (the root).
 enum class RootState : std::uint32_t {
     empty = 0,
     starting = 1,
@@ -117,7 +117,7 @@ struct RootDoor;
 
 }  // namespace detail
 
-// The root of the allocator (THE ROOT).
+// The root of the allocator (the root).
 class AllocRoot final {
 public:
     constexpr AllocRoot() noexcept = default;
@@ -131,12 +131,12 @@ public:
     // fills is read after the init or after the publish of that window.
     [[nodiscard]] constexpr WindowRecord window(WindowSlot slot) const noexcept { return windows_.record(slot); }
 
-    // The count of the slots of the heap table that claims took (THE HEAP
-    // TABLE).
+    // The count of the slots of the heap table that claims took (the heap
+    // table).
     [[nodiscard]] std::uint32_t claimed_heaps() const noexcept { return claimed_heaps_.load_acquire(); }
 
     // The committed bytes of the slots of the heap table, from the first
-    // slot (THE HEAP TABLE).
+    // slot (the heap table).
     [[nodiscard]] ::foundation::core::ByteCount committed_heap_bytes() const noexcept {
         return ::foundation::core::ByteCount{committed_heap_bytes_.load_acquire()};
     }
@@ -148,17 +148,17 @@ private:
     WindowTable windows_{};
     ::foundation::core::Immortal<Window> host_window_{};
     // The commits of the host window, which each heap changes when it takes
-    // a chunk (THE CHUNK SOURCE of foundation/alloc/Window.h).
+    // a chunk (the chunk source of foundation/alloc/Window.h).
     WindowCommits host_commits_{};
     ::foundation::core::Atomic<std::uint32_t> claimed_heaps_{0};
     ::foundation::core::Atomic<std::size_t> committed_heap_bytes_{0};
     ::foundation::core::Immortal<::foundation::os::Reservation> heap_table_{};
 };
 
-// The root of the process (THE ROOT).
+// The root of the process (the root).
 CRUCIBLE_PROCESS_WIDE inline constinit AllocRoot alloc_root_{};
 
-// Initializes the root at its first use (THE ROOT).  After the init, one
+// Initializes the root at its first use (the root).  After the init, one
 // acquire load of the state word and its test.
 [[gnu::always_inline]] inline void ensure_root() noexcept {
     if (!alloc_root_.is_ready()) [[unlikely]] {

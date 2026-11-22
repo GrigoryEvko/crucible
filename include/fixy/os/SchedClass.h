@@ -8,7 +8,7 @@
 //
 // A task is runnable on a pool when the pool's policy subsumes the
 // task's, that is, when the pool sits at or above the task on the chain.
-// A FIFO pool hosts an OTHER task.  An OTHER pool does not host a FIFO
+// A FIFO pool hosts a task of the other policy.  A pool of the other policy does not host a FIFO
 // task.
 //
 // SCHED_DEADLINE is CBS-admitted EDF.  The kernel admits a task through

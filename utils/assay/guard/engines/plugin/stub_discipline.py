@@ -1,13 +1,13 @@
 """stub-discipline — each header with a stub honesty marker has a CRUCIBLE_STUB deprecation, and the reverse.
 
-THE RULE
+Rule
     An honesty marker is a constexpr bool with the value `false` and a name
     that ends with _implemented, _attached or _ready.  It states at compile
     time that a surface does not do its live work.  A stub deprecation is the
     attribute deprecated with a reason that starts with CRUCIBLE_STUB:.  Each
     call of the stub then gets a warning at compile time.  The pair holds in
     each header of include/.  The quarantine plugin reads each declaration of
-    a header (utils/tools/quarantine/declaration.cpp, THE RULE
+    a header (utils/tools/quarantine/declaration.cpp, the rule
     stub-discipline):
       marker-without-stub   a header with a marker and no stub deprecation,
                             at its first marker.  The stub looks live

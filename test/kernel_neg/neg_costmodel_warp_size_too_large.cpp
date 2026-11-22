@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // ValidWarpSize is a fixy::Refined over valid_warp_size, which requires a
 // power of two no larger than 128, and the checked mint is its only door.

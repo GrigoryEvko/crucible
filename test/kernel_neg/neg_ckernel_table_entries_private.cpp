@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The background thread classifies through a sealed kernel table with no
 // lock.  A write to the entry array that does not go through register_op has

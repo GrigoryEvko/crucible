@@ -104,7 +104,7 @@ public:
     // The empty mask.
     constexpr NumaNodeMask() noexcept = default;
 
-    // Puts NODE into the mask.  A sentinel node gives einval and changes
+    // Puts node into the mask.  A sentinel node gives einval and changes
     // nothing.
     [[nodiscard]] constexpr Result<Unit, ::foundation::os::Errno> insert(NumaNodeId node) & noexcept {
         for (Slot const slot : Slot::check(static_cast<std::size_t>(node))) {
@@ -114,7 +114,7 @@ public:
         return err(::foundation::os::Errno::einval);
     }
 
-    // True when the mask holds NODE.  A sentinel node is never in a mask.
+    // True when the mask holds node.  A sentinel node is never in a mask.
     [[nodiscard]] constexpr bool contains(NumaNodeId node) const noexcept {
         for (Slot const slot : Slot::check(static_cast<std::size_t>(node))) {
             return slots_.test(slot);
@@ -144,7 +144,7 @@ private:
     return static_cast<NumaNodeId>(slot.raw());
 }
 
-// The mask of the one node NODE, or no value for a sentinel node.  The
+// The mask of the one given node, or no value for a sentinel node.  The
 // function is not a member of NumaNodeMask, because an Option of a class
 // needs the whole class.
 [[nodiscard]] constexpr Option<NumaNodeMask> make_numa_node_mask(NumaNodeId node) noexcept {
@@ -203,14 +203,14 @@ namespace detail {
 inline constexpr std::size_t numa_mask_bits = 256;
 inline constexpr std::size_t numa_mask_word_bits = sizeof(unsigned long) * CHAR_BIT;
 
-// THE MEMORY POLICY DOOR.  Each function issues its system call through
+// Memory policy door.  Each function issues its system call through
 // foundation::os::raw_syscall, and gives the error of the kernel.  The bodies
 // are in src/fixy/os/NumaPlacement.cpp, which includes no header of the
 // kernel and no header of the C library.  A function that issues one system
-// call NAME out of line has the name NAME_sys (THE AFFINITY DOOR of
+// call name out of line has the name name_sys (the affinity door of
 // fixy/os/CpuPinned.h).
 
-// Sets the policy POLICY over the nodes of NODES for the pages of the range,
+// Sets the given policy over the given nodes for the pages of the range,
 // and moves the pages that the range holds (MPOL_MF_STRICT and MPOL_MF_MOVE).
 // An empty mask gives einval and makes no system call.
 //
@@ -240,7 +240,7 @@ private:
     // The sole friend, and the whole gate.  It builds a proof only after
     // detail::mbind_sys succeeded for this region and this node.
     //
-    // Keep this friend a function that MAKES AND CHECKS the call.  A friend
+    // Keep this friend a function that makes and checks the call.  A friend
     // that only forwards its arguments proves nothing.  The trailing return
     // type is necessary: fixy/os/CpuPinned.h gives the parse reason.
     template <typename FriendTag, typename FriendProt, typename FriendBrand, ::foundation::effects::IsExecCtx FriendCtx>
@@ -460,7 +460,7 @@ namespace detail {
 
 // Counts into census the node of each page that holds one of the `bytes`
 // bytes that start at `first`, or gives the error of the query that the
-// kernel refused (THE MEMORY POLICY DOOR).  census_page_nodes is its caller.
+// kernel refused (the memory policy door).  census_page_nodes is its caller.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 census_page_nodes_(void const* first, std::size_t bytes, numa::PageNodeCensus& census) noexcept;
 
@@ -563,7 +563,7 @@ template <typename T, std::size_t Extent, ::foundation::effects::IsExecCtx Ctx>
 // ── The nodes that the process may use ─────────────────────────────────
 
 // The nodes of a node list of the kernel, such as "0-1,4": each range
-// FIRST-LAST and each single node, between commas, up to the end of the text
+// first-last and each single node, between commas, up to the end of the text
 // or the first newline.  An empty list, a part that is no number, a range
 // that runs backward and a node past 253 give no value.  Complexity: linear
 // in the text and in the nodes of its ranges.
@@ -656,7 +656,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     return ::fixy::detail::read_allowed_numa_nodes_();
 }
 
-// THE THREAD POLICY
+// Thread policy
 //   The memory policy of a thread places each page that the thread touches
 //   first and that no policy of a range covers (set_mempolicy(2)).  A thread
 //   that fork or clone makes takes the policy of its parent, and execve keeps
@@ -691,7 +691,7 @@ struct ThreadMemoryPolicy final {
     }
 };
 
-// The kind of the policy word WORD that get_mempolicy gives, or no value for
+// The kind of the policy word that get_mempolicy gives, or no value for
 // a word that the door does not name: a policy of a later kernel, such as
 // MPOL_LOCAL or MPOL_WEIGHTED_INTERLEAVE, or a word with a mode flag.
 [[nodiscard]] constexpr Option<ThreadPolicyKind> thread_policy_kind_of(int word) noexcept {
@@ -709,7 +709,7 @@ struct ThreadMemoryPolicy final {
     }
 }
 
-// True when POLICY is a policy that set_mempolicy takes: first_touch with no
+// True when policy is a policy that set_mempolicy takes: first_touch with no
 // nodes, preferred with one node, and bind or interleave with at least one.
 [[nodiscard]] constexpr bool is_settable_thread_policy(ThreadMemoryPolicy const& policy) noexcept {
     switch (policy.kind) {
@@ -751,7 +751,7 @@ namespace detail {
 
 namespace numa {
 
-// The memory policy of the calling thread (THE THREAD POLICY).  A host with
+// The memory policy of the calling thread (the thread policy).  A host with
 // more nodes than NumaNodeId names gives the error of the kernel, einval.
 // Not a mint: it reads the kernel and synthesizes no authority.
 template <::foundation::effects::IsExecCtx Ctx>
@@ -760,8 +760,8 @@ template <::foundation::effects::IsExecCtx Ctx>
     return ::fixy::detail::get_mempolicy_sys();
 }
 
-// Sets the memory policy of the calling thread to POLICY (THE THREAD
-// POLICY).  A policy that is_settable_thread_policy refuses gives einval, and
+// Sets the memory policy of the calling thread to policy (the thread
+// policy).  A policy that is_settable_thread_policy refuses gives einval, and
 // a node that the cpuset of the process does not allow gives the error of the
 // kernel, einval.  The policy holds for the pages that the thread touches
 // first after the call.

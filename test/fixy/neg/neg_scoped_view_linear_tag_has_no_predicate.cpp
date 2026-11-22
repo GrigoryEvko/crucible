@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // HS14 fixture 2 of 2 for fixy::mint_linear_view.
 //
@@ -7,7 +7,7 @@
 // reach one.  This carrier witnesses Open and no other state.
 //
 // Without CarrierDeclaresViewState,
-// `requires { mint_linear_view<Closed>(c) }` would answer TRUE, because
+// `requires { mint_linear_view<Closed>(c) }` would answer true, because
 // the tag would reach only the contract predicate and never the
 // signature.
 //

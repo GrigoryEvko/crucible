@@ -3,7 +3,7 @@
 
 Each vessel library carries a layout note with the layout digest of the types
 and the C entries that the two libraries share, and the build writes the
-layout table beside them (THE LAYOUT OF A LIBRARY of crucible_native.py).  The
+layout table beside them (the layout of a library of crucible_native.py).  The
 loader reads the table and the note from the file before dlopen, and compares
 its ctypes Structures with the table.
 

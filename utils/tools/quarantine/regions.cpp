@@ -28,7 +28,7 @@ constexpr char kEndPragma[] = "END_I_KNOW_WHAT_IM_DOING";
 // The classes of the reason of a region (CLAUDE.md section XXII, R7).
 constexpr const char* kReasonClasses[] = {"ABI: ", "C-HEADER: ", "PROBE: ", "ORACLE: ", "MEASURE: "};
 
-// The expansion point of the macro MACRO that made the pragma at LOCATION,
+// The expansion point of the macro named macro that made the pragma at location,
 // or UNKNOWN_LOCATION when no such macro made it, or when a quarantined file
 // defines the macro.  The front end gives each token of a _Pragma the location
 // of the _Pragma operator, so the maps of the macro expansion lead to the
@@ -54,13 +54,13 @@ location_t region_macro_expansion(location_t location, const char* macro) {
     return UNKNOWN_LOCATION;
 }
 
-// The place of a region pragma at LOCATION: the place where the file uses
-// MACRO.  A pragma of a file outside the source root gives no place and no
-// error.  A pragma of a file under the root that MACRO does not make is an
-// error, which the function reports.  A use of MACRO inside another macro is
+// The place of a region pragma at location: the place where the file uses
+// macro.  A pragma of a file outside the source root gives no place and no
+// error.  A pragma of a file under the root that macro does not make is an
+// error, which the function reports.  A use of macro inside another macro is
 // an error too: the place of the region would then be the definition of that
-// macro, and the ledger would count the region in that file.  EXPANSION gets
-// the expansion point of MACRO.  Returns a place with no file when the pragma
+// macro, and the ledger would count the region in that file.  expansion gets
+// the expansion point of macro.  Returns a place with no file when the pragma
 // opens or closes nothing.
 Place region_place(location_t location, const char* macro, const char* pragma, location_t& expansion) {
     Place place = place_of(location, Scope::tree);
@@ -85,8 +85,8 @@ Place region_place(location_t location, const char* macro, const char* pragma, l
     return place_of(expansion, Scope::tree);
 }
 
-// The line of the source that holds EXPANSION, and the index of the column of
-// EXPANSION in it.  Returns false when the plugin cannot read the line.
+// The line of the source that holds expansion, and the index of the column of
+// expansion in it.  Returns false when the plugin cannot read the line.
 bool region_line_at(location_t expansion, std::string& text, std::size_t& at) {
     expanded_location where = expand_location(expansion);
     if (where.file == nullptr || where.line <= 0 || where.column <= 0) {
@@ -103,8 +103,8 @@ bool region_line_at(location_t expansion, std::string& text, std::size_t& at) {
 
 bool is_blank(char byte) { return byte == ' ' || byte == '\t' || byte == '\r'; }
 
-// True when the source spells the call of the begin macro at EXPANSION as
-// CRUCIBLE_I_KNOW_WHAT_IM_DOING("REASON") on one line, with only spaces and
+// True when the source spells the call of the begin macro at expansion as
+// CRUCIBLE_I_KNOW_WHAT_IM_DOING("reason") on one line, with only spaces and
 // tabs between the tokens.  The ledger counts each region by its reason, and a
 // search of the source finds a region by its reason only in this form.
 // Complexity: O(length of the line).
@@ -127,8 +127,8 @@ bool is_plain_region_call(location_t expansion, const std::string& reason) {
     return take(kBeginMacro) && take("(") && take("\"" + reason + "\"") && take(")");
 }
 
-// True when the line of EXPANSION holds only the call CALL that starts at
-// EXPANSION, with blanks before and after it.  A region holds each line from
+// True when the line of expansion holds only the call text that starts at
+// expansion, with blanks before and after it.  A region holds each line from
 // the line of its begin macro to the line of its end macro, so code on the
 // line of a macro would be inside the region.  Complexity: O(length of the
 // line).
@@ -151,7 +151,7 @@ bool is_alone_on_line(location_t expansion, const std::string& call) {
     return true;
 }
 
-// True when REASON starts with a reason class and holds a letter or a digit
+// True when reason starts with a reason class and holds a letter or a digit
 // after it.  A class with no word after it gives no reason.
 bool is_classed_reason(const std::string& reason) {
     for (const char* reason_class : kReasonClasses) {

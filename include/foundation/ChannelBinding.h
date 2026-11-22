@@ -171,7 +171,7 @@ private:
 //
 // Two threads take and release one claim at the same time through its one
 // member, an Atomic of the base.  So the class is Synchronized by its
-// structure, and it states no transfer fact (THE SHARED WRITE of
+// structure, and it states no transfer fact (the shared write in
 // foundation/Transfer.h).
 class EndpointClaim {
 public:

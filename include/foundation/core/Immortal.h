@@ -10,7 +10,7 @@
 //   holder.get()         a Ref to the T, with the fresh brand of the call
 //   holder.is_filled()   true after the fill
 //
-// THE STORAGE
+// Storage
 //   An Immortal holds aligned storage for one T and the address of the T in
 //   it.  An empty holder is zero bytes, so a constinit variable of it runs no
 //   code at the start of the process.  The destructor of the holder is
@@ -22,7 +22,7 @@
 //   makes each unit that holds it register the destructor with the C library,
 //   and a holder makes no such call.
 //
-// THE RULES
+// Rules
 //   fill builds the T one time, and a second fill ends the process.  get() of
 //   an empty holder ends the process.  Each check is one test of the address
 //   and a branch to a cold call of the fatal exit, as each access of a Box
@@ -48,18 +48,18 @@ concept ImmortalPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is
 template <ImmortalPayload T>
 class Immortal final {
 public:
-    // The empty holder (THE STORAGE).
+    // The empty holder (the storage).
     constexpr Immortal() noexcept = default;
 
     Immortal(Immortal const&) = delete("the object of an Immortal lives in its storage for the whole process");
     Immortal&
     operator=(Immortal const&) = delete("the object of an Immortal lives in its storage for the whole process");
 
-    // Trivial, so the destructor of T never runs (THE STORAGE).
+    // Trivial, so the destructor of T never runs (the storage).
     ~Immortal() = default;
 
     // Builds the T from the arguments in the storage.  A holder that holds a
-    // T ends the process (THE RULES).
+    // T ends the process (the rules).
     template <class... Args>
         requires std::is_nothrow_constructible_v<T, Args&&...>
     void fill(Args&&... args) noexcept {
@@ -72,7 +72,7 @@ public:
     [[nodiscard]] constexpr bool is_filled() const noexcept { return object_ != nullptr; }
 
     // The T as a Ref with the fresh brand of the call.  An empty holder ends
-    // the process (THE RULES).  The pack refuses each explicit argument, so
+    // the process (the rules).  The pack refuses each explicit argument, so
     // no caller names the brand.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)

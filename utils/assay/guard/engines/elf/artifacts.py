@@ -1,57 +1,57 @@
 """artifacts — each program and shared library of the tree has its hardening properties, and each link fact has a row.
 
-THE ARTIFACTS
+Artifacts
     The rule reads each executable, shared library and module that the
-    target all builds (assay.guard.engines.elf.runner, THE BUILD).  It reads
+    target all builds (assay.guard.engines.elf.runner, the build).  It reads
     the ELF file of each artifact one time.  The type of the target of an
     artifact in the code model tells if it is an executable.  The first directory of
     the source directory of its target gives its group (GROUPS).  The groups
     are vessel, benches and tests.  Each other directory, such as examples
     and the source root, gives the group tools.
 
-THE FACTS
+Facts
     Each artifact gives facts.  A fact is a kind and an entity:
       `needed`         each entry DT_NEEDED
-      `runpath`        each directory of DT_RUNPATH (THE PATHS)
-      `rpath`          each directory of DT_RPATH (THE PATHS)
+      `runpath`        each directory of DT_RUNPATH (the paths)
+      `rpath`          each directory of DT_RPATH (the paths)
       `static-member`  ARCHIVE(MEMBER) of each member that the link takes
-                       from an archive out of the build directory (THE MAP)
+                       from an archive out of the build directory (the map)
     A group holds a fact when one of its artifacts gives it, and the row of
     the fact has the count 1.  A new program then adds no row, unless it
     gives a new fact.  The rule reads no fact that changes with the host and
     not with the code, such as the interpreter, a needed version or a text
     of .comment.
 
-THE PATHS
+Paths
     A directory of a run path holds the paths of one host.  The rule writes
     {toolchain} for the prefix of the compiler, and {build} for the build
     directory.  assay.guard.engines.elf.runner.toolchain_prefix() gives the
     prefix.
 
-THE RUN PATH DIRECTORIES
+Run path directories
     The loader reads each directory of DT_RUNPATH and DT_RPATH on each start
     of an artifact.  The rule refuses each such directory that the host of
     the build does not give (missing_directories()).  The ELF reader expands
     $ORIGIN and ${ORIGIN} to the directory of the artifact (assay.readers.elf,
-    THE DYNAMIC SECTION).  These directories are errors:
+    the dynamic section).  These directories are errors:
       * A path that is not on the host, or that is not a directory
       * An empty part, which the loader reads as the working directory
       * A relative directory, which the loader also reads from the working
         directory
       * A directory with a $ other than $ORIGIN, such as $LIB, because the
         rule does not expand it.
-    The error names the directory with the words of THE PATHS, and also its
+    The error names the directory with the words of the paths, and also its
     path on the host.
 
-THE MAP
+Map
     cmake/LinkMap.cmake makes mold write the map of each link adjacent to
     its output, as OUTPUT.map.  The rule reads the archive members that the
     input sections of the map name (assay.readers.linkmap.read_members).
-    A member that keeps no section in the output gives no fact (THE INPUTS
+    A member that keeps no section in the output gives no fact (the inputs
     of assay.readers.linkmap).  An artifact with no map is an error of the
     build: configure the build again.
 
-THE PROPERTIES
+Properties
     Each artifact must have each of these properties.  A missing property is
     an error of its kind:
       `pie`           an executable is a position-independent executable
@@ -67,7 +67,7 @@ THE PROPERTIES
                       segment, the loader gives the process a stack that is
                       executable
       `control-flow`  the bits of the control-flow protection in the program
-                      property of the processor (THE CONTROL FLOW)
+                      property of the processor (the control flow)
       `machine`       a machine of the tree: x86_64 or aarch64
     CMakeLists.txt gives each executable `-fPIE` and `-pie`.  It gives each
     link `-z relro`, `-z now` and `-z noexecstack`.  cmake/CodeFlags.cmake
@@ -75,9 +75,9 @@ THE PROPERTIES
     the artifacts with one problem into one error, which names one of them
     and their number.
 
-THE CONTROL FLOW
-    The segment PT_GNU_PROPERTY of an artifact (assay.readers.elf, THE
-    PROPERTIES) holds the feature property of its processor (PROTECTIONS).
+Control flow
+    The segment PT_GNU_PROPERTY of an artifact (assay.readers.elf, the
+    properties) holds the feature property of its processor (PROTECTIONS).
     An artifact of x86_64 must have the bits IBT and SHSTK of
     GNU_PROPERTY_X86_FEATURE_1_AND.  The processor then checks each indirect
     branch and each return.  An artifact of aarch64 must have the bits BTI
@@ -85,7 +85,7 @@ THE CONTROL FLOW
     when each input object has it.  One input with no such bit then removes
     the bit from the artifact, and the error names each such input.
 
-    InputReader reads the inputs of the map of the link (THE MAP, THE INPUTS
+    InputReader reads the inputs of the map of the link (the map, the inputs
     of assay.readers.linkmap).  It reads the feature property of an object
     from its section .note.gnu.property, because an object has no program
     header.  It reads a member of an archive through the archive reader of
@@ -95,25 +95,25 @@ THE CONTROL FLOW
     tree gets the flag of cmake/CodeFlags.cmake.  A start file or an archive
     of the toolchain gets the bits only from a toolchain that builds its
     target libraries with the protection (utils/assay/setup/gcc.py).  The
-    error shows each path with the words of THE PATHS.
+    error shows each path with the words of the paths.
 
-THE LEDGER
+Ledger
     utils/ledgers/artifacts.txt has the policy count, in format 1 of
     assay.core.ledger.  It holds the facts in one set of rows, and the set
-    judges each build (assay.guard.engines.elf.one_set, THE SET):
+    judges each build (assay.guard.engines.elf.one_set, the set):
         @build/GROUP | KIND | 1 | ENTITY | -
     A new fact is an error, and a row of a fact that goes gives no finding
-    (THE POLICIES of assay.core.ledger).  A write from one build keeps each
+    (the policies of assay.core.ledger).  A write from one build keeps each
     row, and it gives no row to a new fact without --raise (RAISE_REASONS,
-    one_set, THE WRITE).  The reduce of the landing gate removes the row of
-    a fact that no build of the gate gives (one_set, THE REDUCE).
+    one_set, the write).  The reduce of the landing gate removes the row of
+    a fact that no build of the gate gives (one_set, the reduce).
 
     The ledger does not judge a missing property or a run path directory
     that the host does not give, because each one is a requirement.  Such an
     error has no count, no row admits it, and a write refuses a build with
     one (one_set.Inspection.unadmitted).
 
-THE PLANTS
+Plants
     A row `kinds KIND...` of plant.txt limits the facts and the properties
     that the rule reads to these kinds (KINDS).  The rule reads the run path
     directories of each artifact, also with such a row.  The link of a
@@ -125,7 +125,7 @@ THE PLANTS
     gives the error `machine`.  The test of the module holds that kind with
     planted properties.
 
-NOT APPLICABLE
+Not applicable
     The rule does not apply (exit 77) to these builds:
       * A build with no build-kind.txt
       * A build that only parses its units
@@ -152,16 +152,16 @@ from assay.readers import elf, linkmap
 
 RULE = "artifacts"
 GROUP_PREFIX = "@build/"
-# The group of each first directory of a source directory (THE ARTIFACTS).  Each other directory is of the group tools.
+# The group of each first directory of a source directory (the artifacts).  Each other directory is of the group tools.
 GROUPS = {"vessel": "vessel", "bench": "benches", "test": "tests"}
 TOOLS = "tools"
-# The kinds of the facts (THE FACTS).
+# The kinds of the facts (the facts).
 NEEDED = "needed"
 RUNPATH = "runpath"
 RPATH = "rpath"
 STATIC_MEMBER = "static-member"
 FACT_KINDS = (NEEDED, RUNPATH, RPATH, STATIC_MEMBER)
-# The kinds of the properties (THE PROPERTIES).
+# The kinds of the properties (the properties).
 PIE = "pie"
 RELRO = "relro"
 BIND_NOW = "bind-now"
@@ -169,10 +169,10 @@ STACK = "stack"
 CONTROL_FLOW = "control-flow"
 MACHINE = "machine"
 PROPERTY_KINDS = (PIE, RELRO, BIND_NOW, STACK, CONTROL_FLOW, MACHINE)
-# The kinds that a row `kinds` of a plant can name (THE PLANTS).
+# The kinds that a row `kinds` of a plant can name (the plants).
 KINDS = (*FACT_KINDS, *PROPERTY_KINDS)
 KINDS_ROW = "kinds"
-# The words that THE PATHS writes for the prefix of the compiler and for the build directory.
+# The words that the paths write for the prefix of the compiler and for the build directory.
 TOOLCHAIN_WORD = "{toolchain}"
 BUILD_WORD = "{build}"
 MAP_SUFFIX = ".map"
@@ -192,14 +192,14 @@ FILE_REASON = "is not a directory"
 EMPTY_REASON = "is empty, and the loader reads an empty part as the working directory"
 RELATIVE_REASON = "is relative, and the loader reads it from the working directory"
 TOKEN_REASON = "holds a $ other than $ORIGIN, and the rule does not expand it"
-# The types of the feature properties of x86 and of aarch64, and the section of the properties of an object (THE
-# CONTROL FLOW).
+# The types of the feature properties of x86 and of aarch64, and the section of the properties of an object (the
+# control flow).
 X86_FEATURE_1_AND = 0xC0000002
 AARCH64_FEATURE_1_AND = 0xC0000000
 PROPERTY_SECTION = ".note.gnu.property"
 # The number of inputs that an error names before the count of the others.
 SHOWN_INPUTS = 8
-# The action of each kind of problem (THE PROPERTIES).
+# The action of each kind of problem (the properties).
 LINK_ACTION = (
     "Link each artifact with -z relro, -z now and -z noexecstack, as the add_link_options() call of CMakeLists.txt does"
 )
@@ -221,7 +221,7 @@ ACTIONS = {
 
 @dataclass(frozen=True, slots=True)
 class Fact:
-    """One fact of a group, with an artifact that gives it, as a message shows it (THE FACTS)."""
+    """One fact of a group, with an artifact that gives it, as a message shows it (the facts)."""
 
     group: str
     kind: str
@@ -231,9 +231,9 @@ class Fact:
 
 @dataclass(frozen=True, slots=True)
 class MissingDirectory:
-    """A run path directory that the host does not give, with the artifacts that name it (THE RUN PATH DIRECTORIES).
+    """A run path directory that the host does not give, with the artifacts that name it (the run path directories).
 
-    `directory` is the part of the run path with the words of THE PATHS.  `host_path` is its path on the host after
+    `directory` is the part of the run path with the words of the paths.  `host_path` is its path on the host after
     the expansion of $ORIGIN, or the part itself when the rule cannot find a directory.  `example` is one artifact
     that names it, and `artifacts` the number of such artifacts.
     """
@@ -247,7 +247,7 @@ class MissingDirectory:
 
 @dataclass(frozen=True, slots=True)
 class Protection:
-    """The control-flow property of one machine (THE CONTROL FLOW).
+    """The control-flow property of one machine (the control flow).
 
     `kind` is the type of the feature property, and `bits` gives the name and the value of each bit that an artifact
     must have.  `flag` is the flag that cmake/CodeFlags.cmake gives each unit for the protection.
@@ -277,7 +277,7 @@ PROTECTIONS = {
 
 @dataclass(frozen=True, slots=True)
 class Hardening:
-    """The hardening facts of one linked artifact that its ELF file gives (THE PROPERTIES).
+    """The hardening facts of one linked artifact that its ELF file gives (the properties).
 
     `flags` and `flags_1` are the values of DT_FLAGS and DT_FLAGS_1, or 0.  `stack_flags` is p_flags of the segment
     PT_GNU_STACK, or None when the file has no such segment.  `features` gives the word of each program property.
@@ -304,7 +304,7 @@ class Problem:
 
 @dataclass(frozen=True, slots=True)
 class InputScan:
-    """The inputs of a link with no bit of a protection, and the inputs that the rule cannot read (THE CONTROL FLOW).
+    """The inputs of a link with no bit of a protection, and the inputs that the rule cannot read (the control flow).
 
     Each input is the file of the map, with the build directory before a relative path.  `unread` gives each input
     that cannot be read with its reason.
@@ -319,8 +319,8 @@ class Reading:
     """The facts, the missing run path directories and the problems of the linked artifacts of a build.
 
     `counts` gives the number of artifacts of each group, and `executables` the number of executables.  `missing`
-    holds each run path directory that the host does not give (THE RUN PATH DIRECTORIES).  `problems` gives the
-    artifacts of each problem, in the sequence of their paths (THE PROPERTIES).
+    holds each run path directory that the host does not give (the run path directories).  `problems` gives the
+    artifacts of each problem, in the sequence of their paths (the properties).
     """
 
     facts: tuple[Fact, ...]
@@ -334,12 +334,12 @@ class Reading:
 
 
 def group_of(directory: str) -> str:
-    """Return the group of the first directory of a source directory (THE ARTIFACTS)."""
+    """Return the group of the first directory of a source directory (the artifacts)."""
     return GROUPS.get(directory, TOOLS)
 
 
 def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
-    """Return each path that THE PATHS replaces with its word, the longest path first."""
+    """Return each path that the paths replace with its word, the longest path first."""
     prefix = runner.toolchain_prefix(compiler)
     pairs = {
         str(prefix): TOOLCHAIN_WORD,
@@ -351,7 +351,7 @@ def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
 
 
 def shown_path(directory: str, words: Iterable[tuple[str, str]]) -> str:
-    """Return a directory of a run path with the word of its prefix (THE PATHS)."""
+    """Return a directory of a run path with the word of its prefix (the paths)."""
     for path, word in words:
         if directory == path or directory.startswith(f"{path}/"):
             return word + directory[len(path) :]
@@ -362,7 +362,7 @@ def member_facts(entries: Sequence[elf.DynamicEntry], words: Iterable[tuple[str,
     """Return the facts of one linked artifact that its dynamic entries give: the needed libraries and the run paths.
 
     `entries` are the entries of member.dynamic(), which the caller reads one time, and `words` are the words of
-    path_words() (THE FACTS).
+    path_words() (the facts).
     """
     pairs = tuple(words)
     found = {(NEEDED, entry.text) for entry in entries if entry.tag == elf.DT_NEEDED}
@@ -376,8 +376,8 @@ def member_facts(entries: Sequence[elf.DynamicEntry], words: Iterable[tuple[str,
 def directory_problem(part: str, artifact: Path) -> tuple[str, str]:
     """Return the path on the host of one part of a run path, and the reason why the host does not give it.
 
-    The reason is an empty text for a directory that the host gives (THE RUN PATH DIRECTORIES).  The ELF reader replaces
-    $ORIGIN with the directory of the artifact (assay.readers.elf, THE DYNAMIC SECTION).
+    The reason is an empty text for a directory that the host gives (the run path directories).  The ELF reader replaces
+    $ORIGIN with the directory of the artifact (assay.readers.elf, the dynamic section).
     """
     if not part:
         return part, EMPTY_REASON
@@ -393,7 +393,7 @@ def directory_problem(part: str, artifact: Path) -> tuple[str, str]:
 
 
 def missing_directories(entries: Iterable[elf.DynamicEntry], artifact: Path) -> list[tuple[str, str, str]]:
-    """Return each part of the run path of an artifact that the host does not give (THE RUN PATH DIRECTORIES).
+    """Return each part of the run path of an artifact that the host does not give (the run path directories).
 
     Each item is the part of the run path, its path on the host and the reason.  An entry with an empty text names no
     directory.  Complexity: one stat for each part of the run path.
@@ -410,7 +410,7 @@ def missing_directories(entries: Iterable[elf.DynamicEntry], artifact: Path) -> 
 
 
 def map_facts(artifact: Path, build_dir: Path) -> set[tuple[str, str]]:
-    """Return the archive members that the link of an artifact takes from archives not in the build directory (THE MAP).
+    """Return the archive members that the link of an artifact takes from archives not in the build directory (the map).
 
     Raises:
         runner.BuildError: If the link wrote no map, or the map cannot be read
@@ -438,7 +438,7 @@ def map_facts(artifact: Path, build_dir: Path) -> set[tuple[str, str]]:
 
 
 def hardening_of(member: elf.Member, entries: Sequence[elf.DynamicEntry], is_executable: bool) -> Hardening:
-    """Return the hardening facts of one linked artifact (THE PROPERTIES).
+    """Return the hardening facts of one linked artifact (the properties).
 
     `entries` are the entries of member.dynamic(), which the caller reads one time.  Complexity: linear in the program
     headers, the dynamic entries and the bytes of the program properties.
@@ -462,13 +462,13 @@ def hardening_of(member: elf.Member, entries: Sequence[elf.DynamicEntry], is_exe
 
 
 def missing_bits(hardening: Hardening, protection: Protection) -> tuple[str, ...]:
-    """Return the name of each bit of the control-flow protection that the artifact does not have (THE CONTROL FLOW)."""
+    """Return the name of each bit of the control-flow protection that the artifact does not have (the control flow)."""
     word = hardening.features.get(protection.kind, 0)
     return tuple(name for name, bit in protection.bits if not word & bit)
 
 
 def problems_of(hardening: Hardening, kinds: frozenset[str]) -> list[Problem]:
-    """Return each property of `kinds` that the artifact does not have, with the words that tell it (THE PROPERTIES).
+    """Return each property of `kinds` that the artifact does not have, with the words that tell it (the properties).
 
     The problem of the control flow names its missing bits, and control_flow_problem() adds the inputs.
     """
@@ -513,7 +513,7 @@ def problems_of(hardening: Hardening, kinds: frozenset[str]) -> list[Problem]:
 def object_word(member: elf.Member, kind: int) -> int | None:
     """Return the word of the property KIND of the section .note.gnu.property of an object, or None with no such one.
 
-    An object has no program header, and Member.properties() then gives no property of it (THE CONTROL FLOW).
+    An object has no program header, and Member.properties() then gives no property of it (the control flow).
     Complexity: linear in the sections of the object and the bytes of its notes.
 
     Raises:
@@ -527,7 +527,7 @@ def object_word(member: elf.Member, kind: int) -> int | None:
 
 
 def archive_words(path: Path, kind: int) -> dict[str, tuple[int | None, ...]]:
-    """Return the words of the property KIND of the members of an archive, by member name (THE CONTROL FLOW).
+    """Return the words of the property KIND of the members of an archive, by member name (the control flow).
 
     An archive can hold two members with one name, and the name then gives two words.  Complexity: linear in the
     bytes of the archive.
@@ -543,7 +543,7 @@ def archive_words(path: Path, kind: int) -> dict[str, tuple[int | None, ...]]:
 
 
 class InputReader:
-    """The reader of the feature property of the inputs of the links of one build (THE CONTROL FLOW).
+    """The reader of the feature property of the inputs of the links of one build (the control flow).
 
     `archives` keeps the words of each archive that the reader read, or the error of its read.  The reader then reads
     each archive one time.
@@ -606,7 +606,7 @@ class InputReader:
 
 
 def shown_inputs(inputs: Sequence[str], words: Iterable[tuple[str, str]]) -> str:
-    """Return the inputs that an error names, with the words of THE PATHS, at most SHOWN_INPUTS."""
+    """Return the inputs that an error names, with the words of the paths, at most SHOWN_INPUTS."""
     pairs = tuple(words)
     shown = [shown_path(os.path.normpath(item), pairs) for item in inputs[:SHOWN_INPUTS]]
     rest = len(inputs) - SHOWN_INPUTS
@@ -618,7 +618,7 @@ def control_flow_cause(
 ) -> str:
     """Return the words that name the inputs of the link of an artifact with no control-flow protection.
 
-    The inputs of the map of the link give the inputs (THE CONTROL FLOW).  A map or an input that cannot be read
+    The inputs of the map of the link give the inputs (the control flow).  A map or an input that cannot be read
     gives words that tell the cause.
     """
     pairs = tuple(words)
@@ -648,7 +648,7 @@ def control_flow_cause(
 def control_flow_problem(
     problem: Problem, hardening: Hardening, artifact: Path, words: Iterable[tuple[str, str]], reader: InputReader
 ) -> Problem:
-    """Return the problem of the control flow with the inputs that removed the protection (THE CONTROL FLOW)."""
+    """Return the problem of the control flow with the inputs that removed the protection (the control flow)."""
     protection = PROTECTIONS[hardening.machine]
     return Problem(problem.kind, problem.detail + control_flow_cause(artifact, protection, words, reader))
 
@@ -657,7 +657,7 @@ def control_flow_problem(
 
 
 def kinds_of(context: runner.ElfContext) -> frozenset[str]:
-    """Return the kinds that the rule reads: each kind, or the kinds of a row `kinds` of a plant (THE PLANTS).
+    """Return the kinds that the rule reads: each kind, or the kinds of a row `kinds` of a plant (the plants).
 
     Raises:
         runner.BuildError: If a row `kinds` names a kind that the rule does not have
@@ -675,8 +675,8 @@ def kinds_of(context: runner.ElfContext) -> frozenset[str]:
 def read_build(context: runner.ElfContext, build_dir: Path) -> Reading:
     """Read each linked artifact of the build one time: its facts, its run path directories and its problems.
 
-    The rule reads the run path directories of each artifact, also with a row `kinds` of a plant (THE PLANTS).
-    Complexity: one map of each artifact, and the reads of THE MAP and THE CONTROL FLOW.
+    The rule reads the run path directories of each artifact, also with a row `kinds` of a plant (the plants).
+    Complexity: one map of each artifact, and the reads of the map and the control flow.
 
     Raises:
         runner.NotApplicable: If the build has no linked artifact, or has not made each one
@@ -733,13 +733,13 @@ def read_build(context: runner.ElfContext, build_dir: Path) -> Reading:
 
 
 def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
-    """Return True for a row with the shape of THE LEDGER: a fact of a group, with a count."""
+    """Return True for a row with the shape of the ledger: a fact of a group, with a count."""
     groups = {f"{GROUP_PREFIX}{name}" for name in (*GROUPS.values(), TOOLS)}
     return key.path in groups and key.kind in FACT_KINDS and bool(key.entity) and entry.value != rule_ledger.ADMIT_VALUE
 
 
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Return an error for each row that does not have a shape of THE LEDGER.
+    """Return an error for each row that does not have a shape of the ledger.
 
     A fact has the count 1.
     """
@@ -747,7 +747,7 @@ def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
 
 
 def fact_finding(fact: Fact) -> check_report.Finding:
-    """Return the finding of one fact of a group (THE FACTS)."""
+    """Return the finding of one fact of a group (the facts)."""
     return check_report.Finding(
         "error",
         f"{GROUP_PREFIX}{fact.group}",
@@ -761,7 +761,7 @@ def fact_finding(fact: Fact) -> check_report.Finding:
 
 
 def missing_finding(item: MissingDirectory) -> check_report.Finding:
-    """Return the error of one run path directory that the host does not give (THE RUN PATH DIRECTORIES)."""
+    """Return the error of one run path directory that the host does not give (the run path directories)."""
     named = f"{item.example} names" if item.artifacts == 1 else f"{item.example} and {item.artifacts - 1} more name"
     host_path = f" ({item.host_path})" if item.host_path != item.directory else ""
     return check_report.Finding(
@@ -778,7 +778,7 @@ def missing_finding(item: MissingDirectory) -> check_report.Finding:
 
 
 def problem_finding(problem: Problem, artifacts: Sequence[str]) -> check_report.Finding:
-    """Return the error of one problem of one or more artifacts (THE PROPERTIES)."""
+    """Return the error of one problem of one or more artifacts (the properties)."""
     subject = artifacts[0] if len(artifacts) == 1 else f"{artifacts[0]} and {len(artifacts) - 1} more artifacts: each"
     return check_report.Finding(
         "error",
@@ -792,13 +792,13 @@ def problem_finding(problem: Problem, artifacts: Sequence[str]) -> check_report.
 
 
 def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> one_set.Inspection:
-    """Read the linked artifacts of the build, and judge their facts against the set of the ledger (THE LEDGER).
+    """Read the linked artifacts of the build, and judge their facts against the set of the ledger (the ledger).
 
     Raises:
-        runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
+        runner.NotApplicable: If the rule does not apply to the build (not applicable)
         runner.BuildError: If the build cannot be read
     """
-    # A build with no build kind does not apply, also when its ledger cannot be read (NOT APPLICABLE).
+    # A build with no build kind does not apply, also when its ledger cannot be read (not applicable).
     context.kind()
     build_dir = context.build_dir if context.build_dir is not None else Path(context.root)
     if context.build_dir is not None and build_config.is_parse_build(context.build_dir):
@@ -810,7 +810,7 @@ def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> one_set.Ins
     counts = reading.counts
     found = [fact_finding(fact) for fact in reading.facts]
     verdict = rule_ledger.compare(rule, ledger, found)
-    # The ledger judges no run path directory that the host does not give and no missing property (THE LEDGER).
+    # The ledger judges no run path directory that the host does not give and no missing property (the ledger).
     properties = sorted(
         (problem_finding(problem, artifacts) for problem, artifacts in reading.problems.items()),
         key=lambda item: (item.kind, item.path),
@@ -841,7 +841,7 @@ def findings(context: runner.ElfContext) -> list[check_report.Finding]:
 
 
 def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the ledger in the tree of the context (THE LEDGER).
+    """Return the findings of the build judged against the ledger in the tree of the context (the ledger).
 
     Raises:
         runner.NotApplicable: If the rule does not apply to the build
@@ -859,9 +859,9 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
     return one_set.run_inspection(RULE, lambda: examine(rule, context), warnings_dir)
 
 
-# The facts that a write refuses with no --raise, and the reasons for --raise (THE LEDGER).
+# The facts that a write refuses with no --raise, and the reasons for --raise (the ledger).
 WRITE_POLICY = one_set.WritePolicy(
     row_problems, FACT_KINDS, RAISE_REASONS, f"each row of {RULE} is a fact of the build", "rows of link facts"
 )
-# The write of the fact rows of the build into the set (THE LEDGER, assay.guard.engines.elf.one_set).
+# The write of the fact rows of the build into the set (the ledger, assay.guard.engines.elf.one_set).
 write = one_set.writer(examine, WRITE_POLICY)

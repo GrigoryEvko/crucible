@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A health fact changes the quarantine state only from a context that
 // owns the Bg atom.  The hot foreground context has an empty row.

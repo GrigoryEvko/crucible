@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The view that the fork lends a body is the proof of its child, and it
 // ends with the body.  A body that could copy or move its view into

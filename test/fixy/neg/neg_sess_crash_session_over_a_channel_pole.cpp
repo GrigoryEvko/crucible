@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit mints a crash session over the consumer pole of an SPSC channel,
 // with a protocol of its own.  A crash session is a session of one end, and

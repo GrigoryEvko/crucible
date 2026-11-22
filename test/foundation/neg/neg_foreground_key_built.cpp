@@ -4,7 +4,7 @@
 // constructor is private, and only the owner of the producer claim and
 // the test witness may call it.
 //
-// VIOLATION: a translation unit builds the key itself and mints a
+// Violation: a translation unit builds the key itself and mints a
 // foreground context with it.
 //
 // Expected diagnostic: the key's constructor is private in this context.

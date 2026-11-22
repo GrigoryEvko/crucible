@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // combine_n consumes the children and rebuilds their parent.  A child
 // passed as an lvalue would stay live beside the rebuilt parent, so the

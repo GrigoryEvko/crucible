@@ -1,6 +1,6 @@
 """census — the translation units of one build, the files that each one reads, and the cost of each one.
 
-A UNIT
+Unit
     A unit is one compile that the build or the test run does.
       * An object of the target all: an output of the compile database that
         `ninja -t inputs all` lists.  An object that only another target
@@ -9,16 +9,16 @@ A UNIT
       * A negative fixture: a test of the build (assay.readers.ctest) whose
         command runs `utils/bin/loop fixture` (fixture_words()).  The driver
         writes the record build/neg-compile/NAME/NAME.inputs after each run,
-        and assay.core.record reads it (THE RECORDS of that module).
+        and assay.core.record reads it (the records of that module).
 
-THE FILES OF A UNIT
+Files of a unit
     The files of an object come from the dependency log of Ninja
     (assay.readers.ninja): the source and each header that its compile read.
     A ccache hit records its dependencies too.  The files of a fixture come
     from its record.  Each name resolves to its real path, and a unit counts
     one real path one time.
 
-THE COST OF A UNIT
+Cost of a unit
     The cost of an object comes from the record OUTPUT.cost of `loop step`:
     the cost block of a compile, or the last cost that the record of a ccache
     hit keeps.  That last cost is the cost of the compile that made the object
@@ -27,14 +27,14 @@ THE COST OF A UNIT
     real compile of its output, and a sum over the units is the cost of a cold
     build.  The instructions of a unit are those of its
     compiler run: the record of an object gives them also for a ccache miss
-    (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE), and the fixture
+    (utils/assay/core/meter.py, a compile through ccache), and the fixture
     driver runs the compiler directly.
 
-THE TOOLS
+Tools
     assay.readers.ninja runs the ninja of the CMake cache of the build, and
     assay.readers.ctest runs its ctest.
 
-FAILURES
+Failures
     read_census() raises NotApplicable when an input does not exist by the
     design of the build: the generator is not ninja, the build made only some
     targets, or no fixture ran in the build directory.  It raises CensusError

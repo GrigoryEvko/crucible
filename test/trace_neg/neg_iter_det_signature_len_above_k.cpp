@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: minting IterationDetector::SignatureLen with K+1 = 6 in a
 // constexpr context (boundary edge, the smallest forbidden value).

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The protocol receives a delegated endpoint whose permission set holds
 // a region whose touch does IO.  The tags of that set move to the

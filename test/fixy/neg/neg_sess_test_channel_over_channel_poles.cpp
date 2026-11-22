@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A test mints a test channel over the two poles of an SPSC channel of int,
 // with a protocol of its own that sends a long.  mint_test_channel names the

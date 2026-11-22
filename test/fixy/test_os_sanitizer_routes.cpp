@@ -1,7 +1,7 @@
 // The routes of the raw primitive in a build with ThreadSanitizer for a
-// close and for a map (THE SANITIZERS of foundation/os/Syscall.h).
+// close and for a map (the sanitizers of foundation/os/Syscall.h).
 //
-// THE CLOSE
+// Close
 //   The sanitizer keeps a state for each descriptor number.  A read or a
 //   write of the C library reads that state, and a close of the C library
 //   checks it against each use in a different thread and then clears it.  A
@@ -16,7 +16,7 @@
 //   descriptor with close(2) of the C library, as a different library of the
 //   process does.
 //
-// THE MAP
+// Map
 //   The sanitizer keeps a shadow of each address that a thread reads or
 //   writes.  A raw unmap that it does not see leaves the shadow of the range,
 //   and a raw map that gives the same range again starts with the accesses
@@ -62,7 +62,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two threads with no happens-before edge, a
 
 namespace {
 
-// Writes VALUE to the first usable byte of a region.
+// Writes value to the first usable byte of a region.
 void write_first_byte(::foundation::os::GuardedRegion& region, char value) noexcept { region.data_mut()[0] = value; }
 
 // A word that the first thread of a case sets to a value other than zero
@@ -87,11 +87,11 @@ using RelaxedWord = RelaxedCell<std::uint64_t>;
 // A file of /dev/null, open for reading only.
 using NullFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
 
-// The number of the descriptor of FILE, which the kernel gave the open.
+// The number of the descriptor of file, which the kernel gave the open.
 [[nodiscard]] int number_of(NullFile const& file) noexcept { return file.ref().abi_descriptor(); }
 
-// Takes the descriptor of FILE, and closes it with close(2) of the C library,
-// which the sanitizer intercepts.  FILE is empty after the call.
+// Takes the descriptor of file, and closes it with close(2) of the C library,
+// which the sanitizer intercepts.  The file is empty after the call.
 [[nodiscard]] bool close_through_the_c_library(NullFile&& file) noexcept {
     return ::close(std::move(file).release_to_abi()) == 0;
 }
@@ -120,7 +120,7 @@ void wait_for(RelaxedWord const& word) noexcept {
     return fixy::sanitize_path(fixy::mint_tagged<src::External>(text)).expect("each test path passes the sanitizer");
 }
 
-// A file of /dev/null under DEVICES, which must open.
+// A file of /dev/null under devices, which must open.
 [[nodiscard]] NullFile open_null(BgCtx const& ctx, fs::DirectoryHandle const& devices) {
     return fs::mint_file_at<fs::read_only>(ctx, devices.ref(), "null").expect("/dev/null opens for a read").consume();
 }
@@ -129,10 +129,10 @@ void wait_for(RelaxedWord const& word) noexcept {
 // keeps before it gives up.
 constexpr std::size_t kOpenTries = 64;
 
-// Opens /dev/null until the descriptor has FIRST_NUMBER, and keeps each
+// Opens /dev/null until the descriptor has the first number, and keeps each
 // lower descriptor open while it tries.  The kernel gives each open the
 // lowest free number, so a number that a different part of the process freed
-// below FIRST_NUMBER comes first.  It closes the descriptor with FIRST_NUMBER
+// below the first number comes first.  It closes the descriptor with the first number
 // through the C library, and gives true when it found and closed it.
 [[nodiscard]] bool open_again_and_close(BgCtx const& ctx, fs::DirectoryHandle const& devices, int first_number,
                                         std::size_t tries_left) {
@@ -143,7 +143,7 @@ constexpr std::size_t kOpenTries = 64;
     return open_again_and_close(ctx, devices, first_number, tries_left - 1);
 }
 
-// THE CLOSE: a close of the C library after a raw close of the same number
+// The close: a close of the C library after a raw close of the same number
 // reports no race.
 [[nodiscard]] int check_reused_number_keeps_no_state() {
     BgCtx const ctx{eff::testing::bg()};
@@ -245,7 +245,7 @@ constexpr std::uint8_t kRangeTakenInEachRound = 12;
 // end, such as one whose second thread does not start, ends at the limit.
 constexpr ::fixy::process::WaitLimit kMapCaseLimit{120000};
 
-// THE MAP: a write to a new map of a range that a raw unmap gave back reports
+// The map: a write to a new map of a range that a raw unmap gave back reports
 // no race with a write to the old map.  The rounds run in a child process,
 // and a report of the sanitizer ends the child with a code other than zero.
 // The fork comes after each thread of the close case joined, so the child

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A class with no friendship tries to reach the door of the session
 // mints by deriving from it.  A member of that class could then call a

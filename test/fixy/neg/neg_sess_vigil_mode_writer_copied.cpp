@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The mode cell has one writer at each time.  The writer is linear: a copy
 // would give the cell a second writer, so the owner could write while the

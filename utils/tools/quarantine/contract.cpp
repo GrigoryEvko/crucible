@@ -8,7 +8,7 @@
 // source root, of each class.  Each specifier that no region opts out is an
 // error, in each mode.
 //
-// THE HOOKS
+// Hooks
 //     PLUGIN_FINISH_DECL     each declaration outside a template, also a
 //                            local one.
 //     PLUGIN_FINISH_PARSE_FUNCTION
@@ -16,7 +16,7 @@
 //                            lambda and a member of a local class.
 //     the end of the parse   one walk of every namespace, also of a library
 //                            namespace that a file under the root opens again
-//                            (THE HOOKS OF THE UNIT of plugin.cpp).
+//                            (the hooks of the unit of plugin.cpp).
 //                            It finds a template and a member of a class
 //                            template that has no definition.
 //

@@ -1,6 +1,6 @@
 """process-wide-state — each `static` or `thread_local` object is one for each process, or a ledger row tells why not.
 
-THE RULE
+Rule
     The build compiles with -fvisibility=hidden.  Each shared library that
     compiles a header then holds its own copy of each inline variable and of
     each static of an inline function of that header.  crucible_native.py
@@ -15,7 +15,7 @@ THE RULE
 
     An object is a `static` or `thread_local` variable that can change, and a
     definition.  The quarantine plugin reads each object
-    (utils/tools/quarantine/declaration.cpp, THE RULE process-wide-state):
+    (utils/tools/quarantine/declaration.cpp, the rule process-wide-state):
       unmarked-static          an object with no marker
       marker-in-template       a marked object of a template.  An
                                instantiation takes the smallest visibility
@@ -41,7 +41,7 @@ THE RULE
     marker with two libraries that dlopen loads with RTLD_LOCAL.  The rule
     reads the lines in the scope of its row of utils/registry.txt.
 
-THE LEDGER
+Ledger
     A row of utils/ledgers/process-wide-state.txt admits one object with no
     marker: `PATH | unmarked-static | admit | ENTITY | REASON`.  The entity is
     the full name of the variable, with its namespaces and classes, and
@@ -81,7 +81,7 @@ ACTIONS = {
 
 # The kinds of an object with static storage duration that holds a thread_bound class, and of an object with static
 # or thread storage duration that reaches a loan key or a keyed owner, are compile errors in each build and each mode
-# (THE THREAD-BOUND STATICS and THE LOAN-KEY STATICS of utils/tools/quarantine/declaration.cpp), and no ledger row
+# (the thread-bound statics and the loan-key statics of utils/tools/quarantine/declaration.cpp), and no ledger row
 # admits them.
 REFUSED_KINDS = frozenset({"thread-bound-static", "loan-key-static"})
 

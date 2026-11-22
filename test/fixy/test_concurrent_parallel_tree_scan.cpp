@@ -77,8 +77,8 @@ void test_scans_on_each_thread_count() {
 }
 
 // Each output of the parallel scan and of the scan of one thread has the
-// output bits of the scan of one thread: the canonical NaN for a NaN (THE
-// VALUES OUTSIDE THE BOUND of foundation/core/Reduce.h).
+// output bits of the scan of one thread: the canonical NaN for a NaN (the
+// values outside the bound of foundation/core/Reduce.h).
 void check_canonical_outputs(View<float const> parallel, View<float const> single) noexcept {
     for (auto const [left, right] : parallel.walk().try_zip(single.walk()).expect("the two runs have one count")) {
         CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::float_bits(*left) == ::crucible::test::output_bits(*right));
@@ -108,7 +108,7 @@ void check_nan_scans(View<float const> all) noexcept {
 // scan each get the elements of one grain or more.
 constexpr std::size_t kTwoGrains = 2 * ::fixy::concurrent::parallel_tree_grain + 1;
 
-// THE INPUT OF A SCAN: a View of the run of out, shifted by one element,
+// The input of a scan: a View of the run of out, shifted by one element,
 // shares elements with out at a shift.  With no test of the overlap, shard 0
 // reads in[16383], which is the element out[16384] that shard 1 writes.  So
 // the scan ends the process before a shard starts.
@@ -145,7 +145,7 @@ void scan_shifted_input() {
 }
 
 // The type route: an input that is a ViewMut of another frame proves by its
-// brand that it shares no element with out (THE ALIAS PROOF of
+// brand that it shares no element with out (the alias proof of
 // foundation/core/Frame.h), so the scan makes no test of the overlap.  The
 // result has the bits of the scan of one thread.
 [[nodiscard]] bool scan_branded_input_matches() {

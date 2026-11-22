@@ -4,13 +4,13 @@
 line.  Exit 0 when each case holds, else 1.
 
 The cases plant the plan of `loop test`, its JUnit report and the records of
-the tests in two build directories.  The report must find each kind of THE
-FINDINGS: a missed test, an unplanned test, a shared key that ran again, and
+the tests in two build directories.  The report must find each kind of the
+findings: a missed test, an unplanned test, a shared key that ran again, and
 a test with no shared key.  The call cases plant call profiles, and the
-report must give the totals of THE CALL PROFILES.  The line cases plant a
+report must give the totals of the call profiles.  The line cases plant a
 source file and the rows of its lines and of the calls of its lines.  The
 report must give the table of each line, and it must expand a hot line into
-the table of its callee (THE LINES).
+the table of its callee (the lines).
 """
 
 import json
@@ -69,9 +69,9 @@ def plant_profile(
     lines: Sequence[list[object]] = (),
     calls: Sequence[list[object]] = (),
 ) -> None:
-    """Write one planted call profile of one second of wall time (THE RECORD of assay.core.calls).
+    """Write one planted call profile of one second of wall time (the record of assay.core.calls).
 
-    With rows of `lines` and `calls`, the profile has the mode of the lines (THE LINES of assay.core.calls).
+    With rows of `lines` and `calls`, the profile has the mode of the lines (the lines of assay.core.calls).
     """
     document = {
         "format": call_profile.FORMAT,
@@ -90,7 +90,7 @@ def plant_profile(
 
 
 def audit_cases(expect: testing.Expect) -> None:
-    """Check the findings of two planted build directories (THE FINDINGS of assay.loop.audit)."""
+    """Check the findings of two planted build directories (the findings of assay.loop.audit)."""
     guard = affected.KIND_GUARD
     plan = [
         affected.PlannedTest("same_key", guard, affected.REASON_CHANGED, "key-one", False),
@@ -146,7 +146,7 @@ def audit_cases(expect: testing.Expect) -> None:
 
 
 def calls_cases(expect: testing.Expect) -> None:
-    """Check the totals of planted call profiles (THE CALL PROFILES of assay.loop.audit)."""
+    """Check the totals of planted call profiles (the call profiles of assay.loop.audit)."""
     # The masters of the planted profiles are in /tree/utils/bin.  /tree/utils is then the directory of the package.
     package = "/tree/utils/assay/core/rows.py"
     import_row = ["<frozen importlib._bootstrap>", 1, audit.IMPORT_FUNCTION, 3, 1, 0.01, 0.25]
@@ -197,7 +197,7 @@ def callee():
 
 
 def lines_cases(expect: testing.Expect) -> None:
-    """Check the tables of the lines and the expansion of a hot line into its callee (THE LINES of assay.loop.audit)."""
+    """Check the tables of the lines and the expansion of a hot line into its callee (the lines of assay.loop.audit)."""
     with tempfile.TemporaryDirectory(prefix="assay-audit-") as scratch:
         utils = Path(scratch) / "utils"
         source = utils / "assay" / "core" / "planted.py"

@@ -81,7 +81,7 @@ enum class FlushRefusal : uint8_t {
 // ring held at the call.
 using FlushResult = ::fixy::Result<::fixy::Unit, FlushRefusal>;
 
-// The policy of a job of run_on_publish_stage (THE CLOSURE OF A JOB of
+// The policy of a job of run_on_publish_stage (the closure of a job of
 // BackgroundThread): the caller waits while the job runs on the thread of the
 // publish stage, and the door calls the job one time.
 inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundation::closure::Crossing::SoleThread,
@@ -113,7 +113,7 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // of the statement reads: bind_ring, bind_meta_log, set_numerics, start,
 // stop, run_on_publish_stage, compute_memory_plan, run_in_row and
 // build_trace_from.  The check exempts this one class until the keyed doors
-// of the owner-key member series replace those doors (THE EXEMPTION of
+// of the owner-key member series replace those doors (the exemption of
 // foundation/Transfer.h).
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
@@ -349,7 +349,7 @@ public:
     // reference, a pointer or a part of a class.  So through the view a job
     // reaches no state of another stage.
     //
-    // THE CLOSURE OF A JOB.  The door checks the closure of the job under
+    // Closure of a job.  The door checks the closure of the job under
     // publish_job_policy (foundation/Closure.h).  The caller waits while the
     // job runs, so the job is the one user of each borrow that it captures.
     // Each value that the job holds crosses to the thread of the stage, so it
@@ -357,7 +357,7 @@ public:
     // refuses.  The value of the job crosses back to the caller, so it is
     // Sendable too.
     //
-    // THE LIFE OF A REGION.  The job of a rollback gives the restored region
+    // Life of a region.  The job of a rollback gives the restored region
     // to the foreground as a Published region, which holds no claim on the
     // memory of the region.  No sweep frees the region between the end of
     // the job and the write of the holders of the foreground, by this order:
@@ -898,7 +898,7 @@ public:
         }
 
         ::fixy::HeapArray<RegionLink> slots_;
-        // The publish stage is the one writer of the count (THE WRITER OF A
+        // The publish stage is the one writer of the count (the writer of a
         // COUNTER of fixy/Mutation.h), so push reads it with relaxed order.
         struct TotalWriter final {};
         ::fixy::AtomicMonotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>> total_ =
@@ -915,13 +915,13 @@ public:
     // A one-way signal for a single run() invocation.  start() re-arms it
     // under quiescence before launching the next pipeline.
     // It is mutable, because the const door rearm_stop writes it, and two
-    // threads can write the flag (THE DOORS OF A SYNCHRONIZED CLASS of
+    // threads can write the flag (the doors of a synchronized class of
     // foundation/Transfer.h).
     alignas(64) mutable ::fixy::handle::OneShotFlag stop_requested;
 
     // Takes the stop signal down for the next run.  The proof of quiescence
     // comes from the thread of the pipeline, so a call while that thread runs
-    // ends the process (THE QUIESCENCE OF AN OWNER of
+    // ends the process (the quiescence of an owner of
     // fixy/os/OwnedThread.h).  A test that runs run_in_row on its own
     // thread calls it between two runs.  The door writes only the flag, a
     // cell that two threads can write, so it is const.
@@ -968,8 +968,8 @@ public:
     // that never started has no ring, holds no op, and gives Unit.
     //
     // The publish stage notifies the event count after each count, and the
-    // pipeline thread notifies it after the stop, so no wake is lost (THE
-    // PROTOCOL of fixy/concurrent/EventCount.h).  A region callback or a job
+    // pipeline thread notifies it after the stop, so no wake is lost (the
+    // protocol of fixy/concurrent/EventCount.h).  A region callback or a job
     // of the publish stage must not flush: it would wait on its own stage.
     //
     // The head of the ring counts each op that the ring ever took, and the
@@ -978,7 +978,7 @@ public:
     // ops that it took itself.
     //
     // The flush reads atomic cells and parks on the event count, which two
-    // threads can write, so it is const (THE DOORS OF A SYNCHRONIZED CLASS of
+    // threads can write, so it is const (the doors of a synchronized class of
     // foundation/Transfer.h).
     template <class Ctx>
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
@@ -1032,7 +1032,7 @@ public:
     // request one point.
     //
     // The three requests write only atomic cells, which two threads can
-    // write, so they are const (THE DOORS OF A SYNCHRONIZED CLASS of
+    // write, so they are const (the doors of a synchronized class of
     // foundation/Transfer.h).
     void request_restart(uint64_t ops_before) const noexcept {
         (void)requested_reset_.try_advance(StreamPoint::restart_at(ops_before));
@@ -1084,7 +1084,7 @@ private:
     // producer writes it, and the detect stage reads it at each reset that it
     // applies.
     mutable ::fixy::Atomic<NumericsHash> requested_numerics_{compute_numerics_hash(NumericsPolicy{}, EagerNumerics{})};
-    // The detect stage is the one writer of the two below (THE WRITER OF A
+    // The detect stage is the one writer of the two below (the writer of a
     // COUNTER of fixy/Mutation.h).
     struct AppliedResetWriter final {};
     ::fixy::AtomicMonotonic<StreamPoint, ::fixy::SoleWriterProof<BackgroundThread, AppliedResetWriter>> applied_reset_ =
@@ -1677,8 +1677,8 @@ public:
                   "row of fixy::BgLoadCtx.  Adding or removing an atom changes the context every site that runs "
                   "this thread must hand in.");
 
-    // The proof that no pipeline thread of this object runs (THE QUIESCENCE
-    // OF AN OWNER of fixy/os/OwnedThread.h).  A run of the pipeline on a
+    // The proof that no pipeline thread of this object runs (the quiescence
+    // of an owner of fixy/os/OwnedThread.h).  A run of the pipeline on a
     // thread of the caller, a build of a trace with no pipeline and a read of
     // the state of a stage take it.  A call while the pipeline thread of
     // start() runs ends the process.
@@ -1833,7 +1833,7 @@ public:
                         ::fixy::View<TensorSlot> slots) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 private:
-    // The stop hook of the pipeline thread (THE THREAD OF AN OWNER of
+    // The stop hook of the pipeline thread (the thread of an owner of
     // fixy/os/OwnedThread.h).  It signals the drain stage to stop, and it does
     // not join.  The stage reads the signal at the end of its sleep.
     void request_stop_() noexcept { stop_requested.signal(); }

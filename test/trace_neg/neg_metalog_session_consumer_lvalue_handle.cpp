@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The session owns the channel handle, so mint_metalog_consumer_session
 // takes it by move.  This call passes the handle as an lvalue, which would

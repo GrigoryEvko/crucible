@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The payloads chain, and each stage fits its own context.  The
 // coordinator is what fails.  One stage was minted under the background

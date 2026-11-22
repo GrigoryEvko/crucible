@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The factory's parameters are the body's own handle types, spelled from
 // the body's signature rather than deduced from the arguments, so a

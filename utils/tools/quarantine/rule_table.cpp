@@ -1,12 +1,12 @@
 // The reader of the rule table, and of the list of the headers that cannot
-// compile alone (THE SENTINEL of plugin.h).  rows.h reads the rows grammar of
+// compile alone (the sentinel in plugin.h).  rows.h reads the rows grammar of
 // utils/assay/core/rows.py, and this file reads the schema of the rule table
 // on those rows, as utils/assay/core/ruletable.py does.  The plant and the
 // control directories of the rule quarantine in utils/plants/quarantine/ give
 // the two readers the same tables, and each reader must give the same verdict
 // at the same line.
 //
-// THE SCHEMA
+// Schema
 //     The first word of a row is its kind, and the head comment of the table
 //     gives the words of each kind.  A row has at most one cell, such as the
 //     reason of an admit row or of a home row.  Only a witness row has two
@@ -23,13 +23,13 @@ namespace crucible_plugin {
 
 namespace {
 
-// The code point of the first white-space character of TEXT that is not a
-// space or a tab, or -1 when TEXT holds no such character.  The characters are
+// The code point of the first white-space character of text that is not a
+// space or a tab, or -1 when text holds no such character.  The characters are
 // the characters of Python str.isspace(): the ASCII control characters 0x0B to
 // 0x0D and 0x1C to 0x1F, and the UTF-8 encodings of U+0085, U+00A0, U+1680,
 // U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F and U+3000.  A lead byte of
 // UTF-8 is never a continuation byte, so a byte sequence below names its code
-// point only.  Complexity: linear in the length of TEXT.
+// point only.  Complexity: linear in the length of text.
 long white_space_code(const std::string& text) {
     auto byte_at = [&text](std::size_t index) -> unsigned {
         return index < text.size() ? static_cast<unsigned char>(text[index]) : 0U;
@@ -62,7 +62,7 @@ long white_space_code(const std::string& text) {
     return -1;
 }
 
-// The error of a row that holds the white-space character CODE.
+// The error of a row that holds the white-space character code.
 // ruletable.white_space_message() gives the same text.
 std::string white_space_message(long code) {
     std::string hex;  // at least four upper-case digits, as the format U+%04X gives
@@ -127,7 +127,7 @@ bool is_digits(const std::string& text) {
 // same value.
 constexpr int kMaxNumber = INT_MAX;
 
-// Reads the number TEXT, a run of digits (is_digits), into VALUE.  Returns
+// Reads the number text, a run of digits (is_digits), into value.  Returns
 // false when the value is more than kMaxNumber.  crucible_rows::number checks
 // each step before it adds a digit, so no step overflows.
 bool number_value(const std::string& text, int& value) {
@@ -185,7 +185,7 @@ bool is_identifier(const std::string& text) {
     return true;
 }
 
-// The words of one admit row after the row kind: ENTRY, then each restriction
+// The words of one admit row after the row kind: entry, then each restriction
 // one time at most, in any order, and `in PATH...` last.  Returns the error of
 // the row when a restriction is unknown, repeated, malformed or does not fit
 // the entry, and an empty text when the row obeys the format.
@@ -249,7 +249,7 @@ std::string parse_admit(const std::vector<std::string>& args, AdmitRow& row) {
     return {};
 }
 
-// True when TEXT is a qualified name: identifiers that "::" divides, with no
+// True when text is a qualified name: identifiers that "::" divides, with no
 // leading "::".
 bool is_qualified_name(const std::string& text) {
     std::size_t start = 0;
@@ -265,17 +265,17 @@ bool is_qualified_name(const std::string& text) {
     }
 }
 
-// True when TEXT is the path of one file of the source root, not of the build
+// True when text is the path of one file of the source root, not of the build
 // directory.
 bool is_file_path(const std::string& text) {
     return is_plain_path(text) && text.back() != '/' && !has_prefix(text, kBuildPrefix);
 }
 
-// The full name of the class TYPE: the text with each template argument list
-// removed.  Returns an empty text when the angle brackets of TYPE do not pair,
+// The full name of the class type: the text with each template argument list
+// removed.  Returns an empty text when the angle brackets of type do not pair,
 // or when the remaining text is not identifiers with "::" between them.
 // ruletable.witness_name() gives the same answer.  Complexity: linear in the
-// length of TYPE.
+// length of type.
 std::string witness_name(const std::string& type) {
     std::string kept;
     int depth = 0;
@@ -313,7 +313,7 @@ constexpr const char* kHomeFormat =
     "| REASON'.  CLASS is a class of the rule home, ENTITY is a qualified name or one name, and the reason is "
     "necessary";
 
-// The words of one home row or home-args row after the row kind: CLASS, ENTITY
+// The words of one home row or home-args row after the row kind: class, entity
 // and the paths.  Returns the error of the row, or an empty text when the row
 // obeys the format.
 std::string parse_home(const std::vector<std::string>& args, bool is_args, HomeRow& row) {
@@ -374,8 +374,8 @@ constexpr const char* kLinearDoorFormat =
     "a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of "
     "its frame, and a reason";
 
-// The kind of a use outside the sites of an owner row of RULE, as the row
-// spells it, or false when RULE has no such kind.
+// The kind of a use outside the sites of an owner row of rule, as the row
+// spells it, or false when rule has no such kind.
 bool owner_kind_of(Rule rule, const std::string& text, Kind& kind) {
     struct OwnerKind {
         Rule rule;
@@ -398,8 +398,8 @@ bool owner_kind_of(Rule rule, const std::string& text, Kind& kind) {
     return false;
 }
 
-// The words of one owner row after the row kind: RULE, KIND, ENTITY, the paths
-// and the field by=FUNCTION.  Returns the error of the row, or an empty text
+// The words of one owner row after the row kind: rule, kind, entity, the paths
+// and the field by=function.  Returns the error of the row, or an empty text
 // when the row obeys the format.
 std::string parse_owner(const std::vector<std::string>& args, OwnerRow& row) {
     if (args.size() < 3) {
@@ -440,8 +440,8 @@ std::string parse_owner(const std::vector<std::string>& args, OwnerRow& row) {
     return {};
 }
 
-// The namespace of a sealed PREFIX: its path after include/, one name for each
-// directory.  Returns an empty list when PREFIX is no directory under include/
+// The namespace of a sealed prefix: its path after include/, one name for each
+// directory.  Returns an empty list when prefix is no directory under include/
 // or a part is no identifier.  ruletable.seal_namespace() gives the same
 // answer.
 std::vector<std::string> seal_namespace(const std::string& prefix) {
@@ -468,7 +468,7 @@ constexpr const char* kSealFormat =
     "a seal row is 'seal ROOT PREFIX...', with one ROOT file of the source root and each PREFIX a directory under "
     "include/ whose parts are identifiers";
 
-// The bytes of the file at PATH, or false after an error.  WHAT names the file
+// The bytes of the file at path, or false after an error.  what names the file
 // in the error, such as "the rule table".
 bool read_bytes(const std::string& path, const char* what, std::string& text) {
     FILE* stream = fopen(path.c_str(), "rb");
@@ -496,7 +496,7 @@ constexpr const char* kNotStandaloneFormat =
 
 }  // namespace
 
-// Reads the rule table at PATH into state.table.  The schema and each check
+// Reads the rule table at path into state.table.  The schema and each check
 // are those of utils/assay/core/ruletable.py.  Returns false after an error.
 // Complexity: O(rows * rows of the same kind), for the checks of a second row.
 bool load_rule_table(const std::string& path) {
@@ -960,8 +960,8 @@ bool load_rule_table(const std::string& path) {
     return true;
 }
 
-// Reads the list of the headers that cannot compile alone at PATH into
-// state.not_standalone_headers (THE SENTINEL of plugin.h).  test/layer/
+// Reads the list of the headers that cannot compile alone at path into
+// state.not_standalone_headers (the sentinel in plugin.h).  test/layer/
 // CMakeLists.txt checks that each header exists and has one row, so this
 // reader takes the words of each row.  Returns false after an error.
 // Complexity: linear in the bytes of the list.
@@ -986,7 +986,7 @@ bool load_not_standalone(const std::string& path) {
 }
 
 // Reads the count rows of the ledger utils/ledgers/RULE.txt of each rule of
-// kCountedLineRules under the source root (THE COUNTED LINES of plugin.cpp).
+// kCountedLineRules under the source root (the counted lines in plugin.cpp).
 // A row `PATH | KIND | COUNT | ENTITY | REASON` above zero gives the key
 // "RULE KIND PATH".  The rows `format`, `rule` and `reason` have more than one
 // word before their cells, so the reader skips them.  A tree with no such

@@ -1,6 +1,6 @@
 """value — the record class of the modules that a step meter imports.
 
-THE COST
+Cost
     CMake and ctest start a step meter for each compile, each link, each test
     and each fixture.  The step meters are `loop step`, `loop test-step` and
     `loop fixture`.  The modules that the import of a step meter adds are a
@@ -11,7 +11,7 @@ THE COST
     derives from Value, and not from a frozen dataclass.  This module imports
     no module.
 
-THE VALUE
+Value
     The fields of a value are the names of the __match_args__ of its class, in
     their sequence, as for a dataclass.  A subclass gives its fields to
     Value.__init__ in that sequence.  A value is equal to a value of the same
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 
 class Value:
-    """A record with a constant set of fields, equal to a record of its class with equal fields (THE VALUE)."""
+    """A record with a constant set of fields, equal to a record of its class with equal fields (the value rules)."""
 
     __slots__ = ()
     __match_args__: tuple[str, ...] = ()
@@ -49,7 +49,7 @@ class Value:
             object.__setattr__(self, name, field)
 
     def __setattr__(self, name: str, value: object) -> NoReturn:
-        """Refuse each change of a field (THE VALUE).
+        """Refuse each change of a field (see the value rules of the module).
 
         Raises:
             AttributeError: Always
@@ -57,7 +57,7 @@ class Value:
         raise AttributeError(f"the field {name} of a {type(self).__name__} does not change after its constructor")
 
     def __delattr__(self, name: str) -> NoReturn:
-        """Refuse each deletion of a field (THE VALUE).
+        """Refuse each deletion of a field (see the value rules of the module).
 
         Raises:
             AttributeError: Always

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The address form of register_external takes an ExternalSlotId, which only
 // mint_external_slot gives, for a slot that the plan marks external.  A plain

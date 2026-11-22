@@ -4,7 +4,7 @@
 label is invisible to that command, so the gate reports a pass and never runs
 the guard.  On 2026-05 twelve of 42 script tests had no label.
 
-THE INPUT
+Input
     The part reads the registered tests of a configured build directory
     through the reader assay.readers.ctest.  CMake has evaluated each
     function, loop, subdirectory and property call, so the command and the
@@ -14,7 +14,7 @@ THE INPUT
     cannot read, or with a build that registers no test of a master
     (registered_tests()).
 
-THE PART
+Part
     A test is a script test when one argument of its command is a master of
     ROOT/utils/bin/ (guard, loop or setup), or a path under
     ROOT/utils/scripts/.  The test launcher `loop test-step` and its options
@@ -38,7 +38,7 @@ THE PART
                     A witness copies each plant to a scratch repository and reads only the plant.  Such a test waits
                     for the eight parts of the fill with no use
       environment   a test behind the test launcher with a property ENVIRONMENT that sets a variable that the
-                    launcher drops (assay.loop.teststep, THE ENVIRONMENT).  The test does not get the variable.
+                    launcher drops (assay.loop.teststep, the environment).  The test does not get the variable.
                     An item of ENVIRONMENT_MODIFICATION with such a variable is an error too, unless its operation
                     is `unset` or `reset`
       unjudged      a test with no test launcher and no fixture driver in its command: no word of the command is
@@ -47,9 +47,9 @@ THE PART
                     to a test of an executable target, and crucible_script_test() of cmake/TestLauncher.cmake
                     gives it to a script test
 
-THE PARTS OF A RULE
+Parts of a rule
     A test of `guard check --rule ID --part K/N` runs part K of N of the
-    files of the rule (THE PARTS of assay.guard.engines.meta.runner).  The
+    files of the rule (the parts of assay.guard.engines.meta.runner).  The
     parts of one count N are disjoint, and together they hold each file.  A
     lost part thus leaves files with no check, and the run of each other
     part gives no sign of it.  The part reads the tests with the label
@@ -97,7 +97,7 @@ TREE_READER = "assay.readers.tsast"
 CMAKE_TIMEOUT_S = 300.0
 # The operations of ENVIRONMENT_MODIFICATION that give the test no value of a variable.
 CLEARING_OPERATIONS = ("unset", "reset")
-# The option of a part of the files of a rule, and the kinds of THE PARTS OF A RULE, which no ledger row admits.
+# The option of a part of the files of a rule, and the kinds of the parts of a rule, which no ledger row admits.
 PART_OPTION = "--part"
 BAD_PART = "bad-part"
 MISSING_PART = "missing-part"
@@ -215,7 +215,7 @@ def implementing_module(rule: rule_registry.Rule, root: Path) -> str | None:
 
 
 def unread_fixture(test: ctest_reader.TestEntry, path: str, line: int, why: str) -> check_report.Finding:
-    """Return the error of a test with FIXTURES_REQUIRED tsast_trees that reads no tree of the tree (THE PART)."""
+    """Return the error of a test with FIXTURES_REQUIRED tsast_trees that reads no tree of the tree (the part)."""
     message = (
         f"the test {test.name} requires the fixture {TREE_FIXTURE}, and {why}.  It waits for the fill of the tree "
         f"cache with no use.  Remove FIXTURES_REQUIRED {TREE_FIXTURE}"
@@ -226,7 +226,7 @@ def unread_fixture(test: ctest_reader.TestEntry, path: str, line: int, why: str)
 def environment_findings(test: ctest_reader.TestEntry, root: Path) -> list[check_report.Finding]:
     """Return an error for each variable that a property gives a test behind the launcher and the launcher drops.
 
-    THE PART gives the kind environment.  Complexity: linear in the items of the two properties.
+    The part gives the kind environment.  Complexity: linear in the items of the two properties.
     """
     command = list(test.command)
     if test_launcher.launched(command) == command:
@@ -256,7 +256,7 @@ def dropped_variable(test: ctest_reader.TestEntry, path: str, line: int, prop: s
 
 @dataclass(frozen=True, slots=True)
 class PartRun:
-    """One test that runs part K of N of a rule (THE PARTS OF A RULE): the part, the test and its place."""
+    """One test that runs part K of N of a rule (the parts of a rule): the part, the test and its place."""
 
     index: int
     count: int
@@ -271,7 +271,7 @@ def part_words(words: Sequence[str]) -> list[str]:
 
 
 def part_findings(parts: dict[str, list[PartRun]]) -> list[check_report.Finding]:
-    """Return an error for each rule with a part K of N that no test runs, or with two counts (THE PARTS OF A RULE).
+    """Return an error for each rule with a part K of N that no test runs, or with two counts (the parts of a rule).
 
     `parts` gives the part runs of the tests with the label ci_guard for each rule.  Complexity: linear in the part
     runs and in the counts N.
@@ -309,7 +309,7 @@ def part_findings(parts: dict[str, list[PartRun]]) -> list[check_report.Finding]
 
 
 def script_run(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]] | None:
-    """Return the master and the words of a script test (THE PART), or None for each other test.
+    """Return the master and the words of a script test (the part), or None for each other test.
 
     The driver of a negative fixture is not a script test.
     """
@@ -320,7 +320,7 @@ def script_run(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]
 
 
 def registered_tests(context: MetaContext) -> tuple[ctest_reader.TestEntry, ...]:
-    """Return the tests that ctest registers in the build of a context (THE INPUT).
+    """Return the tests that ctest registers in the build of a context (the input).
 
     Raises:
         NotApplicable: If the context gives no build directory, ctest cannot read the build, or no test of the build

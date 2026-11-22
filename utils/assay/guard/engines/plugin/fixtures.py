@@ -1,26 +1,26 @@
 """fixtures — the census of the negative fixtures of a build, which the rule quarantine counts with its objects.
 
-THE CENSUS
+Census
     The fixture driver keeps the quarantine plugin in the compile of each
     negative fixture.  The record of each run holds the findings of the
     plugin in the source of the fixture, and the stamp argument of the plugin
     (assay.loop.fixture.store, The quarantine plugin).  The census of a build
     is the census of each fixture with a compile that loads the plugin
     (assay.readers.census.fixtures_of, assay.core.record).  Each finding of a
-    census of a kind of THE KINDS becomes one finding line of its source, as
+    census of a kind of the kinds becomes one finding line of its source, as
     a line of a section does (assay.readers.sections.Finding).  The same line
     of two fixtures with one source counts one time.  A line of the kind
     region gives the first line and the reason of a region of the source,
     with one space between each two words of the reason.
 
-THE SOURCE
+Source
     The plugin names each file relative to its argument root=, the source
     root of the build.  The census names the source of a fixture in the same
     way, relative to the argument root= of the compile commands of the
     fixtures.  A check from a different checkout then gives the keys of the
     build.  A planted build names its sources relative to its root.
 
-THE KINDS
+Kinds
     The rule quarantine counts each kind of its row of the registry in the
     census, and the four kinds of PROBE_KINDS: detail-use, lifetime-start,
     unchecked-use and door-use.  For its probe, a fixture can use a private
@@ -35,18 +35,18 @@ THE KINDS
     specialization-home, or the kind outside-home, because a fixture with
     such a finding probes the rule of that kind.
 
-NO FIXTURE RUN
+No fixture run
     A build with no record of a fixture has no census, and the rule counts
     its objects only.  A parse build has no fixture run
     (assay.core.configuration.is_parse_build).  The context then lists no
     test and reads no dependency log.  Such a build refuses no row of a
     directory of fixtures, and a census is not necessary.  A reduce takes the
-    largest count over its builds (THE REDUCE of assay.core.ledger).  Thus a
+    largest count over its builds (the reduce of assay.core.ledger).  Thus a
     reduce in which no build of objects has a fixture run removes each row of
     a fixture.  reduce_refusal() refuses such a reduce when the build has
     fixtures with the plugin.
 
-THE PROBLEMS
+Problems
     For each fixture with a compile that loads the plugin, these conditions
     are problems:
       * the fixture has no record, and a different fixture has one
@@ -68,9 +68,9 @@ THE PROBLEMS
     too (unsettled_fixtures()), so a run of the base reads only records of
     the base.  A stale record is no problem of the rule, because a full run
     of `loop test` runs such a fixture again by its inputs.  An opted-out line with no region at or before its line is a
-    problem of the rule quarantine (THE OPT-OUT REGIONS of that module).
+    problem of the rule quarantine (the opt-out regions of that module).
 
-THE FILES OF THE FIXTURES
+Files of the fixtures
     The census of a fixture holds the findings of its source only.  A file
     that only the compiles of fixtures read then has findings that no row
     counts.  file_problems() reads the files of each unit
@@ -86,7 +86,7 @@ THE FILES OF THE FIXTURES
     only some targets.  The function then prints the reason and gives no
     error.
 
-THE CONTEXT
+Context
     FixtureContext is the context of the rule quarantine.  It reads the
     census of the objects through the context of the engine (base), or it
     keeps the census of a plant.  objects() gives that census.  census()
@@ -94,7 +94,7 @@ THE CONTEXT
     a census, for the summary line.  part() gives the census of the fixtures.
     The context reads each census one time.
 
-THE PLANTS
+Plants
     A plant of the rule quarantine can name a file of planted fixtures with
     a row `fixtures FILE` of its manifest (assay.guard.engines.plugin.witness).
     The rows of FILE (the rows grammar of assay.core.rows):
@@ -108,12 +108,12 @@ THE PLANTS
         read NAME | FILE
                 The compile of the fixture NAME reads FILE, a path of the
                 tree.  The name all gives a file that an object of the
-                target all reads (THE FILES OF THE FIXTURES)
+                target all reads (the files of the fixtures)
         read stamps | DIRECTORY
                 DIRECTORY, a path of the tree, is the directory of the mode
                 stamps that an argument stamps= of the plugin names
         parse
-                The planted build is a parse build (NO FIXTURE RUN)
+                The planted build is a parse build (no fixture run)
 
 Complexity: linear in the fixtures of the build, the findings of their records and the files of the units.
 """
@@ -136,20 +136,20 @@ from assay.readers import sections as plugin_sections
 
 # The rule that counts the census (assay.guard.engines.plugin.quarantine).
 RULE = "quarantine"
-# The kinds of a probe that the rule counts in the census, and the rule of the registry that gives each one (THE KINDS).
+# The kinds of a probe that the rule counts in the census, and the rule of the registry that gives each one (the kinds).
 PROBE_KINDS = {
     "detail-use": "owners",
     "lifetime-start": "owners",
     "unchecked-use": "owners",
     "door-use": "owners",
 }
-# The census stamp of a planted fixture with no record (THE PLANTS).
+# The census stamp of a planted fixture with no record (the plants).
 MISSING = "missing"
-# The name of a read row of a plant for a file that an object of the target all reads (THE PLANTS).
+# The name of a read row of a plant for a file that an object of the target all reads (the plants).
 ALL_UNITS = "all"
-# The name of a read row of a plant for the directory of the mode stamps (THE PLANTS).
+# The name of a read row of a plant for the directory of the mode stamps (the plants).
 STAMPS_UNIT = "stamps"
-# The row of a plant that makes the planted build a parse build (THE PLANTS).
+# The row of a plant that makes the planted build a parse build (the plants).
 PARSE_ROW = "parse"
 # The plugin arguments of the directory of the mode stamps and of the source root.
 STAMPS_ARGUMENT = f"{runner.PLUGIN_ARGUMENT}stamps="
@@ -160,11 +160,11 @@ ROOT_ARGUMENT = f"{runner.PLUGIN_ARGUMENT}root="
 class FixtureFacts:
     """One fixture of the build: its name, its source, the stamp of its command, and the census of its record.
 
-    `source` is the source as a message shows it, relative to the source root (THE SOURCE).  `stamp` is the stamp
+    `source` is the source as a message shows it, relative to the source root (the source).  `stamp` is the stamp
     argument of the compile command, or None when the command loads no plugin.  `census_stamp` and `census` are those
     of the record, each None when the record holds no census.  `problem` tells why the record cannot be read, MISSING
     for no record, or is empty.  `is_stale` tells that a file of the record is missing or changed after the record
-    (THE PROBLEMS).
+    (the problems).
     """
 
     name: str
@@ -178,11 +178,11 @@ class FixtureFacts:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FixturePart:
-    """The census of the fixtures of a build (THE CENSUS).
+    """The census of the fixtures of a build (the census).
 
-    `fixtures` is the number of fixtures with a census.  `lines` holds each finding line of a kind of THE KINDS one
+    `fixtures` is the number of fixtures with a census.  `lines` holds each finding line of a kind of the kinds one
     time.  `regions` holds the first line and the reason of each region of each source, sorted.  `problems` holds an
-    error with no kind for each problem (THE PROBLEMS).  `source_root` is the root of the sources (THE SOURCE).
+    error with no kind for each problem (the problems).  `source_root` is the root of the sources (the source).
     """
 
     fixtures: int = 0
@@ -195,8 +195,8 @@ class FixturePart:
 class FixtureContext(runner.PluginContext):
     """The context of the rule quarantine: the census of the objects of a build and the census of its fixtures.
 
-    THE CONTEXT gives the parts.  A plant gives a census of objects, planted fixtures and planted reads, and then no
-    build directory (THE PLANTS).
+    The context gives the parts.  A plant gives a census of objects, planted fixtures and planted reads, and then no
+    build directory (the plants).
     """
 
     __slots__ = ("_base", "_facts", "_part", "_planted", "_reads", "is_parse")
@@ -221,7 +221,7 @@ class FixtureContext(runner.PluginContext):
             base: The context of the engine, which reads the census of the objects
             fixtures: The planted fixtures, or None to read the fixtures of the build
             reads: The read rows of a plant: the name of a fixture, ALL_UNITS or STAMPS_UNIT, and a path of the tree
-            is_parse: The planted build is a parse build (NO FIXTURE RUN)
+            is_parse: The planted build is a parse build (no fixture run)
         """
         super().__init__(root, build_dir, census)
         self._base = base
@@ -232,7 +232,7 @@ class FixtureContext(runner.PluginContext):
         self._facts: tuple[FixtureFacts, ...] = ()
 
     def objects(self) -> runner.Census:
-        """Return the census of the objects of the build (THE CONTEXT).
+        """Return the census of the objects of the build (the context).
 
         Raises:
             NotApplicable: If the call gives no build directory, or the rules do not apply to the build
@@ -251,7 +251,7 @@ class FixtureContext(runner.PluginContext):
         return dataclasses.replace(objects, objects=objects.objects + self.part().fixtures)
 
     def part(self) -> FixturePart:
-        """Return the census of the fixtures (THE CENSUS), or an empty census with no fixture run (NO FIXTURE RUN).
+        """Return the census of the fixtures (the census), or an empty census with no fixture run (no fixture run).
 
         Raises:
             BuildError: If the test list, the compile database or the registry cannot be read
@@ -282,7 +282,7 @@ class FixtureContext(runner.PluginContext):
         return census_of(facts, kinds, self.build_shown(), source_root)
 
     def file_problems(self) -> tuple[check_report.Finding, ...]:
-        """Return an error for each file that only the compiles of fixtures read (THE FILES OF THE FIXTURES).
+        """Return an error for each file that only the compiles of fixtures read (the files of the fixtures).
 
         A build with no fixture run gives none, and so does a census with a problem, which fails the rule first.  A
         plant gives its read rows, and a build gives the files of the census of its units.  A census that cannot be
@@ -345,7 +345,7 @@ def counted_kinds(registry: rule_registry.Registry) -> frozenset[str]:
 
 
 def has_records(build_dir: Path) -> bool:
-    """Return True when the build directory holds the record of a run of a fixture (NO FIXTURE RUN).
+    """Return True when the build directory holds the record of a run of a fixture (no fixture run).
 
     Complexity: linear in the directories of the records.
     """
@@ -359,7 +359,7 @@ def root_of(words: Iterable[str]) -> str:
 
 
 def read_fixtures(build_dir: Path, root: Path) -> tuple[tuple[FixtureFacts, ...], Path]:
-    """Return the facts of each fixture of the build, and the source root of the build (THE SOURCE).
+    """Return the facts of each fixture of the build, and the source root of the build (the source).
 
     The source root is the argument root= of the compile commands of the fixtures, or `root` when no fixture command
     gives one.  Complexity: linear in the tests of the build, the rows of the compile database and the records.
@@ -397,7 +397,7 @@ def read_fixtures(build_dir: Path, root: Path) -> tuple[tuple[FixtureFacts, ...]
 
 
 def is_stale_record(path: Path, inputs: Sequence[str], build_dir: Path, changed: dict[str, int | None]) -> bool:
-    """Tell if a file that a fixture record names is missing, or changed after the record (THE PROBLEMS).
+    """Tell if a file that a fixture record names is missing, or changed after the record (the problems).
 
     `changed` caches the time of change of each file in ns, or None for a missing file, over the records of one read.
     Complexity: one stat of each file that no earlier record of the read names.
@@ -420,7 +420,7 @@ def is_stale_record(path: Path, inputs: Sequence[str], build_dir: Path, changed:
 
 
 def problem_of(item: FixtureFacts, build_shown: str) -> str:
-    """Return the message of the problem of one fixture with a plugin, or an empty text (THE PROBLEMS)."""
+    """Return the message of the problem of one fixture with a plugin, or an empty text (the problems)."""
     rerun = f"Run the fixture again: ctest --test-dir {build_shown} -R '^{item.name}$'"
     if item.problem == MISSING:
         return ""
@@ -440,12 +440,12 @@ def problem_of(item: FixtureFacts, build_shown: str) -> str:
 
 
 def unsettled_fixtures(build_dir: Path, root: Path) -> frozenset[str]:
-    """Return the name of each fixture with the plugin whose record census_of() refuses (THE PROBLEMS).
+    """Return the name of each fixture with the plugin whose record census_of() refuses (the problems).
 
     A run of such a fixture writes its record again with the stamp of its compile command.  The problems are a census
     of a different stamp, a record with no census, and a record that does not read.  When the build holds the record
-    of a fixture with the plugin, a fixture with no record is a problem too (NO FIXTURE RUN).  A stale record also
-    gives its fixture (THE PROBLEMS).  `loop test` runs each such fixture also with --only (assay.loop.affected).
+    of a fixture with the plugin, a fixture with no record is a problem too (no fixture run).  A stale record also
+    gives its fixture (the problems).  `loop test` runs each such fixture also with --only (assay.loop.affected).
     Complexity: the cost of read_fixtures().
 
     Raises:
@@ -462,9 +462,9 @@ def unsettled_fixtures(build_dir: Path, root: Path) -> frozenset[str]:
 def census_of(
     fixtures: Sequence[FixtureFacts], kinds: frozenset[str], build_shown: str, source_root: Path
 ) -> FixturePart:
-    """Return the census of the fixtures: the lines, the regions and the problems (THE CENSUS, THE PROBLEMS).
+    """Return the census of the fixtures: the lines, the regions and the problems (the census, the problems).
 
-    A build with no fixture with the plugin, or with no record of such a fixture, has no census (NO FIXTURE RUN).
+    A build with no fixture with the plugin, or with no record of such a fixture, has no census (no fixture run).
     Complexity: linear in the fixtures and the findings of their censuses.
     """
     counted = [item for item in fixtures if item.stamp is not None]
@@ -511,7 +511,7 @@ def census_of(
 
 
 def reduce_refusal(root: Path, builds: Sequence[Path]) -> str:
-    """Return why a reduce over the builds cannot lower the rows of the fixtures, or an empty text (NO FIXTURE RUN).
+    """Return why a reduce over the builds cannot lower the rows of the fixtures, or an empty text (no fixture run).
 
     A reduce in which a build of objects has a fixture run, and a reduce of builds with no fixture with the plugin, can
     lower the rows.  Complexity: one walk of the records of each build, and one test list for a build with none.
@@ -575,8 +575,8 @@ def unjudged_findings(
     """Return an error for each file of the tree that the compile of a fixture reads and no object of all reads.
 
     Each path is a path of `realpath()`, and `root` is one too.  Only a file of the root or of the build directory
-    can be such a file.  The source of a fixture and a file of a directory of the mode stamps are no such file (THE
-    FILES OF THE FIXTURES).  Complexity: linear in the pairs, with one prefix test for each directory of the stamps.
+    can be such a file.  The source of a fixture and a file of a directory of the mode stamps are no such file (the
+    files of the fixtures).  Complexity: linear in the pairs, with one prefix test for each directory of the stamps.
     """
     directories = [str(root)] if build_dir is None else [str(root), os.path.realpath(build_dir)]
     places = tuple(f"{directory}{os.sep}" for directory in directories)
@@ -605,7 +605,7 @@ def unjudged_findings(
 
 
 def plant_context(root: Path, census: runner.Census, path: Path) -> FixtureContext:
-    """Return the context of a plant: the census of its judged compiles and its planted fixtures (THE PLANTS).
+    """Return the context of a plant: the census of its judged compiles and its planted fixtures (the plants).
 
     Raises:
         rows_grammar.RowsError: If the file of the planted fixtures does not obey its rows
@@ -622,7 +622,7 @@ def plant_context(root: Path, census: runner.Census, path: Path) -> FixtureConte
 
 
 def planted_reads(rows: Sequence[rows_grammar.Row]) -> tuple[tuple[str, str], ...]:
-    """Return the name and the path of each read row of a plant (THE PLANTS).
+    """Return the name and the path of each read row of a plant (the plants).
 
     Raises:
         rows_grammar.RowsError: If a read row has a path that is not a relative path of the tree
@@ -641,7 +641,7 @@ def planted_reads(rows: Sequence[rows_grammar.Row]) -> tuple[tuple[str, str], ..
 
 
 def planted_fixtures(rows: Sequence[rows_grammar.Row]) -> tuple[FixtureFacts, ...]:
-    """Return the fixtures of the rows of a plant (THE PLANTS).
+    """Return the fixtures of the rows of a plant (the plants).
 
     Raises:
         rows_grammar.RowsError: If a row is not a fixture row, a finding row, a read row or the parse row

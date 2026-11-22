@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A specialization of relation_state_at cannot build or copy a state, but
 // it can view the cells of another walk through relation_state::of.  Here

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // SDC detector construction is Init-row only.  A background worker may
 // run checks, but it must not mint the detector: BgDrainCtx does not

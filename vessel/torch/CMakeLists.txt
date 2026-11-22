@@ -5,10 +5,10 @@ target_link_libraries(crucible_vessel PRIVATE crucible)
 #
 # Each vessel library compiles layout_note.cpp, so it carries an ELF note with
 # the layout digest of the types and the C entries that the two libraries
-# share (THE NOTE of layout_note.h).  The host tool crucible_layout_digest
+# share (the note of layout_note.h).  The host tool crucible_layout_digest
 # compiles the same unit, and writes the layout table of the build beside the
 # libraries: the digest, and the size and the member offsets of each struct of
-# the C ABI that ctypes mirrors (THE TABLE of layout_table.cpp).  The loader
+# the C ABI that ctypes mirrors (the table of layout_table.cpp).  The loader
 # of the vessel refuses a library whose note differs from the table, and a
 # ctypes Structure whose layout differs from it.  The link of each vessel
 # library takes the table as an input (LINK_DEPENDS), so a build of one library
@@ -35,7 +35,7 @@ endif()
 # ── The x86-64 level of the vessel libraries ─────────────────────────
 #
 # Each vessel library compiles level_note.cpp, so it carries an ELF note
-# with the x86-64 level of its flags (THE NOTE of level_note.h).  A build at
+# with the x86-64 level of its flags (the note of level_note.h).  A build at
 # a level gives that file CRUCIBLE_X86_LEVEL_EXACT, and the note then says
 # exact.  The loader of the vessel reads the note before it loads a library.
 #
@@ -45,10 +45,10 @@ endif()
 # foundation itself, because libfoundation.a has the level of the build.  It
 # carries no sanitizer, so a Python process with no sanitizer runtime loads
 # it in each build: the loader of the vessel, and the test launcher, which
-# reads the level of the host before a test starts (THE LEVEL of
+# reads the level of the host before a test starts (the level of
 # utils/assay/loop/teststep.py).
 #
-# THE LEVEL ROOT
+# The level root
 #   The install of a build at a level puts the two vessel libraries into
 #   lib/crucible/x86-64-LEVEL, and the install of each build puts the probe
 #   into lib/crucible.  Four builds at the four levels with one prefix give a
@@ -212,7 +212,7 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     )
 
     # The dispatch library of a level goes beside the vessel library of the
-    # same level (THE LEVEL ROOT).  The loader imports torch._C before it
+    # same level (see the level root above).  The loader imports torch._C before it
     # loads the library, so libtorch and libc10 are in the process, and the
     # installed library needs no rpath.
     if(CRUCIBLE_X86_LEVEL)

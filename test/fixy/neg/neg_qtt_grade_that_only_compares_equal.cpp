@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A usage grade of Qtt is a QttGrade and nothing else.  The class below
 // is not a grade, but it compares equal to the One grade, so a check on

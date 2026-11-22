@@ -1,6 +1,6 @@
 """use-after-move — no use of a local after std::move, on a path through the function body.
 
-THE RULE
+Rule
     After `std::move(x)`, `std::forward<T>(x)`, `std::move_if_noexcept(x)`,
     `std::forward_like<T>(x)` or `static_cast<T&&>(x)`, the name x is spent.
     The qualifier of the function does not change this: `move(x)` after a
@@ -16,9 +16,9 @@ THE RULE
                       forwards.  Each use of such a macro hides a move from
                       the walk
       known-misses    more known misses in the plants of the rule than
-                      KNOWN_MISS_BOUND (WHAT THE RULE DOES NOT SEE)
+                      KNOWN_MISS_BOUND (what the rule does not see)
 
-WHY
+Why
     A linear token of this tree is an empty class.  A moved-from token and a
     live token then look the same.  `Permission<Tag>` stays one byte, and it
     takes no byte as an empty base.  No byte records the move, and GCC 16 has
@@ -30,7 +30,7 @@ WHY
     type, because a use after move of each type is a defect.  For a linear
     type, the defect gives no sign at run time.
 
-THE WALK
+Walk
     The rule walks each function body, each lambda body and each
     member-initializer list as a tree of control flow.  The tree has the
     blocks, if and else, switch and case, the loops, try and catch, return,
@@ -46,7 +46,7 @@ THE WALK
     label that a subsequent goto of its block names is the head of a loop.
     The walk then does the statements after the label two times too.
 
-THE KEYS
+Keys
     A key is a name, a member path (a.b, a->b) or the object that a pointer
     holds (*p).  A move of a spends each key that starts at a: a, a.b, a->b,
     *a and *a.b, because each access to such a key reads a.  So a.value(),
@@ -71,7 +71,7 @@ THE KEYS
     evaluate is not a use: sizeof, alignof, decltype, noexcept, typeid,
     `requires`, static_assert and a reflection.
 
-THE FIVE SHAPES THAT KEEP A NAME
+Five shapes that keep a name
     A call with a name that starts with try_ keeps its argument when it does
     not succeed, as std::map::try_emplace does.  In
     `while (!ring.try_push(std::move(v)))`, the loop body then sees v live,
@@ -91,7 +91,7 @@ THE FIVE SHAPES THAT KEEP A NAME
     static_cast<T&&>(x) for a scalar T, such as int, keeps x, because a
     scalar has no moved-from state.
 
-THE LAMBDAS
+Lambdas
     A lambda body is a new body.  It starts with the spent keys of the point
     of the lambda, minus its parameters and its init-captures.  A body that
     names a spent capture is then a use after move.  A move in a lambda body
@@ -108,7 +108,7 @@ THE LAMBDAS
     after move at the call.  A new declaration or an assignment of the local
     replaces its keys.
 
-WHAT THE RULE DOES NOT SEE
+What the rule does not see
     The directories control-known-miss-* of utils/plants/use-after-move/
     hold the shapes below.  Each one is a use after move, and the rule
     accepts it.  When the rule learns to refuse a shape, its control fails,
@@ -129,9 +129,9 @@ WHAT THE RULE DOES NOT SEE
     The rule does not know types.  It also refuses a use after move of a type
     with a moved-from state that the standard specifies, such as a
     std::vector.  Give the name a new value first.  Only a test that reads a
-    moved-from object on purpose is out of the scope (THE SCOPE).
+    moved-from object on purpose is out of the scope (the scope).
 
-THE ENTITY
+Entity
     The entity of a use after move is `FUNCTION: KEY`.  FUNCTION is the name
     of the function that holds the walked body, with its namespaces, its
     classes and its parameter types (tsast.function_signature).  A lambda
@@ -141,7 +141,7 @@ THE ENTITY
     `*producer`, `t.size` or `parts.shards[0]`.  The entity of a macro is
     `#define NAME: MOVE`.
 
-THE SCOPE
+Scope
     The C++ files of include/, src/, test/, vessel/ and utils/tools/.  A
     negative-compile fixture is out of the scope, because each one must fail
     to compile.  Its directory is neg or NAME_neg.  A test of PROBE_FILES is
@@ -182,7 +182,7 @@ ADVICE = (
 MACRO_ADVICE = (
     "Each use of the macro hides a move from the walk of use-after-move.  Move the value where the code uses the macro"
 )
-# The tests that read or use a moved-from object on purpose, each with its probe (THE SCOPE).  A reviewer adds a file
+# The tests that read or use a moved-from object on purpose, each with its probe (the scope).  A reviewer adds a file
 # with its probe.
 PROBE_FILES: dict[str, str] = {
     "test/fixy/test_channel_moved_from.cpp": (
@@ -301,12 +301,12 @@ PROBE_FILES: dict[str, str] = {
     "test/test_warden_policy.cpp": "a moved-from warden guard is disarmed and reports each observer as not applied",
 }
 # The plants of the rule, the prefix of the controls of its known misses, and the maximum number of known misses
-# (WHAT THE RULE DOES NOT SEE).
+# (what the rule does not see).
 PLANTS = "utils/plants/use-after-move/"
 KNOWN_MISS_PREFIX = "control-known-miss-"
 KNOWN_MISS_BOUND = 4
 BOUND_KIND = "known-misses"
-# The directories of the negative-compile fixtures, which must fail to compile (THE SCOPE).
+# The directories of the negative-compile fixtures, which must fail to compile (the scope).
 NEGATIVE_DIRECTORY = "neg"
 NEGATIVE_SUFFIX = "_neg"
 # The last name of a function that gives an rvalue of its argument.  The qualifier does not change it.
@@ -459,7 +459,7 @@ class Step:
 
 @dataclass(frozen=True, slots=True)
 class Place:
-    """One key of the walk (THE KEYS): a name, the steps after it, and two marks.
+    """One key of the walk (the keys): a name, the steps after it, and two marks.
 
     is_pointee is the key *path, the object that the path holds.  is_base is
     the key p#base of a base assignment (BASE_MARK).
@@ -741,7 +741,7 @@ def move_source(function: tsast.Node, owner: str | None) -> str | None:
 
 
 def site_scope(node: tsast.Node, name: str) -> str:
-    """Return the namespaces and the classes that hold a node, then a name, joined with `::` (THE ENTITY)."""
+    """Return the namespaces and the classes that hold a node, then a name, joined with `::` (the entity)."""
     scopes = [tsast.ANONYMOUS_NAMESPACE if part == "" else part for part in tsast.namespace_path(node)]
     classes: list[str] = []
     holder = node.ancestor_of_type(*CLASS_SPECIFIERS)
@@ -754,7 +754,7 @@ def site_scope(node: tsast.Node, name: str) -> str:
 def is_out_of_scope(path: str) -> bool:
     """Return True for a negative-compile fixture, in a directory neg or NAME_neg, and for a file of PROBE_FILES.
 
-    THE SCOPE tells why each one is out of the scope.
+    The scope tells why each one is out of the scope.
     """
     is_fixture = any(
         part == NEGATIVE_DIRECTORY or part.endswith(NEGATIVE_SUFFIX) for part in PurePosixPath(path).parts[:-1]
@@ -763,7 +763,7 @@ def is_out_of_scope(path: str) -> bool:
 
 
 class Walk:
-    """The walk of one file: each function body, each lambda body and each member-initializer list in it (THE WALK)."""
+    """The walk of one file: each function body, each lambda body and each member-initializer list in it (the walk)."""
 
     __slots__ = (
         "aliases",
@@ -786,7 +786,7 @@ class Walk:
         self.found: list[check_report.Finding] = []
         # The holder, the spent key and the line of each move that gave a finding.
         self.seen: set[tuple[str, Place, int]] = set()
-        # The last name of the function that the walk is in, and its entity (THE ENTITY).
+        # The last name of the function that the walk is in, and its entity (the entity).
         self.function = ANONYMOUS
         self.holder = ANONYMOUS
         # True while the walk reads a condition on the path where its try_ call did not succeed.  A move in the call
@@ -797,7 +797,7 @@ class Walk:
         # A reference, or a name of `auto& [a, b] = obj;`, in scope: name -> (the key of the object that it names,
         # True for a name of such a declaration).
         self.aliases: dict[str, tuple[Place, bool]] = {}
-        # A local that holds a lambda in scope: name -> the keys that the lambda reads by reference (THE LAMBDAS).
+        # A local that holds a lambda in scope: name -> the keys that the lambda reads by reference (the lambdas).
         self.reference_lambdas: dict[str, tuple[Place, ...]] = {}
         # The parameter p while the walk is in the body of a move assignment operator=(C&& p), and None elsewhere.
         self.assigned_from: str | None = None
@@ -1736,7 +1736,7 @@ class Walk:
         return path.pointee()
 
     def call(self, node: tsast.Node, state: dict[Place, int], pending: list[Place]) -> None:
-        """Walk a call: a move spends its argument, and the other shapes of THE KEYS change their keys."""
+        """Walk a call: a move spends its argument, and the other shapes of the keys change their keys."""
         function = node.child_by_field("function")
         arguments = node.child_by_field("arguments")
         if self.move_callee(node) or self.rvalue_cast(node):
@@ -1782,7 +1782,7 @@ class Walk:
     def late_reads(
         self, node: tsast.Node, function: tsast.Node, arguments: tsast.Node | None, state: dict[Place, int]
     ) -> None:
-        """Refuse each spent key that a lambda in a local reads by reference, at a call that can run it (THE LAMBDAS).
+        """Refuse each spent key that a lambda in a local reads by reference, at a call that can run it (the lambdas).
 
         The call runs the lambda when it calls the local, and it can run the
         lambda when an argument is the local.
@@ -1878,7 +1878,7 @@ class Walk:
         left = node.child_by_field("left")
         right = node.child_by_field("right")
         if left is not None and left.type == "identifier" and tsast.operator_of(node) == "=":
-            # An assignment of a local that holds a lambda replaces the keys that the lambda reads (THE LAMBDAS).
+            # An assignment of a local that holds a lambda replaces the keys that the lambda reads (the lambdas).
             name = name_of(left)
             self.reference_lambdas.pop(name, None)
             reads = self.reference_reads(right) if right is not None and right.type == "lambda_expression" else ()
@@ -1914,7 +1914,7 @@ class Walk:
         return [(child, child.child_by_field("reference") is not None) for child in named(captures)]
 
     def reference_reads(self, node: tsast.Node) -> tuple[Place, ...]:
-        """Return the keys that a lambda reads by reference when it runs (THE LAMBDAS).
+        """Return the keys that a lambda reads by reference when it runs (the lambdas).
 
         A capture `&x` gives x.  The default capture `&` gives each name that
         the body reads and that the body, the parameters and the
@@ -1980,7 +1980,7 @@ class Walk:
         return reads
 
     def lambda_expr(self, node: tsast.Node, state: dict[Place, int]) -> dict[Place, int]:
-        """Walk the captures at the point of the lambda, and its body as a new body (THE LAMBDAS)."""
+        """Walk the captures at the point of the lambda, and its body as a new body (the lambdas)."""
         state = dict(state)
         shadow: list[str] = []
         captures = node.child_by_field("captures")
@@ -2019,7 +2019,7 @@ class Walk:
 
 
 def bound_findings(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error when the plants hold more known misses than KNOWN_MISS_BOUND (WHAT THE RULE DOES NOT SEE).
+    """Give an error when the plants hold more known misses than KNOWN_MISS_BOUND (what the rule does not see).
 
     A tree with no plants of the rule, such as the copy of one plant, holds
     no known miss.
@@ -2055,7 +2055,7 @@ def bound_findings(context: TsastContext) -> list[check_report.Finding]:
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
-    """Give each use after move and each macro that moves in the scope (THE SCOPE), and a known miss too many."""
+    """Give each use after move and each macro that moves in the scope (the scope), and a known miss too many."""
     paths = [path for path in context.scope_files() if not is_out_of_scope(path)]
     found = [finding for tree in context.trees(paths) for finding in Walk(tree).run()]
     found += bound_findings(context)

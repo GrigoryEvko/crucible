@@ -138,8 +138,8 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
 
 class BumpArena;
 
-// The door of a BumpArena to the raw constructors of a View (THE DOORS OF THE
-// OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant: the
+// The door of a BumpArena to the raw constructors of a View (the doors of the
+// owners above this header in foundation/core/Region.h).  The invariant: the
 // bump of array() gave count * sizeof(T) bytes at the alignment of T, and its
 // loop built each element.  So the View of the count elements holds live
 // elements only.  The View holds no brand of the arena, so a View that

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // IsPermission holds for an exclusive token and for nothing else.  A
 // template that asks for a token by this concept refuses a plain value,

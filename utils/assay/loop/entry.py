@@ -1,6 +1,6 @@
 """entry — the nightly entry and the release entry: run the work of the plan of a tier in a time budget.
 
-THE SCOPE
+Scope
     `loop nightly` and `loop release` (assay.loop.nightly, assay.loop.release)
     run the entry of their tier.  The scope of an entry is each tier of ORDER
     of assay.loop.tiers up to its own tier.  The nightly entry then runs the
@@ -9,7 +9,7 @@ THE SCOPE
     (assay.loop.plan) and the presets file on each run.  No list of this
     module names a preset, a test, a bench or a rule.
 
-THE WORK
+Work
     The entry makes one job of each of these, in this sequence:
       1. Each parse preset in the scope.  The job configures its build when
          the build has no graph of Ninja, and runs `loop syntax BUILD`.  Then
@@ -29,9 +29,9 @@ THE WORK
       3. Each step of STEPS of assay.loop.plan in the scope, in its sequence.
          A command that ends with --build-dir gets the build directory of the
          preset of the step.  The step of `loop fuzz` runs one campaign of
-         each harness (THE CAMPAIGN).  A step of ctest runs its tests through
-         the launcher of assay.loop.caps (THE PRIVILEGED TESTS).  A step of
-         cmake builds the build of its preset (THE BUILD STEPS).  A step of
+         each harness (the campaign).  A step of ctest runs its tests through
+         the launcher of assay.loop.caps (the privileged tests).  A step of
+         cmake builds the build of its preset (the build steps).  A step of
          `loop evidence run` is part of job 5
       4. Each configure preset of objects in the scope that uses the profile
          of `loop pgo` (assay.loop.tiers, PresetTier).  It comes after the
@@ -40,17 +40,17 @@ THE WORK
          that a step in the scope names.  The step `loop evidence run` names
          each class, and the step `loop evidence run KIND` names the class of
          KIND.  The runner runs only when an item of the class has less
-         evidence than the target of the tier (THE BUDGET).
+         evidence than the target of the tier (the budget).
     Each job runs as one heavy step of assay.loop.heavy.  A session of the
     gate then goes before it, and the other heavy steps of the host wait for
     it.  A job of a preset and a runner of evidence get the jobs that the
-    memory gives the step (THE MEMORY of assay.loop.heavy).  A campaign gets
-    one CPU for each job of its step (THE CAMPAIGN).  A step of cmake holds
-    a lease of the slot pool and no heavy step (THE BUILD STEPS).  A
+    memory gives the step (the memory of assay.loop.heavy).  A campaign gets
+    one CPU for each job of its step (the campaign).  A step of cmake holds
+    a lease of the slot pool and no heavy step (the build steps).  A
     different step of STEPS holds only the lock, because its command gives
     its own job count.  A job that fails stops no other job.
 
-THE BUDGET
+Budget
     --budget-s gives the wall time of the run, or DEFAULT_BUDGET_S of the
     tier.  A job gets the remaining time of the budget, and it stops at the
     end of the budget.  A job that cannot start in the budget does not run.
@@ -61,7 +61,7 @@ THE BUDGET
     gets an equal part of the remaining time.  A runner does not get more
     than that part.
 
-THE CAMPAIGN
+Campaign
     A campaign uses afl-fuzz in the directory of the AFL++ tools of
     assay.loop.fuzz: AFL_BIN, else the install of the pin aflplusplus.  With
     no afl-fuzz, the job of each harness is blocked, and the report gives the
@@ -73,10 +73,10 @@ THE CAMPAIGN
     reserved CPUs of the host (reserved_cpus() of assay.loop.fuzz, which
     reads them as `loop bench` does).  The campaign gives its heavy step one
     job for each of these CPUs.  CPUS then keeps one CPU for each job that
-    the memory gives the step (THE MEMORY of assay.loop.heavy).  SECONDS is
+    the memory gives the step (the memory of assay.loop.heavy).  SECONDS is
     an equal part of the remaining time for each remaining campaign.
 
-THE PRIVILEGED TESTS
+Privileged tests
     A step whose command starts with CTEST_WORD runs `ctest --test-dir BUILD
     WORDS -j N` in the build BUILD of its preset.  WORDS are the other words
     of its command, and the step bpf gives the label bpf with them.  The
@@ -87,13 +87,13 @@ THE PRIVILEGED TESTS
     reason and the fix.  A blocked job does not make the run red.  The gate
     of `loop land` runs the same tests with no capabilities.
 
-THE BUILD STEPS
+Build steps
     A step whose command starts with BUILD_WORD builds the build of its
     preset, and it runs no test.  The job configures the build when it has
     no graph of Ninja.  Then it runs the command with the cmake of the
     build and the build directory (`cmake --build BUILD`).  The job holds a
     lease of the slot pool with the slice of the run as its cap, and not the
-    exclusive lock of a heavy step (THE POOL of assay.loop.heavy).  The
+    exclusive lock of a heavy step (the pool of assay.loop.heavy).  The
     build gets MAKEFLAGS of the jobserver of the lease and no -j, because
     ninja obeys the jobserver only with no -j.  The lanes of the gate and the
     builds of the work trees then go on beside it.
@@ -102,7 +102,7 @@ THE BUILD STEPS
     The aarch64 cross build is an example: the nightly entry compiles it,
     and the release entry runs its tests under qemu-user.
 
-THE REPORT
+Report
     Each run writes the directory TIER-TIME in REPORTS of the build directory
     of the preset REPORT_PRESET.  The directory holds the log of each command
     in LOGS, and the text report REPORT_NAME:
@@ -159,37 +159,37 @@ from assay.readers import python as python_reader
 from assay.setup import install as setup_install
 from assay.setup import pins as cmake_pin
 
-# The wall time of a run of each tier when the call gives none, in seconds (THE BUDGET).
+# The wall time of a run of each tier when the call gives none, in seconds (the budget).
 DEFAULT_BUDGET_S = {tiers.Tier.NIGHTLY: 8 * 3600.0, tiers.Tier.RELEASE: 24 * 3600.0}
-# The minimum time of a runner, in seconds (THE BUDGET).
+# The minimum time of a runner, in seconds (the budget).
 MINIMUM_RUNNER_S = 60.0
-# The multiplier of the estimate of a runner (THE BUDGET).
+# The multiplier of the estimate of a runner (the budget).
 NEED_MARGIN = 1.25
 # The time after its budget that a runner gets to complete its last unit, in seconds.
 RUNNER_GRACE_S = 900.0
-# The preset of the build directory of the reports, and the directory of the reports in it (THE REPORT).
+# The preset of the build directory of the reports, and the directory of the reports in it (the report).
 REPORT_PRESET = "default"
 REPORTS = "loop-entries"
-# The name of a report, the directory of the logs, and the runs that each tier keeps (THE REPORT).
+# The name of a report, the directory of the logs, and the runs that each tier keeps (the report).
 REPORT_NAME = "report.txt"
 LOGS = "logs"
 KEPT_RUNS = 20
-# The open items of each class that the printed report gives (THE REPORT).
+# The open items of each class that the printed report gives (the report).
 SHOWN_OPEN = 20
-# The build directory of a campaign in the tree, and the most CPUs of a campaign (THE CAMPAIGN).
+# The build directory of a campaign in the tree, and the most CPUs of a campaign (the campaign).
 CAMPAIGN_BUILD = "build-afl"
 CAMPAIGN_CORES = 16
-# The first words of a step that adds evidence, and of a step of campaigns (THE WORK, 3 and 5).
+# The first words of a step that adds evidence, and of a step of campaigns (the work, 3 and 5).
 EVIDENCE_WORDS = ("loop", "evidence", "run")
 FUZZ_WORDS = ("loop", "fuzz")
-# The first word of a step that runs its tests through the launcher (THE PRIVILEGED TESTS), and of a step that builds
-# the build of its preset (THE BUILD STEPS).
+# The first word of a step that runs its tests through the launcher (the privileged tests), and of a step that builds
+# the build of its preset (the build steps).
 CTEST_WORD = "ctest"
 BUILD_WORD = "cmake"
 
 
 class State(enum.StrEnum):
-    """The state of a job at the end of a run (THE REPORT)."""
+    """The state of a job at the end of a run (the report)."""
 
     PASSED = "passed"
     FAILED = "failed"
@@ -199,7 +199,7 @@ class State(enum.StrEnum):
 
 
 class JobKind(enum.StrEnum):
-    """The kind of a job (THE WORK)."""
+    """The kind of a job (the work)."""
 
     PARSE = "parse"
     TESTS = "tests"
@@ -210,7 +210,7 @@ class JobKind(enum.StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Job:
-    """One job of a run (THE WORK).
+    """One job of a run (the work).
 
     `name` is the name of a configure preset, of a step or of a kind of evidence.  `build` is the build directory of
     a preset.  `test_presets` are the filtered test presets of a job of the kind PRESET_TESTS, and `item` is the item
@@ -265,7 +265,7 @@ class RunFacts:
 
 
 def scope_of(tier: tiers.Tier) -> tuple[tiers.Tier, ...]:
-    """Return the tiers of the scope of the entry of a tier (THE SCOPE)."""
+    """Return the tiers of the scope of the entry of a tier (the scope)."""
     return tiers.ORDER[: tiers.ORDER.index(tier) + 1]
 
 
@@ -305,7 +305,7 @@ def preset_jobs(
 
 
 def jobs_of(found: plan.Plan, presets: tiers.Tiers, tier: tiers.Tier) -> list[Job]:
-    """Return the jobs of a run of the entry of a tier, in their sequence (THE WORK).
+    """Return the jobs of a run of the entry of a tier, in their sequence (the work).
 
     Complexity: linear in the items of the plan, the presets and the steps.
     """
@@ -343,7 +343,7 @@ def is_open(row: evidence_status.Row, is_release: bool) -> bool:
 def evidence_budget(
     rows: Sequence[evidence_status.Row], is_release: bool, remaining_s: float, classes_left: int
 ) -> float:
-    """Return the time of the runner of one class, from the open items of its rows (THE BUDGET).
+    """Return the time of the runner of one class, from the open items of its rows (the budget).
 
     Complexity: linear in the rows.
     """
@@ -361,7 +361,7 @@ def run_jobs(
     deadline: float,
     clock: Callable[[], float] = time.monotonic,
 ) -> list[Outcome]:
-    """Run each job in its sequence until the deadline, and return the outcome of each one (THE BUDGET).
+    """Run each job in its sequence until the deadline, and return the outcome of each one (the budget).
 
     Args:
         jobs: The jobs of the run
@@ -397,7 +397,7 @@ def findings_outcome(job: Job, findings: fuzz.Findings, binary: Path, log: Path)
     """Return the failed outcome of a campaign that saved a crash or a hang, or None when it saved no input.
 
     afl-fuzz ends with the status 0 also when it saved a crash, so the job reads the output of the campaign and not
-    only the status of `loop fuzz` (THE FINDINGS of assay.loop.fuzz).  The outcome names the counts and the log, and
+    only the status of `loop fuzz` (the findings of assay.loop.fuzz).  The outcome names the counts and the log, and
     its rerun is the command that replays the first saved input.
 
     Args:
@@ -418,13 +418,13 @@ def findings_outcome(job: Job, findings: fuzz.Findings, binary: Path, log: Path)
 
 
 def campaign_cpus(available: Sequence[int], reserved: Sequence[int]) -> tuple[int, ...]:
-    """Return at most CAMPAIGN_CORES CPUs of a campaign: the available CPUs that are not reserved (THE CAMPAIGN)."""
+    """Return at most CAMPAIGN_CORES CPUs of a campaign: the available CPUs that are not reserved (the campaign)."""
     excluded = set(reserved)
     return tuple(cpu for cpu in sorted(available) if cpu not in excluded)[:CAMPAIGN_CORES]
 
 
 class Runner:
-    """The commands of the jobs of one run in a tree (THE WORK)."""
+    """The commands of the jobs of one run in a tree (the work)."""
 
     def __init__(self, root: Path, tier: tiers.Tier, jobs: int, logs: Path, presets: tiers.Tiers) -> None:
         """Keep the tree, the tier, the job count, the directory of the logs and the presets of the run.
@@ -483,7 +483,7 @@ class Runner:
             return int(ExitCode.TOOL_FAILED)
 
     def run(self, index: int, job: Job, deadline: float) -> Outcome:
-        """Run one job as one heavy step, and return its outcome with its wall time (THE WORK)."""
+        """Run one job as one heavy step, and return its outcome with its wall time (the work)."""
         started = time.monotonic()
         prefix = self.logs / f"{index:02d}-{job.kind}-{job.name}{'-' + job.item if job.item else ''}"
         if job.kind is JobKind.EVIDENCE:
@@ -531,7 +531,7 @@ class Runner:
         return Outcome(job, State.FAILED, f"a command exits {status}, see {log}", reruns=(" ".join(words),))
 
     def parse(self, job: Job, build: Path, prefix: Path, deadline: float, jobs: int) -> Outcome:
-        """Parse each unit of a parse build, and check the counted rules on its reports (THE WORK, 1)."""
+        """Parse each unit of a parse build, and check the counted rules on its reports (the work, 1)."""
         commands = [[*self.master("loop"), "syntax", str(build), "-j", str(jobs)]]
         commands += [
             [*self.master("guard"), "check", "--rule", rule, "--build-dir", str(build)] for rule in COUNTED_RULES
@@ -544,7 +544,7 @@ class Runner:
         return Outcome(job, State.PASSED, f"each unit parses, and the rules {', '.join(COUNTED_RULES)} hold")
 
     def tests(self, job: Job, build: Path, prefix: Path, deadline: float, jobs: int) -> Outcome:
-        """Build a build and run each test with no current pass through `loop test` (THE WORK, 2).
+        """Build a build and run each test with no current pass through `loop test` (the work, 2).
 
         The caller holds the lock of a heavy step.  `loop test` gets MAKEFLAGS of a jobserver of `jobs` jobs, so it
         takes no lease, and it does not wait for that lock.
@@ -572,7 +572,7 @@ class Runner:
         return Outcome(job, State.FAILED, f"{failed} tests failed, see {log}", 0, ran, stored, reruns)
 
     def preset_tests(self, job: Job, build: Path, prefix: Path, deadline: float, jobs: int) -> Outcome:
-        """Build a build and run each filtered test preset of it with ctest (THE WORK, 2)."""
+        """Build a build and run each filtered test preset of it with ctest (the work, 2)."""
         cmake = cmake_pin.configured_program(build, "cmake")
         ctest = cmake_pin.configured_program(build, "ctest")
         words = [cmake, "--build", str(build), "-j", str(jobs)]
@@ -603,7 +603,7 @@ class Runner:
         return Outcome(job, State.PASSED, f"{ran} tests ran in {', '.join(job.test_presets)}", 0, ran)
 
     def step(self, job: Job, prefix: Path, deadline: float) -> Outcome:
-        """Run one step of STEPS (THE WORK, 3)."""
+        """Run one step of STEPS (the work, 3)."""
         step = job.step
         if step is None or step.each is not None:
             return Outcome(job, State.BLOCKED, "the entry gives no arguments to an item of this step")
@@ -622,7 +622,7 @@ class Runner:
         return Outcome(job, State.PASSED, step.text)
 
     def leased_build_step(self, job: Job, prefix: Path, deadline: float) -> Outcome:
-        """Run a step of cmake in a lease of the slot pool, with the slice of the run as its cap (THE BUILD STEPS)."""
+        """Run a step of cmake in a lease of the slot pool, with the slice of the run as its cap (the build steps)."""
         try:
             with heavy.leased(self.root, min(self.jobs, heavy.SLICE)) as share:
                 if share is None:
@@ -635,7 +635,7 @@ class Runner:
         """Configure the build of the preset of a step when it has no graph, and build it with no test.
 
         `served` is MAKEFLAGS of the jobserver of the lease of the caller.  The build gets it and no -j, because ninja
-        obeys the jobserver only with no -j (THE BUILD STEPS).
+        obeys the jobserver only with no -j (the build steps).
         """
         step = job.step
         preset = step.preset if step is not None else ""
@@ -660,7 +660,7 @@ class Runner:
         return Outcome(job, State.PASSED, f"each target of {build} builds, and no test ran")
 
     def campaign(self, job: Job, prefix: Path, deadline: float) -> Outcome:
-        """Run one campaign of AFL++ on a harness, or give the reason why it cannot run (THE CAMPAIGN)."""
+        """Run one campaign of AFL++ on a harness, or give the reason why it cannot run (the campaign)."""
         self.campaigns_left = max(1, self.campaigns_left)
         try:
             tool = fuzz.afl_directory() / "afl-fuzz"
@@ -701,7 +701,7 @@ class Runner:
         """Run the tests of a step of ctest through the launcher in a heavy step, or tell why they cannot run.
 
         The job is blocked when the launcher is not ready, or when the build of the preset of the step is not
-        configured (THE PRIVILEGED TESTS).
+        configured (the privileged tests).
         """
         problem = caps.launcher_problem(self.launcher)
         if problem:
@@ -720,7 +720,7 @@ class Runner:
     def privileged_tests(self, job: Job, build: Path, ctest: str, prefix: Path, deadline: float, jobs: int) -> Outcome:
         """Run the ctest of a build with the words of a step through the launcher, and judge its report.
 
-        The caller holds the lock of a heavy step, or a lease of the slot pool (THE PRIVILEGED TESTS).
+        The caller holds the lock of a heavy step, or a lease of the slot pool (the privileged tests).
 
         Args:
             job: The job of the step
@@ -760,7 +760,7 @@ class Runner:
         return self.rows
 
     def evidence(self, job: Job, prefix: Path, deadline: float) -> Outcome:
-        """Run the runner of one class of evidence when an item of the class is open (THE WORK, 5)."""
+        """Run the runner of one class of evidence when an item of the class is open (the work, 5)."""
         is_release = self.tier is tiers.Tier.RELEASE
         target = next(item for item in evidence_targets.TARGETS if str(item.kind) == job.name)
         rows = [row for row in self.evidence_rows() if row.rule == target.rule]
@@ -792,7 +792,7 @@ def read_rows(root: Path) -> tuple[list[evidence_status.Row], list[str]]:
 
 
 def open_lines(rows: Sequence[evidence_status.Row], is_release: bool, shown: int | None) -> list[str]:
-    """Return a line for each open item of the rows, at most `shown` of each class (THE REPORT)."""
+    """Return a line for each open item of the rows, at most `shown` of each class (the report)."""
     lines: list[str] = []
     for target in evidence_targets.TARGETS:
         chosen: list[str] = []
@@ -815,7 +815,7 @@ def open_lines(rows: Sequence[evidence_status.Row], is_release: bool, shown: int
 
 
 def open_count(rows: Sequence[evidence_status.Row], is_release: bool) -> int:
-    """Return the open items of the rows: a kept failure, no key, or less evidence than the target (THE REPORT)."""
+    """Return the open items of the rows: a kept failure, no key, or less evidence than the target (the report)."""
     return sum(row.failure is not None or not row.key or evidence_status.remaining(row, is_release) > 0 for row in rows)
 
 
@@ -842,7 +842,7 @@ def report_text(
     problems: Sequence[str],
     shown: int | None = None,
 ) -> str:
-    """Return the text of the report of one run (THE REPORT).
+    """Return the text of the report of one run (the report).
 
     Complexity: linear in the outcomes and the rows.
     """
@@ -879,13 +879,13 @@ def report_text(
 
 
 def report_directory(root: Path, presets: tiers.Tiers, tier: tiers.Tier, stamp: str) -> Path:
-    """Return the directory of the report of one run (THE REPORT)."""
+    """Return the directory of the report of one run (the report)."""
     builds = [item.build for item in presets.configure if item.name == REPORT_PRESET and item.build is not None]
     return (builds[0] if builds else root / "build") / REPORTS / f"{tier}-{stamp}"
 
 
 def remove_old(directory: Path, tier: tiers.Tier) -> None:
-    """Remove the reports of a tier other than the last KEPT_RUNS (THE REPORT)."""
+    """Remove the reports of a tier other than the last KEPT_RUNS (the report)."""
     runs = sorted(path for path in directory.glob(f"{tier}-*") if path.is_dir())
     for path in runs[: max(0, len(runs) - KEPT_RUNS)]:
         shutil.rmtree(path, ignore_errors=True)

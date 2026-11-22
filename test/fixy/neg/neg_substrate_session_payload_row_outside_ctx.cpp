@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The channel carries a computation that needs IO.  The foreground context
 // holds no effect.  The session of a channel handle must admit each effect

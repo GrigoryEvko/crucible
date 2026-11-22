@@ -58,7 +58,7 @@ struct ScalarOnly final {
     constexpr float operator()(float left, float right) const noexcept { return left + right; }
 };
 
-// THE NAN RULE: the default is Canonical, and the op under the rule is a lane
+// The NaN rule: the default is Canonical, and the op under the rule is a lane
 // op for the same elements as the op.
 static_assert(nan_rule_of_<Add>() == NanRule::Canonical && nan_rule_of_<Copy>() == NanRule::KeepBits);
 static_assert(std::is_same_v<decltype(ruled_op_<float>(Add{})), CanonicalNanOp<Add, float> const>
@@ -80,7 +80,7 @@ static_assert(tile_class_of_(64, 1) == TileClass::Transposed && tile_class_of_(1
 static_assert(tile_class_of_(0, 64) == TileClass::Splat && tile_class_of_(3, 64) == TileClass::General);
 static_assert(tile_class_of_(1, 1) == TileClass::Dense, "a stride of one on a reads a dense register");
 
-// THE TRANSPOSE NETWORK gives the transpose for each shape of the targets:
+// The transpose network gives the transpose for each shape of the targets:
 // 16, 8 and 4 lanes of 4 bytes, and 8, 4 and 2 lanes of 8 bytes.
 static_assert(transpose_map_<16, 4>.is_transpose && transpose_map_<8, 4>.is_transpose);
 static_assert(transpose_map_<4, 4>.is_transpose && transpose_map_<8, 2>.is_transpose);

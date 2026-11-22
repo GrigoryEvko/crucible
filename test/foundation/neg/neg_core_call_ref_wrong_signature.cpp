@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A CallRef calls its callable with the arguments of its signature.  A
 // callable that takes a different argument does not fit, so the constructor

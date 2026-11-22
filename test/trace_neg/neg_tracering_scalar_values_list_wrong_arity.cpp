@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Entry::scalar_values of TraceRing is a fixy::FixedArray<int64_t, 5>.  Its
 // list constructor takes exactly 5 values, so it refuses a partial fill and

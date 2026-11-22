@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Vigil::dispatch_op_pure asks for the context of the Vigil's producer
 // claim.  A background helper holds the background load context, whose row

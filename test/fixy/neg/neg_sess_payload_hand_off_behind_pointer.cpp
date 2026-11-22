@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A payload points at a DelegatedSession.  The hand-off stays with the
 // sender, so the recipient would hold a second name for the endpoint and

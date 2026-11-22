@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A fusion pattern with no row in the shape table has no shape.  The table
 // is consteval and its default arm is unreachable, so asking for the shape

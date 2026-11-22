@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The foreground context mints a pipeline of foreground stages.  The row
 // of the stages is empty, so the row gate admits it.  The pipeline starts

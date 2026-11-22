@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // What a body returns leaves the frame of the door.  A body that returns
 // a pointer to its view hands out a pointer that dangles when the door

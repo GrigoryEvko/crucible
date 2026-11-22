@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A rewind opens a session at a position, and its gate asks the same of
 // that session as a mint asks of a session from its start.  A Continue

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The door gives the result of the body and the source back in one Record.
 // A part of a Record moves with no throw, so a move of the Record never

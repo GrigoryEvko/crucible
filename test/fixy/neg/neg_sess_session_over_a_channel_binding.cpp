@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit mints a plain session over a class that names no channel_type and
 // holds a reference to a ChannelBinding of a channel.  The binding binds a

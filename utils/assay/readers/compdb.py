@@ -1,6 +1,6 @@
 """compdb — the compile database of a build directory: one entry for each compile.
 
-THE INPUT
+Input
     CMake writes BUILD_DIR/compile_commands.json at each configure, because
     the root CMakeLists.txt sets CMAKE_EXPORT_COMPILE_COMMANDS.  The file is
     a JSON array.  Each object names one compile: "directory" (the working
@@ -9,7 +9,7 @@ THE INPUT
     "arguments" (a list of words).  CMake 3.20 or a subsequent version writes
     "output", and CMake writes "command" and no "arguments".
 
-WHAT THE READER GIVES
+What the reader gives
     entries(build_dir) gives each compile as a CompileEntry, in the order of
     the file.  The file and the output are absolute: a relative path joins
     the directory of its compile, and the output is normalized.  The output
@@ -20,7 +20,7 @@ WHAT THE READER GIVES
     stat fields.  plant() writes a planted database for a test, as rows or
     as text.
 
-ERRORS
+Errors
     CompdbError names the file and the command that writes it.
     MissingDatabase, a subclass, says that the file does not exist.
 

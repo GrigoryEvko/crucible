@@ -70,7 +70,7 @@ static_assert(same_bits(fp::sqrt(signaling_nan_of<float>), quiet_nan_of<float>))
 static_assert(fp::fma(0.1, 10.0, -1.0) > 0.0 && same_bits(fp::fma(0.1, 10.0, -1.0), 0x1p-54));
 static_assert(same_bits(fp::fma(3.0f, 4.0f, 5.0f), 17.0f) && same_bits(fp::fma(-2.0, 0.0, 0.0), 0.0));
 
-// A constant evaluation of fma runs the exact form in integers (THE FMA).
+// A constant evaluation of fma runs the exact form in integers (the FMA).
 // test_core_fma compares the form at run time with an exact oracle, and with
 // the instruction of a second unit of the program.
 //

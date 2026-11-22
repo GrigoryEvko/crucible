@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The netdev parser takes text under the External source tag.  A raw
 // string does not convert to it, so host text crosses into the parser

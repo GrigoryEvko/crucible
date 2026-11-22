@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The object of a Box moves from the thread of a push to the thread of a
 // pop, so the payload of a Box channel is Sendable (foundation/Transfer.h).

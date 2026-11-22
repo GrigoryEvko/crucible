@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A const source cannot move into the frame of the door, so the door
 // refuses it.  The refusal must come from the deleted twin, whose message

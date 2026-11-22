@@ -25,7 +25,7 @@
 // fixy/check/Property.h gives the property tests and the oracle of the
 // family.
 //
-// THE TEST CONTEXT
+// Test context
 //   Each operation takes a context that owns the Test capability
 //   (TestContext).  Only the testing door of foundation/effects/Effect.h
 //   mints the Test source, and the rule owners refuses that door in a unit
@@ -33,26 +33,26 @@
 //   test holds one context, such as
 //     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
 //
-// THE DEATH TEST
+// Death test
 //   expect_dies starts the child through the child door of fixy/os/Process.h.
 //   The body runs only in the child, after a fork, so it may use only what is
-//   safe after a fork (THE CHILD DOOR of that header).  The parent reads the
+//   safe after a fork (the child door of that header).  The parent reads the
 //   standard error of the child to its end and waits for the child.  A
 //   child that ends by SIGABRT, with the expected text in the last
 //   fixy::process::kChildOutputCapacity bytes of its standard error, passes.
 //   On each other end, the test writes the end and the output of the child,
 //   and ends with the site of the call.
 //
-// THE DEATH BY A SIGNAL
+// Death by a signal
 //   expect_dies_by tests a body that ends by a signal of the kernel, such as
 //   a read of a page with no access.  The child first puts back the default
-//   action of the signal (THE CHILD RESET of fixy/os/Signal.h).  Then no
+//   action of the signal (the child reset of fixy/os/Signal.h).  Then no
 //   handler of the process or of a sanitizer turns the end into an exit or
 //   writes a report.  A child that ends by that signal passes, and the test
 //   reads no text.  On each other end, the test writes the end and the
 //   output of the child, and ends with the site of the call.
 //
-// THE COUNTING CHECK
+// Counting check
 //   A test that reads many facts in one run can count its failures in place
 //   of an end at the first one.  Then one run of the test gives each failed
 //   check.  A Tally counts the checks of one test.  CRUCIBLE_TEST_EXPECT
@@ -157,7 +157,7 @@ fail_assertion(Ctx const& /*test*/, char const (&condition)[Length], char const*
     detail::report_failed_assertion_(condition, Length - 1, file, static_cast<std::uint32_t>(line), function);
 }
 
-// Runs body in a child process (THE DEATH TEST).  The test continues when
+// Runs body in a child process (the death test).  The test continues when
 // the child ends by SIGABRT and its standard error holds expected.  Each
 // other end, and an error of the child door, ends the test with the site of
 // the call.  The body goes on to the child door as the caller gave it, so a
@@ -189,8 +189,8 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
         [](os::Errno const&) noexcept {});
 }
 
-// Runs body in a child process with the default action of FATAL_SIGNAL (THE
-// DEATH BY A SIGNAL).  The test continues when the child ends by that
+// Runs body in a child process with the default action of FATAL_SIGNAL (the
+// death by a signal).  The test continues when the child ends by that
 // signal.  Each other end, and an error of the child door, ends the test with
 // the site of the call.  A closure that the caller gives up goes to the once
 // door in the child, and a lent body or a function gets one call in place.
@@ -253,7 +253,7 @@ namespace detail {
 }  // namespace detail
 
 // A count of the failed checks of one test, which continues after a failure
-// (THE COUNTING CHECK).  The test owns the Tally, and it passes the Tally by
+// (the counting check).  The test owns the Tally, and it passes the Tally by
 // reference to each part of the test.  A check costs one increment and one
 // branch, and a failure is a cold call.
 class [[nodiscard]][[= ::foundation::linear::linear{}]] Tally final {
@@ -327,7 +327,7 @@ public:
 
 }  // namespace fixy::check
 
-// Ends the test when the condition is false (THE TEST CONTEXT).  The report
+// Ends the test when the condition is false (the test context).  The report
 // names the condition and the site of the assert: its file, its line and its
 // function.  The process ends through fatal, so a death test of an assert
 // sees SIGABRT.  A passing assert costs one branch, and the failure is a cold
@@ -349,7 +349,7 @@ public:
         }                                                      \
     } while (0)
 
-// Counts one check of the Tally (THE COUNTING CHECK).  A false condition
+// Counts one check of the Tally (the counting check).  A false condition
 // writes its text, the name of the test and the site of the check, and the
 // test continues.  The condition can hold the commas of a template argument
 // list, as in CRUCIBLE_TEST_ASSERT.  The text of the condition is a string

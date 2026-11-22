@@ -1,6 +1,6 @@
 #pragma once
 
-// The keys that a root door mints for its body (THE BORROW OF A ROOT DOOR of
+// The keys that a root door mints for its body (the borrow of a root door of
 // foundation/core/Frame.h).
 //
 //   KeyBrands<B...>     the brands of the keys of one body, in the order of
@@ -24,7 +24,7 @@
 //                       the entry of the dispatch door: the same call, for
 //                       keys of dispatch brands only, with no walk
 //
-// THE CHECKS
+// Checks
 //   The brands are distinct key brands (IsKeyBrand), so no body gets two keys
 //   of one brand, and no body gets a key of Unkeyed.  run_root_body_ mints no
 //   key of a dispatch brand, and run_dispatch_body_ mints only such keys (THE
@@ -134,7 +134,7 @@ concept NamesRootKeys = root_key_brands_t<Body, Leading>::count > 0;
 
 namespace detail {
 
-// True when the brands are distinct key brands (THE CHECKS).  Complexity:
+// True when the brands are distinct key brands (see the checks).  Complexity:
 // quadratic in the count of the brands, at compile time only.
 template <class... Brands>
 consteval bool are_distinct_key_brands_() {
@@ -170,7 +170,7 @@ consteval bool names_no_dispatch_brand_(KeyBrands<Brands...> /*brands*/) {
 }
 
 // True when each part holds BorrowsNoKeyOwner for the brand, and for each
-// brand (THE CHECKS).
+// brand (see the checks).
 template <class Brand, class... Parts>
 consteval bool parts_borrow_no_key_owner_() {
     return (BorrowsNoKeyOwner<Parts, Brand> && ...);
@@ -217,7 +217,7 @@ struct root_body_result_<Body, KeyBrands<Brands...>, Args...> {
     using type = decltype(std::declval<Body>()(std::declval<Args>()..., std::declval<LoanKey<Brands>&>()...));
 };
 
-// The one entry of the root doors (THE CHECKS): checks the body, and calls it
+// The one entry of the root doors (see the checks): checks the body, and calls it
 // with the leading arguments and one fresh key of each brand that it names.
 // The body moves into the frame of the entry, and it runs one time.
 template <std::size_t Leading, class Body, class... Args>

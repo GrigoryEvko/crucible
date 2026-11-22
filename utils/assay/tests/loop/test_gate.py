@@ -70,7 +70,7 @@ REGISTRY = (
 )
 # The planted registry with the scope quarantined for the rule quarantine.  The inputs of the rule then read the rule
 # table for each C++ file of the tree.  The registry and the rule table of a commit that adds a row of a kind that the
-# code of the gate does not know (THE CAREFUL SELECTION).
+# code of the gate does not know (the careful selection).
 QUARANTINED_REGISTRY = REGISTRY.replace(
     "rule quarantine engine=plugin scope=tracked", "rule quarantine engine=plugin scope=quarantined"
 )
@@ -95,7 +95,7 @@ DOOR_PATH = "utils/ledgers/door-unit.txt"
 COUNTED_DOORS = f"{DOOR_LEDGER}src/door.cpp | header-door | 2 | door.h | -\n"
 # The ledger of the rule home.
 HOME_LEDGER = "utils/ledgers/home.txt"
-# The mint inventory of the cases of THE BUILT FILES: the copy that a composition keeps, and the copy that the planted
+# The mint inventory of the cases of the built files: the copy that a composition keeps, and the copy that the planted
 # build gives.
 INVENTORY = "misc/mint-inventory.md"
 STALE_INVENTORY = "| `mint_a` | HS14: 1 |\n"
@@ -145,7 +145,7 @@ with open(build / "configures.txt", "a", encoding="utf-8") as handle:
 #   * deep: start a child in a process group of its own with assay.core.proc of this tree (UTILS_MARK), and wait for
 #     it.  The child writes more bytes to its output than a pipe holds, then its pid to deep.pid.  That write of the
 #     output ends only when the master reads it in its wait.  So the stop that deep.pid causes comes in the wait of the
-#     master (AN INTERRUPT of assay.core.proc).
+#     master (an interrupt of assay.core.proc).
 #   * broken-after-deep: wait for deep.pid of the build of default, and then be the mode broken.
 #   * count: write ready.txt, and wait for greedy.held of the build of default.  Then read each idle token of the
 #     jobserver of the lease, and write their count to tokens.txt.
@@ -390,7 +390,7 @@ if "crucible_dispatch" in words and calls.is_file():
 """.replace("@CALLS@", VESSEL_CALLS).replace("@HEADER@", VESSEL_HEADER)
 # The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
 # unless it is test_broken, test_ledger before the write of its ledger, or test_built before the write of the inventory.  A fall of door-unit makes no test red,
-# because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).  Each run of red tests adds one line to
+# because a ledger fails only on a growth (the policies of assay.core.ledger).  Each run of red tests adds one line to
 # alone-runs.txt of the build: the value of -j and the names of the tests.  A run of --label-regex runs each test of
 # the listing with that label, and writes the label to ran.txt of the build.  Each name in red.txt of the build is red
 # too.  The report gives the text of NAME.out of the build as the output of the test NAME.  The value of
@@ -446,21 +446,21 @@ PLANTED = {
     BUILD_RULE_MODULE: "VALUE = 1\n",
 }
 # The available memory of the heavy step of a run.  With much memory, the step gets the jobs of the gate.  With a small
-# memory, the step of default gets (9.5 - RESERVE_GB) / 0.6 = 2 jobs (THE MEMORY of assay.loop.heavy, and
+# memory, the step of default gets (9.5 - RESERVE_GB) / 0.6 = 2 jobs (the memory of assay.loop.heavy, and
 # KIND_GB_PER_JOB of assay.loop.gate).
 MUCH_MEMORY_GB = 1e6
 SMALL_MEMORY_GB = 9.5
 SMALL_MEMORY_JOBS = 2
-# The slots of the planted pool of a case, and the jobs of a planted gate, which are the slice of each lease (THE
-# JOBSERVER of assay.loop.gate).
+# The slots of the planted pool of a case, and the jobs of a planted gate, which are the slice of each lease (the
+# jobserver of assay.loop.gate).
 POOL_SLOTS = 64
 PLANTED_JOBS = 1
 # The idle ticks of the pump in the case of the greedy configuration: more than a case can run.  The idle tokens of a
 # lease then stay in its jobserver until its job reads them.  The tokens that go back to the pool after IDLE_TICKS are a
-# rule of time, and the test of assay.loop.heavy holds it (THE POOL of assay.loop.heavy).
+# rule of time, and the test of assay.loop.heavy holds it (the pool of assay.loop.heavy).
 NO_IDLE_RETURN_TICKS = 10**9
 # The wall guard of a test of the gate of the case of the hang, and the sleep of its test that never ends, in seconds
-# (THE HANG GUARD of assay.loop.gate).  The verdict reads the status of the test, and not a time.
+# (the hang guard of assay.loop.gate).  The verdict reads the status of the test, and not a time.
 HANG_GUARD_S = 2
 HANG_SLEEP_S = 600
 
@@ -494,7 +494,7 @@ def names_of(configurations: tuple[gate.Configuration, ...]) -> list[str]:
 
 
 def select_cases(expect: testing.Expect) -> None:
-    """Hold the selection of the configurations of a change (THE SELECTION)."""
+    """Hold the selection of the configurations of a change (the selection)."""
     expect(
         "a change of a text file selects the default build only",
         names_of(gate.select(["CLAUDE.md", "utils/assay/loop/land.py"], [], False)) == ["default"],
@@ -548,7 +548,7 @@ def select_cases(expect: testing.Expect) -> None:
 
 
 def table_cases(expect: testing.Expect) -> None:
-    """Hold the table of the configurations against the presets of this tree (THE CONFIGURATIONS)."""
+    """Hold the table of the configurations against the presets of this tree (the configurations)."""
     names = [configuration.configuration_name for configuration in gate.CONFIGURATIONS]
     expect(
         f"each configuration of the gate names the configuration of its build, and no two name the same: {names}",
@@ -598,7 +598,7 @@ def planted_configurations(configure: list[object]) -> tuple[gate.Configuration,
 
 
 def presets_cases(expect: testing.Expect) -> None:
-    """Hold the configurations that the gate reads from the tiers of a planted presets file (THE CONFIGURATIONS)."""
+    """Hold the configurations that the gate reads from the tiers of a planted presets file (the configurations)."""
     found = planted_configurations([PLANTED_BASE, PLANTED_NIGHT, PLANTED_PARSE])
     expect(
         f"the presets with the tier gate are the configurations, the parse presets first: {found}",
@@ -820,8 +820,8 @@ def plan_cases(expect: testing.Expect) -> None:
 
 
 def parse_heal_cases(expect: testing.Expect) -> None:
-    """Hold the heal of the parse builds: the gate configures a stale parse build that `loop test` parses (THE COMPILER
-    HEAL).
+    """Hold the heal of the parse builds: the gate configures a stale parse build that `loop test` parses (the compiler
+    heal).
 
     A change of a text file runs only default, and `loop test` of default parses each configured parse build.  The
     first parse build has a graph and a stale compiler, and the second has no graph.  The gate must configure the first
@@ -864,7 +864,7 @@ def parse_heal_cases(expect: testing.Expect) -> None:
 
 
 def hang_guard_cases(expect: testing.Expect) -> None:
-    """Hold THE HANG GUARD: ctest stops a test that never ends at the guard, and the gate reads the test as red.
+    """Hold the hang guard: ctest stops a test that never ends at the guard, and the gate reads the test as red.
 
     The gate of the case has a guard of HANG_GUARD_S.  The run of the red tests alone uses the pinned ctest on a planted
     build whose test test_hang sleeps for HANG_SLEEP_S, far past the guard.  The verdict reads the status of the test
@@ -912,7 +912,7 @@ def hang_guard_cases(expect: testing.Expect) -> None:
 
 
 def change_cases(expect: testing.Expect) -> None:
-    """Hold the change of a commit as the touch reads it, and the touch of the inputs of a test (THE TOUCH)."""
+    """Hold the change of a commit as the touch reads it, and the touch of the inputs of a test (the touch)."""
     with tempfile.TemporaryDirectory(prefix="gate-change-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -988,7 +988,7 @@ def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[
     """Plant the default build of the warm tree with a mode, and each other build with its mode, and return a gate.
 
     `others` maps the name of a build directory, such as build-bench-fuzz, to its mode.  The gate has no vessel, and
-    vessel_cases() gives one to its gates (THE VESSEL).
+    vessel_cases() gives one to its gates (the vessel).
     """
     for name, build_mode in {"build": mode, **(others or {})}.items():
         plant_build(work, tree, name, build_mode)
@@ -1131,7 +1131,7 @@ def run_cases(expect: testing.Expect) -> None:
 
 
 def reduce_cases(expect: testing.Expect) -> None:
-    """Hold THE REDUCE: a landing that builds each configuration lowers a counted ledger over the builds, and folds it."""
+    """Hold the reduce: a landing that builds each configuration lowers a counted ledger over the builds, and folds it."""
     with tempfile.TemporaryDirectory(prefix="gate-reduce-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1181,7 +1181,7 @@ def reduce_cases(expect: testing.Expect) -> None:
 
 
 def partial_cases(expect: testing.Expect) -> None:
-    """Hold THE REDUCE of a landing that builds only some configurations: the gate and its legs write no ledger."""
+    """Hold the reduce of a landing that builds only some configurations: the gate and its legs write no ledger."""
     with tempfile.TemporaryDirectory(prefix="gate-partial-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1225,7 +1225,7 @@ def partial_cases(expect: testing.Expect) -> None:
 
 
 def counted_cases(expect: testing.Expect) -> None:
-    """Hold THE COUNTED RULES, the words of the reduce of a counted rule, and is_each_built() (THE REDUCE)."""
+    """Hold the counted rules, the words of the reduce of a counted rule, and is_each_built() (the reduce)."""
     with tempfile.TemporaryDirectory(prefix="gate-counted-") as work_text:
         root = Path(work_text)
         files = {
@@ -1270,7 +1270,7 @@ def counted_cases(expect: testing.Expect) -> None:
 
 
 def reduce_parse_cases(expect: testing.Expect) -> None:
-    """Hold THE REDUCE with the parse configurations: a folded ledger that makes their check red rejects the commit."""
+    """Hold the reduce with the parse configurations: a folded ledger that makes their check red rejects the commit."""
     with tempfile.TemporaryDirectory(prefix="gate-reduce-parse-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1316,7 +1316,7 @@ def built_targets(build: Path) -> list[str]:
 
 
 def built_cases(expect: testing.Expect) -> None:
-    """Hold THE BUILT FILES: the gate writes a merged generated file from the build of default before the suite."""
+    """Hold the built files: the gate writes a merged generated file from the build of default before the suite."""
     with tempfile.TemporaryDirectory(prefix="gate-built-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1441,7 +1441,7 @@ def built_cases(expect: testing.Expect) -> None:
 
 
 def built_fixture_cases(expect: testing.Expect) -> None:
-    """Hold THE BUILT FILES for a change that adds a fixture and holds no inventory: the selection and the wait.
+    """Hold the built files for a change that adds a fixture and holds no inventory: the selection and the wait.
 
     The run of default writes the inventory after its build, and the planted derive waits for the build of each other
     configuration.
@@ -1539,7 +1539,7 @@ def built_fixture_cases(expect: testing.Expect) -> None:
 
 
 def built_touch_cases(expect: testing.Expect) -> None:
-    """Hold the touched tests of a change with no compiled file that can change a built file (THE BUILT FILES).
+    """Hold the touched tests of a change with no compiled file that can change a built file (the built files).
 
     The planted rule plan-check has the inventory in its scope, as the rule derived-files has.  A change of the ledger
     of the rule mint touches no input of it, but the written inventory does.
@@ -1568,7 +1568,7 @@ def built_touch_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
-# The registry, the ledger and the path of the ledger of the rule owners of the cases of THE RATCHET ROWS.  The module
+# The registry, the ledger and the path of the ledger of the rule owners of the cases of the ratchet rows.  The module
 # of the rule owners of this tree gives its refused kinds, such as lifetime-start.
 RATCHET_REGISTRY = (
     f"{REGISTRY}rule owners engine=plugin scope=tracked ledger=count kinds=door-use,lifetime-start doc=L0 | a use | "
@@ -1579,7 +1579,7 @@ OWNERS_LEDGER = "format 1\nrule owners\nsrc/old.cpp | door-use | 1 | a: z | a re
 
 
 def ratchet_cases(expect: testing.Expect) -> None:
-    """Hold THE RATCHET ROWS: a red test of the plugin rules gives the rows of the build, and a different one gives none."""
+    """Hold the ratchet rows: a red test of the plugin rules gives the rows of the build, and a different one gives none."""
     with tempfile.TemporaryDirectory(prefix="gate-ratchet-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1651,7 +1651,7 @@ BUDGET_REASON = "the owner decision of 2026-11-15: the header grows with a new d
 
 
 def budget_cases(expect: testing.Expect) -> None:
-    """Hold THE RAISE OF A BUDGET: a crossed row of header-alone rises with the reason, and a different problem stays.
+    """Hold the raise of a budget: a crossed row of header-alone rises with the reason, and a different problem stays.
 
     With no budget reason, the crossed row refuses the commit.  With a budget reason, the gate writes the row with the
     reason, folds it into the commit, runs the round again with the checks of the red configuration, and gives the line
@@ -1740,7 +1740,7 @@ OWN_REASON = "the owner decision of 2026-11-15: a.h reads a new door"
 
 
 def budget_row_cases(expect: testing.Expect) -> None:
-    """Hold the text of one row in THE RAISE OF A BUDGET: --budget-reason ITEM=TEXT next to the plain text.
+    """Hold the text of one row in the raise of a budget: --budget-reason ITEM=TEXT next to the plain text.
 
     Two rows of header-alone cross.  The row of an item gets its own text, and the other row gets the plain text.  With
     no plain text, the row with no own text refuses the commit.  An item that names no crossed row refuses it too.
@@ -1802,7 +1802,7 @@ LOWER_REASON = "a cut of the door cost, measured at 111.0 G"
 
 
 def lower_cases(expect: testing.Expect) -> None:
-    """Hold THE LOWER OF A BUDGET: a candidate with a lower runs each configuration and folds the lowered row.
+    """Hold the lower of a budget: a candidate with a lower runs each configuration and folds the lowered row.
 
     The write gets the build of each configuration of objects.  A write that fails gives its line and the ledger of the
     commit, and the candidate lands.
@@ -1979,7 +1979,7 @@ def seen_of(tree: Path, builds: tuple[str, ...]) -> list[str]:
 
 
 def thread_cases(expect: testing.Expect) -> None:
-    """Hold THE JOBSERVER and THE THREADS: each configuration gets MAKEFLAGS, and the configurations overlap.
+    """Hold the jobserver and the threads: each configuration gets MAKEFLAGS, and the configurations overlap.
 
     Each run of a planted master waits for a file of a different run, and not for a time (LOOP_MASTER).
     """
@@ -2062,7 +2062,7 @@ def thread_cases(expect: testing.Expect) -> None:
 
 
 def oom_cases(expect: testing.Expect) -> None:
-    """Hold THE KILL FOR MEMORY: a red run with a rise of the kill count runs one time again, and a red run with no
+    """Hold the kill for memory: a red run with a rise of the kill count runs one time again, and a red run with no
     rise stays red."""
     with tempfile.TemporaryDirectory(prefix="gate-oom-") as work_text:
         work = Path(work_text)
@@ -2157,7 +2157,7 @@ def kind_cases(expect: testing.Expect) -> None:
 
 
 def memory_cases(expect: testing.Expect) -> None:
-    """Hold THE JOBSERVER with a small memory: the jobserver and each -j get the jobs that the memory holds."""
+    """Hold the jobserver with a small memory: the jobserver and each -j get the jobs that the memory holds."""
     with tempfile.TemporaryDirectory(prefix="gate-memory-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -2184,7 +2184,7 @@ def memory_cases(expect: testing.Expect) -> None:
 
 
 def stop_cases(expect: testing.Expect) -> None:
-    """Hold THE STOP: the first problem stops each configuration that runs, and only its problem is in the verdict."""
+    """Hold the stop: the first problem stops each configuration that runs, and only its problem is in the verdict."""
     with tempfile.TemporaryDirectory(prefix="gate-stop-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -2224,9 +2224,9 @@ def stop_cases(expect: testing.Expect) -> None:
 
 
 def masked_error_cases(expect: testing.Expect) -> None:
-    """Hold THE STOP: a thread that an error stopped does not hide the error, and a stop with no problem is an error.
+    """Hold the stop: a thread that an error stopped does not hide the error, and a stop with no problem is an error.
 
-    A stop also ends the wait of a configuration for its first slot (THE JOBSERVER).
+    A stop also ends the wait of a configuration for its first slot (the jobserver).
     """
     with tempfile.TemporaryDirectory(prefix="gate-masked-") as work_text:
         work = Path(work_text)
@@ -2285,7 +2285,7 @@ def masked_error_cases(expect: testing.Expect) -> None:
 
 
 def base_run_cases(expect: testing.Expect) -> None:
-    """Hold THE RUN OF THE BASE: the gate runs only the focus, with the words of the problems of the batch."""
+    """Hold the run of the base: the gate runs only the focus, with the words of the problems of the batch."""
     with tempfile.TemporaryDirectory(prefix="gate-base-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -2349,7 +2349,7 @@ def base_run_cases(expect: testing.Expect) -> None:
 
 
 def item_cases(expect: testing.Expect) -> None:
-    """Hold THE FAILING ITEMS: a red test gives the items of its output, and a run of the base can give other items."""
+    """Hold the failing items: a red test gives the items of its output, and a run of the base can give other items."""
     with tempfile.TemporaryDirectory(prefix="gate-items-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -2472,7 +2472,7 @@ def vessel_listing(labelled: Sequence[str]) -> str:
 
 
 def vessel_run_cases(expect: testing.Expect) -> None:
-    """Hold the run of the vessel (THE VESSEL).
+    """Hold the run of the vessel (the vessel).
 
     A change of a header that renames a function that the vessel calls fails the build of the vessel, and the gate
     rejects it.  A gate with no vessel accepts the same commit.  A red vessel test, a build with no vessel test, and a
@@ -2614,7 +2614,7 @@ def vessel_run_cases(expect: testing.Expect) -> None:
 
 
 def careful_cases(expect: testing.Expect) -> None:
-    """Hold THE CAREFUL SELECTION: a file that the code of the gate cannot read gives the widest result of its read."""
+    """Hold the careful selection: a file that the code of the gate cannot read gives the widest result of its read."""
     with tempfile.TemporaryDirectory(prefix="gate-careful-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -2708,7 +2708,7 @@ def lock_cases(expect: testing.Expect) -> None:
 
 
 def cited_run_cases(expect: testing.Expect) -> None:
-    """Hold the ended runs that a verdict cites: they stay past RUNS_KEPT in the bounds of age and bytes (THE LOGS)."""
+    """Hold the ended runs that a verdict cites: they stay past RUNS_KEPT in the bounds of age and bytes (the logs)."""
 
     def ended_runs(land: Path, count: int, size: int) -> list[str]:
         """Make `count` ended runs from run 1, each with one log of `size` bytes, and give their names."""
@@ -2754,7 +2754,7 @@ def cited_run_cases(expect: testing.Expect) -> None:
 
 
 def live_run_cases(expect: testing.Expect) -> None:
-    """Hold a run live through a burst of short runs: its logs stay, and they go as an ended run after it (THE LOGS)."""
+    """Hold a run live through a burst of short runs: its logs stay, and they go as an ended run after it (the logs)."""
     with tempfile.TemporaryDirectory(prefix="gate-live-") as work_text:
         land = Path(work_text) / "land"
         logs = land / gate.LOGS

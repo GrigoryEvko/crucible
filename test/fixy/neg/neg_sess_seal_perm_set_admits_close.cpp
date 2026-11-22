@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit says that a handle with a region lent out can close,
 // so that the protocol ends while the loan is out.  The predicate is a

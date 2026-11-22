@@ -11,7 +11,7 @@
 // of the caller holds the handle of each thread, so the door allocates
 // nothing.
 //
-// THE OPTIONS
+// Options
 //     Each thread of one call gets the options of the call: the size of its
 //     stack, the size of the guard area below the stack, its name and its
 //     CPUs.  The defaults do not read the environment.  The stack has 8 MiB,
@@ -37,7 +37,7 @@
 //     call on more than one CPU.  The placement of an empty mask changes
 //     nothing.
 //
-// THE ERRORS
+// Errors
 //     A start that fails before the first thread runs is the error of the
 //     Result, with the error number of the call that failed: eagain when the
 //     process or the host has no resources for one more thread, eperm when
@@ -55,7 +55,7 @@
 //     back.  A join that fails ends the process too, because the door started
 //     and joins each thread one time.
 //
-// THE WAIT OF THE CALLER
+// Wait of the caller
 //     The door has no spin.  A start calls pthread_create, and a join calls
 //     pthread_join, which parks the caller until the thread ends.  run_joined
 //     holds the caller from the first start to the last join.  So the caller
@@ -71,7 +71,7 @@
 //     Bodies that can share a CPU wait with SpinThenPark of
 //     fixy/concurrent/EventCount.h.
 //
-// THE ALTERNATE STACK
+// Alternate stack
 //     Each thread that the door starts holds a ThreadSignalStack of
 //     fixy/os/Signal.h while its task runs.  The handler of a fatal signal
 //     then runs on that stack, also when the task overflows its own stack.
@@ -81,20 +81,20 @@
 //     thread six system calls: mmap, mprotect, three calls of sigaltstack and
 //     munmap.
 //
-// THE OWNED THREAD
+// Owned thread
 //     start_thread_task starts one thread and gives its handle, and
 //     join_thread_task joins it later.  The two are the door of the
 //     OwnedThread of fixy/os/OwnedThread.h, which holds the task, the name
 //     and the body in a frame of its own.  The errors of a start and of a
 //     join are the errors above.
 //
-// THE FORK HOOK
+// Fork hook
 //     run_in_fork_child registers a function that the child of a fork runs
 //     before fork returns in the child, through pthread_atfork.  A child has
 //     only the thread that called fork, so a hook can drop the state of the
 //     other threads of the parent.
 //
-// THE CONTEXT OF A BODY
+// Context of a body
 //     A body of run_joined takes no argument, or the context of the call as
 //     its one parameter.  A body that needs a context takes it there and
 //     captures none, so no context of one thread reaches the body through a
@@ -106,18 +106,18 @@
 //     and the door refuses a body that takes it.  The caller waits until each
 //     thread has joined, so the context outlives each body.
 //
-// THE KEYS OF A BODY
+// Keys of a body
 //     A body of run_joined or of run_beside can name keys of named brands as
 //     its trailing parameters, LoanKey<B>&, after no argument or after the
 //     context: body(keys...) or body(ctx, keys...).  The door is a root door
-//     (THE BORROW OF A ROOT DOOR of foundation/core/Frame.h): on the thread of
+//     (the borrow of a root door of foundation/core/Frame.h): on the thread of
 //     the body, it mints one key of each brand for the call, and it refuses a
 //     body that reaches a key of such a brand, or an owner of such a brand
 //     through a borrow (foundation/core/RootKeys.h).  The bodies of
 //     run_beside_each take the index of the thread only, so a body that names a
 //     key does not compile there.
 //
-// THE BODIES BY MOVE
+// Bodies by move
 //     run_joined, run_joined_raw_probe and run_beside take each body as an
 //     rvalue, and they move each body into a parameter by value of the frame of
 //     the door before the first start.  So two bodies are two objects, also
@@ -136,7 +136,7 @@
 //     capture-unconsumed of the rule must-consume).  A body that the caller
 //     reads after the call gives that value back as its result (THE RESULTS).
 //
-// THE RESULTS
+// Results
 //     A body of run_joined gives a value, or gives nothing.  Each thread
 //     writes the value of its body into a slot of its own in the frame of
 //     the call, and the join orders that write before the read of the
@@ -148,7 +148,7 @@
 //     borrow.  The slot takes the value by an assignment of an Option, so a
 //     linear value is refused.
 //
-// THE CLOSURE OF A BODY
+// Closure of a body
 //     run_joined checks each body with check_closure of foundation/Closure.h,
 //     and a refusal is a static_assert whose message is the verdict.  One
 //     body crosses to one thread while the caller waits, so its policy is
@@ -158,7 +158,7 @@
 //     through two borrows are each refused where a borrow is not
 //     Synchronized: the check fails closed.
 //
-// THE GATE
+// Gate
 //     run_joined takes a context that owns Bg or Init, the authority to start
 //     threads.  The list form and the owned form in detail have no gate of
 //     their own.  Their callers in the base hold the gate: the fork of
@@ -167,7 +167,7 @@
 //     the mint of fixy/os/OwnedThread.h.  run_in_fork_child changes the process
 //     for each fork after it, so it takes a context that owns Init.
 //
-// THE RAW PROBE
+// Raw probe
 //     run_joined_raw_probe is run_joined for a test that probes raw behavior,
 //     such as the memory orders of an atomic.  Its bodies share plain state,
 //     and the order of the probe publishes it.  No type can state that, so the
@@ -178,17 +178,17 @@
 //     cannot call it.  The reason is a string literal, which names the probe
 //     at the call.
 //
-// THE THREAD BESIDE THE CALLER
+// Thread beside the caller
 //     run_beside starts one thread that runs the body, runs the continuation
 //     on the calling thread at the same time, and joins the thread when the
 //     continuation returns.  So the body ends before the call returns, and it
 //     can borrow the locals of the caller.  The continuation gets no owner of
 //     the thread, so no thread leaves the call.  The body moves into the frame
-//     of the door (THE BODIES BY MOVE), and the door takes the continuation by
+//     of the door (the bodies by move), and the door takes the continuation by
 //     value, so the continuation cannot reach the object of the body while
 //     the thread calls it.  The body takes no argument
 //     or the context of the call, as a body of run_joined does, and the
-//     values of the body and of the continuation come back as THE RESULTS
+//     values of the body and of the continuation come back as the results
 //     tell.
 //
 //     The policy of the body is BesideCaller (foundation/Closure.h, rule 8),
@@ -218,10 +218,10 @@
 //     holds a task and a frame for each thread up to that bound, so the door
 //     allocates nothing.  The options of the call are the options of each
 //     thread.  With OneCpuEach, the thread of index k takes the CPU k of the
-//     mask in ascending order of the CPUs (THE OPTIONS), and not the CPU of
+//     mask in ascending order of the CPUs (the options), and not the CPU of
 //     some other order of the caller.  So a caller with threads that have one
-//     role each gives each role a call of its own.  The errors are THE
-//     ERRORS: a first start that fails is the error of the call, and then the
+//     role each gives each role a call of its own.  The errors are the
+//     errors: a first start that fails is the error of the call, and then the
 //     continuation does not run.
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
@@ -317,8 +317,8 @@ private:
     static void name_holds_a_zero_byte_() noexcept;
 };
 
-// How the threads of one call share the CPUs of the mask of the options (THE
-// OPTIONS).
+// How the threads of one call share the CPUs of the mask of the options (the
+// options).
 enum class ThreadPlacement : std::uint8_t {
     // Each thread takes each CPU of the mask.
     SharedMask,
@@ -327,7 +327,7 @@ enum class ThreadPlacement : std::uint8_t {
     OneCpuEach,
 };
 
-// The options of each thread of one call (THE OPTIONS).
+// The options of each thread of one call (the options).
 struct ThreadOptions {
     std::size_t stack_bytes = default_stack_bytes;
     std::size_t guard_bytes = default_guard_bytes;
@@ -356,13 +356,13 @@ struct thread_task {
 };
 
 // Starts one thread for each task with the options, runs each task on its
-// thread, and joins each thread before it returns (THE ERRORS).
+// thread, and joins each thread before it returns (the errors).
 // Complexity: one start and one join for each task.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept;
 
 // Starts one thread for each task with the options, and keeps the handle of
-// each thread in its task (THE ERRORS).  The tasks live until
+// each thread in its task (the errors).  The tasks live until
 // join_thread_tasks returns for them.  Complexity: one start for each task.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 start_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept;
@@ -373,7 +373,7 @@ start_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions co
 void join_thread_tasks(::foundation::core::View<thread_task> tasks) noexcept;
 
 // Starts one thread that runs the task with the options, and gives the
-// handle of the thread (THE OWNED THREAD).  The caller writes the frame, the
+// handle of the thread (the owned thread).  The caller writes the frame, the
 // function and the name of the task, and the task lives until
 // join_thread_task returns for the handle.  A refused option or a start that
 // fails is the error, with the error number of the call, and then no thread
@@ -391,14 +391,14 @@ void join_thread_task(std::uint64_t handle) noexcept;
 void name_calling_thread(ThreadName const& name) noexcept;
 
 // True when a body of run_joined takes the context of the call, and the
-// context is Shareable (THE CONTEXT OF A BODY).  The door calls each body as
-// an rvalue (THE BODIES BY MOVE).
+// context is Shareable (the context of a body).  The door calls each body as
+// an rvalue (the bodies by move).
 template <typename Ctx, typename Body>
 inline constexpr bool takes_context_ =
     std::is_nothrow_invocable_v<Body, Ctx const&> && ::foundation::transfer::Shareable<Ctx>;
 
 // The forms of a body of run_joined and run_beside: no argument, the context,
-// the keys of a root door, or the context and the keys (THE KEYS OF A BODY).
+// the keys of a root door, or the context and the keys (the keys of a body).
 enum class JoinedForm : std::uint8_t {
     none,
     bare,
@@ -431,7 +431,7 @@ consteval JoinedForm joined_form_() noexcept {
     }
 }
 
-// The type that a call of a body gives, void included (THE RESULTS).  Only the
+// The type that a call of a body gives, void included (the results).  Only the
 // trait of the form of the body is read.
 template <typename Ctx, typename Body, JoinedForm Form = joined_form_<Ctx, Body>()>
 struct joined_call_result_ {};
@@ -451,13 +451,13 @@ template <typename Ctx, typename Body>
 using raw_joined_result_t_ = typename joined_call_result_<Ctx, Body>::type;
 
 // The value of a body in the result of run_joined: what the body gives, or
-// Unit for a body that gives nothing (THE RESULTS).
+// Unit for a body that gives nothing (the results).
 template <typename Ctx, typename Body>
 using joined_result_t_ = std::conditional_t<std::is_void_v<raw_joined_result_t_<Ctx, Body>>, ::foundation::core::Unit,
                                             raw_joined_result_t_<Ctx, Body>>;
 
 // True when the value of a body can cross to the thread of the caller and
-// sit in the result of run_joined (THE RESULTS).
+// sit in the result of run_joined (the results).
 template <typename Value>
 concept JoinedValue = ::foundation::transfer::Sendable<Value> && ::foundation::core::DroppablePayload<Value>
                    && ::foundation::core::HoldsNoBorrow<Value>;
@@ -561,7 +561,7 @@ template <typename Ctx, typename Body>
 [[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body&& body, Ctx const& ctx) noexcept {
     constexpr JoinedForm form = joined_form_<Ctx, Body>();
     if constexpr (form == JoinedForm::keys) {
-        // The keys are minted here, on the thread of the body (THE KEYS OF A BODY).
+        // The keys are minted here, on the thread of the body (the keys of a body).
         if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
             ::foundation::core::detail::run_root_body_<0>(static_cast<Body&&>(body));
             return ::foundation::core::Unit{};
@@ -602,7 +602,7 @@ void run_joined_body_(void* frame) noexcept {
             std::move(*static_cast<FrameSlot<Body>*>(joined.body)).take(), *static_cast<Ctx const*>(joined.ctx)));
 }
 
-// Registers HOOK for the child of each fork (THE FORK HOOK).  The error is
+// Registers hook for the child of each fork (the fork hook).  The error is
 // the error number of pthread_atfork: enomem when the C library has no room
 // for one more hook.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -614,7 +614,7 @@ run_in_fork_child_(void (*hook)() noexcept) noexcept;
 template <typename Ctx>
 concept CtxRegistersForkHooks = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
-// Registers HOOK for the child of each fork after the call (THE FORK HOOK).
+// Registers hook for the child of each fork after the call (the fork hook).
 template <typename Ctx>
     requires CtxRegistersForkHooks<Ctx>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -624,19 +624,19 @@ run_in_fork_child(Ctx const& /*init*/, void (*hook)() noexcept) noexcept {
 
 // A body of run_joined for a call with the context Ctx: an object that is not
 // a reference and not const, that runs as an rvalue with no argument or with
-// the context (THE CONTEXT OF A BODY, THE BODIES BY MOVE), and whose value can
-// cross to the caller (THE RESULTS).
+// the context (the context of a body, the bodies by move), and whose value can
+// cross to the caller (the results).
 template <typename Body, typename Ctx>
 concept JoinedBody = !std::is_reference_v<Body> && !std::is_const_v<Body>
                   && (detail::joined_form_<Ctx, Body>() != detail::JoinedForm::none)
                   && detail::JoinedValue<detail::joined_result_t_<Ctx, Body>>;
 
-// True when a call names a body as an lvalue, which a root door refuses (THE
-// BODIES BY MOVE).
+// True when a call names a body as an lvalue, which a root door refuses (the
+// bodies by move).
 template <typename... Bodies>
 concept NamesABodyAsAnLvalue = (std::is_lvalue_reference_v<Bodies> || ...);
 
-// The value of a call of run_joined (THE RESULTS): Unit when no body gives a
+// The value of a call of run_joined (the results): Unit when no body gives a
 // value, else a Record of the value of each body, in the order of the bodies.
 template <typename Ctx, typename... Bodies>
 using joined_values_t =
@@ -684,7 +684,7 @@ run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is
 
 }  // namespace detail
 
-// The policies of a body of run_joined (THE CLOSURE OF A BODY).  One body
+// The policies of a body of run_joined (the closure of a body).  One body
 // runs on one thread while the caller waits, and two or more bodies run at
 // the same time.
 inline constexpr ::foundation::closure::DoorPolicy joined_sole_policy{::foundation::closure::Crossing::SoleThread,
@@ -692,7 +692,7 @@ inline constexpr ::foundation::closure::DoorPolicy joined_sole_policy{::foundati
 inline constexpr ::foundation::closure::DoorPolicy joined_concurrent_policy{
     ::foundation::closure::Crossing::ConcurrentThreads, ::foundation::closure::QttGrade::One, false};
 
-// The policy of a body of run_joined_raw_probe (THE RAW PROBE): the policy
+// The policy of a body of run_joined_raw_probe (the raw probe): the policy
 // of sibling bodies, with no transfer fact of a field.
 inline constexpr ::foundation::closure::DoorPolicy raw_probe_policy{::foundation::closure::Crossing::ConcurrentThreads,
                                                                     ::foundation::closure::QttGrade::One, false, false};
@@ -720,10 +720,10 @@ consteval void check_raw_probe_body_() noexcept {
 
 // Runs each body on a thread of its own with the options, and joins each
 // thread before it returns.  Each body moves into the frame of the door, and
-// the call ends before the frame does (THE BODIES BY MOVE).  The bodies run at
+// the call ends before the frame does (the bodies by move).  The bodies run at
 // the same time, so two bodies that share state need a synchronization of
-// their own.  The value of the call holds the value of each body (THE
-// RESULTS).
+// their own.  The value of the call holds the value of each body (the
+// results).
 template <typename Ctx, typename... Bodies>
     requires(!NamesABodyAsAnLvalue<Bodies...>) && CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0)
          && (JoinedBody<Bodies, Ctx> && ...)
@@ -736,7 +736,7 @@ run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&&... bodies) noe
 }
 
 // A body that the caller names as an lvalue stays an object of the caller, so
-// one object given two times would run on two threads (THE BODIES BY MOVE).
+// one object given two times would run on two threads (the bodies by move).
 template <typename Ctx, typename... Bodies>
     requires NamesABodyAsAnLvalue<Bodies...>
 void run_joined(Ctx const& /*ctx*/, ThreadOptions const& /*options*/, Bodies&&... /*bodies*/) =
@@ -754,12 +754,12 @@ using beside_result_t_ = std::conditional_t<std::is_void_v<std::invoke_result_t<
 
 // A continuation of run_beside: an object that is not const, that runs one
 // time as an rvalue with no argument on the calling thread, and whose value
-// can sit in the result (THE THREAD BESIDE THE CALLER).
+// can sit in the result (the thread beside the caller).
 template <typename Continuation>
 concept BesideContinuation = !std::is_const_v<Continuation> && std::is_nothrow_invocable_v<Continuation>
                           && ::foundation::core::RecordElement<detail::beside_result_t_<Continuation>>;
 
-// The value of a call of run_beside (THE RESULTS): Unit when neither the body
+// The value of a call of run_beside (the results): Unit when neither the body
 // nor the continuation gives a value, else a Record of the value of the body
 // and the value of the continuation.
 template <typename Ctx, typename Body, typename Continuation>
@@ -768,7 +768,7 @@ using beside_values_t = std::conditional_t<
     ::foundation::core::Unit,
     ::foundation::core::Record<detail::joined_result_t_<Ctx, Body>, detail::beside_result_t_<Continuation>>>;
 
-// The policy of a body of run_beside (THE THREAD BESIDE THE CALLER).
+// The policy of a body of run_beside (the thread beside the caller).
 inline constexpr ::foundation::closure::DoorPolicy beside_caller_policy{::foundation::closure::Crossing::BesideCaller,
                                                                         ::foundation::closure::QttGrade::One, false};
 
@@ -839,7 +839,7 @@ run_beside(Ctx const& ctx, ThreadOptions const& options, Body&& body, Continuati
 }
 
 // A body that the caller names as an lvalue stays an object of the caller
-// (THE BODIES BY MOVE).
+// (the bodies by move).
 template <typename Ctx, typename Body, typename Continuation>
     requires NamesABodyAsAnLvalue<Body>
 void run_beside(Ctx const& /*ctx*/, ThreadOptions const& /*options*/, Body&& /*body*/,
@@ -847,7 +847,7 @@ void run_beside(Ctx const& /*ctx*/, ThreadOptions const& /*options*/, Body&& /*b
                                                         "call, or pass std::move(body)");
 
 // The index of the thread of a body of run_beside_each, from 0 to the count
-// less one (THE THREAD BESIDE THE CALLER).
+// less one (the thread beside the caller).
 using BesideIndex = ::foundation::core::Id<struct BesideIndexTag, std::uint32_t>;
 
 // A count of the threads of run_beside_each, from 0 to Max.
@@ -855,8 +855,8 @@ template <std::size_t Max>
 using BesideCount = ::foundation::core::Index<Max + 1>;
 
 // The policy of a body of run_beside_each: beside the caller, more than one
-// call, and one object that many threads call at the same time (THE THREAD
-// BESIDE THE CALLER).
+// call, and one object that many threads call at the same time (the thread
+// beside the caller).
 inline constexpr ::foundation::closure::DoorPolicy beside_each_policy{::foundation::closure::Crossing::BesideCaller,
                                                                       ::foundation::closure::QttGrade::Omega, true};
 
@@ -887,10 +887,10 @@ void run_beside_each_body_(void* frame) noexcept {
 
 // Starts count threads with the options, and each calls the body with its
 // index.  The continuation runs on the calling thread at the same time, and
-// the door joins each thread when the continuation returns (THE THREAD BESIDE
-// THE CALLER).  The call gives the value of the continuation, or Unit when it
+// the door joins each thread when the continuation returns (the thread beside
+// the caller).  The call gives the value of the continuation, or Unit when it
 // gives nothing.  A first start that fails is the error of the call, and then
-// no body and no continuation run (THE ERRORS).  Complexity: one start and one
+// no body and no continuation run (the errors).  Complexity: one start and one
 // join for each thread, and a frame that holds Bound tasks.
 template <typename Ctx, std::size_t Bound, typename Body, typename Continuation>
     requires CtxStartsThreads<Ctx> && BesideEachBody<Body> && BesideContinuation<Continuation>
@@ -946,7 +946,7 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
     }
 }
 
-// The reason of a raw probe (THE RAW PROBE).  Only a string literal that is
+// The reason of a raw probe (the raw probe).  Only a string literal that is
 // not empty gives one, so the reason names the probe at the call.
 class RawProbeReason {
 public:
@@ -960,13 +960,13 @@ private:
     ::foundation::core::TextView text_{};
 };
 
-// A context that is the authority of a raw probe: one that owns Test (THE
-// RAW PROBE).
+// A context that is the authority of a raw probe: one that owns Test (the
+// raw probe).
 template <typename TestCtx>
 concept CtxRunsRawProbes = ::foundation::effects::CtxOwnsCapability<TestCtx, ::foundation::effects::Effect::Test>;
 
 // run_joined for a test that probes raw behavior, with the reason of the
-// probe (THE RAW PROBE).  The bodies, the values and the errors are those of
+// probe (the raw probe).  The bodies, the values and the errors are those of
 // run_joined.
 template <typename Ctx, typename TestCtx, typename... Bodies>
     requires(!NamesABodyAsAnLvalue<Bodies...>) && CtxStartsThreads<Ctx> && CtxRunsRawProbes<TestCtx>
@@ -979,7 +979,7 @@ run_joined_raw_probe(Ctx const& ctx, TestCtx const& /*test*/, RawProbeReason /*r
 }
 
 // A body that the caller names as an lvalue stays an object of the caller
-// (THE BODIES BY MOVE).
+// (the bodies by move).
 template <typename Ctx, typename TestCtx, typename... Bodies>
     requires NamesABodyAsAnLvalue<Bodies...>
 void run_joined_raw_probe(Ctx const& /*ctx*/, TestCtx const& /*test*/, RawProbeReason /*reason*/,

@@ -1,6 +1,6 @@
 """The judge of the measured value of one item against a measured rule and the ledger row of the policy max.
 
-THE VERDICT
+The verdict
     verdict() compares the value of one item with the limit of its kind in a
     measured rule (assay.core.registry).  It also reads the kept value of the
     ledger row of the kind and the item, when the ledger has a row that
@@ -14,13 +14,13 @@ THE VERDICT
                 that names the row.  A row then cannot hide a drift
     NO_FINDING is the verdict of each other value.  A value at or below the
     limit gives no finding, also when a row keeps its item.  A ledger fails
-    only on a growth (THE POLICIES of assay.core.ledger).  A row above its
+    only on a growth (the policies of assay.core.ledger).  A row above its
     value passes.  A value that is equal to the limit or to the kept value
     with its noise is not more than it.  Each judge of a measured value
     calls verdict(): judge() of this module, check_report.classify(), and
     the judges of the step meters.
 
-THE NOISE
+The noise
     The kept value of a row is the value of the item at the last write of the
     row.  Two measures of one item are not always equal, and a change of a
     shared header grows each item that includes it by a small part.  A row
@@ -56,11 +56,11 @@ THE NOISE
     the unit or its display text.  A judge of a check_report.Budget then gets
     the noise of its unit too.
 
-THE JUDGE
+The judge
     judge() gives the finding of one verdict for a check of the engines: an
     error for ERROR and RISEN, and no finding for each other verdict.
 
-THE SCOPE
+The scope
     The measured rules of a compile, a link, an object and a test do not
     judge the outputs of the directory bench of a build: its objects, its
     links and its tests.  A bench measures a hot path on purpose, so its
@@ -70,36 +70,36 @@ THE SCOPE
     and `loop test-step`.  An output that is not in the build directory is
     judged.
 
-THE ROWS
+The rows
     The ledger of a rule of the policy max holds at most one row for each
-    kind and item, and each row judges each build of the tree.  THE REGISTRY
-    AND THE LEDGERS of assay.core.meter gives the row.  read_rows() gives the
+    kind and item, and each row judges each build of the tree.  The registry
+    and the ledgers of assay.core.meter gives the row.  read_rows() gives the
     rows of the kinds that a judge reads, and row_of() gives the row of one
     kind and item, with no finding.  A row whose item a build does not hold
     gives no finding.
 
-THE WRITE
+The write
     raised_ledger() gives the new ledger of `guard write` from the measures
     of a build.  The kind of the limit of a measure is the kind of its row.
     It writes a row only for an item above the limit that no
     row keeps: a new row, or a higher kept value of a row whose item rose
-    above it with its noise (THE VERDICT).  Such a row needs the reason of
+    above it with its noise (the verdict).  Such a row needs the reason of
     the call, and a call with no reason writes nothing.  raised_ledger()
     removes no row and lowers no kept value.  A build that does not hold an
     item, or holds it with a lower value, then keeps the row of a different
     build.  The write of the rules of the engine build then removes each row
-    that keeps nothing in each build (THE PRUNE of
+    that keeps nothing in each build (the prune of
     assay.guard.engines.buildsys.cost_budgets).  An explicit lower of a named
-    row reads one build of each configuration of the gate (THE LOWER of that
+    row reads one build of each configuration of the gate (the lower of that
     module).
 
-THE STEP RULES
+The step rules
     The rule step-cost has the kinds compile, fixture and test, and the rule
     step-memory has the kinds compile, link and test.  STEP_COST, STEP_MEMORY
     and the constants of the kinds give the names to each judge: the module
     assay.guard.engines.buildsys.cost_budgets and the step meters.
 
-THE STEP METERS
+The step meters
     `loop step`, `loop test-step` and `loop fixture` judge each step with
     verdict() and row_of(), and they give their own messages.  The import
     closure of a step meter does not hold assay.core.report, which imports
@@ -121,19 +121,19 @@ if TYPE_CHECKING:
     from assay.core import ledger as rule_ledger
     from assay.core import report as check_report
 
-# The verdicts of one value (THE VERDICT).
+# The verdicts of one value (the verdict).
 NO_FINDING = ""
 ERROR = "error"
 ADMITTED = "admitted"
 RISEN = "risen"
 # The noise of each unit of a measured rule, with the margin of a shared header, as a part of the kept value of a row
-# (THE NOISE).
+# (the noise).
 NOISE = {"s": 1.0, "GB": 0.1, "G": 0.05, "KB": 0.04, "MB": 0.05}
 # The display text of a unit of a measured rule, when it is not the unit itself.  G is 10^9 instructions.
 UNIT_TEXTS = {"G": "G instructions"}
-# The directory of a build whose outputs no measured rule judges (THE SCOPE).
+# The directory of a build whose outputs no measured rule judges (the scope).
 BENCH_DIRECTORY = "bench"
-# The rules of the cost and of the peak memory of one step, and the kinds of their items (THE STEP RULES).
+# The rules of the cost and of the peak memory of one step, and the kinds of their items (the step rules).
 STEP_COST = "step-cost"
 STEP_MEMORY = "step-memory"
 COMPILE_KIND = "compile"
@@ -143,7 +143,7 @@ TEST_KIND = "test"
 
 
 def is_judged(output: str) -> bool:
-    """Tell if the measured rules judge an output, from its path relative to the build directory (THE SCOPE).
+    """Tell if the measured rules judge an output, from its path relative to the build directory (the scope).
 
     Args:
         output: The output relative to the build directory, with '/' between its parts.  An absolute path or a path
@@ -191,7 +191,7 @@ class Admission(Value):
 
 
 class Rows(Value):
-    """The ledger rows of one rule of the policy max (THE ROWS).
+    """The ledger rows of one rule of the policy max (the rows).
 
     `admitted` holds the row of each kind and item that a row keeps.
     """
@@ -209,7 +209,7 @@ class Rows(Value):
 
 
 def noise_of(unit: str) -> float:
-    """Return the noise of a unit or of its display text, as a part of the kept value of a row (THE NOISE)."""
+    """Return the noise of a unit or of its display text, as a part of the kept value of a row (the noise)."""
     shown = {text: name for name, text in UNIT_TEXTS.items()}
     return NOISE.get(shown.get(unit, unit), 0.0)
 
@@ -226,7 +226,7 @@ def kept_value(value: float) -> float:
 
 
 def verdict(value: float, limit: float, kept: float | None, noise: float = 0.0) -> str:
-    """Return the verdict of one value against the limit and the ledger row of its item (THE VERDICT).
+    """Return the verdict of one value against the limit and the ledger row of its item (the verdict).
 
     Args:
         value: The value, in the unit of the measured rule
@@ -247,7 +247,7 @@ def forms_of(shape: str | Mapping[str, str]) -> Mapping[str, str]:
 
 
 def row_of(rule_id: str, kind: str, shape: str, ledger: str, item: str) -> tuple[Admission | None, str, str]:
-    """Return the row of one kind and item from the ledger of a rule of the policy max (THE ROWS).
+    """Return the row of one kind and item from the ledger of a rule of the policy max (the rows).
 
     Args:
         rule_id: The ID of the rule
@@ -272,7 +272,7 @@ def row_of(rule_id: str, kind: str, shape: str, ledger: str, item: str) -> tuple
 
 
 def read_rows(rule_id: str, shape: str | Mapping[str, str], ledger: Path) -> Rows:
-    """Read the rows of the ledger of a rule of the policy max, for the kinds that a judge reads (THE ROWS).
+    """Read the rows of the ledger of a rule of the policy max, for the kinds that a judge reads (the rows).
 
     Complexity: linear in the rows.
 
@@ -307,7 +307,7 @@ def raised_ledger(
     measures: Iterable[tuple[str, float, check_report.Budget]],
     reason: str | None,
 ) -> rule_ledger.Ledger:
-    """Return the ledger of a rule of the policy max with a row for each measure that no row keeps (THE WRITE).
+    """Return the ledger of a rule of the policy max with a row for each measure that no row keeps (the write).
 
     The kind of the limit of a measure (check_report.Budget) is the kind of its row.  Complexity: linear in the
     measures and the rows.
@@ -349,7 +349,7 @@ def raised_ledger(
 
 
 def judge(rule_id: str, budget: check_report.Budget, measure: Measure, rows: Rows) -> check_report.Finding | None:
-    """Judge the value of one item (THE JUDGE).
+    """Judge the value of one item (the judge).
 
     Args:
         rule_id: The ID of the rule of the finding

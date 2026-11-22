@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A body runs inside the fork's noexcept frame, so a body that may throw
 // would terminate the program instead of reporting.  The body below can

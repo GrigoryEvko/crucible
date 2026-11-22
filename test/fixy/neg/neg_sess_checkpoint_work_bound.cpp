@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The compliance check of a checkpoint pair has a bound of work, the
 // template argument WorkBound of the mint.  The pair below is compliant, and

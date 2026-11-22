@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Each append of a producer endpoint of PermissionedMetaLog takes the
 // context of the caller, and the gate of the endpoint reads it.  An append

@@ -1,24 +1,24 @@
 """The judge and the write that the rules of the family linear share.
 
-THE FAMILY
+Family
     The quarantine plugin of utils/tools/quarantine/ holds the family linear
-    (linear.cpp): the rule must-consume, and the six rules of THE SHAPES,
+    (linear.cpp): the rule must-consume, and the six rules of the shapes,
     linear-containment, linear-capture, drop-door, linear-forge, brand-escape
     and brand-reentry.  Each rule is in report mode: a line is counted and is no
     compile error.
 
-THE LEDGER
+Ledger
     The ledger of each rule counts the lines of each directory and kind (the
     policy count), with the key of the rule quarantine
-    (assay.guard.engines.plugin.quarantine, THE KEY).  A row holds no entity and
+    (assay.guard.engines.plugin.quarantine, the key).  A row holds no entity and
     no line.  Each count row gives a reason: in its own REASON cell, or in a row
-    `reason PREFIX | REASON` of a prefix that holds its directory (THE REASON OF
-    A PREFIX of assay.core.ledger).  A count row with no reason is the kind
+    `reason PREFIX | REASON` of a prefix that holds its directory (the reason of
+    a prefix of assay.core.ledger).  A count row with no reason is the kind
     no-reason, which no ledger row admits (REFUSED_KINDS).  A count can only
     fall.  `guard list --build-dir DIR --path DIRECTORY/` prints the lines of a
     directory.
 
-THE WRITE
+Write
     A write counts the lines of the rule in each build.  A count row with no
     reason is a problem of the ledger and not of a build, so a write does not
     count it, and the check reports it until the row gets its reason.
@@ -48,13 +48,13 @@ def message(item_text: str, kind: str, actions: Mapping[str, str]) -> str:
 
 
 def prefix_reason(ledger: rule_ledger.Ledger, path: str) -> str:
-    """Return the reason of the longest reason row that holds a path, or "" (THE REASON OF A PREFIX)."""
+    """Return the reason of the longest reason row that holds a path, or "" (the reason of a prefix)."""
     held = [item for item in ledger.reasons if item.holds(path)]
     return max(held, key=lambda item: len(item.prefix)).reason if held else ""
 
 
 def reason_errors(rule: rule_registry.Rule, root: Path) -> list[check_report.Finding]:
-    """Give one error for each count row of the ledger of RULE with no reason (THE LEDGER).
+    """Give one error for each count row of the ledger of RULE with no reason (the ledger).
 
     A ledger that cannot be read gives no error here: the judgement of the ledger reports it.  Complexity: linear in
     the count rows times the reason rows.
@@ -85,7 +85,7 @@ def line_findings(
 ) -> list[check_report.Finding]:
     """Give an error for each line of RULE_ID other than a record, each count row with no reason and each problem.
 
-    The path of the error of a line is the directory of its file, the key of the ledger (THE LEDGER).
+    The path of the error of a line is the directory of its file, the key of the ledger (the ledger).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -108,7 +108,7 @@ def line_findings(
 def build_counts(
     rule: rule_registry.Rule, context: runner.PluginContext, problem_kinds: Iterable[str] = ()
 ) -> Counter[rule_ledger.Key]:
-    """Return the count of each key of the lines of the rule in the build of the context (THE WRITE).
+    """Return the count of each key of the lines of the rule in the build of the context (the write).
 
     A line of a kind of PROBLEM_KINDS, and a line with no kind, is a problem of the build.
 
@@ -132,7 +132,7 @@ def write(
     request: runner.WriteRequest,
     counts: Callable[[runner.PluginContext], Counter[rule_ledger.Key]] | None = None,
 ) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE).
+    """Write the ledger of the rule from the lines of the builds of the request (the write).
 
     Returns:
         0 when the ledger is written.  1 when a build has a problem, a count rose in the mode lower or an input cannot

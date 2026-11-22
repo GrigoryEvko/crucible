@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A combine rebuilds a parent from its two children, so the manifest
 // must say that the parent splits into those children.  The halves here

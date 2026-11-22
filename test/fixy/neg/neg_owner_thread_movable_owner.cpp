@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The thread holds a pointer to its owner, so the owner stays at one address.
 // mint_owner_thread refuses an owner that can move.

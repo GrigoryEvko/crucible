@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A class type that keeps a SchemaTable::MutableView as a non-static data
 // member must fail the reflection audit no_scoped_view_field_check.  The

@@ -26,7 +26,7 @@
 //                       alternative gets the RefMut<T, Brand> of its payload
 //                       in place, and the sum keeps the payload
 //
-// THE FAMILY
+// Family
 //   Each door of the family stands beside its owner.  Each door that lends a
 //   ViewMut or a RefMut builds it with the key of this header:
 //     with_mut(std::move(owner), body)   HeapArray and MaskedArray
@@ -38,8 +38,8 @@
 //     array.with_mut(body)   a FixedArray, in place (Array.h), and a
 //                       FixedHeapArray, in place (FixedHeapArray.h)
 //     array.with_mut(key, body)   a keyed FixedArray or a keyed
-//                       FixedHeapArray, in place, with its LoanKey (THE LOAN
-//                       KEY), by move or by a borrow of the key
+//                       FixedHeapArray, in place, with its LoanKey (the loan key),
+//                       by move or by a borrow of the key
 //     array.with_element(key, index, body)   one element of a keyed
 //                       FixedArray or of a keyed FixedHeapArray, with its LoanKey
 //     array.with_masked(key, body)   the element at key & (count - 1) of a
@@ -73,7 +73,7 @@
 // the return.  The bodies and the arms of the other two forms give their
 // result, under the same rule.
 //
-// THE TWO FORMS OF AN OWNER
+// Two forms of an owner
 //   A move of an owner on the heap takes a pointer and a count, so its frame
 //   holds the owner at the cost of O(1), and the caller holds no name for it.
 //   A move of an inline owner copies each of its elements into the frame and
@@ -85,23 +85,23 @@
 //   the body calls can still reach the owner, as for a sum, and the alias
 //   proof then holds only for the body that the rule reads.
 //
-// THE TWO FORMS
+// Two forms
 //   A sum is a small value that its holder keeps, often as a member that
 //   other code reads.  A move into a frame would write that member two
 //   times, and a read of its state from a second thread would race with the
 //   move.  So the door of a sum writes no byte of the sum.  It works as the
 //   borrow match does: the rule borrow-match refuses an arm that assigns,
-//   moves or changes the sum, and an owning sum counts the lend (THE LEND
-//   COUNT of Choice.h).  A sum gives one object, and no kernel reads two of
+//   moves or changes the sum, and an owning sum counts the lend (the lend
+//   count in Choice.h).  A sum gives one object, and no kernel reads two of
 //   them, so its frame needs no alias proof.
 //
 //   An owner gives a run, and a door of a kernel reads the brands of runs to
-//   prove that they do not overlap (THE ALIAS PROOF).  That proof needs a
+//   prove that they do not overlap (the alias proof).  That proof needs a
 //   frame that holds its owner, so the door of a heap owner takes the owner
 //   by move, and the door of an inline owner lends in place under the rule
-//   borrow-match (THE TWO FORMS OF AN OWNER).
+//   borrow-match (the two forms of an owner).
 //
-// THE BRAND OF A FRAME
+// Brand of a frame
 //   Each frame door takes a scope brand (CRUCIBLE_SCOPE_BRAND of
 //   foundation/Brand.h) in its last template parameter, after a pack that
 //   takes each explicit argument, so no caller names it.  Each unique borrow
@@ -116,7 +116,7 @@
 //   of the result of the arm, and the rule brand-escape keeps it out of each
 //   object of static or thread storage duration.
 //
-// THE ALIAS PROOF
+// Alias proof
 //   A frame of a heap owner holds its owner by value, and the rule
 //   borrow-match refuses a second door of an inline owner in the body of its
 //   frame, so no two live frames hold one object.  An owner owns its storage
@@ -144,7 +144,7 @@
 // passes a RefMut in a register.  The seal makes the move assignment
 // user-provided, so std::bit_cast builds no RefMut.
 //
-// THE LOAN KEY
+// Loan key
 //   An owner that lends its run in place stays reachable in the body of its
 //   frame: through a capture, a function that the body calls, or a Ref of the
 //   owner.  Each door call gives its frame a brand of its own, so a second
@@ -161,7 +161,7 @@
 //   key brand, such as FixedArray<T, N>, has the brand Unkeyed and the doors
 //   with no key.
 //
-// THE GATE
+// Gate
 //   A keyed door refuses a body that reaches a key of the brand of its owner
 //   (ReachesNoLoanKey): a capture of the key, a capture of an object that holds
 //   the key or that points to it, at each depth of the walk of
@@ -173,7 +173,7 @@
 //   A value behind type erasure, such as a void pointer, hides its type from the
 //   walk.  The quarantine refuses such a pointer outside the base.
 //
-// THE BRAND OF A KEY
+// Brand of a key
 //   A mint gives the fresh brand of its call site (CRUCIBLE_FRESH_BRAND), so
 //   the brand names one site and not one object.  Two objects of one brand,
 //   from two runs of one site or from a copy of an owner, need no brand of
@@ -184,7 +184,7 @@
 //   automatic storage of the scope of its mint.  A move or a copy of an owner
 //   keeps its brand, because the brand is in its type.
 //
-// THE BORROW OF A ROOT DOOR
+// Borrow of a root door
 //   A key of a named brand comes only from a root door: a door that starts a
 //   thread, or the door of one dispatch, mints a key for each brand that its
 //   body names in a trailing parameter LoanKey<B>&.  Another thread, or the
@@ -292,8 +292,8 @@ public:
 };
 
 // The mark of a loan key and of a keyed owner.  The kind loan-key-static of
-// the rule process-wide-state (utils/tools/quarantine/declaration.cpp, THE
-// LOAN-KEY STATICS) refuses an object of static or thread storage duration
+// the rule process-wide-state (utils/tools/quarantine/declaration.cpp, the
+// loan-key statics) refuses an object of static or thread storage duration
 // that reaches a class with the mark, because a body with no capture reaches
 // such an object and the gate does not see it.  A class template whose
 // instances are keyed only for some arguments writes loan_key_mark_when.
@@ -319,7 +319,7 @@ struct Unkeyed final {};
 template <class Brand>
 concept IsKeyBrand = ::foundation::brand::IsFreshBrand<Brand> && !std::is_same_v<Brand, Unkeyed>;
 
-// The annotation of a dispatch brand (THE DISPATCH BRAND): a named brand whose
+// The annotation of a dispatch brand (the dispatch brand): a named brand whose
 // keys only the dispatch door of fixy/concurrent/Dispatch.h mints.
 struct dispatch_brand final {};
 
@@ -334,7 +334,7 @@ struct dispatch_brand final {};
 template <class Brand>
 concept IsDispatchBrand = IsKeyBrand<Brand> && is_dispatch_brand_(^^Brand);
 
-// The key of the frames of the keyed owners of one brand (THE LOAN KEY).  The
+// The key of the frames of the keyed owners of one brand (the loan key).  The
 // class is empty, so it costs no byte and no instruction.  It is linear: each
 // path gives it back to its holder or ends it through a door.  It does not
 // copy, so one key gives one frame at a time.  Its move and its end are
@@ -347,7 +347,7 @@ concept IsDispatchBrand = IsKeyBrand<Brand> && is_dispatch_brand_(^^Brand);
 // the type, and the keyed doors of such an owner take no key, so the class
 // takes each brand.
 //
-// A key of a dispatch brand does not move (THE DISPATCH BRAND): the key cell
+// A key of a dispatch brand does not move (the dispatch brand): the key cell
 // of the dispatch door builds it in place, and a body borrows it.  So no body
 // moves it into a field that outlives the window of its dispatch.  It is no
 // linear class then, because the linear shape asks a move.  Its move
@@ -396,7 +396,7 @@ namespace detail {
     return (is_class && !node.may_read_members) || ::foundation::reflect::holds_unreadable_state(node);
 }
 
-// True when the walk of the gate (THE GATE) reaches the key from the type
+// True when the walk of the gate (the gate) reaches the key from the type
 // root, or a class whose members it cannot read.  The walk is the walk of
 // first_component_satisfying of foundation/reflect/TypeComponents.h with the
 // instantiating read.  It is a function that is no template, so no unit can
@@ -453,14 +453,14 @@ namespace detail {
     return false;
 }
 
-// The two regions of the walk of THE BORROW OF A ROOT DOOR: what a value of
+// The two regions of the walk of the borrow of a root door: what a value of
 // the root holds, and what it reaches through a borrow.
 enum class BorrowRegion : unsigned char {
     held,
     borrowed,
 };
 
-// True when the walk of THE BORROW OF A ROOT DOOR reaches an owner of the
+// True when the walk of the borrow of a root door reaches an owner of the
 // brand or a key of the brand through a borrow, or a class whose members it
 // cannot read.  Each node has a region, and the walk keeps one list for each
 // region, so a type read in one region is read again in the other:
@@ -554,7 +554,7 @@ enum class BorrowRegion : unsigned char {
 
 }  // namespace detail
 
-// True when no value of Root reaches a key of the brand (THE GATE): no part
+// True when no value of Root reaches a key of the brand (the gate): no part
 // of it, by value, through a reference, a pointer or a template argument, at
 // each depth, is a LoanKey<Brand>.  Each keyed door asks it of its body and of
 // the element of its owner.  The walk reads each class one time.  Complexity:
@@ -564,7 +564,7 @@ concept ReachesNoLoanKey =
     IsKeyBrand<Brand> && !detail::reaches_loan_key_(^^std::remove_cvref_t<Root>, std::meta::dealias(^^LoanKey<Brand>));
 
 // True when a part of a body of a root door is safe for a key of the brand
-// (THE BORROW OF A ROOT DOOR): it reaches no key of the brand in either region,
+// (the borrow of a root door): it reaches no key of the brand in either region,
 // and it reaches no owner of the brand through a borrow.  A root door asks it
 // of its body, of the result of the body and of each parameter that is no key.
 // Complexity: two walks, linear in the distinct types that Root reaches, at

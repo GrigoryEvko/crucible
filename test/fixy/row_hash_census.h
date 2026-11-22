@@ -415,7 +415,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::foundation::algebra,
     ^^::foundation::permissions,
     // The classes of the Simd facade are in its target namespace, whose name
-    // follows the target (THE TARGET NAMESPACE of foundation/Platform.h).
+    // follows the target (the target namespace of foundation/Platform.h).
     std::meta::parent_of(^^::foundation::simd::vec),
     ^^::foundation::effects,
     ^^::foundation::effects::resource,
@@ -467,7 +467,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
      "the tag and the brand that the witness row of the drain claim of a channel names: no code builds a channel of "
      "them, and they are no carriers"},
     // The element ops are in the target namespace of their header, whose name
-    // follows the target (THE TARGET NAMESPACE of foundation/Platform.h).
+    // follows the target (the target namespace of foundation/Platform.h).
     {std::meta::parent_of(^^::foundation::core::elementwise::Sum),
      "the ops of one element of the pointwise walk: empty classes that a walk calls, and none of them is a value "
      "in a kernel signature"},

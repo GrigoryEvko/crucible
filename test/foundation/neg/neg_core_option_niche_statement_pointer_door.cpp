@@ -1,7 +1,7 @@
 // A class forges the statement that no door builds the empty value: its
 // public constructor takes the null pointer and no key, and it builds the
 // empty value from it.  The payload gate checks the statement against the
-// constructors of the class (THE CHECK OF THE STATEMENT of
+// constructors of the class (the check of the statement of
 // foundation/core/Choice.h), so the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

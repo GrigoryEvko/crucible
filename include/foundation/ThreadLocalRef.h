@@ -12,7 +12,7 @@
 // authorizes nothing, and the public default constructor is the one door.
 // There is no mint.
 //
-// THE CELLS.  A thread_local of a template has a copy in each shared library,
+// Cells.  A thread_local of a template has a copy in each shared library,
 // because the hidden visibility of the tree hides each instance.  So no
 // template holds a cell.  Each thread has one table of thread_local_cell_count
 // cells of thread_local_cell_bytes bytes.  The table is an inline thread_local
@@ -20,7 +20,7 @@
 // object for the process.  A process-wide registry gives each (Tag, T) one
 // index of the table at its first use, the same index in each library.
 //
-// THE KEY.  The key of the registry has 128 bits, two independent words of
+// Key.  The key of the registry has 128 bits, two independent words of
 // the stable name of the handle type: its stable type id (FNV-1a and fmix64,
 // foundation/reflect/Hash.h), and its SipHash-2-4 under a fixed public key
 // (foundation/core/SipHash.h).  The registry is inside one process and no
@@ -31,14 +31,14 @@
 // internal linkage, is a different type in each unit, so the handle refuses
 // it.
 //
-// THE STEADY PATH.  Each handle type keeps its index in a cache of its own,
+// Steady path.  Each handle type keeps its index in a cache of its own,
 // which holds thread_local_cell_count until the first use.  After the first
 // use, one access is the acquire load of the cache, which is a plain load on
 // x86-64, its test, and the address of the table of the thread.  The
 // registry publishes each slot with release and reads it with acquire, on
 // the first use only.
 //
-// THE VALUES.  A cell holds bytes, so peek() copies the value out and store()
+// Values.  A cell holds bytes, so peek() copies the value out and store()
 // copies it in.  A value is trivially copyable, trivially destructible and
 // trivially default constructible, with a size and an alignment of at most
 // thread_local_cell_bytes.  A cell starts as zero bytes, so the value T{} of
@@ -77,7 +77,7 @@ inline constexpr std::size_t thread_local_cell_bytes = 8;
 namespace detail {
 
 // True when no subobject of the type is a pointer to a member, so the value
-// T{} of a trivially default constructible type is zero bytes (THE VALUES).
+// T{} of a trivially default constructible type is zero bytes (the values).
 // The bases and the members come from member_components_of, the one read of
 // the members of a class.  A complete type reads its members, and so does each
 // of its by-value subobjects.  Complexity: linear in the subobject
@@ -249,7 +249,7 @@ public:
     // Constructing a handle does not claim a cell.  The first access does.
     constexpr ThreadLocalRef() noexcept = default;
 
-    // The two words of the key of the cell of this handle type (THE KEY).
+    // The two words of the key of the cell of this handle type (the key).
     [[nodiscard]] static consteval ThreadLocalTypeIds cell_ids() noexcept { return key_; }
 
     constexpr ThreadLocalRef(ThreadLocalRef const&) noexcept = default;

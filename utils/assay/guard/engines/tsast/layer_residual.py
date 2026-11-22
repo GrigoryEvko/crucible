@@ -1,6 +1,6 @@
 """layer-residual — each arm of a base file includes no higher project root, and a base directory holds C++ and prose.
 
-THE RULE
+Rule
     The quarantine plugin reads only the arms of a preprocessor conditional
     that a build compiles.  The rule layer-boundary and the include rules of
     the rule quarantine have this limit.  The kit does not preprocess, and
@@ -16,11 +16,11 @@ THE RULE
                   cannot see the target of such an include
       `unread`    a file of a base directory that is not C++ and not prose
                   (.md or .txt), because no rule of a compiler reads it.
-    A file that does not parse is an error of the runner (THE PARSE ERRORS of
+    A file that does not parse is an error of the runner (the parse errors of
     assay.guard.engines.tsast.runner).  A file that tsast.UNPARSEABLE lists
     is an error too, because a base file must parse.
 
-THE PROJECT ROOTS
+Project roots
     A project root is a directory in include/.  The rank of a root is the
     rank of the rule layer-boundary (assay.core.ruletable.root_ranks): the
     lowest rank of a layer row of the root.  A root of a quarantine row is
@@ -31,7 +31,7 @@ THE PROJECT ROOTS
     foundation, fixy and crucible do.  The include rules of the plugin judge
     the layers in a root.
 
-THE TARGET OF AN INCLUDE
+Target of an include
     A quoted include first resolves in the directory of the file, as the
     compiler does.  Then it resolves in include/.  An angle include resolves
     in include/.  A target that resolves is a file of the source root.  A base
@@ -86,7 +86,7 @@ def header_of(body: tsast.MacroBody) -> str:
 
 
 class Roots:
-    """The project roots of a tree, their ranks and the rule table, for THE TARGET OF AN INCLUDE."""
+    """The project roots of a tree, their ranks and the rule table, for the target of an include."""
 
     __slots__ = ("names", "ranks", "root", "table")
 
@@ -204,7 +204,7 @@ def include_findings(
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each include of THE RULE, and for each file of a base directory that is not C++ or prose.
+    """Give an error for each include of the rule, and for each file of a base directory that is not C++ or prose.
 
     Raises:
         NotApplicable: If the root is not a git work tree

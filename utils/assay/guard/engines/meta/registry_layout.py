@@ -1,6 +1,6 @@
 """The part layout of the rule registry: each file of utils/ has its path row, and obeys the naming rule of its place.
 
-THE PLACES
+Places
     The path rows of the registry give the permitted paths: a glob and what
     those files are.  Each tracked file of utils/, and each tracked Python
     file or shell script outside utils/, matches exactly one path row, and
@@ -9,7 +9,7 @@ THE PLACES
     directories.  The part reads the tracked files and the new files that
     .gitignore does not match.
 
-THE NAMING RULE
+Naming rule
     In utils/, outside the plants of utils/plants/:
       * A master of utils/bin/ has a name of one lowercase word with no
         suffix, a shebang, and mode 755.
@@ -19,7 +19,7 @@ THE NAMING RULE
       * A data file (.txt or .json) outside utils/tools/ has a name of
         lowercase words with hyphens.
 
-THE GUIDES
+Guides
     Claude Code loads each file with the name CLAUDE.md or AGENTS.md into
     each agent that works in its directory.  So only the root of the tree
     holds a file with one of these names, and a tracked file with such a name
@@ -29,13 +29,13 @@ THE GUIDES
     plant whose name ends with .planted its name without that suffix, in the
     throwaway copy only.
 
-THE KINDS
+Kinds
     no-row, two-rows, empty-row, master, module-name, command, data-name and
     guide-place.  During the migration of the utils system, the ledger admits
     each shell script of today, which is a command, and the change that makes
     the shell scripts modules removes its rows.
 
-NOT APPLICABLE
+Not applicable
     The part does not apply to a tree that is not a git work tree
     (MetaContext.tracked()).
 
@@ -99,7 +99,7 @@ def naming(context: MetaContext, path: str) -> tuple[str, str] | None:
 
 
 def guide_finding(path: str) -> check_report.Finding | None:
-    """Return the error of a file with the name of a guide in a directory other than the root, or None (THE GUIDES)."""
+    """Return the error of a file with the name of a guide in a directory other than the root, or None (the guides)."""
     pure = PurePosixPath(path)
     if pure.name not in GUIDE_NAMES or pure.parent == PurePosixPath("."):
         return None

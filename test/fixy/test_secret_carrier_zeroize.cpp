@@ -2,7 +2,7 @@
 // object.  A move gives the secret to the target and zeroizes the source,
 // and the end of a carrier zeroizes its storage.
 //
-// THE ROSTER
+// Roster
 // The carriers of the base are Secret<T>, DeclassifyOnSend<T, Policy> and
 // CTPayload<T>.  The test runs each carrier through three hazards:
 //

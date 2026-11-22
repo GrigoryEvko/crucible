@@ -1,11 +1,11 @@
 """search — run each property test of a build with new seeds in a time budget, and add its CPU seconds to its evidence.
 
-THE SELECTION
+Selection
     run() reads the items of the class `property-search` of one build.  It
-    selects the pending items (assay.loop.evidence.items, THE PENDING ITEMS)
+    selects the pending items (assay.loop.evidence.items, the pending items)
     of the nightly target, or with is_release of the release target.
 
-THE SLICES
+Slices
     A slice is one run of the program of a property test, with a seed and a
     count of iterations.  It runs with no test launcher (assay.loop.teststep,
     launched()).  The program gets the clean environment of a test and the
@@ -27,7 +27,7 @@ THE SLICES
     test again.  A slice of a test with inputs that changed during the slice
     gets no evidence.
 
-THE BUDGET
+Budget
     At most JOBS slices run at one time, one for each item.  A slice starts
     only when the time that the call used, with SLICE_S, stays in the budget.
     The next slice goes to the pending item with the minimum evidence, until
@@ -54,7 +54,7 @@ from assay.loop.evidence import store as evidence_store
 from assay.loop.evidence import targets
 from assay.readers import ctest as ctest_reader
 
-# The CPU seconds of one slice (THE SLICES), and the time limit of a slice as a multiple of it, with a floor.
+# The CPU seconds of one slice (the slices), and the time limit of a slice as a multiple of it, with a floor.
 SLICE_S = 30.0
 LIMIT_FACTOR = 10.0
 LIMIT_FLOOR_S = 300.0
@@ -71,7 +71,7 @@ ERROR_LINE_LIMIT = 300
 class Searched:
     """One selected property test: its entry, its key, its evidence, its target, its rate and its slices.
 
-    The runner changes the key, the evidence, the rate and the failure after each slice (THE SLICES).  The class is
+    The runner changes the key, the evidence, the rate and the failure after each slice (the slices).  The class is
     then a state and not a record.
     """
 
@@ -117,7 +117,7 @@ class Outcome:
 
 
 def program_words(test: ctest_reader.TestEntry) -> tuple[str, ...]:
-    """Return the program of a test and its arguments, with no test launcher (THE SLICES)."""
+    """Return the program of a test and its arguments, with no test launcher (the slices)."""
     return tuple(test_launcher.launched(list(test.command)))
 
 
@@ -149,7 +149,7 @@ def seed_for(key: str, value: float, number: int) -> int:
 
 
 def slice_of(searched: Searched, slice_s: float = SLICE_S) -> Slice:
-    """Return the next slice of a selected test, and count it (THE SLICES)."""
+    """Return the next slice of a selected test, and count it (the slices)."""
     words = program_words(searched.test)
     iterations = command_iterations(words)
     if searched.rate is not None:
@@ -161,7 +161,7 @@ def slice_of(searched: Searched, slice_s: float = SLICE_S) -> Slice:
 
 
 def run_slice(command: Slice, test: ctest_reader.TestEntry, cwd: str, slice_s: float) -> proc.Completed | None:
-    """Run one slice of a test, and return its result, or None when it ran for more time than its limit (THE SLICES).
+    """Run one slice of a test, and return its result, or None when it ran for more time than its limit (the slices).
 
     The slice gets the clean environment of a test and the property ENVIRONMENT of the test.
     """
@@ -201,7 +201,7 @@ def record_slice(
     command: Slice,
     completed: proc.Completed | None,
 ) -> bool:
-    """Add the CPU seconds or keep the failure of one slice (THE SLICES), and return True for a failure."""
+    """Add the CPU seconds or keep the failure of one slice (the slices), and return True for a failure."""
     keys.forget()
     rule, name = targets.PROPERTY.rule, searched.test.name
     after, is_current = keys.key_after_run(searched.test)
@@ -232,7 +232,7 @@ def record_slice(
 def selection(
     keys: evidence_items.TestKeys, store: evidence_store.EvidenceStore, target: float, names: Sequence[str]
 ) -> list[Searched]:
-    """Return each property test that the slices run (THE SELECTION).
+    """Return each property test that the slices run (the selection).
 
     Complexity: the planner of assay.loop.affected for each member, and one read of the store for each item with a key.
     """
@@ -245,7 +245,7 @@ def selection(
 
 
 def next_searched(chosen: Sequence[Searched]) -> Searched | None:
-    """Return the pending test with the minimum evidence and with no slice that runs, or None (THE BUDGET)."""
+    """Return the pending test with the minimum evidence and with no slice that runs, or None (the budget)."""
     waiting = [searched for searched in chosen if searched.is_pending and not searched.is_running]
     return min(waiting, key=lambda searched: (searched.value, searched.test.name), default=None)
 
@@ -258,7 +258,7 @@ def run_slices(
     jobs: int,
     slice_s: float = SLICE_S,
 ) -> Outcome:
-    """Run slices of the selected tests until each one gets its target or a failure, or the budget ends (THE BUDGET).
+    """Run slices of the selected tests until each one gets its target or a failure, or the budget ends (the budget).
 
     Complexity: one run of a program for each slice.
     """
@@ -295,7 +295,7 @@ def run_slices(
 
 
 def run(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str], jobs: int, target: float) -> ExitCode:
-    """Select the property tests of a build, run the slices, and report (THE SELECTION, THE SLICES).
+    """Select the property tests of a build, run the slices, and report (the selection, the slices).
 
     Returns:
         OK when no slice found a failure, FINDINGS when one did, MISSING_INPUT when the build cannot be read

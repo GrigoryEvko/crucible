@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit specializes the crash decorator and builds, from the
 // specialization, a decorator around a plain handle.  The protocol of the

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Every tag a split names needs an effect row, or nothing says which
 // contexts may touch the region of that child.  The child tag here

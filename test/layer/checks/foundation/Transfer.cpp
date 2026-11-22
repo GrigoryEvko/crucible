@@ -147,7 +147,7 @@ static_assert(Sendable<Plain> && Shareable<Plain>);
 static_assert(Sendable<::foundation::core::Option<int>> && !Sendable<::foundation::core::Option<int*>>);
 
 // A mutable member makes a class not Shareable, unless two threads can write
-// the member (THE SHARED WRITE).
+// the member (the shared write).
 struct MutableCount {
     mutable int count = 0;
 };
@@ -239,14 +239,14 @@ private:
 static_assert(Synchronized<OrdersItsCount> && Shareable<OrdersItsCount> && Sendable<OrdersItsCount>);
 static_assert(first_synchronized_refusal(^^OrdersItsCount) == std::meta::info{});
 
-// THE DOORS OF A SYNCHRONIZED CLASS, the controls.  A class with a plain
+// Doors of a synchronized class, the controls.  A class with a plain
 // private part keeps each door: a door that takes its key, a const door, a
 // static door that takes its key or reaches no object, a template door that
 // takes its key, and a claim door that gives its key.  The key is a member
-// class that states thread_bound{}, so it is tied to the class (THE PROOF OF A
-// DOOR).  Its constructor is private, and the claim door is its one caller:
+// class that states thread_bound{}, so it is tied to the class (the proof of a
+// door).  Its constructor is private, and the claim door is its one caller:
 // one atomic exchange gives the key to one thread for the life of the count
-// (THE BUILD OF A TOKEN).
+// (the build of a token).
 class[[= synchronized{}]] KeyedCount {
 public:
     class[[= thread_bound{}]][[= not_shareable{}]] Key final {
@@ -282,7 +282,7 @@ private:
 };
 static_assert(Synchronized<KeyedCount>);
 
-// THE NESTED CLASSES, the control of a borrow.  A nested probe holds a
+// Nested classes, the control of a borrow.  A nested probe holds a
 // reference to the count of hits, which two threads can write, so its door
 // needs no proof, also beside the plain part of the class.  A reference to
 // the plain part refuses (the fixture neg_synchronized_nested_part_reference).
@@ -323,7 +323,7 @@ private:
 };
 static_assert(Synchronized<CountsHits>);
 
-// THE BUILD OF A TOKEN.  A key that each thread can build is open: an empty
+// The build of a token.  A key that each thread can build is open: an empty
 // aggregate, an aggregate whose one closed part has a default member
 // initializer, a class with a public constructor template, and a class that
 // can inherit a public constructor of its base.  A class whose public
@@ -388,7 +388,7 @@ static_assert(detail::is_door_token(^^KeyedCount::Key));
 static_assert(detail::is_door_token(^^::foundation::core::SoleWriter<WriterRole, WriterBrand>));
 static_assert(detail::is_open_token_of(^^OpenKey, ^^OpenKey) && !detail::is_open_token_of(^^GatedKey, ^^GatedKey));
 
-// THE EXEMPTION holds one class, crucible::BackgroundThread, and no class of
+// The exemption holds one class, crucible::BackgroundThread, and no class of
 // this file.  The keyed doors of the owner-key member series remove the
 // exemption and these pins with it.
 static_assert(std::extent_v<decltype(detail::synchronized_door_exemptions)> == 1);
@@ -469,7 +469,7 @@ struct Node {
 };
 static_assert(Sendable<Node>);
 
-// THE VALUE BESIDE ITS SENDER: each target of a reference, of refers and of
+// The value beside its sender: each target of a reference, of refers and of
 // refers_unique is Synchronized, also a target that is const.  An owner, a
 // statement of sendable and a statement of by_arguments work as for Send.
 using IntReads = ::foundation::core::View<int const>;
@@ -489,7 +489,7 @@ consteval bool are_refs_checked_beside() {
 }
 static_assert(are_refs_checked_beside());
 
-// THE VALUE THAT OUTLIVES ITS SENDER: each reference and each class that
+// The value that outlives its sender: each reference and each class that
 // refers to an object refuses, also a reference to an Atomic.  An owner holds
 // it when the object that it owns holds it, and a statement of sendable wins
 // as it does for Send.
@@ -508,7 +508,7 @@ consteval bool are_refs_owned() {
 }
 static_assert(are_refs_owned());
 
-// THE OPAQUE TYPES: a class that is only declared holds what the statement of
+// The opaque types: a class that is only declared holds what the statement of
 // its registry gives.  A definition must hold each property that its
 // statement gives, so the definition of StatedWithBorrow, whose reference
 // refuses Share, disagrees with its statement.
@@ -531,7 +531,7 @@ inline constexpr opaque_facts stated_plain{.type = ^^StatedPlain, .is_sendable =
 // A statement that the definition of the class refuses.
 inline constexpr opaque_facts stated_with_borrow{.type = ^^StatedWithBorrow, .is_shareable = true};
 // A statement of Send that the definition refuses, because its reference to
-// an Atomic can outlive the cell (THE VALUE THAT OUTLIVES ITS SENDER).
+// an Atomic can outlive the cell (the value that outlives its sender).
 inline constexpr opaque_facts stated_with_cell_borrow{.type = ^^StatedWithCellBorrow, .is_sendable = true};
 inline constexpr opaque_seal seal{.count = 4};
 }  // namespace transfer_facts

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A kernel map copies the bytes of each value, so a map value is trivially
 // copyable.  A value with a copy constructor of its own is not, and the

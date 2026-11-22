@@ -1,10 +1,10 @@
 // rows_reader — the host program of rows.h.  The rule rows-readers compiles it
 // and gives it the files that the Python reader of the rows grammar reads.
 //
-// USAGE
+// Usage
 //     rows_reader FILE...
 //
-// THE OUTPUT
+// Output
 //     One line of JSON for each file, in the sequence of the arguments:
 //         {"path":"FILE","rows":[{"line":1,"words":["w"],"cells":["c"]}]}
 //         {"path":"FILE","problem":{"line":3,"message":"..."}}
@@ -12,7 +12,7 @@
 //     than 0x20 (as \u00XX).  Each other byte goes out as it is.  rows.h
 //     refuses a file that is not UTF-8.  The text of a row is then UTF-8.
 //
-// THE EXIT
+// Exit
 //     0 after the line of each file, also when a file does not obey the
 //     grammar.  2 when the arguments name no file, when the program cannot
 //     read a file, or when it cannot write the output.  The program then
@@ -34,7 +34,7 @@ namespace {
 // The number of bytes of one read of a file.
 constexpr std::size_t kChunk = 1 << 16;
 
-// Read each byte of the file at PATH into BYTES.  Returns false when the program cannot open or read the file, for
+// Read each byte of the file at path into bytes.  Returns false when the program cannot open or read the file, for
 // example a directory.  Complexity: linear in the number of bytes of the file.
 bool read_file(const char* path, std::string& bytes) {
     std::FILE* file = std::fopen(path, "rb");
@@ -50,7 +50,7 @@ bool read_file(const char* path, std::string& bytes) {
     return !has_failed;
 }
 
-// Append TEXT to OUTPUT as a JSON string (THE OUTPUT).  Complexity: linear in the length of the text.
+// Append text to output as a JSON string (see the output).  Complexity: linear in the length of the text.
 void append_text(std::string& output, std::string_view text) {
     constexpr std::string_view kHexDigits = "0123456789abcdef";
     output.push_back('"');
@@ -70,7 +70,7 @@ void append_text(std::string& output, std::string_view text) {
     output.push_back('"');
 }
 
-// Append a JSON list of texts to OUTPUT.  Complexity: linear in the length of the texts.
+// Append a JSON list of texts to output.  Complexity: linear in the length of the texts.
 void append_texts(std::string& output, const std::vector<std::string>& texts) {
     output.push_back('[');
     for (std::size_t index = 0; index < texts.size(); ++index) {
@@ -80,7 +80,7 @@ void append_texts(std::string& output, const std::vector<std::string>& texts) {
     output.push_back(']');
 }
 
-// Append the line of one file to OUTPUT (THE OUTPUT).  Complexity: linear in the number of bytes of the rows.
+// Append the line of one file to output (see the output).  Complexity: linear in the number of bytes of the rows.
 void append_file(std::string& output, std::string_view path, const crucible_rows::Rows& result) {
     output.append("{\"path\":");
     append_text(output, path);

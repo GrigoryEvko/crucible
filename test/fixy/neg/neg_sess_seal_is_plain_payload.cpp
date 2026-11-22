@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit marks a payload that moves a token as plain, so that
 // a checkpoint session admits it.  The predicate is a concept over the

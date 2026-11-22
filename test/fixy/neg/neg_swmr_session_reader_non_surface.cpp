@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_swmr_reader asks for a channel of the SWMR shape.  An int is not
 // a channel, so the mint refuses it.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A payload that holds a pointer to void can point at a token or at a
 // session endpoint, and the payload walk of fixy/session/Classification.h

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A query reads one walk of a relation for each count of its members.
 // The first read below walks the sealed relation and finds the count of

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: passing a `Tagged<Vigil*, source::External>` (or any tag
 // other than `source::ABIBoundary`) to `crucible::vessel::from_typed()`,
@@ -30,11 +30,11 @@ using crucible::vessel::from_typed;
 
 int main() {
     // Build a `Tagged<Vigil*, External>` through the one door — same
-    // payload type as TypedHandle but a DIFFERENT tag, so a different
+    // payload type as TypedHandle but a different tag, so a different
     // type entirely.
     auto wrong_tag = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<crucible::Vigil*>(nullptr));
 
-    // Should FAIL: from_typed expects TypedHandle (Tagged<Vigil*,
+    // Should fail: from_typed expects TypedHandle (Tagged<Vigil*,
     // ABIBoundary>), not Tagged<Vigil*, External>.  No converting
     // constructor / no implicit retag exists.
     return from_typed(wrong_tag) == nullptr ? 0 : 1;

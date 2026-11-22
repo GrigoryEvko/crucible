@@ -1,6 +1,6 @@
 // A branded foreground context does not go into a lambda by value.
 //
-// VIOLATION: a lambda captures the context by value.  The lambda can run
+// Violation: a lambda captures the context by value.  The lambda can run
 // on a thread that holds no claim of the brand, and the copy there is
 // evidence of a claim that the thread does not hold.
 //

@@ -1,7 +1,7 @@
 """cache_root — the root of the caches as a path text, for the modules that a step meter imports.
 
-THE ROOT
-    assay.core.cache gives the rule of the root of the caches (THE ROOT of
+The root
+    assay.core.cache gives the rule of the root of the caches (the root of
     that module): $CRUCIBLE_CACHE_DIR when it is set, else
     $XDG_CACHE_HOME/crucible, else ~/.cache/crucible.  The value "off" turns
     each cache off.  This module holds that rule, and assay.core.cache gives
@@ -23,15 +23,15 @@ TYPE_CHECKING = False
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-# The environment variable that moves the root, or turns each cache off with OFF.
+# The environment variable that moves the root, or turns each cache off when its value is off.
 ROOT_VARIABLE = "CRUCIBLE_CACHE_DIR"
 OFF = "off"
 # The environment variable of the directory of the caches of the user.
 HOME_VARIABLE = "XDG_CACHE_HOME"
 # The cache of the compiled modules of Python, which each master names in sys.pycache_prefix.  The test launcher gives
-# it to each test as PYTHONPYCACHEPREFIX (assay.loop.teststep, THE ENVIRONMENT).
+# it to each test as PYTHONPYCACHEPREFIX (assay.loop.teststep, the environment).
 COMPILED_CACHE = "pycache"
-# A run touches an entry that it uses when the last touch is older than this, in seconds (assay.core.cache, THE BOUND).
+# A run touches an entry that it uses when the last touch is older than this, in seconds (assay.core.cache, the bound).
 TOUCH_INTERVAL = 3600.0
 
 

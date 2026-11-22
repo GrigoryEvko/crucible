@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An atomic cell hands values of its payload from one thread to another, so
 // it is Sendable only when its payload is (payload_cell{} of

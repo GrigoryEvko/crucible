@@ -146,7 +146,7 @@ LINEAR_DOOR_FORMAT = (
 )
 # The prefix of the field of an owner row that names the function of its sites.
 BY_PREFIX = "by="
-# The classes of the rule home of the plugin (utils/tools/quarantine/home.cpp, THE CLASSES), which the home rows and
+# The classes of the rule home of the plugin (utils/tools/quarantine/home.cpp, the classes), which the home rows and
 # the home-args rows name.  The class of a row selects the sites of its entity.
 HOME_CLASSES = ("federation", "owner", "combine", "split", "trait")
 # The error of a home row that does not obey its format.  rule_table.cpp gives the same text.

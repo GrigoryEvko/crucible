@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The admission of a NIC takes a program that mint_tc_program declared.  A
 // raw spec does not convert to the declared program, so the call is refused.

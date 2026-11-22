@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The constructor of WorkloadProfiler is private, and
 // mint_workload_profiler is its one friend.  So no caller builds a

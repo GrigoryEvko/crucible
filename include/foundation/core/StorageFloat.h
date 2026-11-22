@@ -34,7 +34,7 @@
 // call that names its rounding.  A round takes a float only, because a
 // double rounded to float and then to a storage type rounds two times.
 //
-// THE ROUNDING.  Each round obeys IEEE 754 and section 5.2.1 of the OCP
+// Rounding. Each round obeys IEEE 754 and section 5.2.1 of the OCP
 // specification: it rounds the significand to the trailing bits of To with
 // ties to even, with the subnormals of To and no flush of a subnormal input
 // or output.  Then a magnitude above the highest value of To is an
@@ -52,7 +52,7 @@
 // f16 and bf16 the mode of round_nonsaturating.  round_saturating of f16 and
 // bf16 is the same clamp, for a kernel that names one mode for each format.
 //
-// THE NaN.  Each conversion keeps the sign of a NaN.  A round of a NaN gives
+// NaN. Each conversion keeps the sign of a NaN.  A round of a NaN gives
 // the quiet NaN of To with the top bits of the payload of x: the exponent
 // field with each bit set, the top trailing bit set, and the next trailing
 // bits from the top bits of the significand of x.  fp8_e4m3 has one NaN for
@@ -62,7 +62,7 @@
 // signaling NaN.  bf16 is the upper half of a binary32, so its widen is the
 // shift by 16, and a signaling NaN stays signaling.
 //
-// THE CODE.  Each conversion is a function of the bits.  The portable code
+// Code. Each conversion is a function of the bits.  The portable code
 // does integer operations only, so it reads no rounding mode, no flush mode
 // and no flag of the floating-point environment, and it raises no flag.  Each
 // conversion is constexpr, and a constant evaluation uses the portable code.
@@ -81,7 +81,7 @@
 // Crucible reads them.
 //
 // bf16 and the two fp8 formats use the portable code on each target, and
-// aarch64 uses it for f16 too.  THE DISPATCH below gives the reasons.
+// aarch64 uses it for f16 too.  the dispatch below gives the reasons.
 
 #include <foundation/Platform.h>
 #include <foundation/core/Bits.h>
@@ -339,7 +339,7 @@ using HardwareHalfLanes [[gnu::vector_size(16)]] = short;
 
 #endif
 
-// THE DISPATCH.  widen_bits and round_bits choose the arm of a conversion:
+// Dispatch. widen_bits and round_bits choose the arm of a conversion:
 // F16C for f16 on x86_64, and the portable code in a constant evaluation and
 // on each other target and format.
 //
@@ -356,7 +356,7 @@ using HardwareHalfLanes [[gnu::vector_size(16)]] = short;
 // a zero with its sign, which the round to nearest even does not.
 //
 // The arm follows F16C of the target, so widen_bits, round_bits and the
-// three conversions that call them are in the target namespace (THE TARGET
+// three conversions that call them are in the target namespace (the target
 // NAMESPACE of foundation/Platform.h).  A unit of x86-64 and a unit of
 // x86-64-v3 in one program then keep their own bodies, and the link cannot
 // give the body of F16C to the unit of x86-64.  Each arm gives the same bits.
@@ -412,7 +412,7 @@ template <class Format, Saturation Mode>
 
 }  // namespace detail
 
-// The three conversions call the arm of the target (THE DISPATCH), so they
+// The three conversions call the arm of the target (the dispatch), so they
 // are in the target namespace too.
 inline namespace CRUCIBLE_SIMD_TARGET {
 

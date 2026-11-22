@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A record writes the history, and the background owns every write.  The
 // startup row holds no Bg, so record refuses it.  The snapshot comes in

@@ -5,7 +5,7 @@
 // diagnostic names the Ref.  The control is an Option of a Box in
 // test_payload_row.cpp, which carries the row of the object of the Box.
 //
-// VIOLATION: a TU asks for the row of a message that holds an Option of a
+// Violation: a TU asks for the row of a message that holds an Option of a
 // borrow.
 
 #include <fixy/concurrent/PayloadRow.h>

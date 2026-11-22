@@ -1,7 +1,7 @@
 """plan — the plan of the tree: each item that an entry runs, with its tier and its entry (`loop plan`).
 
-THE ITEMS
-    plan() reads the tree and some builds of it (THE BUILDS), and it gives
+Items
+    plan() reads the tree and some builds of it (the builds), and it gives
     one item of a kind of Kind for each of these:
       preset       a configure preset of the presets file (assay.loop.tiers)
       test-preset  a test preset of the presets file
@@ -14,7 +14,7 @@ THE ITEMS
       step         a step of STEPS
     No file holds the plan.  Each call reads the tree again.
 
-THE COVERS
+Covers
     A cover of an item is a tier and a text that tells what runs the item:
       * A preset gets the tier of its block.  The tier manual is a cover
         too, because the reason of the block tells what a person runs.  A
@@ -44,7 +44,7 @@ THE COVERS
     manual.  ENTRIES of assay.loop.tiers gives the command of its entry.  An
     item with no cover runs nowhere.
 
-THE SAMPLED ITEMS
+Sampled items
     A sampled item gives only a part of its evidence in one run, and `loop
     evidence` adds the evidence of each run to its key.  Each class of
     TARGETS of assay.loop.evidence.targets gives a nightly target and a
@@ -60,7 +60,7 @@ THE SAMPLED ITEMS
     step pgo writes a new profile, and `loop derive header-costs --measure`
     counts instructions.
 
-THE BUILDS
+Builds
     read_builds() reads the build directories that the call names.  With no
     name, it reads the build directory of each configure preset with a tier
     and with no parse option, when CMake configured that directory.  A build
@@ -69,7 +69,7 @@ THE BUILDS
     gives the files of each bench target.  A build directory of no configure
     preset is an error.
 
-THE STEPS
+Steps
     STEPS gives each step that an entry runs and that is no preset.  A step
     has a tier, the words of its command and a text.  It can name the
     configure preset of its build and the rules that it runs.  A command that
@@ -77,14 +77,14 @@ THE STEPS
     with `each` runs each item of that kind.  The command `loop evidence run
     KIND` runs the items of the class of KIND in a time budget, and the
     command `loop fuzz` runs one campaign of each harness
-    (assay.loop.entry, THE WORK).  A command that starts with ctest runs
+    (assay.loop.entry, the work).  A command that starts with ctest runs
     that ctest in the build of the preset of its step, through the launcher
-    of assay.loop.caps (assay.loop.entry, THE PRIVILEGED TESTS).  A command
+    of assay.loop.caps (assay.loop.entry, the privileged tests).  A command
     that starts with cmake builds the build of the preset of its step, and
-    it runs no test (assay.loop.entry, THE BUILD STEPS).  The tests of that
+    it runs no test (assay.loop.entry, the build steps).  The tests of that
     build keep the tier of the preset.
 
-THE COMMANDS
+Commands
     Each subcommand of utils/bin/loop has a class:
       * a hidden subcommand (a row of SUBCOMMANDS with no help line) is a tool
         of a different subcommand
@@ -94,11 +94,11 @@ THE COMMANDS
       * the subcommand of a step of STEPS.
     A subcommand with no class is a problem.
 
-THE PROBLEMS
+Problems
     These are the problems of a plan (ProblemKind):
       preset-block   a problem of the presets file or of the block of a preset
-      stale-entry    a row of STEPS, HOLDERS, MANUAL or of a class of THE
-                     COMMANDS that names no preset, rule, step, item or
+      stale-entry    a row of STEPS, HOLDERS, MANUAL or of a class of the
+                     commands that names no preset, rule, step, item or
                      subcommand
       no-class       a holder of a rule with no row of HOLDERS that is no
                      rule of the registry, and a subcommand of
@@ -140,17 +140,17 @@ from assay.readers import cmake as cmake_reader
 from assay.readers import ctest as ctest_reader
 from assay.readers import python as python_reader
 
-# The master of the subcommands of THE COMMANDS, and the property of a test that no entry runs.
+# The master of the subcommands of the commands, and the property of a test that no entry runs.
 LOOP_MASTER = "utils/bin/loop"
 DERIVE_MODULE = "utils/assay/loop/derive/__init__.py"
 DISABLED = "DISABLED"
-# The word of a build directory at the end of the command of a step (THE STEPS), and the path of this module.
+# The word of a build directory at the end of the command of a step (the steps), and the path of this module.
 BUILD_OPTION = "--build-dir"
 MODULE_PATH = Path(__file__).resolve().relative_to(paths.REPO_ROOT).as_posix()
 
 
 class Kind(enum.StrEnum):
-    """The kind of an item of the plan (THE ITEMS)."""
+    """The kind of an item of the plan (the items)."""
 
     PRESET = "preset"
     TEST_PRESET = "test-preset"
@@ -164,7 +164,7 @@ class Kind(enum.StrEnum):
 
 
 class ProblemKind(enum.StrEnum):
-    """The kind of a problem of the plan (THE PROBLEMS)."""
+    """The kind of a problem of the plan (the problems)."""
 
     PRESET_BLOCK = "preset-block"
     STALE_ENTRY = "stale-entry"
@@ -178,7 +178,7 @@ class PlanError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Cover:
-    """One cover of an item: a tier, and the text that tells what runs the item (THE COVERS)."""
+    """One cover of an item: a tier, and the text that tells what runs the item (the covers)."""
 
     tier: tiers.Tier
     text: str
@@ -196,7 +196,7 @@ class Item:
 
     @property
     def tier(self) -> tiers.Tier | None:
-        """The first tier of ORDER of the covers, else manual, or None for an item with no cover (THE COVERS)."""
+        """The first tier of ORDER of the covers, else manual, or None for an item with no cover (the covers)."""
         given = {cover.tier for cover in self.covers}
         return next((tier for tier in (*tiers.ORDER, tiers.Tier.MANUAL) if tier in given), None)
 
@@ -224,7 +224,7 @@ class Problem:
 
 @dataclass(frozen=True, slots=True)
 class Build:
-    """One build of a configure preset: its tests, its bench targets and the name of its configuration (THE BUILDS).
+    """One build of a configure preset: its tests, its bench targets and the name of its configuration (the builds).
 
     `bench_programs` holds the resolved path of each file of each bench target, with the name of its target.
     """
@@ -244,7 +244,7 @@ class Build:
 
 @dataclass(frozen=True, slots=True)
 class Step:
-    """One step of an entry that is no preset (THE STEPS)."""
+    """One step of an entry that is no preset (the steps)."""
 
     name: str
     tier: tiers.Tier
@@ -257,7 +257,7 @@ class Step:
 
 @dataclass(frozen=True, slots=True)
 class Target:
-    """One target of `loop derive`: its name and the dotted name of its module (assay.loop.derive, THE TARGETS)."""
+    """One target of `loop derive`: its name and the dotted name of its module (assay.loop.derive, the targets)."""
 
     name: str
     module: str
@@ -354,7 +354,7 @@ HOLDERS = {
     "loop-gauge": Holding(step="gauge"),
 }
 # The items that no entry can run, by their kind and their name.  Each one has the reason, and what a person runs
-# (THE COVERS).
+# (the covers).
 MANUAL = {
     (Kind.DERIVE, "aten-ops"): (
         "The target reads native_functions.yaml of the source tree of the patched PyTorch, and no file or pin of the "
@@ -370,7 +370,7 @@ ITEM_COMMANDS = ("bench", "derive")
 
 
 def read_build(preset: tiers.PresetTier, directory: Path) -> Build:
-    """Return one build of a configure preset: its tests, its bench targets and its configuration (THE BUILDS).
+    """Return one build of a configure preset: its tests, its bench targets and its configuration (the builds).
 
     A build with no code model of CMake has no bench target.  Complexity: one run of ctest, and linear in the targets.
 
@@ -405,7 +405,7 @@ def bench_program_paths(model: cmake_reader.CodeModel, benches: Sequence[str]) -
 
 
 def read_builds(presets: tiers.Tiers, directories: Sequence[Path] = ()) -> tuple[Build, ...]:
-    """Return the builds of some build directories, or of each configured build of a preset (THE BUILDS).
+    """Return the builds of some build directories, or of each configured build of a preset (the builds).
 
     Complexity: one run of ctest for each build, and linear in the presets.
 
@@ -437,7 +437,7 @@ def read_builds(presets: tiers.Tiers, directories: Sequence[Path] = ()) -> tuple
 def preset_items(presets: tiers.Tiers) -> list[Item]:
     """Return an item for each configure preset and each test preset with a tier, with the cover of its tier.
 
-    A preset with no tier gives no item, because it gives a problem (THE PROBLEMS).  A plain test preset of a configure
+    A preset with no tier gives no item, because it gives a problem (the problems).  A plain test preset of a configure
     preset with no tier gives no item too, because its configure preset gives the problem (assay.loop.tiers).
     """
     found: list[Item] = []
@@ -463,9 +463,9 @@ def is_fixture(test: ctest_reader.TestEntry, root: Path) -> bool:
 
 
 def bench_target_of(test: ctest_reader.TestEntry, programs: Mapping[str, str]) -> str | None:
-    """Return the bench target that has the program of a test as a file, or None (THE COVERS).
+    """Return the bench target that has the program of a test as a file, or None (the covers).
 
-    The program comes after the launcher and after the emulator of a cross build (assay.loop.teststep, THE EMULATOR).
+    The program comes after the launcher and after the emulator of a cross build (assay.loop.teststep, the emulator).
     """
     program = test_launcher.launched_program(list(test.command))
     if program is None or not programs:
@@ -474,7 +474,7 @@ def bench_target_of(test: ctest_reader.TestEntry, programs: Mapping[str, str]) -
 
 
 def test_items(builds: Sequence[Build], root: Path) -> list[Item]:
-    """Return an item for each test of the builds, with the tier of each build that runs it (THE COVERS).
+    """Return an item for each test of the builds, with the tier of each build that runs it (the covers).
 
     Complexity: linear in the tests of the builds.
     """
@@ -501,7 +501,7 @@ def test_items(builds: Sequence[Build], root: Path) -> list[Item]:
 
 
 def test_covers(builds: Sequence[Build], registry: rule_registry.Registry, root: Path) -> dict[str, list[Cover]]:
-    """Return the covers of each rule from the tests of the builds that run `guard check` of the rule (THE COVERS).
+    """Return the covers of each rule from the tests of the builds that run `guard check` of the rule (the covers).
 
     Complexity: O(t * a) for t tests of a words.
     """
@@ -580,7 +580,7 @@ def module_imports(root: Path, module: str) -> tuple[str, ...]:
 def derive_items(
     root: Path, registry: rule_registry.Registry, rules: Sequence[Item], targets: Sequence[Target]
 ) -> list[Item]:
-    """Return an item for each target of `loop derive`, with the covers of each rule that compares it (THE COVERS).
+    """Return an item for each target of `loop derive`, with the covers of each rule that compares it (the covers).
 
     Complexity: one parse of the module of each rule and of each target.
 
@@ -666,7 +666,7 @@ def manual_items(items: Sequence[Item]) -> tuple[list[Item], list[Problem]]:
 
 
 def preset_problems(presets: tiers.Tiers) -> list[Problem]:
-    """Return a problem for each problem of the presets file and of the block of a preset (THE PROBLEMS)."""
+    """Return a problem for each problem of the presets file and of the block of a preset (the problems)."""
     found = [Problem(ProblemKind.PRESET_BLOCK, tiers.PRESETS_FILE, 0, "", text) for text in presets.problems]
     found += [
         Problem(ProblemKind.PRESET_BLOCK, tiers.PRESETS_FILE, 0, item.name, item.problem)
@@ -795,7 +795,7 @@ def plan(
     builds: Sequence[Build],
     targets: Sequence[Target],
 ) -> Plan:
-    """Return the plan of a tree with some builds and the targets of `loop derive` (THE ITEMS, THE PROBLEMS).
+    """Return the plan of a tree with some builds and the targets of `loop derive` (the items, the problems).
 
     Complexity: linear in the presets, the tests of the builds and the rules.  One parse of the module of each rule and
     of each target.
@@ -832,7 +832,7 @@ def plan(
 def derive_targets(root: Path) -> tuple[Target, ...]:
     """Return each target of `loop derive` of a tree, with its module, from the table TARGETS of DERIVE_MODULE.
 
-    A row of the table is a name and a call with the module as its first argument (assay.loop.derive, THE TARGETS).
+    A row of the table is a name and a call with the module as its first argument (assay.loop.derive, the targets).
     A tree with no such module has no target.  Complexity: linear in the nodes of the syntax tree of the module.
 
     Raises:
@@ -850,7 +850,7 @@ def derive_targets(root: Path) -> tuple[Target, ...]:
 
 
 def tree_plan(root: Path, registry: rule_registry.Registry, directories: Sequence[Path] = ()) -> Plan:
-    """Return the plan of a tree with its builds of THE BUILDS.
+    """Return the plan of a tree with its builds of the builds.
 
     Raises:
         PlanError: If a build directory is the build of no configure preset, or its tests do not read

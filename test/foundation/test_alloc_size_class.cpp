@@ -100,7 +100,7 @@ constexpr std::size_t kNoSlot = ~std::size_t{0};
     return offset / slot;
 }
 
-// THE SLOT OF AN OFFSET of foundation/alloc/Metadata.h: each offset of the
+// The slot of an offset of foundation/alloc/Metadata.h: each offset of the
 // slab of each small class, and for each class each bound of a slot, the
 // byte below it and the byte above it, up to the first bound past the slots.
 // Complexity: O(32 * 2^16 + 64 * 4097 * 3).

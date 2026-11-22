@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The fork splits the parent under the caller's context, so the context
 // must admit the parent's row, and not only the rows of the children.

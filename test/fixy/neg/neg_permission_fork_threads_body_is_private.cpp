@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The body of the fork splits a parent, starts one thread per child and
 // rebuilds the parent.  That is the work of mint_permission_fork, so only

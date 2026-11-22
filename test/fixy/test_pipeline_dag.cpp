@@ -194,7 +194,7 @@ static_assert(slotted_system.channels[0].capacity == 4 && slotted_system.channel
 static_assert(net::check_liveness(slotted_system).is_admitted());
 
 // Handles that state no capacity.  Only a handle of an output end of a graph,
-// the sink, can state none (THE MARKED SYSTEM of fixy/concurrent/StageNet.h).
+// the sink, can state none (the marked system of fixy/concurrent/StageNet.h).
 template <typename T>
 struct UnstatedConsumer {
     using channel_type = FakeChannel<T>;
@@ -266,7 +266,7 @@ static_assert(net::check_liveness(
                   .is_admitted());
 
 // A loop of fake stages in the shape of the loop of the Vigil
-// (stage_loop_fakes.h, THE LOOP of fixy/concurrent/StageNet.h).  The channels
+// (stage_loop_fakes.h, the loop of fixy/concurrent/StageNet.h).  The channels
 // of the flush arm stand in the order of their first ends: the ring, the
 // count, and the three edges between the stages.  Each channel takes the
 // capacity that the types of its ends state.  The lock adds no action, so
@@ -402,7 +402,7 @@ static_assert(cc::check_loop<JobFlushes>().says("liveness: the receive side of c
                                                 "'foreground' and by 'publish'.  One process holds each side of a "
                                                 "channel."));
 
-// The ends inside a bracket (THE LOCKS of fixy/concurrent/StageNet.h).  A
+// The ends inside a bracket (the locks of fixy/concurrent/StageNet.h).  A
 // second lock: the marks that the foreground writes, and that the last stage
 // reads.
 struct Marks {};
@@ -482,7 +482,7 @@ static_assert(
                                       cc::WritesLock<Marks>, cc::SendsOn<loop::Count>>>>()
         .is_admitted());
 
-// The capacities of the ends of a channel (THE LOOP).  The build stage sends
+// The capacities of the ends of a channel (the loop).  The build stage sends
 // into edge 3 through a handle of eight values, and the last stage receives
 // through a handle of four (neg_stage_loop_capacity_disagrees).
 using NarrowReceive = cc::StageLoop<loop::ForegroundFlush, loop::DrainProcess, loop::DetectProcess, loop::BuildProcess,
@@ -519,7 +519,7 @@ static_assert(cc::check_loop<NarrowReceiveOfGraph>().says(
     "loop: the ends of 'channel 4' state two capacities: 8 and 4.  Each end that states the capacity of a channel "
     "states the same capacity."));
 
-// The door over the arms (THE ARMS).  The three arms of the loop agree, and
+// The door over the arms (the arms).  The three arms of the loop agree, and
 // so do the flush arm through the handles and through the graph.
 static_assert(cc::check_arms<loop::FlushArm, loop::JobArm, loop::JobLateArm>().is_admitted());
 static_assert(cc::check_arms<loop::FlushArm, loop::FlushArmOfGraph>().is_admitted());

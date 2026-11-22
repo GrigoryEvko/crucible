@@ -11,7 +11,7 @@
 //                                       result on each generated input
 //   Draw                                the source of the inputs of one run
 //
-// THE INPUTS
+// Inputs
 //   A body takes a Draw and gives true when the property holds.  Each value
 //   that it draws comes from one or two words of 64 bits.  Run r of the seed
 //   s takes its words from the Philox4x32-10 blocks of the key s and the
@@ -19,7 +19,7 @@
 //   the same seed gives the same inputs on each run of the test and on each
 //   host.
 //
-// THE SHRINK
+// Shrink
 //   The words of a run are its choice sequence.  When a run fails, the
 //   family replays the body on smaller sequences and keeps each one that
 //   still fails: it removes each word, sets each word to zero, and searches
@@ -35,7 +35,7 @@
 //   body that ends the process, such as by CRUCIBLE_TEST_ASSERT, gets no
 //   shrink: it must give false for a failure.
 //
-// THE ORACLE
+// Oracle
 //   oracle compares a family operation with its model, often the std form.
 //   The test file holds the model inside one opt-out region of the class
 //   ORACLE (foundation/Quarantine.h), so the std names stay in the region.
@@ -92,7 +92,7 @@ struct DrawnValue {
 
 }  // namespace detail
 
-// The source of the inputs of one run of a property (THE INPUTS).
+// The source of the inputs of one run of a property (the inputs).
 class Draw {
 public:
     // A word of 64 bits.
@@ -102,7 +102,7 @@ public:
         return value;
     }
 
-    // A value from low to high, both included (THE SHRINK).  The origin is
+    // A value from low to high, both included (the shrink).  The origin is
     // the value of the range nearest to zero.  When the range holds values
     // on the two sides of the origin, a first word picks the side: a word
     // below 2^63 picks the side above the origin.  The next word gives the
@@ -130,7 +130,7 @@ public:
     // A bool, false for the word zero.
     [[nodiscard]] bool boolean() noexcept { return integer<std::uint8_t>(0, 1) == 1; }
 
-    // The source of the words of run RUN of SEED (THE INPUTS).  A test can
+    // The source of the words of run RUN of SEED (the inputs).  A test can
     // also draw values outside a property with it.
     Draw(std::uint64_t seed, std::uint32_t run) noexcept : seed_{seed}, run_{run} {}
 
@@ -264,7 +264,7 @@ private:
 template <typename Body>
 concept PropertyBody = std::is_nothrow_invocable_r_v<bool, Body&, Draw&>;
 
-// The runs and the shrink of one property (THE SHRINK).
+// The runs and the shrink of one property (the shrink).
 template <typename Body>
 class PropertyRunner {
 public:
@@ -361,7 +361,7 @@ private:
     std::uint32_t budget_ = kShrinkRuns;
 };
 
-// Runs body on the inputs of runs 0 to count - 1 of seed (THE INPUTS).  On
+// Runs body on the inputs of runs 0 to count - 1 of seed (the inputs).  On
 // the first run that fails, the shrink finds a smaller input, and the test
 // ends with the report of the shrunk input and the site of the call.
 template <TestContext Ctx, typename Body>
@@ -379,7 +379,7 @@ void property(Ctx const& /*test*/, std::uint64_t seed, std::uint32_t count, Body
 }
 
 // The property that family and model give the same result for each input
-// that generate draws (THE ORACLE).
+// that generate draws (the oracle).
 template <TestContext Ctx, typename Generate, typename Family, typename Model>
     requires std::is_nothrow_invocable_v<Generate&, Draw&>
           && std::is_nothrow_invocable_v<Family&, std::invoke_result_t<Generate&, Draw&> const&>

@@ -29,7 +29,7 @@
 // neither type has a hash or an order.  Neither has arithmetic, because the
 // replay of a region only gives an address on.
 //
-// THE DOORS
+// Doors
 //   mint_run_address(bytes, offset)   the address of the byte at offset of a
 //                       run of bytes that the program owns, such as a pool.
 //                       An offset equal to the count gives the address one
@@ -161,7 +161,7 @@ public:
 // The empty value of an Option of a RunAddress: the null pointer, which no
 // RunAddress holds.  No door builds the null pointer: each mint gives no
 // value for it, and the seal refuses std::bit_cast.  The payload gate checks
-// the statement (THE CHECK OF THE STATEMENT of foundation/core/Choice.h): the
+// the statement (the check of the statement in foundation/core/Choice.h): the
 // one constructor from a pointer takes the key of the mints, no public member
 // writes a RunAddress, and the statement stands in a header of the base.  So
 // a loop over a mutable Option of a RunAddress gets a cursor that writes the

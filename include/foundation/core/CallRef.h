@@ -11,14 +11,14 @@
 //                       a member function of an object that a name holds
 //   call_ref(args...)   calls the callable with the arguments
 //
-// THE SHAPE
+// Shape
 //     A CallRef is two words: the address of the callable, and a thunk that
 //     calls the callable at that address.  It owns nothing, it allocates
 //     nothing, and it has no virtual call.  The signature is noexcept, so a
 //     callable that can throw does not fit.  A call is one indirect call
 //     through the thunk, and the thunk inlines the call of the callable.
 //
-// THE BORROW
+// Borrow
 //     A CallRef borrows its callable, as a Ref borrows its object.  It
 //     refuses the one shape that always dangles: a callable or an object
 //     that is a temporary.  The constructor and bind of an rvalue are

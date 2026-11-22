@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_metalog_consumer_session asks for an execution context as its first
 // argument.  An int is not one, so the gate refuses the call.

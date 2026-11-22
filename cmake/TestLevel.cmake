@@ -1,11 +1,11 @@
 # The x86-64 level that each test needs, which the test launcher checks before
 # the program of the test starts.
 #
-# THE NEED OF A TEST
+# Need of a test
 #   A program of x86_64 needs the x86-64 level of the instructions that its
-#   units can run (THE X86 LEVELS of foundation/os/X86Level.h).  A unit gets
+#   units can run (the x86 levels of foundation/os/X86Level.h).  A unit gets
 #   the level of the flags of the build, such as x86-64-v3 for the build of
-#   the preset default (THE FLOOR of CMakeLists.txt).  A target or a source
+#   the preset default (the floor of CMakeLists.txt).  A target or a source
 #   can give more, such as -march=native for a bench, -march=x86-64-v4 for a
 #   unit of a test of two targets, or -mavx2.  The need of a program is the
 #   highest need of its units.  The need of a unit is the lowest level whose
@@ -15,7 +15,7 @@
 #   the features of each level, and this file holds no list of them.  A
 #   feature above v4, such as AVX512-VNNI of -march=native, gives the need v4.
 #
-# THE FLOOR OF A PROGRAM
+# Floor of a program
 #   A target or a source can also give less than the build, such as
 #   -mno-avx512f or -march=x86-64-v3 in a build at x86-64-v4.  But a program
 #   can link the static libraries of the build, and each unit of them has the
@@ -35,13 +35,13 @@
 #   makes the target depend on the level probe crucible_level, and writes a
 #   row of x86-level-needs.txt of the build directory.  `loop bench`, `loop
 #   pgo` and `loop evidence` start a bench with no test launcher, and they
-#   read that file (THE NEED of utils/assay/core/x86level.py).
+#   read that file (the need of utils/assay/core/x86level.py).
 #   crucible_script_test() gives a script test that names the file of a
 #   target ($<TARGET_FILE:NAME>) the need of that target.
 #
-# THE SKIP
+# Skip
 #   The test launcher reads the level of the host through the level probe of
-#   the build before the program starts (THE LEVEL of
+#   the build before the program starts (the level of
 #   utils/assay/loop/teststep.py).  A host below the need ends the test with
 #   CRUCIBLE_TEST_SKIP_CODE, and the program does not start, because a check
 #   in the program can run after code of its level.  Each test of the tree
@@ -108,7 +108,7 @@ function(_crucible_level_universe)
   endforeach()
 endfunction()
 
-# The need of a unit with the -m words WORDS, 1 to 4 (THE NEED OF A TEST).  A global property keeps the need of each
+# The need of a unit with the -m words WORDS, 1 to 4 (the need of a test).  A global property keeps the need of each
 # set of words, so each set costs one run of the preprocessor.
 function(_crucible_need_of_words out)
   string(SHA1 _key "${ARGN}")
@@ -166,7 +166,7 @@ function(_crucible_need_of_target out target build_words build_need)
     _crucible_m_words(_target_words ${_options})
   endif()
   # A unit with no -m word of its own has the need of the target, so only such a word costs a run of the
-  # preprocessor.  The need never falls below the need of the build (THE FLOOR OF A PROGRAM).
+  # preprocessor.  The need never falls below the need of the build (the floor of a program).
   set(_need ${build_need})
   if(_target_words)
     _crucible_need_of_words(_own ${build_words} ${_target_words})
@@ -209,7 +209,7 @@ function(_crucible_need_of_target out target build_words build_need)
   set(${out} ${_need} PARENT_SCOPE)
 endfunction()
 
-# THE NEED OF A TEST and THE SKIP, for each target and test of the tree.  The configure calls it at the end of the
+# Need of a test and the skip, for each target and test of the tree.  The configure calls it at the end of the
 # root directory, when each target exists.  Complexity: linear in the sources of the executable targets and in the
 # tests, and one run of the preprocessor for each different set of -m words.
 function(_crucible_test_levels)

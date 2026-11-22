@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An attach plan is start-up work, so its mint takes a context that owns the
 // initialization capability.  A background drain context does not own it,

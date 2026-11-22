@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // HS14 fixture #1 of 2 for the provenance gate of compute_storage_nbytes*
 // (TensorMeta input -> ExternalTensorMeta).
@@ -24,7 +24,7 @@ int main() {
     meta.strides[0] = ::crucible::tensor_dim(1);
     meta.dtype = crucible::ScalarType::Float;
 
-    // MUST fail: compute_storage_nbytes requires ExternalTensorMeta,
+    // must fail: compute_storage_nbytes requires ExternalTensorMeta,
     // not a raw TensorMeta reference.
     auto bytes = crucible::compute_storage_nbytes(meta);
     (void)bytes;

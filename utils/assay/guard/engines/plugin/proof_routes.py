@@ -1,11 +1,11 @@
 """proof-routes — no compiled shape builds a proof type with no call to its door.
 
-THE RULE
+Rule
     A proof type is a context, a key, a capability, a permission, a pin or a
     placement.  Only the door that its header names builds one.  The language
     refuses most other shapes.  The quarantine plugin of
     utils/tools/quarantine/ reads the shapes that the language permits, on the
-    semantic tree of each unit (THE PROOF ROUTES in expression.cpp):
+    semantic tree of each unit (the proof routes in expression.cpp):
       union                           a union definition
       pointer-cast                    a cast to a pointer or a reference to a
                                       proof type
@@ -43,10 +43,10 @@ THE RULE
     (utils/toolchain/gcc/patches/0004-*.patch).
 
     The rule reads the finding lines in the sections of the objects of the
-    target all of one build (assay.guard.engines.plugin.runner, THE
-    SECTIONS).
+    target all of one build (assay.guard.engines.plugin.runner, the
+    sections).
 
-THE LEDGER
+Ledger
     utils/ledgers/proof-routes.txt admits a reviewed site with a count and a
     reason (assay.core.ledger).  The reason tells why the site builds no proof
     type.  Each problem of the census of the runner is an error too.

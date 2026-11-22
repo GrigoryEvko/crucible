@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: passing a `Tagged<const CrucibleMeta*, source::External>`
 // (or any tag other than `source::ABIBoundary`) to
@@ -31,11 +31,11 @@ using crucible::vessel::metas_from_typed;
 
 int main() {
     // Build a `Tagged<const CrucibleMeta*, External>` through the one door
-    // — same payload type as TypedMeta but a DIFFERENT tag, so a
+    // — same payload type as TypedMeta but a different tag, so a
     // different type entirely.
     auto wrong_tag = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const CrucibleMeta*>(nullptr));
 
-    // Should FAIL: metas_from_typed expects TypedMeta
+    // Should fail: metas_from_typed expects TypedMeta
     // (Tagged<const CrucibleMeta*, ABIBoundary>), not
     // Tagged<const CrucibleMeta*, External>.  No converting constructor /
     // no implicit retag exists.

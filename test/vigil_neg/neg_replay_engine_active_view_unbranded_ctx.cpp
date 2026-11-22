@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The active view of the replay cursor is minted only from the foreground
 // context of a Vigil's producer claim.  A context that names no claim

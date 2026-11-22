@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_deadline_watchdog rejects a background context.  Building a
 // watchdog takes the baseline of the first window, which belongs to

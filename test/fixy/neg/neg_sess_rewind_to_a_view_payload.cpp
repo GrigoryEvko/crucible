@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A rewind opens a new session on the Resource of a handle at End, at a
 // protocol of its own, and it takes no context.  So no row gate reads the

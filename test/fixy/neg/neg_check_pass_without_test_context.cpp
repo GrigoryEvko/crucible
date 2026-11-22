@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // pass writes the pass line of a test, and only a test calls it.  An init
 // context owns no Test capability, so the concept TestContext refuses it at

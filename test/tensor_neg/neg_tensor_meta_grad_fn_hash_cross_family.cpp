@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // TensorMeta::grad_fn_hash is GradFnHash, ::fixy::Tagged<uint64_t,
 // hash_family::FamilyB>.  A Family-A hash is stable across processes, and a
@@ -18,7 +18,7 @@ int main() {
 
     crucible::TensorMeta meta{};
 
-    // MUST fail: a Family-A hash cannot occupy a Family-B slot.
+    // must fail: a Family-A hash cannot occupy a Family-B slot.
     meta.grad_fn_hash = persistent;
     return 0;
 }

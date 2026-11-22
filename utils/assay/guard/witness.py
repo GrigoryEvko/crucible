@@ -3,8 +3,8 @@
 usage: guard witness [--rule ID]... [--engine E]... [--cxx PATH] [--plugin PATH] [--build-dir DIR] [--jobs N]
 
 A plant is a tree in utils/plants/RULE/ that the rule must refuse, and a
-control is a tree that it must accept (assay.guard.engines.meta.runner, THE
-WITNESS).  The command runs the witness of each rule that the call names and
+control is a tree that it must accept (assay.guard.engines.meta.runner, the
+witness).  The command runs the witness of each rule that the call names and
 that has a module of its own.  The rule registry holds that each rule has a
 minimum of one plant and one control.
 
@@ -20,7 +20,7 @@ its rules itself.  It selects each rule of the engine plugin that the call
 names.  With --engine plugin, it also selects each rule of the engine with a
 module or with plants.  The witness of the engine elf builds each plant with
 the patched compiler that ASSAY_TEST_CXX names
-(assay.guard.engines.elf.runner, THE PLANTS).  A measured rule with a holder
+(assay.guard.engines.elf.runner, the plants).  A measured rule with a holder
 has no run of its own.  The command selects it when the call names it, or
 when the call names its engine and the rule has plants.  Its witness runs the
 judge of its holder on each plant (assay.guard.engines.buildsys.held).

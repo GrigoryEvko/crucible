@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A history has no lock and no atomic, so the foreground must not read
 // it while the background records.  The foreground row owns neither Init

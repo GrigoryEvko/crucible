@@ -32,7 +32,7 @@
 // connection classes of cntp) are always initialized by their aggregate
 // or constructor.  The door stays for the slot array.
 //
-// mint_tagged is the named factory, but it is NOT true that one
+// mint_tagged is the named factory, but it is not true that one
 // `mint_` search finds every authorization point in the tree.  The
 // factories that produce a Declared* value are also named declare_*,
 // admit_*, validate_*, plan_*, query_*, and several one-offs

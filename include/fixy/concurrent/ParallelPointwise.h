@@ -15,17 +15,17 @@
 //                       shards, for a test or a bench, such as the placement
 //                       OneCpuEach that gives each shard its own core
 //
-// THE SPLIT
+// Split
 //   Shard s writes the positions [start(s), start(s + 1)) of the first axis
 //   of out, by the cut of mint_split (fixy::detail::shard_start), and it
 //   reads the same positions of each input.  out is a unique view, so no two
 //   indexes of out name one element, and no two shards write one element.
 //   Each shard runs the body of write_pointwise over its positions.  The
 //   walk computes each element alone from the input elements at its index
-//   (THE LANES of Pointwise.h), so the cut changes no bit.  A first axis of
+//   (the lanes of Pointwise.h), so the cut changes no bit.  A first axis of
 //   fewer positions than Shards leaves some shards with no position.
 //
-// THE ALIAS PROOF
+// Alias proof
 //   The form takes the plan of write_pointwise over the whole views one time,
 //   on the calling thread.  An input that can name an element of out at a
 //   different index makes the walk keep the stated order of walk(), in which
@@ -36,7 +36,7 @@
 //   of zero, a view with no element and a first axis of one position do not
 //   split either.
 //
-// THE THREADS
+// Threads
 //   The coupling and the count of shards pass to mint_parallel_for of
 //   fixy/concurrent/Spawn.h.  Independent shards run on the threads that the
 //   parallelism rule gives for the bytes of the walk.  When the rule gives
@@ -46,9 +46,9 @@
 //   run a stated count of threads.  The form starts the threads of each
 //   call, so a walk of few elements costs more than the walk of one thread.
 //
-// THE TARGET
+// Target
 //   The form calls the lane path of the walk, so it is in the inline namespace
-//   CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of foundation/Platform.h).
+//   CRUCIBLE_SIMD_TARGET (the target namespace of foundation/Platform.h).
 
 #include <fixy/OwnedRegion.h>
 #include <fixy/concurrent/ParallelismRule.h>
@@ -196,7 +196,7 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
     }
 }
 
-// Writes op(input...) into the element of out at each index, by THE SPLIT,
+// Writes op(input...) into the element of out at each index, by the split,
 // with the bits of write_pointwise.  It gives ShapeMismatch, and writes
 // nothing, when the sizes of an input differ from the sizes of out.
 // Complexity: O(count) calls of the op in Shards shards, O(rank^2 * views)

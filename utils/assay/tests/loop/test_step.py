@@ -17,7 +17,7 @@ RLIMIT_CPU of 1 s, and the launcher keeps that lower limit.  The cases of a
 step over its limit call judge() of the launcher with a planted
 measurement.  The cases that read the instruction
 counts of a compile record expect them when this host gives an exact counter
-(utils/assay/core/meter.py, THE INSTRUCTION COUNT), and no count with
+(utils/assay/core/meter.py, the instruction count), and no count with
 CRUCIBLE_COUNT_INSTRUCTIONS=0.  The planted ccache is a file named ccache.
 On a miss it runs a preprocessor run, and then the compiler run behind the
 words of CCACHE_PREFIX, as ccache 4 does.  A miss keeps a copy of the object,
@@ -39,7 +39,7 @@ limit judges the signal of the limit, and it reads the judge of the
 launcher on the CPU time of the record for the line of the limit.  It
 judges no wall time, because the wall time increases with the load of the
 host.  The exact CPU time of the record can be lower than the limit at a
-high load (THE CPU LIMIT of assay.core.meter), so the cases of the judge
+high load (the CPU limit of assay.core.meter), so the cases of the judge
 also take two planted CPU times of such compiles.
 The time limit of each launch is the guard against a step that does not
 end.  When ccache is on
@@ -90,7 +90,7 @@ LAUNCH_TIMEOUT_S = 60.0
 # The text that the planted tool and the GCC driver write for a child that a signal ended, such as the SIGKILL of
 # RLIMIT_CPU.
 KILLED_TEXT = b"Killed signal terminated program"
-# The exact CPU times of two compiles that RLIMIT_CPU of 1 s stopped on the build host at a load of 210 (THE CPU LIMIT
+# The exact CPU times of two compiles that RLIMIT_CPU of 1 s stopped on the build host at a load of 210 (the CPU limit
 # of assay.core.meter).
 STOPPED_CPU_S = (0.844, 0.947)
 # The time limit of a run of the program that the real compiler links, in seconds.
@@ -484,7 +484,7 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
     )
     bench.launch(through_ccache, PLANTED_HIT="1")
     expect("a second hit keeps the same last cost", bench.record().get("last_cost") == missed)
-    # With no counter, a hit with no cost does not compile again (A HIT WITH NO COST of the launcher).  The cases of
+    # With no counter, a hit with no cost does not compile again (a hit with no cost of the launcher).  The cases of
     # the key then see the hit itself.
     no_counter = {cost_meter.INSTRUCTIONS_ENV: "0"}
     bench.launch([*through_ccache, "-DPLANTED_OPTION"], variables=no_counter, PLANTED_HIT="1")
@@ -545,7 +545,7 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
 def run_store_order(bench: Bench, verdicts: Verdicts) -> None:
     """The entry of a miss before the store of ccache, a hit with no cost, and a rejected compile through ccache.
 
-    These cases hold THE ORDER of assay.core.cost_store and A HIT WITH NO COST of the launcher.
+    These cases hold the order of assay.core.cost_store and a hit with no cost of the launcher.
     """
     expect = verdicts.expect
     through_ccache = [*bench.ccache, *bench.tool]
@@ -606,7 +606,7 @@ def run_store_order(bench: Bench, verdicts: Verdicts) -> None:
 def run_counted_entries(bench: Bench, verdicts: Verdicts) -> None:
     """A hit whose entry holds no count, and a miss with no count over an entry with a count, on a host with a counter.
 
-    These cases hold A HIT WITH NO COUNT of the launcher and THE COUNT OF AN ENTRY of assay.core.cost_store.  The
+    These cases hold a hit with no count of the launcher and the count of an entry of assay.core.cost_store.  The
     caller gives a store with one entry of the object, and that entry holds a count.
     """
     expect = verdicts.expect
@@ -789,7 +789,7 @@ def is_stopped_at_limit(result: proc.Completed, record: dict[str, object], limit
 
     The kernel sends SIGKILL when a process reaches RLIMIT_CPU.  The planted tool and the GCC driver each write
     KILLED_TEXT for a child that a signal ended.  The exact CPU time of the record can be lower than the limit at a
-    high load (THE CPU LIMIT of assay.core.meter).  So the line of the check loop-step must come exactly when the judge
+    high load (the CPU limit of assay.core.meter).  So the line of the check loop-step must come exactly when the judge
     of the launcher holds on the CPU time of the record, and the verdict does not change with the load of the host.
     """
     cpu_s = cost_of(record).get("cpu_s")

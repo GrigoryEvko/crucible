@@ -1,13 +1,13 @@
 """witness-roster — each class of the base with a door shape has a witness row of the rule table.
 
-THE RULE
+Rule
     A witness class attests to a fact that it cannot see, such as a pin, a
     mapping, a descriptor, a permission or a context.  Its constructor must
     take the proof of the fact, or be the operation that makes the proof.  A
     witness row of utils/rule-table.txt names each such class.  The command
     `loop derive witness-fixtures` writes one negative fixture for each row.
     The quarantine plugin gives one finding for each class of a base file
-    with a door shape and no witness row (THE RULE witness-roster of
+    with a door shape and no witness row (the rule witness-roster of
     utils/tools/quarantine/declaration.cpp):
       unrostered-witness   a class with a door shape and no witness row
     The door shapes are a mint_ friend, a passkey class and a constructor
@@ -16,7 +16,7 @@ THE RULE
     a friend type are door shapes only with a closed constructor.  The rule
     reads the lines in the scope of its row of utils/registry.txt.
 
-THE LEDGER
+Ledger
     A row of utils/ledgers/witness-roster.txt admits one class:
     `PATH | unrostered-witness | admit | ENTITY | REASON`.  The entity is the
     full name of the class, with its namespaces and no template arguments.

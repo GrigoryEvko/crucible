@@ -7,7 +7,7 @@
 # step-memory and step-cost of utils/registry.txt, and exits with the
 # status of the test (the docstring of the launcher gives the rules).  It
 # gives each test a soft core limit of 1 byte.  A child that aborts then writes
-# no core dump, unless CRUCIBLE_TEST_CORES=keep keeps the cores (CORE DUMPS in
+# no core dump, unless CRUCIBLE_TEST_CORES=keep keeps the cores (core dumps in
 # that docstring).  The driver of a negative fixture, `loop fixture`, writes the
 # same record and holds the same rules itself.
 #
@@ -40,12 +40,12 @@ file(REMOVE "${CMAKE_BINARY_DIR}/CTestCustom.cmake")
 # launcher with the name of the test in front of its command.  With no python3,
 # the test runs with no launcher.  TRACE never gives the launcher the option
 # --trace never.  The launcher then does not trace the test, and the test runs
-# on each call of `loop test` (utils/assay/loop/teststep.py, THE READ SET).
+# on each call of `loop test` (utils/assay/loop/teststep.py, the read set).
 # Only a test that needs a listener of seccomp of its own takes it.
 #
 # On x86_64, a command that names the file of a target ($<TARGET_FILE:NAME>)
 # gives the launcher --x86-level with the need of each such target, so the
-# launcher skips the test on a host below the need (THE NEED OF A TEST of
+# launcher skips the test on a host below the need (the need of a test of
 # cmake/TestLevel.cmake).  The value starts with v1, so it is never empty.
 function(crucible_script_test)
   cmake_parse_arguments(PARSE_ARGV 0 _script "COMMAND_EXPAND_LISTS" "NAME;WORKING_DIRECTORY;TRACE"
@@ -123,7 +123,7 @@ set(CMAKE_TEST_LAUNCHER ${CRUCIBLE_TEST_STEP})
 # program of a test of an executable target.  With the policy CMP0158 NEW, it
 # does so only in a cross build.  The launcher then gets the number of the
 # words of the emulator.  The program of the test is the word after them, and
-# each test gets a record of its own (THE EMULATOR of utils/assay/loop/teststep.py).
+# each test gets a record of its own (the emulator of utils/assay/loop/teststep.py).
 cmake_policy(GET CMP0158 _crucible_emulator_policy)
 if(CMAKE_CROSSCOMPILING_EMULATOR AND (CMAKE_CROSSCOMPILING OR NOT _crucible_emulator_policy STREQUAL "NEW"))
   list(LENGTH CMAKE_CROSSCOMPILING_EMULATOR _crucible_emulator_words)

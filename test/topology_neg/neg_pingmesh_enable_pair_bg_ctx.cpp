@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // enable_pair writes the pair mask that record_measurement reads, so it
 // takes an Init-row context.  A background worker cannot turn a pair on.

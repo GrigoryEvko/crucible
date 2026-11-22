@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // One parked token has one loan.  A copy of the loan would be a second
 // read right that the parked token does not wait for, so a reader could

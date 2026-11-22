@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Once::call runs its argument, so the argument must be callable with no
 // arguments.  The requires-clause of call refuses one that is not, at the

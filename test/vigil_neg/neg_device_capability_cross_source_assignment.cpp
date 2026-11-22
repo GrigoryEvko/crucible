@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Mismatch class 2 of 2 for BackgroundThread::DeviceCapability: the
 // compiler rejects an assignment of a value under tags::source::Calibrated,

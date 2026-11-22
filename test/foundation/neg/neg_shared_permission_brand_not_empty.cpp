@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A share proof carries the brand of the exclusive it came from, and a
 // brand carries no state.  A brand with a data member would give the

@@ -7,7 +7,7 @@
 namespace foundation::alloc {
 
 // The root has no destructor that runs at the end of the process, so no unit
-// registers one and no end of the process unmaps the host window (THE ROOT).
+// registers one and no end of the process unmaps the host window (the root).
 static_assert(std::is_trivially_destructible_v<AllocRoot>);
 static_assert(!std::is_copy_constructible_v<AllocRoot> && !std::is_copy_assignable_v<AllocRoot>);
 
@@ -24,7 +24,7 @@ inline constexpr bool kIsConstant = [] consteval {
 
 static_assert(root_check::kIsConstant);
 
-// THE HEAP TABLE: a slot of 20 KiB is five pages, and it holds the HeapState
+// The heap table: a slot of 20 KiB is five pages, and it holds the HeapState
 // and the bin stacks of its heap.  The slots of 65,534 heaps take 1.25 GiB of
 // address space, and a step of 2 MiB holds 102 whole slots.
 static_assert(kHeapSlotBytes == 5 * 4096);

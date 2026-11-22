@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A state of one producer of its own holds the claim of its own brand, and
 // asks that claim for a proof in the role of the record path.  The proof names

@@ -7,7 +7,7 @@
 // without a constructor call, so the refusal is the constraint's and
 // not the passkey's.
 //
-// VIOLATION: a TU mints an init context with a background key.
+// Violation: a TU mints an init context with a background key.
 //
 // Expected diagnostic: no matching call to mint_context, with the
 // CanMintContext constraint unsatisfied.

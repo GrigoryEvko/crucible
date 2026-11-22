@@ -24,7 +24,7 @@
 //
 // The runtime arm obeys the contract evaluation semantic of the
 // translation unit, as a language contract clause does.  The build sets
-// that semantic in CMakeLists.txt, SECTION 6 and SECTION 6b.  Debug
+// that semantic in CMakeLists.txt, section 6 and section 6b.  Debug
 // enforces it, and Release observes it through a handler that aborts.
 // So a precondition does its check in a Release library, as it does in
 // Debug.  NDEBUG has no effect on these macros.
@@ -146,7 +146,7 @@
     } while (0)
 
 // An optimizer that reasons from undefined behaviour is entitled to
-// delete code standing BEFORE an `[[assume(cond)]]`, on the grounds
+// delete code standing before an `[[assume(cond)]]`, on the grounds
 // that the code could not have run if the condition were false there.
 // The checkpoint is a sequence point the optimizer may not carry that
 // reasoning backward across.  It costs no machine instructions.  Only

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The graph declares two stages joined by one edge, and the call
 // supplies one stage.  The graph is well formed; the mint gate's second

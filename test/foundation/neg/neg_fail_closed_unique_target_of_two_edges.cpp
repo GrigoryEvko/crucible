@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // unique_target reads a relation as a function of its From.  A From with
 // two edges has two targets, so the relation is not a function of it.

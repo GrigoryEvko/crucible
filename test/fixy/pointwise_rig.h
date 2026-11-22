@@ -1,7 +1,7 @@
 #pragma once
 
 // The rig of test_pointwise: the drawn cases, the oracle walk(), the
-// properties and the directed cases of THE NAN RULE of
+// properties and the directed cases of the NAN rule of
 // foundation/core/Pointwise.h.
 //
 // The compile of an op through write_pointwise gives one lane plan for each
@@ -282,7 +282,7 @@ template <class Op>
     }
 }
 
-// The output of the oracle for the value of the op: by THE NAN RULE, the
+// The output of the oracle for the value of the op: by the NAN rule, the
 // canonical NaN for each NaN of a floating element, unless the op keeps its
 // bits.  The test reads the bits with is_nan_bits, and not with the header.
 template <class E, class Op, class Value>
@@ -471,8 +471,8 @@ template <class E, Walker Under = Walker::Pointwise, class Op, std::size_t... Is
             .expect("an input fits the run");
     };
 
-    // The oracle: walk() in the stated order, with the op on scalars and THE
-    // NAN RULE in each step, so a shared input reads the canonical NaN of an
+    // The oracle: walk() in the stated order, with the op on scalars and the
+    // NAN rule in each step, so a shared input reads the canonical NaN of an
     // earlier step.  The walk writes the copy in a frame of the copy.
     auto [is_walked, walked] = ::fixy::with_mut(std::move(expected), [&drawn, &input_of, op](auto frame_run) noexcept {
         ::fixy::View<E> const expected_run = frame_run.view();
@@ -528,7 +528,7 @@ void pointwise_agrees_with_walk(::fixy::TestRunnerCtx const& test, ::fixy::TextV
     if (Inputs > 0) CRUCIBLE_TEST_ASSERT(test, outcomes.in_place >= kOutcomeFloor);
 }
 
-// ── The directed cases of THE NAN RULE ──────────────────────────────────
+// ── The directed cases of the NAN rule ──────────────────────────────────
 
 // The layout of one axis of count elements with the stride, from offset.
 [[nodiscard]] inline Layout line_of(std::size_t count, std::size_t stride, std::size_t offset) noexcept {

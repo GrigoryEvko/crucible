@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // TensorMeta::data_ptr is ExternalDataPtr, ::fixy::Tagged<void*,
 // source::External>.  A pointer under a different provenance tag cannot be
@@ -19,7 +19,7 @@ int main() {
 
     crucible::TensorMeta meta{};
 
-    // MUST fail: Tagged<void*, Sanitized> is not ExternalDataPtr.
+    // must fail: Tagged<void*, Sanitized> is not ExternalDataPtr.
     meta.data_ptr = sanitized;
     return 0;
 }

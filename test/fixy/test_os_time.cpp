@@ -106,7 +106,7 @@ void mark_the_sleep(bool is_in_sleep) noexcept { is_asleep = is_in_sleep ? 1 : 0
 // The id of the calling thread for the kernel.
 [[nodiscard]] std::uint64_t calling_thread_id() noexcept { return static_cast<std::uint64_t>(::gettid()); }
 
-// True when the kernel reports the thread with the id THREAD_ID asleep in
+// True when the kernel reports the thread with the thread id asleep in
 // clock_nanosleep.  The first field of /proc/self/task/ID/syscall is the
 // number of the call in which the thread sleeps, and the file of a thread
 // that runs holds "running".
@@ -344,7 +344,7 @@ using BgWitness = fixy::BgObserveCtx;
 // intercepts or that it knows to block, and it holds the handler of a signal
 // that comes in another call.  The sanitizer does not intercept the
 // clock_nanosleep of the C library.  So the tsan preset shows here that the
-// raw sleep tells the sanitizer of the call (THE SANITIZERS of
+// raw sleep tells the sanitizer of the call (the sanitizers of
 // foundation/os/Syscall.h).  A handler that the sanitizer held to the end of
 // the sleep finds no sleep in progress.
 // The signaling thread sends the signal only when the kernel reports the

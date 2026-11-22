@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A flow class takes an admitted DSCP.  A raw byte does not convert to the
 // refined DSCP, so the mint refuses it.  The class id and the priority are

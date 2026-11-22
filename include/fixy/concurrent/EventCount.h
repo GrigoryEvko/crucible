@@ -4,7 +4,7 @@
 // one load when no thread waits, and that sleeps in the kernel after a spin
 // budget (the event count of Vyukov, as Eigen and folly give it).
 //
-// THE PROTOCOL
+// Protocol
 //   A waiter takes four steps:
 //     1. prepare_wait() enters the waiter in the count of the waiters, reads
 //        the epoch, and runs fence_seq_cst.  It gives the entry of the waiter
@@ -20,7 +20,7 @@
 //   ends the call.  Otherwise the notifier adds one to the epoch and wakes the
 //   waiters of the epoch word.
 //
-// THE ORDER
+// Order
 //   The fence of the waiter orders its entry in the count, a store, before
 //   its test of the condition, a load.  The fence of the notifier orders its
 //   store of the condition before its load of the count.  The fences give
@@ -36,7 +36,7 @@
 //   acquire order, and the add has release order.  So the waiter also sees
 //   the condition that the notifier stored before its add.
 //
-// THE EPOCH
+// Epoch
 //   The epoch is a word of 32 bits.  2^32 notifies that each find a waiter,
 //   between the read of the epoch by a waiter and its sleep, bring the word
 //   back to the value of the waiter.  The waiter then sleeps until the next
@@ -44,20 +44,20 @@
 //   than an hour, and a waiter goes from its read to its sleep in some
 //   microseconds.
 //
-// THE ENTRY
+// Entry
 //   prepare_wait gives an EventWait, the entry of one waiter in the count.
 //   The entry cannot copy or move, and its destructor leaves the count.  So
 //   each path of a waiter leaves the count one time, and the end of the scope
 //   of the entry cancels a wait.  A waiter that stays in the count only makes
 //   each notify do a system call for nothing.
 //
-// THE GATE
+// Gate
 //   commit_wait sleeps, so it takes a context that owns Block.  A notify that
 //   finds a waiter makes a system call, so it takes such a context too.  The
 //   foreground context owns no Block, so the type keeps the futex off the hot
 //   path, as CLAUDE.md asks.
 //
-// THE POLICY
+// Policy
 //   A wait policy names how a consumer waits.  Spin spins with the plain arm
 //   of the process and never parks, so each context takes it.
 //   SpinThenPark<BudgetNanos> spins for its budget with the spin budget of
@@ -98,7 +98,7 @@ enum class WakeCount : std::uint8_t {
 
 class EventCount;
 
-// The entry of one waiter in the count of the waiters (THE ENTRY).
+// The entry of one waiter in the count of the waiters (the entry).
 class [[nodiscard]] EventWait {
 public:
     EventWait(EventWait const&) = delete("an entry in the count of the waiters belongs to one wait");
@@ -123,7 +123,7 @@ private:
     std::uint32_t epoch_ = 0;
 };
 
-// The event count (THE PROTOCOL).  The two words share one cache line, and no
+// The event count (the protocol).  The two words share one cache line, and no
 // other data shares it.  A notifier with no waiter only reads the line, so the
 // line stays shared between the cores of the notifier and of the waiter.
 class alignas(64) EventCount : ::foundation::Pinned<EventCount> {
@@ -214,12 +214,12 @@ inline EventWait::EventWait(EventCount& events, std::uint32_t epoch) noexcept
 
 inline EventWait::~EventWait() { events_->leave_(); }
 
-// The wait policy that spins and never parks (THE POLICY).
+// The wait policy that spins and never parks (the policy).
 struct Spin final {
     static constexpr bool should_park = false;
 };
 
-// The wait policy that spins for BudgetNanos, and then parks (THE POLICY).
+// The wait policy that spins for BudgetNanos, and then parks (the policy).
 template <std::uint32_t BudgetNanos>
 struct SpinThenPark final {
     static constexpr bool should_park = true;

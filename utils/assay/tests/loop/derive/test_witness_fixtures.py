@@ -3,7 +3,7 @@
 `guard selftest tests.loop.derive.test_witness_fixtures` runs the test.  Each
 case plants a rule table and a header in a throwaway tree, and writes one
 line.  The compile cases compile a planted fixture with the patched compiler
-(assay.core.testing, THE COMPILER).  The case of the registration lists the
+(assay.core.testing, the compiler).  The case of the registration lists the
 tests of the build directory that ASSAY_TEST_BUILD_DIR names, with the ctest
 of that build.  Without a compiler or a build directory, the case does not
 hold.  Exit 0 when each case holds, else 1.

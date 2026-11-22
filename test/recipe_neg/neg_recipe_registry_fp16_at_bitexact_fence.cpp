@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A value at ULP_FP16 must not reach a consumer that requires BITEXACT.
 // ULP_FP16 is three tiers below BITEXACT.  tolerance_of maps a BITEXACT_TC

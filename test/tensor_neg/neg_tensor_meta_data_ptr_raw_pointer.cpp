@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // HS14 fixture #1 of 2 for the provenance gate of TensorMeta::data_ptr
 // (Tagged<void*, source::External>).
@@ -20,7 +20,7 @@ int main() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     void* raw = nullptr;
 
-    // MUST fail: data_ptr is ExternalDataPtr, not a raw void*.
+    // must fail: data_ptr is ExternalDataPtr, not a raw void*.
     meta.data_ptr = raw;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;

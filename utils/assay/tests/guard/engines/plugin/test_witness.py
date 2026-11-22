@@ -26,7 +26,7 @@ from assay.guard.engines.meta import runner as meta_runner
 from assay.guard.engines.plugin import witness
 from assay.readers import sections
 
-# The variable that a CI runner sets, which the witness removes for the run of its plants (THE ENVIRONMENT).
+# The variable that a CI runner sets, which the witness removes for the run of its plants (the environment).
 CI_VARIABLE = meta_runner.PLANTED_VARIABLES[0]
 MANIFEST = """# a planted manifest
 compile report unit.cpp
@@ -478,7 +478,7 @@ def _planted_log(tree: Path, path: str) -> dict[str, object]:
 
 
 def link_cases(expect: testing.Expect, work: Path) -> None:
-    """Do a test of THE LINKS: make_links(), and the location of a result of the plugin through a link."""
+    """Do a test of the links: make_links(), and the location of a result of the plugin through a link."""
     tree = work / witness.TREE
     (tree / "include" / "garden").mkdir(parents=True)
     (tree / "include" / "garden" / "Bed.h").write_text("#pragma once\n", encoding="utf-8")
@@ -510,7 +510,7 @@ def link_cases(expect: testing.Expect, work: Path) -> None:
 
 
 def environment_cases(expect: testing.Expect) -> None:
-    """Do a test of THE ENVIRONMENT: the run of the plants has no planted variable, and a plant sets none."""
+    """Do a test of the environment: the run of the plants has no planted variable, and a plant sets none."""
     with tempfile.TemporaryDirectory(prefix="test-witness-") as scratch:
         root = Path(scratch)
         plants = root / meta_runner.PLANTS / "quarantine"

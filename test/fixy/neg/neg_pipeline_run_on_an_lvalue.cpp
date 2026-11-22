@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Running a pipeline moves each stage into its own thread, so run is
 // rvalue-qualified and an lvalue pipeline cannot be run in place.

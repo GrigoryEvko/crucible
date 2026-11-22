@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // clear() empties the schema table and opens it again after the seal.  In
 // production code that reopens a table that lock-free readers still read.

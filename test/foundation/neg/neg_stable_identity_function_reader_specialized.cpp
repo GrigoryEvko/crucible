@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The identity walk reads the function that a pointer argument names, and
 // it refuses a function with internal linkage.  A unit that could

@@ -7,7 +7,7 @@
 // pipeline: the dataflow, the forest, the vicious circles, the determinism
 // and the canonical form.
 //
-// THE NET
+// Net
 //   Each stage is an agent, and its ports are its inputs and then its
 //   outputs.  An input takes a value of its channel, and an output gives
 //   one.  Each edge of the graph is one channel and one wire, from an output
@@ -33,12 +33,12 @@
 //   Deterministic.  A stage that merges its inputs in the order of their
 //   arrival states that in a net of its own.
 //
-// THE BOUNDS
+// Bounds
 //   A kind has at most max_agent_ports ports, so each stage has at most
 //   eight ports.  The gate of the graph holds first, so each port of a stage
 //   that is no end of the graph has exactly one edge.
 //
-// THE MARKED SYSTEM
+// Marked system
 //   marked_system_of_stage_graph gives the graph as a system of processes
 //   (foundation/algebra/net/Priority.h), so the liveness check can read a
 //   pipeline.  Each stage is a process that loops: in each period it
@@ -48,7 +48,7 @@
 //   each output of the last stage, each in port order.  The processes are
 //   the stages in the order of the stage pack, then the source, then the
 //   sink, named 'stage 0', 'source' and 'sink'.  The channels are the
-//   channels of THE NET in the same order, named 'edge 0', 'input 0' and
+//   channels of the net in the same order, named 'edge 0', 'input 0' and
 //   'output 0'.
 //
 //   The capacity of a channel is the channel_capacity that the handle of
@@ -78,9 +78,9 @@
 //   fan-in receives input 0 first through a second path
 //   (test/fixy/test_pipeline_dag.cpp).  The check also gains its value when a
 //   loop joins the graph, such as the loop of the Vigil from the foreground
-//   through the pipeline and back to the foreground (THE LOOP).
+//   through the pipeline and back to the foreground (the loop).
 //
-// THE LOOP
+// Loop
 //   A loop is a system of processes over typed ends (StageLoop).  Each
 //   process is a LoopProcess: a type that names it, and its ends in the order
 //   of one period of the process.  An end is one of these:
@@ -92,7 +92,7 @@
 //                           of the stage, in port order
 //     StageEdges<Graph, S>  the actions of stage S of the graph on the edges
 //                           of the graph, in the order of the marked system
-//                           of the graph (THE MARKED SYSTEM): a send through
+//                           of the graph (the marked system): a send through
 //                           the output handle of the edge, and a receive
 //                           through its input handle.  The ends of the graph
 //                           are no part of it.
@@ -116,7 +116,7 @@
 //   capacity 0.  The door refuses an end that states no capacity, and two
 //   ends of one channel that state two capacities.  The capacity of the
 //   channel is the capacity that its ends state.  Only the sink of a stage
-//   graph can state no capacity (THE MARKED SYSTEM), and no end of a loop is
+//   graph can state no capacity (the marked system), and no end of a loop is
 //   a sink: a handle of a sink names no channel, so OutputsOf refuses it, and
 //   StageEdges reads no end of the graph.  A lock is a type too,
 //   and the locks stand in the order of their first ends, with the names
@@ -127,11 +127,11 @@
 //   marked_system_of_loop gives the processes in the order of the loop, each
 //   with the actions of its channel ends in the order of its ends.  An end
 //   inside a bracket stands after the end of its lock.  A lock end adds no
-//   action (THE LOCKS).  The door ensure_loop_live checks the locks and the
+//   action (the locks).  The door ensure_loop_live checks the locks and the
 //   capacities, and then it checks the liveness of the marked system.
 //
-// THE LOCKS
-//   The check of the marked graph reads no bracket (THE LIMITS of
+// Locks
+//   The check of the marked graph reads no bracket (the limits of
 //   foundation/algebra/net/Priority.h).  So the door checks each lock by
 //   three rules.  First, one process writes the lock, and one other process
 //   reads it.  Second, a process that writes or reads the lock waits on
@@ -148,7 +148,7 @@
 //   and the liveness of the marked system is the liveness of the loop.  The
 //   second rule also holds for a read, because a read can run again.
 //
-// THE ARMS
+// Arms
 //   A process that polls a channel and goes on when the channel is empty
 //   does not wait on it.  At each poll, such a process takes one of some
 //   arms, and a caller checks one loop for each arm.  The door refuses an arm
@@ -186,7 +186,7 @@
 //   its sender.  Then the caller checks the arm of that shift too, so that the
 //   processes take one arm together in each period again.
 //
-// THE COSTS
+// Costs
 //   One constant evaluation for each graph, linear in the stages, the ports
 //   and the edges.  The reading of a loop of N ends is quadratic in N,
 //   because each end looks for the first end of its channel or its lock.  The
@@ -213,7 +213,7 @@ namespace fixy::concurrent {
 namespace detail {
 
 // The channel of each port of each stage of a graph whose gate holds: the
-// edge of the port, or the channel of its end (THE NET).  Port P of stage S
+// edge of the port, or the channel of its end (the net).  Port P of stage S
 // is the slot S * max_agent_ports + P, the inputs before the outputs.
 template <std::size_t Slots>
 struct stage_channel_map {
@@ -248,7 +248,7 @@ template <class... Stages, class... Edges>
     return map;
 }
 
-// The net of a stage graph whose gate holds (THE NET).  Complexity: linear in
+// The net of a stage graph whose gate holds (the net).  Complexity: linear in
 // the stages, the ports and the edges.
 template <class... Stages, class... Edges>
 [[nodiscard]] consteval auto net_of_stage_graph_(StagePack<Stages...> stages, EdgePack<Edges...> edges) noexcept {
@@ -316,7 +316,7 @@ template <class... Stages, class... Edges>
     return graph;
 }
 
-// The capacity of the channel of a handle (THE MARKED SYSTEM): the capacity
+// The capacity of the channel of a handle (the marked system): the capacity
 // that it states, cut at the top of the range of a channel of a system, or
 // 0 for a handle that states none, which only a sink can be.
 template <class Handle>
@@ -432,7 +432,7 @@ consteval void size_output_ends_(System& marked) noexcept {
     }
 }
 
-// The marked system of a stage graph whose gate holds (THE MARKED SYSTEM).
+// The marked system of a stage graph whose gate holds (the marked system).
 // Complexity: linear in the stages, the ports and the edges.
 template <class... Stages, class... Edges>
 [[nodiscard]] consteval auto marked_system_of_stage_graph_(StagePack<Stages...> stages,
@@ -534,8 +534,8 @@ template <class Graph>
 inline constexpr std::size_t input_end_count_v =
     detail::input_end_count_(typename stage_graph_traits<Graph>::stage_pack_type{});
 
-// The verdict on the input ends of a graph whose gate holds (THE MARKED
-// SYSTEM): admitted when the handle of each input end states the capacity of
+// The verdict on the input ends of a graph whose gate holds (the marked
+// system): admitted when the handle of each input end states the capacity of
 // its channel, or a refusal that names the first input end that states none.
 template <class Graph>
 [[nodiscard]] consteval ::foundation::algebra::net::NetVerdict check_stage_graph_ends_() noexcept {
@@ -551,7 +551,7 @@ template <class Graph>
 
 }  // namespace detail
 
-// True when a stage graph has a marked system (THE MARKED SYSTEM): its gate
+// True when a stage graph has a marked system (the marked system): its gate
 // holds, and the handle of each input end states the capacity of its channel.
 // The gate proves that each handle of an edge states it, and only a handle of
 // an output end, the sink, can state none.
@@ -559,7 +559,7 @@ template <class Graph>
 concept StatesStageGraphCapacities =
     StageGraphWellFormed<Graph> && detail::first_unstated_end_v<Graph> == detail::input_end_count_v<Graph>;
 
-// The net of a stage graph (THE NET), for a graph whose gate holds and whose
+// The net of a stage graph (the net), for a graph whose gate holds and whose
 // stages each have at most eight ports.
 template <class Graph>
     requires StageGraphWellFormed<Graph>
@@ -568,7 +568,7 @@ template <class Graph>
     return detail::net_of_stage_graph_(typename traits::stage_pack_type{}, typename traits::edge_pack_type{});
 }
 
-// The marked system of a stage graph (THE MARKED SYSTEM), for a graph whose
+// The marked system of a stage graph (the marked system), for a graph whose
 // gate holds and whose stages each have at most eight ports.  A graph with
 // an input end that states no capacity does not compile: one static_assert
 // fires, with a text that names the port.
@@ -607,7 +607,7 @@ using pipeline_graph_t = typename detail::pipeline_graph<Runner>::type;
 
 // ── The loop ────────────────────────────────────────────────────────────
 
-// One send into the channel (THE LOOP).
+// One send into the channel (the loop).
 template <class Channel>
 struct SendsOn {};
 
@@ -632,7 +632,7 @@ template <class Graph, std::size_t Stage>
 struct StageEdges {};
 
 // The bracket of the writer of a sequence lock, and the ends that the writer
-// does inside the bracket, in order (THE LOCKS).
+// does inside the bracket, in order (the locks).
 template <class Lock, class... Inside>
 struct WritesLock {};
 
@@ -671,7 +671,7 @@ enum class LoopMove : std::uint8_t {
     return move == LoopMove::Send || move == LoopMove::Receive;
 }
 
-// True when the type is an end of a loop (THE LOOP).
+// True when the type is an end of a loop (the loop).
 template <class End>
 inline constexpr bool is_loop_end_v = false;
 template <class Channel>
@@ -959,7 +959,7 @@ template <class Name, class... Ends>
     return Name::process_name;
 }
 
-// The reading of a loop (THE LOOP).  The first end of an end is the first end
+// The reading of a loop (the loop).  The first end of an end is the first end
 // whose key is its key and whose kind names a channel when its kind does.
 // Complexity: quadratic in the ends.
 template <class... Processes>
@@ -981,7 +981,7 @@ template <class... Processes>
     return reading;
 }
 
-// The channels and the locks of a loop (THE LOOP): the channel of each end of
+// The channels and the locks of a loop (the loop): the channel of each end of
 // a channel and the lock of each end of a lock, each in the order of the
 // first ends, and the capacity of each channel.
 template <std::size_t Count>
@@ -997,7 +997,7 @@ struct loop_shape {
 // first of its ends that states one, or 0 for a channel whose ends state
 // none.  The door refuses an end that states none (find_capacity_fault_), so
 // the capacity of a channel of an admitted loop is the capacity of each of
-// its ends (THE LOOP).  Complexity: linear in the ends.
+// its ends (the loop).  Complexity: linear in the ends.
 template <std::size_t Count>
 [[nodiscard]] consteval loop_shape<Count> shape_of_loop_(loop_reading<Count> const& reading) noexcept {
     loop_shape<Count> shape{};
@@ -1026,7 +1026,7 @@ template <std::size_t Count>
     return shape;
 }
 
-// The rule that the ends of a loop break (THE LOCKS, THE LOOP).
+// The rule that the ends of a loop break (the locks, the loop).
 enum class LoopFaultCode : std::uint8_t {
     NoFault = 0,
     // The fault names the lock, the count of the processes that write it,
@@ -1090,7 +1090,7 @@ template <std::size_t Count>
 }
 
 // The first lock that one process does not write, or that one other process
-// does not read, as the fault LockUnwired, or NoFault (THE LOCKS).
+// does not read, as the fault LockUnwired, or NoFault (the locks).
 // Complexity: O(N * K) for N ends and K lock ends.  Each lock reads the N
 // ends, and each of its ends does two scans of the N ends.
 template <std::size_t Count>
@@ -1119,7 +1119,7 @@ template <std::size_t Count>
 
 // The first end inside a bracket that waits, as the fault WaitInBracket, or
 // the first bracket of a writer inside a read, as the fault WriteInRead, or
-// NoFault (THE LOCKS).  An end of a channel and a read of a lock wait, and a
+// NoFault (the locks).  An end of a channel and a read of a lock wait, and a
 // bracket of the writer of a lock does not.  The scan reads the ends in the
 // order of the reading, and a bracket stands before each end inside it.  So
 // the first write inside a read stands directly inside that read, or a wait
@@ -1150,7 +1150,7 @@ template <std::size_t Count>
 
 // The first end of a channel that states no capacity, as the fault
 // CapacityUnstated, or that states another capacity than the capacity of its
-// channel, as the fault CapacityDisagrees, or NoFault (THE LOOP).  The
+// channel, as the fault CapacityDisagrees, or NoFault (the loop).  The
 // capacity of the channel is the capacity of its first end that states one.
 // Complexity: linear in the ends.
 template <std::size_t Count>
@@ -1176,8 +1176,8 @@ template <std::size_t Count>
 }
 
 // The first fault of the ends of a loop: the wiring of the locks, the ends
-// inside the brackets (THE LOCKS), and then the capacity that each end of a
-// channel states (THE LOOP).  Complexity: O(N * K) for N ends and K lock
+// inside the brackets (the locks), and then the capacity that each end of a
+// channel states (the loop).  Complexity: O(N * K) for N ends and K lock
 // ends.
 template <std::size_t Count>
 [[nodiscard]] consteval LoopFault find_loop_fault_(loop_reading<Count> const& reading,
@@ -1209,7 +1209,7 @@ count_moves_(::foundation::algebra::net::ProcessSystem<Processes, Channels, Acti
     return count;
 }
 
-// The marked system of a loop with an end of a channel (THE LOOP).
+// The marked system of a loop with an end of a channel (the loop).
 // Complexity: quadratic in the ends.
 template <class... Processes>
 [[nodiscard]] consteval auto marked_system_of_loop_(StageLoop<Processes...>) noexcept {
@@ -1258,8 +1258,8 @@ template <class... Processes>
 inline constexpr std::size_t loop_end_total_v<StageLoop<Processes...>> =
     (loop_process_end_count_v<Processes> + ... + 0);
 
-// The ends of all the arms of a loop, while the check of the arms runs (THE
-// ARMS).  Each end has its key, its arm and its process, which is a place in
+// The ends of all the arms of a loop, while the check of the arms runs (the
+// arms).  Each end has its key, its arm and its process, which is a place in
 // the processes of all the arms, in the order of the arms.  Each process has
 // its arm, the key of the type of its name, and its name.  As in loop_scan,
 // only this local holds the keys.
@@ -1344,7 +1344,7 @@ template <std::size_t Count, std::size_t Processes>
     return false;
 }
 
-// The rule that the arms of a loop break (THE ARMS).
+// The rule that the arms of a loop break (the arms).
 enum class ArmsFaultCode : std::uint8_t {
     NoFault = 0,
     // The fault names the arm and the name of its two processes.
@@ -1378,7 +1378,7 @@ struct ArmsFault {
 
 // The first earlier end of the channel of the end at index that disagrees
 // with it, as a fault, or NoFault: a send or a receive of another process,
-// or a capacity that another arm states (THE ARMS).  Complexity: linear in
+// or a capacity that another arm states (the arms).  Complexity: linear in
 // the ends.
 template <std::size_t Count, std::size_t Processes>
 [[nodiscard]] consteval ArmsFault find_channel_disagreement_(arms_scan<Count, Processes> const& scan,
@@ -1407,8 +1407,8 @@ template <std::size_t Count, std::size_t Processes>
 }
 
 // The first earlier end of the lock of the end at index that holds the same
-// side in another process, as the fault LockSideDisagrees, or NoFault (THE
-// ARMS).  A read by a process that writes the lock holds no side.
+// side in another process, as the fault LockSideDisagrees, or NoFault (the
+// arms).  A read by a process that writes the lock holds no side.
 // Complexity: quadratic in the ends.
 template <std::size_t Count, std::size_t Processes>
 [[nodiscard]] consteval ArmsFault find_lock_disagreement_(arms_scan<Count, Processes> const& scan,
@@ -1432,7 +1432,7 @@ template <std::size_t Count, std::size_t Processes>
     return ArmsFault{};
 }
 
-// The first fault of the arms of a loop (THE ARMS): two processes of one arm
+// The first fault of the arms of a loop (the arms): two processes of one arm
 // with one name, and then the first end that disagrees with an earlier end of
 // its channel or its lock.  Complexity: quadratic in the ends and in the
 // processes of all the arms.
@@ -1466,13 +1466,13 @@ template <class... Arms>
 
 }  // namespace detail
 
-// True when the type is a loop (THE LOOP): a StageLoop of one process or
+// True when the type is a loop (the loop): a StageLoop of one process or
 // more, each a LoopProcess whose name type states its name and whose ends are
 // each an end of a loop.
 template <class Loop>
 concept IsStageLoop = detail::is_stage_loop_v<Loop>;
 
-// The marked system of a loop (THE LOOP), for a loop with an end of a
+// The marked system of a loop (the loop), for a loop with an end of a
 // channel.  Complexity: quadratic in the ends.
 template <class Loop>
     requires IsStageLoop<Loop>
@@ -1480,13 +1480,13 @@ template <class Loop>
     return detail::marked_system_of_loop_(Loop{});
 }
 
-// The verdict on a loop (THE LOOP): the refusal of its first lock that one
+// The verdict on a loop (the loop): the refusal of its first lock that one
 // process does not write or that one other process does not read, of its
 // first wait inside a bracket, or of its first bracket of a writer inside a
-// read (THE LOCKS).  Then the refusal of the first end of a channel that
+// read (the locks).  Then the refusal of the first end of a channel that
 // states no capacity or another capacity than an earlier end of that channel
-// (THE LOOP), the refusal of a channel whose period does not give back its
-// marking (THE ARMS), the
+// (the loop), the refusal of a channel whose period does not give back its
+// marking (the arms), the
 // verdict of check_liveness on its marked system, or the admitted verdict for
 // a loop with no end of a channel.  The marked graph finds each channel whose
 // sends and receives differ in count before it looks for a cycle, so the
@@ -1590,7 +1590,7 @@ template <class... Arms>
 
 }  // namespace detail
 
-// The verdict on the arms of a loop (THE ARMS): the verdict of check_loop on
+// The verdict on the arms of a loop (the arms): the verdict of check_loop on
 // the first arm that it refuses, after the place of the arm.  Then the
 // refusal of an arm with two processes of one name, of a channel whose
 // sends or whose receives stand in two processes, of a channel whose ends
@@ -1666,8 +1666,8 @@ template <class... Arms>
 }
 
 // The door over the arms of a loop: an arm that the door of a loop refuses,
-// or arms that disagree on a name, a side or a capacity, do not compile (THE
-// ARMS).  One static_assert fires, with the text of the verdict.
+// or arms that disagree on a name, a side or a capacity, do not compile (the
+// arms).  One static_assert fires, with the text of the verdict.
 template <class... Arms>
     requires(sizeof...(Arms) != 0 && (IsStageLoop<Arms> && ...))
 consteval void ensure_arms_live() noexcept {

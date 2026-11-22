@@ -1,8 +1,8 @@
 """linear-containment — a linear value stays in a class that keeps it linear.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ reads each class and each
-    declaration of a unit (linear.cpp, THE SHAPES).  The kinds:
+    declaration of a unit (linear.cpp, the shapes).  The kinds:
       pinned-holder     a class that holds a linear part by value, cannot move,
                         and has no door at the end of its scope: no annotation
                         scope_end_door and no destructor that is a door.  Its
@@ -23,7 +23,7 @@ THE RULE
     The entity of a line names the class, or the declaration and the class of
     the library.
 
-THE LEDGER, THE WRITE
+Ledger, write
     assay.guard.engines.plugin.linear_family.
 
 Usage
@@ -59,5 +59,5 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family)."""
+    """Write the ledger of the rule from the lines of the builds of the request (the write of linear_family)."""
     return linear_family.write(rule, request)

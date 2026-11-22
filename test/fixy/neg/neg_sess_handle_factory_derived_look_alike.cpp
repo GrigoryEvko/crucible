@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A class with no friendship tries to reach the handle factory by
 // deriving from it, to call a member from its own scope or to make one

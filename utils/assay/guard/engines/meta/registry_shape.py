@@ -1,6 +1,6 @@
 """The part shape of the rule registry: each row of the registry obeys its schema, and each doc field names a section.
 
-THE PART
+Part
     assay.core.registry.examine() reads each row of utils/registry.txt and
     gives each problem:
       - A line that does not obey the rows grammar
@@ -19,7 +19,7 @@ THE PART
               command
     No ledger row admits a finding of the three kinds (KINDS).
 
-THE GUIDE
+Guide
     The guide is the file that the context names: misc/GUIDE.md of the tree.
     A plant holds its guide in the file guide.md, and plant_context() gives
     the context of a plant that path.

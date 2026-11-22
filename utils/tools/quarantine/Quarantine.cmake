@@ -13,7 +13,7 @@
 #
 #   REPORT  The default.  Each object holds the findings of its unit in the
 #           section .crucible.quarantine (the head comment of plugin.cpp,
-#           THE SECTION), and utils/assay/readers/sections.py reads the
+#           the section), and utils/assay/readers/sections.py reads the
 #           section.  A finding in a file whose enforce mode is error is a
 #           compile error, and each other finding stops nothing.
 #   ERROR   Each finding that no opt-out region covers is a compile error.
@@ -23,7 +23,7 @@
 # of the tree gets them.  execute_process builds the plugin, so the plugin is
 # not a target and it is not built with itself loaded.
 #
-# THE COMPILER OF THE PLUGIN
+# Compiler of the plugin
 #   The plugin loads into the cc1plus of the patched GCC, so the patched g++
 #   builds it.  cmake/Toolchain-gcc16.cmake gives that compiler as
 #   CRUCIBLE_TOOLCHAIN_CXX, also when CMAKE_CXX_COMPILER names a wrapper of it,
@@ -37,7 +37,7 @@
 #   the plugin headers of the cross compiler, and the cc1plus of the cross
 #   compiler loads it.  With no such name, the compiler of the plugin builds it.
 #
-# THE KEY OF THE PLUGIN
+# Key of the plugin
 #   The key of the plugin names the hash of each source, the compiler and the
 #   flags.  The key file beside the plugin records that key and the hash of the
 #   bytes of the plugin (utils/tools/quarantine/PluginKey.cmake).  A configure
@@ -51,7 +51,7 @@
 #   not part of the stamp, so a rebuild for the same key compiles no object
 #   again.
 #
-# THE INPUTS OF A COMPILE
+# Inputs of a compile
 #   `loop stamps` (utils/assay/loop/stamps.py) runs at each configure.  It writes the
 #   facts of the rule table (facts.txt), its enforce rows (enforce.txt) and a
 #   mode stamp for each source file of a row into ${CMAKE_BINARY_DIR}/quarantine.
@@ -71,7 +71,7 @@
 #     dependency file of the unit.  A change of the enforce mode of a file
 #     compiles again only the units with a finding in that file.  The stamp of
 #     a file of the mode error also holds the count rows of its directory in
-#     the ledgers of the rules with counted lines (THE COUNTED LINES of
+#     the ledgers of the rules with counted lines (the counted lines of
 #     plugin.cpp), and each such ledger reruns the configure.
 #   - ccache hashes enforce.txt (extra_files_to_hash), so a unit that compiles
 #     again after a change of a mode never gets the object of the old mode.
@@ -79,20 +79,20 @@
 #   directories of two work trees share the entries of the cache.  The stamp
 #   stays in the hash, and the section of each object holds it.
 #
-# THE KINDS
+# Kinds
 #   After each build of the plugin, the plugin writes the kinds of each rule to
 #   ${CMAKE_BINARY_DIR}/quarantine/kinds.txt (the argument kinds of plugin.cpp).
 #   This run also makes sure that cc1plus loads the plugin.  The part kinds of
 #   the rule registry compares kinds.txt with the kinds of the rows of the
 #   engine plugin of utils/registry.txt.
 #
-# THE TIME OF THE BUILD
+# Time of the build
 #   A configure that builds the plugin writes the start and the end of that
 #   build to ${CMAKE_BINARY_DIR}/quarantine/plugin-build-time.txt, in seconds
 #   since the epoch.  The span holds the compiles, the link and the run that
 #   writes kinds.txt.  `guard warnings`, the loop history and `loop gauge`
 #   print the span, and the configure less the span, as plain numbers
-#   (utils/assay/loop/history.py, THE PLUGIN BUILD).  A configure that builds
+#   (utils/assay/loop/history.py, the plugin build).  A configure that builds
 #   no plugin writes no such file.
 #
 # The root CMakeLists.txt includes this file after the ccache block and the
@@ -138,10 +138,10 @@ if(NOT DEFINED CRUCIBLE_RULE_TABLE)
   set(CRUCIBLE_RULE_TABLE "${_crucible_quarantine_utils}/rule-table.txt")
 endif()
 find_program(CRUCIBLE_PYTHON3 NAMES python3 REQUIRED)
-# The key file of the plugin (THE KEY OF THE PLUGIN).
+# The key file of the plugin (the key of the plugin).
 include("${CMAKE_CURRENT_LIST_DIR}/PluginKey.cmake")
 
-# The compiler of the plugin (THE COMPILER OF THE PLUGIN).
+# The compiler of the plugin (the compiler of the plugin).
 if(DEFINED CRUCIBLE_TOOLCHAIN_CXX)
   set(CRUCIBLE_PLUGIN_CXX "${CRUCIBLE_TOOLCHAIN_CXX}")
 else()
@@ -216,7 +216,7 @@ if(EXISTS "${_crucible_quarantine_cc1plus}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_crucible_quarantine_cc1plus}")
 endif()
 
-# The plugin builds when it is not current (THE KEY OF THE PLUGIN).  Each unit compiles in the directory
+# The plugin builds when it is not current (the key of the plugin).  Each unit compiles in the directory
 # of the sources, which the compile maps to `.`, so the plugin bytes hold no
 # path of the work tree, and two work trees build the same bytes.  The result
 # store of the negative fixtures keys these bytes (utils/assay/loop/fixture/store.py).
@@ -282,7 +282,7 @@ if(NOT _crucible_quarantine_is_current)
   crucible_quarantine_write_plugin_key("${CRUCIBLE_QUARANTINE_PLUGIN}" "${_crucible_quarantine_key}")
 endif()
 
-# The kinds of each rule (THE KINDS).
+# The kinds of each rule (the kinds).
 if(NOT EXISTS "${_crucible_quarantine_kinds}")
   execute_process(
     COMMAND "${CRUCIBLE_PLUGIN_CXX}" -fsyntax-only -x c++ /dev/null "-fplugin=${CRUCIBLE_QUARANTINE_PLUGIN}"
@@ -295,7 +295,7 @@ if(NOT EXISTS "${_crucible_quarantine_kinds}")
   endif()
 endif()
 
-# The time of the plugin build (THE TIME OF THE BUILD).
+# The time of the plugin build (the time of the build).
 if(DEFINED _crucible_quarantine_build_start)
   string(TIMESTAMP _crucible_quarantine_build_end "%s.%f" UTC)
   file(WRITE "${_crucible_quarantine_out}/plugin-build-time.txt"
@@ -333,18 +333,18 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CRUCIBLE_LOOP}" "${_crucible_quarantine_utils}/assay/loop/stamps.py"
   "${_crucible_quarantine_utils}/assay/core/ruletable.py" "${_crucible_quarantine_utils}/assay/core/rows.py"
   "${_crucible_quarantine_utils}/assay/core/paths.py")
-# The ledgers of the rules with counted lines, which counted.txt names (THE
-# COUNTED LINES of plugin.cpp).  A change of one writes the mode stamps again.
+# The ledgers of the rules with counted lines, which counted.txt names (the
+# counted lines of plugin.cpp).  A change of one writes the mode stamps again.
 file(STRINGS "${_crucible_quarantine_out}/counted.txt" _crucible_quarantine_counted_ledgers)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_crucible_quarantine_counted_ledgers})
 
-# The threshold of the rule padded-list (THE INPUTS OF A COMPILE).
+# The threshold of the rule padded-list (the inputs of a compile).
 include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/Guards.cmake")
 crucible_rule_limit(padded-list _crucible_quarantine_padded_limit)
 
 # The list of the headers of include/ that cannot compile alone.  No unit is
 # the sentinel of such a header, so the family home reads it in each unit that
-# includes it (THE SENTINEL of plugin.h).  A project that is not the tree has
+# includes it (the sentinel of plugin.h).  A project that is not the tree has
 # no such list, and its compiles get no argument not-standalone.
 if(NOT DEFINED CRUCIBLE_NOT_STANDALONE_LIST AND EXISTS "${CMAKE_SOURCE_DIR}/test/layer/crucible-not-standalone.txt")
   set(CRUCIBLE_NOT_STANDALONE_LIST "${CMAKE_SOURCE_DIR}/test/layer/crucible-not-standalone.txt")
@@ -365,7 +365,7 @@ string(SUBSTRING "${_crucible_quarantine_stamp}" 0 16 _crucible_quarantine_stamp
 set(_crucible_quarantine_argument "-fplugin-arg-crucible_quarantine")
 # The families declaration property and expression shape read a base header
 # only in the sentinel unit of that header, and the family home reads the
-# gates of each header of include/ only there (THE SENTINEL of plugin.h).
+# gates of each header of include/ only there (the sentinel of plugin.h).
 # test/layer/CMakeLists.txt gives each sentinel unit this argument with the
 # path of its header under the root.  The path is relative to the source
 # root, so each work tree gives ccache one text.

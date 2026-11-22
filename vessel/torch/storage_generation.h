@@ -8,7 +8,7 @@
 // and its generation (crucible::storage_key).  So a free and a new allocation
 // at one address give two keys.
 //
-// THE RECORD AND THE REPLAY.  The header of each allocation costs time, and a
+// The record and the replay.  The header of each allocation costs time, and a
 // replay reads no generation.  So the CPU allocator follows the mode of the
 // Vigil: the generation allocator while the Vigil records, and the prior
 // allocator while it replays.  The record path compares the mode of the Vigil
@@ -18,7 +18,7 @@
 // at the exit follows a divergence of the op or of the close of its nest.  So
 // the rest of a parent whose child diverged runs on the generation allocator.
 //
-// THE PERIODS.  fill_meta gives each storage that the generation allocator did
+// The periods.  fill_meta gives each storage that the generation allocator did
 // not make an unknown generation with the period of the read: a storage of a
 // replay, a storage that lived before the session, and a storage of another
 // allocator.  The attach, the detach and each change to the prior allocator
@@ -47,7 +47,7 @@
 // deleter after a change, so its free stays correct and its generation stays
 // known.
 //
-// THE CHAIN.  The allocator keeps the CPU allocator that was set before the
+// The chain.  The allocator keeps the CPU allocator that was set before the
 // first attach, and it allocates through it.  A profiler or another library
 // that set its own CPU allocator keeps its allocations.  A change and the last
 // detach put that allocator back, at the priority that it had, only when the
@@ -55,7 +55,7 @@
 // allocator over the generation allocator in the session, no change touches
 // it, and each change to a replay still starts a new period.
 //
-// THE ALLOCATION.  Each allocation of n > 0 bytes takes n + 64 bytes from the
+// The allocation.  Each allocation of n > 0 bytes takes n + 64 bytes from the
 // inner allocator.  The first 64 bytes hold the header: the generation and
 // the DataPtr of the inner allocation.  The data starts after the header.  The
 // default CPU allocator of PyTorch aligns each allocation to 64 bytes
@@ -65,7 +65,7 @@
 // bytes goes to the inner allocator with no header, so an empty tensor has no
 // data address, as before.
 //
-// THE DATA POINTER.  The context of the DataPtr is the data pointer, and its
+// The data pointer.  The context of the DataPtr is the data pointer, and its
 // deleter finds the header 64 bytes before the data.  raw_allocate of PyTorch
 // needs a context equal to the data, and oneDNN allocates through it.
 // raw_deleter() gives the same deleter.  is_simple_data_ptr() is false for an
@@ -74,14 +74,14 @@
 // the generation in the middle of a region, and the key of one live storage
 // would change.
 //
-// THE LIFE.  The allocator object lives as long as the process: its storage
+// The life.  The allocator object lives as long as the process: its storage
 // never runs its destructor.  The deleter is a function of the dispatch
 // library, and Python never unloads a library that it loaded.  So a storage
 // that the allocator made can end in a replay, after the detach, and also
 // after the static destructors of the process.  The library must not be
 // unloaded while such a storage lives.
 //
-// THE THREADS.  An allocation and a free come from any thread, and the count
+// The threads.  An allocation and a free come from any thread, and the count
 // of the generations is an atomic.  The attach, the detach and each change
 // write the state of the sessions with no lock, and they call
 // c10::SetCPUAllocator, which writes one pointer of an array of PyTorch with
@@ -115,11 +115,11 @@ inline constexpr uint8_t kNoAllocatorSwitch = 0xFF;
 
 // The state of the allocator that the record path reads at the entry and at
 // the exit of each op, and at each read of a storage.  The thread of the
-// sessions (THE THREADS) is its one writer, at the attach, at the detach and
+// sessions (see the threads above) is its one writer, at the attach, at the detach and
 // at each change.  The record path reads it on the same thread.
 struct AllocatorFollow {
     // The period of the CPU allocator.  The attach, the detach and each change
-    // to the prior allocator add one (THE PERIODS).
+    // to the prior allocator add one (see the periods above).
     ::fixy::Atomic<uint32_t> epoch{};
     // The mode of a Vigil (crucible::ContextMode) before whose op the CPU
     // allocator changes: COMPILED while the generation allocator is set for
@@ -197,7 +197,7 @@ void detach_generation_allocator() noexcept;
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The CPU allocator follows the mode of the Vigil of one op that the vessel
-// records, at the entry and at the exit of the op (THE RECORD AND THE REPLAY).
+// records, at the entry and at the exit of the op (see the record and the replay above).
 // The record path makes the scope before the nest of the op, so the exit check
 // comes after the close of the nest, also in an unwind.
 class [[nodiscard]] AllocatorFollowScope {

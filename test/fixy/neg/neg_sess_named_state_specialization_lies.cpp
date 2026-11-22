@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An explicit specialization of Named lies about the protocol of its name:
 // its member protocol and its base say Send<long, End>, and the name says

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Registered transports are typed as Bits<TransportProbeKind>.  A raw
 // integer mask must not cross the API, because it could come from a

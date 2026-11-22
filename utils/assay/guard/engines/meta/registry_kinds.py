@@ -1,6 +1,6 @@
 """The part kinds of the rule registry: the kinds that the quarantine plugin gives are the kinds of the plugin rows.
 
-THE PART
+Part
     The quarantine plugin writes the kinds of each of its rules to
     BUILD/quarantine/kinds.txt, one row `kind RULE KIND` for each kind (the
     argument kinds of utils/tools/quarantine/plugin.cpp, which
@@ -19,7 +19,7 @@ THE PART
     The ledger and the runner of its rule then know it.  No ledger row admits
     a finding of the three kinds (KINDS).
 
-NOT APPLICABLE
+Not applicable
     The part does not apply with no build directory, or with a build
     directory that holds no kinds.txt.  A plant holds the build directory
     `planted-build` with its kinds.txt (plant_context()).

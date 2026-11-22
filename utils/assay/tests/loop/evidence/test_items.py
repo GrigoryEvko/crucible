@@ -38,7 +38,7 @@ def ctest_program() -> str:
 
 
 def preset_cases(expect: testing.Expect) -> None:
-    """Hold the builds of each class: the test presets with the field `repeat`, and the fuzz builds (THE BUILDS)."""
+    """Hold the builds of each class: the test presets with the field `repeat`, and the fuzz builds (the builds)."""
     build, fuzz = Path("/planted/build"), Path("/planted/build-fuzz")
     configure = tiers.PresetKind.CONFIGURE
     presets = tiers.Tiers(
@@ -86,7 +86,7 @@ def preset_cases(expect: testing.Expect) -> None:
 
 
 def member_cases(expect: testing.Expect) -> None:
-    """Hold the members of a class: the label of the class, no disabled test and no fixture (THE ITEMS)."""
+    """Hold the members of a class: the label of the class, no disabled test and no fixture (the items)."""
     labelled = ctest_reader.TestEntry("prop_one", ("prop_one",), {ctest_reader.LABELS: (targets.PROPERTY.label,)})
     plain = ctest_reader.TestEntry("test_one", ("test_one",))
     disabled = ctest_reader.TestEntry(
@@ -101,7 +101,7 @@ def member_cases(expect: testing.Expect) -> None:
 
 
 def build_cases(expect: testing.Expect) -> None:
-    """Hold the items and the keys of the tests of a fake build tree of `loop test` (THE ITEMS, THE KEYS)."""
+    """Hold the items and the keys of the tests of a fake build tree of `loop test` (the items, the keys)."""
     ctest = ctest_program()
     expect("ASSAY_TEST_CTEST or the pinned ctest of PATH gives the ctest of the fake build tree", bool(ctest))
     if not ctest:
@@ -128,7 +128,7 @@ def build_cases(expect: testing.Expect) -> None:
 
 
 def bench_cases(expect: testing.Expect) -> None:
-    """Hold the items and the keys of the bench targets of a planted code model (THE ITEMS, THE KEYS)."""
+    """Hold the items and the keys of the bench targets of a planted code model (the items, the keys)."""
     with tempfile.TemporaryDirectory(prefix="evidence-benches-") as directory:
         build = Path(directory)
         compiler = build / "planted-cxx"
@@ -171,7 +171,7 @@ def bench_cases(expect: testing.Expect) -> None:
     )
 
 
-# A planted CMake project (THE KEYS OF A HEADER).  Two tests read two headers of include/, and no unit reads a third
+# A planted CMake project (the keys of a header).  Two tests read two headers of include/, and no unit reads a third
 # header.  A header of the build names the build directory.
 PROJECT = """cmake_minimum_required(VERSION 3.28)
 project(planted_headers CXX)
@@ -208,8 +208,8 @@ def planted_build(source: Path, build: Path, tools: tuple[str, str, str]) -> boo
 
 
 def header_cases(expect: testing.Expect) -> None:
-    """Hold the keys of the headers of a planted build, in two build directories and after a change (THE KEYS OF A
-    HEADER)."""
+    """Hold the keys of the headers of a planted build, in two build directories and after a change (the keys of a
+    header)."""
     from assay.core import git
     from assay.guard.engines.buildsys import reconfigure_noop
     from assay.guard.engines.meta import runner as meta_runner
@@ -275,7 +275,7 @@ def pending_cases(expect: testing.Expect) -> None:
 
 
 def admitted_cases(expect: testing.Expect) -> None:
-    """Hold the read of the admitted gates of a source tree, and its rows by header (THE ADMITTED GATES)."""
+    """Hold the read of the admitted gates of a source tree, and its rows by header (the admitted gates)."""
     row = "include/planted/Gate.h | requires | admit | Gate: (true) | a planted reason"
     expect("the admitted gates of this tree read", evidence_items.gate_ledger(paths.REPO_ROOT) is not None)
     with tempfile.TemporaryDirectory(prefix="evidence-admitted-") as directory:

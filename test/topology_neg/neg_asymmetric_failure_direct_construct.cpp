@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The detector's constructor is private: mint_asymmetric_failure_detector,
 // gated on an Init-row context, is the only way to build one.

@@ -1,13 +1,13 @@
 """banned — no reserve call on a std container, no file stream or process start, no reinterpret_cast, no line directive.
 
-THE FIVE KINDS
+Five kinds
     vector-reserve  CLAUDE.md section IV bans `std::vector::reserve`.  The
                     kind reads each call with a member access named `reserve`
                     as its callee: `v.reserve(n)`, `p->reserve(n)`,
                     `v.Base::reserve(n)` and `v.template reserve<T>(n)`.  It
                     refuses the call when the receiver has a std type.  It
                     also refuses the call when the parse tree does not show
-                    the type of the receiver (THE RECEIVER TYPES).  It reads
+                    the type of the receiver (the receiver types).  It reads
                     include/, src/ and bench/.
     file-stream     A runtime directory of `RUNTIME_DIRECTORIES` opens a file
                     only through `fixy::fs::mint_file` or
@@ -70,14 +70,14 @@ THE FIVE KINDS
     own, and no counted configuration compiles vessel/torch.  For these three
     reasons, this rule also reads the quarantined files of its scope.
 
-THE REFUSED KINDS
+Refused kinds
     No ledger row admits a cast or a line directive.  REFUSED_KINDS names the
     kinds reinterpret-cast and line-directive (assay.guard.engines.meta.runner,
-    THE REFUSED KINDS), so a row of such a kind admits no finding, and a write
+    the refused kinds), so a row of such a kind admits no finding, and a write
     of the rule refuses each such site.  A row of each other kind admits its
     sites.
 
-THE MACRO BODIES
+Macro bodies
     The rule reads the parse of each macro body (`tsast.macro_bodies`) with
     the same node rules.  In a body, the name of a declaration also counts
     for process-start, because a use site completes a body such as
@@ -89,7 +89,7 @@ THE MACRO BODIES
     when no `.` or `->` and no namespace other than std or an alias of std is
     before it.  Each token `reinterpret_cast` counts.
 
-THE RECEIVER TYPES
+Receiver types
     The receiver of a reserve call is a name, a name in parentheses, or
     `this->name`.  The rule finds the declaration of the name in the scopes
     around the call, from the innermost scope out:
@@ -113,12 +113,12 @@ THE RECEIVER TYPES
     The rule refuses a type name that has an alias to a std type and a class
     of the same name.  The message of each refused call gives its case.
 
-WHAT THE RULE CANNOT SEE
+What the rule cannot see
     A name that a macro makes with `##`, a system call number that the source
     writes as a literal, and a call through a namespace of a different file
     that holds a `using` directive of std.
 
-THE ENTITY
+Entity
     The entity of a finding is `HOLDER: CALLEE` for vector-reserve,
     `HOLDER: NAME` for file-stream and process-start, and
     `HOLDER: reinterpret_cast<TYPE>` for reinterpret-cast, with the spelling
@@ -132,9 +132,9 @@ THE ENTITY
     scope of the site: the names of its namespaces and its classes.  For a
     site in a macro body, HOLDER is `#define NAME`.
 
-THE SCOPE
+Scope
     The scope of the registry is tracked: each C++ file of the tree
-    (assay.guard.engines.tsast.runner, THE SCOPE).  The kind line-directive
+    (assay.guard.engines.tsast.runner, the scope).  The kind line-directive
     reads each file of that scope.  Each other kind reads the files in its
     directories, less each directory test, examples, third_party, external
     and vendor.  The rule keeps only the trees of those files, and it reads
@@ -161,7 +161,7 @@ STREAM_KIND = "file-stream"
 START_KIND = "process-start"
 CAST_KIND = "reinterpret-cast"
 LINE_KIND = "line-directive"
-# The kinds that no ledger row admits (THE REFUSED KINDS).
+# The kinds that no ledger row admits (the refused kinds).
 REFUSED_KINDS = frozenset({CAST_KIND, LINE_KIND})
 CAST_KEYWORD = "reinterpret_cast"
 # The name of a #line directive after `#`.  A GNU line marker has a number in place of the name.
@@ -246,7 +246,7 @@ START_NAMES = frozenset(
 )
 # The node types of a class head, and of each declaration of a template parameter.
 CLASS_SPECIFIERS = ("class_specifier", "struct_specifier", "union_specifier", "enum_specifier")
-# The node types of a class that is part of the HOLDER of a site in no function (THE ENTITY).
+# The node types of a class that is part of the holder of a site in no function (the entity).
 HOLDER_CLASSES = ("class_specifier", "struct_specifier", "union_specifier")
 TEMPLATE_PARAMETERS = (
     "type_parameter_declaration",
@@ -755,7 +755,7 @@ def type_verdict(type_node: tsast.Node | None, types: TypeIndex, seen: frozenset
 def receiver_detail(receiver: tsast.Node | None, types: TypeIndex) -> str | None:
     """Return the reason to refuse a reserve call on a receiver, or None when its type is not in std.
 
-    THE RECEIVER TYPES gives the rules.
+    The receiver types section gives the rules.
 
     Args:
         receiver: The `argument` field of the member access of the call
@@ -826,7 +826,7 @@ def outer_qualified(node: tsast.Node) -> tsast.Node:
 
 
 def start_references(root: tsast.Node, names: frozenset[str], is_fragment: bool) -> Iterator[tuple[tsast.Node, str]]:
-    """Yield the name node and the spelling of each reference to a process start in a root (THE FOUR KINDS).
+    """Yield the name node and the spelling of each reference to a process start in a root (the four kinds).
 
     Args:
         root: The root of a file or of a macro body
@@ -940,12 +940,12 @@ def scope_holder(node: tsast.Node) -> str:
 
 
 def holder_of(node: tsast.Node) -> str:
-    """Return the holder of a site of a file: the signature of its function, or its scope (THE ENTITY)."""
+    """Return the holder of a site of a file: the signature of its function, or its scope (the entity)."""
     return tsast.function_signature(node) or scope_holder(node)
 
 
 def finding(kind: str, path: str, line: int, entity: str, why: str = "") -> check_report.Finding:
-    """Return the error of one site of a kind (THE ENTITY)."""
+    """Return the error of one site of a kind (the entity)."""
     message = {
         RESERVE_KIND: RESERVE_MESSAGE,
         STREAM_KIND: STREAM_MESSAGE,
@@ -1001,7 +1001,7 @@ def file_findings(tree: tsast.Tree, kinds: Kinds, types: TypeIndex) -> Iterator[
 
 
 def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iterator[check_report.Finding]:
-    """Yield the error of each site of the kinds of the file of one macro body, in the body (THE MACRO BODIES)."""
+    """Yield the error of each site of the kinds of the file of one macro body, in the body (the macro bodies)."""
     path = PurePosixPath(body.define.tree.path).as_posix()
     holder = f"#define {body.name}"
     names = types.std_names(body.define.tree)
@@ -1037,7 +1037,7 @@ def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iter
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
     """Give an error for each line directive of the scope, and for each site of each other kind in the files of its
-    directories (THE FIVE KINDS, THE SCOPE)."""
+    directories (the five kinds, the scope)."""
     found: list[check_report.Finding] = []
     kept: list[tsast.Tree] = []
     for tree in context.trees(context.scope_files()):

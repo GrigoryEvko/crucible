@@ -88,7 +88,7 @@ static void large(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { record_
 
 // A stage that names a key of a named brand after its handles.  The stage
 // door mints the key on the thread of the stage, and the stage opens a frame
-// of the holder that it owns with it (THE KEYS OF A STAGE).
+// of the holder that it owns with it (the keys of a stage).
 struct StageHolderBrand final {};
 struct StageHolder {
     ::foundation::core::FixedArray<int, 4, StageHolderBrand> array{};

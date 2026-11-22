@@ -31,7 +31,7 @@ static_assert(heap_of(ChunkOwner::none).is_none());
 static_assert(heap_of(ChunkOwner::span).is_none());
 static_assert(heap_of(owner_entry_of(HeapId{7})).value_or(HeapId{1}) == HeapId{7});
 
-// THE TAG BYTE: on aarch64 strip_tag removes bits 56 to 63, so a tagged
+// The tag byte: on aarch64 strip_tag removes bits 56 to 63, so a tagged
 // address names the chunk of the same address with no tag.  On x86-64 it
 // keeps each bit.  An address with no tag stays the same on each target.
 namespace chunk_map_check {

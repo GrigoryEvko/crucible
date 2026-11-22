@@ -6,9 +6,9 @@ usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [-
        guard write --rule ID [ARG]...      a rule with a legacy module
 
 A rule with a module of its own: the command runs the rule and writes its
-ledger in the mode of the call (assay.core.ledger, THE WRITE).  The default
+ledger in the mode of the call (assay.core.ledger, the write).  The default
 mode lowers each count, removes each row that admits nothing, and refuses a
-new finding.  A write from one build of THE BUILDS lowers no row.  --raise
+new finding.  A write from one build (see the builds below) lowers no row.  --raise
 also writes a count above its row: use it only when the rule changed what it
 reports, and give the reason in the commit.
 --admit also writes a row for each new finding, with the reason of --reason.
@@ -16,20 +16,20 @@ A rule of the policy max or baseline judges its ledger itself, so its module
 writes the ledger: the function written(context, ledger, reason) of the module
 gives the new ledger, and --reason gives the reason of a changed row.  A held
 rule of such a policy has no module of its own.  The command then calls
-written() of assay.guard.engines.buildsys.held (THE WRITE of that module).
+written() of assay.guard.engines.buildsys.held (the write of that module).
 
 The module of a rule can name kinds in REFUSED_KINDS, and no row admits a
-finding of such a kind (assay.guard.engines.meta.runner, THE REFUSED KINDS).
+finding of such a kind (assay.guard.engines.meta.runner, the refused kinds).
 The command refuses each such finding in each mode.
 
 A module of a rule with more than one part can give the function
 unread_parts(context): the parts of the rule that do not apply to the
 context, such as a part that reads a build in a call with no --build-dir.
 The command then refuses the write, because the write would remove the rows
-of those parts (assay.guard.engines.meta.registry, THE BUILD).
+of those parts (assay.guard.engines.meta.registry, the build).
 
 --path names paths of the rows of the ledger.  The command then writes only
-the rows of those paths, and it keeps each other row (THE PATHS of
+the rows of those paths, and it keeps each other row (the paths of
 assay.core.ledger).  It applies to a rule of the engine build, meta, tsast or
 plugin with the policy count or admit.  A plugin rule whose module writes its
 ledger itself refuses it.  With --reason and no mode, each row of those paths
@@ -48,11 +48,11 @@ of a row whose value holds, so no change of a ledger needs a hand edit.
 
 --lower with --row lowers each named row of a rule of the module
 assay.guard.engines.buildsys.cost_budgets to the largest measure of its
-item over the builds of --build-dir, with the reason of --reason (THE LOWER
+item over the builds of --build-dir, with the reason of --reason (the lower
 of that module).  The builds must be one build of each configuration of
 objects of the landing gate (lower_refusal()), so the row holds the largest
 value that the gate measures.  The write takes no mode and no --path.  The
-landing gate makes this write for `loop land --lower` (THE LOWER OF A BUDGET
+landing gate makes this write for `loop land --lower` (the lower of a budget
 of assay.loop.gate).
 
 A rule of the policy none has no ledger.  Its module can write a data file
@@ -61,7 +61,7 @@ file again, and the command prints the line that the function returns.  The
 list test/layer/header-constexpr-ops.txt of the rule header-constexpr-ops is
 such a file.
 
-THE BUILDS
+Builds
     A rule of the engine plugin writes through
     assay.guard.engines.plugin.runner, and a rule of the engine elf through
     the function write(rule, request) of its module
@@ -69,10 +69,10 @@ THE BUILDS
     --build-dir.
 
     One --build-dir gives the counts of one build, and the write lowers no
-    row (THE WRITE of assay.core.ledger).  More than one --build-dir is a
-    reduce (THE REDUCE of assay.core.ledger).  The builds must be one build
+    row (the write of assay.core.ledger).  More than one --build-dir is a
+    reduce (the reduce of assay.core.ledger).  The builds must be one build
     of each configuration of the landing gate that checks the rule
-    (assay.loop.gate, THE COUNTED RULES).  The write then lowers each row to
+    (assay.loop.gate, the counted rules).  The write then lowers each row to
     the largest count over the builds.  The landing gate makes this write.
     The command exits 77 when the rule does not apply to a build.
 
@@ -107,7 +107,7 @@ JUDGED_POLICIES = (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE)
 def reduce_refusal(rule_id: str, root: Path, builds: Sequence[Path]) -> str:
     """Return the reason that the builds of a reduce are not one build of each configuration of the gate, or "".
 
-    The configurations are those of the landing gate that check the rule (THE BUILDS).  Complexity: one read of the
+    The configurations are those of the landing gate that check the rule (the builds).  Complexity: one read of the
     build kind and the CMake cache of each build, and one read of the presets of the tree.
     """
     from assay.core import configuration as build_config
@@ -163,7 +163,7 @@ def lower_refusal(root: Path, builds: Sequence[Path]) -> str:
 
 
 def write_lowered(rule: rule_registry.Rule, root: Path, builds: Sequence[Path], request: LowerRequest) -> int:
-    """Lower each row that the request names to the largest measure of its item over the builds (THE LOWER).
+    """Lower each row that the request names to the largest measure of its item over the builds (the lower).
 
     Returns:
         0 when the ledger is written, 1 when the lower is refused, 2 for a rule with no lower or builds that do not
@@ -203,7 +203,7 @@ def write_lowered(rule: rule_registry.Rule, root: Path, builds: Sequence[Path], 
 
 
 def write_reasons(rule: rule_registry.Rule, root: Path, request: rule_ledger.RowReason) -> int:
-    """Write the reason of each row that the request names into the ledger of a rule (THE REASON OF A ROW).
+    """Write the reason of each row that the request names into the ledger of a rule (the reason of a row).
 
     Returns:
         0 when the ledger is written, 1 when the request names no row or gives no reason, 2 for a rule with no ledger

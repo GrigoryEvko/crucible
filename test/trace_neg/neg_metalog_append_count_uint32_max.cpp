@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: minting ValidMetaAppendCount with the value UINT32_MAX in a
 // constant expression.  This is the wide miss of the cap on the count

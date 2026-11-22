@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A BuiltRegion holds the ops of a region, the runs that the ops point into,
 // and the arena that owns the runs.  An assignment to the arena would free

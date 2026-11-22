@@ -30,7 +30,7 @@
 // the call takes by value, so the output has one writer by its type.  The
 // inputs are Views.
 //
-// THE ORDER
+// Order
 //   Write k as a sum of different powers of two, from the largest.  The
 //   prefix [0, k) divides into blocks of these sizes, in that order, and each
 //   block is aligned at a multiple of its size.  The exclusive prefix F(k) is
@@ -52,10 +52,10 @@
 //   left part takes the same carry, and its right part takes the carry
 //   F(a) + S, where S is the tree sum of the left part.  The left part of
 //   each node is an aligned block of a power of two, so the carries are the
-//   folds of THE ORDER.  The work is O(n), with at most two combines for each
+//   folds of the order.  The work is O(n), with at most two combines for each
 //   element.
 //
-// THE GRAINS
+// Grains
 //   A grain of G elements, a power of two, starts at a multiple of G.  The
 //   carry of grain g is F(g * G).  The blocks of g * G hold whole grains, so
 //   the carries of the grains are the exclusive scan of the tree sums of the
@@ -64,7 +64,7 @@
 //   and the scan of each grain with its carry.  A thread count, a schedule
 //   and a grain change no operand of any combine.
 //
-// THE ERROR BOUND
+// Error bound
 //   Each element of a block passes through the tree of the block, and then
 //   through the folds that come after the block.  So the depth of out[k] is
 //   floor(log2 k) + popcount(k) - 1 for an exclusive scan with k >= 1, and
@@ -74,15 +74,15 @@
 //   elements of the prefix, with d the depth, gamma(d) = d * u / (1 - d * u),
 //   and u = 2^-24 for float and 2^-53 for double.
 //
-// THE VALUES OUTSIDE THE BOUND
-//   The rule of THE VALUES OUTSIDE THE BOUND of Reduce.h holds for each sum
+// Values outside the bound
+//   The rule of the values outside the bound of Reduce.h holds for each sum
 //   scan: each output that is a NaN is the canonical NaN quiet_nan_of<T>,
 //   with one compare and one select at each output.  So the inclusive output
 //   of a first element that is a NaN is the canonical NaN too, and not a copy
 //   of that element.  The scans with the combine of a caller give the bits of
 //   the combine.  The exclusive out[0] of a sum scan is +0.
 //
-// THE LANES
+// Lanes
 //   A sum scan loads L consecutive elements into one vector, with L the count
 //   of lanes of one register of the target.  The block of the vector is
 //   aligned, so its prefixes are its carry F(start) and then the blocks of the
@@ -96,19 +96,19 @@
 //   term of each level, from the largest block.  A lane with no block at a
 //   level adds -0, which is exact for each value.  A binary counter of the
 //   sums of the blocks gives the carry of each vector.  So 4, 8 or 16 lanes
-//   compute the folds of THE ORDER, and a test compares each count of lanes
+//   compute the folds of the order, and a test compares each count of lanes
 //   with the recursion.
 //
-// THE COSTS
+// Costs
 //   A scan makes at most two combines for each element, with a recursion of
 //   depth ceil(log2 n) + popcount(n).  A sum scan makes about 2 * log2(L)
 //   shuffles and adds for each vector of L lanes.  No scan allocates.  in can
 //   be the View of the run of out, and no other overlap is permitted.
 //
-// THE TARGET
+// Target
 //   The sum scans and their grain forms read the vector width of the target.
 //   So they and their SIMD helpers are in the inline namespace
-//   CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of foundation/Platform.h).  The
+//   CRUCIBLE_SIMD_TARGET (the target namespace of foundation/Platform.h).  The
 //   scans with the combine of a caller and the plans stay outside it.
 
 #include <foundation/Platform.h>
@@ -135,7 +135,7 @@ enum class ScanKind : std::uint8_t {
 };
 
 // The depth of out[position] of an exclusive scan, and of an inclusive scan.
-// The error bound of THE ERROR BOUND reads it.
+// The error bound section reads it.
 [[nodiscard]] constexpr int count_exclusive_scan_depth(std::size_t position) noexcept {
     return position == 0 ? 0 : bit_width(position) - 1 + popcount(position) - 1;
 }
@@ -209,7 +209,7 @@ constexpr void scan_run_(T const* in, T* out, std::size_t count, T const* carry,
 
 }  // namespace detail
 
-// The inclusive scan of in into out, by THE ORDER, with the combine of the
+// The inclusive scan of in into out, by the order, with the combine of the
 // caller.  The two runs hold one count, and two counts that differ give
 // LengthMismatch with no write.  in can be the View of the run of out.
 // Complexity: at most 2n combines.
@@ -224,7 +224,7 @@ template <class T, class Brand, std::size_t Extent, class Combine>
     return Unit{};
 }
 
-// The exclusive scan of in into out, by THE ORDER: out[0] is empty, and
+// The exclusive scan of in into out, by the order: out[0] is empty, and
 // out[k] combines in[0] to in[k - 1].  The two runs hold one count, and two
 // counts that differ give LengthMismatch with no write.  Complexity: at most
 // 2n combines.
@@ -273,7 +273,7 @@ scan_level_terms_(simd::vec<T, Lanes> siblings, simd::detail::LaneList<Lane...> 
 // total.  sums holds in lane j the sum of the aligned block of 2^Level
 // elements that holds j.  The recursion forms the sums of each level on its
 // way down, the up-sweep.  On its way up it adds the carry and then the term
-// of each level, from the largest block, the left fold of THE ORDER.  Each
+// of each level, from the largest block, the left fold of the order.  Each
 // vector has the full width, so no step stores a part of a register: a
 // shuffle of a narrow vector into a wide one gave a failed store forwarding
 // on each block, and the scan ran at 2.3 ns for each element.

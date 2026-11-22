@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A class with no friendship tries to get access to the checkpoint door
 // through derivation.  A member of that class can then open a checkpoint

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit wraps the producer pole of an SPSC channel in a class of its own,
 // which names no channel, and mints a plain session over that class with a

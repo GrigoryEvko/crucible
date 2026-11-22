@@ -3,7 +3,7 @@
 // The futex door: a wait on a word with an optional deadline, and a wake of
 // one waiter or of each waiter of the word (futex(2)).
 //
-// THE WORD
+// Word
 //   The word is a foundation::core::Atomic<std::uint32_t>, which holds the
 //   32-bit word that the kernel reads.  The door gives the kernel the address
 //   of the cell, and the checks of src/fixy/os/Futex.cpp hold its layout: the
@@ -11,40 +11,40 @@
 //   the process, so the kernel keys its waiters by the address in the
 //   process.
 //
-// THE WAIT
-//   wait() sleeps while the word holds EXPECTED, until a wake on the word, a
+// Wait
+//   wait() sleeps while the word holds expected, until a wake on the word, a
 //   handler of a signal, or the deadline.  The kernel reads the word in the
 //   lock of its queue of waiters, so a wake after a change of the word is not
 //   lost.  The Result tells how the wait ended:
 //     woken            The kernel ended the wait with no error: a wake, or no
 //                      cause.  The caller reads the word again.
-//     word_changed     The word did not hold EXPECTED when the wait began.
+//     word_changed     The word did not hold expected when the wait began.
 //     interrupted      A handler of a signal ran.
 //     deadline_passed  The monotonic clock passed the deadline.
 //   Each other answer of the kernel is an Errno.
 //
-// THE WAKE
+// Wake
 //   wake_one() wakes at most one waiter of the word, and wake_all() each
 //   waiter.  Each gives the number of the waiters that it woke.
 //
-// THE DEADLINE
+// Deadline
 //   A deadline is an absolute time of CLOCK_MONOTONIC.  Deadline::after reads
 //   the monotonic clock through a reader of fixy/os/Time.h, whose mint holds
 //   the gate of a clock read, and adds a bound.  A caller that waits again
 //   after interrupted keeps the same deadline, so a signal does not make the
 //   wait longer.
 //
-// THE GATE
+// Gate
 //   A wait blocks the thread, and a wake serves the waiters of a blocking
 //   protocol.  Each operation takes a context that owns Effect::Block, so a
 //   foreground context touches no futex word.  The bare blocking lock of
 //   fixy/os/SpinLock.h calls the operations of the namespace detail, and its
 //   gate asks for the same context.
 //
-// THE SANITIZERS
+// Sanitizers
 //   The door has one code path in each build.  In a build with
 //   ThreadSanitizer, the raw system call primitive tells the sanitizer of
-//   each futex call (THE SANITIZERS of foundation/os/Syscall.h).
+//   each futex call (the sanitizers of foundation/os/Syscall.h).
 
 #include <fixy/os/ClockSource.h>
 #include <foundation/ByteSeal.h>
@@ -64,10 +64,10 @@ namespace core = ::foundation::core;
 namespace eff = ::foundation::effects;
 namespace os = ::foundation::os;
 
-// The word of a futex (THE WORD).
+// The word of a futex (the word).
 using FutexWord = core::Atomic<std::uint32_t>;
 
-// How a wait ended (THE WAIT).
+// How a wait ended (the wait).
 enum class WaitEnd : std::uint8_t {
     woken,
     word_changed,
@@ -86,10 +86,10 @@ concept MonotonicClockReader = std::same_as<typename Clock::result_type, Monoton
                                    } -> std::same_as<core::Result<MonotonicClockBytes<std::uint64_t>, os::Errno>>;
                                };
 
-// An absolute time of CLOCK_MONOTONIC, in nanoseconds (THE DEADLINE).
+// An absolute time of CLOCK_MONOTONIC, in nanoseconds (the deadline).
 class Deadline final {
 public:
-    // The time BOUND_NANOS after a read of CLOCK, as a Result<Deadline,
+    // The time bound_nanos after a read of clock, as a Result<Deadline,
     // os::Errno>.  A sum past the last time of the clock gives the last time.
     // A read that fails gives its error number.  The read takes the bare tag
     // of Nondet.  The return type is deduced, because the class is complete
@@ -122,7 +122,7 @@ private:
 };
 
 // A context that may wait on a futex word or wake its waiters: one that owns
-// Effect::Block (THE GATE).
+// Effect::Block (the gate).
 template <typename Ctx>
 concept CtxMayUseFutex = eff::CtxOwnsCapability<Ctx, eff::Effect::Block>;
 
@@ -133,7 +133,7 @@ namespace detail {
 inline constexpr std::uint32_t kAllWaiters = 0x7FFFFFFFU;
 
 // The operations of the door with no gate.  The gate of the caller holds the
-// rule of THE GATE, as the gate of the blocking lock of fixy/os/SpinLock.h
+// rule of the gate, as the gate of the blocking lock of fixy/os/SpinLock.h
 // does.
 [[nodiscard]] core::Result<WaitEnd, os::Errno> wait_on(FutexWord const& word, std::uint32_t expected,
                                                        core::Option<Deadline> deadline) noexcept;
@@ -142,8 +142,8 @@ inline constexpr std::uint32_t kAllWaiters = 0x7FFFFFFFU;
 
 }  // namespace detail
 
-// Sleeps while WORD holds EXPECTED, until a wake, a handler of a signal or
-// DEADLINE (THE WAIT).
+// Sleeps while word holds expected, until a wake, a handler of a signal or
+// deadline (the wait).
 template <typename Ctx>
     requires CtxMayUseFutex<Ctx>
 [[nodiscard]] core::Result<WaitEnd, os::Errno> wait(Ctx const& /*ctx*/, FutexWord const& word, std::uint32_t expected,
@@ -151,14 +151,14 @@ template <typename Ctx>
     return detail::wait_on(word, expected, std::move(deadline));
 }
 
-// Wakes at most one waiter of WORD, and gives the number that it woke.
+// Wakes at most one waiter of word, and gives the number that it woke.
 template <typename Ctx>
     requires CtxMayUseFutex<Ctx>
 [[nodiscard]] core::Result<std::uint32_t, os::Errno> wake_one(Ctx const& /*ctx*/, FutexWord const& word) noexcept {
     return detail::wake_waiters(word, 1);
 }
 
-// Wakes each waiter of WORD, and gives the number that it woke.
+// Wakes each waiter of word, and gives the number that it woke.
 template <typename Ctx>
     requires CtxMayUseFutex<Ctx>
 [[nodiscard]] core::Result<std::uint32_t, os::Errno> wake_all(Ctx const& /*ctx*/, FutexWord const& word) noexcept {

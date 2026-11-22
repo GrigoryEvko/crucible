@@ -340,7 +340,7 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
 // proof itself is exercised in the case after the next one.
 [[nodiscard]] int sched_class_answers_read_at_run_time() {
     // The pool-hosting answers at run time.  A FIFO task runs on a
-    // DEADLINE pool and must not run on an OTHER one.
+    // deadline pool and must not run on an other one.
     const bool on_deadline = FifoInt::runnable_on<fixy::SchedulerPolicy_v::Deadline>;
     const bool on_other = FifoInt::runnable_on<fixy::SchedulerPolicy_v::Other>;
     if (!on_deadline || on_other) {

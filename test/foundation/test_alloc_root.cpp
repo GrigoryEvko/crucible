@@ -89,7 +89,7 @@ void threads_see_one_window(TestRunnerCtx const& test) {
     pass(test, "  threads_see_one_window: PASSED\n");
 }
 
-// THE HEAP TABLE: the first claim of the process takes slot 0, the heap of
+// Heap table: the first claim of the process takes slot 0, the heap of
 // the id 1, with the chunk map of the host window and its own entry.  A
 // second claim of the thread gives the same heap.  A claim on a new thread
 // takes the id 2.  The slots commit one step of 2 MiB from the front.

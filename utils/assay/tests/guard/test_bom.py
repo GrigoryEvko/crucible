@@ -3,7 +3,7 @@
 `guard selftest tests.guard.test_bom` runs the test.  Each case writes one
 line.  Exit 0 when each case holds, else 1.
 
-THE CASES
+Cases
     The cases read the build that ASSAY_TEST_BUILD_DIR names.  They hold the
     targets that the command finds, and the five layers of a static library
     and of a linked file.  They also hold an artifact that the command cannot

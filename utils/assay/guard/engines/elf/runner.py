@@ -1,6 +1,6 @@
 """The runner of the engine elf: the facts of a build, the plants, and the run, the witness and the write of a rule.
 
-THE BUILD
+Build
     A rule of the engine elf reads the objects, the static libraries and the
     compile database of a build.  ElfContext reads each fact of the build one
     time, on its first use:
@@ -29,7 +29,7 @@ THE BUILD
     that does not apply raises NotApplicable.  A test or a witness gives a
     PlantedBuild, and then no build directory is necessary.
 
-THE PLANTS
+Plants
     A plant of a rule of the engine is a tree in utils/plants/RULE/ (the
     witness of assay.guard.engines.meta.runner).  Its file plant.txt, in the
     rows grammar of assay.core.rows, gives the build of the plant.
@@ -81,7 +81,7 @@ THE PLANTS
     the bin directory of the install of mold (assay.setup.install).  A
     plant does not build when mold is not installed.
 
-THE RUN
+Run
     A module that judges its findings itself gives judge(rule, context),
     run(rule, context, warnings_dir) and write(rule, request).  For each other
     rule, the run of assay.guard.engines.meta.runner judges the findings of
@@ -125,16 +125,16 @@ PLANTED = "planted"
 # its own, as each build of the tree does.
 FLAGS = ("-std=c++17", "-O1", "-ffunction-sections")
 ROOT_WORD = "{root}"
-# The word of a flags row for the control-flow protection, and the flag of each machine of the host (THE PLANTS).
+# The word of a flags row for the control-flow protection, and the flag of each machine of the host (the plants).
 CFI_WORD = "{cfi}"
 CFI_FLAGS = {"x86_64": "-fcf-protection=full", "aarch64": "-mbranch-protection=standard"}
-# The rows of plant.txt that compile units into a library, and the rows of a linked artifact of all (THE PLANTS).
+# The rows of plant.txt that compile units into a library, and the rows of a linked artifact of all (the plants).
 LIBRARY_ROWS = frozenset({"library", "archive", "shared"})
 PROGRAM_ROW = "program"
 MODULE_ROW = "module"
 LINKED_ROWS = frozenset({PROGRAM_ROW, MODULE_ROW})
 # The tool of the linker, the rule of its thread count, and the word that tells mold to start no child process
-# (THE PLANTS).  cmake/Linker.cmake gives each link of the tree the same words, and the link is then complete when
+# (the plants).  cmake/Linker.cmake gives each link of the tree the same words, and the link is then complete when
 # the compiler driver stops.
 LINKER_TOOL = "mold"
 THREADS_RULE = "build-graph"
@@ -148,14 +148,14 @@ class BuildError(Exception):
 
 
 def toolchain_prefix(compiler: str) -> Path:
-    """Return the prefix of a compiler: PREFIX of PREFIX/usr/bin/COMPILER or of PREFIX/bin/COMPILER (THE BUILD)."""
+    """Return the prefix of a compiler: PREFIX of PREFIX/usr/bin/COMPILER or of PREFIX/bin/COMPILER (the build)."""
     binaries = Path(compiler).parent
     return binaries.parent.parent if binaries.parent.name == "usr" else binaries.parent
 
 
 @dataclass(frozen=True, slots=True)
 class LinkedArtifact:
-    """One linked artifact of the target all (THE BUILD).
+    """One linked artifact of the target all (the build).
 
     `directory` is the first directory of the source directory of its target, or an empty text for the source root.
     `path` is its file, and `target_type` is the type of its target in the code model: EXECUTABLE, SHARED_LIBRARY or
@@ -174,7 +174,7 @@ class LinkedArtifact:
 
 @dataclass(frozen=True, slots=True)
 class PlantedBuild:
-    """The facts of a build that a test or a plant gives (THE BUILD).
+    """The facts of a build that a test or a plant gives (the build).
 
     `libraries` gives the archive of each static library of the root by its target name, `targets` gives the objects
     of each target, and `rows` holds each row of plant.txt for the module of the rule.  `link_libraries` gives each
@@ -198,7 +198,7 @@ class WriteRequest:
     """What one write of the ledger of a rule of the engine does.
 
     `mode` is the mode of assay.core.ledger.  `more_builds` holds the other builds of a reduce, after `build_dir`
-    (THE REDUCE of assay.core.ledger).
+    (the reduce of assay.core.ledger).
     """
 
     root: Path
@@ -216,7 +216,7 @@ class WriteRequest:
 class ElfContext:
     """The build that the rules of the engine elf read: the root of the tree, the build directory and its facts.
 
-    The context reads each fact one time, on its first use (THE BUILD).  A planted build gives each fact, and then no
+    The context reads each fact one time, on its first use (the build).  A planted build gives each fact, and then no
     build directory is necessary.
     """
 
@@ -344,7 +344,7 @@ class ElfContext:
         return self._model
 
     def link_libraries(self) -> tuple[str, ...]:
-        """Return each library of a link line that is not a file of the build directory (THE BUILD).
+        """Return each library of a link line that is not a file of the build directory (the build).
 
         Each item is a word -lNAME or an absolute path, in the sequence of the
         targets of the code model, with no second copy.  Complexity: linear in
@@ -374,7 +374,7 @@ class ElfContext:
         return self._links
 
     def linked_artifacts(self) -> tuple[LinkedArtifact, ...]:
-        """Return each linked artifact of the target all (THE BUILD).
+        """Return each linked artifact of the target all (the build).
 
         The items come in the sequence of their paths.  Complexity: one run of
         `ninja -t inputs all`, and linear in the targets of the code model.
@@ -478,7 +478,7 @@ def refused(row: rows_grammar.Row, shape: str) -> BuildError:
 
 
 def manifest_rows(tree: Path) -> tuple[rows_grammar.Row, ...]:
-    """Read the file plant.txt of a copy of a plant (THE PLANTS).
+    """Read the file plant.txt of a copy of a plant (the plants).
 
     Raises:
         BuildError: If the plant has no plant.txt, or the file does not obey the rows grammar
@@ -504,7 +504,7 @@ def host_flags(words: Sequence[str]) -> list[str]:
 
 @functools.cache
 def mold_words() -> tuple[str, ...]:
-    """Return the words that make the compiler link with the pinned mold (THE PLANTS).
+    """Return the words that make the compiler link with the pinned mold (the plants).
 
     The thread count is the limit of the rule build-graph of the registry of the repository.  The check of the
     install runs mold two times, and the cache does it one time in a process.
@@ -544,7 +544,7 @@ def linked_artifact(row: rows_grammar.Row, tree: Path, build: Path, compiler: st
 
 
 def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
-    """Build the plant of a copied tree in a scratch build directory, and give its facts (THE PLANTS).
+    """Build the plant of a copied tree in a scratch build directory, and give its facts (the plants).
 
     The compiles of the units run at the same time.  Complexity: one compile
     of each unit, and one run of ar or of the link for each library, each
@@ -556,7 +556,7 @@ def planted_build(tree: Path, build: Path, compiler: str) -> PlantedBuild:
     from concurrent.futures import ThreadPoolExecutor
 
     rows = manifest_rows(tree)
-    # The shape of each row, its number of words, and the numbers of cells that it can have (THE PLANTS).
+    # The shape of each row, its number of words, and the numbers of cells that it can have (the plants).
     shapes = {
         "kind": ("kind KIND", 2, (0,)),
         "cache": ("cache NAME VALUE", 3, (0,)),
@@ -642,7 +642,7 @@ def plant_compiler() -> str | None:
 
 
 def plant_context(plant: Path, scratch: Path) -> ElfContext:
-    """Copy a plant to a throwaway repository, build it in the scratch directory, and give its context (THE PLANTS).
+    """Copy a plant to a throwaway repository, build it in the scratch directory, and give its context (the plants).
 
     Raises:
         NotApplicable: If no variable names the patched compiler, or the plant does not build.  The witness counts
@@ -665,7 +665,7 @@ def plant_context(plant: Path, scratch: Path) -> ElfContext:
 
 
 def run_rule(rule: rule_registry.Rule, context: ElfContext, warnings_dir: Path | None) -> int:
-    """Run one rule on the build of the context, and write its findings (THE RUN).
+    """Run one rule on the build of the context, and write its findings (the run).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
@@ -690,7 +690,7 @@ def run(
 
 
 def judged_plant(rule: rule_registry.Rule, context: meta_runner.RuleContext) -> list[check_report.Finding]:
-    """Return the judged findings of one rule on a plant (THE RUN).
+    """Return the judged findings of one rule on a plant (the run).
 
     When the facts of the plant cannot be read, the rule does not apply to it.
 
@@ -704,7 +704,7 @@ def judged_plant(rule: rule_registry.Rule, context: meta_runner.RuleContext) -> 
 
 
 def witness(rule: rule_registry.Rule, root: Path) -> int:
-    """Run a rule on each of its plants and controls, with the build of each plant (THE PLANTS).
+    """Run a rule on each of its plants and controls, with the build of each plant (the plants).
 
     Returns:
         0 when the witness holds, and 1 when it fails.  2 when the rule has no plant.  SKIPPED when no variable names

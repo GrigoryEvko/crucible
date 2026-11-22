@@ -33,7 +33,7 @@
 // The atom-pack mints of fixy/os/Mmap.h build their regions through these
 // doors.
 //
-// THE SOURCE OF A MAP
+// Source of a map
 //   mint_region has two forms.  A region of the share Anonymous maps no
 //   file and takes no descriptor.  A region of a file takes the borrow of
 //   the Handle of the file, which holds the right map, and also read and
@@ -42,8 +42,8 @@
 //   read does not compile.  map_foreign_region maps a descriptor that a C
 //   library opened, such as the map of a BPF object.  It takes the int of
 //   the C library and refuses a negative one with ebadf.  Each call of the
-//   product code is inside an opt-out region of the class ABI (THE ABI
-//   DESCRIPTOR of fixy/os/Handle.h).
+//   product code is inside an opt-out region of the class ABI (the ABI
+//   descriptor of fixy/os/Handle.h).
 //
 // The address a mapping lands at is randomized by the kernel and is
 // deliberately not reproducible.  No replay path may observe it.
@@ -149,20 +149,20 @@ namespace detail {
 // The calls of the door file src/fixy/os/Mmap.cpp.  Each call gives the
 // error of the kernel in its Result.
 
-// Maps LENGTH bytes with the PROT_* word PROTECTION and the MAP_* word
-// FLAGS, from OFFSET of the file of DESCRIPTOR, or memory with no file for a
+// Maps length bytes with the PROT_* word protection and the MAP_* word
+// flags, from offset of the file of descriptor, or memory with no file for a
 // descriptor of -1.  The kernel picks the address, and the result is the
 // address of the map.
 [[nodiscard]] ::foundation::core::Result<void*, ::foundation::os::Errno>
 map_region_(std::size_t length, int protection, int flags, int descriptor, std::int64_t offset) noexcept;
 
-// Unmaps the LENGTH bytes at ADDRESS, which a call of map_region_ gave.  The
+// Unmaps the length bytes at address, which a call of map_region_ gave.  The
 // kernel refuses an unmap only for an address or a length that no map
 // gave, so the door reports no error.
 void unmap_region_(void* address, std::size_t length) noexcept;
 
-// Gives the kernel the advice ADVICE, a MADV_* word, for the LENGTH bytes at
-// ADDRESS.  A null ADDRESS, the address of a region that is not mapped, gives
+// Gives the kernel the advice, a MADV_* word, for the length bytes at
+// address.  A null address, the address of a region that is not mapped, gives
 // EINVAL and makes no system call.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 advise_region_(void* address, std::size_t length, int advice) noexcept;
@@ -201,7 +201,7 @@ namespace fixy::detail::owner {
 
 // The fields of an OwnedMmap: the address and the length of the mapping, or
 // null and zero when it holds no mapping.  The state is a member of the home
-// of the owner states of fixy, which THE ROSTER of foundation/core/Owner.h
+// of the owner states of fixy, which the roster of foundation/core/Owner.h
 // names, so the probe of the owners holds it in its roster.  The unmap takes
 // the length that the map took.
 struct MappingState {
@@ -274,7 +274,7 @@ concept CtxFitsRegionMint =
 
 // The rights that a map of a file needs from the handle of the file: map,
 // and also read and write for a shared map that writes, because its stores
-// reach the file (THE SOURCE OF A MAP).
+// reach the file (the source of a map).
 template <typename Prot, typename Share>
     requires MappedProt<Prot>
 [[nodiscard]] consteval ::fixy::os::RightSet file_map_rights() noexcept {
@@ -321,7 +321,7 @@ concept SharedWord = ::foundation::core::UnsignedInteger<T> && (sizeof(T) <= siz
 // The byte offset of the first word of a run in a mapping.
 using MappingOffset = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
 
-// THE SHARED WORDS
+// Shared words
 //   Count words of a shared mapping that another writer stores: the kernel,
 //   a BPF program or another process.  Each read is an acquire load, so the
 //   stores that the writer made before its store of a word are visible after
@@ -418,8 +418,8 @@ public:
     // nothing, so it stays public.
     OwnedMmap() noexcept = default;
 
-    // The map of no file: a region of the share Anonymous (THE SOURCE OF A
-    // MAP).
+    // The map of no file: a region of the share Anonymous (the source of a
+    // map).
     //
     // The permission is read and not consumed.  The caller keeps it, and
     // presents it again to fixy::mmap::advise_release_aware.
@@ -436,7 +436,7 @@ public:
     }
 
     // The map of the file of a handle from the byte at offset.  The handle
-    // holds the rights that file_map_rights names (THE SOURCE OF A MAP).
+    // holds the rights that file_map_rights names (the source of a map).
     // The borrow of an empty handle gives ebadf.  The permission is read as
     // in the anonymous form.
     template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx, ::fixy::os::RightSet Rights>
@@ -449,7 +449,7 @@ public:
     }
 
     // The map of a descriptor that a C library opened, such as the map of a
-    // BPF object, from the byte at offset (THE SOURCE OF A MAP).  The
+    // BPF object, from the byte at offset (the source of a map).  The
     // descriptor is the int of the C library, and a negative descriptor
     // gives ebadf with no call to the kernel.  The permission is read as in
     // the anonymous form.
@@ -559,7 +559,7 @@ public:
     void view_at(std::size_t) const&& = delete("a View of a temporary mapping dangles when the mapping unmaps");
 
     // The Count words of T from the byte offset of a shared mapping, which
-    // another writer stores (THE SHARED WORDS of fixy::mmap), or no value
+    // another writer stores (the shared words of fixy::mmap), or no value
     // when they do not fit in the mapping or when the offset is not a
     // multiple of the alignment of T.  The checks are those of view_at, and
     // the call starts the lifetime of the Count words over their bytes.  The

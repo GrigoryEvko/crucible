@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A share of a region needs the row of its tag, or nothing says which
 // contexts may read it.  No mint makes a token for a tag with no row,

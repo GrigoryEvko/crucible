@@ -1,20 +1,20 @@
 """syscalls — each raw system call has a reviewed capability claim and a grant, and the affinity calls have one door.
 
-THE CLAIMS
+Claims
     The syscall rows of utils/rule-table.txt give each function of the C
     library that issues one system call.  The quarantine plugin gives the
     kind `raw-syscall` to each call of such a function, and to each call of
     syscall().  It does this in each file in include/, src/ or vessel/ that a
-    build compiles (utils/tools/quarantine/owner.cpp, THE CLAIMS).  A file in
+    build compiles (utils/tools/quarantine/owner.cpp, the claims).  A file in
     a directory named test, bench, examples, third_party, external or vendor
     has no claim.  A file in a directory with a name that starts with build
     has no claim too.  The entity of a finding is HOLDER: SHAPE.  The holder is the function that
     holds the call, with the types of its parameters, "macro NAME" for a
     call that a macro body spells, or namespace-scope.  The shape is the name
-    of the function, or syscall(SYS_NAME) for a call of syscall() (THE PLACE
-    AND THE ENTITY of owner.cpp).
+    of the function, or syscall(SYS_NAME) for a call of syscall() (the place
+    and the entity of owner.cpp).
 
-THE DOORS
+Doors
     Two owner rows of the rule table give the one site of sched_setaffinity
     and pthread_setaffinity_np: the body of fixy::detail::sched_setaffinity_sys
     in src/fixy/os/CpuPinned.cpp.  That door records a pin event, and a pin
@@ -28,22 +28,22 @@ THE DOORS
     the sites of the raw system call primitive of the base,
     foundation::os::raw_syscall.
 
-THE PRIMITIVE AND THE DENIED CALLS
+Primitive and the denied calls
     The primitive row of the rule table names the primitive.  A call of it is
     a raw system call too, with the shape raw_syscall(NAME) for the enumerator
     NAME of its first argument.  The deny rows name the system calls that the
     base does not issue raw.  The C library owns the state of these calls.
     A call of syscall() or of the primitive with such a call is the kind
-    `denied-syscall` (owner.cpp, THE DENIED CALLS).  The kind applies in each
+    `denied-syscall` (owner.cpp, the denied calls).  The kind applies in each
     file that a build compiles, also a test and a bench.
 
-THE GRANTS
+Grants
     A grant row of the rule table names a grant file, its grant alias, the
     enumeration of the system calls and the door files.  The plugin reads
     each unit that reads the grant file.  It finds the system calls of the
     code of the grant file, also through the functions of the door files.  It
     compares them with the enumerators that the alias grants
-    (utils/tools/quarantine/expression.cpp, THE GRANTS).  The kinds are:
+    (utils/tools/quarantine/expression.cpp, the grants).  The kinds are:
       `not-granted`   a system call of the code that the alias does not grant
       `not-issued`    a grant of the alias that the code does not issue
       `wrong-helper`  a call of syscall() with the number of a different call
@@ -56,7 +56,7 @@ THE GRANTS
     error too, of the kind unread-grant.  No unit of the build then read its
     grant file.
 
-THE LEDGER
+Ledger
     utils/ledgers/syscalls.txt counts the raw system calls of each file and
     entity (the policy count):
         PATH | raw-syscall | COUNT | HOLDER: SHAPE | CLAIM
@@ -64,7 +64,7 @@ THE LEDGER
     2, and a third call fails the rule.  The reason of each row is the
     effects::* capability claim of its calls, and a row with no reason is an
     error.  No row admits a finding of the kinds outside-door and
-    denied-syscall, or of a kind of THE GRANTS (REFUSED_KINDS), and a row of
+    denied-syscall, or of a kind of the grants (REFUSED_KINDS), and a row of
     such a kind is an error too.  Each problem of the census of the runner is
     an error.
 
@@ -73,11 +73,11 @@ THE LEDGER
     src/foundation/os/Intercepted.cpp, which only a build with
     ThreadSanitizer compiles.  One set of rows judges each build, and the
     count of a key is its largest count over the configurations of the
-    landing gate (THE REDUCE of assay.core.ledger).
+    landing gate (the reduce of assay.core.ledger).
 
-THE WRITE
+Write
     `guard write --rule syscalls --build-dir DIR` writes the counts of the
-    kind raw-syscall of one build, and it lowers no row (THE WRITE of
+    kind raw-syscall of one build, and it lowers no row (the write of
     assay.core.ledger).  A build with a finding of a refused kind makes the
     write write nothing.  The landing gate lowers the rows.  The modes
     --raise and --admit and the reason of --reason are those of
@@ -110,7 +110,7 @@ CLAIM_KIND = "raw-syscall"
 DOOR_KIND = "outside-door"
 # The kind of a raw call of a system call that a deny row names.
 DENIED_KIND = "denied-syscall"
-# The record of a unit that compared a grant set with the system calls of its grant file (THE GRANTS).
+# The record of a unit that compared a grant set with the system calls of its grant file (the grants).
 COMPARED = "compared"
 UNREAD_KIND = "unread-grant"
 GRANT_MESSAGES = {
@@ -119,7 +119,7 @@ GRANT_MESSAGES = {
     "wrong-helper": "a helper NAME_sys calls syscall() with the number of a different system call",
     UNREAD_KIND: "the unit cannot read the grant alias, its enumeration, its grants or its calls",
 }
-# The kinds that no ledger row admits (assay.guard.engines.meta.runner, THE REFUSED KINDS).
+# The kinds that no ledger row admits (assay.guard.engines.meta.runner, the refused kinds).
 REFUSED_KINDS = frozenset({DOOR_KIND, DENIED_KIND, *GRANT_MESSAGES})
 # The rule table of a tree, relative to its root.
 TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
@@ -159,7 +159,7 @@ def grant_files(context: runner.PluginContext) -> list[str]:
 
 
 def row_errors(rows: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Give one error for each row of a kind that no row admits, and for each row with no claim (THE LEDGER).
+    """Give one error for each row of a kind that no row admits, and for each row with no claim (the ledger).
 
     Complexity: linear in the rows.
     """
@@ -195,7 +195,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     """Give the errors of the claims, the doors, the denied calls, the grants, the rows and the census.
 
     Each finding line other than a line compared is one error.  A grant file that no unit compared is one error of the
-    kind unread-grant (THE GRANTS).  A ledger that cannot be read gives no row error here: the judgement of the ledger reports it.
+    kind unread-grant (the grants).  A ledger that cannot be read gives no row error here: the judgement of the ledger reports it.
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -236,7 +236,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the rows of the ledger (THE LEDGER).
+    """Return the findings of the build judged against the rows of the ledger (the ledger).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -267,7 +267,7 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
 
 
 def build_counts(context: runner.PluginContext) -> Counter[rule_ledger.Key]:
-    """Return the count of each key of the raw system calls of the build of the context (THE WRITE).
+    """Return the count of each key of the raw system calls of the build of the context (the write).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -291,7 +291,7 @@ def build_counts(context: runner.PluginContext) -> Counter[rule_ledger.Key]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the counts of the builds of the request (THE WRITE).
+    """Write the counts of the builds of the request (the write).
 
     Returns:
         0 when the ledger is written.  1 when a build cannot be read, an object has a problem or the mode refuses a

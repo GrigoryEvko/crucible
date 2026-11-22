@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Storage-byte fixture #1: compute_storage_nbytes_det()
 // returns DetSafe<Pure, Saturated<uint64_t>>, not a raw Saturated

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A lattice names itself with a name() that gives a TextView.  The lattice
 // below declares a name() of another type.  lattice_name refuses it, so the

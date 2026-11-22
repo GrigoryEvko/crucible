@@ -1,13 +1,13 @@
 // The parallel form of the pointwise walk (fixy/concurrent/ParallelPointwise.h)
 // for 1, 2, 4 and 8 shards, each shard on a core of its own.
 //
-// THE CORES
+// Cores
 //   The bench states nine threads with CORES 9 in bench/CMakeLists.txt: the
 //   eight threads of the shards and the measuring thread.  The shards wait on
 //   each other (WaitOnEachOther), so mint_parallel_for gives each shard a
 //   thread of its own and runs no shard on the measuring thread.  A claim of
 //   nine cores spans the two L3 groups of bench.slice.  The measuring thread
-//   takes the core of slot 0, the quietest core of the claim (THE CORES OF A
+//   takes the core of slot 0, the quietest core of the claim (the cores of a
 //   RUN of bench_harness.h).  A claim of eight cores of one group and one core
 //   of the other has the lone core last in that order, and the measuring
 //   thread does not take it.  A row of S shards takes the first S other cores
@@ -20,7 +20,7 @@
 //   8 shards: the measuring thread waited 302 ms in 1242 arrivals on its run
 //   queue in a loop of 3 s.
 //
-// THE ROWS
+// Rows
 //   Each row writes out = left + right over three dense square planes of
 //   floats: 1024 x 1024 (12 MiB in all, in the L3 cache of one group) and
 //   4096 x 4096 (192 MiB, in memory).  Each call starts and joins the threads
@@ -29,7 +29,7 @@
 //   bytes of one pass, its speedup over the row of one shard at the median,
 //   and its ratio to the reference.
 //
-// THE ROW OF THE RULE
+// Row of the rule
 //   The rows of 1 to 8 shards wait on each other, so each shard has a thread
 //   of its own, and the parallelism rule does not decide their threads.  The
 //   last row of each size has 8 independent shards, so the rule of
@@ -37,20 +37,20 @@
 //   ships.  A line gives the threads that the rule gives for the bytes of the
 //   walk, and the ratio of the row to the reference.
 //
-// THE START COST
+// Start cost
 //   The last three rows start and join 2, 4 and 8 threads of
 //   mint_parallel_for with an empty body, with the placement of the walk.  A
 //   line gives the median of each and the cost of one more thread from 2 to 8
 //   threads.  mint_parallel_for starts its threads in each call, so this cost
 //   is in each parallel row, and the parallelism rule reads its measure.
 //
-// THE REFERENCE
+// Reference
 //   The first row of each size is the raw loop of the add over the three
 //   runs, on the measuring core: the loop that the compiler vectorizes at the
 //   width of the target, with no plan, no shard and no thread.  A ratio above
 //   1 is a row faster than that loop.
 //
-// THE CORE OF EACH SHARD
+// Core of each shard
 //   Before the rows, a probe for 2, 4 and 8 shards runs the shards of
 //   mint_parallel_for with the coupling and the thread options of the walk.
 //   Each shard reads the CPU of its own thread in procfs, and a line gives
@@ -128,7 +128,7 @@ struct Placement {
 
 // The options of the threads of a row of Shards shards: the first Shards cores
 // of the claim apart from the measuring core, one for each thread, or the
-// affinity of the process with no claim (THE CORES).
+// affinity of the process with no claim (the cores).
 template <std::size_t Shards>
 [[nodiscard]] ::fixy::thread::ThreadOptions options_of(Placement const& placement) noexcept {
     if (!placement.is_claimed) return ::fixy::thread::ThreadOptions{};
@@ -146,7 +146,7 @@ struct AddOp final {
     }
 };
 
-// THE REFERENCE: the raw loop of the add over three runs of one count.  An
+// Reference: the raw loop of the add over three runs of one count.  An
 // add of floats is commutative, so a swap of left and right changes no bit.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loop of the add is the reference of the parallel walk")
 [[gnu::noipa, gnu::hot]] void add_raw(::fixy::View<float> out, ::fixy::View<float const> left,
@@ -196,7 +196,7 @@ template <BodyCoupling Coupling, std::size_t Shards, class Out>
 }
 
 // The threads that the parallelism rule gives the 8 independent shards of a
-// walk of one size, for the bytes of one pass (THE ROW OF THE RULE).
+// walk of one size, for the bytes of one pass (the row of the rule).
 [[nodiscard]] std::size_t rule_threads_of(Level const& level) noexcept {
     std::size_t const plane_bytes = sizeof(float) * level.count();
     ::fixy::concurrent::WorkBudget const budget{
@@ -238,7 +238,7 @@ struct ShardProbeCells final {
 };
 
 // Prints the CPU and the L3 group of each shard of a walk of Shards shards
-// (THE CORE OF EACH SHARD).  The shards wait on each other, as the shards of
+// (the core of each shard).  The shards wait on each other, as the shards of
 // the walk do, so each shard has a thread of its own.  The CPU of a shard is
 // field 39 of /proc/thread-self/stat, read in its thread.
 template <std::size_t Shards>
@@ -277,7 +277,7 @@ void print_shard_cores(Placement const& placement) noexcept {
 }
 
 // Prints the core of the walk of one shard: the measuring core, because the
-// walk of one shard runs on the measuring thread (THE CORE OF EACH SHARD).
+// walk of one shard runs on the measuring thread (the core of each shard).
 void print_one_shard_core(Placement const& placement) noexcept {
     bench::print("  1 shard, on the measuring thread: cpu{} L3 of cpu{}\n", placement.measuring_core,
                  bench::read_l3_group(bench::CpuId{placement.measuring_core}).first().value_or(-1));
@@ -285,7 +285,7 @@ void print_one_shard_core(Placement const& placement) noexcept {
 
 // Measures the start and the join of Shards threads of mint_parallel_for with
 // an empty body, one thread for each shard, with the options of the walk
-// (THE START COST).
+// (the start cost).
 template <std::size_t Shards>
 [[nodiscard]] bench::Report measure_starts(bench::Run run, Placement const& placement) {
     ::fixy::thread::ThreadOptions const options = options_of<Shards>(placement);
@@ -305,7 +305,7 @@ template <std::size_t Shards>
     });
 }
 
-// The three rows of THE START COST, then a line with the median of each and the
+// The three rows of the start cost, then a line with the median of each and the
 // cost of one more thread from 2 to 8 threads.  The rows go to all.
 void run_starts(Placement const& placement, ::fixy::FixedList<bench::Report, kRows>& all) {
     bench::Report two = measure_starts<2>(bench::Run{"start and join of 2 threads [empty shards]"}, placement);

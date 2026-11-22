@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The brand of a ReadView names the region the view was lent from.  Only
 // an empty class type can be a brand.  A view branded with int would

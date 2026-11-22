@@ -6,7 +6,7 @@
 // same door through the shared ref of the same Handle, a ForeignSocketRef,
 // which a table of cntp stores.  The ratio of the two medians gives the cost
 // of the door of a foreign ref over the door of a borrow: the check of the
-// generation of its number (THE GENERATION OF A DESCRIPTOR of fixy/os/Fd.h).
+// generation of its number (the generation of a descriptor of fixy/os/Fd.h).
 // The third row is that check alone.
 //
 // Each line gives the core of its row, the percentiles of one call in

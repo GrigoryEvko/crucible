@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The backend Portable names no one device, so a semaphore on it has no
 // device to signal.  SemaphoreBackend refuses it in the clause of the class,

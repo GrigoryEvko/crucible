@@ -67,7 +67,7 @@ static_assert(mint_layout(core::ByteCount{24}, Alignment{0}).is_err());
 static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes}, Alignment{1}).is_ok());
 static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes}, Alignment{64}).is_err());
 
-// The last fact of THE LAYOUT counts the alignment - 1 bytes of the unaligned
+// The last fact of the layout counts the alignment - 1 bytes of the unaligned
 // storage, so the largest layout at 64 bytes leaves room for them.
 static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes - 126}, Alignment{64}).is_ok());
 static_assert(mint_layout(core::ByteCount{kMaxLayoutBytes - 62}, Alignment{64}).is_err());

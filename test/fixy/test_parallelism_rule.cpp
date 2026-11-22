@@ -120,7 +120,7 @@ void test_parallel_when_dram_bound() {
     CRUCIBLE_TEST_REQUIRE(local.tier == Tier::DRAMBound);
 }
 
-// THE START COST of fixy/concurrent/ParallelismRule.h, on a host like the
+// The start cost of fixy/concurrent/ParallelismRule.h, on a host like the
 // bench VM: an L3 of 16 MiB for 8 CPUs, 9 CPUs for the process, and the start
 // cost of this tree, 3 MiB.  The walk of 12 MiB of the parallel walk bench
 // stays on the calling thread, because two threads cost 6 MiB of work and

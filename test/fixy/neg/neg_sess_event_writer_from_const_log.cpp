@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A const log is a view of the record.  A view gives no right to append,
 // so the mint of the writer refuses it.

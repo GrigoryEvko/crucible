@@ -47,7 +47,7 @@ def format_cases(expect: testing.Expect) -> None:
 
 
 def store_cases(expect: testing.Expect) -> None:
-    """Hold the samples and the failures of a store in a scratch directory (THE WRITE, THE FAILURE)."""
+    """Hold the samples and the failures of a store in a scratch directory (the write, the failure)."""
     with tempfile.TemporaryDirectory(prefix="evidence-store-") as directory:
         store = evidence_store.EvidenceStore(Path(directory))
         expect("a store with no entry reads no record", store.read(RULE, "key-a") is None)
@@ -85,7 +85,7 @@ def store_cases(expect: testing.Expect) -> None:
 
 
 def off_cases(expect: testing.Expect) -> None:
-    """Hold the store with the caches off: it reads nothing and writes nothing (THE STORE)."""
+    """Hold the store with the caches off: it reads nothing and writes nothing (the store)."""
     with testing.environment_variable(root_rule.ROOT_VARIABLE, root_rule.OFF):
         store = evidence_store.EvidenceStore()
         record = store.add(RULE, "one", "key-a", SAMPLE)

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The MetaLog holds the ring of its records in a FixedHeapArray.  An
 // assignment to the ring would free the storage that the producer writes and

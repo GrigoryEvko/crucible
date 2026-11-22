@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A body of a property gives true when the property holds, so the shrink can
 // replay a failure.  A body that gives no bool has no result to shrink, so

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A NaN is outside one turn, because every comparison with a NaN is false.
 // Without the precondition of cos_poly the reduction would convert the NaN

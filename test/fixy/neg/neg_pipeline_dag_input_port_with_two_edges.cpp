@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The two outputs of a fan-out stage each have one edge, and the two edges
 // end at input 0 of one plain stage.  Two edges on one input give one

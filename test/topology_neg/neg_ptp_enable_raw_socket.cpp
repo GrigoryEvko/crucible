@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Socket timestamping takes the ref of a socket that the doors of the base
 // gave.  A raw int does not convert to it, so an unchecked descriptor cannot

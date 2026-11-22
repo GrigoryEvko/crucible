@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // An upgrade fails while a share is out, and another thread ends a share at
 // a time that the schedule decides.  So an upgrade takes a context that

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit mints a plain session over a class that refers to a class with no
 // definition in the unit.  The walk of the Resource cannot read that class.

@@ -169,7 +169,7 @@ struct subprocess final : atom_of<Axis::Protocol> {
 
 namespace fixy::atom::detail {
 
-// SAMPLES, not a roster, and the name says which.
+// Samples, not a roster, and the name says which.
 //
 // Every member is a parametric atom, so the namespace walk that catches an
 // unrostered plain atom has nothing to read here; fixy/Atom.h says why
@@ -555,7 +555,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
 
     // Starts the workers with the options, and joins each one before it
     // returns.  The error of the door when no worker started, and then no
-    // shard ran (THE ERRORS of fixy/os/ThreadTasks.h).
+    // shard ran (the errors of fixy/os/ThreadTasks.h).
     template <typename Ctx, typename Shards, typename Body, std::size_t... Is>
         requires eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
     [[nodiscard]] static ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>

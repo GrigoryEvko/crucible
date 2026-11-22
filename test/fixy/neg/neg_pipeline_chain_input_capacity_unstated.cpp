@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A linear pipeline of two stages.  The output handle of the first stage
 // states a capacity of one value, and the input handle of the second stage

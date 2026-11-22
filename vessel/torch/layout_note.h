@@ -8,14 +8,14 @@
 // reads the note from the file before it loads the library, and refuses a
 // library whose digest differs from the digest of the build.
 //
-// THE NOTE
-//   The section .note.crucible holds it beside the level note (THE NOTE of
+// The note
+//   The section .note.crucible holds it beside the level note (the note of
 //   level_note.h): eight words of 32 bits, the size of the name (9), the
 //   size of the descriptor (8), the type (2), the name "Crucible" and its
 //   zero in three words, and the digest, its low word first.  A note has the
 //   alignment 4, and a descriptor of 8 bytes keeps it.
 //
-// THE DIGEST
+// The digest
 //   layout_note.cpp folds the layout digest (layout_digest_of of
 //   foundation/reflect/Hash.h) of each shared type, and the digest of the C
 //   entries of vessel_api.h and dispatch_api.h (c_entry_digest).  Each vessel

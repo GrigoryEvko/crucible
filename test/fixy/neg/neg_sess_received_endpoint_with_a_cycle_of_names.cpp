@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The protocol of the mint receives an endpoint, and the receiver runs the
 // protocol of that endpoint.  So the walk of the regions that a protocol

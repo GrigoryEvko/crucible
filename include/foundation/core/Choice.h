@@ -128,7 +128,7 @@ inline constexpr NoValue none{};
 namespace side {
 
 // The file of this header, which anchors the include root of the base in the
-// test of the path of a header (THE CHECK OF THE STATEMENT).
+// test of the path of a header (the check of the statement).
 struct ChoiceHeader final {};
 
 }  // namespace side
@@ -241,8 +241,8 @@ public:
     NicheStatementPlace& operator=(NicheStatementPlace const&) = delete("a place is the file of one statement");
 };
 
-// The statement that no door of a payload builds its empty value (THE CHECK
-// OF THE STATEMENT).  The default argument of the constructor reads the Site
+// The statement that no door of a payload builds its empty value (the check
+// of the statement).  The default argument of the constructor reads the Site
 // where the statement stands, and the payload gate admits only a statement
 // of a header of the base at the scope of a class or of a namespace.  A copy
 // reads the Site of the copy too, so a declaration of a different file that
@@ -321,8 +321,8 @@ public:
 //   static constexpr niche_statement is_empty_never_built{};          in niche<T>
 //   static constexpr niche_statement is_niche_empty_never_built{};    in T
 //
-// The payload gate checks the statement at compile time (THE CHECK OF THE
-// STATEMENT below): the constructors and the members of T, and the place of
+// The payload gate checks the statement at compile time (the check of the
+// statement below): the constructors and the members of T, and the place of
 // the mark of the statement in a header of the base.  So a type outside the base states
 // no such fact.  The statement gives a loop over a mutable Option a cursor
 // that writes the payload, and the storage of a full Option then does not
@@ -434,7 +434,7 @@ public:
 
     // True when niche<T>, or T in the member protocol, states that no door of
     // T builds the empty value.  The payload gate holds the type and the
-    // place of the statement (THE CHECK OF THE STATEMENT).
+    // place of the statement (the check of the statement).
     [[nodiscard]] static consteval bool is_empty_never_built() noexcept {
         return requires { niche<T>::is_empty_never_built; } || requires { T::is_niche_empty_never_built; };
     }
@@ -465,7 +465,7 @@ public:
     }
 };
 
-// THE CHECK OF THE STATEMENT
+// Check of the statement
 //   A payload that states that no door builds its empty value gets no test
 //   of its payload in the storage of a full Option.  So the payload gate
 //   holds three checks of the statement (CheckedStatement):
@@ -515,8 +515,8 @@ template <class U>
 inline constexpr bool states_empty_never_built =
     requires { niche<U>::is_empty_never_built; } || requires { U::is_niche_empty_never_built; };
 
-// True when the statement of the type passes the three checks of THE CHECK
-// OF THE STATEMENT.  The definition is after the three concepts.
+// True when the statement of the type passes the three checks of the check
+// of the statement.  The definition is after the three concepts.
 consteval bool is_statement_checked(std::meta::info type);
 
 // True when the member is a niche_statement of a header of the base: a
@@ -528,8 +528,8 @@ consteval bool is_base_statement(std::meta::info member) {
     return std::meta::extract<niche_statement const&>(member).is_in_base();
 }
 
-// True when the statement of the type stands in the base (3 of THE CHECK OF
-// THE STATEMENT).  A specialization of niche states it in its own member,
+// True when the statement of the type stands in the base (3 of the check of
+// the statement).  A specialization of niche states it in its own member,
 // and a class of the member protocol in a member of its own, and each one
 // that the type has is a niche_statement of the base.  A statement that a
 // class or a niche takes from a base class names no own member, so the
@@ -553,7 +553,7 @@ consteval bool is_stated_in_base(std::meta::info type) {
 }
 
 // True when the class has a public constructor that is not deleted.  A
-// constructor template counts.  The walks of THE CHECK OF THE STATEMENT index
+// constructor template counts.  The walks of the check of the statement index
 // the lists of a query, as the walks of foundation/core/Owner.h do.
 // Complexity: linear in the members.
 consteval bool has_public_constructor(std::meta::info type) {
@@ -628,8 +628,8 @@ consteval bool takes_raw_value(std::meta::info constructor) {
 }
 
 // True when each public constructor of the type other than copy and move
-// that takes a raw value also takes a voucher (1 of THE CHECK OF THE
-// STATEMENT).  A constructor with a voucher needs no walk of its raw values,
+// that takes a raw value also takes a voucher (1 of the check of the
+// statement).  A constructor with a voucher needs no walk of its raw values,
 // so the walk of the target of a Ref runs for no Ref.  Complexity: linear in
 // the members of the type and the parameters of its constructors, and the
 // walks of their types.
@@ -663,7 +663,7 @@ consteval bool has_writable_parameter(std::meta::info function) {
 }
 
 // True when no public member of the type writes a value of the type in
-// place (2 of THE CHECK OF THE STATEMENT).  A deleted function writes
+// place (2 of the check of the statement).  A deleted function writes
 // nothing.  The walk of the fields reads the private fields too, because a
 // const member function writes a mutable field of each access.  Complexity:
 // linear in the members of the type.
@@ -690,24 +690,24 @@ consteval bool writes_no_payload(std::meta::info type) {
     return true;
 }
 
-// The constructor check of the statement of T (1 of THE CHECK OF THE
-// STATEMENT).
+// The constructor check of the statement of T (1 of the check of the
+// statement).
 template <class T>
 concept BuildsNoEmptyValue =
     !std::is_aggregate_v<T> && !std::is_default_constructible_v<T> && !std::is_constructible_v<T, std::nullptr_t>
     && !std::is_constructible_v<T, void*> && !std::is_constructible_v<T, int>
     && !std::is_constructible_v<T, unsigned long long> && vouches_each_raw_parameter(^^T);
 
-// The member check of the statement of T (2 of THE CHECK OF THE STATEMENT).
+// The member check of the statement of T (2 of the check of the statement).
 template <class T>
 concept WritesNoEmptyValue = writes_no_payload(^^T);
 
-// The place of the statement of T (3 of THE CHECK OF THE STATEMENT).
+// The place of the statement of T (3 of the check of the statement).
 template <class T>
 concept StatedInBase = is_stated_in_base(^^T);
 
-// The three checks of the statement of T, in the order of THE CHECK OF THE
-// STATEMENT.  The two walks come first, so a refusal names the walk that a
+// The three checks of the statement of T, in the order of the check of the
+// statement.  The two walks come first, so a refusal names the walk that a
 // class of the base fails.
 template <class T>
 concept CheckedStatement = BuildsNoEmptyValue<T> && WritesNoEmptyValue<T> && StatedInBase<T>;
@@ -749,7 +749,7 @@ public:
 // take the key, have the types of the protocol and do not throw.  Its empty
 // value is a constant, and is_empty gives true for it.  A statement that no
 // door builds the empty value is a constant of type bool, and it passes the
-// three checks of THE CHECK OF THE STATEMENT.  A malformed niche
+// three checks of the check of the statement.  A malformed niche
 // would give the plain or the owning form with no message, so the payload
 // gate refuses it.  This gate is the one gate that reads niche<T>.
 template <class T>
@@ -1155,7 +1155,7 @@ namespace detail {
 
 struct NoPayload final {};
 
-// THE LEND COUNT
+// Lend count
 //     A borrow match gives an arm a reference into the payload.  The rule
 //     borrow-match reads one body, so a write in a callee of the arm or
 //     through a second reference escapes it.  The owning storage counts the
@@ -1186,7 +1186,7 @@ struct NoPayload final {};
           "match or a combinator");
 }
 
-// THE END OF A LINEAR ALTERNATIVE
+// End of a linear alternative
 //   A Result and a OneOf have no empty state, so a consumer leaves the
 //   moved-from alternative in place, and the end of the sum ends it.  A test
 //   build (CRUCIBLE_QTT_TRACK_CONSUME, as the consume tracker of fixy/Qtt.h
@@ -1339,7 +1339,7 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     // True when the slot tests each payload: the niche does not state that
     // no door of T builds the empty value.  The payload gate checks a
     // statement against the constructors and the members of T, and only a
-    // type of the base states one (THE CHECK OF THE STATEMENT), so a payload
+    // type of the base states one (the check of the statement), so a payload
     // of a stated niche is never the empty value.
     static constexpr bool is_payload_tested_ = !NicheRead<T>::is_empty_never_built();
 
@@ -1547,7 +1547,7 @@ public:
         return Result<T, E>{static_cast<T&&>(taken)};
     }
 
-    // THE DOORS OF A NAMED OPTION
+    // Doors of a named Option
     //   take, fill and replace change an Option that the caller names, and no
     //   one of them drops a payload, so each one is legal for a linear
     //   payload.  A loop over a linear session handle keeps the handle in one
@@ -1556,7 +1556,7 @@ public:
     //   an Option, which is [[nodiscard]], and an Option of a linear payload
     //   is linear, so the rule must-consume holds it to one consume.  An
     //   owning Option ends its old payload through its clear, so a borrow
-    //   match that lends the payload ends the process (THE LEND COUNT).
+    //   match that lends the payload ends the process (the lend count).
 
     // The payload as a full Option, or an empty Option.  This Option is
     // empty after the call.  The cost is the one branch of expect.
@@ -1612,7 +1612,7 @@ public:
     void replace(U&& value) && = delete("a replace of a temporary Option puts a payload into an object that the full "
                                         "expression ends: name the Option, or build a full Option with some(value)");
 
-    // THE COMBINATORS
+    // Combinators
     //   A combinator is the rvalue match with the empty arm fixed by the
     //   shape of the sum: the absence passes through, so the caller writes
     //   only the arm of the payload.  map, and_then and filter consume the
@@ -1682,7 +1682,7 @@ public:
 
     // True when the Option holds a payload that holds accepts.  holds reads
     // the payload through a const reference, the Option keeps it, and an
-    // owning Option counts the lend (THE LEND COUNT).
+    // owning Option counts the lend (the lend count).
     template <class Holds>
         requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_some_and(Holds&& holds) const
@@ -1746,8 +1746,8 @@ public:
     // reference, and the Option keeps it.  The parameter of on_some is T or
     // T const&, so no conversion reads the payload as another type.  The rule
     // borrow-match of the plugin refuses an arm that assigns, moves or
-    // changes this Option, and an owning Option counts the lend (THE LEND
-    // COUNT).
+    // changes this Option, and an owning Option counts the lend (the lend
+    // count).
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
@@ -1788,7 +1788,7 @@ public:
     // Option, and the door gives the result of the arm.  The Option keeps
     // the payload, and the door writes no byte of the Option.  The rule
     // borrow-match refuses an arm that assigns, moves or changes this
-    // Option, and an owning Option counts the lend (THE LEND COUNT), so no
+    // Option, and an owning Option counts the lend (the lend count), so no
     // arm ends the payload while it holds the RefMut.  A write through the
     // RefMut bypasses the test of Option::some, so a niche payload takes the
     // door only when its niche states that no door of T builds the empty
@@ -1833,7 +1833,7 @@ public:
     //
     // The door begin() carries the annotation borrow_match, so the rule
     // borrow-match reads the body of the loop as an arm, and it refuses a
-    // write of this Option in the body (THE LOOP of the rule).  A cursor
+    // write of this Option in the body (the loop of the rule).  A cursor
     // counts no lend, so only a niche or a plain Option has the loop.  Those
     // two forms own nothing, and their borrow match counts no lend either.
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr OptionCursor<T const> begin() const& noexcept
@@ -1847,7 +1847,7 @@ public:
         return OptionCursor<T const>{nullptr};
     }
 
-    // An owning Option counts each lend of its payload (THE LEND COUNT), and
+    // An owning Option counts each lend of its payload (the lend count), and
     // a cursor counts none.  A loop would then lend the payload while a write
     // in a callee of the body ends it, with no check in any build.  So an
     // owning Option has no loop: the borrow match, is_some_and, is_none_or
@@ -2221,8 +2221,8 @@ public:
     // the stack.
     [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return cells_.tag_; }
     [[nodiscard]] constexpr NoLend lend_(SumKey /*key*/) const noexcept { return NoLend{}; }
-    // A plain sum holds no linear alternative (THE END OF A LINEAR
-    // ALTERNATIVE).
+    // A plain sum holds no linear alternative (the end of a linear
+    // alternative).
     constexpr void spend_(SumKey /*key*/) noexcept {}
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
@@ -2270,12 +2270,12 @@ public:
 // stays a borrow of a live object.  A move assignment drops the alternative
 // that the slot holds, so a sum with a linear alternative has none.  The tag
 // names one alternative, so the slot carries the mark closed_tag.  The slot
-// counts its lends (THE LEND COUNT), and a moved slot starts with none.
+// counts its lends (the lend count), and a moved slot starts with none.
 template <class... Ts>
 class[[= ::foundation::core::closed_tag{}]] SumSlotOf<false, Ts...> {
     static constexpr bool tracks_end_ = tracks_alternative_ends_ && (!DroppablePayload<Ts> || ...);
 
-    // True when the alternative at INDEX is linear.  Complexity: linear in
+    // True when the alternative at index is linear.  Complexity: linear in
     // the alternatives, at compile time for a constant index.
     [[nodiscard]] static constexpr bool is_linear_at_(std::size_t index) noexcept {
         std::size_t position = 0;
@@ -2295,7 +2295,7 @@ public:
     // the stack.
     [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return tag_; }
     [[nodiscard]] constexpr Lend lend_(SumKey /*key*/) const noexcept { return Lend{lend_count_}; }
-    // A consumer takes the sum (THE END OF A LINEAR ALTERNATIVE).
+    // A consumer takes the sum (the end of a linear alternative).
     constexpr void spend_(SumKey /*key*/) noexcept { end_mark_.spend(); }
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
@@ -2449,10 +2449,10 @@ public:
 // holds, so a linear payload has none.  The destructor is not trivial, so no
 // lifetime start over bytes builds the slot.  The annotation states that
 // fact to the rule linear-forge, which reads an annotation and not a
-// destructor.  The slot counts its lends (THE LEND COUNT), and a moved slot
+// destructor.  The slot counts its lends (the lend count), and a moved slot
 // starts with none.
 //
-// THE ZERO WORDS OF AN ENDED PAYLOAD
+// Zero words of an ended payload
 //   A clear ends the payload, and GCC then takes the bytes of the payload as
 //   dead.  Where GCC cannot prove that the destructor of the slot does not
 //   end the payload a second time, -Wmaybe-uninitialized reports a read in
@@ -2555,7 +2555,7 @@ public:
         delete("an owning Option is move-only: a copy would duplicate what the payload owns");
     OptionSlot& operator=(OptionSlot const&) = delete("an owning Option is move-only");
 
-    // THE END OF A LINEAR PAYLOAD
+    // End of a linear payload
     //   A linear payload leaves only through a consumer, so a full Option of
     //   a linear payload at its end would drop a value that each path must
     //   use one time.  The rule must-consume refuses such an end of a named
@@ -2615,8 +2615,8 @@ class ResultSlot {
     [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(SumDoor::key()); }
     [[nodiscard]] constexpr E const& error_() const noexcept { return sum_.template alternative_<0>(SumDoor::key()); }
     // The value and the error for a consumer, which takes the Result.  The
-    // end of the slot then reads no linear alternative as owed (THE END OF
-    // A LINEAR ALTERNATIVE).
+    // end of the slot then reads no linear alternative as owed (the end of
+    // a linear alternative).
     [[nodiscard]] constexpr T&& take_value_() noexcept {
         sum_.spend_(SumDoor::key());
         return static_cast<T&&>(value_());
@@ -2731,7 +2731,7 @@ public:
         slot_.expect_value_(why);
     }
 
-    // THE COMBINATORS
+    // Combinators
     //   A combinator is the rvalue match with one arm fixed by the shape of
     //   the sum.  map and and_then pass the error through, and map_err and
     //   or_else pass the value through.  Each consumes the Result through &&,
@@ -2825,7 +2825,7 @@ public:
 
     // True when the Result holds a value that holds accepts.  holds reads the
     // value through a const reference, the Result keeps it, and an owning
-    // Result counts the lend (THE LEND COUNT), as the borrow match does.
+    // Result counts the lend (the lend count), as the borrow match does.
     template <class Holds>
         requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_ok_and(Holds&& holds) const
@@ -2890,7 +2890,7 @@ public:
     // parameter of each arm is its part type or a const reference to it, so
     // no conversion reads a part as another type.  The rule borrow-match of
     // the plugin refuses an arm that assigns, moves or changes this Result,
-    // and an owning Result counts the lend (THE LEND COUNT).
+    // and an owning Result counts the lend (the lend count).
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
               && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
@@ -2931,7 +2931,7 @@ public:
     // the error, and the door gives the result of the arm.  The Result keeps
     // its part, and the door writes no byte of the Result.  The rule
     // borrow-match refuses an arm that assigns, moves or changes this
-    // Result, and an owning Result counts the lend (THE LEND COUNT).  One
+    // Result, and an owning Result counts the lend (the lend count).  One
     // branch.
     template <class OnOk, class OnErr, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && ResultFrameArms<T, E, OnOk, OnErr, Fresh>

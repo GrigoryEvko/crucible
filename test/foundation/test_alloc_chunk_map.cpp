@@ -132,7 +132,7 @@ void ladder_under_a_cap(TestRunnerCtx const& test) {
     pass(test, "  ladder_under_a_cap: PASSED\n");
 }
 
-// THE FULL WINDOW of foundation/alloc/Window.h: a cap below the smallest
+// The full window of foundation/alloc/Window.h: a cap below the smallest
 // size of the ladder gives WindowFull, with no end of the process, and the
 // diagnostic names the sizes, the error and the limits to raise.  The next
 // call that succeeds empties the diagnostic.
@@ -195,7 +195,7 @@ void new_map_reads_no_owner(TestRunnerCtx const& test) {
     pass(test, "  new_map_reads_no_owner: PASSED\n");
 }
 
-// THE TAG BYTE of foundation/alloc/ChunkMap.h: on aarch64 an address with a
+// The tag byte of foundation/alloc/ChunkMap.h: on aarch64 an address with a
 // tag in its top byte reads the chunk and the owner of the same address with
 // no tag.  On x86-64 the same word lies outside the window, and the checked
 // read refuses it.

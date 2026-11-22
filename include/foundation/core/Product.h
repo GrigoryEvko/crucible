@@ -30,24 +30,24 @@
 // foundation/core/Side.h, so the two factors of a call cannot swap.  Each
 // factor is a view of const elements.
 //
-// THE ORDER
+// Order
 //   Each product a[m, k] * b[k, n] rounds alone, and the build contracts no
 //   multiply and add (-ffp-contract=off).  The products of one output combine
-//   by the tree of THE ORDER of foundation/core/Reduce.h over k = 0 to K - 1:
+//   by the tree of the order of foundation/core/Reduce.h over k = 0 to K - 1:
 //   a run splits at the largest power of two below its count, and the part of
 //   the lower k is the left operand of the add.  The tree of 3 products is
 //   (p0 + p1) + p2.  No initial value enters the tree, so a product of -0 is
 //   an output of -0.  A depth K of zero gives +0 at each output.  A sum of
 //   runs combines runs[r, n] by the same tree over r, and no run gives +0.
 //
-// THE PATHS
+// Paths
 //   Each output takes one of three paths.  Each path computes the nodes of
 //   the tree and no other sum, so each path gives the bits of the tree:
 //     Dot     a has a stride of one on k, and b has a stride of one on k.  The
 //             two runs of each output are a dot product, as in
 //             sum_products_by_tree: L consecutive products fill one vector,
 //             and the merges of the even and the odd lanes compute the nodes
-//             of the tree (THE LANES of Reduce.h)
+//             of the tree (the lanes of Reduce.h)
 //     Row     b and out have a stride of one on n.  The L outputs of one
 //             vector are the L lanes, and each lane holds the tree of its own
 //             output: each leaf is a[m, k] in each lane times the L elements
@@ -60,7 +60,7 @@
 //   split of the output and the target change no bit.  A test compares each
 //   path and each count of lanes with a scalar model of the tree.
 //
-// THE ERROR BOUND
+// Error bound
 //   With the round to nearest of IEEE 754, the unit roundoff u (2^-24 for
 //   float and 2^-53 for double), gamma(j) = j * u / (1 - j * u), and the depth
 //   d = count_tree_depth(K), the computed output c' of the exact sum c of the
@@ -76,14 +76,14 @@
 //   and 4.2).  A sum of runs has no product, so |c' - c| <= gamma(d) * sum_r
 //   |runs[r, n]| with d = count_tree_depth(R).
 //
-// THE VALUES OUTSIDE THE BOUND
+// Values outside the bound
 //   A NaN, an infinity or an overflow of a partial sum gives a NaN or an
 //   infinity.  Each output that is a NaN is the canonical NaN quiet_nan_of<T>
 //   of foundation/core/Number.h, as for the sums of Reduce.h, so no payload
 //   and no order of the operands of a target reaches an output.  Each other
 //   output keeps the bits of its tree.
 //
-// THE ALIASES
+// Aliases
 //   The output must share no element with an input, because a write of one
 //   output would change a later read.  Else a call gives OutputOverlapsInput
 //   and writes nothing.  The check compares the address ranges of the views
@@ -91,17 +91,17 @@
 //   of pointers.  Two ranges that touch count as shared, also when the two
 //   views interleave and share no element.
 //
-// THE COSTS
+// Costs
 //   The row path makes one broadcast, one load, one multiply and one add for
 //   each leaf of a vector of L outputs, with about K / 2 calls of the tree
 //   for each vector.  The dot path makes two loads, one multiply and about
 //   two shuffles and one add for each vector of L products.  No operation
 //   allocates.
 //
-// THE TARGET
+// Target
 //   Each form reads the vector width of the target, so the forms and their
-//   SIMD helpers are in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
-//   NAMESPACE of foundation/Platform.h).  The roles, the error type and the
+//   SIMD helpers are in the inline namespace CRUCIBLE_SIMD_TARGET (the target
+//   namespace of foundation/Platform.h).  The roles, the error type and the
 //   scalar tree read no target, and they stay outside it.
 
 #include <foundation/Simd.h>
@@ -142,7 +142,7 @@ using RightFactorOf = Side<side::RightFactor, StridedView<T const, 2>>;
 enum class ProductError : std::uint8_t {
     // The sizes of the views do not agree.
     ShapeMismatch = 0,
-    // The output shares an element with an input (THE ALIASES).
+    // The output shares an element with an input (the aliases).
     OutputOverlapsInput = 1,
 };
 
@@ -190,7 +190,7 @@ struct RunLeaves {
     [[nodiscard]] CRUCIBLE_INLINE T operator()(std::size_t leaf) const noexcept { return first[leaf * step]; }
 };
 
-// The tree of the count leaves from the leaf first, by THE ORDER, for a
+// The tree of the count leaves from the leaf first, by the order, for a
 // count of at least one.  Value is a scalar, or a vector whose lanes are
 // independent trees.  A run of up to four leaves has its tree inline, so the
 // recursion makes about one call for each two leaves.  The check file of this
@@ -314,7 +314,7 @@ template <class T, int Lanes>
 // The tree of the count products of two consecutive runs, with vectors of
 // Lanes lanes, for a count of at least one.  A part of fewer than Lanes
 // products takes the scalar tree, a part of a power of two takes a block of
-// vectors, and each other part splits by THE ORDER.
+// vectors, and each other part splits by the order.
 template <class T, int Lanes>
 [[nodiscard]] T product_run_by_tree_(T const* left, T const* right, std::size_t count) noexcept {
     constexpr auto lanes = static_cast<std::size_t>(Lanes);
@@ -350,7 +350,7 @@ void write_rows_of_lanes_(T* out, std::size_t outputs, std::size_t leaves, MakeL
     }
 }
 
-// The matrix product on the plain views, with Lanes lanes (THE PATHS).
+// The matrix product on the plain views, with Lanes lanes (the paths).
 template <class T, int Lanes>
 [[nodiscard]] Result<Unit, ProductError> multiply_by_tree_(StridedView<T, 2> const& out,
                                                            StridedView<T const, 2> const& left,
@@ -417,7 +417,7 @@ template <class T, int Lanes>
     return Unit{};
 }
 
-// The sum of runs on the plain views, with Lanes lanes (THE PATHS).
+// The sum of runs on the plain views, with Lanes lanes (the paths).
 template <class T, int Lanes>
 [[nodiscard]] Result<Unit, ProductError> sum_strided_runs_by_tree_(StridedView<T, 1> const& out,
                                                                    StridedView<T const, 2> const& runs) noexcept {
@@ -467,7 +467,7 @@ template <class T, int Lanes>
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the products left[i] * right[i] with Lanes lanes in each
-// vector, by THE ORDER.  The two arguments can swap with no change of a bit.
+// vector, by the order.  The two arguments can swap with no change of a bit.
 // Two Views of different counts give LengthMismatch, and an empty View gives
 // +0.  Complexity: O(n).
 template <int Lanes, class T>
@@ -492,7 +492,7 @@ template <int Lanes, class T>
 }
 
 // The matrix product out = left * right with Lanes lanes in each vector, by
-// THE ORDER and THE PATHS.  The sizes give ShapeMismatch when they do not
+// The order and the paths.  The sizes give ShapeMismatch when they do not
 // agree, and an output that shares an element with a factor gives
 // OutputOverlapsInput.  Each error comes before the first write.  The
 // factors come by reference, so a call with the roles compiles to the
@@ -515,7 +515,7 @@ multiply_by_tree(StridedViewMut<T, Rank, Brand>& out, std::type_identity_t<LeftF
 }
 
 // The tree sum of the runs of runs, element by element, with Lanes lanes in
-// each vector, by THE ORDER and THE PATHS.  The count of the outputs must be
+// each vector, by the order and the paths.  The count of the outputs must be
 // the size of a run, else the call gives ShapeMismatch.  An output that shares
 // an element with the runs gives OutputOverlapsInput.  No run gives +0 at each
 // output.  Complexity: O(R * N).

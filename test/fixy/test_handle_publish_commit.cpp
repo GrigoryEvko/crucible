@@ -27,7 +27,7 @@ struct CommitTag {};
 class PublishingStage;
 
 // The token of the one writer.  Its constructor is private, and the stage
-// mints it, so no other thread holds one (THE BUILD OF A TOKEN of
+// mints it, so no other thread holds one (the build of a token of
 // foundation/Transfer.h).
 class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] Publisher final {
     Publisher() noexcept {}

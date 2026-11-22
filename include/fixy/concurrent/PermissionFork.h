@@ -42,7 +42,7 @@ namespace fixy::concurrent {
 
 namespace detail {
 
-// A type that a body of the fork on threads can give (THE VALUE OF A BODY of
+// A type that a body of the fork on threads can give (the value of a body of
 // foundation/permissions/PermissionFork.h): a value that the borrow takes,
 // and that crosses from the thread of its body to the fork.
 template <typename Given>

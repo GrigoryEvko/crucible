@@ -9,7 +9,7 @@
 //                       bytes up to 32 and eight bytes up to 64, and words of
 //                       64 bits past 64 positions.  A copy copies the bits.
 //                       A seal refuses a byte image, so the mint from a word
-//                       is the one road from bits (A PACKED RECORD)
+//                       is the one road from bits (a packed record)
 //   HeapBitSet<Tag>     a set of the ids Id<Tag, std::uint32_t> below a count
 //                       that its mint fixes, in bits on the heap.  The tag names
 //                       the domain of the ids, such as the slots of a plan, so
@@ -18,7 +18,7 @@
 //                       id compares it with the count, and an id at or past
 //                       the count ends the process in each build
 //
-// THE KEYS OF A BitSet
+// Keys of a BitSet
 //   The key type is the index type of the domain of the set, so a set of the
 //   scalar slots of an op refuses an argument position.  Four kinds of key
 //   pass, and the key is Index<N> when the set names none:
@@ -40,7 +40,7 @@
 //   A key past N ends the process in each build.  The walk gives the keys of
 //   the set in the type of the key.
 //
-// THE MINTS
+// Mints
 //   mint_heap_bit_set<Tag>(alloc, count)
 //                       the empty set of count ids, in new storage that holds
 //                       zero bits.  A count of zero allocates nothing
@@ -51,7 +51,7 @@
 //                       bit at or past N.  bits() of a set of at most 64
 //                       positions is the word back
 //
-// A PACKED RECORD
+// Packed record
 //   The seal makes a BitSet not trivially copyable, so a record that the code
 //   copies by its bytes, such as an entry of a trace, holds no BitSet.  Such a
 //   record stores the raw word of the set: bits() gives the word out, and
@@ -59,7 +59,7 @@
 //   a word that holds a bit at or past N.  So no set with a bit past N exists,
 //   and two byte images of one set hold one word and give one digest.
 //
-// THE OPERATIONS
+// Operations
 //   set(key), reset(key)        put the key into the set, take it out
 //   test(key)                   true when the set holds the key
 //   size()                      the count of the keys that the set holds: the
@@ -69,7 +69,7 @@
 //   is_empty()                  true when the set holds no key
 //   clear()                     takes each key out
 //   with_keys(body)             lends body the walk of the keys of the set
-//                               (THE WALK), so `for (key : keys)` gives each
+//                               (the walk), so `for (key : keys)` gives each
 //                               key of the set in the order of the positions.
 //                               The walk reads the words from the first, so no
 //                               order comes from an address or a hash
@@ -90,19 +90,19 @@
 // differ give LengthMismatch, and the change writes nothing.  The three
 // queries read the two heap sets as sets of ids, so two counts can differ.
 //
-// THE WORDS
+// Words
 //   A set holds its bits in words: the position i is the bit i % W of the word
 //   i / W, for the W bits of a word.  The bits past the last position of the
 //   last word stay zero in each state, because no verb sets one, the mint from
 //   a word refuses one, and each operation of two sets keeps a zero bit zero.
 //   So size(), ==, the queries and the walk read whole words with no mask.
 //
-// THE WALK
+// Walk
 //   The frame door with_keys lends its body a walk of the keys, BitKeys, for
 //   the time of the call.  The walk and its cursors do not copy and do not
 //   move, and a set has no begin() and no end(), so no cursor outlives its
 //   set.  So the words that a cursor reads are the words of the live set, and
-//   by THE WORDS each of their bits lies below N.  A cursor of a BitSet<N>
+//   by the words each of their bits lies below N.  A cursor of a BitSet<N>
 //   then makes each Index<N> through the road of the walk of Index.h, with no
 //   check.  The ids of a HeapBitSet prove no bound, so each verb that takes
 //   an id compares it with the count.
@@ -234,7 +234,7 @@ template <class Key>
     return true;
 }
 
-// THE KEYS OF A BitSet: the position of each kind of key.  The walk of a set
+// Keys of a BitSet: the position of each kind of key.  The walk of a set
 // makes the key at a position itself, from the positions of its own bits, so
 // no function of the base makes a key from a number with no check.  A
 // BitKeyKind holds no key and makes none, so it is no passkey.
@@ -326,7 +326,7 @@ struct HeapBitSetState {
 template <class Key, std::size_t N>
 concept RoleIndexKey = std::is_same_v<Key, Side<typename Key::tag_type, Index<N>>>;
 
-// A key of a BitSet of N positions (THE KEYS OF A BitSet): Index<N>, the Side
+// A key of a BitSet of N positions (the keys of a BitSet): Index<N>, the Side
 // of an Index<N>, a scoped enum whose word holds each position below N, or an
 // Id whose word holds each position below N.  The gate reads no template that
 // a unit can specialize.  The class of the set reads the enumerators of an
@@ -588,7 +588,7 @@ public:
     // Complexity: O(N / W).
     constexpr void clear() & noexcept { words_ = FixedArray<Word, word_count_>{}; }
 
-    // The frame door of the keys (THE WALK): body gets the walk of the keys
+    // The frame door of the keys (the walk): body gets the walk of the keys
     // of the set for the time of the call, as in
     // `set.with_keys([&](auto const& keys) noexcept { for (Key key : keys) { ... } })`,
     // and the door gives the result of body, which holds no borrow.  The walk
@@ -615,7 +615,7 @@ public:
     void end() const = delete("a cursor that a caller holds could outlive its set: walk the keys in the body of "
                               "with_keys");
 
-    // The four changes of THE OPERATIONS.  Each one keeps the zero bits past
+    // The four changes of the operations.  Each one keeps the zero bits past
     // N zero.  Complexity: O(N / W).
     constexpr void unite(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
@@ -806,7 +806,7 @@ public:
         }
     }
 
-    // The frame door of the ids (THE WALK): body gets the walk of the ids of
+    // The frame door of the ids (the walk): body gets the walk of the ids of
     // the set for the time of the call, as in
     // `set.with_keys([&](auto const& ids) noexcept { for (BitId<Tag> id : ids) { ... } })`,
     // and the door gives the result of body, which holds no borrow.  The walk
@@ -833,7 +833,7 @@ public:
     void end() const = delete("a cursor that a caller holds could outlive the storage of its set: walk the ids in "
                               "the body of with_keys");
 
-    // The four changes of THE OPERATIONS.  Two counts that differ give
+    // The four changes of the operations.  Two counts that differ give
     // LengthMismatch, and the change writes nothing.  Complexity:
     // O(extent() / 64).
     [[nodiscard]] constexpr Result<Unit, LengthMismatch> unite(HeapBitSet const& other) & noexcept {

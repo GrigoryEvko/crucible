@@ -694,7 +694,7 @@ template <Receive How>
 }
 
 // Two forked sessions, each run from its own thread.  Each right body
-// gives its endpoint to the left body of the OTHER session.  Each left
+// gives its endpoint to the left body of the other session.  Each left
 // body then waits on its own session for the message that its partner's
 // thread would send only after its own wait ends.  Each right body releases
 // its endpoint to the tracked policy before it gives the endpoint away.

@@ -1,6 +1,6 @@
 """The test of the run of the gate mutants (assay.mutation.run).
 
-THE CASES
+Cases
     verdict_cases   A planted header has gates that a negative fixture, a
                     syntax-only compile and a death test hold, and gates that
                     no test holds.  Each mutant must get its verdict and its
@@ -12,7 +12,7 @@ THE CASES
                     test launcher.  The run must give the program behind the
                     launcher as a candidate.
 
-THE TOOLS
+Tools
     ASSAY_TEST_CXX names the compiler, ASSAY_TEST_CMAKE the cmake and
     ASSAY_TEST_NINJA the ninja.  The registration of the test in CMake gives
     them.  The run reads the parse trees of each planted header.  The test
@@ -410,7 +410,7 @@ def unbuilt_cases(expect: testing.Expect) -> None:
 
 
 def main(argv: list[str]) -> int:
-    """Run each case, and write one line for each (THE CASES)."""
+    """Run each case, and write one line for each (the cases)."""
     try:
         tsast.kit_dir()
     except tsast.KitMissing as missing:

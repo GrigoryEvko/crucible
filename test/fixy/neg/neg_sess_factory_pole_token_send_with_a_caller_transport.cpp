@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The token send of the handle factory is the step that the token send of a
 // handle calls.  A unit plants a pole table, in a probe region that the

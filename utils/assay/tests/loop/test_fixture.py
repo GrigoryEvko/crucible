@@ -969,7 +969,7 @@ class StoreTest:
     def check_command_index(self) -> None:
         """The driver keeps each compile of the database in one index, and uses it only while the database is the same.
 
-        THE COMMAND INDEX of the driver gives the rules.
+        The command index of the driver gives the rules.
         """
         database = compdb.database_file(self.build)
         source = str(self.root / "neg" / "neg_size.cpp")
@@ -1874,8 +1874,8 @@ def main(argv: list[str]) -> int:
     if shutil.which(cxx) is None:
         print("tests.loop.test_fixture --cxx COMPILER: the compiler cannot run", file=sys.stderr)
         return 3
-    # GITHUB_ACTIONS=true turns off the CPU limit of a step and adds annotations to the output (assay.core.meter, A CI
-    # RUNNER).  The checks in this process expect the build host.  Remove the variable, as run() does for each run.
+    # GITHUB_ACTIONS=true turns off the CPU limit of a step and adds annotations to the output (assay.core.meter, a CI
+    # runner).  The checks in this process expect the build host.  Remove the variable, as run() does for each run.
     os.environ.pop("GITHUB_ACTIONS", None)
     failures: list[str] = []
     skips: list[str] = []

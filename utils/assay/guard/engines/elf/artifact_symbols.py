@@ -1,13 +1,13 @@
 """artifact-symbols — a static library of the tree throws nothing, has no polymorphic type, and gets no new import.
 
-THE TWO PROPERTIES
+Two properties
     -fno-exceptions and -fno-rtti are not in this build, and the opt-out
     table of section III of CLAUDE.md tells why.  The properties of the two
     flags hold all the same, and the artifact is the guarantee.  The rule
     reads each static library of the root CMakeLists.txt
-    (assay.guard.engines.elf.runner, THE BUILD), and it refuses:
+    (assay.guard.engines.elf.runner, the build), and it refuses:
       throw     a reference to __cxa_throw, to __cxa_rethrow or to a throw
-                helper of libstdc++ (THE THROW HELPERS) in a live function.
+                helper of libstdc++ (the throw helpers) in a live function.
                 An error path is std::expected or an abort
       downcast  a reference to __dynamic_cast or __cxa_bad_cast
       vtable    a typeinfo or a vtable that the archive holds: a polymorphic
@@ -15,14 +15,14 @@ THE TWO PROPERTIES
     A flag reads only the units of the tree.  The rule also finds a throw or
     a downcast that a library header gives in an instance of a template of
     the tree.  An undefined reference is a strong or a weak undefined symbol
-    (assay.readers.elf, THE SYMBOLS).  A weak reference then counts too.
+    (assay.readers.elf, the symbols).  A weak reference then counts too.
 
-A CATCH IS NOT A VIOLATION
+A catch is not a violation
     A catch of a throw of a library, with an abort or a fallback, is the
     documented boundary.  It gives references to __cxa_begin_catch and
     __cxa_end_catch, and the rule does not read those two symbols.
 
-WHERE A THROW STANDS
+Where a throw stands
     Each relocation names the section that holds it.  The tree compiles with
     -ffunction-sections, and that section names the function of the throw.
     A local function is dead when no code or data section of its object
@@ -31,7 +31,7 @@ WHERE A THROW STANDS
     function does not count.  A reference to a throw that no relocation
     gives to a function has the kind hidden-throw.
 
-THE THROWS OF THE ALLOCATOR
+Throws of the allocator
     In C++26, each allocate of libstdc++ holds an inline
     `throw std::bad_alloc()` or `throw std::bad_array_new_length()`.  This is
     the failure of an allocation in the library, which ends the process, as
@@ -40,7 +40,7 @@ THE THROWS OF THE ALLOCATOR
     loads it as the second argument of __cxa_throw.  The rule admits a throw
     of one of the two types.  A rethrow has no type.
 
-THE THROW HELPERS
+Throw helpers
     A member function of a library class can throw through a function of
     libstdc++ in the scope std.  Examples are std::string_view::substr,
     which calls std::__throw_out_of_range_fmt, and std::vector::push_back,
@@ -59,7 +59,7 @@ THE THROW HELPERS
     count can only fall.  The migration to the types of the base removes the
     containers and the views of the standard library.
 
-THE IMPORTS
+Imports
     Rule R5 of misc/01_10_2026_quarantine.md says that the objects of
     libcrucible.a use only the libstdc++ symbols and the C runtime symbols
     of a short allowlist.  The same rule applies to each binary other
@@ -67,11 +67,11 @@ THE IMPORTS
     ledger holds the imports of each static library of the root.  A library
     then gets no new import.  An import of a library is a name that an
     object of its archive references.  No archive of the root holds that
-    name with a section.  The rule finds the owner of each import (THE
-    PROVIDERS), and the family of the owner gives the mark of its row (THE
-    MARKS).
+    name with a section.  The rule finds the owner of each import (the
+    providers), and the family of the owner gives the mark of its row (the
+    marks).
 
-THE PROVIDERS
+Providers
     A provider is a file that can give an import.  The first provider of
     this sequence that gives the name is its owner:
       libstdc++  the libstdc++.so of the compiler
@@ -79,7 +79,7 @@ THE PROVIDERS
                  dynamic loader after libc_nonshared.a.  The loader is the
                  interpreter of libc.so.6
       static     each archive of a link line of the build
-                 (assay.guard.engines.elf.runner, THE BUILD)
+                 (assay.guard.engines.elf.runner, the build)
       crt        the start files and the end files of CRT_FILES
       host       each shared library of a link line of the build, such as
                  libbpf.so
@@ -97,7 +97,7 @@ THE PROVIDERS
     provider gives is an error of the kind unknown-provider, and no row
     admits it.
 
-THE NAMES
+Names
     The entity of an import is the name of its symbol, with no version.  The
     version of a name of a shared library changes with the C library of the
     host, and not with the code: memcpy has the version GLIBC_2.14 on x86_64
@@ -106,7 +106,7 @@ THE NAMES
     cannot use it.  A name with only such versions is not a name of that
     library.
 
-THE MARKS
+Marks
     The kind of the finding of an import is its mark:
       `allow`, `ratchet`            libstdc++.  `allow` marks a symbol of
                                     the allowlist of plan section 13.4
@@ -116,12 +116,12 @@ THE MARKS
                                     import of foundation has the mark
                                     `ratchet`
       `libc-allow`, `libc-ratchet`  runtime.  `libc-allow` marks a symbol of
-                                    the allowlist of its library (THE
-                                    ALLOWLISTS), and a door call from the
-                                    member of its door (THE DOORS)
+                                    the allowlist of its library (the
+                                    allowlists), and a door call from the
+                                    member of its door (the doors)
       `door-ratchet`                runtime: a door call from a member that
-                                    is not its door, in each library (THE
-                                    DOORS)
+                                    is not its door, in each library (the
+                                    doors)
       `static-ratchet`              static
       `crt-allow`, `crt-ratchet`    crt.  `crt-allow` marks __dso_handle in
                                     a library with __cxa_atexit in its
@@ -129,22 +129,22 @@ THE MARKS
       `host-ratchet`                host
     A static object with a destructor gives __dso_handle to __cxa_atexit.
     An import of a sanitizer runtime gives no row, because only a build with
-    that sanitizer has it.  An import of THE CALLS OF THE COMPILER gives no
+    that sanitizer has it.  An import of the calls of the compiler gives no
     row either (NO_ROW).
 
-THE ALLOWLISTS
+Allowlists
     The C runtime allowlist of a library (LIBC_ALLOWLISTS) holds these
     symbols:
       * The calls that GCC makes itself (COMPILER_CALLS), and each function
         of the support library of GCC (SUPPORT_ARCHIVES), such as
-        _Unwind_Resume.  A call of THE CALLS OF THE COMPILER gets no mark, so
+        _Unwind_Resume.  A call of the calls of the compiler gets no mark, so
         the allowlist gives the mark `libc-allow` only to __stack_chk_fail,
         __tls_get_addr and each other function of the support library.
       * For crucible and each other library of the root, __cxa_atexit, which
         plan section 13.4 admits.
     At the S4 gate, libfixy.a holds no `libc-ratchet` row.
 
-THE CALLS OF THE COMPILER
+Calls of the compiler
     GCC emits some calls itself, and the flags of a build decide them, not
     the source.  At x86-64 and x86-64-v2, GCC emits a call of __popcountdi2
     for a count of bits, and at x86-64-v3 it emits the instruction popcnt.
@@ -165,12 +165,12 @@ THE CALLS OF THE COMPILER
         __trunc), and the outline atomics of aarch64 (__aarch64_).  GCC
         calls an outline atomic, such as __aarch64_cas8_acq, for an atomic
         operation at a level with no LSE instruction.
-    The import comes from the runtime (THE PROVIDERS).  The rule
+    The import comes from the runtime (the providers).  The rule
     c-library-call of the quarantine plugin judges a call of one of the
     four functions of the C library that the source spells.  Each other
     function of the support library, such as _Unwind_Resume, keeps its row.
 
-THE DOORS
+Doors
     Decision D12 of the plan keeps some calls of the C library in the base,
     because the C library owns their state.  Each such call has one door: a
     member of the archive of foundation or of fixy (DOOR_CALLS).  The rule
@@ -187,12 +187,12 @@ THE DOORS
     each door call in decision D12.  The change that adds a door adds its
     calls to DOOR_CALLS and to D12.
 
-THE HIDDEN IMPORTS
+Hidden imports
     The quarantine plugin writes the records of the library code into the
-    section of each object (utils/tools/quarantine/body.cpp, THE
-    RECORDS).  A record call, reference or symbol names a symbol that the
+    section of each object (utils/tools/quarantine/body.cpp, the
+    records).  A record call, reference or symbol names a symbol that the
     code of the tree can import.  It also gives the line of its source
-    (assay.readers.sections, THE SYMBOLS OF THE LIBRARY CODE).  The rule
+    (assay.readers.sections, the symbols of the library code).  The rule
     explains each import of a member of an archive with these records.  The
     records of a member connect it to these names:
       * each symbol of a record of the member
@@ -205,7 +205,7 @@ THE HIDDEN IMPORTS
     A live section of a member can name an import with a mark.  The import
     has the kind hidden-import when no record of the member connects to it,
     and no row admits it.  A local function that no different section names
-    is dead, as WHERE A THROW STANDS tells.  A section with no named symbol
+    is dead, as where a throw stands tells.  A section with no named symbol
     holds data that the compiler makes, such as a string constant.  The type
     data of a check of UBSan is such data too, and it holds a typeinfo.  The
     references of the two do not count.  The unwind tables and the debug
@@ -221,9 +221,9 @@ THE HIDDEN IMPORTS
     no section, such as the archive of a plant that compiles with no plugin,
     gets no judgement of its hidden imports.
 
-THE CLASS OF A SYMBOL
+Class of a symbol
     The messages give the class of a symbol: the first class of this list
-    that its mangled name gives (assay.readers.elf, THE MANGLED SCOPE).
+    that its mangled name gives (assay.readers.elf, the mangled scope).
       alloc  the global operator new or delete
       abi    a name that starts with __cxa_ or __gxx_, __dynamic_cast, or a
              name in the scope __cxxabiv1
@@ -232,20 +232,20 @@ THE CLASS OF A SYMBOL
       c      a name with no mangling, such as __once_proxy
       other  each other mangled name
 
-THE LEDGER
+Ledger
     utils/ledgers/artifact-symbols.txt has the policy count, in format 1 of
     assay.core.ledger.  It holds one set of rows, and the set judges each
-    build (assay.guard.engines.elf.one_set, THE SET):
+    build (assay.guard.engines.elf.one_set, the set):
         @build/LIBRARY | MARK | 1 | IMPORT | -
         @build/LIBRARY | door-ratchet | 1 | IMPORT | REASON
         @build/ARCHIVE | helper-throw | COUNT | HELPER | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
         @build/ARCHIVE | vtable | admit | TEXT | REASON
-    MARK is one of MARKS (THE MARKS), and IMPORT is the name of THE NAMES.  A
+    MARK is one of MARKS (the marks), and IMPORT is the name of the names.  A
     row door-ratchet has a reason: the code that makes the call outside its
     door, and the slice of the plan that moves the call.  A row helper-throw
     gives the references of an archive that is not of the base to a throw
-    helper (THE THROW HELPERS).  The imports change with the
+    helper (the throw helpers).  The imports change with the
     build, because the inlining, the sanitizers and the macro
     _GLIBCXX_ASSERTIONS change the references.  The set holds the imports of
     each build, and each build is judged against the full set.  LIBRARY and
@@ -263,9 +263,9 @@ THE LEDGER
     row admits has its full name as its entity.  The rule
     refuses a row of a different kind, and no row can admit a downcast.
 
-THE VERDICT
+Verdict
     assay.core.ledger judges the findings.  A ledger fails only when a count
-    is more than its row (THE POLICIES of assay.core.ledger).  A finding with
+    is more than its row (the policies of assay.core.ledger).  A finding with
     no row is an error.  A row of an import that goes gives no finding, and a
     row throw or vtable that admits nothing gives no finding too.  A hidden
     import and an import with no provider are errors that no row admits.
@@ -276,11 +276,11 @@ THE VERDICT
       * An archive with no symbol
       * An archive of IMPORTING_LIBRARIES with no undefined reference.
 
-THE WRITE
+Write
     `guard write --rule artifact-symbols --build-dir DIR` writes the import
     rows and the counts of helper-throw of the build into the set.  A write
-    from one build keeps each row (assay.guard.engines.elf.one_set, THE
-    WRITE).  It gives a row to a new import with the mark `allow`,
+    from one build keeps each row (assay.guard.engines.elf.one_set, the
+    write).  It gives a row to a new import with the mark `allow`,
     `libc-allow` or `crt-allow`, and it refuses a new import with a ratchet
     mark (RATCHET_MARKS).  It
     also refuses a count of helper-throw above its row.  --raise also writes
@@ -288,9 +288,9 @@ THE WRITE
     the reason in the commit.  The write adds no row door-ratchet, throw or
     vtable, also with --raise: a person writes it with its reason.  The reduce of the landing gate
     removes the row of an import or a count that no build of the gate gives,
-    and it keeps each row throw and vtable (one_set, THE REDUCE).
+    and it keeps each row throw and vtable (one_set, the reduce).
 
-NOT APPLICABLE
+Not applicable
     The rule does not apply (exit 77) to these builds:
       * A build with no build-kind.txt
       * A build that has not made each library.
@@ -317,16 +317,16 @@ LIBRARY_PREFIX = "@build/"
 # The libraries that the root must make.  Without them, the rule cannot read the correct set of archives.
 REQUIRED_LIBRARIES = ("foundation", "crucible")
 # The libraries that reference the runtime in each build.  An archive of one of them with no undefined reference is an
-# archive that the rule did not read (THE VERDICT).
+# archive that the rule did not read (the verdict).
 IMPORTING_LIBRARIES = ("foundation", "fixy", "crucible")
-# The families of the providers, in the sequence of THE PROVIDERS.
+# The families of the providers, in the sequence of the providers.
 LIBSTDCXX = "libstdc++"
 RUNTIME = "runtime"
 STATIC = "static"
 CRT = "crt"
 HOST = "host"
 SANITIZER = "sanitizer"
-# The marks of an import (THE MARKS).
+# The marks of an import (the marks).
 ALLOW = "allow"
 RATCHET = "ratchet"
 LIBC_ALLOW = "libc-allow"
@@ -351,15 +351,15 @@ MARKS = (
 RATCHET_MARKS = (RATCHET, LIBC_RATCHET, STATIC_RATCHET, CRT_RATCHET, HOST_RATCHET)
 # The marks of an import that a write gives a row to.
 ALLOW_MARKS = (ALLOW, LIBC_ALLOW, CRT_ALLOW)
-# The kind of an import that no provider gives (THE PROVIDERS).  No row admits it.
+# The kind of an import that no provider gives (the providers).  No row admits it.
 UNKNOWN_PROVIDER = "unknown-provider"
-# The kind of an import that no record of the library code explains (THE HIDDEN IMPORTS).  No row admits it.
+# The kind of an import that no record of the library code explains (the hidden imports).  No row admits it.
 HIDDEN_IMPORT = "hidden-import"
 # The sections of the type tables of the exceptions.  Their relocations name the typeinfo of each catch clause.
 EXCEPTION_TABLES = (".gcc_except_table",)
 THROW = "throw"
 HIDDEN_THROW = "hidden-throw"
-# The kind of a reference to a throw helper in an archive that is not of the base (THE THROW HELPERS).
+# The kind of a reference to a throw helper in an archive that is not of the base (the throw helpers).
 HELPER_THROW = "helper-throw"
 # The target names of the libraries of the base, where each throw helper is a throw finding.
 BASE_LIBRARIES = ("foundation", "fixy")
@@ -372,7 +372,7 @@ ALLOWLIST = frozenset(
 )
 # The shared library of libstdc++ of the compiler.
 LIBSTDCXX_FILE = "libstdc++.so"
-# The files of the runtime (THE PROVIDERS), in the sequence of the link that the driver of g++ makes.  True marks a
+# The files of the runtime (the providers), in the sequence of the link that the driver of g++ makes.  True marks a
 # shared library, and its dynamic symbols count.  False marks an archive, and the global symbols of its members count.
 # libgcc_s.so.1 is the shared library of the support library of GCC.  libc_nonshared.a holds the part of glibc that
 # each program links statically, such as atexit.  The driver links libgcc_eh.a only for a static link, and it comes
@@ -396,7 +396,7 @@ CRT_FILES = ("crt1.o", "crti.o", "crtbegin.o", "crtbeginS.o", "crtend.o", "crten
 SANITIZER_FILES = (("libasan.so", True), ("libubsan.so", True), ("libtsan.so", True))
 # The words -l of a link line that name a library of the runtime.  Such a word adds no provider.
 RUNTIME_WORDS = frozenset({"-lc", "-lm", "-lpthread", "-ldl", "-lrt", "-lgcc", "-lgcc_s", "-lstdc++", "-latomic"})
-# The names that the linker makes itself, with no provider (THE PROVIDERS).
+# The names that the linker makes itself, with no provider (the providers).
 LINKER_NAMES = frozenset(
     {
         "_GLOBAL_OFFSET_TABLE_",
@@ -425,15 +425,15 @@ LINKER_NAMES = frozenset(
 LINKER_PREFIXES = ("__start_", "__stop_")
 # The support library of GCC: the helpers of the arithmetic and the unwinder that GCC calls itself.
 SUPPORT_ARCHIVES = ("libgcc.a", "libgcc_eh.a")
-# The registration of the destructor of a static object.  __dso_handle of the start files goes with it (THE MARKS).
+# The registration of the destructor of a static object.  __dso_handle of the start files goes with it (the marks).
 ATEXIT = "__cxa_atexit"
 CRT_ALLOWLIST = frozenset({"__dso_handle"})
 # The calls of the C library that GCC emits itself for a copy, a move, a fill and a compare of memory.  An import of one
-# of them gives no row (THE CALLS OF THE COMPILER).
+# of them gives no row (the calls of the compiler).
 EMITTED_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp"})
 # The families of the helpers of the support library of GCC that GCC emits itself.  A family is the start of the name of
-# each of its helpers, such as __popcountdi2 and __udivti3.  An import of such a helper gives no row (THE CALLS OF THE
-# COMPILER).
+# each of its helpers, such as __popcountdi2 and __udivti3.  An import of such a helper gives no row (the calls of the
+# compiler).
 EMITTED_HELPER_FAMILIES = (
     "__popcount",
     "__clz",
@@ -459,13 +459,13 @@ EMITTED_HELPER_FAMILIES = (
 )
 # The calls of the C library that GCC makes itself, which each library can reference (rule R5).
 COMPILER_CALLS = EMITTED_CALLS | {"__stack_chk_fail", "__tls_get_addr"}
-# The mark of an import that gives no row: an import of a sanitizer runtime, and a call of THE CALLS OF THE COMPILER.
+# The mark of an import that gives no row: an import of a sanitizer runtime, and a call of the calls of the compiler.
 NO_ROW = ""
 
 
 @dataclass(frozen=True, slots=True)
 class DoorCall:
-    """One call of the C library that a door of the base keeps (THE DOORS).
+    """One call of the C library that a door of the base keeps (the doors).
 
     `library` is the target name of the library of the door, and `member` the file name of the member of the door in
     its archive.  `kind_word` is a word that the build kind must hold, or an empty text for each build kind.
@@ -481,7 +481,7 @@ class DoorCall:
 FOUNDATION = "foundation"
 FIXY = "fixy"
 TSAN_WORD = "tsan"
-# The calls of the C library that decision D12 of the plan keeps, each with its door (THE DOORS, rule R5).
+# The calls of the C library that decision D12 of the plan keeps, each with its door (the doors, rule R5).
 #   * The abort door of foundation/os/Abort.h calls abort in each build.  The deny rows of the rule table give the
 #     signals of the process to the C library, and no raw call can send SIGABRT.
 #   * The allocation door of foundation/core/Heap.h calls malloc, calloc, aligned_alloc and free.  The allocator of
@@ -556,27 +556,27 @@ DOOR_CALLS = (
 # The door of each door call.  A call has one door.
 DOORS = {call.symbol: call for call in DOOR_CALLS}
 # The C runtime allowlist of each library, by its target name, without the support library and without the door
-# calls (THE ALLOWLISTS).  Each other library of the root has the allowlist of crucible.
+# calls (the allowlists).  Each other library of the root has the allowlist of crucible.
 LIBC_ALLOWLISTS = {
     FOUNDATION: COMPILER_CALLS,
     FIXY: COMPILER_CALLS,
     "crucible": COMPILER_CALLS | {ATEXIT},
 }
 TREE_ALLOWLIST = LIBC_ALLOWLISTS["crucible"]
-# The names that the compiler references itself, also from the unwind tables, with no record of the plugin (THE
-# HIDDEN IMPORTS).
+# The names that the compiler references itself, also from the unwind tables, with no record of the plugin (the
+# hidden imports).
 COMPILER_MADE = COMPILER_CALLS | ALLOWLIST | CRT_ALLOWLIST
 CLASSES = ("alloc", "abi", "std", "gnu", "c", "other")
 ABI_PREFIXES = ("__cxa_", "__gxx_")
 ABI_SCOPE = "__cxxabiv1"
 GNU_SCOPE = "__gnu_cxx"
 THROW_SYMBOLS = ("__cxa_throw", "__cxa_rethrow")
-# A throw helper of libstdc++ is a function of the scope std with a name that starts with __throw_ (THE THROW HELPERS).
+# A throw helper of libstdc++ is a function of the scope std with a name that starts with __throw_ (the throw helpers).
 # Its mangled name is the prefix, the length of the name in digits, and the name.
 STD_FUNCTION_PREFIX = "_ZSt"
 THROW_HELPER_MARK = "__throw_"
 DOWNCAST_SYMBOLS = ("__dynamic_cast", "__cxa_bad_cast")
-# The typeinfo of std::bad_alloc and of std::bad_array_new_length (THE THROWS OF THE ALLOCATOR).
+# The typeinfo of std::bad_alloc and of std::bad_array_new_length (the throws of the allocator).
 ALLOCATION_FAILURES = frozenset({"_ZTISt9bad_alloc", "_ZTISt20bad_array_new_length"})
 # The throw helpers of the same two failures: std::__throw_bad_alloc() and std::__throw_bad_array_new_length().
 ALLOCATION_HELPERS = frozenset({"_ZSt17__throw_bad_allocv", "_ZSt28__throw_bad_array_new_lengthv"})
@@ -593,7 +593,7 @@ RAISE_REASONS = (
     "a new build kind or target",
     "a class of symbols that the rule did not read before",
 )
-# The four shapes of a row (THE LEDGER).
+# The four shapes of a row (the ledger).
 ROW_SHAPE = (
     f"a row is '@build/LIBRARY | {'|'.join(mark for mark in MARKS if mark != DOOR_RATCHET)} | 1 | IMPORT | -', "
     f"'@build/LIBRARY | {DOOR_RATCHET} | 1 | IMPORT | REASON', '@build/ARCHIVE | helper-throw | COUNT | HELPER | -', "
@@ -620,7 +620,7 @@ class Artifact:
     each symbol that the archive holds with a section.  `exported` holds each such name that is not local, which a
     reference of a different object can use.  `hidden` gives the members that reference each undefined name with no
     record that connects to it.  `sectioned` counts the members with a section of the plugin, and `sectionless`
-    names each member with none (THE HIDDEN IMPORTS).
+    names each member with none (the hidden imports).
     """
 
     name: str
@@ -636,7 +636,7 @@ class Artifact:
 
 @dataclass(frozen=True, slots=True)
 class Provider:
-    """One file that can give an import: its file name, its family, and the names that it gives (THE PROVIDERS)."""
+    """One file that can give an import: its file name, its family, and the names that it gives (the providers)."""
 
     label: str
     family: str
@@ -645,7 +645,7 @@ class Provider:
 
 @dataclass(frozen=True, slots=True)
 class Providers:
-    """The providers of a build (THE PROVIDERS).
+    """The providers of a build (the providers).
 
     `owners` gives each name its owner.  `support` holds each function of the support library of GCC.
     """
@@ -658,7 +658,7 @@ class Providers:
 
 
 def classify(symbol: str) -> str:
-    """Return the class of a symbol (THE CLASS OF A SYMBOL)."""
+    """Return the class of a symbol (the class of a symbol)."""
     scope = elf.outer_scope(symbol)
     if elf.global_operator(symbol):
         return "alloc"
@@ -677,12 +677,12 @@ def mark_of(symbol: str) -> str:
 
 
 def libc_allowlist(library: str) -> frozenset[str]:
-    """Return the C runtime allowlist of a library by its target name (THE ALLOWLISTS)."""
+    """Return the C runtime allowlist of a library by its target name (the allowlists)."""
     return LIBC_ALLOWLISTS.get(library, TREE_ALLOWLIST)
 
 
 def is_door_call(library: str, symbol: str, members: frozenset[str], kind: str) -> bool:
-    """Return True for an import of a door call from the member of its door, in a build kind of the call (THE DOORS).
+    """Return True for an import of a door call from the member of its door, in a build kind of the call (the doors).
 
     `library` is the target name of the importing library, `members` names the members that import the symbol, and
     `kind` is the build kind.
@@ -696,7 +696,7 @@ def is_door_call(library: str, symbol: str, members: frozenset[str], kind: str) 
 
 
 def is_emitted_call(symbol: str, support: frozenset[str]) -> bool:
-    """Return True for a name of THE CALLS OF THE COMPILER, which GCC emits itself.
+    """Return True for a name of the calls of the compiler, which GCC emits itself.
 
     `support` holds the functions of the support library of GCC.  A name of a family of EMITTED_HELPER_FAMILIES is such
     a call only when the support library holds it.
@@ -712,11 +712,11 @@ def mark_for(
     members: frozenset[str] = frozenset(),
     kind: str = "",
 ) -> str:
-    """Return the mark of an import of a library from a provider of a family (THE MARKS).
+    """Return the mark of an import of a library from a provider of a family (the marks).
 
     `library` is the target name of the library, and `support` holds the functions of the support library of GCC.
-    `members` names the members that import the symbol, and `kind` is the build kind, for the door calls (THE DOORS).
-    The family is not sanitizer, because such an import has no row.  An import of the runtime of THE CALLS OF THE
+    `members` names the members that import the symbol, and `kind` is the build kind, for the door calls (the doors).
+    The family is not sanitizer, because such an import has no row.  An import of the runtime of the calls of the
     COMPILER gets NO_ROW.
     """
     if family == LIBSTDCXX:
@@ -734,7 +734,7 @@ def mark_for(
 
 
 def is_linker_name(symbol: str) -> bool:
-    """Return True for a name that the linker makes itself (THE PROVIDERS)."""
+    """Return True for a name that the linker makes itself (the providers)."""
     return symbol in LINKER_NAMES or symbol.startswith(LINKER_PREFIXES)
 
 
@@ -742,7 +742,7 @@ def is_linker_name(symbol: str) -> bool:
 
 
 def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
-    """Return True for a row with a shape of THE LEDGER: an import, a throw helper, or a row throw or vtable.
+    """Return True for a row with a shape of the ledger: an import, a throw helper, or a row throw or vtable.
 
     A row door-ratchet has a reason.
     """
@@ -753,7 +753,7 @@ def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
 
 
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Return an error for each row that does not have a shape of THE LEDGER.
+    """Return an error for each row that does not have a shape of the ledger.
 
     A row of an import has the count 1.
     """
@@ -761,7 +761,7 @@ def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
 
 
 def admitting_text(rows: Sequence[rule_ledger.Key], path: str, kind: str, subject: str) -> str | None:
-    """Return the TEXT of the first row of a path and a kind that the subject holds, or None (THE LEDGER)."""
+    """Return the TEXT of the first row of a path and a kind that the subject holds, or None (the ledger)."""
     return next((key.entity for key in rows if key.path == path and key.kind == kind and key.entity in subject), None)
 
 
@@ -783,7 +783,7 @@ def is_throw(symbol: str) -> bool:
 
 
 def member_references(member: elf.Member, relocations: Sequence[elf.Relocation]) -> list[tuple[bool, str, str, str]]:
-    """Return each reference of one member to a throw or a throw helper, as WHERE A THROW STANDS tells.
+    """Return each reference of one member to a throw or a throw helper, as where a throw stands tells.
 
     `relocations` are the relocations of the member that are not in UNREAD_SECTIONS.  Each item is True when the
     function is live, the symbol, the typeinfo that a throw throws or "-", and the function or the section that
@@ -820,10 +820,10 @@ def member_references(member: elf.Member, relocations: Sequence[elf.Relocation])
 def hidden_names(member: elf.Member, relocations: Sequence[elf.Relocation], seeds: Iterable[str]) -> set[str]:
     """Return each undefined name of one member that a live section names and that no record connects to.
 
-    THE HIDDEN IMPORTS gives the names that `seeds`, the symbols of the records of the member, connect to.
+    The hidden imports give the names that `seeds`, the symbols of the records of the member, connect to.
     `relocations` are the relocations of the member that are not in UNREAD_SECTIONS.  A relocation names a symbol of
     a section by the name of the section.  A local function that no relocation of a different section names is dead,
-    as WHERE A THROW STANDS tells.  A section with no named symbol holds data that the compiler makes.  The
+    as where a throw stands tells.  A section with no named symbol holds data that the compiler makes.  The
     references of the two do not count.  Complexity: linear in the relocations and the symbols of the member.
 
     Raises:
@@ -967,7 +967,7 @@ def runtime_file(compiler: str, name: str) -> Path:
 
 
 def read_provider(path: Path, is_shared: bool, family: str) -> Provider:
-    """Read one provider: each global name with a section of the file (THE NAMES).
+    """Read one provider: each global name with a section of the file (the names).
 
     A shared library gives its dynamic symbols, and a name with only hidden
     versions is no name of the library.  An archive or an object gives the
@@ -1000,7 +1000,7 @@ def read_provider(path: Path, is_shared: bool, family: str) -> Provider:
 
 
 def link_file(compiler: str, word: str) -> Path:
-    """Return the file of one library of a link line: a word -lNAME or an absolute path (THE PROVIDERS).
+    """Return the file of one library of a link line: a word -lNAME or an absolute path (the providers).
 
     The compiler finds libNAME.so, else libNAME.a, for a word -lNAME.
 
@@ -1022,7 +1022,7 @@ def link_file(compiler: str, word: str) -> Path:
 
 
 def provider_files(compiler: str, links: Sequence[str]) -> list[tuple[Path, bool, str]]:
-    """Return each file of a provider, with its shared flag and its family, in the sequence of THE PROVIDERS.
+    """Return each file of a provider, with its shared flag and its family, in the sequence of the providers.
 
     Raises:
         runner.BuildError: If a file of the compiler cannot be found, or libc.so.6 names no dynamic loader
@@ -1130,7 +1130,7 @@ def class_findings(
     counted: Counter[str],
     base_archives: frozenset[str],
 ) -> list[check_report.Finding]:
-    """Return the findings of the throws, the downcasts and the classes of the libraries (THE TWO PROPERTIES).
+    """Return the findings of the throws, the downcasts and the classes of the libraries (the two properties).
 
     `names` gives the demangled name of each name, and `rows` the keys of the rows throw and vtable in the sequence of
     their lines.  `counted` gets the count of the throws of the allocator.  A throw helper is a throw finding only in
@@ -1208,7 +1208,7 @@ def helper_findings(
     """Return one finding for each live reference to a throw helper in an archive that is not of the base.
 
     The allocation helpers give no finding.  Each finding has the key of its archive and helper.  The ledger then
-    counts the references of each archive and helper (THE THROW HELPERS).  Complexity: linear in the references.
+    counts the references of each archive and helper (the throw helpers).  Complexity: linear in the references.
     """
     found: list[check_report.Finding] = []
     for archive in sorted(set(artifacts) - base_archives):
@@ -1239,7 +1239,7 @@ def named(symbol: str, shown: str) -> str:
 def import_message(
     archive: str, library: str, symbol: str, provider: Provider, mark: str, shown: str, used: str
 ) -> str:
-    """Return the message of one import of a library (THE MARKS).
+    """Return the message of one import of a library (the marks).
 
     `library` is the target name of the archive, `mark` the mark of the import, `shown` its demangled name, and `used`
     names the members that reference it.
@@ -1273,7 +1273,7 @@ class Import:
     """One import of a static library: the archive, the name, the members that reference it, its owner and its mark.
 
     `provider` is None for a name that no provider gives.  `mark` is NO_ROW for such a name, for a name of a sanitizer
-    runtime and for a call of THE CALLS OF THE COMPILER, which have no row (THE MARKS).
+    runtime and for a call of the calls of the compiler, which have no row (the marks).
     """
 
     archive: str
@@ -1286,7 +1286,7 @@ class Import:
 def imports_of(
     artifacts: Mapping[str, Artifact], targets: Mapping[str, str], providers: Providers, kind: str = ""
 ) -> list[Import]:
-    """Return each import of each archive of `targets`, with its owner and its mark (THE PROVIDERS, THE MARKS).
+    """Return each import of each archive of `targets`, with its owner and its mark (the providers, the marks).
 
     `targets` gives the target name of each archive, and `kind` is the build kind.  A name that an archive of
     `artifacts` exports is no import.  Complexity: linear in the undefined names of the archives.
@@ -1312,7 +1312,7 @@ def import_findings(
     """Return the findings of the imports of each library, and the findings of the imports with no provider.
 
     `imports` are the imports of imports_of(), and `targets` gives the target name of each archive.  An import of a
-    sanitizer runtime gives no finding (THE MARKS).  Complexity: linear in the imports.
+    sanitizer runtime gives no finding (the marks).  Complexity: linear in the imports.
     """
     write = f"Write the ledger again: `python3 utils/bin/guard write --rule {RULE} --build-dir {build_shown}`"
     found: list[check_report.Finding] = []
@@ -1344,7 +1344,7 @@ def hidden_findings(
 ) -> list[check_report.Finding]:
     """Return an error for each hidden import and for each member with no section in an archive with sections.
 
-    THE HIDDEN IMPORTS gives the rule.  An import with no mark, of a sanitizer runtime or with no provider, gives no
+    The hidden imports give the rule.  An import with no mark, of a sanitizer runtime or with no provider, gives no
     such finding.  Complexity: linear in the imports and the members.
     """
     found: list[check_report.Finding] = []
@@ -1399,13 +1399,13 @@ def symbol_classes(symbols: Sequence[check_report.Finding]) -> str:
 
 
 def examine(rule: rule_registry.Rule, context: runner.ElfContext) -> one_set.Inspection:
-    """Read the libraries of the build, and judge their findings against the set of the ledger (THE VERDICT).
+    """Read the libraries of the build, and judge their findings against the set of the ledger (the verdict).
 
     Raises:
-        runner.NotApplicable: If the rule does not apply to the build (NOT APPLICABLE)
+        runner.NotApplicable: If the rule does not apply to the build (not applicable)
         runner.BuildError: If the build cannot be read
     """
-    # A build with no build kind does not apply, also when its ledger cannot be read (NOT APPLICABLE).
+    # A build with no build kind does not apply, also when its ledger cannot be read (not applicable).
     context.kind()
     ledger = one_set.read_ledger(rule, context.root)
     if isinstance(ledger, one_set.Inspection):
@@ -1453,7 +1453,7 @@ def findings(context: runner.ElfContext) -> list[check_report.Finding]:
 
 
 def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the ledger in the tree of the context (THE VERDICT).
+    """Return the findings of the build judged against the ledger in the tree of the context (the verdict).
 
     Raises:
         runner.NotApplicable: If the rule does not apply to the build
@@ -1472,7 +1472,7 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
 
 
 # The rows that a write refuses with no --raise: a new import with a ratchet mark and a risen count of a throw helper.
-# Then the reasons for --raise, and the rows door-ratchet that only a person writes (THE WRITE).
+# Then the reasons for --raise, and the rows door-ratchet that only a person writes (the write).
 WRITE_POLICY = one_set.WritePolicy(
     row_problems,
     (*RATCHET_MARKS, HELPER_THROW),
@@ -1482,5 +1482,5 @@ WRITE_POLICY = one_set.WritePolicy(
     (DOOR_RATCHET,),
     "its reason: the code that makes the call outside its door, and the slice of the plan that moves the call",
 )
-# The write of the import rows of the build into the set (THE WRITE, assay.guard.engines.elf.one_set).
+# The write of the import rows of the build into the set (the write, assay.guard.engines.elf.one_set).
 write = one_set.writer(examine, WRITE_POLICY)

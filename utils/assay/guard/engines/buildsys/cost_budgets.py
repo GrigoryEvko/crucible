@@ -1,15 +1,15 @@
 """cost-budgets — a compile, a link, an object, a header alone or a target of a build that costs more than its rule.
 
-THE INPUTS
+Inputs
     The compile database of the build names each compile job and its object.
     The code model of the CMake file API names each linked output: an
     executable, a shared library or a module.  A rule reads only the outputs
     that are there, and no output of the directory bench of the build
-    (assay.core.budget, THE SCOPE).  A target that the build does not make,
+    (assay.core.budget, the scope).  A target that the build does not make,
     such as a negative fixture, has no output to read.  The ledger rows of a
-    rule judge each build (THE LEDGERS).
+    rule judge each build (the ledgers).
 
-THE RULES OF A STEP
+Rules of a step
     step-cost and step-memory read the record OUTPUT.cost of each output of
     the kinds compile and link (assay.core.record).  step-cost reads the user
     instructions of the compiler run of a compile, in G (10^9).  step-memory
@@ -23,25 +23,25 @@ THE RULES OF A STEP
     the kind not-wired for that kind.
 
     The CPU time of a step increases with the load of the host, and the
-    instruction count does not (assay.core.meter, THE INSTRUCTION COUNT).
+    instruction count does not (assay.core.meter, the instruction count).
     No rule judges the CPU time of a step, and step-cost judges the cost of
     a compile.  step-cost does not apply to a build in which no record holds
     a count.
 
-THE KINDS OF A STEP METER
+Kinds of a step meter
     The kinds test and fixture of a rule of a step have no records in the
     build that a check can judge: a step meter judges each test and each
     fixture while it runs.  `loop test-step` judges the kind test of the two
     rules, and the fixture driver judges the kind fixture of step-cost and
-    the kind test of the run of a fixture (assay.loop.teststep, THE MEASURED
-    RULES).  A record of an earlier run can be stale, so the module does not
+    the kind test of the run of a fixture (assay.loop.teststep, the measured
+    rules).  A record of an earlier run can be stale, so the module does not
     judge it again.  METER_KINDS gives these kinds.  The witness of a rule of
     a step runs the judge of each step meter on each plant too (judge(), with
     the judges of assay.guard.engines.buildsys.held), and `guard write`
     reads the records of the tests and the fixtures for the rows of these
-    kinds (THE LEDGERS).
+    kinds (the ledgers).
 
-THE RULE object-size
+Rule object-size
     object-size reads two values of each object, in KB: the largest STT_FUNC
     symbol, of the kind function, and the sum of the allocated, executable
     sections, of the kind object.  The rule reads the section headers and the
@@ -50,7 +50,7 @@ THE RULE object-size
     as a compile.  An object that the reader refuses gives an error of the
     kind input.
 
-THE RULE header-alone
+Rule header-alone
     The sentinels of test/layer/CMakeLists.txt compile each header of include/
     alone.  For each sentinel, the rule reads its list in the dependency log of
     Ninja (assay.readers.ninja) and adds the bytes of the files after the
@@ -65,7 +65,7 @@ THE RULE header-alone
     with no sentinel object, or to a build that a generator other than Ninja
     made.
 
-THE KINDS
+Kinds
     A rule has one limit for each kind of item (assay.core.registry).
     RULE_KINDS gives the kinds of each rule with a fixed set of kinds.  A
     kind that the table gives and the registry does not, and a kind that the
@@ -73,10 +73,10 @@ THE KINDS
     input, because the judge of a kind with no limit is off.  The kinds of
     header-alone are the layers of include/, which the registry gives.
 
-THE JUDGE
+Judge
     assay.core.budget judges each value against the limit of its kind and
-    the ledger rows of the rule (assay.core.budget, THE VERDICT and THE
-    ROWS).  Each finding is an error.  The kinds of the findings:
+    the ledger rows of the rule (assay.core.budget, the verdict and the
+    rows).  Each finding is an error.  The kinds of the findings:
       over-limit         a value above the limit, with no ledger row
       risen              a value above the limit and above the kept value of
                          its row with the noise of its unit
@@ -90,22 +90,22 @@ THE JUDGE
     finding, because a ledger fails only on a growth.  A row whose item the
     build does not hold gives no finding either.
 
-THE LEDGERS
+Ledgers
     utils/ledgers/RULE.txt holds at most one row for each kind and item, with
-    the reason, and each row judges each build (assay.core.meter, THE
-    REGISTRY AND THE LEDGERS).  KIND is "-" for a rule with one limit:
+    the reason, and each row judges each build (assay.core.meter, the
+    registry and the ledgers).  KIND is "-" for a rule with one limit:
 
         @build/OUTPUT | KIND | VALUE | - | REASON     an output of a step or an object
         HEADER | LAYER | VALUE | - | REASON          a header, for header-alone
 
     `guard write --rule RULE --build-dir DIR --reason TEXT` writes a row for
     each item of the build above the limit that no row keeps, through the
-    member function written of the rule (assay.core.budget, THE WRITE).  Then
-    it prunes the rows (THE PRUNE).  It gives the ledger the head comment
-    LEDGER_COMMENT (assay.core.ledger, THE HEAD COMMENT).  A ledger with no
+    member function written of the rule (assay.core.budget, the write).  Then
+    it prunes the rows (the prune).  It gives the ledger the head comment
+    LEDGER_COMMENT (assay.core.ledger, the head comment).  A ledger with no
     row has no file.
 
-THE PRUNE
+Prune
     One ledger judges the builds of each preset that runs the rule: the
     presets of the gate, of loop nightly and of loop release.  Some items are
     only in one build, such as the units of the vessel.  One build then
@@ -127,7 +127,7 @@ THE PRUNE
         different shape keeps its row.
       * A row of header-alone of a header that the tree does not hold.
       * A row of header-alone of a header whose measure in the build, with
-        the noise of the unit MB (THE NOISE of assay.core.budget), is at or
+        the noise of the unit MB (the noise of assay.core.budget), is at or
         below the limit of its layer.  A header within that margin of the
         limit keeps its row, so the next small growth of a shared header
         does not make it an item with no row above the limit.  On
@@ -143,9 +143,9 @@ THE PRUNE
     measure of an object, a compile or a test changes with the build, so no
     row of such an item gets a lower value.
 
-THE LOWER
+Lower
     One build cannot lower a row of an object or a step, because a different
-    build can measure more (THE PRUNE).  After a cut of a cost, `guard write
+    build can measure more (the prune).  After a cut of a cost, `guard write
     --rule RULE --row ITEM... [--kind KIND] --lower --reason TEXT --build-dir
     DIR...` lowers each named row to the largest measure of its item over
     the builds, with the reason of the cut (lowered_ledger()).  The builds are
@@ -154,11 +154,11 @@ THE LOWER
     measures.  A preset of `loop nightly` or `loop release` that then
     measures more raises its row with its own reason, because the nightly is
     no gate.  `loop land --lower RULE ITEM --lower-reason TEXT` lets the gate
-    run this write on the builds of its run (THE LOWER OF A BUDGET of
+    run this write on the builds of its run (the lower of a budget of
     assay.loop.gate).
     The lower reads the measure of a compile also from the record of a
     ccache hit: the cost of the compile that made the object, which the cost
-    store gives the record (assay.core.record, THE FORMAT).  It reads the
+    store gives the record (assay.core.record, the format).  It reads the
     rows of the kinds of LOWERED_KINDS and of each layer of header-alone.  A
     test and a fixture have a record only after their run, so the write
     refuses a row of such a kind.  It also refuses an item that names no
@@ -201,7 +201,7 @@ HEADER_ALONE_SENTINEL = "/layer_sentinel_"
 HEADER_ALONE_CHECK_FILES = Path("test/layer/checks")
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
 # The parts of the object path of a compile job, DIR/CMakeFiles/TARGET.dir/SOURCE.o, and the part of SOURCE that CMake
-# writes for ".." (THE PRUNE).
+# writes for ".." (the prune).
 OBJECT_DIRECTORY = "CMakeFiles"
 TARGET_SUFFIX = ".dir"
 OBJECT_SUFFIX = ".o"
@@ -217,7 +217,7 @@ LEDGER_COMMENT = (
 
 
 class Quantity(enum.StrEnum):
-    """The value of a record that a rule of a step reads (THE RULES OF A STEP)."""
+    """The value of a record that a rule of a step reads (the rules of a step)."""
 
     INSTRUCTIONS = "instructions"
     MEMORY = "memory"
@@ -237,7 +237,7 @@ COMPILE_KIND = cost_budget.COMPILE_KIND
 LINK_KIND = cost_budget.LINK_KIND
 FIXTURE_KIND = cost_budget.FIXTURE_KIND
 TEST_KIND = cost_budget.TEST_KIND
-# The kinds of each rule of a step that this module judges from the records of the build (THE RULES OF A STEP).
+# The kinds of each rule of a step that this module judges from the records of the build (the rules of a step).
 STEP_KINDS: dict[str, dict[str, StepKind]] = {
     STEP_COST: {COMPILE_KIND: StepKind(cost_record.COMPILE, Quantity.INSTRUCTIONS)},
     STEP_MEMORY: {
@@ -245,22 +245,22 @@ STEP_KINDS: dict[str, dict[str, StepKind]] = {
         LINK_KIND: StepKind(cost_record.LINK, Quantity.MEMORY),
     },
 }
-# The kinds of each rule of a step that a step meter judges while it runs (THE KINDS OF A STEP METER).
+# The kinds of each rule of a step that a step meter judges while it runs (the kinds of a step meter).
 METER_KINDS: dict[str, tuple[str, ...]] = {STEP_COST: (FIXTURE_KIND, TEST_KIND), STEP_MEMORY: (TEST_KIND,)}
 OBJECT_SIZE = "object-size"
 # The two kinds of object-size: the largest function of an object, and the machine code of the object.
 FUNCTION_KIND = "function"
 OBJECT_KIND = "object"
 HEADER_ALONE = "header-alone"
-# The kinds of the items of each rule with a fixed set of kinds (THE KINDS).
+# The kinds of the items of each rule with a fixed set of kinds (the kinds).
 RULE_KINDS: dict[str, tuple[str, ...]] = {
     STEP_COST: (COMPILE_KIND, FIXTURE_KIND, TEST_KIND),
     STEP_MEMORY: (COMPILE_KIND, LINK_KIND, TEST_KIND),
     OBJECT_SIZE: (FUNCTION_KIND, OBJECT_KIND),
 }
-# The form of the item of a ledger row of each kind of a step meter: the name of a test or of a fixture (THE LEDGERS).
+# The form of the item of a ledger row of each kind of a step meter: the name of a test or of a fixture (the ledgers).
 NAMED_KINDS = frozenset({FIXTURE_KIND, TEST_KIND})
-# The kinds of each rule with a fixed set of kinds whose measure each build holds, which the lower reads (THE LOWER).
+# The kinds of each rule with a fixed set of kinds whose measure each build holds, which the lower reads (the lower).
 # The lower reads each layer of header-alone too.
 LOWERED_KINDS: dict[str, tuple[str, ...]] = {
     STEP_COST: (COMPILE_KIND,),
@@ -287,7 +287,7 @@ class Measured:
 
 @dataclass(frozen=True, slots=True)
 class LowerRequest:
-    """The rows that a lower names, by their items and at most one kind, and the reason of the cut (THE LOWER).
+    """The rows that a lower names, by their items and at most one kind, and the reason of the cut (the lower).
 
     An empty `kind` names each kind of the items.
     """
@@ -314,7 +314,7 @@ def input_error(rule_id: str, path: str, message: str, entity: str = "", line: i
 def budgets_of(
     context: BuildContext, rule_id: str
 ) -> tuple[dict[str, check_report.Budget], list[check_report.Finding]]:
-    """Return the limit of each kind of a rule, by the kind, and an error for each kind that does not agree (THE KINDS).
+    """Return the limit of each kind of a rule, by the kind, and an error for each kind that does not agree (the kinds).
 
     Complexity: linear in the kinds.
     """
@@ -474,7 +474,7 @@ def record_problems(
 
 
 def step_values(context: BuildContext, rule_id: str, kind: str, outputs: Sequence[Output]) -> Measured:
-    """Read the instructions or the peak memory of each step of one kind from its record (THE RULES OF A STEP).
+    """Read the instructions or the peak memory of each step of one kind from its record (the rules of a step).
 
     Complexity: one read of the record of each output.
 
@@ -552,7 +552,7 @@ def readable_names(names: Sequence[str]) -> tuple[tuple[str, str], ...]:
 
 
 def object_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]) -> Measured:
-    """Read the largest function and the machine code of each object, the two kinds of object-size (THE RULE).
+    """Read the largest function and the machine code of each object, the two kinds of object-size (the rule).
 
     Complexity: one read of the section headers and the symbols of each object, and one call of c++filt.
     """
@@ -615,7 +615,7 @@ def resolved_size(name: str, build: Path, sizes: dict[str, tuple[Path, int]]) ->
 
 
 def header_values(context: BuildContext, rule_id: str, outputs: Sequence[Output], layers: Collection[str]) -> Measured:
-    """Measure the bytes that each header includes alone, from the dependency list of its sentinel (THE RULE).
+    """Measure the bytes that each header includes alone, from the dependency list of its sentinel (the rule).
 
     `layers` gives the layers that the rule has a limit for, the kinds of the rule.  Complexity: linear in the files
     of the dependency lists, with one stat for each different file.
@@ -691,7 +691,7 @@ def measured_of(context: BuildContext, rule_id: str, kinds: Collection[str]) -> 
     """Measure each item of a rule, and give the errors of its inputs.
 
     `kinds` gives the kinds of the rule (budgets_of()).  The rule measures no output of the directory bench of the
-    build (assay.core.budget, THE SCOPE).
+    build (assay.core.budget, the scope).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -722,12 +722,12 @@ def measured_of(context: BuildContext, rule_id: str, kinds: Collection[str]) -> 
 
 
 def judged_outputs(outputs: Sequence[Output], build: Path) -> list[Output]:
-    """Return the outputs that the measured rules judge: each output outside the directory bench (THE INPUTS)."""
+    """Return the outputs that the measured rules judge: each output outside the directory bench (the inputs)."""
     return [output for output in outputs if cost_budget.is_judged(build_census.shown(output.path, build))]
 
 
 def ledger_forms(rule_id: str, kinds: Collection[str]) -> dict[str, str]:
-    """Return the form of the item of a ledger row of each kind of a rule (THE LEDGERS).
+    """Return the form of the item of a ledger row of each kind of a rule (the ledgers).
 
     A header of header-alone is a file of the tree, a test or a fixture is a name, and each other item is an output.
     """
@@ -752,7 +752,7 @@ def rows_text(forms: Mapping[str, str]) -> str:
 def judged_values(
     rule_id: str, budgets: Mapping[str, check_report.Budget], measured: Measured, rows: cost_budget.Rows
 ) -> list[check_report.Finding]:
-    """Judge each value against the limit of its kind and the ledger rows that judge the build (THE JUDGE).
+    """Judge each value against the limit of its kind and the ledger rows that judge the build (the judge).
 
     Complexity: linear in the values.
     """
@@ -766,7 +766,7 @@ def judged_values(
 
 
 def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Finding]:
-    """Give the findings of one rule of a step, of an object or of header-alone (THE JUDGE).
+    """Give the findings of one rule of a step, of an object or of header-alone (the judge).
 
     Raises:
         NotApplicable: If the call gives no build directory, or the rule does not apply to the build
@@ -780,7 +780,7 @@ def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Fi
 
 
 def ledger_rows(context: BuildContext, rule_id: str, kinds: Collection[str]) -> cost_budget.Rows:
-    """Return the ledger rows of a rule, with each problem of the ledger as an error of the kind input (THE LEDGERS)."""
+    """Return the ledger rows of a rule, with each problem of the ledger as an error of the kind input (the ledgers)."""
     path = rule_ledger.ledger_path(rule_id, context.root)
     rows = cost_budget.read_rows(rule_id, ledger_forms(rule_id, kinds), path)
     return rows.replaced(problems=tuple(replace(problem, kind="input") for problem in rows.problems))
@@ -791,7 +791,7 @@ def budget_written(
 ) -> rule_ledger.Ledger:
     """Return the ledger of a rule with a row for each item of the build that no row keeps, and no stale row.
 
-    THE LEDGERS gives the rows, and THE PRUNE gives the rows that the write removes or lowers.
+    The ledgers give the rows, and the prune gives the rows that the write removes or lowers.
 
     Raises:
         NotApplicable: If the call gives no build directory, or the rule does not apply to the build
@@ -821,7 +821,7 @@ def budget_written(
 def object_sources(item: str, root: Path, build: Path) -> tuple[Path, ...]:
     """Return the two places of the source of the object of a compile job: in the source tree and in the build directory.
 
-    THE PRUNE gives the object path.  An item of a different shape gives no place.
+    The prune gives the object path.  An item of a different shape gives no place.
 
     Args:
         item: The object relative to the build directory, with '/' between its parts
@@ -854,7 +854,7 @@ def pruned_ledger(
 ) -> rule_ledger.Ledger:
     """Return the ledger with no row that keeps nothing in each build, and each row of header-alone at most its measure.
 
-    THE PRUNE gives the rows.  Complexity: linear in the rows, the measures and the compile jobs, with at most two stats
+    The prune gives the rows.  Complexity: linear in the rows, the measures and the compile jobs, with at most two stats
     for each row.
 
     Raises:
@@ -892,7 +892,7 @@ def pruned_ledger(
 
 
 def is_deleted_source(root: Path, source: Path) -> bool:
-    """Tell if the git history of a tree knows a source path that the tree does not hold (THE PRUNE).
+    """Tell if the git history of a tree knows a source path that the tree does not hold (the prune).
 
     A git that cannot answer, such as in a tree with no repository, gives False, so the row stays.  Complexity: one
     run of `git log` with the path.
@@ -914,7 +914,7 @@ def lower_values(
     budgets: Mapping[str, check_report.Budget],
     wanted: Collection[tuple[str, str]],
 ) -> dict[tuple[str, str], float]:
-    """Return the measure of each wanted kind and item that the build holds, also of a ccache hit (THE LOWER).
+    """Return the measure of each wanted kind and item that the build holds, also of a ccache hit (the lower).
 
     A compile or a link gives the cost of the step that made its output, which a record of a hit keeps from the cost
     store.  Complexity: one read of the record of each output of a wanted kind of a step, one read of each named
@@ -977,7 +977,7 @@ def lower_values(
 def lowered_ledger(
     rule_id: str, contexts: Sequence[BuildContext], ledger: rule_ledger.Ledger, request: LowerRequest
 ) -> tuple[rule_ledger.Ledger, list[str]]:
-    """Return the ledger with each named row at the largest measure of its item over the builds (THE LOWER).
+    """Return the ledger with each named row at the largest measure of its item over the builds (the lower).
 
     Complexity: linear in the rows, and one measure of the named items in each build.
 
@@ -991,7 +991,7 @@ def lowered_ledger(
         The new ledger, and one line for each named row with its old and its new value
 
     Raises:
-        rule_ledger.LedgerError: If a named row cannot be lowered, as THE LOWER tells
+        rule_ledger.LedgerError: If a named row cannot be lowered, as the lower tells
     """
     budgets, missing = budgets_of(contexts[0], rule_id)
     if missing:
@@ -1125,8 +1125,8 @@ def judge(rule: rule_registry.Rule, context: BuildContext) -> list[check_report.
     """Return the findings of a rule on the planted build of a plant, judged against the ledger of the copy.
 
     The witness calls this function (module_judged() of assay.guard.engines.meta.runner).  For a rule of a step, the
-    findings also hold the findings of the judge of each step meter of METER_KINDS on the plant (THE KINDS OF A STEP
-    METER).  Complexity: one run of the rule and of each judge of a step meter.
+    findings also hold the findings of the judge of each step meter of METER_KINDS on the plant (the kinds of a step
+    meter).  Complexity: one run of the rule and of each judge of a step meter.
 
     Raises:
         NotApplicable: If the rule does not apply to the planted build

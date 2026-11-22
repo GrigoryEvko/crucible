@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit gives the producer end of an SPSC channel a protocol of its own, in
 // a probe region that the rule specialization-home admits.  The two ends of

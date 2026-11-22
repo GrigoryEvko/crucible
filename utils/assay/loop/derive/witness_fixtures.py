@@ -3,7 +3,7 @@
 usage: loop derive witness-fixtures --write
        loop derive witness-fixtures --check
 
-THE FIXTURES
+Fixtures
     Each witness row of utils/rule-table.txt (assay.core.ruletable) names a
     class of the base that attests to a fact that it cannot see.  The row also
     gives the header of the class, the refusal of the compiler and the
@@ -20,7 +20,7 @@ THE FIXTURES
     string(JSON).  It registers one negative compile test for each fixture
     record, and it writes witness_roster.h from the records of the rows.
 
-THE DIAGNOSTICS
+Diagnostics
     A fixture spells its construction with curly brackets, `T{args}`.  GCC
     writes the constructor that it refuses with parentheses,
     `T(args) [with ...]`.  The pattern `\\bT\\(` then matches a text of the
@@ -28,7 +28,7 @@ THE DIAGNOSTICS
     of each fixture.  The first diagnostic is the text of the refusal of the
     row.
 
-THE MODES
+Modes
     --write   write each fixture and the manifest, and remove each fixture of
               no row.  A file changes only when its bytes change.
     --check   compare each fixture and the manifest with the rows, and write
@@ -111,7 +111,7 @@ def key_of(name: str) -> str:
 
 
 def slug_of(name: str) -> str:
-    """Return the slug of a class name (THE FIXTURES).  Complexity: linear in the length of NAME."""
+    """Return the slug of a class name (the fixtures).  Complexity: linear in the length of NAME."""
     parts: list[str] = []
     is_run = False
     for character in key_of(name).lower():
@@ -170,7 +170,7 @@ int main() {{
 
 
 def manifest_text(witnesses: tuple[ruletable.Witness, ...]) -> str:
-    """Return the manifest of the rows (THE FIXTURES): the fixture records sorted by name, and then each row."""
+    """Return the manifest of the rows (the fixtures): the fixture records sorted by name, and then each row."""
     fixtures = sorted(
         (
             {
@@ -231,7 +231,7 @@ def report_errors(errors: Sequence[check_report.Finding]) -> None:
 
 
 def written(root: Path) -> ExitCode:
-    """Write each fixture and the manifest, and remove each fixture of no row (THE MODES)."""
+    """Write each fixture and the manifest, and remove each fixture of no row (the modes)."""
     derivation = derive(root)
     if derivation.errors:
         report_errors(derivation.errors)
@@ -290,7 +290,7 @@ def drift(root: Path) -> list[check_report.Finding]:
 
 
 def checked(root: Path) -> ExitCode:
-    """Compare each fixture and the manifest with the rows, and write nothing (THE MODES)."""
+    """Compare each fixture and the manifest with the rows, and write nothing (the modes)."""
     errors = drift(root)
     if errors:
         report_errors(errors)
@@ -300,7 +300,7 @@ def checked(root: Path) -> ExitCode:
 
 
 def main(argv: list[str]) -> int:
-    """Run one mode (THE MODES).
+    """Run one mode (the modes).
 
     Args:
         argv: The words after `loop derive witness-fixtures`

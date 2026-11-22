@@ -1,7 +1,7 @@
 #pragma once
 
 // The layout of an allocation: a count of bytes and an alignment, as one
-// checked value (THE LAYOUT).
+// checked value (the layout).
 //
 //   Alignment                      a count of bytes that is a power of two
 //   alignment_of<T>()              the alignment of the type T
@@ -18,7 +18,7 @@
 //   layout.bytes(), layout.alignment()
 //
 //   SizeClass                      one of the 64 slot sizes of the allocator
-//                                  of the base, 1 to 64 (THE SIZE CLASSES)
+//                                  of the base, 1 to 64 (the size classes)
 //   slot_bytes(size_class)         the bytes of one slot of the class
 //   class_for(layout)              the smallest class whose slot holds the
 //                                  bytes and is a whole count of the
@@ -27,7 +27,7 @@
 //   slab_slots(size_class)         the slots of one slab of the class
 //   bin_capacity(size_class)       the slots that the bin of a thread holds
 //
-// THE LAYOUT
+// Layout
 //   The allocation door of foundation/core/Heap.h takes one Layout.  So a
 //   count of bytes and an alignment cannot swap at a call, and no call gives
 //   the door a request that it refuses.  A Layout holds these facts:
@@ -48,13 +48,13 @@
 //   builds no Layout from bytes, and the checked lifetime start refuses it
 //   (test/fixy/test_forgeable_proofs.cpp).
 //
-// THE ALIGNMENT
+// Alignment
 //   Alignment is a scoped enumeration over std::size_t.  It passes in a
 //   register, and no number converts to it.  Its value names a power of two
 //   by its contract, but a cast can name each number.  So mint_layout tests
 //   the power again, and only a Layout holds the fact.
 //
-// THE SIZE CLASSES
+// Size classes
 //   Classes 1 to 8 hold 16 to 128 bytes in steps of 16.  Above 128 bytes each
 //   doubling has four classes, at 5/4, 6/4, 7/4 and 2 times the doubling
 //   below, to 2 MiB in class 64.  So a slot above 128 bytes holds less than a
@@ -97,7 +97,7 @@ namespace foundation::alloc {
 // allocator of the C library gives, which is the maximum of std::ptrdiff_t.
 inline constexpr std::size_t kMaxLayoutBytes = static_cast<std::size_t>(__PTRDIFF_MAX__);
 
-// A count of bytes that is a power of two (THE ALIGNMENT).
+// A count of bytes that is a power of two (the alignment).
 enum class Alignment : std::size_t {
 };
 
@@ -131,7 +131,7 @@ mint_alignment(::foundation::core::ByteCount bytes) noexcept {
     return ::foundation::core::ByteCount{static_cast<std::size_t>(alignment)};
 }
 
-// A count of bytes above zero at an Alignment (THE LAYOUT).
+// A count of bytes above zero at an Alignment (the layout).
 //
 // A Result of a Layout names a complete Layout, so the two doors that give
 // one deduce their return type, and their bodies come after the class.
@@ -145,7 +145,7 @@ public:
 
     // The layout of count objects of T, a Result<Layout, LayoutError>.  Zero
     // objects have no bytes, and a count whose bytes break the last fact of
-    // THE LAYOUT is too large.
+    // the layout is too large.
     template <LayoutType T>
     [[nodiscard]] static constexpr auto of_array(::foundation::core::ElementCount count) noexcept;
 
@@ -161,7 +161,7 @@ public:
     // The layout of storage at an alignment of one that holds a block of this
     // layout at its alignment: the bytes rounded up to the alignment, and
     // alignment - 1 bytes more, before the first address at the alignment.
-    // The last fact of THE LAYOUT holds the sum, so no check runs.
+    // The last fact of the layout holds the sum, so no check runs.
     // Complexity: O(1).
     [[nodiscard]] constexpr Layout unaligned_storage() const noexcept {
         auto const step = static_cast<std::size_t>(alignment_);
@@ -198,7 +198,7 @@ constexpr auto Layout::of_array(::foundation::core::ElementCount count) noexcept
 }
 
 // The layout of bytes bytes at the alignment, a LayoutResult: the layout, or
-// the first fact of THE LAYOUT that the request breaks.
+// the first fact of the layout that the request breaks.
 [[nodiscard]] constexpr auto mint_layout(::foundation::core::ByteCount bytes, Alignment alignment) noexcept {
     auto const step = static_cast<std::size_t>(alignment);
     if (!::foundation::core::has_single_bit(step)) {
@@ -209,7 +209,7 @@ constexpr auto Layout::of_array(::foundation::core::ElementCount count) noexcept
     // and zero marks a round-up past std::size_t.
     std::size_t const rounded = ::foundation::core::align_up(bytes.raw(), step).value_or(0);
     if (rounded == 0) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
-    // The last fact of THE LAYOUT: the rounded bytes and alignment - 1 more.
+    // The last fact of the layout: the rounded bytes and alignment - 1 more.
     // Each power of two of std::size_t is at most kMaxLayoutBytes + 1, so the
     // subtraction does not wrap.
     if (rounded > kMaxLayoutBytes - (step - 1)) return LayoutResult{::foundation::core::err(LayoutError::too_large)};
@@ -218,8 +218,8 @@ constexpr auto Layout::of_array(::foundation::core::ElementCount count) noexcept
 
 // ── The size classes ───────────────────────────────────────────────────
 
-// One of the 64 slot sizes of the allocator of the base, 1 to 64 (THE SIZE
-// CLASSES).  A value outside 1 to 64 names no class, and each query below
+// One of the 64 slot sizes of the allocator of the base, 1 to 64 (the size
+// classes).  A value outside 1 to 64 names no class, and each query below
 // refuses it.
 enum class SizeClass : std::uint8_t {
 };
@@ -247,7 +247,7 @@ inline constexpr std::uint32_t kSmallBinSlots = 128;
 inline constexpr std::size_t kBinBytes = std::size_t{16} << 10;
 inline constexpr std::uint32_t kFewestBinSlots = 2;
 
-// The kind of the slab of a class (THE SIZE CLASSES).
+// The kind of the slab of a class (the size classes).
 enum class SlabKind : std::uint8_t {
     small,
     medium,
@@ -272,7 +272,7 @@ enum class SlabKind : std::uint8_t {
 namespace detail {
 
 // The smallest class whose slot holds bytes bytes, which are above zero and
-// at most kLargestSlotBytes (THE SIZE CLASSES).  Complexity: O(1), one
+// at most kLargestSlotBytes (the size classes).  Complexity: O(1), one
 // compare.
 [[nodiscard]] constexpr SizeClass class_of_bytes_(std::size_t bytes) noexcept {
     if (bytes <= kSmallClassBytes) return SizeClass{static_cast<std::uint8_t>((bytes + kSlotStepBytes - 1) >> 4)};
@@ -285,7 +285,7 @@ namespace detail {
 
 // The smallest class whose slot holds the bytes of the layout and is a whole
 // count of its alignment, or none for a layout past kLargestSlotBytes or for
-// an alignment past it (THE SIZE CLASSES).  Complexity: O(1), at most four
+// an alignment past it (the size classes).  Complexity: O(1), at most four
 // steps for an alignment above 16.
 [[nodiscard]] constexpr ::foundation::core::Option<SizeClass> class_for(Layout layout) noexcept {
     std::size_t const bytes = layout.bytes().raw();
@@ -328,7 +328,7 @@ namespace detail {
     ::foundation::core::unreachable();
 }
 
-// The slots that the bin of a thread holds for the class (THE SIZE CLASSES).
+// The slots that the bin of a thread holds for the class (the size classes).
 // Complexity: O(1), one division.
 [[nodiscard]] constexpr std::uint32_t bin_capacity(SizeClass size_class) noexcept {
     std::size_t const slot = slot_bytes(size_class).raw();

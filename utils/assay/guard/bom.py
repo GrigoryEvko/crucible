@@ -2,13 +2,13 @@
 
 usage: guard bom --build-dir DIR [--limit N] ARTIFACT
 
-THE ARTIFACT
+Artifact
     ARTIFACT is the name of a target of the code model of the build, such as
     foundation or test_arena.  It can also be the path of the file of the
     target.  The target is a static library, an executable, a shared library
     or a module.
 
-THE LAYERS
+Layers
     The command prints five layers.  A layer that cannot be read gives one
     line with its problem, and the other layers stay:
       1. imports         each name that the artifact gets from a different
@@ -16,19 +16,19 @@ THE LAYERS
                          artifact-symbols, with its owner, its family and its
                          mark.  Then the line of the source of the first
                          record of the library code that names the import
-                         (assay.readers.sections, THE SYMBOLS OF THE LIBRARY
-                         CODE).  For a linked file, each library of
+                         (assay.readers.sections, the symbols of the library
+                         code).  For a linked file, each library of
                          DT_NEEDED, and each undefined dynamic symbol as
                          SYMBOL@VERSION with the file of its version
       2. library code    the exclusive bytes of each class of
-                         assay.readers.library_bytes (THE MEASURE), and the
+                         assay.readers.library_bytes (the measure), and the
                          largest library bodies
       3. compiler calls  each import that GCC adds to the code itself
                          (COMPILER_MADE of artifact_symbols), and each
                          import of a function of the support library of
                          GCC.  A linked file also gives each member of the
                          support library that the map of its link names
-                         (THE INPUTS of assay.readers.linkmap)
+                         (the inputs of assay.readers.linkmap)
       4. link facts      each link fact of the rule artifacts of a linked
                          file.  A static library has no link, and the layer
                          gives its members and its COMDAT groups
@@ -40,7 +40,7 @@ THE LAYERS
     --limit N gives the maximum lines of each long list.  The default is
     LIMIT.
 
-THE EXIT
+Exit
     0 when the command prints the layers, 1 when the build or the artifact
     cannot be read, and 2 on a usage error.
 
@@ -61,7 +61,7 @@ from assay.readers import dwarf, elf, library_bytes, linkmap, sections
 LIMIT = 20
 INDENT = "     "
 DYNAMIC = "dynamic"
-# The problems that end the read of one layer, and the other layers stay (THE LAYERS).
+# The problems that end the read of one layer, and the other layers stay (the layers).
 LAYER_PROBLEMS = (
     runner.BuildError,
     runner.NotApplicable,
@@ -118,7 +118,7 @@ class Imports:
 
 
 def resolve(context: runner.ElfContext, wanted: str) -> Artifact | None:
-    """Return the target of a name or of a path of the build, or None (THE ARTIFACT).
+    """Return the target of a name or of a path of the build, or None (the artifact).
 
     Complexity: linear in the targets of the code model.
 
@@ -206,7 +206,7 @@ def linked_imports(artifact: Artifact) -> Imports:
 
 
 def read_imports(context: runner.ElfContext, artifact: Artifact) -> Imports:
-    """Return the imports of the artifact (THE LAYERS, layer 1).
+    """Return the imports of the artifact (the layers, layer 1).
 
     Raises:
         runner.NotApplicable: If the build has not made each static library of the root
@@ -350,7 +350,7 @@ def source_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> 
 
 
 def bill(context: runner.ElfContext, artifact: Artifact, limit: int) -> list[str]:
-    """Return the lines of the five layers of an artifact (THE LAYERS).  A layer that cannot be read gives one line."""
+    """Return the lines of the five layers of an artifact (the layers).  A layer that cannot be read gives one line."""
     kind = "static library" if artifact.is_library else artifact.kind.lower().replace("_", " ")
     lines = [f"guard bom: {build_census.shown(artifact.path, context.root)}, the {kind} {artifact.name}"]
     try:
@@ -378,7 +378,7 @@ def bill(context: runner.ElfContext, artifact: Artifact, limit: int) -> list[str
 
 
 def main(argv: list[str]) -> int:
-    """Print the five layers of one artifact of a build (THE EXIT).
+    """Print the five layers of one artifact of a build (the exit).
 
     Returns:
         0 when the command prints the layers, 1 when the build or the artifact cannot be read, 2 on a usage error

@@ -27,7 +27,7 @@ REPORT = {
 
 
 def read_cases(expect: testing.Expect) -> None:
-    """Hold the reports of the last JSON tail of an output (THE OUTPUT, THE REPORT)."""
+    """Hold the reports of the last JSON tail of an output (the output, the report)."""
     tail = json.dumps([REPORT, dict(REPORT, name="try_pop", cv=0.07)])
     output = f"try_push: p50=7 ns\n{bench_reader.MARKER}\n[]\nmore text\n{bench_reader.MARKER}\n{tail}\n"
     found = bench_reader.reports(output) or ()

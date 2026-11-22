@@ -1,6 +1,6 @@
 """The test of the rule static-tls (assay.guard.engines.elf.static_tls).
 
-THE CASES
+Cases
     The cases hold these parts of the rule:
       * The base thread-local variables of one member
       * The TLS facts of one shared library, and the library that another
@@ -11,7 +11,7 @@ THE CASES
     The compile cases use the compiler that ASSAY_TEST_CXX names.  The
     registration of the test gives the compiler of the build.  Each link of
     a shared library uses the pinned mold (assay.guard.engines.elf.runner,
-    THE PLANTS).
+    the plants).
 """
 
 from collections.abc import Callable, Iterable
@@ -155,7 +155,7 @@ class Scratch:
 
 
 def member_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold the bytes and the names of the base thread-local variables of one member (THE MEMBERS)."""
+    """Hold the bytes and the names of the base thread-local variables of one member (the members)."""
 
     def read(unit: str, is_base_library: bool) -> tuple[int, tuple[str, ...]]:
         """Return the base thread-local variables of the object of one unit."""
@@ -215,7 +215,7 @@ def library_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold the judge of the items against the limit and the rows (THE JUDGE, THE ERRORS)."""
+    """Hold the judge of the items against the limit and the rows (the judge, the errors)."""
     scratch.archive("foundation", ["counter", "plain"])
     scratch.archive("crucible", ["cache", "header", "plain"])
     found = static_tls.judge(planted_rule(), scratch.planted())
@@ -279,7 +279,7 @@ def judge_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
-    """Hold the write of a build: a new row only with a reason, and no removed row (THE LEDGER)."""
+    """Hold the write of a build: a new row only with a reason, and no removed row (the ledger)."""
     rule = planted_rule()
     scratch.archive("foundation", ["counter", "plain"])
     scratch.archive("crucible", ["header", "plain"])
@@ -318,7 +318,7 @@ def write_cases(expect: testing.Expect, scratch: Scratch) -> None:
 
 
 def written_cases(expect: testing.Expect) -> None:
-    """Hold the ledger that written() gives from the items of a build, with no build (THE LEDGER)."""
+    """Hold the ledger that written() gives from the items of a build, with no build (the ledger)."""
     budget = static_tls.budget_of(planted_rule())
     item = "libcrucible.a(header.cpp.o)"
     gone = rule_ledger.Key("@build/libfixy.a(old.cpp.o)", "", "")

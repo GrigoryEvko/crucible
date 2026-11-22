@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The view of a relation reads the cells that the walk keeps in the
 // variable template relation_cells_at, and a translation unit can

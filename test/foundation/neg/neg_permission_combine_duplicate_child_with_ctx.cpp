@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The ctx-bound form of the binary combine takes the same distinctness
 // check as the form with no context.  The context here admits the rows of

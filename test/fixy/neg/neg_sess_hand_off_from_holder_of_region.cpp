@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A session that holds the region Region sends an endpoint whose set holds
 // Region too.  The endpoint keeps the token of Region in its slots, and the

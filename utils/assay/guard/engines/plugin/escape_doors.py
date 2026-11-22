@@ -1,12 +1,12 @@
 """escape-doors — the surface of a base class hands out a raw reference or pointer only through an admitted door.
 
-THE RULE
+Rule
     fixy is safe by default.  A raw reference or pointer goes out of a wrapper
     only through an explicit door, and the compiler checks the types of the
     door.  The quarantine plugin reads each public function of a base header
     that returns a reference or a raw pointer, or can through decltype(auto),
     a dependent decltype or a member type of a template.
-    These are the doors (utils/tools/quarantine/declaration.cpp, THE RULE
+    These are the doors (utils/tools/quarantine/declaration.cpp, the rule
     escape-doors):
       * An accessor is no finding: an operator other than a conversion, and a
         getter with a name of the list kAccessors of the plugin
@@ -19,7 +19,7 @@ THE RULE
     with an underscore are no door.  A public member whose name ends with an
     underscore is a door, because a caller names it through its class.
 
-THE SURFACE
+Surface
     A caller names the public members of a class, of each public base at each
     depth, and the targets of each public using-declaration.  A class guards
     its storage when it is no aggregate, or when it declares a public member
@@ -32,10 +32,10 @@ THE SURFACE
       * unread-surface: a public base, or the scope of a public
         using-declaration, whose members the rule cannot read, such as a
         template parameter.
-    The plugin gives each case (utils/tools/quarantine/declaration.cpp, THE
-    SURFACE).
+    The plugin gives each case (utils/tools/quarantine/declaration.cpp, the
+    surface).
 
-THE LEDGER
+Ledger
     A row of utils/ledgers/escape-doors.txt admits one door:
     `PATH | KIND | admit | ENTITY | REASON`.  The entity is the full name of
     the function, with the types of its parameters and its qualifiers.  Each

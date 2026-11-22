@@ -66,7 +66,7 @@ static_assert(std::is_same_v<decltype(std::declval<Interleaved const&>().nodes()
 
 namespace fixy::detail::numa_mask_invariants {
 
-// THE NODE MASK: a sentinel node is no member.
+// The node mask: a sentinel node is no member.
 [[nodiscard]] consteval bool sentinel_insert_is_refused() {
     NumaNodeMask mask{};
     bool const is_refused = mask.insert(NumaNodeId::None).is_err() && mask.insert(NumaNodeId::Any).is_err();
@@ -96,7 +96,7 @@ static_assert(nodes_of("0") == nodes(0) && nodes_of("0-1") == nodes(0, 1));
 static_assert(nodes_of("0-1,4\n") == nodes(0, 1, 4) && nodes_of("2,0-1") == nodes(0, 1, 2));
 static_assert(nodes_of("253") == nodes(253));
 
-// THE THREAD POLICY: the words that the read names, and the policies that
+// The thread policy: the words that the read names, and the policies that
 // the set takes.
 using ::fixy::numa::is_settable_thread_policy;
 using ::fixy::numa::thread_policy_kind_of;

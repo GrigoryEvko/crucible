@@ -10,7 +10,7 @@ utils/assay/core/ledger.py only to read or write a ledger that exists.  The
 compiler meter of a ccache miss imports the cost store and the record
 module to write the cost of its compiler run.
 
-MEASURE
+Measure
     measure(command, environment, cpu_limit_s) runs a command with the
     standard streams of the caller, waits for it, and returns a Measurement:
     the status, the user and system CPU time, the wall time and the peak
@@ -25,11 +25,11 @@ MEASURE
     for it.  With a CPU limit, each process of the command gets
     RLIMIT_CPU of that many seconds, so a process that runs away ends on
     SIGKILL and does not run for minutes.  On a CI runner, limit_cpu() sets
-    no limit (A CI RUNNER below tells why).  With count_instructions, the
-    measurement also holds the user instructions of the command (THE
-    INSTRUCTION COUNT below).
+    no limit (a CI runner below tells why).  With count_instructions, the
+    measurement also holds the user instructions of the command (the
+    instruction count below).
 
-THE CPU LIMIT
+The CPU limit
     RLIMIT_CPU stops a process on the CPU time that the kernel charges to it
     at each tick (the process clock CPUCLOCK_PROF).  wait4 gives the exact
     CPU time of the scheduler, and at a high load that time can be lower.  On
@@ -42,7 +42,7 @@ THE CPU LIMIT
     failed with at least LIMIT_CLOCK_PART of its CPU limit counts as a run
     that the limit stopped (is_at_cpu_limit()).
 
-A TRACED RUN
+A traced run
     With a supervisor, measure() starts the command with supervisor.start(),
     and with no spawn.  It calls supervisor.serve() until the command ends,
     waits for the command, reads the counter, and calls supervisor.finish().
@@ -51,7 +51,7 @@ A TRACED RUN
     the wait.  The answers to the processes that outlive the command are then
     not in the measure.
 
-THE OWN RUN
+The own run
     A process that is a test itself, such as the fixture driver `loop
     fixture`, measures its own run: start_self() at the start of its work,
     and measure_self() at its end.  The CPU time and the peak memory of
@@ -72,7 +72,7 @@ THE OWN RUN
     measure_self() reads it.  The count does not hold the start of the
     interpreter and the imports before the call.
 
-THE INSTRUCTION COUNT
+The instruction count
     The CPU time of one compile rises with the load of the host, because two
     threads share each core.  The number of user instructions does not: four
     compiles of test/test_arena.cpp at a load of 1,030 on the build host gave
@@ -95,7 +95,7 @@ THE INSTRUCTION COUNT
     when the environment sets CRUCIBLE_COUNT_INSTRUCTIONS to 0.  A count is
     exact or absent.
 
-A COMPILE THROUGH CCACHE
+A compile through ccache
     On a miss, ccache runs the preprocessor and then the compiler.  On a hit,
     it runs neither.  The count of the full step then holds the preprocessor
     run and the work of ccache: test/test_trace_ring_pop_batch.cpp ran
@@ -111,7 +111,7 @@ A COMPILE THROUGH CCACHE
     of its own, adds one line to the file, and exits as the compiler exited.
     read_compiler_count() reads the file.  After a compiler run with the
     status 0, the meter also writes the cost of the run into the cost store,
-    before ccache stores the object (assay.core.cost_store, THE ORDER).  The
+    before ccache stores the object (assay.core.cost_store, the order).  The
     launcher gives it the inputs of the key in the variable KEY_ENV of that
     module.  The meter costs approximately 57 M
     instructions and 12 ms of CPU time for each miss.  ccache splits the
@@ -123,7 +123,7 @@ A COMPILE THROUGH CCACHE
     that `loop derive walk-units --measure` measures run the compiler
     directly, so their counts are counts of the compiler run too.
 
-A CI RUNNER
+A CI runner
     The hard stops of the steps apply to the build host of the tree.  A
     GitHub runner has 4 slower vCPUs and 16 GB, and it runs two or three jobs
     at a time.  A step there can pass a hard stop with no defect in the tree.
@@ -133,7 +133,7 @@ A CI RUNNER
     measured rule judges a time, so an error of a measured rule stays an
     error on a runner.
 
-THE JOBSERVER OF A TEST
+The jobserver of a test
     ctest gives each test the variable MAKEFLAGS of the GNU make jobserver
     that `loop test` operates (assay.core.jobserver).  `loop test-step` gives
     a test a clean environment, with no MAKEFLAGS.  ninja and make in a test
@@ -144,12 +144,12 @@ THE JOBSERVER OF A TEST
     hold it.  The launcher gives CALL_PROFILE_ENV and LINES_ENV to the test
     by the same rule (assay.core.calls).
 
-THE RECORD
+The record
     A launcher writes the record of each step with assay.core.record, from
     its Measurement (record.measured()).  That module holds the format of
     each record and its one reader and writer.
 
-THE REGISTRY AND THE LEDGERS
+The registry and the ledgers
     budget_rows() reads the limits of some measured rules of
     utils/registry.txt, through the rows reader of assay.core.rows, which
     imports no module.  A rule has one limit, or one limit for each kind of
@@ -160,7 +160,7 @@ THE REGISTRY AND THE LEDGERS
     read_ledger_rows() reads the ledger of a measured rule of the policy max,
     utils/ledgers/RULE.txt, through assay.core.ledger.  A row keeps one item
     over the limit of its kind, and the rows judge each build of the tree
-    (assay.core.budget, THE VERDICT and THE ROWS):
+    (assay.core.budget, the verdict and the rows):
 
         PATH | KIND | VALUE | ENTITY | REASON
 
@@ -177,7 +177,7 @@ THE REGISTRY AND THE LEDGERS
     pays the import of assay.core.ledger only when a ledger exists.
     write_ledger_rows() writes the rows of such a ledger again.
 
-THE MEMO OF THE ROWS
+The memo of the rows
     The import of assay.core.ledger and the parse of the registry cost about
     60 ms.  The launcher of each test and the fixture driver read three
     ledgers, and in the gate of a1df30f04 each of 10,890 processes paid that
@@ -215,7 +215,7 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     class Supervisor(Protocol):
-        """The start of a command that a supervisor monitors, such as the tracer of assay.loop.tracer (A TRACED RUN)."""
+        """The start of a command that a supervisor monitors, such as the tracer of assay.loop.tracer (a traced run)."""
 
         def start(self, command: list[str], environment: Mapping[str, str]) -> int:
             """Start the command, and return its process ID."""
@@ -232,11 +232,11 @@ CONFIGURATION_FILE = "build-configuration.txt"
 KB_PER_GB = 1024 * 1024
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
 # The part of its CPU limit that a failed run uses at least when the limit stopped it, as the exact CPU time of wait4
-# gives it (THE CPU LIMIT).  The lowest part that the build host gave was 0.844 at a load of 210.
+# gives it (the CPU limit).  The lowest part that the build host gave was 0.844 at a load of 210.
 LIMIT_CLOCK_PART = 0.5
 CI_DEMOTION =("The step demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the hard "
                "stops apply to the build host, and a CI runner is slower")
-# The CPU time and the run-queue wait of this task since its fork, in nanoseconds (THE OWN RUN).
+# The CPU time and the run-queue wait of this task since its fork, in nanoseconds (the own run).
 SCHEDSTAT_FILE = "/proc/self/schedstat"
 # CRUCIBLE_COUNT_INSTRUCTIONS=0 opens no instruction counter, as on a host with no counter.
 INSTRUCTIONS_ENV = "CRUCIBLE_COUNT_INSTRUCTIONS"
@@ -252,22 +252,22 @@ PERF_COUNT_HW_INSTRUCTIONS = 1
 PERF_READ_TIMES = 0x1 | 0x2
 # disabled, inherit, exclude_kernel, exclude_hv, enable_on_exec.
 PERF_ATTR_FLAGS = (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 12)
-# inherit, exclude_kernel, exclude_hv: a counter of this process from the open on, and of its new processes (THE OWN
-# RUN).
+# inherit, exclude_kernel, exclude_hv: a counter of this process from the open on, and of its new processes (the own
+# run).
 PERF_OWN_FLAGS = (1 << 1) | (1 << 5) | (1 << 6)
 PERF_FLAG_FD_CLOEXEC = 8
 # The variable that names the file of the counts of the compiler runs of one ccache call, the suffix of that file
-# beside the object, and the line of a run whose count is not exact (A COMPILE THROUGH CCACHE).
+# beside the object, and the line of a run whose count is not exact (a compile through ccache).
 COMPILER_COUNT_ENV = "CRUCIBLE_COMPILER_COUNT"
 COMPILER_COUNT_SUFFIX = ".compiler-count"
 INEXACT_COUNT = "-"
 CCACHE_PREFIX_ENV = "CCACHE_PREFIX"
-# The variable of the GNU make jobserver, and the variable that gives its value to a test (THE JOBSERVER OF A TEST).
+# The variable of the GNU make jobserver, and the variable that gives its value to a test (the jobserver of a test).
 MAKEFLAGS_ENV = "MAKEFLAGS"
 TEST_JOBSERVER_ENV = "CRUCIBLE_TEST_MAKEFLAGS"
-# The directory of the call profiles of a diagnostic run (THE RECORD of assay.core.calls).
+# The directory of the call profiles of a diagnostic run (the record of assay.core.calls).
 CALL_PROFILE_ENV = "CRUCIBLE_CALL_PROFILE"
-# The variable that selects the profile of the lines, and not cProfile (THE LINES of assay.core.calls).
+# The variable that selects the profile of the lines, and not cProfile (the lines of assay.core.calls).
 LINES_ENV = "CRUCIBLE_CALL_PROFILE_LINES"
 # The directory utils.  This module is utils/assay/core/meter.py.  It calculates the paths with os.path and not with
 # assay.core.paths, because each compile and each link imports it, and pathlib costs an import.
@@ -276,22 +276,22 @@ UTILS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 LOOP_MASTER = os.path.join(UTILS, "bin", "loop")
 # The directory of the ledgers of the rules, utils/ledgers (assay.core.ledger).
 LEDGER_DIRECTORY = os.path.join(UTILS, "ledgers")
-# The prefix of a PATH cell that names a file of the build directory (assay.core.ledger, THE FILE).
+# The prefix of a PATH cell that names a file of the build directory (assay.core.ledger, the file).
 BUILD_PATH_PREFIX = "@build/"
-# The cache of the rows of the ledgers of the measured rules, and the format of an entry (THE MEMO OF THE ROWS).
+# The cache of the rows of the ledgers of the measured rules, and the format of an entry (the memo of the rows).
 ROWS_CACHE = "ledger-rows"
 ROWS_FORMAT = 3
-# The period in which a change of an input of the parse makes read_ledger_rows() write no entry (THE MEMO OF THE ROWS).
+# The period in which a change of an input of the parse makes read_ledger_rows() write no entry (the memo of the rows).
 ROWS_SETTLE_NS = 50_000_000
-# The modules of this directory that make the rows of a ledger from its text (THE MEMO OF THE ROWS).
+# The modules of this directory that make the rows of a ledger from its text (the memo of the rows).
 ROWS_MODULES = ("meter.py", "ledger.py", "rows.py", "registry.py", "paths.py")
-# The forms of the item of a row of a ledger of a measured rule (THE REGISTRY AND THE LEDGERS), and the PATH cell and
+# The forms of the item of a row of a ledger of a measured rule (the registry and the ledgers), and the PATH cell and
 # the ENTITY cell of the row of each.
 ITEM_OUTPUT = "output"
 ITEM_FILE = "file"
 ITEM_NAME = "name"
 ITEM_CELLS = {ITEM_OUTPUT: (f"{BUILD_PATH_PREFIX}OUTPUT", "-"), ITEM_FILE: ("FILE", "-"), ITEM_NAME: ("-", "NAME")}
-# The words of the prefix that ccache puts in front of the compiler run of a miss (A COMPILE THROUGH CCACHE).
+# The words of the prefix that ccache puts in front of the compiler run of a miss (a compile through ccache).
 COMPILER_METER = (LOOP_MASTER, "meter-compiler")
 
 
@@ -317,7 +317,7 @@ class Measurement:
 
     @property
     def reached_cpu_limit(self) -> bool:
-        """Whether the run failed with the CPU time of a run that the limit of its processes stopped (THE CPU LIMIT)."""
+        """Whether the run failed with the CPU time of a run that the limit of its processes stopped (the CPU limit)."""
         return is_at_cpu_limit(self.exit_code, self.cpu_s, self.cpu_limit_s)
 
     @property
@@ -332,7 +332,7 @@ class Measurement:
 
 
 def is_at_cpu_limit(exit_code: int, cpu_s: float, cpu_limit_s: int | None) -> bool:
-    """Tell if a run failed with at least LIMIT_CLOCK_PART of the CPU limit of its processes (THE CPU LIMIT).
+    """Tell if a run failed with at least LIMIT_CLOCK_PART of the CPU limit of its processes (the CPU limit).
 
     Args:
         exit_code: The status of the run
@@ -387,9 +387,9 @@ def limit_cpu(seconds: float) -> int | None:
 def open_instruction_counter(own: bool = False) -> int | None:
     """Open a counter of the user instructions of each process that this process starts after the call.
 
-    THE INSTRUCTION COUNT in the module docstring gives the rules.  With
-    `own`, the counter also counts this process from the call on (THE OWN
-    RUN).  Close the counter with read_instruction_counter().
+    The instruction count in the module docstring gives the rules.  With
+    `own`, the counter also counts this process from the call on (the own
+    run).  Close the counter with read_instruction_counter().
 
     Args:
         own: Count this process too, from the call on
@@ -430,7 +430,7 @@ def open_instruction_counter(own: bool = False) -> int | None:
 
 
 def host_gives_counter() -> bool:
-    """Return True when this host gives an accurate instruction counter (THE INSTRUCTION COUNT).
+    """Return True when this host gives an accurate instruction counter (the instruction count).
 
     A test of a meter reads it, and the test then knows if a record of the host can hold a count.
     """
@@ -473,7 +473,7 @@ def measure(command: list[str], environment: dict[str, str] | None = None, cpu_l
         environment: The environment of the command, or None for the environment of the caller
         cpu_limit_s: The CPU limit of each process of the command, or None for no limit
         count_instructions: Whether to count the user instructions of the command
-        supervisor: The start of a traced run, or None for a spawn (A TRACED RUN)
+        supervisor: The start of a traced run, or None for a spawn (a traced run)
 
     Returns:
         The measurement.  An exit code of 127 means that the command did not start
@@ -538,7 +538,7 @@ def process_lead_s() -> float:
 
 
 class OwnStart:
-    """The start of a measure of this process (THE OWN RUN).
+    """The start of a measure of this process (the own run).
 
     `clock_s` is the monotonic clock at the start of the process, `load` the
     one-minute load average, and `counter` the file descriptor of the counter
@@ -555,7 +555,7 @@ class OwnStart:
 
 
 def start_self(count_instructions: bool = False) -> OwnStart:
-    """Return the start of a measure of this process, which measure_self() reads (THE OWN RUN).
+    """Return the start of a measure of this process, which measure_self() reads (the own run).
 
     A process that is a test itself, such as the fixture driver, measures its
     own run with measure_self().  The start is the monotonic clock less
@@ -580,8 +580,8 @@ def measure_self(exit_code: int, start: OwnStart) -> Measurement:
     The CPU time holds this process and each process that it waited for, and
     the peak memory is that of the largest of them.  The CPU time and the
     peak memory start with the process.  The wall time starts at the start
-    that start_self() gives, which holds the start of the interpreter (THE
-    OWN RUN).  The call reads and closes the counter of the start.
+    that start_self() gives, which holds the start of the interpreter (the
+    own run).  The call reads and closes the counter of the start.
 
     Args:
         exit_code: The status that the process ends with
@@ -604,7 +604,7 @@ def measure_self(exit_code: int, start: OwnStart) -> Measurement:
 def compiler_meter_environment(environment: dict[str, str], count_path: str) -> dict[str, str] | None:
     """Return the environment of a ccache call that counts its compiler run, or None when the call cannot count it.
 
-    A COMPILE THROUGH CCACHE in the module docstring gives the rules.
+    A compile through ccache in the module docstring gives the rules.
 
     Args:
         environment: The environment of the ccache call
@@ -649,8 +649,8 @@ def read_compiler_count(count_path: str) -> tuple[bool, int | None]:
 def meter_compiler(command: list[str]) -> None:
     """Run the compiler run of a ccache call, add its count to the file of COMPILER_COUNT_ENV, and end as it ended.
 
-    `loop meter-compiler` calls this function as the prefix of ccache (A
-    COMPILE THROUGH CCACHE).  ccache keeps the standard streams as the output
+    `loop meter-compiler` calls this function as the prefix of ccache (a
+    compile through ccache).  ccache keeps the standard streams as the output
     of the compiler, so the function writes to them only when the command
     cannot start.
 
@@ -681,7 +681,7 @@ def meter_compiler(command: list[str]) -> None:
 def store_compiler_cost(command: list[str], run: Measurement) -> None:
     """Write the cost of a compiler run of a ccache miss into the cost store, before ccache stores its object.
 
-    assay.core.cost_store, THE ORDER, gives the rules.  The function writes
+    assay.core.cost_store, the order, gives the rules.  The function writes
     nothing when the environment holds no inputs of the key, and a failure
     writes nothing too.  A measurement never fails a step.
 
@@ -818,7 +818,7 @@ def item_cells(item: str, form: str) -> tuple[str, str]:
 
 def rows_memo(rule_id: str, forms: Mapping[str, str], path: str,
               settle_ns: int = ROWS_SETTLE_NS) -> tuple[str, bool] | None:
-    """Return the entry of the rows of a ledger in the cache, and True when each input settled (THE MEMO OF THE ROWS).
+    """Return the entry of the rows of a ledger in the cache, and True when each input settled (the memo of the rows).
 
     The result is None with no cache, or when an input cannot be read.  An
     input settled when it did not change in `settle_ns` before the call.  A
@@ -848,7 +848,7 @@ def rows_memo(rule_id: str, forms: Mapping[str, str], path: str,
 
 
 def has_settled(change_ns: int, settle_ns: int) -> bool:
-    """Tell if a change time of an inode is more than `settle_ns` before the clock (THE MEMO OF THE ROWS)."""
+    """Tell if a change time of an inode is more than `settle_ns` before the clock (the memo of the rows)."""
     return change_ns < time.time_ns() - settle_ns
 
 
@@ -892,9 +892,9 @@ def read_ledger_rows(rule_id: str, forms: Mapping[str, str], path: str,
                                                                list[tuple[int, str]], str]:
     """Read the ledger of a measured rule of the policy max: the row of each item of the kinds that the caller judges.
 
-    THE REGISTRY AND THE LEDGERS gives the rows.  A ledger that does not exist
+    The registry and the ledgers gives the rows.  A ledger that does not exist
     has no row, and the call then imports no module.  An entry of the cache
-    gives the rows of a ledger with no parse (THE MEMO OF THE ROWS).
+    gives the rows of a ledger with no parse (the memo of the rows).
 
     Args:
         rule_id: The ID of the measured rule
@@ -929,7 +929,7 @@ def parsed_ledger_rows(rule_id: str, forms: Mapping[str, str],
 
     read_ledger_rows() calls it.  A row whose KIND is not a kind of the rule
     is a problem, and so is a row of a kind of `forms` whose PATH and ENTITY
-    do not have the form of that kind (THE REGISTRY AND THE LEDGERS).  The
+    do not have the form of that kind (the registry and the ledgers).  The
     call skips a row of a different kind of the rule, because a different
     judge reads it.  Complexity: linear in the rows.
 
@@ -980,7 +980,7 @@ def write_ledger_rows(rule_id: str, forms: Mapping[str, str], path: str,
     """Write the ledger of a measured rule of the policy max with these rows, sorted by their keys.
 
     The ledger takes `comment` as its head comment on each write
-    (assay.core.ledger, THE HEAD COMMENT).  A ledger with no row has no file.
+    (assay.core.ledger, the head comment).  A ledger with no row has no file.
 
     Args:
         rule_id: The ID of the measured rule

@@ -4,25 +4,25 @@ usage: loop derive mint-inventory --write [--build-dir DIR]
        loop derive mint-inventory --stdout [--build-dir DIR]
        loop derive mint-inventory --check [--build-dir DIR]
 
-THE MINTS
+Mints
     The quarantine plugin writes a record of each mint into the objects of a
-    build (utils/tools/quarantine/declaration.cpp, THE RULE mint).
+    build (utils/tools/quarantine/declaration.cpp, the rule mint).
     assay.guard.engines.plugin.declarations reads the records in the scope of
     the rule mint.  The rule mint and the inventory read the same records.
     DIR is the build directory, with REPO_ROOT/build as the default.
 
-THE ROWS
+Rows
     One row is one function: an overload is a row of its own, and a
     declaration and its definition are one row at the definition.  A section
     is a layer root and its first directory.  The inventory holds no line
     numbers, because an edit above a mint moves its line.
 
-THE CARVE-OUTS
+Carve-outs
     A row of utils/ledgers/mint.txt with the kind mint-unconstrained
     admits a mint with a gate on values that no concept can see, and the
     inventory shows "- (pre)".
 
-THE FIXTURES
+Fixtures
     The HS14 count of a row is the number of negative-compile fixtures of its
     own layer that name the mint.  Two layers can declare mints of one name,
     and a fixture of one layer says nothing about a gate of the other.  A
@@ -36,23 +36,23 @@ THE FIXTURES
     fixture also names that class or an alias of the class
     (declarations.aliases()).
 
-THE CHECK
+Check
     --check compares misc/mint-inventory.md with the rows of the build.  The
     rule derived-files (assay.guard.engines.meta.derived_files) reads the
     same finding (drift()), and the rule mint reads the same rows.
 
-THE INPUTS
+Inputs
     The landing gate writes the inventory for each change that can change it
-    (THE BUILT FILES of assay.loop.gate).  is_input() tells if a change of
+    (the built files of assay.loop.gate).  is_input() tells if a change of
     one path can change it:
       * a file of include/, which holds the mints
       * a file of test/layer/, which compiles each header alone, so each
         mint of include/ has records
       * a fixture: a file in a directory of test/ with the name neg or a
-        name that ends with _neg (THE FIXTURES)
+        name that ends with _neg (the fixtures)
       * a file of the quarantine plugin, which writes the records
       * a build file, which can change the arms that a build compiles
-      * the ledger of the rule mint (THE CARVE-OUTS), the registry, the rule
+      * the ledger of the rule mint (the carve-outs), the registry, the rule
         table, and the inventory itself.
     A change of a file of src/ or of a different test changes no record,
     because the unit of each header of test/layer/ compiles the header
@@ -97,7 +97,7 @@ SUBSTRATE = "substrate"
 CARVE_RQ = "mint-unconstrained"
 WRITER = "python3 utils/bin/loop derive mint-inventory --write"
 # The files and the prefixes of the paths whose change can change the inventory, and the names of the build files
-# (THE INPUTS).  is_fixture() gives the fixtures.
+# (the inputs).  is_fixture() gives the fixtures.
 INPUT_FILES = frozenset({INVENTORY, "utils/ledgers/mint.txt", "utils/registry.txt", "utils/rule-table.txt"})
 INPUT_PREFIXES = ("include/", "test/layer/", "utils/tools/quarantine/")
 BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
@@ -110,10 +110,10 @@ class InventoryError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Row:
-    """One mint, with the facts that the inventory shows for it (THE ROWS).
+    """One mint, with the facts that the inventory shows for it (the rows).
 
     `family` is crucible or substrate, the layer of the site.  `hs14` is the number of fixtures of its layer that
-    name the mint (THE FIXTURES).  `is_overloaded` is True when its header has a second mint of the same name.
+    name the mint (the fixtures).  `is_overloaded` is True when its header has a second mint of the same name.
     """
 
     mint: declarations.Mint
@@ -148,20 +148,20 @@ def group_of(path: str) -> str:
 
 
 def is_fixture(path: str) -> bool:
-    """Tell if a path of the tree is a fixture: a file in a directory of test/ named neg or *_neg (THE FIXTURES)."""
+    """Tell if a path of the tree is a fixture: a file in a directory of test/ named neg or *_neg (the fixtures)."""
     parts = PurePosixPath(path).parts
     return len(parts) > 2 and parts[0] == "test" and (parts[-2] == "neg" or parts[-2].endswith("_neg"))
 
 
 def is_input(path: str) -> bool:
-    """Tell if a change of a path of the tree can change the inventory, other than a module of the code (THE INPUTS)."""
+    """Tell if a change of a path of the tree can change the inventory, other than a module of the code (the inputs)."""
     name = PurePosixPath(path).name
     is_build_file = name in BUILD_FILE_NAMES or name.endswith(BUILD_FILE_SUFFIX)
     return path in INPUT_FILES or path.startswith(INPUT_PREFIXES) or is_build_file or is_fixture(path)
 
 
 def fixture_files(root: Path) -> dict[str, list[Path]]:
-    """Return the fixture files of each layer, relative to the root and sorted (THE FIXTURES).
+    """Return the fixture files of each layer, relative to the root and sorted (the fixtures).
 
     Complexity: linear in the directories in test/.
     """
@@ -198,7 +198,7 @@ def fixture_names(root: Path, paths: Sequence[Path]) -> list[frozenset[str]]:
 def fixture_count(
     mint: declarations.Mint, carriers: int, names: Sequence[frozenset[str]], aliases: dict[str, frozenset[str]]
 ) -> int:
-    """Return the number of fixtures that name one mint (THE FIXTURES).
+    """Return the number of fixtures that name one mint (the fixtures).
 
     Complexity: linear in the fixtures.
     """
@@ -210,7 +210,7 @@ def fixture_count(
 
 
 def carved(root: Path, rule: rule_registry.Rule) -> frozenset[str]:
-    """Return the entities that the ledger of the rule mint admits with the kind of THE CARVE-OUTS.
+    """Return the entities that the ledger of the rule mint admits with the kind of the carve-outs.
 
     Raises:
         InventoryError: If the ledger does not obey its grammar

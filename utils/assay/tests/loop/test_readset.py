@@ -17,7 +17,7 @@ from assay.loop import readset
 
 
 def record_cases(expect: testing.Expect) -> None:
-    """Write and read read sets, with escapes, and refuse each record of a different shape (THE RECORD)."""
+    """Write and read read sets, with escapes, and refuse each record of a different shape (the record)."""
     entries = (
         readset.Entry(readset.READ, readset.KEY, "f:1:2:3", "f:1:2:3", "/a/with\ttab"),
         readset.Entry(readset.LIST, readset.FACT, readset.NOT_MEASURED, readset.NOT_MEASURED, "/proc/self/fd"),
@@ -46,7 +46,7 @@ def record_cases(expect: testing.Expect) -> None:
 
 
 def signature_cases(expect: testing.Expect) -> None:
-    """Take the signatures of a file, a directory, a pipe and a path with no file (THE SIGNATURE)."""
+    """Take the signatures of a file, a directory, a pipe and a path with no file (the signature)."""
     with tempfile.TemporaryDirectory(prefix="test-readset-") as scratch:
         root = Path(scratch)
         item = root / "item.txt"
@@ -77,7 +77,7 @@ def signature_cases(expect: testing.Expect) -> None:
 
 
 def classify_cases(expect: testing.Expect) -> None:
-    """Give planted events to classify() (THE CLASSES OF A READ)."""
+    """Give planted events to classify() (the classes of a read)."""
     work = cache.work_root()
     work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="test-readset-", dir=work) as scratch:
@@ -128,7 +128,7 @@ def classify_cases(expect: testing.Expect) -> None:
 
 
 def runtime_root_cases(expect: testing.Expect) -> None:
-    """Check the runtime roots of a planted environment (THE CLASSES OF A READ)."""
+    """Check the runtime roots of a planted environment (the classes of a read)."""
     planted = {
         readset.TMPDIR: "/planted/tmp",
         cache_root.ROOT_VARIABLE: "/planted/caches",
@@ -149,7 +149,7 @@ def runtime_root_cases(expect: testing.Expect) -> None:
 
 
 def plan_cases(expect: testing.Expect) -> None:
-    """Call plan() for each condition of a retrace (THE RETRACE)."""
+    """Call plan() for each condition of a retrace (the retrace)."""
     work = cache.work_root()
     work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="test-readset-", dir=work) as scratch:

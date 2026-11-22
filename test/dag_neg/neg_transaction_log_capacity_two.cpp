@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Violation: instantiating TransactionLog<N> with N = 2, the largest power
 // of two below the minimum ring.  A claim in a full ring keeps the slot of

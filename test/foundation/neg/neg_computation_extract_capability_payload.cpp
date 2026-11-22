@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // HS14 fixture 1 of 2 for the authority relation in
 // foundation/effects/Computation.h.
@@ -43,7 +43,7 @@ int main() {
     // its gate without ever reaching the line it exists to witness.
     PureOverCapability pure = PureOverCapability::mint_computation(std::move(cap));
 
-    // THE LOAD-BEARING LINE: must FAIL to compile.  A pure-typed carrier
+    // The load-bearing line: must fail to compile.  A pure-typed carrier
     // must not hand out the authority it is carrying.
     auto escaped = pure.extract();
     (void)escaped;

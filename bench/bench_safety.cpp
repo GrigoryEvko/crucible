@@ -174,7 +174,7 @@ int main() {
                        bench::do_not_optimize(s);
                    }),
 
-        // Standalone ct::* primitives — no bare comparator, they ARE
+        // Standalone ct::* primitives — no bare comparator, they are
         // the primitive. Just confirm they stay ~1-2 ns.
         bench::run("ct::select<u32>",
                    [&] {

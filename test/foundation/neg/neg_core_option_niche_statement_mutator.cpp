@@ -2,8 +2,8 @@
 // builds the empty value, but a public member function writes the raw word.
 // The frame door with_mut gives the payload in place, and a local can change
 // before some(), so a full Option would read as empty.  The walk of the
-// members refuses a public member function that is not const (THE CHECK OF
-// THE STATEMENT of foundation/core/Choice.h), so the Option of the class does
+// members refuses a public member function that is not const (the check of
+// the statement of foundation/core/Choice.h), so the Option of the class does
 // not compile.
 
 #include <foundation/core/Choice.h>

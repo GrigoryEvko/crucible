@@ -10,7 +10,7 @@
 //                         each little-endian, the first bytes in word 0
 //   keyed_hash(key, m)    the Hash256 of the bytes m under the key
 //
-// THE CHOICE.  A key of a federation of caches crosses a process boundary
+// Choice.  A key of a federation of caches crosses a process boundary
 // between organizations.  A member of the federation holds the key and can
 // choose the input.  Under a known key the keyed mode of BLAKE3 stays a hash
 // with collision resistance: 32 bytes of output give 128 bits of it against
@@ -19,16 +19,16 @@
 // pseudorandom function, which says nothing once the key is known.  An id
 // inside one process stays the 64-bit hash of foundation/core/Protocol.h.
 //
-// THE ALGORITHM.  The message divides into chunks of 1024 bytes and each
+// Algorithm.  The message divides into chunks of 1024 bytes and each
 // chunk into blocks of 64 bytes.  The compression takes a chaining value of
 // 8 words, a block of 16 words, a counter, the count of bytes of the block
 // and the flags, and it runs 7 rounds of 8 applications of g.  The chaining
 // values of the chunks join in a binary tree whose left subtree is full and
-// holds a power of two of chunks.  The root takes the flag ROOT.  Each word is
+// holds a power of two of chunks.  The root takes the root flag.  Each word is
 // little-endian and each step is an add, an xor or a rotation of 32 bits, so
 // the output is the same on each target and at each ISA level.
 //
-// THE ARMS.  A constant evaluation runs the scalar compression.  At run time
+// Arms.  A constant evaluation runs the scalar compression.  At run time
 // a message of one chunk runs in the rows: the compression holds the 4 rows
 // of the state in vectors of 4 words, the columns in one step and the
 // diagonals after a rotation of three rows.  A longer message runs its chunks
@@ -47,10 +47,10 @@
 // code, and a build with a sanitizer compiles it in that one source and not
 // in each unit that hashes a key.
 //
-// THE ENTRY.  The library gives the run-time arm through one symbol,
+// Entry.  The library gives the run-time arm through one symbol,
 // detail::compute_keyed_hash_, whose name holds no target.  So a unit of each
 // x86 level links a call of keyed_hash, and the call runs the arm of the level
-// of the library (THE TARGET NAMESPACE of foundation/Platform.h).  The call
+// of the library (the target namespace in foundation/Platform.h).  The call
 // is direct, with no table and no pointer: the loader picks the library of the
 // level of the host.
 //
@@ -204,8 +204,8 @@ constexpr void blake3_compress_scalar_(std::uint32_t const (&value)[8], Blake3Bl
     }
 }
 
-// The keyed hash of the bytes of message under the key, at run time (THE
-// ENTRY): the rows for a message of one chunk and the lanes for a longer one,
+// The keyed hash of the bytes of message under the key, at run time (the
+// entry): the rows for a message of one chunk and the lanes for a longer one,
 // in src/foundation/core/KeyedHash.cpp.  A unit that includes this header
 // compiles only the scalar arm of a constant evaluation.
 [[nodiscard]] Hash256 compute_keyed_hash_(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept;
@@ -307,7 +307,7 @@ constexpr void blake3_parent_block_(std::uint32_t const (&left)[8], std::uint32_
 
 }  // namespace detail
 
-// The keyed hash of the bytes of message under the key (THE ALGORITHM):
+// The keyed hash of the bytes of message under the key (the algorithm):
 // BLAKE3 in its keyed mode, with 32 bytes of output.  Complexity: one
 // compression for each 64 bytes of the message and one for each parent.
 [[nodiscard]] constexpr Hash256 keyed_hash(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept {

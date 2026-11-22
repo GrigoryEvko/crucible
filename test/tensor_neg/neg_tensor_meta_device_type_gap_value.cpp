@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: the checked mint of ValidDeviceType receives int8_t{3} in
 // constant evaluation.  3 is an interior gap of the sparse DeviceType set:

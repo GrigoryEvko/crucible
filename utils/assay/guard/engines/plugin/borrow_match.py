@@ -1,6 +1,6 @@
 """borrow-match — no arm of a borrow match writes the sum that the match reads.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ gives a finding of the
     kind borrow-match for each assignment, move or mutating call of the
     receiver of a borrow match in an arm that holds a reference into the
@@ -10,8 +10,8 @@ THE RULE
     OneOf.  The body of a range loop over a sum is an arm too, when the loop
     door begin() carries the annotation, and the entity of its finding starts
     with "loop".  The rule reads those finding lines in the sections of the objects
-    of the target all of one build (assay.guard.engines.plugin.runner, THE
-    SECTIONS).  The same line from two objects counts one time.  The entity of
+    of the target all of one build (assay.guard.engines.plugin.runner, the
+    sections).  The same line from two objects counts one time.  The entity of
     a finding is the kind of the write and the receiver.
 
     The rule has no ledger, and each finding is an error.  A write in an

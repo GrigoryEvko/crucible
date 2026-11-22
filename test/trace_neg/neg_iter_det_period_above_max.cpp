@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: minting IterationDetector::Period with a length one op above
 // MAX_PERIOD in a constant evaluation.

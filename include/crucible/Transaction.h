@@ -196,7 +196,7 @@ private:
 // computation give two logs.  So no method of the log takes the tag of
 // Nondet, and a body whose context holds no Nondet can roll the log back.
 //
-// THE DOORS
+// Doors
 //   begin_tx claims a slot and gives a TxDraft.  commit consumes the draft and
 //   gives a CommittedTx, which activate takes, also after later claims and in
 //   any order.  A claim never recycles the slot of the active transaction or
@@ -204,7 +204,7 @@ private:
 //   of their transaction, and with_tx lends a transaction as const to a body.
 //   No door gives a reference to a transaction out.
 //
-// THE KEY
+// Key
 //   A log of a key brand comes from build_transaction_log, over a ring of
 //   mint_cyclic_buffer, whose LoanKey is the key of the log.
 //   begin_tx takes the key by move, the draft holds it, and commit and abandon
@@ -214,7 +214,7 @@ private:
 //   of the owner-key series give one.  They wait for removal, and only the log
 //   of the Vigil uses them.
 //
-// THE TRANSFER FACT.  The log states sendable{} (foundation/Transfer.h).  Each
+// Transfer fact.  The log states sendable{} (foundation/Transfer.h).  Each
 // member of the log takes the proof of its owner, and the proof stays on the
 // thread that owns the log (OwnerProof).  So a borrow of the log that a job
 // uses on the thread of its owner while the caller waits has one user at a
@@ -271,7 +271,7 @@ public:
     TransactionLog(TransactionLog&&) = delete("a draft and a CommittedTx name a slot of this log");
     TransactionLog& operator=(TransactionLog&&) = delete("a draft and a CommittedTx name a slot of this log");
 
-    // ── The doors with no key of a log of Unkeyed (THE KEY) ────────────────
+    // ── The doors with no key of a log of Unkeyed (the key) ────────────────
 
     [[nodiscard, gnu::cold]] Draft begin_tx(Owner const& /*owner*/, uint64_t step_id) noexcept
         requires(!is_keyed_)
@@ -340,7 +340,7 @@ public:
         return committed_of_(active_);
     }
 
-    // The rollback target, or no value (THE TARGET).
+    // The rollback target, or no value (the target).
     [[nodiscard]] ::fixy::Option<Committed> previous(Owner const& /*owner*/) const noexcept
         requires(!is_keyed_)
     {
@@ -365,7 +365,7 @@ public:
         return with_tx_(Committed{draft.slot_, draft.claim_}, static_cast<Body&&>(body));
     }
 
-    // ── The doors of a log of a key brand (THE KEY) ────────────────────────
+    // ── The doors of a log of a key brand (the key) ────────────────────────
 
     [[nodiscard, gnu::cold]] Draft begin_tx(key_type&& key, Owner const& /*owner*/, uint64_t step_id) noexcept
         requires is_keyed_
@@ -644,7 +644,7 @@ private:
         return true;
     }
 
-    // THE TARGET: the slot of the superseded transaction with the newest
+    // Target: the slot of the superseded transaction with the newest
     // displacement, or no value when no transaction in the ring is
     // superseded.  A caller can activate an older transaction after a newer
     // one, so the order of the claims does not give the target.  The scan is
@@ -699,7 +699,7 @@ private:
     ::fixy::Monotonic<uint64_t> events_ = ::fixy::mint_monotonic<uint64_t>(0);
 };
 
-// A keyed TransactionLog over a keyed ring of mint_cyclic_buffer (THE KEY):
+// A keyed TransactionLog over a keyed ring of mint_cyclic_buffer (the key):
 //   auto [ring, key] = ::fixy::mint_cyclic_buffer<Transaction, 16>();
 //   auto log = build_transaction_log<Owner>(std::move(ring));
 // The log takes the ring and its brand, so the key of the ring is the key of

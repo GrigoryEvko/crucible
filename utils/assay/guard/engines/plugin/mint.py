@@ -1,11 +1,11 @@
 """mint — each mint of include/ has the shape of section XXI and two negative-compile fixtures of its layer (HS14).
 
-THE RULE
+Rule
     The quarantine plugin gives a record of the kind mint for each mint, and
     a record of the kind mint-alias for each alias of a class with a member
-    mint (utils/tools/quarantine/declaration.cpp, THE RULE mint).  The rule
+    mint (utils/tools/quarantine/declaration.cpp, the rule mint).  The rule
     reads those lines in the sections of the objects of the target all
-    (assay.guard.engines.plugin.runner, THE SECTIONS).  It keeps the lines in
+    (assay.guard.engines.plugin.runner, the sections).  It keeps the lines in
     the scope of its row of utils/registry.txt.  A record is no finding.  The
     rule has two parts:
       the axes    the plugin gives one finding for each axis of section XXI
@@ -19,7 +19,7 @@ THE RULE
                   minimum of HS14_FLOOR negative-compile fixtures.  Each
                   fixture is a mismatch that the constraint of the mint
                   refuses.  The rule counts the fixtures of the layer of each
-                  mint (assay.loop.derive.mint_inventory, THE FIXTURES), and
+                  mint (assay.loop.derive.mint_inventory, the fixtures), and
                   the inventory misc/mint-inventory.md shows the same count.
                   A mint under the floor is a finding with no kind.
 
@@ -28,13 +28,13 @@ THE RULE
     refuses an incorrect constexpr.  The record keeps the fact for the
     inventory.
 
-THE POSITION OF A MINT
+Position of a mint
     A mint with a declaration in one header and its definition in a
     different header has a record of each unit.  The finding of each axis and
     of the floor is at the position of the record with the body
-    (assay.guard.engines.plugin.declarations, THE MINTS).
+    (assay.guard.engines.plugin.declarations, the mints).
 
-THE LEDGER
+Ledger
     A row of utils/ledgers/mint.txt admits one finding of one mint:
     `PATH | KIND | admit | ENTITY | REASON`.  The entity is the full name of
     the mint, with its namespaces and the types of its parameters.  The kind
@@ -45,7 +45,7 @@ THE LEDGER
     no concept can see.  The tree holds no row of an axis.  A row that admits
     no finding gives no finding, and the write of the landing gate removes it.
 
-THE PLANTS
+Plants
     A plant compiles a header with mints, and its tree holds the fixture
     directories of the layers.  The witness of the engine plugin gives the
     finding lines of the compile of a judge row to this module.
@@ -75,7 +75,7 @@ ACTIONS = {
 
 
 def axis_findings(context: runner.PluginContext) -> list[check_report.Finding]:
-    """Give one error for each axis that a mint does not meet, at the position of its chosen record (THE RULE).
+    """Give one error for each axis that a mint does not meet, at the position of its chosen record (the rule).
 
     Complexity: linear in the lines of the rule, and O(r log r) for r records.
 
@@ -110,7 +110,7 @@ def axis_findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def floor_findings(context: runner.PluginContext) -> list[check_report.Finding]:
-    """Give one error with no kind for each mint with fewer than HS14_FLOOR fixtures of its layer (THE RULE).
+    """Give one error with no kind for each mint with fewer than HS14_FLOOR fixtures of its layer (the rule).
 
     Complexity: linear in the mint records and the fixtures, and one kit run parses the fixtures.
 
@@ -134,7 +134,7 @@ def floor_findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:
-    """Give the errors of the axes and of the floor, and each problem of the census (THE RULE).
+    """Give the errors of the axes and of the floor, and each problem of the census (the rule).
 
     A record or an input that does not read gives one error, and the rule then gives no finding of a mint.
 

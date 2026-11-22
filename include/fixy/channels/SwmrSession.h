@@ -251,7 +251,7 @@ public:
     // error of GCC 16 at -O1 with TSan, because the compiler does not see that
     // the Option holds no handle on the path where the pool lent no share.
     //
-    // A claim door (THE DOORS OF A SYNCHRONIZED CLASS of foundation/
+    // A claim door (the doors of a synchronized class of foundation/
     // Transfer.h): one compare-exchange of the pool makes the share, and the
     // handle holds it.  After the compare-exchange the door writes only the
     // handle, and a reader handle reads the snapshot with atomic steps.
@@ -261,7 +261,7 @@ public:
         return ::fixy::some(ReaderHandle{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
     }
 
-    // The reader root while it is out of the pool (THE LEASE of
+    // The reader root while it is out of the pool (the lease of
     // foundation/permissions/SharedPermission.h).
     using reader_lease = ::foundation::permissions::ExclusiveLease<reader_tag, reader_brand>;
 

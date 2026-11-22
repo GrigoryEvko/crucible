@@ -1,8 +1,8 @@
 // The cost of the owner read of the allocator of the base
-// (foundation/alloc/ChunkMap.h, THE MAP READ) against the lookups of the
+// (foundation/alloc/ChunkMap.h, the map read) against the lookups of the
 // metadata of a block in the pinned references.
 //
-// THE ROWS
+// Rows
 //   Each row reads the metadata of a random block of kBlocks blocks.
 //   hearth, inline   owner_of of a BiasedChunkMap, inline in the loop: one
 //                    shift and one load of the entry of 2 bytes.  The blocks
@@ -31,22 +31,22 @@
 //   2 MiB, mimalloc asks for transparent huge pages, its first write in each
 //   block made a huge page resident, and the process held 8 GiB.
 //
-// THE SEQUENCE
+// Sequence
 //   Each row reads kPicks addresses in a cycle, from a table that Philox4x32
 //   fills with a fixed key before the row.  So no lookup computes a random
 //   number, and each run reads the same blocks in the same order.  The table
 //   holds 512 KiB, so its reads stream from the L2 cache in each row.
 //
-// THE WINDOWS
+// Windows
 //   The TSC of the bench host steps in 10 ns, and one read takes about one
 //   nanosecond.  So each sample times kBatch reads, and the report gives the
 //   p50, the p99 and the maximum of the mean of one read in a sample.
 //
-// THE RATIOS
+// Ratios
 //   The run ends with the p50 of each form of the base over the p50 of each
 //   reference.  Below 1.00 the base is faster.
 //
-// THE SPEED OF LIGHT
+// Speed of light
 //   A row that beats a reference can still be far from the floor of the core.
 //   So the run ends with the rows in cycles of the core, each beside the floor
 //   of a model of the core and the ratio to it:
@@ -68,7 +68,7 @@
 //   The window of the latency rows is a window of the ladder with no cap, 1 TiB
 //   on the bench host.
 //
-// THE GAPS
+// Gaps
 //   hearth call     the row takes about 4.9 cycles a read against the floor
 //                   of 4, the best case of the BTB.  The gap comes from the
 //                   call form of the bench, and the bench does not divide its
@@ -85,7 +85,7 @@
 //                   cause: a perf record of the bench kept too few samples in
 //                   the loop of one row
 //
-// THE COMMAND
+// Command
 //   python3 utils/bin/loop bench bench_alloc_owner_lookup
 
 #include <fixy/Core.h>
@@ -164,15 +164,15 @@ namespace os = ::foundation::os;
 constexpr std::size_t kBlocks = 4096;
 // The addresses of the table of a row, which the reads take in a cycle.
 constexpr std::size_t kPicks = 65536;
-// The reads of one sample (THE WINDOWS), and the samples of one row.
+// The reads of one sample (the windows), and the samples of one row.
 constexpr std::size_t kBatch = 1024;
 constexpr std::size_t kSamples = 2048;
 // The window of the base rows: 16 extents, with kBlocks chunks that are not
 // guards.
 constexpr std::size_t kWindowBytes = std::size_t{16} << 30;
-// The bytes of a block of a reference (THE ROWS).
+// The bytes of a block of a reference (the rows).
 constexpr std::size_t kReferenceBlockBytes = std::size_t{64} << 10;
-// The key of the Philox stream of the table (THE SEQUENCE).
+// The key of the Philox stream of the table (the sequence).
 constexpr std::uint64_t kSequenceKey = 0x4f574e45525f4c4bULL;
 
 using PickIndex = core::Index<kPicks>;
@@ -238,7 +238,7 @@ void print_ratio(fixy::TextView name, bench::Report const& base, bench::Report c
 // The read and the state are fields of one object, and the cursor and the
 // sum are 32-bit words.  A load of an address of the table then cannot alias
 // a store of the state, so GCC keeps the state in registers in the loop of a
-// sample and loads the map word one time (THE WINDOWS).
+// sample and loads the map word one time (the windows).
 template <class Read>
 struct ReadLoop {
     Read read;
@@ -270,7 +270,7 @@ struct CallRead {
     }
 };
 
-// Times the reads of one row (THE WINDOWS).
+// Times the reads of one row (the windows).
 template <class Read>
 [[nodiscard]] bench::Report measure_reads(fixy::TextView name, Read read, Picks const& picks) {
     ReadLoop<Read> loop{read, picks};
@@ -347,7 +347,7 @@ template <class Calls>
 
 // The dependent adds of one call of the clock body, the calls of one sample of
 // the clock, the chunks between two lines of the chunk map, and the lines of
-// the largest chain (THE SPEED OF LIGHT).  A sample of the clock is 16,384
+// the largest chain (the speed of light).  A sample of the clock is 16,384
 // adds, about 750 steps of the TSC, so the step of 10 ns moves its p50 by less
 // than 0.2%.
 constexpr std::uint32_t kClockAdds = 64;
@@ -358,7 +358,7 @@ constexpr std::size_t kChaseWords = kChainLines * 16;
 // The steps of one sample of a chain.
 constexpr std::size_t kChainBatch = 256;
 
-// The model of the core of luks-a, in cycles (THE SPEED OF LIGHT).  luks-a is
+// The model of the core of luks-a, in cycles (the speed of light).  luks-a is
 // an EPYC 9754, with Zen 4c cores: the Zen 4 architecture in a denser
 // physical form, with an L3 of 16 MB for each complex of eight cores, half of
 // the L3 of a complex of Zen 4 (Chips and Cheese, "Testing AMD's Bergamo:
@@ -436,7 +436,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: a chain of dependent adds gives the cloc
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-// kClockAdds dependent adds: one cycle each on the core (THE SPEED OF LIGHT).
+// kClockAdds dependent adds: one cycle each on the core (the speed of light).
 struct ClockChain {
     std::uint64_t value = 0;
 
@@ -450,7 +450,7 @@ struct ClockChain {
 };
 
 // The minimum of a read: the address that the table gives, with no load of
-// the map (THE SPEED OF LIGHT).
+// the map (the speed of light).
 struct FloorRead {
     [[nodiscard, gnu::always_inline]] std::uint32_t operator()(alloc::AddressWord address) const noexcept {
         return static_cast<std::uint32_t>(static_cast<std::uint64_t>(address));
@@ -458,7 +458,7 @@ struct FloorRead {
 };
 
 // Two reads in one call of the body: the test of the front end of the core,
-// with one taken branch for two reads (THE SPEED OF LIGHT).
+// with one taken branch for two reads (the speed of light).
 template <class Read>
 struct ReadLoopTwo {
     Read read;
@@ -545,7 +545,7 @@ void build_cycle(core::FixedArray<std::uint32_t, kChainLines>& order, std::size_
     });
 }
 
-// The rows of the speed of light (THE SPEED OF LIGHT): the clock, the floor
+// The rows of the speed of light (the speed of light): the clock, the floor
 // row of the throughput form, and the latency form at three levels with the
 // chase floor of each level.
 void run_light_rows(bench::Report const& inline_read, bench::Report const& call_read, Picks const& picks,

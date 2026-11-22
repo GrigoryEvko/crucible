@@ -30,7 +30,7 @@ namespace detail::channel_binding_self_test {
 
 // A class that keeps its state private and states that two threads write it
 // at the same time, as a channel does.  It has no assignment, which would
-// write its plain state with no proof (THE DOORS OF A SYNCHRONIZED CLASS of
+// write its plain state with no proof (the doors of a synchronized class of
 // foundation/Transfer.h).
 class[[= transfer::synchronized{}]] SharedChannel {
 public:

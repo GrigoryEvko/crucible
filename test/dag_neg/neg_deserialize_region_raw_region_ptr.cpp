@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Fixture 1 of 2 for the loaded-region door of deserialize_region.
 //
@@ -18,7 +18,7 @@ int main() {
     ::fixy::BumpArena arena{1024};
     ::fixy::View<const std::byte> bytes{};
 
-    // MUST fail: the region of the Result is a LoadedRegionNode.
+    // Must fail: the region of the Result is a LoadedRegionNode.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture reads a typed result into a raw pointer")
     crucible::RegionNode* raw = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena)
                                     .expect("the fixture names the type of a loaded region");

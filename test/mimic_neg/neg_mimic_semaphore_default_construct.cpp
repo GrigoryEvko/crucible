@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A default descriptor would point to no counter, and a signal through it
 // would write through a null pointer.  The default constructor is deleted.

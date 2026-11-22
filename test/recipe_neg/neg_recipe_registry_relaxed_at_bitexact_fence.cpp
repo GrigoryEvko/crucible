@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // RecipeRegistry::by_name_pinned<RELAXED>(name) gives a
 // NumericalTier<RELAXED, const NumericalRecipe*> for an ORDERED or an

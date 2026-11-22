@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Violation: instantiating TransactionLog<N> with N = 0 (a zero-
 // capacity ring).  A ring with no slots cannot hold a transaction;
@@ -6,7 +6,7 @@
 //
 // The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
 // N>, and this fixture is the companion to the non-power-of-two one:
-//   * The class-body static_assert((N & (N - 1)) == 0, ...) PASSES for
+//   * The class-body static_assert((N & (N - 1)) == 0, ...) passes for
 //     N = 0, because `0 & (0u - 1u)` is 0.
 //   * The class-body static_assert(N >= 4, ...) refuses N = 0.  The
 //     capacity fixtures also pin that gate.

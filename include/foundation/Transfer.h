@@ -3,14 +3,14 @@
 // The transfer of a value between threads, derived from the structure of its
 // type, as Rust derives its auto traits Send and Sync.
 //
-// THE THREE PROPERTIES
+// Three properties
 //     Sendable<T>      a value of T can move to another thread, and that
 //                      thread can use it there.
 //     Shareable<T>     two threads can read one object of T through a
 //                      reference to const at the same time.
 //     Synchronized<T>  two threads can write one object of T through a
-//                      reference that is not const at the same time (THE
-//                      SHARED WRITE).  C++ needs this third property where
+//                      reference that is not const at the same time (the
+//                      shared write).  C++ needs this third property where
 //                      Rust needs two, because a T& of C++ is both the &mut T
 //                      and the &T with interior mutability of Rust.
 //     SendableBeside<T>
@@ -18,14 +18,14 @@
 //                      sender runs on, as the body of run_beside of
 //                      fixy/os/ThreadTasks.h does.  The sender can still
 //                      write each object that the value refers to, so each
-//                      such object is Synchronized (THE VALUE BESIDE ITS
-//                      SENDER).
+//                      such object is Synchronized (the value beside its
+//                      sender).
 //     SendableOwned<T> a value of T holds no borrow, so it can move to a
 //                      thread that uses it after its sender ends, as a value
-//                      of a channel does (THE VALUE THAT OUTLIVES ITS
-//                      SENDER).
+//                      of a channel does (the value that outlives its
+//                      sender).
 //
-// THE RULES
+// Rules
 //     The walk asks one property of one type, and the first rule that applies
 //     gives the answer.  A type that the walk meets again during the walk
 //     counts as holding the property, so a type that reaches itself through a
@@ -33,8 +33,8 @@
 //
 //     1. A reference to const T holds each property when T is Shareable.  A
 //        reference to T that is not const holds each property when two
-//        threads can write an object of T at the same time (THE SHARED
-//        WRITE): the thread that gives the reference can still write the
+//        threads can write an object of T at the same time (the shared
+//        write): the thread that gives the reference can still write the
 //        object, and no type tells that only one of the two threads writes.
 //        A class that states refers{}, such as a Ref, is a reference to its
 //        first type argument, and this rule applies to it.  A class that
@@ -57,12 +57,12 @@
 //        else holds the object.
 //     4. An array holds a property when its element holds it.
 //     5. A class or a union that states a property holds it or not as it
-//        states (THE ANNOTATIONS).  A class that states thread_bound{} is not
+//        states (the annotations).  A class that states thread_bound{} is not
 //        Sendable.
 //     6. A class that states by_arguments{} holds a property when its first
 //        type argument holds it, and the walk reads no member of it.  The
 //        class owns an object of that argument, so an argument that is only
-//        declared holds only what its statement gives (THE OPAQUE TYPES), as
+//        declared holds only what its statement gives (the opaque types), as
 //        the payload of a cell does.  The class holds no value of its other
 //        type arguments, such as the authority of a BoxWord, so the walk asks
 //        nothing of them.
@@ -80,7 +80,7 @@
 //        Shareable, unless two threads can write the member at the same time,
 //        because a read through a reference to const can write it.
 //
-// THE SHARED WRITE
+// Shared write
 //     T is Synchronized when T is a class that states synchronized{}, a cell
 //     of a payload that is Sendable, such as the Atomic of the base, an array
 //     of such a type, or a class whose each base and each member is
@@ -93,17 +93,17 @@
 //     of one scalar race.  An atomic of the standard library is not either:
 //     the base quarantines it, and its Atomic takes its place.
 //
-// THE VALUE BESIDE ITS SENDER
+// Value beside its sender
 //     SendableBeside is Sendable with a stricter rule 1.  A reference, a class
 //     that states refers{} and a class that states refers_unique{} hold it
-//     only when two threads can write their target (THE SHARED WRITE), also
+//     only when two threads can write their target (the shared write), also
 //     for a target that is const.  Each other rule is the rule of Sendable,
 //     and sendable{}, not_sendable{} and thread_bound{} state it as they state
 //     Sendable.  So a View of const int is Sendable, but it is not
 //     SendableBeside: the sender can write the ints while the other thread
 //     reads them, and no type tells that it does not.
 //
-// THE VALUE THAT OUTLIVES ITS SENDER
+// Value that outlives its sender
 //     SendableOwned is Sendable with a rule 1 that refuses each borrow.  A
 //     reference, and a class that states refers{}, refers_unique{} or
 //     refers_deep{}, name an object that can end before the value does, so
@@ -114,7 +114,7 @@
 //     value and end before a consumer on another thread pops the value.  Rust
 //     asks Send and 'static of such a value for the same reason.
 //
-// THE ANNOTATIONS
+// Annotations
 //     A class states a property that its fields hide with one annotation, the
 //     named door that a search finds:
 //
@@ -131,8 +131,8 @@
 //     const and Shareable.  A part that fails stops the build, and the
 //     diagnostic names the class and the part.  A private member is state
 //     that the code of the class orders, as the comment beside the statement
-//     tells, and the check reads the doors of the class that write it (THE
-//     DOORS OF A SYNCHRONIZED CLASS).
+//     tells, and the check reads the doors of the class that write it (the
+//     doors of a synchronized class).
 //     by_arguments{} states that the class owns the object of its first type
 //     argument behind its pointers, as a Box does, and that its other type
 //     arguments name no object that it holds.  refers{} states that the class
@@ -156,7 +156,7 @@
 //     a claim that the code of the class makes true, and the comment beside
 //     it gives the reason.
 //
-// THE DOORS OF A SYNCHRONIZED CLASS
+// Doors of a synchronized class
 //     The check of a statement of synchronized{} also reads the member
 //     functions of the class.  A class whose private parts are each
 //     Synchronized, or const and Shareable, writes only cells that two
@@ -165,7 +165,7 @@
 //     each door of the class is one of these, or the build stops:
 //       - const.  A const door writes only mutable parts, and a mutable part
 //         that two threads cannot write stops the build;
-//       - a door that takes a proof of the class (THE PROOF OF A DOOR);
+//       - a door that takes a proof of the class (the proof of a door);
 //       - a claim door.  Its result is a proof of the class, an Option or a
 //         Result of one, or an Option or a Result of a handle class whose own
 //         member is a proof of the class.  A claim door makes its token with
@@ -191,10 +191,10 @@
 //     apart.  So the kind synchronized-friend of the rule proof-routes of the
 //     quarantine plugin refuses each friend function of a class that states
 //     synchronized{}, and each friend class that can reach the class.  The
-//     check reads the nested classes (THE NESTED CLASSES).  One class has its
-//     doors exempt (THE EXEMPTION).
+//     check reads the nested classes (the nested classes).  One class has its
+//     doors exempt (the exemption).
 //
-// THE PROOF OF A DOOR
+// Proof of a door
 //     A parameter is a proof of the class when its bare type is a token and
 //     the token is tied to the class.  A token is a class that carries the
 //     annotation authority{} of foundation/Linear.h and does not copy, such as
@@ -208,11 +208,11 @@
 //     of a tag that the class does not declare as its own, proves nothing
 //     about the class.  A LoanKey carries no authority, so it never counts,
 //     and neither does a QuiescenceProof, which each thread can make.  A
-//     token counts only when no other thread can build one (THE BUILD OF A
-//     TOKEN).  The check reads the tie first and the build second, so a door
+//     token counts only when no other thread can build one (the build of a
+//     token).  The check reads the tie first and the build second, so a door
 //     whose one tied token is open stops the build with its own message.
 //
-// THE BUILD OF A TOKEN
+// Build of a token
 //     A token proves that one thread holds it only when no thread can build a
 //     second one from nothing.  So a token counts only when its class is
 //     closed: no code outside its friends and its own members builds an
@@ -234,7 +234,7 @@
 //     reference to const.  A walk deeper than closed_walk_depth levels counts
 //     the class as open.
 //
-// THE NESTED CLASSES
+// Nested classes
 //     A nested class of a class that states synchronized{}, such as the
 //     handle of a channel, can write the plain parts of the class, so the
 //     check reads its doors too, at each depth.  A door of a nested class is
@@ -272,7 +272,7 @@
 //     the door makes the share with one atomic step, and the share proves the
 //     claim of that step.
 //
-// THE EXEMPTION
+// Exemption
 //     The check does not read the doors of crucible::BackgroundThread.  Nine
 //     of its doors take no proof, and plant 06 of the audit of the threads,
 //     where two bodies of run_joined call set_numerics, proves the race.  The
@@ -280,7 +280,7 @@
 //     that series removes the exemption and the test that pins it to one
 //     class.
 //
-// THE OPAQUE TYPES
+// Opaque types
 //     A class that is only declared, such as a handle whose definition is out
 //     of view, holds no property, because the walk cannot read it.  The same
 //     holds for such a class as the argument of an owner, such as the Box of
@@ -334,7 +334,7 @@
 
 namespace foundation::transfer {
 
-// The annotations (THE ANNOTATIONS).
+// The annotations (the annotations).
 struct sendable final {};
 struct not_sendable final {};
 struct shareable final {};
@@ -349,7 +349,7 @@ struct synchronized final {};
 struct shares final {};
 
 // A statement of the facts of a class that is only declared, and the seal of
-// a registry of such statements (THE OPAQUE TYPES).  is_synchronized states
+// a registry of such statements (the opaque types).  is_synchronized states
 // that two threads can write an object of the class at the same time.  Both
 // are structural types, so the walk reads a variable of each as a constant.
 struct opaque_facts {
@@ -363,8 +363,8 @@ struct opaque_seal {
     std::size_t count = 0;
 };
 
-// The properties that first_refusal walks (THE THREE PROPERTIES, THE VALUE
-// BESIDE ITS SENDER and THE VALUE THAT OUTLIVES ITS SENDER).  The shared
+// The properties that first_refusal walks (the three properties, the value
+// beside its sender and the value that outlives its sender).  The shared
 // write has a walk of its own, is_synchronized.
 enum class Property : unsigned char {
     Send = 0,
@@ -373,7 +373,7 @@ enum class Property : unsigned char {
     SendOwned = 3,
 };
 
-// True when the type holds the property (THE RULES).  The definition follows
+// True when the type holds the property (the rules).  The definition follows
 // first_refusal.
 [[nodiscard]] consteval bool holds(std::meta::info type, Property property);
 
@@ -418,7 +418,7 @@ namespace detail {
 // element, a target or the root.  A type argument that a class owns behind its
 // pointers (rule 6, and the payload of a cell) is a part too, because the
 // class holds an object of it.  An incomplete part holds only what its
-// statement gives (THE OPAQUE TYPES).  A tag is a type argument that rule 8
+// statement gives (the opaque types).  A tag is a type argument that rule 8
 // reads.  An incomplete tag holds each property, because no value of it can
 // be inside the class: a tag type is the usual case.
 enum class Reach : unsigned char {
@@ -495,7 +495,7 @@ private:
 }
 
 // Each function below has no constant definition.  A call to one stops the
-// constant evaluation, and the diagnostic names it (THE OPAQUE TYPES).
+// constant evaluation, and the diagnostic names it (the opaque types).
 void a_registry_of_transfer_facts_has_no_seal() noexcept;
 void a_registry_of_transfer_facts_has_two_seals() noexcept;
 void a_statement_of_transfer_facts_stands_outside_its_seal() noexcept;
@@ -519,7 +519,7 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 }
 
 // The statement of the class, read from its registry, or a statement with no
-// type when the registry states nothing of it (THE OPAQUE TYPES).  A fault of
+// type when the registry states nothing of it (the opaque types).  A fault of
 // the registry stops the build.  Complexity: linear in the members of the
 // namespace of the class and of the registry.
 [[nodiscard]] consteval opaque_facts statement_of(std::meta::info type) {
@@ -552,7 +552,7 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 }
 
 // True when the statement of a class that is only declared gives the
-// property (THE OPAQUE TYPES).  Without a statement, the class holds none.
+// property (the opaque types).  Without a statement, the class holds none.
 [[nodiscard]] consteval bool is_stated(std::meta::info type, Property property) {
     const opaque_facts statement = statement_of(type);
     if (statement.type == std::meta::info{}) return false;
@@ -561,7 +561,7 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 
 // The annotation that states the property, and the one that refuses it.
 // sendable{} and not_sendable{} state SendableBeside and SendableOwned too
-// (THE VALUE BESIDE ITS SENDER, THE VALUE THAT OUTLIVES ITS SENDER).
+// (the value beside its sender, the value that outlives its sender).
 [[nodiscard]] consteval std::meta::info stating_annotation(Property property) {
     return property == Property::Share ? ^^shareable : ^^sendable;
 }
@@ -574,7 +574,7 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
     return std::meta::is_class_type(type) || std::meta::is_union_type(type);
 }
 
-// The first type argument of a cell of a payload (THE ANNOTATIONS), or a null
+// The first type argument of a cell of a payload (the annotations), or a null
 // reflection when the class names no type argument.
 [[nodiscard]] consteval std::meta::info payload_of_cell(std::meta::info cell) {
     namespace refl = ::foundation::reflect;
@@ -585,8 +585,8 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 }
 
 // Stops the build when a class that states synchronized{} shows a part that
-// a holder of a reference that is not const can write with no order (THE
-// SHARED WRITE).  Such a part is a base that two threads cannot write, or a
+// a holder of a reference that is not const can write with no order (the
+// shared write).  Such a part is a base that two threads cannot write, or a
 // data member that is not private and that is a reference, or that two
 // threads cannot write at the same time and that is not const and Shareable.
 // A private member is state that the code of the class orders, as the comment
@@ -597,8 +597,8 @@ void a_class_has_two_statements_of_transfer_facts() noexcept;
 consteval void check_synchronized_statement(std::meta::info type);
 
 // The first type that two threads cannot write at the same time, or a null
-// reflection when two threads can write an object of the root (THE SHARED
-// WRITE).  A class answers for a member that refuses, so the answer names
+// reflection when two threads can write an object of the root (the shared
+// write).  A class answers for a member that refuses, so the answer names
 // the class that holds a reference, or the class of a const member that is
 // not Shareable.  Complexity: linear in the number of distinct parts.
 [[nodiscard]] consteval std::meta::info first_shared_write_refusal(std::meta::info root) {
@@ -616,21 +616,21 @@ consteval void check_synchronized_statement(std::meta::info type);
             continue;
         }
         if (!is_class_or_union(type)) return type;
-        // A class that is only declared holds what its statement gives (THE
-        // OPAQUE TYPES).
+        // A class that is only declared holds what its statement gives (the
+        // opaque types).
         if (!std::meta::is_complete_type(type)) {
             if (statement_of(type).is_synchronized) continue;
             return type;
         }
         if (states(type, ^^not_shareable) || states(type, ^^thread_bound)) return type;
-        // A cell of a payload (THE ANNOTATIONS).
+        // A cell of a payload (the annotations).
         if (states(type, ^^payload_cell)) {
             const std::meta::info payload = payload_of_cell(type);
             if (payload == std::meta::info{} || !::foundation::transfer::holds(payload, Property::Send)) return type;
             continue;
         }
-        // A statement of the shared write, which the check reads (THE
-        // ANNOTATIONS).
+        // A statement of the shared write, which the check reads (the
+        // annotations).
         if (states(type, ^^synchronized)) {
             check_synchronized_statement(type);
             continue;
@@ -655,7 +655,7 @@ consteval void check_synchronized_statement(std::meta::info type);
 }
 
 // True when two threads can write an object of the type at the same time
-// (THE SHARED WRITE).
+// (the shared write).
 [[nodiscard]] consteval bool is_shared_writable(std::meta::info root) {
     return first_shared_write_refusal(root) == std::meta::info{};
 }
@@ -687,7 +687,7 @@ consteval void refuse_synchronized_part(std::meta::info type, std::meta::info pa
 }
 
 // The refusal of a private member that is mutable and that two threads cannot
-// write (THE DOORS OF A SYNCHRONIZED CLASS): a const door writes it.
+// write (the doors of a synchronized class): a const door writes it.
 template <std::meta::info Class, std::meta::info Part>
 consteval bool refuse_mutable_part() {
     static_assert(Class == std::meta::info{},
@@ -704,7 +704,7 @@ consteval bool refuse_mutable_part() {
 template <std::meta::info Class, std::meta::info Part>
 inline constexpr bool mutable_part_refusal = refuse_mutable_part<Class, Part>();
 
-// The refusal of a door with no proof (THE DOORS OF A SYNCHRONIZED CLASS).
+// The refusal of a door with no proof (the doors of a synchronized class).
 template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
 consteval bool refuse_unproven_door() {
     static_assert(Class == std::meta::info{},
@@ -724,7 +724,7 @@ consteval bool refuse_unproven_door() {
 template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
 inline constexpr bool unproven_door_refusal = refuse_unproven_door<Class, Door, Part>();
 
-// The refusal of a door of a nested class with no proof (THE NESTED CLASSES).
+// The refusal of a door of a nested class with no proof (the nested classes).
 template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
 consteval bool refuse_unproven_nested_door() {
     static_assert(Class == std::meta::info{},
@@ -767,8 +767,8 @@ consteval bool refuse_unreadable_door() {
 template <std::meta::info Class, std::meta::info Door>
 inline constexpr bool unreadable_door_refusal = refuse_unreadable_door<Class, Door>();
 
-// The refusal of a door whose one token another thread can build (THE BUILD
-// OF A TOKEN).
+// The refusal of a door whose one token another thread can build (the build
+// of a token).
 template <std::meta::info Class, std::meta::info Door, std::meta::info Token>
 consteval bool refuse_open_token() {
     static_assert(Class == std::meta::info{},
@@ -787,8 +787,8 @@ consteval bool refuse_open_token() {
 template <std::meta::info Class, std::meta::info Door, std::meta::info Token>
 inline constexpr bool open_token_refusal = refuse_open_token<Class, Door, Token>();
 
-// The probe body of a member function template (THE DOORS OF A SYNCHRONIZED
-// CLASS): its call takes each argument list, gives nothing and does not
+// The probe body of a member function template (the doors of a synchronized
+// class): its call takes each argument list, gives nothing and does not
 // throw.  It is no token, so a parameter of its type proves nothing.
 struct door_probe_body final {
     template <class... Arguments>
@@ -848,7 +848,7 @@ inline constexpr synchronized_door_exemption synchronized_door_exemptions[] = {
     {.space = "crucible", .name = "BackgroundThread"},
 };
 
-// True when the class is an exemption (THE EXEMPTION).  The name query of
+// True when the class is an exemption (the exemption).  The name query of
 // foundation/reflect/Members.h compares each name and walks no scope.  A
 // specialization is no exemption.  Complexity: linear in the exemptions,
 // times the length of a name.
@@ -865,11 +865,11 @@ inline constexpr synchronized_door_exemption synchronized_door_exemptions[] = {
     return false;
 }
 
-// The depth of the walk of a closed class (THE BUILD OF A TOKEN).  A walk that
+// The depth of the walk of a closed class (the build of a token).  A walk that
 // needs more levels counts the class as open, so the check fails closed.
 inline constexpr int closed_walk_depth = 4;
 
-// True when the class has the shape of a token (THE PROOF OF A DOOR): it
+// True when the class has the shape of a token (the proof of a door): it
 // states thread_bound{}, or it carries authority{} and does not copy.
 [[nodiscard]] consteval bool has_token_shape(std::meta::info bare) {
     if (!is_class_or_union(bare) || !std::meta::is_complete_type(bare)) return false;
@@ -893,7 +893,7 @@ inline constexpr int closed_walk_depth = 4;
 [[nodiscard]] consteval bool is_closed_class(std::meta::info bare, int depth);
 
 // True when a parameter of a public constructor needs a value that no other
-// thread can make (THE BUILD OF A TOKEN).  The class of the parameter is
+// thread can make (the build of a token).  The class of the parameter is
 // closed, and the parameter has no default argument.  A value or an rvalue
 // reference takes an object that the caller gives up.  An lvalue reference
 // borrows an object that each thread can hold, so it counts only for a token
@@ -916,7 +916,7 @@ enum class MakerSet : unsigned char {
 };
 
 // True when a public constructor of the set takes no gating parameter, or a
-// public constructor template exists (THE BUILD OF A TOKEN).  The check
+// public constructor template exists (the build of a token).  The check
 // cannot read the parameters of a template, so a template opens the class.
 [[nodiscard]] consteval bool has_open_constructor(std::meta::info bare, int depth, MakerSet set) {
     namespace refl = ::foundation::reflect;
@@ -934,7 +934,7 @@ enum class MakerSet : unsigned char {
 }
 
 // True when no code outside the friends and the members of the class can
-// build an object of it from nothing (THE BUILD OF A TOKEN).  GCC 16 shows no
+// build an object of it from nothing (the build of a token).  GCC 16 shows no
 // inherited constructor, so a public constructor of a base that a using
 // declaration can inherit makes the class open when no parameter gates it.
 // Complexity: linear in the public members of the class and of its bases,
@@ -963,22 +963,22 @@ enum class MakerSet : unsigned char {
     return true;
 }
 
-// True when the token can prove that one thread holds it (THE BUILD OF A
-// TOKEN): the class is closed, and a token that copies is not Shareable, so
+// True when the token can prove that one thread holds it (the build of a
+// token): the class is closed, and a token that copies is not Shareable, so
 // no other thread copies the token out of a reference to const.
 [[nodiscard]] consteval bool is_closed_token(std::meta::info bare) {
     if (!is_closed_class(bare, closed_walk_depth)) return false;
     return !std::meta::is_copy_constructible_type(bare) || !::foundation::transfer::holds(bare, Property::Share);
 }
 
-// True when the class is a token (THE PROOF OF A DOOR): it has the shape of a
-// token, and no other thread can build one (THE BUILD OF A TOKEN).
+// True when the class is a token (the proof of a door): it has the shape of a
+// token, and no other thread can build one (the build of a token).
 [[nodiscard]] consteval bool is_door_token(std::meta::info bare) {
     return has_token_shape(bare) && is_closed_token(bare);
 }
 
-// True when the type is one of the own types of the owner (THE PROOF OF A
-// DOOR): the owner, a member class of it, or a type that a public member
+// True when the type is one of the own types of the owner (the proof of a
+// door): the owner, a member class of it, or a type that a public member
 // alias of it names.  Complexity: linear in the members of the owner.
 [[nodiscard]] consteval bool is_own_type_of(std::meta::info owner, std::meta::info candidate) {
     namespace refl = ::foundation::reflect;
@@ -992,7 +992,7 @@ enum class MakerSet : unsigned char {
     return alias != std::meta::info{};
 }
 
-// True when the token is tied to the owner (THE PROOF OF A DOOR): it is an own
+// True when the token is tied to the owner (the proof of a door): it is an own
 // type of the owner, or one of its type arguments is one.
 [[nodiscard]] consteval bool is_tied_to(std::meta::info token, std::meta::info owner) {
     namespace refl = ::foundation::reflect;
@@ -1004,13 +1004,13 @@ enum class MakerSet : unsigned char {
     return false;
 }
 
-// True when the bare type is a token tied to the owner (THE PROOF OF A DOOR).
+// True when the bare type is a token tied to the owner (the proof of a door).
 [[nodiscard]] consteval bool is_proof_type(std::meta::info bare, std::meta::info owner) {
     return is_door_token(bare) && is_tied_to(bare, owner);
 }
 
 // True when the bare type has the shape of a token and is tied to the owner,
-// but another thread can build one (THE BUILD OF A TOKEN), so it proves no
+// but another thread can build one (the build of a token), so it proves no
 // one holder.
 [[nodiscard]] consteval bool is_open_token_of(std::meta::info bare, std::meta::info owner) {
     return has_token_shape(bare) && is_tied_to(bare, owner) && !is_closed_token(bare);
@@ -1025,8 +1025,8 @@ enum class MakerSet : unsigned char {
     return !::foundation::transfer::holds(parameter.type, Property::Share);
 }
 
-// True when the bare result of a door is the token of a claim door (THE DOORS
-// OF A SYNCHRONIZED CLASS): a proof of the owner, or a sum whose first type
+// True when the bare result of a door is the token of a claim door (the doors
+// of a synchronized class): a proof of the owner, or a sum whose first type
 // argument is a proof of the owner or a handle class whose own member is one.
 // The read stops at the members of the handle, so the rule stays exact.
 [[nodiscard]] consteval bool is_claim_result(std::meta::info result, std::meta::info owner) {
@@ -1047,7 +1047,7 @@ enum class MakerSet : unsigned char {
     return false;
 }
 
-// True when the member is a door (THE DOORS OF A SYNCHRONIZED CLASS).  A
+// True when the member is a door (the doors of a synchronized class).  A
 // static member is read too, because a parameter can give it the object.
 [[nodiscard]] consteval bool is_door(std::meta::info member) {
     const bool is_template = std::meta::is_function_template(member);
@@ -1064,8 +1064,8 @@ enum class MakerSet : unsigned char {
     return parameter.was_reference && !parameter.was_const && parameter.type == owner;
 }
 
-// The open token of the owner in the bare result of a door (THE BUILD OF A
-// TOKEN), or a null reflection.  The read follows is_claim_result: the result,
+// The open token of the owner in the bare result of a door (the build of a
+// token), or a null reflection.  The read follows is_claim_result: the result,
 // the first type argument of a sum, and the own members of that argument.
 [[nodiscard]] consteval std::meta::info open_token_in_result(std::meta::info result, std::meta::info owner) {
     namespace refl = ::foundation::reflect;
@@ -1143,7 +1143,7 @@ struct DoorFinding {
     return DoorFinding{.verdict = DoorVerdict::unproven};
 }
 
-// True when an object of the type can write the owner (THE NESTED CLASSES):
+// True when an object of the type can write the owner (the nested classes):
 // the type is the owner, a reference or a pointer to the owner that is not
 // const, or a class whose base, member or type argument reaches it, read by
 // the walk of foundation/reflect/TypeComponents.h.  A walk deeper than depth
@@ -1185,7 +1185,7 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
 
 // True when an object of the type holds a borrow that is not const, through a
 // reference, a pointer or a class that refers to an object, of a part that
-// two threads cannot write (THE NESTED CLASSES).  A borrow of the owner is a
+// two threads cannot write (the nested classes).  A borrow of the owner is a
 // reach of the owner, which can_write_owner reads.  Complexity: linear in the
 // components of the type, to closed_walk_depth levels.
 [[nodiscard]] consteval bool holds_plain_borrow(std::meta::info type, std::meta::info owner, int depth) {
@@ -1248,8 +1248,8 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
     return false;
 }
 
-// True when the nested class is a proof holder of the owner (THE NESTED
-// CLASSES): it is itself a proof of the owner, or it holds one by value as
+// True when the nested class is a proof holder of the owner (the nested
+// classes): it is itself a proof of the owner, or it holds one by value as
 // its own member.  A member counts exactly when a door parameter of the same
 // type would count, and a reference member counts never.
 [[nodiscard]] consteval bool is_proof_holder(std::meta::info nested, std::meta::info owner) {
@@ -1262,7 +1262,7 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
     return false;
 }
 
-// True when the member is a door of a nested class (THE NESTED CLASSES): a
+// True when the member is a door of a nested class (the nested classes): a
 // public or protected member function or member function template that is no
 // destructor and not deleted.  A constructor is a door too, apart from a copy
 // and a move constructor: it can take the owner.
@@ -1275,7 +1275,7 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
     return !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
 }
 
-// The verdict of a door of a nested class (THE NESTED CLASSES).  The door
+// The verdict of a door of a nested class (the nested classes).  The door
 // reaches the owner through this when the class reaches it, or through a
 // parameter.  A const door has no exemption, because a pointer, a Ref or a
 // binding of the class still writes the owner.  The class is no proof holder,
@@ -1351,7 +1351,7 @@ consteval void refuse_door(std::meta::info type, std::meta::info door, DoorFindi
 }
 
 // Stops the build at the first door of a nested class of the owner, at each
-// depth, that does not hold the rule (THE NESTED CLASSES).  The walk is
+// depth, that does not hold the rule (the nested classes).  The walk is
 // unchecked, as the walk of the doors of the owner is.  Complexity: linear in
 // the members of each nested class, times the parameters of each door.
 consteval void check_nested_doors(std::meta::info scope, std::meta::info owner, std::meta::info plain, int depth) {
@@ -1389,8 +1389,8 @@ consteval void check_nested_doors(std::meta::info scope, std::meta::info owner, 
 }
 
 // Stops the build at the first door of the class that does not hold the rule
-// (THE DOORS OF A SYNCHRONIZED CLASS), and then at the first door of a nested
-// class (THE NESTED CLASSES).  plain names the first plain private part.  The
+// (the doors of a synchronized class), and then at the first door of a nested
+// class (the nested classes).  plain names the first plain private part.  The
 // walk is unchecked, because a derived class can call a protected door, and
 // is_door then drops each private member.  Complexity: linear in the members
 // of the class, times the parameters of each door.
@@ -1424,8 +1424,8 @@ consteval void check_synchronized_statement(std::meta::info type) {
         // A member that is a reference is not held by value.  No write
         // reaches a const member, so a read is all it must allow.
         if (std::meta::is_private(part.member)) {
-            // A const door writes a mutable member (THE DOORS OF A
-            // SYNCHRONIZED CLASS).  The first plain member is enough for the
+            // A const door writes a mutable member (the doors of a
+            // synchronized class).  The first plain member is enough for the
             // check of the doors, so the walk stops there.
             if (part.is_mutable) {
                 if (!part.is_held_by_value || !is_shared_writable(part.type)) {
@@ -1455,8 +1455,8 @@ consteval void check_synchronized_statement(std::meta::info type) {
 // property.  A reference to const asks Shareable of the target.  A reference
 // to a target that is not const holds when two threads can write the target,
 // and refuses otherwise.  For SendableBeside, each reference holds only when
-// two threads can write the target (THE VALUE BESIDE ITS SENDER).  For
-// SendableOwned, each reference refuses (THE VALUE THAT OUTLIVES ITS SENDER).
+// two threads can write the target (the value beside its sender).  For
+// SendableOwned, each reference refuses (the value that outlives its sender).
 struct ReferenceAnswer {
     bool is_refused = false;
     Goal next{};
@@ -1495,7 +1495,7 @@ struct ReferenceAnswer {
 }  // namespace detail
 
 // The first type that refuses the property, or a null reflection when the
-// root holds it (THE RULES).  The root must be complete.  Complexity: linear
+// root holds it (the rules).  The root must be complete.  Complexity: linear
 // in the number of distinct goals, times the scan of the visited list.
 [[nodiscard]] consteval std::meta::info first_refusal(std::meta::info root, Property property) {
     namespace refl = ::foundation::reflect;
@@ -1551,7 +1551,7 @@ struct ReferenceAnswer {
             continue;
         }
         // A statement of the shared write states the read of two threads too,
-        // and the check reads it (THE ANNOTATIONS).
+        // and the check reads it (the annotations).
         if (goal.property == Property::Share && detail::states(bare, ^^synchronized)) {
             detail::check_synchronized_statement(bare);
             continue;
@@ -1576,11 +1576,11 @@ struct ReferenceAnswer {
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
             if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
             const std::meta::info target = arguments.begin()->type;
-            // The target can end before the value (THE VALUE THAT OUTLIVES
-            // ITS SENDER).
+            // The target can end before the value (the value that outlives
+            // its sender).
             if (goal.property == Property::SendOwned) return bare;
-            // Beside its sender, the target is also the sender's (THE VALUE
-            // BESIDE ITS SENDER), so it falls to the shared write below.
+            // Beside its sender, the target is also the sender's (the value
+            // beside its sender), so it falls to the shared write below.
             if (goal.property == Property::Send) {
                 pending.push(detail::Goal{target, Property::Send});
                 continue;
@@ -1649,11 +1649,11 @@ struct ReferenceAnswer {
 }
 
 // True when two threads can write one object of the type through a reference
-// that is not const at the same time (THE SHARED WRITE).
+// that is not const at the same time (the shared write).
 [[nodiscard]] consteval bool is_synchronized(std::meta::info type) { return detail::is_shared_writable(type); }
 
 // True when the class has a statement of its facts and its definition holds
-// each property that the statement gives (THE OPAQUE TYPES).  The file that
+// each property that the statement gives (the opaque types).  The file that
 // defines a class with a statement asserts it beside the definition.  A
 // property that the statement does not give asks nothing, so a statement can
 // give less than the definition holds.  The walk answers SendableBeside and
@@ -1671,7 +1671,7 @@ struct ReferenceAnswer {
 }
 
 // The first type that two threads cannot write at the same time, or a null
-// reflection when the type is Synchronized (THE SHARED WRITE).  A message
+// reflection when the type is Synchronized (the shared write).  A message
 // names the part that refuses with it.
 [[nodiscard]] consteval std::meta::info first_synchronized_refusal(std::meta::info type) {
     return detail::first_shared_write_refusal(type);
@@ -1686,13 +1686,13 @@ concept Sendable = holds(^^T, Property::Send);
 template <class T>
 concept Shareable = holds(^^T, Property::Share);
 
-// A value of T can move to a thread that runs while its sender runs on (THE
-// VALUE BESIDE ITS SENDER).
+// A value of T can move to a thread that runs while its sender runs on (the
+// value beside its sender).
 template <class T>
 concept SendableBeside = holds(^^T, Property::SendBeside);
 
 // A value of T holds no borrow, so it can move to a thread that uses it after
-// its sender ends (THE VALUE THAT OUTLIVES ITS SENDER).
+// its sender ends (the value that outlives its sender).
 template <class T>
 concept SendableOwned = holds(^^T, Property::SendOwned);
 

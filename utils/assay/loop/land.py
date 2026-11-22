@@ -1,21 +1,21 @@
 """land — compose the commits of the waiting landings, test them one time in the gate, and move main by compare-and-swap.
 
-THE REQUEST
+Request
     The words before the word -- give the message and the edits.  The words
     after it give the own paths, and that list can be empty:
       -m TEXT                   One paragraph of the message.  The first paragraph is the subject
       --patch FILE              A unified diff that git made against HEAD
       --replace FILE OLD NEW    In the shared FILE, the text of the file NEW replaces the text of the file OLD
       --block FILE AFTER BLOCK  In the shared FILE, the text of the file BLOCK goes after the text of the file AFTER
-      --series BRANCH           Each commit of BRANCH that HEAD does not hold, as one request (THE SERIES)
+      --series BRANCH           Each commit of BRANCH that HEAD does not hold, as one request (the series)
       --jobs N                 The slice of the lease of one configuration of the gate, with SLICE as the most
-      --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
-      --budget-reason TEXT      The gate raises each crossed row of a budget with this reason (THE BUDGET REASON)
-      --budget-reason ITEM=TEXT The gate raises the crossed row of ITEM with this reason (THE BUDGET REASON)
-      --lower RULE ITEM        The gate lowers the row of ITEM of RULE to the largest measure of its builds (THE LOWER)
-      --lower-reason TEXT       The reason of the cut, which each lowered row of the request gets (THE LOWER)
+      --all-configurations      The gate runs each configuration (assay.loop.gate, the selection)
+      --budget-reason TEXT      The gate raises each crossed row of a budget with this reason (the budget reason)
+      --budget-reason ITEM=TEXT The gate raises the crossed row of ITEM with this reason (the budget reason)
+      --lower RULE ITEM        The gate lowers the row of ITEM of RULE to the largest measure of its builds (the lower)
+      --lower-reason TEXT       The reason of the cut, which each lowered row of the request gets (the lower)
       --check                   Run the gate on the commit, and do not land it
-      --here                    With --check: run this copy of the module (THE DRIVER)
+      --here                    With --check: run this copy of the module (the driver)
       --dry-run                 Print the diff of the commit, and change nothing
       --tree                    Print the object name of the tree of the commit, and change nothing
     The value of an option can be the word --.  The command then reads the
@@ -25,7 +25,7 @@ THE REQUEST
     repository of the current directory.  --check with no edit, patch or own
     path runs the gate on HEAD.
 
-THE TREE
+Tree
     The tree of the commit is the commit before it with the working-tree copy
     of each own path.  It also holds each shared file as the commit before it
     holds it, with the edits.  When an own path is gone from the working tree,
@@ -40,21 +40,21 @@ THE TREE
     Else the request does not compose.
 
     The request file holds the commit of HEAD of the work tree at the
-    request (THE QUEUE).  A different commit can land after that commit and
+    request (the queue).  A different commit can land after that commit and
     change a file of an own path.  The working-tree copy can be without that
     change, and the commit of the request can revert it.  A request does not
     compose when it changes a file of an own path that is not the same in the
     two commits.  A request with no such commit compares with the commit that
     its batch started from.
 
-THE COMPOSITION
+Composition
     The command composes the tree in the index of a scratch repository.  That
-    repository writes into the object directory of the repository (THE
-    BORROWED INDEX of assay.core.git).  Each blob, tree and commit that the composition
+    repository writes into the object directory of the repository (the
+    borrowed index of assay.core.git).  Each blob, tree and commit that the composition
     writes is then in the repository.  The scratch repository reads the own
     paths from the work tree of the request through --work-tree.
 
-THE MERGE
+Merge
     A patch applies with `git apply --cached`.  A patch that does not apply
     as text composes by a three-way merge of each of its files
     (merged_patch()).  git builds the base of each file from the blobs that
@@ -62,9 +62,9 @@ THE MERGE
     copy of the composition.  A file that ours did not change takes the
     result of the patch, and a file that the two sides changed merges:
       * A ledger of a rule of the registry of the composition merges by its
-        rows (THE MERGE of assay.core.ledger).  When two changes of one count
+        rows (the merge of assay.core.ledger).  When two changes of one count
         merge by a sum, the merged count can be too high.  The gate then runs
-        each configuration, and THE REDUCE writes the measured count.
+        each configuration, and the reduce writes the measured count.
       * A count that ours and the patch change to one value is two changes,
         so it merges by a sum too (EqualChange.SUM of assay.core.ledger).
         Two requests that each raise a row from 1 to 2 then compose to 3, on
@@ -73,7 +73,7 @@ THE MERGE
         of a request of --patch that ours holds whole, file for file: its
         commit landed already, so it changes nothing (HeldPatch.LANDED).  A
         commit of a series is never such a commit, because the series
-        refuses a commit that HEAD holds (THE SERIES).
+        refuses a commit that HEAD holds (the series).
       * A witness fixture and the witness manifest come from the writer of
         assay.loop.derive.witness_fixtures and the composed rule table, when
         the composition holds the code of the writer of this copy.
@@ -81,7 +81,7 @@ THE MERGE
         needs a build.  The composition keeps its own copy, and the
         candidate of the gate names the file.  The gate writes the file from
         the build of the composed tree, and it folds the file into the last
-        commit (THE BUILT FILES of assay.loop.gate).
+        commit (the built files of assay.loop.gate).
       * The registry merges by its lines, and on a conflict by its rows
         (merged_registry()).  The key of a row is its first two words, such
         as `rule must-consume`.  The places of the rows merge with each row
@@ -97,7 +97,7 @@ THE MERGE
     a patch stays a change of its row in the commit.  The verdict names each
     merged file and each file that the gate writes.
 
-THE SERIES
+Series
     `loop land --series BRANCH --` in the main work tree lands each commit
     of BRANCH that HEAD does not hold, from the oldest, each with its own
     message, as one request (series_request()).  The author of each commit
@@ -124,20 +124,20 @@ THE SERIES
         agent to rebase the branch onto main and to resolve each conflict
         in its own commit.
       * The holder composes each commit on the commit before it, as a patch
-        does (THE MERGE).  The first commit starts from the commit of the
+        does (the merge).  The first commit starts from the commit of the
         batch or from the top of the stack.  When the branch started from
         an earlier commit of main, each patch thus applies to the main of
         the run, as `git cherry-pick` does.  The first commit that does not
         compose refuses the series, with its number, its commit and its
         subject.  A commit whose change the commit before it holds gives no
         commit.
-    A series is one request for the batch, THE SEARCH, THE CONFIRMATION, THE
-    RIGHT OF WAY and THE STACK.  The gate tests only the last commit, the
+    A series is one request for the batch, the search, the confirmation, the
+    right of way and the stack.  The gate tests only the last commit, the
     tip, in one run, so the slot cost does not grow with the number of
     commits.  A red series is refused whole, and the search does not divide
     it.  The swap moves the branch to the tip, so main gets each commit of
     the series, in sequence.
-    THE BUILT FILES and THE REDUCE fold into the last commit of the batch,
+    the built files and the reduce fold into the last commit of the batch,
     which is the last commit of a series at the end of the batch.  The fold
     gives that commit a new tree with the same parents, the same message
     and a note.  Main then holds each commit of the series one time and no
@@ -149,7 +149,7 @@ THE SERIES
     gate accepted, and the swap moves the branch only to that tip.  The gate
     does not build or test a commit before the tip alone.
 
-THE QUEUE
+Queue
     A landing writes its request into the queue of its repository before it
     waits for the lock of the warm tree.  The queue is the directory
     QUEUE/KEY of the work directory.  KEY is the first KEY_LENGTH digits of
@@ -174,28 +174,28 @@ THE QUEUE
     process that ends removes its request file first and its lock file last.
     The next holder of the tree removes each file of a request with no lock.
 
-THE WAIT
+Wait
     The landing waits for one of two events, and it looks again each POLL_S
     seconds.  When the queue holds the file NUMBER.verdict with its token,
     the landing reads that verdict.  It gives its work tree the update of the
-    verdict (THE INDEX AND THE WORKING TREE).  Then it writes the lines of the
+    verdict (the index and the working tree).  Then it writes the lines of the
     verdict and exits with its status.  When the landing gets the lock of a free lane
     (free_lane() of assay.loop.gate), it is the holder of the tree of that
-    lane (THE HOLDER, THE LANES).  The holder takes the requests in the
+    lane (the holder, the lanes).  The holder takes the requests in the
     sequence of their numbers.
 
     A landing of an earlier copy of this module writes no request.  It waits
     for the lock of the first lane with flock(2), and it runs alone when it
-    gets the lock (THE LANES of assay.loop.gate).
+    gets the lock (the lanes of assay.loop.gate).
 
-THE LANES
+Lanes
     Up to LANES holders run at the same time, each in the warm tree of
-    its lane (THE LANES of assay.loop.gate).  A holder claims each request of
+    its lane (the lanes of assay.loop.gate).  A holder claims each request of
     its batch with an exclusive lock of flock(2) on the file NUMBER.claim of
     the queue, with no wait (Claims.take()).  A different holder takes no request
     with a claim, so no request lands two times.  The kernel frees the claims
     of a holder that ends.  The holder frees the claim of a request that
-    waits for the next batch (THE BATCH) at the cut, and each other claim at
+    waits for the next batch (the batch) at the cut, and each other claim at
     the end of its batch.  A holder of a different lane can then take a
     request that waits for the next batch while the search of the first batch
     runs.  The holder gives no verdict to such a request, so the two holders
@@ -203,19 +203,19 @@ THE LANES
 
     Two lanes race only at the compare-and-swap.  The lane that loses
     composes its requests again on the new commit of the branch, and its gate
-    runs again (THE COMPARE-AND-SWAP).  A batch that loses many times takes
-    the right of way, and the other lanes wait for it (THE RIGHT OF WAY).
-    THE REDUCE and THE BUILT FILES of a lane fold only into the commit of
+    runs again (the compare-and-swap).  A batch that loses many times takes
+    the right of way, and the other lanes wait for it (the right of way).
+    the reduce and the built files of a lane fold only into the commit of
     that lane.
 
     The request file of this copy holds the field claims.  An earlier copy of
     this module claims no request.  The holder of a lane after the first one
     then takes no batch while a request of an earlier copy waits.
 
-THE HOLDER
+Holder
     The holder of the tree takes the requests of the queue in the sequence
     of the numbers.  It takes each request with no verdict, with no claim of
-    a different holder, and with a process that holds its lock (THE LANES).  A request with a lock and no request file
+    a different holder, and with a process that holds its lock (the lanes).  A request with a lock and no request file
     can come next.  The holder waits INCOMPLETE_S seconds for its request
     file, and then it takes the requests after it.  It takes the requests with
     the git directory and the branch of the first one, and the others wait
@@ -223,17 +223,17 @@ THE HOLDER
     gate, through the shared git directory, and not through the work tree of
     a request.
 
-    The holder lands the batch (THE BATCH).  It writes the verdict
+    The holder lands the batch (the batch).  It writes the verdict
     of a request only while the process of the request holds its lock.  The
     holder keeps the number of each request with a verdict, and it gives no
     request a second verdict.
 
     While it lands the batch, it holds the session of the gate.  That session
-    goes before each other heavy step of the host (THE PRIORITY OF THE GATE
+    goes before each other heavy step of the host (the priority of the gate
     of assay.loop.heavy).  --check holds that session too.  Then it frees the
     lock.  It does that again while its own request has no verdict.  An
     error outside a run of the gate on a commit of the batch stops the batch.
-    An error of the run of the base is such an error (THE ERROR OF A RUN).
+    An error of the run of the base is such an error (the error of a run).
     Each request of the batch with no verdict then gets the verdict of that
     error, other than a request that landed.  A LandError gives a usage
     error.  Each other error gives a tool error.  An error that is not of the
@@ -246,11 +246,11 @@ THE HOLDER
     its verdict.  When no verdict can be written, the holder ends on the
     error.
 
-THE BATCH
+Batch
     The batch composes each request as its own commit on the commit of the
     request before it.  A request that does not compose on them gets a
     refusal for that reason only.  An example is an own path with a file that
-    an earlier request of the batch changes (THE TREE).  The first
+    an earlier request of the batch changes (the tree).  The first
     composition also cuts the batch.  A request that changes a C++ file that
     an earlier request of the batch changes waits for the next batch, with
     each request after it.
@@ -261,16 +261,16 @@ THE BATCH
     each request alone.  Then a fall of one request in a file cannot pay for
     a rise of a different request in that file.
 
-    The gate builds and tests the last commit one time (THE GATE).  The
+    The gate builds and tests the last commit one time (the gate).  The
     candidate of the gate is that commit, with the commit that the batch
     started from and the changed paths of each request.  The gate then runs
     each configuration that one or more of the requests selects.  The batch
     runs the gate with the smallest --jobs of its requests, and with
     --all-configurations when one request gives it.  When the gate accepts
     the last commit, one compare-and-swap moves the branch to the commit of
-    the gate (THE COMPARE-AND-SWAP).
+    the gate (the compare-and-swap).
 
-THE SEARCH
+Search
     When the gate rejects the last commit, a binary search finds each request
     that the gate rejects.  The batch keeps an accepted part: the first
     requests, in a chain that the gate accepted as a unit.  It also keeps the
@@ -279,7 +279,7 @@ THE SEARCH
     accepted run adds that half to the accepted part.
 
     A rejected run makes that half the red part.  A red part of one request
-    is red on the accepted part.  THE CONFIRMATION then runs its tree again
+    is red on the accepted part.  the confirmation then runs its tree again
     before a refusal.  The other requests then compose again on the
     accepted part, and the gate tests them as a unit.  When only an
     interaction of two requests is red, the refusal goes to the second of the
@@ -290,7 +290,7 @@ THE SEARCH
     Each run after the first run of a batch runs `loop test` with the inputs
     that changed (assay.loop.gate).
 
-THE CONFIRMATION
+Confirmation
     One red run does not refuse a request, because a flaky test or a
     transient error of a tool can make a correct request red.  Before a
     refusal, the gate runs the red tree again: the request on the accepted
@@ -308,7 +308,7 @@ THE CONFIRMATION
     When the accepted part holds requests, the gate then also runs the
     request alone before its refusal: its commit on the commit of the batch,
     with no other request, and with the focus of the second red run
-    (assay.loop.gate, THE RUN OF THE BASE).  That run only gives the first
+    (assay.loop.gate, the run of the base).  That run only gives the first
     line of the refusal: red alone too, or green alone and red after the
     accepted requests, which is an interaction.  A request that does not
     compose alone on the commit of the batch, such as an edit of a text that
@@ -316,21 +316,21 @@ THE CONFIRMATION
 
     A problem that a green run of the same tree did not repeat is a flaky
     test or a transient error.  The verdict of the request names it with
-    the line FLAKY_MARK (THE FLAKY TESTS).  No retry hides it.
+    the line FLAKY_MARK (the flaky tests).  No retry hides it.
 
     The confirmation adds one run of the gate to each refusal, and one
     focused run when the accepted part holds requests.  Each run of the
     confirmation is a retry, so `loop test` runs only the tests with an
     input that changed or with no pass, such as the red tests.
 
-THE RUN OF THE BASE
+Run of the base
     The first run of a batch can be red, also for a batch of one request.
     The gate then runs on the commit of the batch with no request, with the
     changed paths of the batch.  The verdict of the first run gives the
     focus of each configuration with a problem.  The focus of a
     configuration holds the tests that were red alone too, or no test for a
     problem of a different kind.  The run of the base runs only that focus
-    (THE RUN OF THE BASE of assay.loop.gate).  It does not run each
+    (the run of the base of assay.loop.gate).  It does not run each
     configuration of the batch.  It runs only the red tests of a
     configuration, with `loop test --only`, and each configuration with a
     different problem in the mode of the changed inputs.
@@ -342,7 +342,7 @@ THE RUN OF THE BASE
     request.
 
     The batch compares the failing items of two runs, not their problems
-    (THE FAILING ITEMS of assay.loop.gate).  An item of a red test gives the
+    (the failing items of assay.loop.gate).  An item of a red test gives the
     test, and the rule, the path and the line of each finding.  Two runs
     can fail one test of a rule on different files, with problems of the
     same words.  An item can name the directory of the logs of its run.
@@ -355,12 +355,12 @@ THE RUN OF THE BASE
 
     A search on a red branch runs the gate approximately two times for each
     request.  An example is a batch of three requests with one red request.
-    With THE CONFIRMATION, the batch runs the gate 5 times for the first red
+    With the confirmation, the batch runs the gate 5 times for the first red
     request, 7 times for the second and 6 times for the last.  With no red
     request, the batch runs the gate one time.  On a red branch, it runs the
     gate 2 times.  One red request alone runs the gate 3 times.
 
-THE ERROR OF A RUN
+Error of a run
     The check of the gate can raise an error on a commit of the batch.  An
     example is a file of the commit that the code of the gate cannot read.
     The error can be of each type, also a TypeError of a file of an
@@ -368,51 +368,51 @@ THE ERROR OF A RUN
     text of the error, and with no focus (gate_run()).  The run of the base then runs each
     configuration of the batch on the commit of the batch.  When that run
     raises an error too, the error is not of a request, and each request
-    gets the verdict of a tool error (THE HOLDER).  Else THE SEARCH finds the
+    gets the verdict of a tool error (the holder).  Else the search finds the
     request that gives the error, that request gets the refusal with its
     text, and the others land.
 
     A run of the gate with no error has no added step.  An error of a run
     after the run of the base is a problem of its commit too.  A transient
-    error then counts as a red run, as a flaky test does, and THE
-    CONFIRMATION judges it.
+    error then counts as a red run, as a flaky test does, and the
+    confirmation judges it.
 
-THE FLAKY TESTS
+Flaky tests
     The gate runs the red tests of a configuration again, together in one run
-    of ctest apart from the suite (assay.loop.gate, THE RUN OF A
+    of ctest apart from the suite (assay.loop.gate, the run of a
     CONFIGURATION).  A test that is green in that run does not reject the
     commit.  Such a test is a flaky test, and no retry hides it.  The verdict of each
     request that lands, or that --check accepts, names each flaky test of
     each accepted run of the gate that holds the request, with the line
     FLAKY_MARK.  The record of a run gives its flaky tests too.  The verdict
-    also names each problem that THE CONFIRMATION judged noise.
+    also names each problem that the confirmation judged noise.
 
-THE GATE
+Gate
     The gate builds and tests a commit in the warm tree of each configuration
     that the change selects (assay.loop.gate).  The gate has no base side.  A
     test that is red alone on HEAD then rejects each landing.  When the gate
     builds each of its configurations, it writes the falls of the counted
-    ledgers into a new commit (THE REDUCE of assay.loop.gate).  That commit
+    ledgers into a new commit (the reduce of assay.loop.gate).  That commit
     has the parents and the message of the last commit of the batch.  The
-    gate also writes each file that THE MERGE names for it, and each built
-    file that the change can change, into that commit (THE BUILT FILES of
+    gate also writes each file that the merge names for it, and each built
+    file that the change can change, into that commit (the built files of
     assay.loop.gate).  The message then names each such file.  The candidate
     names such a file of each link of the batch, so the last commit holds
     the written file.
 
     The verdict gives it, and the compare-and-swap moves the branch to it.
     Each run of the gate writes its logs into a directory of its own
-    (assay.loop.gate, THE LOGS).  The problems of a refusal then name logs
+    (assay.loop.gate, the logs).  The problems of a refusal then name logs
     that the next run does not change.  After the problems, a refusal gives
-    the rows of the ratchet ledgers that the build gives (THE RATCHET ROWS of
+    the rows of the ratchet ledgers that the build gives (the ratchet rows of
     assay.loop.gate).
 
-THE BUDGET REASON
+Budget reason
     A correct change that crosses a row of a budget raises the row with its
     measured value and a reason (the owner decision of 2026-11-15).  With
     --budget-reason TEXT, the gate makes that raise in the run of the
-    request, and it folds the raised ledgers into the last commit (THE RAISE
-    OF A BUDGET of assay.loop.gate).  The request file holds the reason
+    request, and it folds the raised ledgers into the last commit (the raise
+    of a budget of assay.loop.gate).  The request file holds the reason
     (encoded_request()).  The candidate of a chain gets a reason only when
     each request of the chain gives one, and the reason of a chain of more
     requests holds the reason of each (chain_budget_reason()).  A request
@@ -429,27 +429,27 @@ THE BUDGET REASON
     each other crossed row.  A request with only ITEM=TEXT values gives no
     text to a row that it does not name, so such a crossed row refuses the
     request.  An ITEM that names no crossed row refuses it too, with a line
-    that names the item (THE RAISE OF A BUDGET of assay.loop.gate).  The
+    that names the item (the raise of a budget of assay.loop.gate).  The
     text of an item in a chain holds the text of each request for the
     item: its own text, else its plain text (chain_budget_rows()).  A
     request file of an earlier copy holds no such row.
 
-THE LOWER
+Lower
     A row of a budget goes down only by an explicit write of the named row,
-    with the reason of the cut (THE LOWER of
+    with the reason of the cut (the lower of
     assay.guard.engines.buildsys.cost_budgets).  With --lower RULE ITEM and
     --lower-reason TEXT, the gate makes that write in the run of the request
     on the build of each of its configurations, and it folds the lowered
-    ledgers into the last commit (THE LOWER OF A BUDGET of assay.loop.gate).
+    ledgers into the last commit (the lower of a budget of assay.loop.gate).
     The option --lower can occur more than one time, and RULE is a rule of
     LOWER_RULES of assay.loop.gate.  The request file holds the rows and the
     reason.  Each row of a chain takes the reason of its own request
     (chain_lowers()), and a candidate with a lower runs each configuration.
     The verdict of each request of the run names each lowered row with its
     old and its new value, or the line of a lower that wrote nothing.  The
-    text of the reason obeys the rules of THE BUDGET REASON.
+    text of the reason obeys the rules of the budget reason.
 
-THE COMPARE-AND-SWAP
+Compare-and-swap
     The branch moves to the commit only when the branch holds the commit that
     the batch started from (`git update-ref REF NEW OLD`).  A different
     commit can land first, such as a commit of a landing of an earlier copy
@@ -463,7 +463,7 @@ THE COMPARE-AND-SWAP
     others compose again and go to the gate again.  The holder keeps the
     lock of the warm tree for all of the batch.
 
-THE STORE
+Store
     A stop of the host can damage the git store of the repository: a file
     config with no bytes, or an object with no bytes.  Before each batch,
     the holder reads the store (store_problem()).  The file config must have
@@ -476,7 +476,7 @@ THE STORE
     refusal, so a ref that a different tree writes at that moment refuses
     no request.  The refusal names each ref of the error of git.
 
-THE RIGHT OF WAY
+Right of way
     A long run of the gate, such as a run of --all-configurations, can lose
     each swap: a short landing of a different lane moves the branch while it
     runs.  Thus, after RIGHT_AFTER refused swaps, the batch takes the right
@@ -491,7 +491,7 @@ THE RIGHT OF WAY
     first.  Thus the oldest batch goes first, and no two batches wait for
     each other.  A right of way does not go first when its holder is below
     the batch in the stack, or when the entry of its holder is not on the
-    branch (THE STACK), because such a holder cannot swap first.  A batch
+    branch (the stack), because such a holder cannot swap first.  A batch
     waits while a right of way that goes first is held, at two points:
       * Before each round, also the first one.  A holder that goes first
         moves the branch when it lands, and the swap of a run that started
@@ -508,7 +508,7 @@ THE RIGHT OF WAY
     of that wait named.  At its end, a wait before a round writes the
     seconds that it waited.
 
-THE STACK
+Stack
     Two batches that run at the same time on one commit of the branch lose
     one run: the first one lands, and the other one runs again.  Thus a
     batch composes on the commit that a running batch tests, and not only on
@@ -528,7 +528,7 @@ THE STACK
         right of way before a batch with none, then the smaller number.
       * When the stack holds STACK_DEPTH entries, the batch waits before its
         run.  A run on a different base would lose its swap.
-      * THE LINE.  The batches that wait for a place of the stack go in the
+      * The line.  The batches that wait for a place of the stack go in the
         sequence of their entry into the queue: the smaller number first.
         Before its run, a batch that can stack writes its mark into the file
         NUMBER.line of the queue, with its branch, under the lock of the
@@ -538,15 +538,15 @@ THE STACK
         round writes the entry (Stack.publish()), or the round ends with no
         entry (Stack.withdraw()).  Thus no younger batch takes the place
         that an older batch takes.  A batch that waits for the verdicts of
-        THE RULE OF ONE LOST RUN, or whose wait gets to STACK_WAIT_S, has no
+        the rule of one lost run, or whose wait gets to STACK_WAIT_S, has no
         mark.  On 2026-11-21 the first look after a landing took the free
         place, also when an older batch waited for it.
       * The round composes on the top of the stack.  The first run of a
         round writes the entry with the commit of that run.  A red first run
         removes the entry, because the search then lands a different commit.
         An accepted run writes the final commit, with the mark accepted.
-      * A run on the stack names each built file to the gate (THE BUILT
-        FILES of assay.loop.gate).  A batch below can change a built file,
+      * A run on the stack names each built file to the gate (the built
+        files of assay.loop.gate).  A batch below can change a built file,
         such as the mint inventory, and the commit that it tests holds the
         file before its fold.  The gate then writes each built file from
         the build of the run.
@@ -568,8 +568,8 @@ THE STACK
     different commit, or when its entry leaves, the base can never be the
     branch.  An outside push of the branch has the same effect.  The batch
     then composes again on the new top of the stack.
-    A fold below gives a different final commit, because THE REDUCE and
-    THE BUILT FILES change only ledgers and built files.  The batch then
+    A fold below gives a different final commit, because the reduce and
+    the built files change only ledgers and built files.  The batch then
     composes again on that final commit.  Its next run runs only the tests
     with an input that changed, with the same selection as each run after
     the first one (assay.loop.affected).  Each other result of the batch did
@@ -582,11 +582,11 @@ THE STACK
     composes on the branch, and its search judges the batch on its exact
     base.  A request that does not compose on the stack also gives a next
     round on the branch.  A round that composes again for the stack counts
-    in STACK_ATTEMPTS, and not in the refused swaps of THE RIGHT OF WAY.
+    in STACK_ATTEMPTS, and not in the refused swaps of the right of way.
     After STACK_ATTEMPTS such rounds, the batch composes only on the branch.
     After a wait for the stack that gets to STACK_WAIT_S, the next round
     composes on the branch too.
-      * THE RULE OF ONE LOST RUN.  The first round of a batch can compose on
+      * the rule of one lost run.  The first round of a batch can compose on
         an entry with no verdict, so its run overlaps the run below it.  A
         run is lost when it is red on the stack, or when its base leaves the
         stack (StackRule).  After the first lost run, the batch can stack at
@@ -614,11 +614,11 @@ THE STACK
     A batch that holds a right of way composes only on the branch.  Thus it
     never waits for a batch below it, and the batches below it never wait
     for its right of way while it waits for them.  It goes first on the
-    branch, as THE RIGHT OF WAY tells.
+    branch, as the right of way tells.
     --check composes on the branch, and it writes no entry.  The stack adds
     no lane and no job: the lanes and the slot pool stay as they are.
 
-THE JOURNAL
+Journal
     Before the swap, the holder writes the file NUMBER.journal of each
     accepted request.  The file holds the token, the branch, the commit of
     the swap and the verdict of the request.  After the swap, the holder
@@ -634,7 +634,7 @@ THE JOURNAL
     the refusal of a tool error with the reason.  The commit can then be on
     the branch.
 
-THE INDEX AND THE WORKING TREE
+Index and working tree
     After the swap, the holder gives the work tree of each landed request its
     update.  Then it writes each verdict.  It does that before it frees the
     lock of the warm tree.  A landing that composes after it then reads a
@@ -645,7 +645,7 @@ THE INDEX AND THE WORKING TREE
     The process of each landed request gives its own work tree the same
     update after it reads its verdict, and it writes the warnings.  An update
     that the work tree holds changes nothing.  The update also comes after a
-    holder that ended after its swap (THE JOURNAL).  The verdict gives the
+    holder that ended after its swap (the journal).  The verdict gives the
     update: the landed commit, the paths, and the commit that the batch
     started from.  Each update holds a lock of flock(2) on the file
     UPDATE_LOCK of the git directory of its work tree.  Two updates of one
@@ -660,8 +660,8 @@ THE INDEX AND THE WORKING TREE
     batch started from.  A copy that holds a local edit merges with the
     target by its lines, with the entry of the index as the base.  When the
     lines conflict, the edits of the request go to a shared file of an edit.
-    A copy that holds the target changes nothing.  So a patch that THE MERGE
-    composed, a fold of THE REDUCE next to a hunk, and a later request of the
+    A copy that holds the target changes nothing.  So a patch that the merge
+    composed, a fold of the reduce next to a hunk, and a later request of the
     batch give no warning.
 
     A local edit that does not merge gives a warning, and the copy keeps the
@@ -671,7 +671,7 @@ THE INDEX AND THE WORKING TREE
     HEAD of the work tree is not on the branch of the request, the work tree
     gets no update.
 
-THE LOCK OF A HEAVY STEP
+Lock of a heavy step
     The gate takes a lease of the slot pool for each configuration, and a
     lease holds the lock of the heavy steps in the shared mode
     (assay.loop.heavy).  A landing in an exclusive heavy step then waits for
@@ -679,7 +679,7 @@ THE LOCK OF A HEAVY STEP
     STEP_VARIABLE of assay.loop.heavy.  It also refuses to run when it has an
     open descriptor of the lock file, as flock(1) gives its command.
 
-THE RECORD
+Record
     Each run of the gate adds one line of JSON to the file RECORDS of the
     work directory.  The line holds the time, the commits, the configurations
     and the problems.  It holds the subject and the result of each request of
@@ -701,7 +701,7 @@ THE RECORD
     problem too.  The work directory is the directory land of the work root
     of assay.core.cache.
 
-THE DRIVER
+Driver
     A landing runs the copy of this module in the main work tree of the
     repository, which holds main.  A different copy runs the copy of the
     main work tree with the same words.  An example is the copy of a work
@@ -757,24 +757,24 @@ from assay.loop import history as loop_history
 from assay.loop import inputs as guard_inputs
 from assay.loop.derive import witness_fixtures
 
-# The refusals of the compare-and-swap before the batch stops, and the range of the random pause after one (THE
-# COMPARE-AND-SWAP).  With many lanes, a short landing moves the branch in each long run of the gate.  A run after a
+# The refusals of the compare-and-swap before the batch stops, and the range of the random pause after one (the
+# compare-and-swap).  With many lanes, a short landing moves the branch in each long run of the gate.  A run after a
 # refused swap tests only the inputs that changed, so it is short, and a long landing needs many tries before it wins.
 ATTEMPTS = 32
 PAUSE_RANGE_S = (0.1, 0.9)
 # The refused swaps before a batch takes the right of way, and the longest wait of a swap for a right of way of a
-# different batch (THE RIGHT OF WAY).  A run of --all-configurations takes approximately 12 minutes.
+# different batch (the right of way).  A run of --all-configurations takes approximately 12 minutes.
 RIGHT_AFTER = 2
 RIGHT_WAIT_S = 1800.0
-# The two steps of a batch before which it waits for a right of way that goes first (THE RIGHT OF WAY).
+# The two steps of a batch before which it waits for a right of way that goes first (the right of way).
 RUN_STEP = "run"
 SWAP_STEP = "swap"
 # The most entries below a batch in the stack, the wait for the batches below a batch, in seconds, and the times that a
-# batch composes again for the stack before it composes only on the branch (THE STACK).
+# batch composes again for the stack before it composes only on the branch (the stack).
 STACK_DEPTH = 3
 STACK_WAIT_S = 3600.0
 STACK_ATTEMPTS = 8
-# The two kinds of an edit of a shared file (THE REQUEST).
+# The two kinds of an edit of a shared file (the request).
 INSERT = "insert"
 REPLACE = "replace"
 # The count of the values of each option, for the division of the words (split_words()).
@@ -811,28 +811,28 @@ USAGE = (
 CHECK_SUBJECT = "Check a change in the gate"
 # The length of a commit in a line of the landing.
 SHORT_HASH = 9
-# The work directory of the gate, in the work root, and the file of the records in it (THE RECORD).
+# The work directory of the gate, in the work root, and the file of the records in it (the record).
 WORK_NAME = "land"
 RECORDS = "records.jsonl"
-# The directory of the queues in the work directory, and the length of the key of the queue of a repository (THE
-# QUEUE).
+# The directory of the queues in the work directory, and the length of the key of the queue of a repository (the
+# queue).
 QUEUE = "queue"
 KEY_LENGTH = 16
-# The file of the next number in a queue, and the new lock of a reservation (THE QUEUE).
+# The file of the next number in a queue, and the new lock of a reservation (the queue).
 NEXT = "next"
 RESERVE = ".reserve"
-# The files of one request in its queue (THE QUEUE, THE JOURNAL).
+# The files of one request in its queue (the queue, the journal).
 NUMBER_WIDTH = 8
 LOCK_SUFFIX = ".lock"
 REQUEST_SUFFIX = ".request"
-# The request file of a series (THE SERIES).  An earlier copy of this module reads only REQUEST_SUFFIX, so it takes no
+# The request file of a series (the series).  An earlier copy of this module reads only REQUEST_SUFFIX, so it takes no
 # series, and it cannot land a series as one commit.
 SERIES_SUFFIX = ".series"
 VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
 CLAIM_SUFFIX = ".claim"
 RIGHT_SUFFIX = ".right"
-# The entry of a batch in the stack, its lock file, and the mark of a batch in the line of the full stack (THE STACK).
+# The entry of a batch in the stack, its lock file, and the mark of a batch in the line of the full stack (the stack).
 # No suffix ends with LOCK_SUFFIX, because each such file is the lock of a request.
 STACK_SUFFIX = ".stack"
 STACK_LOCK_SUFFIX = ".stacked"
@@ -843,7 +843,7 @@ LINE_SUFFIX = ".line"
 # 2026-11-15 on.
 DEAD_HOLDER_AGE_S = 3600.0
 # The lines of the error of `git fsck` that the refusal of a damaged store names, the runs of the check before a
-# refusal, the pause between two runs in seconds, and a ref in the error (THE STORE).  On 2026-11-21, a rebase in a
+# refusal, the pause between two runs in seconds, and a ref in the error (the store).  On 2026-11-21, a rebase in a
 # different work tree made one check exit 2 for a reflog entry of its branch, and a check some minutes later exited 0.
 STORE_LINES = 3
 STORE_TRIES = 3
@@ -851,50 +851,50 @@ STORE_RETRY_S = 5.0
 STORE_REF = re.compile(r"\brefs/[^\s:]+")
 PATCH_MARK = ".patch-"
 REQUEST_FORMAT = 2
-# The bytes of the random token of a request (THE QUEUE).
+# The bytes of the random token of a request (the queue).
 TOKEN_BYTES = 8
-# The interval of the wait for a verdict or for the lock, in seconds (THE WAIT).  The wait for the request file of a
-# request with a lock, and its interval, in seconds (THE HOLDER).
+# The interval of the wait for a verdict or for the lock, in seconds (the wait).  The wait for the request file of a
+# request with a lock, and its interval, in seconds (the holder).
 POLL_S = 2.0
-# The interval of the look of a holder at the processes of the requests of its run, in seconds (THE STACK).
+# The interval of the look of a holder at the processes of the requests of its run, in seconds (the stack).
 WATCH_S = POLL_S
 INCOMPLETE_S = 5.0
 INCOMPLETE_POLL_S = 0.1
-# The lock file of the update of a work tree, in its git directory (THE INDEX AND THE WORKING TREE).
+# The lock file of the update of a work tree, in its git directory (the index and the working tree).
 UPDATE_LOCK = "loop-land.lock"
-# The directory of the open descriptors of this process (THE LOCK OF A HEAVY STEP).
+# The directory of the open descriptors of this process (the lock of a heavy step).
 DESCRIPTORS = Path("/proc/self/fd")
-# The copy of this module in a tree, and the master that runs it (THE DRIVER).
+# The copy of this module in a tree, and the master that runs it (the driver).
 MODULE_PATH = Path("utils/assay/loop/land.py")
 MASTER_PATH = Path("utils/bin/loop")
 # The limit of a landing that the driver runs from the main work tree, in seconds.
 DRIVER_S = 8 * proc.BUILD_S
-# The results of a request in one run of the gate (THE RECORD).
+# The results of a request in one run of the gate (the record).
 LANDED = "landed"
 REFUSED = "refused"
 ACCEPTED = "accepted"
 REJECTED = "rejected"
 DROPPED = "dropped"
-# The replacement of the directory of the logs of a run, when the batch compares the problems of two runs (THE RUN OF
-# THE BASE).
+# The replacement of the directory of the logs of a run, when the batch compares the problems of two runs (the run of
+# the base).
 LOGS_MARK = "LOGS"
-# The name of the directory of a run of the gate in the text of a verdict (THE LOGS of assay.loop.gate).
+# The name of the directory of a run of the gate in the text of a verdict (the logs of assay.loop.gate).
 CITED_RUN = re.compile(rf"{gate.RUN_MARK}\d{{{gate.RUN_WIDTH}}}")
-# The start of a line of the verdict of a request that names a flaky test (THE FLAKY TESTS).
+# The start of a line of the verdict of a request that names a flaky test (the flaky tests).
 FLAKY_MARK = "loop land: FLAKY, "
-# The directory of the ledgers and their suffix (THE MERGE).
+# The directory of the ledgers and their suffix (the merge).
 LEDGER_PREFIX = "utils/ledgers/"
 LEDGER_SUFFIX = ".txt"
-# The first words of a row of the registry, whose first two words are its key (THE MERGE).
+# The first words of a row of the registry, whose first two words are its key (the merge).
 REGISTRY_ROW_WORDS = ("rule", "path")
-# The files of the code of the writer of the witness fixtures, which the merge compares with this copy (THE MERGE).
+# The files of the code of the writer of the witness fixtures, which the merge compares with this copy (the merge).
 WITNESS_WRITER = (
     "utils/assay/loop/derive/witness_fixtures.py",
     "utils/assay/core/ruletable.py",
     "utils/assay/core/rows.py",
 )
-# The mode of an executable file, and the modes whose bytes the update of a working tree writes (THE INDEX AND THE
-# WORKING TREE).
+# The mode of an executable file, and the modes whose bytes the update of a working tree writes (the index and the
+# working tree).
 EXECUTABLE_MODE = "100755"
 FILE_MODES = (git.PLAIN_FILE_MODE, EXECUTABLE_MODE)
 
@@ -904,10 +904,10 @@ class LandError(Exception):
 
 
 class HeldPatch(enum.Enum):
-    """What a patch is when the composition holds each of its files as the patch gives it (THE MERGE).
+    """What a patch is when the composition holds each of its files as the patch gives it (the merge).
 
     LANDED is the patch of a request of --patch: its commit landed already, and it changes nothing.  SECOND is a commit
-    of a series: the series refuses a commit that HEAD holds (THE SERIES), so the patch is a second change of each count
+    of a series: the series refuses a commit that HEAD holds (the series), so the patch is a second change of each count
     that it changes.
     """
 
@@ -915,7 +915,7 @@ class HeldPatch(enum.Enum):
     SECOND = "second"
 
 
-# The errors of a tool or of an input that the landing expects (THE HOLDER).  An error of a different type is a defect
+# The errors of a tool or of an input that the landing expects (the holder).  An error of a different type is a defect
 # of the code of the landing, and its verdict also gives its type and its traceback.
 KNOWN_ERRORS = (LandError, gate.GateError, git.GitError, proc.ToolFailed, OSError, ValueError)
 
@@ -932,8 +932,8 @@ class Edit:
 
 @dataclass(frozen=True, slots=True)
 class Part:
-    """One commit of a series: its message, the patch of the commit against its first parent, and the commit (THE
-    SERIES)."""
+    """One commit of a series: its message, the patch of the commit against its first parent, and the commit (the
+    series)."""
 
     message: str
     patch: Path
@@ -947,9 +947,9 @@ class Part:
 
 @dataclass(frozen=True, slots=True)
 class Request:
-    """The message, the patches, the edits and the own paths of one landing (THE REQUEST).
+    """The message, the patches, the edits and the own paths of one landing (the request).
 
-    `parts` holds each commit of a series, from the oldest (THE SERIES).  A series has no message, patch, edit or own
+    `parts` holds each commit of a series, from the oldest (the series).  A series has no message, patch, edit or own
     path of its own.
     """
 
@@ -999,8 +999,8 @@ class Options:
 class Composed:
     """The result of one composition: the commit that it starts from, the tree, the changed paths, and the diff.
 
-    `merged` holds each path that THE MERGE composed, and `is_summed` tells that it summed two changes of one count.
-    `built` holds each merged file of BUILT_FILES of assay.loop.gate, which the gate writes (THE MERGE).
+    `merged` holds each path that the merge composed, and `is_summed` tells that it summed two changes of one count.
+    `built` holds each merged file of BUILT_FILES of assay.loop.gate, which the gate writes (the merge).
     """
 
     head: str
@@ -1014,7 +1014,7 @@ class Composed:
 
 @dataclass(frozen=True, slots=True)
 class PatchMerge:
-    """The result of THE MERGE of one patch: the entry of each path that it gives, and the paths that it merged.
+    """The result of the merge of one patch: the entry of each path that it gives, and the paths that it merged.
 
     An entry of None removes its path.  `is_summed` tells that a ledger summed two changes of one count.  `built` holds
     each merged file of BUILT_FILES of assay.loop.gate, which keeps the copy of the composition and gets no entry.
@@ -1030,11 +1030,11 @@ class PatchMerge:
 class Queued:
     """One request of a batch: its number in the queue, the work tree of its process, the request and its options.
 
-    `branch` is the branch of HEAD of the work tree, and `common` is its shared git directory (THE HOLDER).  `token` is
-    the random token of the request, and its verdict holds the same token (THE QUEUE).  `head` is the commit of HEAD of
-    the work tree at the request, or "" (THE TREE).  `is_claiming` tells that the process of the request runs a copy of
-    this module that claims each request that it takes (THE LANES).  `entry_time` is the time of the entry of the
-    request into the queue, as ISO 8601 text in UTC, or "" for a request file of an earlier copy (THE RECORD).
+    `branch` is the branch of HEAD of the work tree, and `common` is its shared git directory (the holder).  `token` is
+    the random token of the request, and its verdict holds the same token (the queue).  `head` is the commit of HEAD of
+    the work tree at the request, or "" (the tree).  `is_claiming` tells that the process of the request runs a copy of
+    this module that claims each request that it takes (the lanes).  `entry_time` is the time of the entry of the
+    request into the queue, as ISO 8601 text in UTC, or "" for a request file of an earlier copy (the record).
     """
 
     number: int
@@ -1058,8 +1058,8 @@ class Queued:
 class Link:
     """One request composed on the commit before it: the request, that commit, its own commit, and its paths.
 
-    `merged`, `is_summed` and `built` come from its composition (THE MERGE).  `commits` holds each commit of a series
-    with its subject, from the oldest, and `commit` is the last one of them (THE SERIES).
+    `merged`, `is_summed` and `built` come from its composition (the merge).  `commits` holds each commit of a series
+    with its subject, from the oldest, and `commit` is the last one of them (the series).
     """
 
     queued: Queued
@@ -1082,11 +1082,11 @@ class Line:
 
 @dataclass(frozen=True, slots=True)
 class Update:
-    """The update of the work tree of a landed request (THE INDEX AND THE WORKING TREE).
+    """The update of the work tree of a landed request (the index and the working tree).
 
     The index gets the entry of the commit `index_commit` for each path of `index_paths`, or of a later commit of the
     branch.  `base` is the commit that the batch started from, or "".  `falls` holds the commit that the gate tested
-    and the commit that landed, or nothing, and `ledgers` holds the ledgers of THE REDUCE.  This module reads no
+    and the commit that landed, or nothing, and `ledgers` holds the ledgers of the reduce.  This module reads no
     falls, and a landing of an earlier copy reads them.
     """
 
@@ -1101,7 +1101,7 @@ class Update:
 class Decision:
     """The verdict of one request: the exit, the commit of the request that landed or "", the lines, and the update.
 
-    `update` is the update of the work tree of a landed request, else None (THE INDEX AND THE WORKING TREE).
+    `update` is the update of the work tree of a landed request, else None (the index and the working tree).
     """
 
     status: int
@@ -1125,7 +1125,7 @@ class Run:
     """One run of the gate: the candidate, the number, the subject and the entry time of each request of its chain, and
     the verdict.
 
-    A run of the base has no request (THE RUN OF THE BASE).  The entry time of a request is Queued.entry_time.
+    A run of the base has no request (the run of the base).  The entry time of a request is Queued.entry_time.
     """
 
     candidate: gate.Candidate
@@ -1137,22 +1137,22 @@ class Run:
 
 @dataclass(frozen=True, slots=True)
 class RunRecord:
-    """One run of the gate with the result of each of its requests, in the sequence of its chain (THE RECORD)."""
+    """One run of the gate with the result of each of its requests, in the sequence of its chain (the record)."""
 
     run: Run
     results: tuple[str, ...]
 
 
-# The check of the gate: the candidate and the retry flag give the verdict (THE GATE).
+# The check of the gate: the candidate and the retry flag give the verdict (the gate).
 type Check = Callable[[gate.Candidate, bool], gate.Verdict]
-# The function that receives the verdict of each request (THE HOLDER).
+# The function that receives the verdict of each request (the holder).
 type Decide = Callable[[Queued, Decision], None]
-# The check that tells if the process of a request holds its lock (THE COMPARE-AND-SWAP).
+# The check that tells if the process of a request holds its lock (the compare-and-swap).
 type IsAlive = Callable[[Queued], bool]
-# The function that frees the claim of a request that waits for the next batch (THE LANES).
+# The function that frees the claim of a request that waits for the next batch (the lanes).
 type Release = Callable[[Queued], None]
 # The holder of the tree of a lane: it takes the work directory, the queue and the lane, and it tells if a batch was
-# there (THE WAIT, THE LANES).
+# there (the wait, the lanes).
 type Holder = Callable[[Path, Path, int], bool]
 
 
@@ -1160,7 +1160,7 @@ type Holder = Callable[[Path, Path, int], bool]
 
 
 def split_words(words: Sequence[str]) -> tuple[list[str], list[str]]:
-    """Return the words before the first -- that is not the value of an option, and the words after it (THE REQUEST).
+    """Return the words before the first -- that is not the value of an option, and the words after it (the request).
 
     Raises:
         LandError: If no such -- is in the words, or an option has fewer values than it takes
@@ -1199,7 +1199,7 @@ class ReasonOption:
     cause: str
 
 
-# The two options of a reason of a row of a budget (THE BUDGET REASON, THE LOWER).
+# The two options of a reason of a row of a budget (the budget reason, the lower).
 BUDGET_REASON = ReasonOption(
     "--budget-reason",
     "each raised row of a budget",
@@ -1239,7 +1239,7 @@ def checked_reason(option: ReasonOption, text: str) -> str:
 
 
 def budget_reasons_of(reason_values: Sequence[Sequence[str]]) -> tuple[str, tuple[tuple[str, str], ...]]:
-    """Return the plain text and the text of each named row of the words of --budget-reason (THE BUDGET REASON).
+    """Return the plain text and the text of each named row of the words of --budget-reason (the budget reason).
 
     A value ITEM=TEXT gives the text of the crossed row of the item, and ITEM holds no space and no '='.  Each other
     value is the plain text of each crossed row with no text of its own.  Complexity: linear in the values.
@@ -1268,7 +1268,7 @@ def budget_reasons_of(reason_values: Sequence[Sequence[str]]) -> tuple[str, tupl
 
 
 def lowers_of(lower_values: Sequence[Sequence[str]]) -> tuple[tuple[str, str], ...]:
-    """Return the rule and the item of each --lower, in the sequence of the words (THE LOWER).
+    """Return the rule and the item of each --lower, in the sequence of the words (the lower).
 
     Raises:
         LandError: If a rule is not a rule of LOWER_RULES of assay.loop.gate, or an item is empty or holds '|'
@@ -1288,7 +1288,7 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
     """Return the options of the flags and of the options with values, and refuse a combination that does not apply.
 
     A series takes its messages and its changes from its commits, so it takes no -m, no patch, no edit and no own path
-    (THE SERIES).  --dry-run and --tree run no gate, so they take no --budget-reason and no --lower.
+    (the series).  --dry-run and --tree run no gate, so they take no --budget-reason and no --lower.
 
     Raises:
         LandError: If the options do not apply together
@@ -1345,7 +1345,7 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
 
 
 def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
-    """Return the request and the other options of the command line (THE REQUEST).
+    """Return the request and the other options of the command line (the request).
 
     The command reads the options itself, and not with argparse, because the value of an option can start with -.
 
@@ -1388,7 +1388,7 @@ def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
 
 
 def series_request(root: Path, revision: str, directory: Path) -> Request:
-    """Return the request of a series: each commit of the revision that HEAD does not hold, from the oldest (THE SERIES).
+    """Return the request of a series: each commit of the revision that HEAD does not hold, from the oldest (the series).
 
     The patch of each commit against its first parent goes into a file of the directory.  A merge in the series gives no
     part, because its two sides are in the series or in HEAD.  Complexity: two runs of git for each commit.
@@ -1430,7 +1430,7 @@ def series_request(root: Path, revision: str, directory: Path) -> Request:
 
 
 def landed_subjects(root: Path, head: str, tip: str) -> frozenset[str]:
-    """Return the subject of each commit of HEAD after the merge base of HEAD and the tip of a series (THE SERIES).
+    """Return the subject of each commit of HEAD after the merge base of HEAD and the tip of a series (the series).
 
     Histories with no merge base give no subject.  Complexity: two runs of git, and linear in the commits after the
     merge base.
@@ -1509,7 +1509,7 @@ def is_under(path: str, items: set[str]) -> bool:
 
 
 def patch_sides(root: Path, patch: Path) -> tuple[dict[str, git.TreeEntry], dict[str, git.TreeEntry]]:
-    """Return the base and the result of each file of a patch: the entries before and after the patch (THE MERGE).
+    """Return the base and the result of each file of a patch: the entries before and after the patch (the merge).
 
     git builds an index of the blobs that the patch names as its base, and then it applies the patch to that index.
 
@@ -1525,7 +1525,7 @@ def patch_sides(root: Path, patch: Path) -> tuple[dict[str, git.TreeEntry], dict
 
 
 def is_witness_output(path: str) -> bool:
-    """Tell if a path is a file that the writer of the witness fixtures writes (THE MERGE)."""
+    """Tell if a path is a file that the writer of the witness fixtures writes (the merge)."""
     pure = PurePosixPath(path)
     directory = witness_fixtures.FIXTURE_DIR.as_posix()
     if pure.parent.as_posix() != directory:
@@ -1552,7 +1552,7 @@ def blob_text(root: Path, entry: git.TreeEntry | None) -> str | None:
 
 
 def ledger_rules(root: Path, scratch: Path) -> dict[str, rule_registry.Rule]:
-    """Return each rule with a ledger of the registry in the index of the composition, by its id (THE MERGE).
+    """Return each rule with a ledger of the registry in the index of the composition, by its id (the merge).
 
     A registry that does not read gives no rule, and each ledger then merges as text.
     """
@@ -1578,10 +1578,10 @@ def merged_ledger(
 ) -> tuple[git.TreeEntry | None, bool]:
     """Return the entry of a ledger that two changes of one base merge to, and tell if a count merged by a sum.
 
-    `equal` tells how two sides that change one count to one value merge (THE MERGE).
+    `equal` tells how two sides that change one count to one value merge (the merge).
 
     Raises:
-        LandError: If the merge of the ledger conflicts (THE MERGE of assay.core.ledger)
+        LandError: If the merge of the ledger conflicts (the merge of assay.core.ledger)
     """
     texts = (blob_text(root, sides[0]), blob_text(root, sides[1]), blob_text(root, sides[2]))
     try:
@@ -1596,7 +1596,7 @@ def merged_ledger(
 
 
 def merged_text(root: Path, path: str, sides: tuple[git.TreeEntry | None, ...]) -> git.TreeEntry:
-    """Return the entry of a file that two changes of one base merge to, by its lines (THE MERGE).
+    """Return the entry of a file that two changes of one base merge to, by its lines (the merge).
 
     Raises:
         LandError: If one side adds, removes or changes the mode of the file differently, or the lines conflict
@@ -1651,7 +1651,7 @@ def merged_set(texts: tuple[str, str, str]) -> str:
 
 
 def merged_row(root: Path, rows: tuple[str, str, str]) -> str:
-    """Merge three copies of one row of the registry by its fields (THE MERGE).
+    """Merge three copies of one row of the registry by its fields (the merge).
 
     A word KEY=VALUE merges by its value: a value of a list with commas merges by merged_set(), and a text cell after
     a bar merges by its words.  Each other change of one field by the two sides is a conflict.
@@ -1698,7 +1698,7 @@ def merged_row(root: Path, rows: tuple[str, str, str]) -> str:
 
 
 def row_key(line: str) -> str:
-    """Return the key of a row of the registry, its first two words, or "" for a line that is no row (THE MERGE)."""
+    """Return the key of a row of the registry, its first two words, or "" for a line that is no row (the merge)."""
     words = line.split(" ", 2)
     return f"{words[0]} {words[1]}" if len(words) == 3 and words[0] in REGISTRY_ROW_WORDS else ""
 
@@ -1739,7 +1739,7 @@ def merged_registry(root: Path, texts: tuple[str, str, str]) -> str:
 
 
 def merged_registry_entry(root: Path, path: str, sides: tuple[git.TreeEntry | None, ...]) -> git.TreeEntry:
-    """Return the entry of the registry that two changes merge to: by its lines, else by its rows (THE MERGE).
+    """Return the entry of the registry that two changes merge to: by its lines, else by its rows (the merge).
 
     Raises:
         LandError: If the lines conflict and the rows do not merge either
@@ -1755,7 +1755,7 @@ def merged_registry_entry(root: Path, path: str, sides: tuple[git.TreeEntry | No
 
 
 def regenerated_witnesses(root: Path, scratch: Path) -> list[tuple[git.TreeEntry | None, str]]:
-    """Return the entry of each witness fixture and of the manifest that the composed rule table gives (THE MERGE).
+    """Return the entry of each witness fixture and of the manifest that the composed rule table gives (the merge).
 
     The entries remove each fixture of no row.
 
@@ -1796,7 +1796,7 @@ def regenerated_witnesses(root: Path, scratch: Path) -> list[tuple[git.TreeEntry
 
 
 def merged_patch(root: Path, scratch: Path, patch: Path, problem: str, held: HeldPatch) -> PatchMerge:
-    """Compose a patch that does not apply as text by a three-way merge of each of its files (THE MERGE).
+    """Compose a patch that does not apply as text by a three-way merge of each of its files (the merge).
 
     A count ledger that ours and the patch change to one copy merges by its rows too, and each count that the two
     change to one value merges by a sum.  A patch of HeldPatch.LANDED that ours holds whole changes nothing.
@@ -1888,7 +1888,7 @@ def compose(
     since: str = "",
     held: HeldPatch = HeldPatch.LANDED,
 ) -> Composed:
-    """Compose the tree of a request on a commit (THE TREE, THE COMPOSITION).
+    """Compose the tree of a request on a commit (the tree, the composition).
 
     Args:
         root: The top of the work tree of the request
@@ -1896,7 +1896,7 @@ def compose(
         head: The full name of the commit that the tree starts from
         with_diff: Give the diff of the tree against the commit, too
         since: The commit of HEAD of the work tree at the request, or "".  The own paths compare with it
-        held: What a patch is when the composition holds each of its files (THE MERGE)
+        held: What a patch is when the composition holds each of its files (the merge)
 
     Raises:
         LandError: If the request does not compose
@@ -1968,9 +1968,9 @@ def commit_tree(root: Path, composed: Composed, message: str) -> str:
 
 
 def compose_link(queued: Queued, parent: str, since: str) -> Link:
-    """Compose the commit of a request on a commit, and return the link (THE BATCH).
+    """Compose the commit of a request on a commit, and return the link (the batch).
 
-    `since` is the commit that the own paths compare with (THE TREE).
+    `since` is the commit that the own paths compare with (the tree).
 
     Raises:
         LandError: If the request does not compose, or it changes nothing
@@ -1987,7 +1987,7 @@ def compose_link(queued: Queued, parent: str, since: str) -> Link:
 
 
 def series_link(queued: Queued, parent: str, since: str) -> Link:
-    """Compose each commit of a series on the commit before it, with its own message, and return the link (THE SERIES).
+    """Compose each commit of a series on the commit before it, with its own message, and return the link (the series).
 
     A commit whose change the commit before it holds gives no commit.  Complexity: one composition for each commit.
 
@@ -2047,7 +2047,7 @@ def branch_of(root: Path) -> str:
 
 
 def swap(root: Path, branch: str, new: str, head: str, subject: str) -> bool:
-    """Move the branch to the new commit when it holds the commit head, and tell if it moved (THE COMPARE-AND-SWAP)."""
+    """Move the branch to the new commit when it holds the commit head, and tell if it moved (the compare-and-swap)."""
     return git.swap_ref(root, branch, new, head, f"loop land: {subject}")
 
 
@@ -2061,7 +2061,7 @@ def working_names(root: Path, paths: Sequence[str]) -> dict[str, str]:
 
 
 def write_copy(root: Path, path: str, entry: git.TreeEntry | None) -> None:
-    """Give the working tree the copy of an entry, or remove the file for no entry (THE INDEX AND THE WORKING TREE).
+    """Give the working tree the copy of an entry, or remove the file for no entry (the index and the working tree).
 
     Raises:
         LandError: If the entry is not a file, such as a link or a commit of a different repository
@@ -2120,7 +2120,7 @@ def merged_copy(
 def synced_paths(root: Path, branch: str, request: Request, update: Update) -> list[str]:
     """Give the index and the working tree the landed copy of each path of an update, and return the warnings.
 
-    THE INDEX AND THE WORKING TREE gives the rules.  Complexity: a constant number of git calls for each path.
+    The index and the working tree give the rules.  Complexity: a constant number of git calls for each path.
     """
     target = update.index_commit
     tip = git.resolve(root, branch) if branch else None
@@ -2178,7 +2178,7 @@ def updated_tree(root: Path, branch: str, request: Request, update: Update) -> l
     """Give the work tree of a landed request the update of its verdict, and return the warnings.
 
     An error of git or of a file only gives a warning, because the commit is on the branch.  A work tree with HEAD on
-    a different branch gets no update (THE INDEX AND THE WORKING TREE).
+    a different branch gets no update (the index and the working tree).
     """
     try:
         current = git.symbolic_head(root)
@@ -2202,7 +2202,7 @@ def updated_tree(root: Path, branch: str, request: Request, update: Update) -> l
 def given_update(queued: Queued, decision: Decision) -> None:
     """Give the work tree of a landed request the update of its verdict as the holder, and write each warning as a line.
 
-    The process of the request gives the same update again after it reads the verdict (THE INDEX AND THE WORKING TREE).
+    The process of the request gives the same update again after it reads the verdict (the index and the working tree).
     """
     if decision.update is None:
         return
@@ -2219,12 +2219,12 @@ def chain_changed(chain: Sequence[Link]) -> tuple[str, ...]:
 
 
 def chain_built(chain: Sequence[Link]) -> tuple[str, ...]:
-    """Return each file that the gate writes for a chain of links, one time, sorted (THE MERGE)."""
+    """Return each file that the gate writes for a chain of links, one time, sorted (the merge)."""
     return tuple(sorted({path for link in chain for path in link.built}))
 
 
 def repository_of(queued: Queued) -> Path:
-    """Return the shared git directory of a request, or its work tree for a request with no such directory (THE HOLDER)."""
+    """Return the shared git directory of a request, or its work tree for a request with no such directory (the holder)."""
     return Path(queued.common) if queued.common else queued.root
 
 
@@ -2236,13 +2236,13 @@ def shown_item(verdict: gate.Verdict, item: str) -> str:
 def shown_items(verdict: gate.Verdict) -> frozenset[str]:
     """Return the failing items of a verdict with LOGS_MARK as the replacement of the directory of its logs.
 
-    The items of two runs then compare equal when only their directories of logs are different (THE RUN OF THE BASE).
+    The items of two runs then compare equal when only their directories of logs are different (the run of the base).
     """
     return frozenset(shown_item(verdict, item) for item in verdict.items)
 
 
 def cut_point(links: Sequence[Link]) -> int:
-    """Return the count of the first links in which no link changes a C++ file of an earlier link (THE BATCH).
+    """Return the count of the first links in which no link changes a C++ file of an earlier link (the batch).
 
     Complexity: linear in the paths of the links.
     """
@@ -2261,7 +2261,7 @@ def refused(status: int, *texts: str) -> Decision:
 
 
 def store_problem(repository: Path, pause: Callable[[float], None] = time.sleep) -> str | None:
-    """Return why the git store of a repository is damaged, or None for a whole store (THE STORE).
+    """Return why the git store of a repository is damaged, or None for a whole store (the store).
 
     A stop of the host can leave the file config with no bytes, or an object with no bytes.  The file config must
     have bytes, and `git fsck --connectivity-only --no-reflogs` must exit 0 in one of STORE_TRIES runs, with a pause
@@ -2296,7 +2296,7 @@ def store_problem(repository: Path, pause: Callable[[float], None] = time.sleep)
 
 
 def merge_lines(link: Link) -> list[Line]:
-    """Return the line that names each file of a request that THE MERGE composed, and each file that the gate writes.
+    """Return the line that names each file of a request that the merge composed, and each file that the gate writes.
 
     With no merged file, the result is no line.
     """
@@ -2326,7 +2326,7 @@ def written_text(verdict: gate.Verdict) -> str:
 
 
 def chain_budget_reason(chain: Sequence[Link]) -> str:
-    """Return the budget reason of a chain, or "" when a request of the chain gives none (THE BUDGET REASON).
+    """Return the budget reason of a chain, or "" when a request of the chain gives none (the budget reason).
 
     The reason of a chain of more requests holds the reason of each of them, in the sequence of the chain.  Complexity:
     linear in the links.
@@ -2341,7 +2341,7 @@ def chain_budget_rows(chain: Sequence[Link]) -> tuple[tuple[str, str], ...]:
     """Return the item and the text of each row that a request of a chain names with --budget-reason ITEM=TEXT.
 
     The text of a row holds the text of each request of the chain for the item: its own text for the item, else its
-    plain text.  A row gets a text only when each request gives one (THE BUDGET REASON).  Complexity: linear in the
+    plain text.  A row gets a text only when each request gives one (the budget reason).  Complexity: linear in the
     rows of the links times the links.
     """
     named = dict.fromkeys(item for link in chain for item, _ in link.queued.options.budget_rows)
@@ -2354,7 +2354,7 @@ def chain_budget_rows(chain: Sequence[Link]) -> tuple[tuple[str, str], ...]:
 
 
 def chain_lowers(chain: Sequence[Link]) -> tuple[tuple[str, str, str], ...]:
-    """Return the rule, the item and the reason of the cut of each row that a request of a chain lowers (THE LOWER).
+    """Return the rule, the item and the reason of the cut of each row that a request of a chain lowers (the lower).
 
     Each row takes the reason of its own request.  A row that two requests name keeps the first.  Complexity: linear
     in the rows of the links.
@@ -2367,19 +2367,19 @@ def chain_lowers(chain: Sequence[Link]) -> tuple[tuple[str, str, str], ...]:
 
 
 def raised_of(verdict: gate.Verdict) -> list[Line]:
-    """Return the line of each row of a budget that the gate raised or lowered for a verdict (THE BUDGET REASON)."""
+    """Return the line of each row of a budget that the gate raised or lowered for a verdict (the budget reason)."""
     raised = [Line(f"loop land: the gate raised the row {line} with the budget reason") for line in verdict.raised]
     return [*raised, *(Line(f"loop land: the lower of a budget: {line}") for line in verdict.lowered)]
 
 
 def flaky_of(verdict: gate.Verdict) -> list[Line]:
-    """Return the line of each flaky test of a verdict of the gate (THE FLAKY TESTS)."""
+    """Return the line of each flaky test of a verdict of the gate (the flaky tests)."""
     shown = f" (logs in {verdict.logs})" if verdict.logs else ""
     return [Line(f"{FLAKY_MARK}{name} is red in the suite and green alone{shown}", True) for name in verdict.flaky]
 
 
 def error_text(problem: Exception) -> str:
-    """Return the text of an error, with its type and its traceback when it is not of KNOWN_ERRORS (THE HOLDER)."""
+    """Return the text of an error, with its type and its traceback when it is not of KNOWN_ERRORS (the holder)."""
     if isinstance(problem, KNOWN_ERRORS):
         return str(problem)
     trace = "".join(traceback.format_exception(problem)).rstrip("\n")
@@ -2387,13 +2387,13 @@ def error_text(problem: Exception) -> str:
 
 
 def stopped_batch(problem: Exception) -> Decision:
-    """Return the verdict of each request of a batch that an error stopped: a usage error or a tool error (THE HOLDER)."""
+    """Return the verdict of each request of a batch that an error stopped: a usage error or a tool error (the holder)."""
     status = ExitCode.USAGE if isinstance(problem, LandError) else ExitCode.TOOL_FAILED
     return refused(status, f"loop land: {error_text(problem)}")
 
 
 class Journal:
-    """The journals of the requests of one queue (THE JOURNAL)."""
+    """The journals of the requests of one queue (the journal)."""
 
     __slots__ = ("queue",)
 
@@ -2411,7 +2411,7 @@ class Journal:
 
 
 class RightOfWay:
-    """The right of way of one batch in its queue, with the number of the first request of the batch (THE RIGHT OF WAY).
+    """The right of way of one batch in its queue, with the number of the first request of the batch (the right of way).
 
     The object holds the descriptor of the lock while the batch holds the right of way, and -1 before.
     """
@@ -2482,7 +2482,7 @@ class StackEntry:
 
 
 class StackRule(enum.Enum):
-    """The entries of the stack that a round of a batch composes on, after its lost runs (THE RULE OF ONE LOST RUN).
+    """The entries of the stack that a round of a batch composes on, after its lost runs (the rule of one lost run).
 
     ANY is the rule of a batch that lost no run: each entry, also an entry with no verdict.  OLDER is the rule after the
     first lost run: each accepted entry and each entry of an older batch, with no wait.  ACCEPTED is the rule after the
@@ -2500,7 +2500,7 @@ class StackRule(enum.Enum):
 
 
 class Stack:
-    """The entry of one batch in the stack of its queue, with the number of the first request of the batch (THE STACK).
+    """The entry of one batch in the stack of its queue, with the number of the first request of the batch (the stack).
 
     The object holds the descriptor of the lock of the entry from the first entry or the first mark in the line of the
     batch to free(), and -1 before.  The holder of the batch is the one writer of its entry and of its mark.
@@ -2548,7 +2548,7 @@ class Stack:
     def join_line(self, branch: str) -> None:
         """Write the mark of the batch in the line of the full stack of a branch, and hold the lock of the entry.
 
-        A mark that the batch holds already stays as it is (THE STACK).
+        A mark that the batch holds already stays as it is (the stack).
 
         Raises:
             OSError: If the lock file cannot be opened or locked, or the mark cannot be written
@@ -2623,7 +2623,7 @@ class Stack:
         """Return the stack from the branch: each entry on the commit of the entry before it, at most STACK_DEPTH.
 
         Among the entries on one commit, the stack takes the entry that lands first: a holder of a right of way
-        before a batch with none, then the smaller number (THE STACK).  Complexity: quadratic in the entries.
+        before a batch with none, then the smaller number (the stack).  Complexity: quadratic in the entries.
         """
         chain: list[StackEntry] = []
         top = tip
@@ -2637,14 +2637,14 @@ class Stack:
         return chain
 
     def is_right_held(self, number: int) -> bool:
-        """Tell if the batch with the number holds its right of way (THE RIGHT OF WAY)."""
+        """Tell if the batch with the number holds its right of way (the right of way)."""
         return heavy.is_held(queue_file(self.queue, number, RIGHT_SUFFIX))
 
 
 def stack_path(tip: str, base: str, entries: Sequence[StackEntry]) -> list[StackEntry] | None:
     """Return the entries of a path from the branch to a base, each on the commit of the one before, or None.
 
-    The path of a base at the branch is empty.  None tells that the base can never be the branch (THE STACK).
+    The path of a base at the branch is empty.  None tells that the base can never be the branch (the stack).
     Complexity: quadratic in the entries.
     """
     if tip == base:
@@ -2664,11 +2664,11 @@ def stack_path(tip: str, base: str, entries: Sequence[StackEntry]) -> list[Stack
 
 
 class BatchLanding:
-    """The landing of one batch of requests (THE BATCH, THE SEARCH, THE COMPARE-AND-SWAP).
+    """The landing of one batch of requests (the batch, the search, the compare-and-swap).
 
-    The object keeps the runs of the gate, the run that landed, and the run that refused each request, for THE
-    RECORD.  It also keeps the requests that wait for the next batch, the dropped requests and the verdicts of the
-    requests that landed.  `noise` keeps the lines of the problems that THE CONFIRMATION judged noise, for each
+    The object keeps the runs of the gate, the run that landed, and the run that refused each request, for the
+    record.  It also keeps the requests that wait for the next batch, the dropped requests and the verdicts of the
+    requests that landed.  `noise` keeps the lines of the problems that the confirmation judged noise, for each
     request.
     """
 
@@ -2716,10 +2716,10 @@ class BatchLanding:
         """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, the journal, the right,
         the stack and the release of a claim.
 
-        The first request gives the shared git directory and the branch (THE HOLDER).  With no check of the processes,
+        The first request gives the shared git directory and the branch (the holder).  With no check of the processes,
         each request stays in the batch.  With no right of way, the batch neither takes one nor waits for one.  With no
-        stack, the batch composes on the branch, and it writes no entry (THE STACK).  With no release, a request that
-        waits for the next batch keeps its claim until the end of the batch (THE LANES).
+        stack, the batch composes on the branch, and it writes no entry (the stack).  With no release, a request that
+        waits for the next batch keeps its claim until the end of the batch (the lanes).
         """
         self.repository = repository_of(batch[0])
         self.branch = batch[0].branch or branch_of(batch[0].root)
@@ -2764,7 +2764,7 @@ class BatchLanding:
         """Tell if the rule of the batch lets a round compose on an entry of the stack with no wait for its verdict.
 
         An accepted entry is settled with each rule.  With StackRule.ANY each entry is settled, and with StackRule.OLDER
-        also each entry of an older batch: a smaller number (THE RULE OF ONE LOST RUN).
+        also each entry of an older batch: a smaller number (the rule of one lost run).
         """
         if item.is_accepted or self.stack_rule is StackRule.ANY:
             return True
@@ -2793,13 +2793,13 @@ class BatchLanding:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
-        A focus runs only the configurations and the tests of the focus (assay.loop.gate, THE RUN OF THE BASE).
-        `is_alone` tells that the chain is the run alone of its one request (THE CONFIRMATION).  The title of the
+        A focus runs only the configurations and the tests of the focus (assay.loop.gate, the run of the base).
+        `is_alone` tells that the chain is the run alone of its one request (the confirmation).  The title of the
         candidate names the kind of the run: the run alone of the request, or the run of the batch.  A chain with a
-        count that THE MERGE summed runs each configuration.  The candidate names each file that THE MERGE leaves to the
-        gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).  The first run of a round writes
+        count that the merge summed runs each configuration.  The candidate names each file that the merge leaves to the
+        gate.  An error of the check is a problem of the commit (the error of a run).  The first run of a round writes
         the entry of the batch with its commit, and a red first run removes it.  `is_stacked` tells that the round
-        composed on the stack.  Its candidate names each built file, because a batch below can change one (THE STACK).
+        composed on the stack.  Its candidate names each built file, because a batch below can change one (the stack).
         """
         is_every = any(link.is_summed for link in chain)
         commit = chain[-1].commit
@@ -2843,7 +2843,7 @@ class BatchLanding:
         """Free the entry of the stack at once when a request of the chain leaves the queue while the block runs.
 
         A batch above stacks on the entry, and the commit of the entry holds the change of the request that left, so
-        that commit can never land (THE STACK).  A thread looks at the process of each request each WATCH_S seconds.
+        that commit can never land (the stack).  A thread looks at the process of each request each WATCH_S seconds.
         After the free, no fold writes the entry again (publish_fold()).  The batch then drops the request after the
         run, as before.  With no published entry, the block runs with no thread.
         """
@@ -2877,7 +2877,7 @@ class BatchLanding:
             thread.join()
 
     def publish_fold(self, commit: str) -> None:
-        """Write the commit of the fold of the built files into the entry of the batch, during the run (THE STACK).
+        """Write the commit of the fold of the built files into the entry of the batch, during the run (the stack).
 
         A batch that starts after this write stacks on the commit that the batch lands, if no later fold changes it.
         An entry that cannot be written gives a line, and the entry keeps its last commit.
@@ -2898,7 +2898,7 @@ class BatchLanding:
         check_report.write_line(f"loop land: the entry of the batch holds the commit {commit[:SHORT_HASH]} of the fold")
 
     def base_gate_run(self, changed: Sequence[str], focus: Sequence[gate.Focus]) -> gate.Verdict:
-        """Run the gate on the commit of the batch with the changed paths of the batch, and keep the run (THE RUN OF THE BASE).
+        """Run the gate on the commit of the batch with the changed paths of the batch, and keep the run (the run of the base).
 
         The run is a retry.  With a focus, it runs only the focus: the red tests and the configurations with a problem
         of the first run.  With no focus, it runs the tests of the configurations of the batch with an input that
@@ -2916,14 +2916,14 @@ class BatchLanding:
         return shown_items(self.runs[self.base_run].verdict) if self.base_run >= 0 else frozenset()
 
     def red_base_line(self) -> str:
-        """Return the line that tells that the commit of the batch is red with no request (THE RUN OF THE BASE)."""
+        """Return the line that tells that the commit of the batch is red with no request (the run of the base)."""
         return f"loop land: REJECTED, the commit {self.base[:SHORT_HASH]} of {self.branch} is red with no request"
 
     def compose_chain(self, accepted: Sequence[Link], items: Sequence[Queued]) -> tuple[list[Link], list[Queued]]:
         """Compose each request on the accepted links and on the requests before it, and refuse each that does not.
 
         A request with a process that left the queue drops out with no verdict.  The own paths of a request compare
-        with the commit of its HEAD at the request, else with the commit of the batch (THE TREE).  Returns the links
+        with the commit of its HEAD at the request, else with the commit of the batch (the tree).  Returns the links
         and the requests that do not compose or drop out.
         """
         links: list[Link] = []
@@ -2954,7 +2954,7 @@ class BatchLanding:
         """Give a request that is red on the accepted part the refusal, with the problems of its run.
 
         When each failing item of the run is an item of the run of the base, the first line tells that the branch is red
-        (THE RUN OF THE BASE).  A `lead` is the first line, such as the line of an interaction (THE CONFIRMATION).
+        (the run of the base).  A `lead` is the first line, such as the line of an interaction (the confirmation).
         """
         self.refused_by[queued.number] = run
         verdict = self.runs[run].verdict
@@ -2967,9 +2967,9 @@ class BatchLanding:
         self.decide(queued, refused(ExitCode.FINDINGS, *lines, *verdict.rows))
 
     def note_noise(self, queued: Queued, red_run: int, green_run: int) -> None:
-        """Keep a line for each problem of a red run that a green run of the same tree did not repeat (THE CONFIRMATION).
+        """Keep a line for each problem of a red run that a green run of the same tree did not repeat (the confirmation).
 
-        The holder writes each line, and the verdict of the request gives it (THE FLAKY TESTS).
+        The holder writes each line, and the verdict of the request gives it (the flaky tests).
         """
         red, green = self.runs[red_run].verdict, self.runs[green_run].verdict
         where = f"in {red.logs} " if red.logs else ""
@@ -2987,7 +2987,7 @@ class BatchLanding:
     def confirmed(self, queued: Queued, accepted: Sequence[Link], red_run: int) -> Link | None:
         """Run the red tree of a request again before its refusal, and return its link when its red run was noise.
 
-        THE CONFIRMATION gives the rules.  The function gives the refusal of a request whose tree is red two times,
+        The confirmation gives the rules.  The function gives the refusal of a request whose tree is red two times,
         and it returns None.  A request with a process that left the queue drops out, with None.
 
         Args:
@@ -3010,8 +3010,8 @@ class BatchLanding:
     def alone_line(self, queued: Queued, accepted: Sequence[Link], focus: Sequence[gate.Focus]) -> str:
         """Run the failed checks of a red chain on the request alone, and return the first line of its refusal.
 
-        The run alone is the request on the commit of the batch, with the focus of the second red run (THE
-        CONFIRMATION).  It only gives the words of the refusal: red alone too, or an interaction.
+        The run alone is the request on the commit of the batch, with the focus of the second red run (the
+        confirmation).  It only gives the words of the refusal: red alone too, or an interaction.
         """
         numbers = " ".join(link.queued.name for link in accepted)
         base = self.base[:SHORT_HASH]
@@ -3030,7 +3030,7 @@ class BatchLanding:
         return f"loop land: REJECTED, the request is red two times after the accepted requests {numbers}, and alone too"
 
     def reject_on_red_base(self, items: Sequence[Queued], batch_run: int) -> None:
-        """Give each request the refusal of a branch that is red with no request that repairs it (THE RUN OF THE BASE).
+        """Give each request the refusal of a branch that is red with no request that repairs it (the run of the base).
 
         The lines give each problem of the run of the base, and each other failing item of the first run of the batch,
         with the directory of its logs.
@@ -3055,7 +3055,7 @@ class BatchLanding:
         """Cut the batch at the first link that changes a C++ file of an earlier link.
 
         The requests from that link wait for the next batch.  The function cuts only at the first composition of the
-        batch (THE BATCH).
+        batch (the batch).
         """
         if self.is_cut:
             return pending, links
@@ -3074,12 +3074,12 @@ class BatchLanding:
         return [item for item in pending if item not in later], links[:kept]
 
     def search(self, items: Sequence[Queued]) -> tuple[list[Link], int]:
-        """Return the accepted links of the requests and the index of the run that accepted them as a unit (THE SEARCH).
+        """Return the accepted links of the requests and the index of the run that accepted them as a unit (the search).
 
-        The index is -1 when the gate accepts no request.  A first run that is red gets THE RUN OF THE BASE.  When
+        The index is -1 when the gate accepts no request.  A first run that is red gets the run of the base.  When
         that run is red, and the first run has each of its problems, each request gets the refusal of a red branch.
         Complexity: one run of the gate when the gate accepts each request.  A batch of n requests with r red
-        requests runs the gate O(r log n) times.  THE RUN OF THE BASE adds one run, and THE CONFIRMATION adds one or
+        requests runs the gate O(r log n) times.  the run of the base adds one run, and the confirmation adds one or
         two runs for each red request.
         """
         accepted: list[Link] = []
@@ -3123,7 +3123,7 @@ class BatchLanding:
     def flaky_lines(self, number: int) -> list[Line]:
         """Return the lines of the noise of a request and of each flaky test of each accepted run that holds it.
 
-        THE FLAKY TESTS gives the rules.  Complexity: linear in the runs and their flaky tests.
+        The flaky tests give the rules.  Complexity: linear in the runs and their flaky tests.
         """
         found = [
             line
@@ -3145,9 +3145,9 @@ class BatchLanding:
     def landed_decisions(
         self, accepted: Sequence[Link], verdict: gate.Verdict, final: str
     ) -> list[tuple[Queued, Decision]]:
-        """Return the verdict of each accepted request, with the update of its work tree (THE INDEX AND THE WORKING TREE).
+        """Return the verdict of each accepted request, with the update of its work tree (the index and the working tree).
 
-        The ledgers of THE REDUCE and the built files that the gate wrote go to the last request of each work tree.
+        The ledgers of the reduce and the built files that the gate wrote go to the last request of each work tree.
         Complexity: linear in the paths of the links.
         """
         ledgers = verdict.ledgers
@@ -3193,7 +3193,7 @@ class BatchLanding:
     def land(self, items: Sequence[Queued]) -> None:
         """Land the requests: compose, run the gate, search, and move the branch by compare-and-swap.
 
-        After the swap, each landed work tree gets its update before the first verdict (THE INDEX AND THE WORKING TREE).
+        After the swap, each landed work tree gets its update before the first verdict (the index and the working tree).
 
         Raises:
             gate.GateError: If the warm tree cannot hold a commit, or a step of the gate cannot start
@@ -3218,7 +3218,7 @@ class BatchLanding:
         """Run the rounds of land() until the swap, a refusal of each request, or ATTEMPTS refused swaps.
 
         After RIGHT_AFTER refused swaps, the batch takes its right of way before its next round.  Before each round and
-        before each swap, it waits for the batches that go first (THE RIGHT OF WAY, THE STACK).  A round composes on the
+        before each swap, it waits for the batches that go first (the right of way, the stack).  A round composes on the
         top of the stack, or on the branch.  A move of the branch from the base of a round on the branch counts as a
         refused swap.  A round on the stack whose base leaves the stack counts in STACK_ATTEMPTS.  The caller frees the
         right of way and the entry.
@@ -3316,7 +3316,7 @@ class BatchLanding:
     def stacked_round(
         self, pending: list[Queued], below: Sequence[StackEntry]
     ) -> tuple[list[Queued], list[Link], int, bool]:
-        """Run one round on the top of the stack: compose, write the entry, and run the gate one time (THE STACK).
+        """Run one round on the top of the stack: compose, write the entry, and run the gate one time (the stack).
 
         The round gives no verdict, because its base is not on the branch.  A request that does not compose on the
         stack makes the next round compose on the branch.  After a red run, the batch waits until the branch is at its
@@ -3366,7 +3366,7 @@ class BatchLanding:
         """Wait until the branch is at the base of the batch, or the base leaves the stack, and tell if it is the branch.
 
         The wait looks again each POLL_S seconds, for at most STACK_WAIT_S seconds.  After that bound, the next round
-        composes on the branch (THE STACK).
+        composes on the branch (the stack).
         """
         if self.stack is None:
             return self.tip() == self.base
@@ -3385,15 +3385,15 @@ class BatchLanding:
         """Wait before a step of a round for the batches that go first, and tell if the base can never be the branch.
 
         Before a run, the batch waits while a right of way goes first, or while the stack holds STACK_DEPTH entries.
-        `is_stacking` tells that the round can compose on the stack.  Such a batch holds a mark in THE LINE, and it also
+        `is_stacking` tells that the round can compose on the stack.  Such a batch holds a mark in the line, and it also
         waits while the older marks in the line are as many as the free places of the stack.  A batch whose `pending`
         requests each left the queue holds no mark, so it holds no younger batch until its wait ends.  A batch with
         StackRule.ACCEPTED also waits while an entry of the stack that had no verdict at the first look of the wait has
         none, and it holds no mark in the line during that wait.  An entry that comes into the stack during the wait
-        does not hold it (THE STACK, THE RULE OF ONE LOST RUN).  Before a swap, the batch waits while a right of way
+        does not hold it (the stack, the rule of one lost run).  Before a swap, the batch waits while a right of way
         goes first, or while batches of the stack are below its base.  A right of way does not go first when its holder
         is below the batch in the stack, or when the entry of its holder is not on the branch, because such a holder
-        cannot swap first (THE RIGHT OF WAY, THE STACK).  The wait looks again each POLL_S seconds.  A right of way holds
+        cannot swap first (the right of way, the stack).  The wait looks again each POLL_S seconds.  A right of way holds
         it for at most RIGHT_WAIT_S seconds, and the stack for at most STACK_WAIT_S seconds.  Each line names the
         batches that no earlier line of the wait named.
 
@@ -3474,7 +3474,7 @@ class BatchLanding:
     def landed_swap(
         self, accepted: Sequence[Link], decisions: Sequence[tuple[Queued, Decision]], final: str, run: int
     ) -> bool:
-        """Move the branch from the base of the batch to the final commit, and give each verdict (THE JOURNAL).
+        """Move the branch from the base of the batch to the final commit, and give each verdict (the journal).
 
         Returns:
             True if the swap moved the branch.  False if a different lane moved the branch first, and the journals
@@ -3499,7 +3499,7 @@ class BatchLanding:
         return False
 
     def records(self) -> list[RunRecord]:
-        """Return each run of the gate with the result of each of its requests (THE RECORD)."""
+        """Return each run of the gate with the result of each of its requests (the record)."""
         found: list[RunRecord] = []
         for index, run in enumerate(self.runs):
             results = []
@@ -3517,9 +3517,9 @@ class BatchLanding:
 
 
 def write_records(work: Path, mode: str, records: Sequence[RunRecord], lane: int = 0) -> None:
-    """Append one line of JSON for each run of the gate to the file RECORDS of the work directory (THE RECORD).
+    """Append one line of JSON for each run of the gate to the file RECORDS of the work directory (the record).
 
-    The line gives the lane of the run, from 1 (THE LANES).
+    The line gives the lane of the run, from 1 (the lanes).
     """
     if not records:
         return
@@ -3550,7 +3550,7 @@ def write_records(work: Path, mode: str, records: Sequence[RunRecord], lane: int
 
 
 def queue_of(work: Path, root: Path) -> Path:
-    """Return the queue of the repository of a work tree in the work directory (THE QUEUE).
+    """Return the queue of the repository of a work tree in the work directory (the queue).
 
     Raises:
         git.GitError: If root is not in a git work tree
@@ -3563,7 +3563,7 @@ def cited_runs(work: Path) -> frozenset[str]:
     """Return the name of each run of the gate that a verdict or a journal in a queue of the work directory cites.
 
     A verdict stays in the queue until the process of its request reads it and leaves the queue (remove_request()).
-    So the sweep of the runs keeps the logs of each such run for that read (THE LOGS of assay.loop.gate).  A file that
+    So the sweep of the runs keeps the logs of each such run for that read (the logs of assay.loop.gate).  A file that
     does not read cites no run.  Complexity: linear in the bytes of the verdicts and the journals.
     """
     found: set[str] = set()
@@ -3591,7 +3591,7 @@ def number_of(path: Path) -> int | None:
 def reserve(queue: Path) -> tuple[int, int]:
     """Take a new number of the queue, and return it with the descriptor of its lock, which the process holds.
 
-    Each number occurs one time only (THE QUEUE).  The process holds the lock of the file NEXT while it reserves.  It
+    Each number occurs one time only (the queue).  The process holds the lock of the file NEXT while it reserves.  It
     locks a new file first, and then it links that file to the file of the number.  A different process then does not see
     the file of the number with no lock.  Complexity: linear in the files of the queue.
     """
@@ -3620,7 +3620,7 @@ def reserve(queue: Path) -> tuple[int, int]:
 
 
 def encoded_request(queued: Queued, patch_names: Sequence[str], part_names: Sequence[str] = ()) -> bytes:
-    """Return the bytes of the file NUMBER.request or NUMBER.series of a request (THE QUEUE, THE SERIES).
+    """Return the bytes of the file NUMBER.request or NUMBER.series of a request (the queue, the series).
 
     `part_names` gives the name of the copy of the patch of each commit of a series in the queue.
     """
@@ -3685,7 +3685,7 @@ def token_of(data: bytes) -> str:
 
 
 def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
-    """Return the request of the bytes of a file NUMBER.request (THE QUEUE).
+    """Return the request of the bytes of a file NUMBER.request (the queue).
 
     Raises:
         ValueError: If the bytes do not hold JSON of REQUEST_FORMAT
@@ -3749,7 +3749,7 @@ def entered(
     """Write a request into the queue, hold its lock for the block, give the request, and remove its files at the end.
 
     The request of the block keeps the patches of the request.  The copy of each patch is in the queue.  `clock` gives
-    the time of the entry, in seconds since the epoch (THE RECORD).
+    the time of the entry, in seconds since the epoch (the record).
 
     Raises:
         LandError: If HEAD of the work tree is not on a branch, or a patch cannot be read
@@ -3787,7 +3787,7 @@ def request_file_of(queue: Path, number: int) -> Path:
 
 
 def remove_request(queue: Path, number: int) -> None:
-    """Remove each file of a request from the queue: the request file first, and the lock file last (THE QUEUE).
+    """Remove each file of a request from the queue: the request file first, and the lock file last (the queue).
 
     A holder then takes no request of a process that left the queue, and it finds no file of a request with no lock.
     """
@@ -3850,14 +3850,14 @@ def decoded_decision(data: bytes) -> Decision:
 
 
 def write_decision(queue: Path, queued: Queued, decision: Decision) -> None:
-    """Write the verdict file of a request into the queue, with the token of the request (THE HOLDER)."""
+    """Write the verdict file of a request into the queue, with the token of the request (the holder)."""
     cache.write_atomic(queue_file(queue, queued.number, VERDICT_SUFFIX), encoded_decision(decision, queued.token))
 
 
 def read_decision(queue: Path, number: int, token: str) -> Decision | None:
     """Return the verdict of a request from the queue, or None when the request has no verdict with its token.
 
-    A verdict with no token is the verdict of a request file that does not read (THE HOLDER).
+    A verdict with no token is the verdict of a request file that does not read (the holder).
     """
     try:
         data = queue_file(queue, number, VERDICT_SUFFIX).read_bytes()
@@ -3868,7 +3868,7 @@ def read_decision(queue: Path, number: int, token: str) -> Decision | None:
 
 
 def write_journal(queue: Path, queued: Queued, entry: JournalEntry) -> None:
-    """Write the journal file of a request into the queue (THE JOURNAL)."""
+    """Write the journal file of a request into the queue (the journal)."""
     record = {
         "format": REQUEST_FORMAT,
         "token": entry.token,
@@ -3880,7 +3880,7 @@ def write_journal(queue: Path, queued: Queued, entry: JournalEntry) -> None:
 
 
 def read_journal(queue: Path, number: int) -> JournalEntry | None:
-    """Return the journal of a request, or None when the request has no journal that reads (THE JOURNAL)."""
+    """Return the journal of a request, or None when the request has no journal that reads (the journal)."""
     try:
         record = json.loads(queue_file(queue, number, JOURNAL_SUFFIX).read_text(encoding="utf-8"))
         token, branch, final = text_list([record.get(key) for key in ("token", "branch", "final")], "journal")
@@ -3891,17 +3891,17 @@ def read_journal(queue: Path, number: int) -> JournalEntry | None:
 
 
 def is_alive(queue: Path, queued: Queued) -> bool:
-    """Tell if the process of a request holds the lock of the request (THE HOLDER)."""
+    """Tell if the process of a request holds the lock of the request (the holder)."""
     return heavy.is_held(queue_file(queue, queued.number, LOCK_SUFFIX))
 
 
 def is_claimed(queue: Path, number: int) -> bool:
-    """Tell if the holder of a different lane holds the claim of a request (THE LANES)."""
+    """Tell if the holder of a different lane holds the claim of a request (the lanes)."""
     return heavy.is_held(queue_file(queue, number, CLAIM_SUFFIX))
 
 
 class Claims:
-    """The claims of the requests of one batch, with the descriptor of the lock of each claim (THE LANES).
+    """The claims of the requests of one batch, with the descriptor of the lock of each claim (the lanes).
 
     The holder of the batch is the one owner.  free_all() frees each claim that the batch still holds.
     """
@@ -3948,7 +3948,7 @@ class Claims:
 def has_journal_verdict(queue: Path, queued: Queued) -> bool:
     """Give a request with a journal the verdict that the journal settles, and tell if the request then has a verdict.
 
-    A journal of a swap that did not occur goes, and the function gives False (THE JOURNAL).  For a journal of a
+    A journal of a swap that did not occur goes, and the function gives False (the journal).  For a journal of a
     swap that occurred, the work tree gets the update of the journal, and then the request gets its verdict.  When
     git cannot tell if the swap occurred, the journal goes, and the request gets the refusal of a tool error.
     """
@@ -3981,7 +3981,7 @@ def has_journal_verdict(queue: Path, queued: Queued) -> bool:
 
 
 def removed_orphans(queue: Path) -> None:
-    """Remove each file of a request with a verdict or a journal and no lock (THE QUEUE)."""
+    """Remove each file of a request with a verdict or a journal and no lock (the queue)."""
     for path in (*paths.listing(queue, f"*{VERDICT_SUFFIX}"), *paths.listing(queue, f"*{JOURNAL_SUFFIX}")):
         number = number_of(path)
         if number is not None and not heavy.is_held(queue_file(queue, number, LOCK_SUFFIX)):
@@ -3992,7 +3992,7 @@ def removed_dead_holders(queue: Path, now: float | None = None) -> list[str]:
     """Remove the files of the right of way and of the stack of each holder that ended, and return their names.
 
     A holder frees its files at the end of its batch (Right.free(), Stack.free()).  A holder that a signal or a stop of
-    the host ended leaves them, and each reader skips a file with no lock (THE RIGHT OF WAY, THE STACK).  The function
+    the host ended leaves them, and each reader skips a file with no lock (the right of way, the stack).  The function
     removes a file NUMBER.right or NUMBER.stacked whose lock no process holds, and a file NUMBER.stack or NUMBER.line
     whose file NUMBER.stacked no process holds.  It keeps a file younger than DEAD_HOLDER_AGE_S, because a holder makes
     its file before it takes the lock.  Complexity: linear in the files of the queue.
@@ -4026,10 +4026,10 @@ def removed_dead_holders(queue: Path, now: float | None = None) -> list[str]:
 
 
 def waiting_requests(queue: Path, pause: heavy.Pause = time.sleep) -> list[Queued]:
-    """Return each request of the queue with no verdict and a live process, in the sequence of the numbers (THE HOLDER).
+    """Return each request of the queue with no verdict and a live process, in the sequence of the numbers (the holder).
 
     The function removes the files of each request of a process that ended, and each verdict of a different token.
-    It gives a request with a journal the verdict that the journal settles (THE JOURNAL).  It waits INCOMPLETE_S
+    It gives a request with a journal the verdict that the journal settles (the journal).  It waits INCOMPLETE_S
     seconds for a live request with no request file, and then it skips it.  A request file that does not read gets a
     verdict of a usage error.  Complexity: linear in the files of the queue, for each look.
     """
@@ -4078,7 +4078,7 @@ def waiting_requests(queue: Path, pause: heavy.Pause = time.sleep) -> list[Queue
 
 
 def batch_of(found: Sequence[Queued]) -> list[Queued]:
-    """Return the requests of the next batch, in their sequence (THE HOLDER).
+    """Return the requests of the next batch, in their sequence (the holder).
 
     The batch holds the requests with the git directory and the branch of the first request.
     """
@@ -4091,7 +4091,7 @@ def batch_of(found: Sequence[Queued]) -> list[Queued]:
 def held_gate(
     work: Path, batch: Sequence[Queued], check: Check | None, lane: int = 0
 ) -> tuple[Check, contextlib.AbstractContextManager[None]]:
-    """Return the check of the gate of a batch and the session of the gate that the holder holds (THE HOLDER).
+    """Return the check of the gate of a batch and the session of the gate that the holder holds (the holder).
 
     A planted check gets no session.  Else the gate runs on the shared git directory of the first request, with the
     smallest --jobs of the batch, and each run writes its logs into a directory of its own.
@@ -4110,7 +4110,7 @@ def held_gate(
 
 
 def refused_queue(queue: Path, problem: Exception) -> bool:
-    """Give each live request of the queue the verdict of an error of the read of the queue (THE HOLDER).
+    """Give each live request of the queue the verdict of an error of the read of the queue (the holder).
 
     The holder then knows no batch.  The request file of each request gives the token of its verdict.  A request
     with a verdict of its token keeps that verdict.
@@ -4144,11 +4144,11 @@ def refused_queue(queue: Path, problem: Exception) -> bool:
 
 
 def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause = time.sleep, lane: int = 0) -> bool:
-    """Land one batch of the queue as the holder of the warm tree of a lane, and tell if a batch was there (THE HOLDER).
+    """Land one batch of the queue as the holder of the warm tree of a lane, and tell if a batch was there (the holder).
 
-    The caller holds the lock of the warm tree of the lane.  The holder claims each request of its batch (THE LANES).
+    The caller holds the lock of the warm tree of the lane.  The holder claims each request of its batch (the lanes).
     With no planted check, the batch runs the gate of assay.loop.gate on the shared git directory of its first request.
-    It holds the session of the gate, which goes before each other heavy step (THE PRIORITY OF THE GATE of
+    It holds the session of the gate, which goes before each other heavy step (the priority of the gate of
     assay.loop.heavy).  Each run of the gate writes its logs into a directory of its own.
     """
     claims = Claims(queue)
@@ -4176,9 +4176,9 @@ def held_batch(
     lane: int,
     release: Release | None = None,
 ) -> bool:
-    """Land a claimed batch as the holder of the warm tree of a lane, write the records, and give True (THE HOLDER).
+    """Land a claimed batch as the holder of the warm tree of a lane, write the records, and give True (the holder).
 
-    `release` frees the claim of a request that waits for the next batch (THE LANES).
+    `release` frees the claim of a request that waits for the next batch (the lanes).
     """
     decided: set[int] = set()
 
@@ -4216,12 +4216,12 @@ def held_batch(
 
 
 def hold_lane(work: Path, queue: Path, lane: int) -> bool:
-    """Land one batch of the queue as the holder of the warm tree of a lane, with the gate (THE HOLDER, THE LANES)."""
+    """Land one batch of the queue as the holder of the warm tree of a lane, with the gate (the holder, the lanes)."""
     return hold(work, queue, lane=lane)
 
 
 def settle(batch: Sequence[Queued], decide: Decide, landing: BatchLanding | None, failure: Decision) -> None:
-    """Give each request of a batch that stopped on an error its verdict (THE HOLDER).
+    """Give each request of a batch that stopped on an error its verdict (the holder).
 
     A request that landed gets the verdict of its landing.  A request that waits for the next batch, or that dropped
     out, gets no verdict.  Each other request gets the verdict of the error.  A verdict that cannot be written gives a
@@ -4258,9 +4258,9 @@ def landing(
     holder: Holder = hold_lane,
     pause: heavy.Pause = time.sleep,
 ) -> int:
-    """Write the request into the queue, wait for its verdict or for the lock, and return its exit (THE WAIT).
+    """Write the request into the queue, wait for its verdict or for the lock, and return its exit (the wait).
 
-    The process then gives its work tree the update of a verdict of a landing (THE INDEX AND THE WORKING TREE).
+    The process then gives its work tree the update of a verdict of a landing (the index and the working tree).
 
     Raises:
         LandError: If HEAD of the work tree is not on a branch, or a patch cannot be read
@@ -4289,7 +4289,7 @@ def landing(
 
 
 def held_heavy_lock(root: Path, environment: Mapping[str, str] = os.environ) -> str | None:
-    """Tell how this process holds the lock of the heavy steps, or give None (THE LOCK OF A HEAVY STEP).
+    """Tell how this process holds the lock of the heavy steps, or give None (the lock of a heavy step).
 
     Complexity: linear in the open descriptors of the process.
     """
@@ -4310,7 +4310,7 @@ def checked(root: Path, request: Request, options: Options, work: Path) -> int:
     """Run the gate on the commit of a request as --check does, alone with the lock of the warm tree, and return the exit.
 
     --check with an empty request checks HEAD itself.  The entry time of the request in its record is the start of the
-    call, before the wait for the lock (THE RECORD).
+    call, before the wait for the lock (the record).
 
     Raises:
         LandError: If HEAD of the work tree is not on a branch
@@ -4375,7 +4375,7 @@ def preview(root: Path, request: Request, options: Options) -> int:
 
 
 def driver_tree(root: Path) -> Path | None:
-    """Return the main work tree when this module is not its copy there, else None (THE DRIVER)."""
+    """Return the main work tree when this module is not its copy there, else None (the driver)."""
     main_tree = heavy.main_work_tree(root)
     if Path(__file__).resolve() == (main_tree / MODULE_PATH).resolve():
         return None
@@ -4383,7 +4383,7 @@ def driver_tree(root: Path) -> Path | None:
 
 
 def run_driver(main_tree: Path, argv: Sequence[str]) -> int:
-    """Run the same words with the copy of the main work tree, and return its exit (THE DRIVER)."""
+    """Run the same words with the copy of the main work tree, and return its exit (the driver)."""
     command = [sys.executable, str(main_tree / MASTER_PATH), "land", *argv]
     check_report.write_line(f"loop land: the landing runs the copy of {main_tree}")
     completed = proc.run(

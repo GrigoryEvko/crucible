@@ -1,6 +1,6 @@
 // A branded foreground context is not started over bytes.
 //
-// VIOLATION: a translation unit starts the lifetime of the foreground
+// Violation: a translation unit starts the lifetime of the foreground
 // context of a brand over a zeroed buffer, and skips the claim.
 //
 // Expected diagnostic: no matching call to start_as_array, because

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The schema table admits a name only when its tag satisfies
 // SchemaNameSource: Sanitized (a boundary checked it, and the check

@@ -1,6 +1,6 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
-// The cell of an owner names its writer in its type (THE CELL OF AN OWNER of
+// The cell of an owner names its writer in its type (the cell of an owner in
 // foundation/core/Atomic.h).  The owner of another class makes a proof of the
 // same role, but the proof names that class, so the store of the cell has no
 // overload for it.

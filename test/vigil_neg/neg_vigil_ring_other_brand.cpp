@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // ring() hands out the producer surface of the ring, so it asks for the
 // foreground context of a Vigil's producer claim.  The context of another

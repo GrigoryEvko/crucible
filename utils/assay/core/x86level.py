@@ -1,14 +1,14 @@
 """x86level — the x86-64 level of the host, and the check of the level that a test or a bench needs.
 
-THE NEED
+Need
     The configure of a build gives each executable target the x86-64 level
-    that its units need (THE NEED OF A TEST of cmake/TestLevel.cmake).  The
+    that its units need (the need of a test in cmake/TestLevel.cmake).  The
     launcher of a test gets the need as the option --x86-level of `loop
     test-step`.  The file NEEDS_FILE of the build directory gives the need of
     each target that needs more than v1, one row "TARGET vN" for each, for a
     start of a bench with no test launcher.
 
-THE LEVEL OF A HOST
+Level of a host
     Python cannot read CPUID.  The level probe of the build,
     PROBE_DIRECTORY/PROBE_LIBRARY, compiles at x86-64 (v1), and it reads the
     level of the host through the level door of foundation/os/X86Level.h, the
@@ -25,7 +25,7 @@ THE LEVEL OF A HOST
     the same request reads the file and loads no probe.  A different boot or a
     different request loads the probe again.
 
-THE CHECK
+Check
     refusal() gives the text of a skip when the host is below the need, else
     None.  A launcher prints the text and ends with SKIP_CODE before the
     program starts.
@@ -39,7 +39,7 @@ import os
 # imports no pathlib, because the test launcher imports this module, and each test pays its imports.
 type PathText = str | os.PathLike[str]
 
-# The variable of a request of a level (THE LEVEL OF A HOST), which the loader of the vessel also reads.
+# The variable of a request of a level (the level of a host), which the loader of the vessel also reads.
 REQUEST_VARIABLE = "CRUCIBLE_ISA_LEVEL"
 # The level probe of a build, below its build directory (vessel/torch/CMakeLists.txt).
 PROBE_DIRECTORY = "lib"
@@ -49,7 +49,7 @@ PROBE_ABI_VERSION = 1
 # The file of the needs of the targets, and the file of the level of the host, in a build directory.
 NEEDS_FILE = "x86-level-needs.txt"
 CACHE_FILE = "x86-host-level.txt"
-# The boot id of the kernel, which changes at each boot (THE LEVEL OF A HOST).
+# The boot id of the kernel, which changes at each boot (the level of a host).
 BOOT_ID_FILE = "/proc/sys/kernel/random/boot_id"
 # The exit of a launcher that skips a test, which each test of the tree takes as its SKIP_RETURN_CODE.
 SKIP_CODE = 77
@@ -106,7 +106,7 @@ def boot_id(path: PathText = BOOT_ID_FILE) -> str:
 
 
 def probe_level(probe: PathText, request: str) -> int:
-    """Load the level probe at `probe`, and return the level that it picks for the request (THE LEVEL OF A HOST).
+    """Load the level probe at `probe`, and return the level that it picks for the request (the level of a host).
 
     Raises:
         LevelError: If the probe is not there, cannot load, or has a different ABI stamp
@@ -135,7 +135,7 @@ def probe_level(probe: PathText, request: str) -> int:
 
 
 def host_level(build_dir: PathText, request: str | None = None, boot: str | None = None) -> int:
-    """Return the level of the host for the request, from the cache of the build or from its probe (THE LEVEL OF A HOST).
+    """Return the level of the host for the request, from the cache of the build or from its probe (the level of a host).
 
     Args:
         build_dir: The build directory, which holds the probe and the cache
@@ -173,7 +173,7 @@ def host_level(build_dir: PathText, request: str | None = None, boot: str | None
 
 
 def refusal(need: int, host: int, request: str, subject: str) -> str | None:
-    """Return the text of a skip when the host is below the need, else None (THE CHECK).
+    """Return the text of a skip when the host is below the need, else None (the check).
 
     Args:
         need: The level that the program needs, from 1 to 4
@@ -191,7 +191,7 @@ def refusal(need: int, host: int, request: str, subject: str) -> str | None:
 
 
 def needs_of(build_dir: PathText) -> dict[str, int]:
-    """Return the need of each target of NEEDS_FILE of a build, or no need when the file is not there (THE NEED).
+    """Return the need of each target of NEEDS_FILE of a build, or no need when the file is not there (the need).
 
     Complexity: linear in the rows.
 
@@ -217,7 +217,7 @@ def needs_of(build_dir: PathText) -> dict[str, int]:
 
 
 def bench_refusal(build_dir: PathText, target: str) -> str | None:
-    """Return the text of a skip of a bench target whose need is above the host, else None (THE CHECK).
+    """Return the text of a skip of a bench target whose need is above the host, else None (the check).
 
     A start of a bench with no test launcher calls it: `loop bench`, `loop pgo` and the measurement of `loop evidence`.
     A host other than x86_64 and a target with no row need nothing.

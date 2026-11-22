@@ -480,7 +480,7 @@ void implication_cycle_between_two_names_for_one_predicate() noexcept;
 // answers a query of a predicate against itself with one step.
 //
 // The relation reads the name of each predicate, so a query stops the
-// build when a unit specialized the premise or the conclusion (THE SEAL
+// build when a unit specialized the premise or the conclusion (the seal
 // of fixy/Predicates.h).  A chain needs no seal of a predicate between the
 // two ends: the steps hold for the predicates of fixy/Predicates.h, and
 // they compose to a claim about the two ends alone.

@@ -53,7 +53,7 @@ void test_sums_on_each_thread_count() {
 }
 
 // A run with NaNs and infinities: the parallel sum and the sum of one thread
-// give the canonical NaN for a NaN sum (THE VALUES OUTSIDE THE BOUND of
+// give the canonical NaN for a NaN sum (the values outside the bound of
 // foundation/core/Reduce.h), on each thread count.
 template <spawn::BodyCoupling Coupling, std::size_t Shards>
 void check_nan_sums(View<float const> all) noexcept {

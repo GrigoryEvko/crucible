@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // An operator override forces a state only with the OperatorOverride
 // permission token.  A call with no token has no matching overload.

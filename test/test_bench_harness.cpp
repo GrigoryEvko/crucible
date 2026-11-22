@@ -549,7 +549,7 @@ void test_clobber_array_source_container_diversity() {
     }
 }
 
-// The sink of a timed body (THE SINK of bench/bench_harness.h).  An integer,
+// The sink of a timed body (the sink of bench/bench_harness.h).  An integer,
 // an enumeration and a pointer take a general register, a float and a double
 // a vector register, a small class whose copy is a copy of its bytes a
 // general register or memory, and each other type memory.  Each form changes
@@ -638,7 +638,7 @@ void test_sink_keeps_each_value() {
 }
 
 // A row whose median call takes less than kCycleFloor cycles of the TSC is
-// NOT VALID (THE CYCLE FLOOR of bench/bench_harness.h).  One cycle a call is
+// not valid (the cycle floor of bench/bench_harness.h).  One cycle a call is
 // the time of a body with one load, so the floor does not mark it.  A report
 // with no calibration of the TSC has no cycles, and the floor does not judge
 // it.  The time of a real body changes with the load of the host, so each
@@ -1263,7 +1263,7 @@ void test_median_of_a_part() {
     CHECK(approx(median_of(3, 6), 3.0));
 }
 
-// A Run splits its sampled loop into five windows (THE WINDOWS of
+// A Run splits its sampled loop into five windows (the windows of
 // bench/bench_harness.h).  Ten samples give five windows and keep the ten
 // samples.  Three samples give one window for each sample.  A body of about
 // a millisecond with a cap of 50 ms ends each window at its part of the time
@@ -1478,14 +1478,14 @@ void test_planted_pause_is_caught() {
     // voluntary switch in the window, and the check judges it by its lost
     // time.  The readings open no file between their clocks.  So the read-set
     // tracer of `loop test-step`, which stops each open, adds no switch and no
-    // arrival in the window (THE PAUSE CHECK of bench/bench_harness.h).  The
+    // arrival in the window (the pause check of bench/bench_harness.h).  The
     // first run of each new build of the test is a traced run.
     CHECK(paused.pause.basis == bench::PauseBasis::LostTime);
     CHECK(paused.pause.lost_ns >= 1900000u);
     CHECK(paused.pause.own_ns() >= 1900000u);
     CHECK(paused.pause.is_over_bound());
     // The window of the planted pause has its own check, and it marks that
-    // window (THE WINDOWS of bench/bench_harness.h).
+    // window (the windows of bench/bench_harness.h).
     CHECK(paused.paused_windows >= 1u);
     const ::fixy::TextView basis = paused.pause.basis == bench::PauseBasis::LostTime ? ::fixy::TextView{"lost time"}
                                                                                      : ::fixy::TextView{"run delay"};

@@ -10,7 +10,7 @@
 //
 // Three legs, each a property rather than a restatement of the last run.
 //
-//   1  ADDRESS INDEPENDENCE.  The same computation is described twice with
+//   1  Address independence.  The same computation is described twice with
 //      different data_ptr values, out of two separate arenas, in an order
 //      that puts the second build at a different address.  Each region's
 //      content hash, and the merkle hash over them, must come out equal
@@ -20,11 +20,11 @@
 //      happen to live.  A data_ptr absorbed into the fold would break it,
 //      and the fold is where a well-meant edit would put one.
 //
-//   2  THE REFERENCE PIN.  Both builds must equal a committed hash.  Leg 1
+//   2  The reference pin.  Both builds must equal a committed hash.  Leg 1
 //      alone cannot see a change to the fold's seed, to the order of its
 //      operands, to the SIMD dimension hash, or to the traversal that
 //      feeds it: those move both sides together.  A count cannot pin this
-//      and neither can a self-comparison.  The hash IS the content, so the
+//      and neither can a self-comparison.  The hash is the content, so the
 //      pin is the hash.
 //
 //      A legitimate change to the format reddens this test.  That is the
@@ -33,13 +33,13 @@
 //      keyed on the old value is then known to be stale rather than
 //      silently wrong.
 //
-//   3  PLAN DETERMINISM.  The same slot set yields the same pool size and
+//   3  Plan determinism.  The same slot set yields the same pool size and
 //      the same offset for every slot, twice, and equals a committed
 //      reference.  §L3 rests on this: same DFG, same plan, same addresses,
 //      so the same kernel sees the same alignment and the same aliasing on
 //      every run and on every machine.
 //
-// WHY THE VERDICT IS AN EXIT CODE.  This file uses no assertion macro.
+// Why the verdict is an exit code.  This file uses no assertion macro.
 // CRUCIBLE_PRE follows the contract semantic of the build, and the ignore
 // semantic makes it an assumption with no check.  So a test written with
 // it proves less as the build gets closer to what ships.
@@ -50,7 +50,7 @@
 // exit code, the way test_serialize_release_gate.cpp does it and for the
 // same reason.
 //
-// WHAT THIS TEST DOES NOT COVER, so that nobody reads more into a green
+// What this test does not cover, so that nobody reads more into a green
 // line than it earns.  It is one process on one host.  It does not compare
 // across machines, across vendors, or across a reshard — those are
 // cross_vendor_step_invariant and fleet_reshard_replay, and both need
@@ -184,7 +184,7 @@ struct Built {
     uint64_t offsets[kNumSlots]{};
 };
 
-// TWO regions, chained.  For a lone region compute_merkle_hash returns the
+// Two regions, chained.  For a lone region compute_merkle_hash returns the
 // content hash unchanged — correct for a leaf, and it makes a merkle pin on
 // one region a second copy of the content pin rather than a second pin.
 // Chaining makes the fold do its work (fmix64 of the head's content against

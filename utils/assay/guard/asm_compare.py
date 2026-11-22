@@ -6,7 +6,7 @@ usage: guard asm-compare --function NAME... --objects BEFORE AFTER [--require-sa
        guard asm-compare --function NAME... --source FILE --build-dir DIR --base REVISION [--with-sanitizers]
                          [--require-same]
 
-THE SIDES
+Sides
     The command compares two sides: the code before a change and the code
     after it.  The code of a side is the code of one object:
       --objects  two object files, such as the objects of one unit in two
@@ -25,10 +25,10 @@ THE SIDES
     word of the quarantine plugin (PLUGIN_PREFIX, PLUGIN_DEFINE), because the
     plugin reads the code and does not change it.  With no
     --with-sanitizers, a compile also has no sanitizer word, as the verdict
-    of the rule codegen-shapes has none (THE COMPILES of
+    of the rule codegen-shapes has none (the compiles of
     assay.guard.engines.elf.codegen_shapes).
 
-THE FUNCTIONS
+Functions
     NAME is the demangled name of a function, such as
     fixy::concurrent::AtomicSnapshot<Payload>::load.  The full name of a
     function of a side has its parameter list and its qualifiers.  The
@@ -41,10 +41,10 @@ THE FUNCTIONS
     nearest names.  The full name has no unnamed namespace, and the cold
     part of a function is a part of it (codes_of() of codegen_shapes).
 
-THE DIFFERENCE
+Difference
     The command reads the instructions of each function on its returning
-    paths, with the normalization of the rule codegen-shapes.  THE WALK and
-    THE NORMALIZATION of codegen_shapes give that normalization.  For each
+    paths, with the normalization of the rule codegen-shapes.  the walk and
+    the normalization of codegen_shapes give that normalization.  For each
     NAME the command prints the count of the instructions of each side.
     Then it prints each instruction that only one side holds, with its class:
     check, branch, call, division, indexed or plain.  The two lists come from
@@ -52,7 +52,7 @@ THE DIFFERENCE
     codegen_shapes).  A function with no such instruction has the same
     normalized code on the two sides.
 
-THE EXIT
+Exit
     0 when the command prints each function.  With `--require-same`, 1 when
     a function has an instruction that only one side holds.  3 when a
     side cannot be read or compiled, or when a NAME agrees with no function
@@ -79,9 +79,9 @@ from assay.guard.engines.elf import codegen_shapes as shapes
 from assay.readers import cmake, compdb
 
 PROGRAM = "guard asm-compare"
-# The qualifiers at the end of a demangled member function, which a NAME does not hold (THE FUNCTIONS).
+# The qualifiers at the end of a demangled member function, which a NAME does not hold (the functions).
 QUALIFIERS = (" const", " volatile", " &&", " &", " noexcept")
-# The words of the quarantine plugin that a compile of a side does not have (THE SIDES).
+# The words of the quarantine plugin that a compile of a side does not have (the sides).
 PLUGIN_PREFIX = "-fplugin"
 PLUGIN_DEFINE = "-DCRUCIBLE_QUARANTINE_ACTIVE"
 # The number of the nearest names in the message of a NAME that agrees with no function.
@@ -121,7 +121,7 @@ class Difference:
 
 
 def object_side(path: Path) -> Side:
-    """Return the side of one object file (THE SIDES).
+    """Return the side of one object file (the sides).
 
     Raises:
         SideError: If the file is missing, or objdump or c++filt does not succeed
@@ -182,7 +182,7 @@ def side_entry(entry: compdb.CompileEntry, old_root: Path, new_root: Path) -> co
 
 
 def compiled_side(label: str, entry: compdb.CompileEntry, with_sanitizers: bool) -> Side:
-    """Compile the unit of a row into a scratch object, and return its side (THE SIDES).
+    """Compile the unit of a row into a scratch object, and return its side (the sides).
 
     Raises:
         SideError: If the compile or the disassembly does not succeed
@@ -194,7 +194,7 @@ def compiled_side(label: str, entry: compdb.CompileEntry, with_sanitizers: bool)
 
 
 def build_sides(builds: Sequence[Path], source: Path, with_sanitizers: bool) -> tuple[Side, Side]:
-    """Return the sides of one unit compiled in two build directories (THE SIDES, --builds).
+    """Return the sides of one unit compiled in two build directories (the sides, --builds).
 
     Raises:
         SideError: If a build cannot be read, or a compile does not succeed
@@ -229,7 +229,7 @@ def exported(root: Path, revision: str, scratch: Path) -> Path:
 
 
 def base_sides(build_dir: Path, source: Path, revision: str, with_sanitizers: bool) -> tuple[Side, Side]:
-    """Return the sides of one unit at a revision and in the tree, with the command of one build (THE SIDES, --base).
+    """Return the sides of one unit at a revision and in the tree, with the command of one build (the sides, --base).
 
     Raises:
         SideError: If the build or the revision cannot be read, or a compile does not succeed
@@ -247,7 +247,7 @@ def base_sides(build_dir: Path, source: Path, revision: str, with_sanitizers: bo
 
 
 def plain_name(name: str) -> str:
-    """Return a function name with no qualifier of QUALIFIERS at its end and no parameter list (THE FUNCTIONS)."""
+    """Return a function name with no qualifier of QUALIFIERS at its end and no parameter list (the functions)."""
     trimmed = name
     while True:
         qualifier = next((item for item in QUALIFIERS if trimmed.endswith(item)), None)
@@ -257,7 +257,7 @@ def plain_name(name: str) -> str:
 
 
 def code_of(side: Side, name: str) -> shapes.Code:
-    """Return the code of the one function of a side that agrees with NAME (THE FUNCTIONS).
+    """Return the code of the one function of a side that agrees with NAME (the functions).
 
     Complexity: linear in the functions of the side.
 
@@ -275,7 +275,7 @@ def code_of(side: Side, name: str) -> shapes.Code:
 
 
 def difference(name: str, before: Side, after: Side) -> Difference:
-    """Return the difference of one function of the two sides (THE DIFFERENCE).
+    """Return the difference of one function of the two sides (the difference).
 
     Raises:
         SideError: If a side has no function or two functions that agree with NAME
@@ -292,7 +292,7 @@ def difference(name: str, before: Side, after: Side) -> Difference:
 
 
 def lines_of(item: Difference) -> list[str]:
-    """Return the lines that the command prints for one function (THE DIFFERENCE)."""
+    """Return the lines that the command prints for one function (the difference)."""
     lines = [f"{item.name}: before {item.before_count} instructions, after {item.after_count} instructions"]
     if item.is_same:
         return [*lines, f"{INDENT}the same normalized instructions"]
@@ -306,7 +306,7 @@ def lines_of(item: Difference) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class Request:
-    """The words of one call of the command: the NAMEs, the sides and the two flags (THE SIDES)."""
+    """The words of one call of the command: the NAMEs, the sides and the two flags (the sides)."""
 
     names: tuple[str, ...]
     objects: tuple[Path, Path] | None = None
@@ -329,7 +329,7 @@ class Request:
 
 
 def sides_of(request: Request) -> tuple[Side, Side]:
-    """Return the two sides that a request names (THE SIDES).
+    """Return the two sides that a request names (the sides).
 
     Raises:
         SideError: If a side cannot be read or compiled
@@ -347,10 +347,10 @@ def sides_of(request: Request) -> tuple[Side, Side]:
 
 
 def compare(request: Request) -> int:
-    """Print the difference of each NAME of the two sides of a request (THE EXIT).
+    """Print the difference of each NAME of the two sides of a request (the exit).
 
     Returns:
-        The exit code of THE EXIT
+        The exit code of the exit section
     """
     problem = request.problem()
     if problem is not None:
@@ -371,10 +371,10 @@ def compare(request: Request) -> int:
 
 
 def main(argv: list[str]) -> int:
-    """Read the words of the command, and print the difference of each NAME of two sides (THE EXIT).
+    """Read the words of the command, and print the difference of each NAME of two sides (the exit).
 
     Returns:
-        The exit code of THE EXIT
+        The exit code of the exit section
     """
     from assay.core import cli
 

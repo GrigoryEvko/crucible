@@ -285,7 +285,7 @@ INHERITING_PRESETS = """{"version": 6, "configurePresets": [
 
 
 def inheritance_cases(expect: testing.Expect) -> None:
-    """Check the parents, the vendor entries and the test presets of a planted presets file (THE INHERITANCE)."""
+    """Check the parents, the vendor entries and the test presets of a planted presets file (the inheritance)."""
     with tempfile.TemporaryDirectory(prefix="assay-cmake-") as scratch:
         root = Path(scratch) / "tree"
         root.mkdir()

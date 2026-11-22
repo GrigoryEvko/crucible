@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The row of a tag is the walk that the variable template row_cell_at
 // keeps, and a translation unit can specialize a variable template.  The

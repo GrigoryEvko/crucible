@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Every tag an n-ary split names needs an effect row.  The second child
 // here declares none.  The fit concept of the token form compares no

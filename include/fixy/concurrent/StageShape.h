@@ -5,7 +5,7 @@
 // non-const rvalue reference.  The order is the data-flow order, so a
 // producer parameter ahead of a consumer parameter is not a stage.
 //
-// THE KEYS OF A STAGE
+// Keys of a stage
 //   After the handles, a stage can name keys of named brands, LoanKey<B>&.
 //   The stage door is a root door: it mints one key of each brand on the
 //   thread of the stage, through the entry of foundation/core/RootKeys.h,
@@ -43,7 +43,7 @@ inline constexpr bool stage_output_param_v =
     stage_param_rvalue_nonconst_v<FnPtr, I> && is_producer_handle_v<refl::param_type_t<FnPtr, I>>;
 
 // A key of a named brand, LoanKey<B>&, which the stage door mints for the body
-// on the thread of the stage (THE KEYS OF A STAGE).
+// on the thread of the stage (the keys of a stage).
 template <auto FnPtr, std::size_t I>
 inline constexpr bool stage_key_param_v =
     ::foundation::core::detail::key_brand_of_<refl::param_type_t<FnPtr, I>>::is_key;

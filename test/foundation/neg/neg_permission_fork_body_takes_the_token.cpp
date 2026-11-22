@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A body that holds its child token can move the token out of the fork,
 // into storage that outlives the join.  The parent that the fork gives

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A live TCP_INFO harvest takes an admitted SocketFd.  A raw int does not
 // convert to the refined descriptor, so it cannot reach getsockopt.  The

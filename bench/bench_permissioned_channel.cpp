@@ -1,6 +1,6 @@
 // The push and the pop of the permissioned channels, across threads.
 //
-// THE OPS
+// Ops
 //   spsc push   try_push of the producer handle of an SPSC channel on the main
 //               thread, and try_pop of its consumer handle on one worker
 //   spsc pop    try_pop of the consumer handle on the main thread, and try_push
@@ -13,17 +13,17 @@
 //   A push into a full ring and a pop of an empty ring wait with the spin hint.
 //   The wait of a worker stops when the row stops.
 //
-// THE PHASES OF A ROW
+// Phases of a row
 //   1. The window: the main thread runs its op for kWindowNs and counts it.
 //      The row gives the ops of the main thread in one second.
 //   2. The latency: the workers go on, and the main thread runs its op under
 //      Run::measure, one op in each sample.  The report gives p50, p99 and the
 //      maximum of one op, with the wait for the other side in it.
 //
-// THE ROWS
+// Rows
 //   spsc push and spsc pop with 2 threads, mpsc push and mpsc pop with 2 and
 //   4 threads.  Slot k of the spread holds thread k, and slot 0 is the main
-//   thread (THE SPREAD OF A RUN of bench/bench_harness.h).  The bench states
+//   thread (the spread of a run of bench/bench_harness.h).  The bench states
 //   four cores, so loop bench gives it one L3 group:
 //       python3 utils/bin/loop bench bench_permissioned_channel
 
@@ -161,7 +161,7 @@ struct RowResult {
     bench::Report latency{};
 };
 
-// The two phases of the main thread (THE PHASES OF A ROW).  The workers of
+// The two phases of the main thread (the phases of a row).  The workers of
 // the row run already, one for each thread apart from the main thread, and
 // they stop when the call stops the row.  The run gives the name of the row.
 template <class Op>

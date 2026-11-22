@@ -94,7 +94,7 @@ using LinearFountainPacket = ::fixy::Linear<FountainPacket<SourceSymbols, Symbol
 
 // The members of the two codecs call the kernels of the target of
 // crucible/cntp/Fec.h.  So the codecs and their mints are in the inline
-// namespace CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of
+// namespace CRUCIBLE_SIMD_TARGET (the target namespace of
 // foundation/Platform.h), and each target has its own codec types.
 inline namespace CRUCIBLE_SIMD_TARGET {
 

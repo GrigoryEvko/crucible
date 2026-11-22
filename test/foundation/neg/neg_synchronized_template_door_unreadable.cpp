@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The constraint of the template door set refuses the probe body, so the check
 // of the statement has no specialization to read, and it cannot see whether
-// the door takes a proof.  The check fails closed and refuses the door (THE
-// DOORS OF A SYNCHRONIZED CLASS of foundation/Transfer.h).
+// the door takes a proof.  The check fails closed and refuses the door (the
+// doors of a synchronized class of foundation/Transfer.h).
 //
 // Expected diagnostic: the template has no specialization for the probe body,
 // and the diagnostic names the template set.

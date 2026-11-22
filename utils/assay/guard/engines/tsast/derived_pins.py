@@ -1,6 +1,6 @@
 """derived-pins — a static_assert does not pin a constant to its own literal.
 
-THE PATTERN
+Pattern
     The rule refuses this pattern:
 
         inline constexpr int surface_cardinality = 28;
@@ -12,7 +12,7 @@ THE PATTERN
     (`enumerators_of(^^E).size()`), a `tuple_size_v`, the `.size()` of an
     array or a `sizeof`.  Then a real edit moves one side and not the other.
 
-THE RULE
+Rule
     A pin is an `==` in the condition of a static_assert, also in a
     conjunction, between a name and an integer literal, in each order.  The
     rule refuses:
@@ -45,7 +45,7 @@ THE RULE
     pins.  A floor or a ceiling (`>=`, `<=`) is a bound, such as the limit of
     an API, and the rule does not read it.
 
-THE SCOPE
+Scope
     The scope of the registry, less the negative-compile fixtures of the
     directories test/NAME_neg/.  A pin in a macro body is not read.
 

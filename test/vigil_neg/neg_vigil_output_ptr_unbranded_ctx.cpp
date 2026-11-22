@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // An output pointer of the replayed op is read only by the thread that
 // holds this Vigil's producer claim, and mint_producer_context is the

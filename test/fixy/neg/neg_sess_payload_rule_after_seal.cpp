@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The payload rules of the family `core` are sealed in
 // fixy/session/Protocol.h.  A rule that a later header adds to that

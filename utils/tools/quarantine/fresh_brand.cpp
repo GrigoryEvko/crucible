@@ -1,7 +1,7 @@
 // The family fresh brand, the rule fresh-brand: no caller names or deduces the
 // fresh brand of a mint.
 //
-// THE FRESH BRAND
+// Fresh brand
 //     A mint takes its fresh brand from the default argument of a template
 //     parameter: a closure type that CRUCIBLE_FRESH_BRAND or
 //     CRUCIBLE_SCOPE_BRAND of include/foundation/Brand.h writes.  Each use of
@@ -10,7 +10,7 @@
 //     default argument is a closure type, or a value of a closure type, is a
 //     fresh brand of the template (is_closure_default of plugin.h).
 //
-// THE ROUTES
+// Routes
 //     A caller that gives a fresh brand an argument that it holds makes a
 //     second value of one identity, such as a second exclusive token.  Three
 //     routes give the parameter an argument that is no default:
@@ -23,7 +23,7 @@
 //     The two kinds close the three routes.  A specialization deduces the
 //     arguments that it does not name from its declared type.
 //
-// THE KINDS
+// Kinds
 //     deduced-brand   the fresh brand stands in a deduced context of the
 //                     function type: the return type or the type of a
 //                     parameter.  A brand inside a nested name specifier, such
@@ -41,7 +41,7 @@
 //     The entity is the qualified name of the template and the position of
 //     the parameter in its list, from 0.
 //
-// THE TEMPLATES
+// Templates
 //     Each function template of a file under the source root or of the build
 //     directory: at namespace scope, a member template of a class or of a
 //     class template, a friend template that a class declares, and the call
@@ -49,14 +49,14 @@
 //     template that the unit only declares, and PLUGIN_FINISH_PARSE_FUNCTION
 //     gives each definition, also of a lambda.
 //
-// THE ERRORS
+// Errors
 //     Each finding is a compile error in each build and each mode
 //     (is_each_mode_kind of plugin.h), at the first declaration of the
 //     template.  The message does not start with "quarantine: ", so a regex of
 //     a negative fixture reads it.  A test of an open route puts the template
 //     in an opt-out region of the reason class PROBE:.
 //
-// THE ACTIVATION
+// Activation
 //     The argument fresh-brand=on turns on the rule (plugin.cpp), and
 //     Quarantine.cmake gives it to each compile of the tree.  A compile of a
 //     plant of a different rule has no such argument.
@@ -228,7 +228,7 @@ void record_fresh(Kind kind, tree template_decl, int index) {
                 qualified_name(template_decl) + ", the template parameter " + std::to_string(index));
 }
 
-// The two kinds for one function template (THE KINDS).
+// The two kinds for one function template (see the kinds).
 void check_template(tree template_decl) {
     if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL
         || !read_templates.insert(template_decl).second) {

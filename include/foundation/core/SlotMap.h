@@ -13,7 +13,7 @@
 //                       one word, so a foreign caller, such as Python, holds
 //                       it as one integer
 //
-// THE MINT
+// Mint
 //   mint_slot_map<T, Tag>(alloc, capacity)
 //                       the empty map of capacity slots, in one allocation.  A
 //                       capacity of zero allocates nothing.  The third template
@@ -21,7 +21,7 @@
 //                       std::uint16_t or std::uint32_t, and std::uint32_t when
 //                       the call names none
 //
-// THE OPERATIONS
+// Operations
 //   insert(value)       puts value in a free slot, and gives its key, or
 //                       Full<T> when no slot is free.  No allocation: the mint
 //                       took the storage of each slot
@@ -39,7 +39,7 @@
 //   for (x : map)       each value, in the order of the indexes of the slots
 //   keys()              each key of a value, in the same order
 //
-// THE KEYS
+// Keys
 //   A key is a number, and a caller can build one from a word, so get and
 //   remove read each key as a claim.  The index of a key must be below the
 //   count of the slots that a value took at least one time, and the
@@ -49,13 +49,13 @@
 //   again.  Each key that insert gives has an odd generation and an index
 //   below 0xFFFFFFFF, so no key is the empty value of an Option of a key.
 //
-// THE FREE SLOTS
+// Free slots
 //   The free slots are a stack of indexes, so an insert searches nothing: it
 //   takes the last index that a remove freed, or else the first slot that no
 //   value took yet.  The order of the indexes, the keys and the walk depend
 //   only on the order of the calls, never on an address or a hash.
 //
-// THE WRAP OF A GENERATION
+// Wrap of a generation
 //   A remove at the largest generation of the word would wrap the generation
 //   to zero, and the next insert would give the generation 1 again: a key of
 //   a value that the map removed long ago would then match a new value.  So
@@ -210,7 +210,7 @@ struct SlotMapState {
     [[= ::foundation::linear::drop_door{}]] static constexpr void end_slot_(T& value) noexcept { value.~T(); }
 
     // Ends each value in the order of the slots, and gives the allocation
-    // back, with each slot unpoisoned (THE SPARE STORAGE of Heap.h).
+    // back, with each slot unpoisoned (the spare storage of Heap.h).
     // Complexity: O(used).
     static constexpr void release(SlotMapState const& state) noexcept {
         if (state.values == nullptr) {
@@ -420,7 +420,7 @@ public:
         return Quantity<unit::Element, std::uint32_t>{this->state_.capacity};
     }
 
-    // Puts value in a free slot (THE FREE SLOTS), and gives its key, or
+    // Puts value in a free slot (the free slots), and gives its key, or
     // Full<T> when no slot is free.  For a linear T the Full holds the value.
     // No allocation and no search.
     [[nodiscard]] constexpr Result<SlotKey<Tag>, Full<T>> insert(T value) & noexcept {
@@ -451,7 +451,7 @@ public:
 
     // The value of key, as an Option of a Ref with the fresh brand of the
     // call, or no value when the slot of key does not hold the value of key
-    // (THE KEYS).  The pack refuses each explicit argument, and the result
+    // (the keys).  The pack refuses each explicit argument, and the result
     // type holds the brand in undeducible_brand_t.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
@@ -477,8 +477,8 @@ public:
 
     // Moves the value of key out, and frees its slot: the generation of the
     // slot takes one more, and its index goes onto the stack of the free
-    // slots.  The slot is then poisoned (THE SPARE STORAGE of Heap.h).  At
-    // the largest generation the slot retires (THE WRAP OF A GENERATION).  No
+    // slots.  The slot is then poisoned (the spare storage of Heap.h).  At
+    // the largest generation the slot retires (the wrap of a generation).  No
     // value for a key that the slot does not hold.
     [[nodiscard]] constexpr Option<T> remove(SlotKey<Tag> key) & noexcept {
         if (!holds_(key.raw())) {
@@ -530,7 +530,7 @@ public:
 // The empty map of capacity slots: one allocation of the values, the stack of
 // the free indexes and the generations.  No slot holds a value, and no byte
 // of a slot is read before an insert writes it, so each slot of the values is
-// poisoned (THE SPARE STORAGE of Heap.h).  A capacity of zero allocates
+// poisoned (the spare storage of Heap.h).  A capacity of zero allocates
 // nothing.  Complexity: one allocation.
 template <class T, class Tag, class Generation, class Marker>
     requires CanMintSlotMap<T, Tag, Generation, Marker>

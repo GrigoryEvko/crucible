@@ -1,18 +1,18 @@
 """one_set — the run and the write of a rule of the engine elf with one set of rows that judges each build.
 
-THE SET
+Set
     The ledger of such a rule holds one set of rows.  A Debug build, a
     Release build and a build with a sanitizer give other facts, and the set
     holds the facts of each of them.  Each build is judged against the full
     set (assay.core.ledger.compare()).  A fact of the build with no row is an
     error.  A row
     that the build does not give passes, because a ledger fails only on a
-    growth (THE POLICIES of assay.core.ledger).
+    growth (the policies of assay.core.ledger).
 
-THE RUN
+Run
     run_inspection() writes the findings and the summary line of the rule.
 
-THE WRITE
+Write
     write_inspection() writes the set from one build:
       * The write keeps each row of the ledger.  One build cannot see the
         facts of a different build.  A write that removed a row that the
@@ -27,9 +27,9 @@ THE WRITE
         cannot read writes nothing.  A build with an error that no row of the
         ledger admits writes nothing (Inspection.unadmitted).
 
-THE REDUCE
+Reduce
     The landing gate gives the write a build of each of its configurations
-    of objects (THE REDUCE of assay.core.ledger).  The write then takes the
+    of objects (the reduce of assay.core.ledger).  The write then takes the
     largest count of each key over these builds, and it lowers each row to
     that count.  It removes a row of a fact that no build gives, and it keeps
     each admit row.  It refuses each count above its row, because the check
@@ -48,16 +48,16 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.guard.engines.elf import runner
 
-# The mode admit of a write gives this status (THE WRITE).
+# The mode admit of a write gives this status (the write).
 USAGE_STATUS = 2
 
 
 @dataclass(frozen=True, slots=True)
 class Inspection:
-    """The findings of one build, judged against the set, with the counts that the write uses (THE SET).
+    """The findings of one build, judged against the set, with the counts that the write uses (the set).
 
     `counts` gives the count of each key of the build that a write writes.  `unadmitted` gives each error of
-    `findings` that no row of the ledger can admit, and a write writes nothing while one holds (THE WRITE).
+    `findings` that no row of the ledger can admit, and a write writes nothing while one holds (the write).
     """
 
     findings: tuple[check_report.Finding, ...]
@@ -69,7 +69,7 @@ class Inspection:
 
 @dataclass(frozen=True, slots=True)
 class WritePolicy:
-    """What a write of a rule refuses and writes (THE WRITE).
+    """What a write of a rule refuses and writes (the write).
 
     `row_problems` gives an error for each row of a ledger that the rule refuses.  `refusal_kinds` names the kinds of
     the keys that only --raise writes, when the count of the build is above the row.  `raise_reasons` are the reasons
@@ -112,7 +112,7 @@ def ledger_problems(
     row_shape: str,
     is_single: Callable[[rule_ledger.Key], bool],
 ) -> list[check_report.Finding]:
-    """Return an error for each row of a ledger that the rule refuses (THE SET).
+    """Return an error for each row of a ledger that the rule refuses (the set).
 
     `is_row` accepts a row, and `row_shape` tells the shape of a row.  A key that `is_single` accepts has the count
     1.  Complexity: linear in the rows.
@@ -132,7 +132,7 @@ def ledger_problems(
 
 
 def run_inspection(rule_id: str, examine: Callable[[], Inspection], warnings_dir: Path | None) -> int:
-    """Run the inspection of a build, and write its findings and its summary (THE RUN).
+    """Run the inspection of a build, and write its findings and its summary (the run).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
@@ -163,7 +163,7 @@ def risen_rows(inspection: Inspection, held: Mapping[rule_ledger.Key, int], kind
 
 
 def set_counts(ledger: rule_ledger.Ledger, counts: Mapping[rule_ledger.Key, int]) -> dict[rule_ledger.Key, int]:
-    """Return the count of each key of the written set: the larger of its row and of the build (THE WRITE).
+    """Return the count of each key of the written set: the larger of its row and of the build (the write).
 
     Each admit row stays with the count 1, and a write adds no admit row.  Complexity: linear in the rows and the
     counts.
@@ -225,7 +225,7 @@ def write_inspection(
     examine: Callable[[runner.ElfContext], Inspection],
     policy: WritePolicy,
 ) -> int:
-    """Write the set of the ledger with the counts of the builds of the request (THE WRITE, THE REDUCE).
+    """Write the set of the ledger with the counts of the builds of the request (the write, the reduce).
 
     Returns:
         0 when the ledger is written.  1 when the write refuses a count or a build cannot be read.  2 for the mode
@@ -280,13 +280,13 @@ def write_inspection(
 def writer(
     examine: Callable[[rule_registry.Rule, runner.ElfContext], Inspection], policy: WritePolicy
 ) -> Callable[[rule_registry.Rule, runner.WriteRequest], int]:
-    """Return the function write(rule, request) of a rule module, which writes through write_inspection() (THE WRITE).
+    """Return the function write(rule, request) of a rule module, which writes through write_inspection() (the write).
 
     The runner of the engine calls the function write of a rule module for `guard write`.
     """
 
     def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-        """Write the set of the ledger with the counts of the builds of the request (THE WRITE).
+        """Write the set of the ledger with the counts of the builds of the request (the write).
 
         Returns:
             0 when the ledger is written.  1 when the write refuses a count or a build cannot be read.  2 for the mode

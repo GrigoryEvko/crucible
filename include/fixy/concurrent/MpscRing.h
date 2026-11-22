@@ -12,7 +12,7 @@
 // cell: a cell that still holds the value of the round before shows a full
 // ring at that ticket.
 //
-// THE MEASURED REASON
+// Measured reason
 //   An earlier form kept the ready signal out of band, one bit for each cell
 //   in a packed bitmap, so that the cells stay packed.  Each producer and the
 //   consumer then did a read-modify-write on one bitmap word for each 64
@@ -23,9 +23,9 @@
 //   3, 1.5 times with 7 and 2.3 times with 15, and a batch push of 16 gave 1.0
 //   to 1.8 times.
 //
-// THE SPACING OF THE CELLS
-//   The ring takes the spacing of its cells as a parameter (THE SPACING OF THE
-//   CELLS of fixy/concurrent/SequenceCells.h).  With packed cells, two
+// Spacing of the cells
+//   The ring takes the spacing of its cells as a parameter (the spacing of the
+//   cells of fixy/concurrent/SequenceCells.h).  With packed cells, two
 //   producers with adjacent tickets write one cache line.  With the spacing
 //   line, each cell takes a line of its own, and the ring pays a line for each
 //   item.  In bench_thread_scaling on isolated cores of one L3 group, the push
@@ -135,7 +135,7 @@ public:
     // All or nothing: a batch that does not fit pushes no items.  The
     // consumer frees the cells in the order of their tickets, so a last cell
     // that is free for its ticket shows each cell of the batch as free
-    // (THE TURN OF A WRITER of fixy/concurrent/SequenceCells.h).  One claim
+    // (the turn of a writer of fixy/concurrent/SequenceCells.h).  One claim
     // takes the tickets of the whole batch.
 
     [[nodiscard, gnu::hot]] std::size_t try_push_batch(::foundation::core::View<T const> items) noexcept {

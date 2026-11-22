@@ -4,7 +4,7 @@
 // append of a part of the same text, the frame doors, the freeze into a
 // HeapText, the foreign doors of Region.h, and the CText of a text that keeps
 // a zero after its characters.  test/fixy/test_core_grow_lend.cpp holds the
-// deaths of THE LEND COUNT.
+// deaths of the lend count.
 
 #include <foundation/core/Grow.h>
 

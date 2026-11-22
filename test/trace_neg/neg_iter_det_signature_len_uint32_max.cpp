@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: minting IterationDetector::SignatureLen with UINT32_MAX in a
 // constexpr context (wide miss, the whole upper half-line).

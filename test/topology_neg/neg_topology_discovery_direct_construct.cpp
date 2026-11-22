@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The snapshot's constructor is private, so mint_discovery_snapshot is the
 // only door.  A snapshot built directly would skip the initialisation

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A snapshot is reached only through its mint, which checks the cog and
 // computes the effective bandwidth.  It has no default constructor, and its

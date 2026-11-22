@@ -13,7 +13,7 @@
 // fail the second, and the property is that neither is admitted: the
 // refusal is for saying nothing about what it hides.
 //
-// VIOLATION: a TU asks for the row of an unrostered wrapper around an
+// Violation: a TU asks for the row of an unrostered wrapper around an
 // engaged computation.
 //
 // Expected diagnostic: the payload_row_is_classified static_assert, with

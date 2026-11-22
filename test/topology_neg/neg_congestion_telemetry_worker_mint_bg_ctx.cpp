@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Only an Init-row context mints the congestion telemetry worker.  A
 // background context may record into a worker but may not create one.

@@ -1,7 +1,7 @@
 // Tier 2, through the mistake a reader of fixy/Role.h is most likely to
-// make: passing a ROLE where an ATOM belongs.
+// make: passing a role where an atom belongs.
 //
-// A role is an alias for a whole binding — role::PureCopy<int> IS
+// A role is an alias for a whole binding — role::PureCopy<int> is
 // fn<int, atom::copy> — so writing it inside a pack asks for a binding
 // whose grade on some axis is another binding.  It is not an atom: it is
 // not final, it does not derive atom_base, and it names no axis.  Tier 2

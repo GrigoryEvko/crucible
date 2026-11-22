@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // lookup() gives a C text tagged source::Interned: the schema table owns
 // and interns the name.  A text tagged source::External is raw input from

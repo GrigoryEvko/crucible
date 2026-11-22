@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The flow map takes a flow class that mint_tc_flow_class declared.  A raw
 // class does not convert to the declared class, so the update is refused.

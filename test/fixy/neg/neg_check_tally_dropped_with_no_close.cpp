@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A Tally that ends with no close would lose its failures.  The constructor
 // is nodiscard, so an expression that builds a Tally and drops it at once is

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The members_of of GCC 16 lists no alias member whose target is a closure
 // type, so the member check reads such a member on a copy of the node with

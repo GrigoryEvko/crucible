@@ -119,7 +119,7 @@ static_assert(matrix_sum() == 66);
 }
 static_assert(scope_sum() == 66);
 
-// A strided view refers to its elements (THE TRANSFER).  The walk above
+// A strided view refers to its elements (the transfer).  The walk above
 // writes each element through a const view of int, so a const view of
 // elements that are not const is no shared read.  A view of const elements
 // moves to another thread and two threads read it.

@@ -5,7 +5,7 @@ BuildContext.graph(), and the dependency log of Ninja through
 assay.readers.ninja.  One run judges the four parts of the graph that
 follow, and it gives the findings of each part.
 
-THE POOLS
+Pools
     cmake/JobPools.cmake gives Ninja the pool compile and the pool link.  The
     depth of each pool comes from the job count of the host at each
     configure.  Each compile, and each custom command that compiles an object,
@@ -23,7 +23,7 @@ THE POOLS
                       link.  One finding gives the number of such edges for
                       each kind of edge and each pool, and the first edge
 
-THE ORDER
+Order
     No compile waits for a link or an archive through an input after `||`
     (an `order-only` input).
 
@@ -51,7 +51,7 @@ THE ORDER
     command can run a tool of the build to write a file that a compile reads.
     The entity is the output of the link or the archive.
 
-THE CUSTOM OBJECTS
+Custom objects
     Each object that a custom command compiles has the headers of its compile
     in the dependency log of Ninja.
 
@@ -72,7 +72,7 @@ THE CUSTOM OBJECTS
     build with no custom command that writes an object, for example a build
     with CRUCIBLE_HAVE_BPF off, gives no finding of this part.
 
-THE LINKER
+Linker
     Each link of the tree runs mold (cmake/Linker.cmake).  The compiler gets
     -fuse-ld=mold, -B with the bin directory of the pinned mold, and the
     linker options --threads=N and --no-fork.  N is the limit of the rule in
@@ -99,19 +99,19 @@ THE LINKER
     it.  The configure step refuses a mold of a different version.  For that
     reason, the rule does not run ld.mold.
 
-THE INPUT
+Input
     The rule gives `input` when it cannot read build.ninja, a file that
     build.ninja includes or the dependency log.  It also gives `input` when
     it cannot divide a variable of a link edge into words, and when the
     limit of the rule is not an integer above 0.  With no graph, the rule
     judges no part.
 
-THE MISSING DEPENDENCIES
+Missing dependencies
     missing_dependencies(build) gives each file of the dependency log that is
     not on the disk.  The rule reconfigure-noop calls it, because such a file
     makes its edge run again on each build.
 
-THE PLANTS
+Plants
     The plants of the rule start from the tree of its control control-graph.
     That tree holds a planted build with the two pools, a custom object with
     a depfile, the linker flags of cmake/Linker.cmake on each link, and a
@@ -143,7 +143,7 @@ from assay.readers import ninja as ninja_reader
 RULE = "build-graph"
 # The path of the registry that gives the limit of the rule, in a finding.
 REGISTRY_FILE = "utils/registry.txt"
-# The tree of each plant of the rule (THE PLANTS).
+# The tree of each plant of the rule (the plants).
 BASE_CONTROL = "control-graph"
 # The suffix of an object that a custom command compiles.
 OBJECT_SUFFIX = ".o"
@@ -175,7 +175,7 @@ DEFAULT_COUNT = "the default of mold"
 LINK_VARIABLES = ("FLAGS", "LINK_FLAGS")
 # The characters that a '$' escapes in a value of a Ninja variable.
 NINJA_ESCAPED = frozenset("$ :")
-# The repair of a link edge (THE LINKER).
+# The repair of a link edge (the linker).
 LINKER_REPAIR = (
     "Configure the build again: cmake/Linker.cmake gives each link -fuse-ld=mold, -B with the bin directory of the "
     "pinned mold, the thread count of the rule build-graph and --no-fork"
@@ -184,7 +184,7 @@ LINKER_REPAIR = (
 
 @dataclass(frozen=True, slots=True)
 class Pool:
-    """One Ninja pool of cmake/JobPools.cmake: its name, its edges and the repair of an edge outside it (THE POOLS).
+    """One Ninja pool of cmake/JobPools.cmake: its name, its edges and the repair of an edge outside it (the pools).
 
     `kinds` are the edge kinds of assay.readers.ninja in the pool.  With
     `has_custom_objects`, the pool also holds each custom command that
@@ -256,7 +256,7 @@ def pooled_edges(graph: ninja_reader.Graph, pool: Pool, objects: Sequence[int]) 
 
 
 def pool_findings(graph: ninja_reader.Graph, shown: str, objects: Sequence[int]) -> list[check_report.Finding]:
-    """Give the errors of the two pools: a pool that the graph does not have, and an edge outside its pool (THE POOLS).
+    """Give the errors of the two pools: a pool that the graph does not have, and an edge outside its pool (the pools).
 
     Complexity: linear in the edges.
     """
@@ -295,7 +295,7 @@ def pool_findings(graph: ninja_reader.Graph, shown: str, objects: Sequence[int])
 
 
 def order_only_waits(graph: ninja_reader.Graph) -> dict[tuple[int, int], int]:
-    """Find each input after `||` that a link or an archive writes, behind each compile (THE ORDER).
+    """Find each input after `||` that a link or an archive writes, behind each compile (the order).
 
     Complexity: linear in the edges and their inputs, with one memo entry for each edge.
 
@@ -343,7 +343,7 @@ def order_only_waits(graph: ninja_reader.Graph) -> dict[tuple[int, int], int]:
 
 
 def order_findings(graph: ninja_reader.Graph, shown: str) -> list[check_report.Finding]:
-    """Give one error for each input after `||` that a link or an archive writes, behind a compile (THE ORDER)."""
+    """Give one error for each input after `||` that a link or an archive writes, behind a compile (the order)."""
     found: list[check_report.Finding] = []
     for (waiter, link), count in sorted(order_only_waits(graph).items()):
         waiting = graph.edges[waiter]
@@ -400,7 +400,7 @@ def no_header(edge: ninja_reader.Edge, listed: ninja_reader.Deps, shown: str) ->
 def custom_findings(
     build: Path, graph: ninja_reader.Graph, shown: str, objects: Sequence[int]
 ) -> list[check_report.Finding]:
-    """Give one error for each object of a custom command when Ninja does not record its headers (THE CUSTOM OBJECTS).
+    """Give one error for each object of a custom command when Ninja does not record its headers (the custom objects).
 
     An edge with no depfile gives one error, and the rule then does not read
     the list of its object.  Complexity: linear in the edges, their inputs and
@@ -436,7 +436,7 @@ def custom_findings(
 
 @dataclass(frozen=True, slots=True)
 class LinkSetting:
-    """The linker words of one link edge (THE LINKER).
+    """The linker words of one link edge (the linker).
 
     `linker` is the value of the last -fuse-ld, or empty when the edge has
     none.  `prefixes` holds each -B prefix in sequence.  `threads` is the
@@ -558,7 +558,7 @@ def thread_count(context: BuildContext) -> int | check_report.Finding:
 
 
 def linker_message(kind: str, value: str, count: int) -> str:
-    """Return the start of the message of a group of link edges of one kind and one value (THE LINKER)."""
+    """Return the start of the message of a group of link edges of one kind and one value (the linker)."""
     if kind == "linker":
         given = f"{LINKER_OPTION}{value}, and not {LINKER_OPTION}{LINKER}" if value else f"no {LINKER_OPTION}{LINKER}"
         return f"give the compiler {given}, and GCC then runs a different linker"
@@ -582,7 +582,7 @@ def linker_message(kind: str, value: str, count: int) -> str:
 
 
 def linker_findings(build: Path, graph: ninja_reader.Graph, shown: str, count: int) -> list[check_report.Finding]:
-    """Give the errors of the linker words of each link edge (THE LINKER).
+    """Give the errors of the linker words of each link edge (the linker).
 
     Complexity: linear in the edges and their variables, and one read of the
     file system for each different -B prefix.
@@ -626,7 +626,7 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
 
     The module text tells each part.  An error of the limit of the rule
     stops only the part of the linker, and a graph that cannot be read stops
-    each part (THE INPUT).
+    each part (the input).
 
     Raises:
         NotApplicable: If the call gives no build directory, or a generator other than Ninja made the build
@@ -655,7 +655,7 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
 def missing_dependencies(build: Path) -> dict[str, tuple[str, ...]]:
     """Return each file of the dependency log of Ninja that is not on the disk, by the output of its list.
 
-    THE MISSING DEPENDENCIES of the module text tells the use.  Ninja can
+    The missing dependencies of the module text tells the use.  Ninja can
     list one output two times, with a relative and an absolute name.  The
     output is the absolute normalized path, and each file counts one time for
     its output.  Complexity: linear in the files of the lists of the log, with
@@ -676,7 +676,7 @@ def missing_dependencies(build: Path) -> dict[str, tuple[str, ...]]:
 
 
 def plant_context(plant: Path, scratch: Path) -> BuildContext:
-    """Copy the tree of the base control of a plant, then make the planted build of the plant over it (THE PLANTS).
+    """Copy the tree of the base control of a plant, then make the planted build of the plant over it (the plants).
 
     Raises:
         NotApplicable: If build.txt or the planted registry does not obey its rows

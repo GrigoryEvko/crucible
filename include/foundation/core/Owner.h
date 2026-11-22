@@ -17,7 +17,7 @@
 // member of the core is protected, so the public base gives a caller no
 // door, and the walks of the roster see the base with no unchecked access.
 //
-// THE ORDER OF A MOVE ASSIGNMENT
+// Order of a move assignment
 // The source can live inside the value that the target holds, as in
 // head = move(head->next): the end of the old value of head ends the source.
 // So the assignment does these steps, in this order:
@@ -33,7 +33,7 @@
 // address: step 3 reads the emptied state of step 2, so step 5 releases
 // nothing, and step 4 gives the value back.
 //
-// THE COPY OF A STATE
+// Copy of a state
 // Each copy of a state goes through a local state of the core, and no local
 // state is const.  GCC keeps a const local aggregate in memory, and it copies
 // an aggregate from memory to memory with one 16-byte access and one 8-byte
@@ -53,7 +53,7 @@
 // on the inline budget of its unit.  The release of a state that is small
 // and hot is always inline too, as AlignedBytesState::release is.
 //
-// THE MARKER
+// Marker
 // A state opts in to the core with the member
 //
 //   using owner_state_mark = ::foundation::core::OwnerStateMark;
@@ -63,7 +63,7 @@
 // is no part of the gate, so each layer keeps its states in its own
 // namespace.
 //
-// THE ROSTER
+// Roster
 // Each layer keeps its states in one home namespace: detail::owner of
 // foundation::core, and fixy::detail::owner.  The probe of the owners,
 // test/foundation/test_core_owner_probe.cpp, names each home in an
@@ -164,13 +164,13 @@ protected:
     // of line takes the state by its address, so the fields go through memory.
     CRUCIBLE_INLINE constexpr explicit OwnerCore(State const& state) noexcept : state_{state} {}
 
-    // The state moves through a local (THE COPY OF A STATE).
+    // The state moves through a local (the copy of a state).
     CRUCIBLE_INLINE constexpr OwnerCore(OwnerCore&& other) noexcept {
         State taken = other.take_state_();
         state_ = taken;
     }
 
-    // The five steps of THE ORDER OF A MOVE ASSIGNMENT.  The steps work on
+    // The five steps of the order of a move assignment.  The steps work on
     // the states, so no step builds a second core.  take_state_ does steps
     // 1 and 2.
     CRUCIBLE_INLINE constexpr OwnerCore& operator=(OwnerCore&& other) noexcept {

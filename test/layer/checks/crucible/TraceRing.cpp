@@ -29,7 +29,7 @@ static_assert(offsetof(TraceRing, head) == 0 && offsetof(TraceRing, tail) == 64
                   && offsetof(TraceRing, meta_starts) == 256 + sizeof(TraceRing::Entry) * TraceRing::CAPACITY,
               "the counters sit on separate cache lines ahead of the arrays");
 // The producer reads its position and the cache of the tail from one line,
-// which only the producer touches (THE TWO PUBLISHES of crucible/TraceRing.h).
+// which only the producer touches (the two publishes of crucible/TraceRing.h).
 static_assert(offsetof(TraceRing, own_head_) / 64 == offsetof(TraceRing, cached_tail_) / 64,
               "the copy of the head shares the private line of the producer with the cache of the tail");
 

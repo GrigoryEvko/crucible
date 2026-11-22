@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The brand of a ReadLoan names the parked token.  Only an empty class
 // type can be a brand.  A loan branded with int would carry a value where

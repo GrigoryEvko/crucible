@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A unit mints a plain session over the producer handle of the MetaLog, with
 // a protocol of its own that loops on a send and never stops.  The handle

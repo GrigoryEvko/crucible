@@ -6,7 +6,7 @@
 //
 // The kernels that read the vector extensions of the target, and the codec
 // whose members call them, are in the inline namespace CRUCIBLE_SIMD_TARGET
-// (THE TARGET NAMESPACE of foundation/Platform.h).  Two units of two targets
+// (the target namespace of foundation/Platform.h).  Two units of two targets
 // keep their own bodies.
 
 #include <fixy/Core.h>

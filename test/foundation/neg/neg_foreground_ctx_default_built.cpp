@@ -5,7 +5,7 @@
 // let any thread make that claim, so the context has none: it is built
 // from a foreground source, and the source from the key of the claim.
 //
-// VIOLATION: a translation unit builds the foreground context with braces.
+// Violation: a translation unit builds the foreground context with braces.
 //
 // Expected diagnostic: no matching call to the ExecCtx constructor with no
 // argument.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // PublishSlot<T> adds the star itself and hands off a T*, as PublishOnce
 // does, so T is the pointee.  PublishSlot<Foo*> builds an atomic<Foo**>

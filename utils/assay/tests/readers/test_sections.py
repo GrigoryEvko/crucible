@@ -6,8 +6,8 @@ one line.  Exit 0 when each case holds, else 1.
 The cases plant objects with the writer of assay.readers.elf.  An object
 has the section, no section, or two sections of the name.  An object also
 has the extended numbering, or a name that only ends with the name of the
-section.  The cases of the entities plant the entity of each kind of THE
-ENTITIES OF THE RECORDS, with more spaces than the plugin writes.  They
+section.  The cases of the entities plant the entity of each kind of the
+entities of the records, with more spaces than the plugin writes.  They
 also plant each entity of padded-list and mint that does not read.
 """
 

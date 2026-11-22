@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A forward declaration before the header of a type cannot mark the type
 // linear.  Without -fannotations-on-definition-only (the seventh GCC patch),

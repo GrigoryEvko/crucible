@@ -1,6 +1,6 @@
 """jobserver — the GNU make jobserver of one heavy step, and a client of it for a pool of threads.
 
-THE PROTOCOL
+The protocol
     A jobserver is a FIFO that holds one byte for each job that can start.
     A process gives its children the variable MAKEFLAGS with the words -jN
     and --jobserver-auth=fifo:PATH.  Each child opens the FIFO by its path.
@@ -13,7 +13,7 @@ THE PROTOCOL
     only when its command line gave no -j, and ctest 4.4.2 obeyed it also
     with -j N.
 
-THE SERVER
+The server
     serving(jobs) makes the FIFO in a new private directory, and it writes
     jobs - 1 bytes into it.  The process of the server keeps the last slot
     as its own implicit slot.  The server keeps a descriptor of the FIFO open
@@ -24,9 +24,9 @@ THE SERVER
 
     serving(jobs, tokens) writes only `tokens` bytes, with jobs - 1 as the
     most.  MAKEFLAGS still gives -jJOBS.  The owner of the server can then
-    add bytes and remove idle bytes while its children run (THE VALVE).
+    add bytes and remove idle bytes while its children run (the valve).
 
-THE VALVE
+The valve
     valve(path) gives the valve of a FIFO for the block.  Valve.idle() gives
     the bytes in the FIFO at the time of the call, from the ioctl FIONREAD.
     These bytes are the idle tokens: no child holds them.  Valve.put(count)
@@ -36,7 +36,7 @@ THE VALVE
     Valve.wait_idle(timeout) waits until the FIFO holds a byte, for example
     a token that a child gives back.
 
-THE CLIENT
+The client
     client_of(environment) gives the client of the jobserver that MAKEFLAGS
     names, or None when MAKEFLAGS names no FIFO.  connected(path) gives the
     client of a FIFO, for the threads of the server itself.  Client.held()
@@ -73,11 +73,11 @@ from assay.core import meter as cost_meter
 
 # The byte of one token, as GNU make writes it.
 TOKEN = b"+"
-# The variable of the jobserver, and the word that names its FIFO (THE PROTOCOL).
+# The variable of the jobserver, and the word that names its FIFO (the protocol).
 VARIABLE = cost_meter.MAKEFLAGS_ENV
 AUTH_PREFIX = "--jobserver-auth="
 FIFO_PREFIX = "fifo:"
-# The directory and the FIFO of a server (THE SERVER).  A write of at most PIPE_BUF bytes to a pipe is atomic.  A server
+# The directory and the FIFO of a server (the server).  A write of at most PIPE_BUF bytes to a pipe is atomic.  A server
 # then holds at most that many tokens.
 DIRECTORY_PREFIX = "crucible-jobserver-"
 FIFO_NAME = "jobs.fifo"
@@ -92,20 +92,20 @@ class JobserverError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Server:
-    """The jobserver of one block: the path of its FIFO and its jobs (THE SERVER)."""
+    """The jobserver of one block: the path of its FIFO and its jobs (the server)."""
 
     path: Path
     jobs: int
 
     @property
     def makeflags(self) -> str:
-        """The value of MAKEFLAGS that gives a child the jobserver (THE PROTOCOL)."""
+        """The value of MAKEFLAGS that gives a child the jobserver (the protocol)."""
         return f"-j{self.jobs} {AUTH_PREFIX}{FIFO_PREFIX}{self.path}"
 
 
 @dataclass(frozen=True, slots=True)
 class Slot:
-    """One slot that a client holds: the byte of the FIFO, or no byte for the implicit slot (THE CLIENT)."""
+    """One slot that a client holds: the byte of the FIFO, or no byte for the implicit slot (the client)."""
 
     token: bytes
 
@@ -116,7 +116,7 @@ class Slot:
 
 
 class Client:
-    """A client of one jobserver: its descriptor of the FIFO, and the implicit slot of the process (THE CLIENT).
+    """A client of one jobserver: its descriptor of the FIFO, and the implicit slot of the process (the client).
 
     Each thread of the process can call take(), give() and held().
     """
@@ -154,7 +154,7 @@ class Client:
             select.select([self._descriptor], [], [], WAIT_S)
 
     def try_take(self) -> Slot | None:
-        """Return the implicit slot when it is free, else one byte of the FIFO, else None with no wait (THE CLIENT).
+        """Return the implicit slot when it is free, else one byte of the FIFO, else None with no wait (the client).
 
         Raises:
             JobserverError: If the FIFO gives an end of file.  The FIFO of a server in its block gives none
@@ -203,7 +203,7 @@ class Client:
 
 
 class Valve:
-    """The valve of the FIFO of a server: its own descriptor of the FIFO (THE VALVE)."""
+    """The valve of the FIFO of a server: its own descriptor of the FIFO (the valve)."""
 
     __slots__ = ("_descriptor", "path")
 
@@ -245,7 +245,7 @@ class Valve:
 
 @contextlib.contextmanager
 def valve(path: Path) -> Iterator[Valve]:
-    """Give the valve of a FIFO for the block, and close its descriptor at the end (THE VALVE).
+    """Give the valve of a FIFO for the block, and close its descriptor at the end (the valve).
 
     Raises:
         JobserverError: If the FIFO cannot be opened
@@ -263,7 +263,7 @@ def valve(path: Path) -> Iterator[Valve]:
 
 @contextlib.contextmanager
 def serving(jobs: int, tokens: int | None = None) -> Iterator[Server]:
-    """Make a jobserver of `jobs` jobs for the block, and remove its FIFO at the end, also on an exception (THE SERVER).
+    """Make a jobserver of `jobs` jobs for the block, and remove its FIFO at the end, also on an exception (the server).
 
     `tokens` is the count of bytes that the server writes, else jobs - 1.
 
@@ -296,7 +296,7 @@ def serving(jobs: int, tokens: int | None = None) -> Iterator[Server]:
 
 
 def client_path(environment: Mapping[str, str]) -> Path | None:
-    """Return the FIFO that MAKEFLAGS of an environment names, or None when it names no FIFO (THE CLIENT).
+    """Return the FIFO that MAKEFLAGS of an environment names, or None when it names no FIFO (the client).
 
     The last word --jobserver-auth= decides, as GNU make reads it.  A jobserver of two descriptors gives None.
     Complexity: linear in the words of MAKEFLAGS.
@@ -310,7 +310,7 @@ def client_path(environment: Mapping[str, str]) -> Path | None:
 
 @contextlib.contextmanager
 def connected(path: Path) -> Iterator[Client]:
-    """Give the client of a FIFO for the block, and close its descriptor at the end (THE CLIENT).
+    """Give the client of a FIFO for the block, and close its descriptor at the end (the client).
 
     Raises:
         JobserverError: If the FIFO cannot be opened
@@ -331,7 +331,7 @@ def connected(path: Path) -> Iterator[Client]:
 
 @contextlib.contextmanager
 def client_of(environment: Mapping[str, str]) -> Iterator[Client | None]:
-    """Give the client of the jobserver that MAKEFLAGS of an environment names, or None, for the block (THE CLIENT).
+    """Give the client of the jobserver that MAKEFLAGS of an environment names, or None, for the block (the client).
 
     Raises:
         JobserverError: If MAKEFLAGS names a FIFO that cannot be opened

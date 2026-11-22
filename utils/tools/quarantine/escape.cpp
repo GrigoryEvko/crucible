@@ -3,7 +3,7 @@
 // function: a local, a parameter by value or a temporary.  A read of the
 // result then reads a dead stack frame.  The rule refuses each such return.
 //
-// THE BORROW
+// Borrow
 //   A type holds a borrow when it is a reference or a pointer, or a class that
 //   states refers{}, refers_unique{} or refers_deep{} of
 //   include/foundation/Transfer.h, such as a View or a Ref, at each depth of
@@ -13,7 +13,7 @@
 //   Box and a Ref do, so the walk reads that argument too.  The rule reads
 //   each function whose return type holds a borrow.
 //
-// THE ORIGINS
+// Origins
 //   The origins of an expression are the objects that its borrow can name.
 //   Each borrow of the base comes from a door of the base: to(), erase_brand(),
 //   view(), get(), append(), and the constructors of a View and a Ref.  So the
@@ -34,7 +34,7 @@
 //   initializer.  A conversion, a conditional, a comma and a temporary pass
 //   their origins on.
 //
-// THE FINDING
+// Finding
 //   escaped-borrow   a return whose value has an origin that ends with the
 //                    frame: a local of automatic storage, a parameter by
 //                    value, a temporary of the full expression, a parameter
@@ -51,7 +51,7 @@
 //   finding.  The kind missing-mark of the rule lifetime-twin asks such a
 //   function to mark the parameter, so the caller cannot give a temporary.
 //
-// THE LIMITS
+// Limits
 //   The rule reads one body.  A borrow that a function of the tree outside the
 //   base makes from an argument, a borrow that passes through a member of a
 //   local object, a field of a closure, or a container of borrows, gives no
@@ -60,12 +60,12 @@
 //   copy holds a view of a member that it declares first.  The rule reads only
 //   the return of a borrow, and neither of the two meets a return of a local.
 //
-// THE RETIREMENT
+// Retirement
 //   A View with a brand or a lifetime parameter would carry this fact in its
 //   type, as a borrow of Rust carries its lifetime.  C++ gives neither today,
 //   so the plugin holds it.
 //
-// THE ERRORS
+// Errors
 //   The census of the tree, the parse presets and the units of bench-fuzz,
 //   gave no finding.  So each finding is a compile error in each build and each
 //   mode (is_each_mode_kind of plugin.h), and an opt-out region covers it.  The
@@ -81,7 +81,7 @@ namespace {
 // The deepest walk of a type or an expression.
 constexpr int kEscapeDepth = 32;
 
-// The marks of the borrow of THE BORROW.
+// The marks of the borrow of the borrow.
 struct EscapeNames {
     tree transfer = NULL_TREE;
     tree refers = NULL_TREE;
@@ -119,7 +119,7 @@ bool is_owner_core_class(tree type) {
     return false;
 }
 
-// True when TYPE holds a borrow (THE BORROW).  Complexity: linear in the
+// True when TYPE holds a borrow (the borrow).  Complexity: linear in the
 // distinct classes that the type reaches, one time for each class in a unit.
 bool holds_borrow(tree type, int depth) {
     if (type == NULL_TREE || type == error_mark_node || depth > kEscapeDepth) {
@@ -174,7 +174,7 @@ bool holds_borrow(tree type, int depth) {
     return is_held;
 }
 
-// True for a function of the base, whose borrow THE ORIGINS follow.
+// True for a function of the base, whose borrow the origins follow.
 bool is_base_door(tree function) {
     tree top = top_namespace(function);
     return top != global_namespace
@@ -189,7 +189,7 @@ bool is_standard_reference(tree function) {
         && TREE_CODE(type) == REFERENCE_TYPE;
 }
 
-// The deepest walk of COULD NAME.
+// The deepest walk of a type that could name something.
 constexpr int kNameDepth = 6;
 
 // Adds the types that a borrow of TYPE names: the element of a reference or a
@@ -272,7 +272,7 @@ bool holds_part(tree whole, tree part, int depth) {
     return false;
 }
 
-// How a call can lend an object that an argument names (THE ORIGINS).
+// How a call can lend an object that an argument names (the origins).
 enum class Lend : std::uint8_t {
     object,  // std::move and a local reference: the object itself
     part,  // a door: an object that holds a target of the result
@@ -352,14 +352,14 @@ tree strip_conversions(tree node) {
     return node;
 }
 
-// The origins of the expressions of one function (THE ORIGINS).
+// The origins of the expressions of one function (the origins).
 class OriginWalk {
 public:
     explicit OriginWalk(tree function) : function_{function} {}
 
     // True for an object that ends with the frame of the function: a local, a
     // parameter by value, a parameter by an rvalue reference to a value that
-    // holds no borrow, and a capture by value of a closure (THE FINDING).
+    // holds no borrow, and a capture by value of a closure (the finding).
     bool ends_with_frame(tree decl) const {
         if (TREE_CODE(decl) == PARM_DECL) {
             tree type = TREE_TYPE(decl);
@@ -556,7 +556,7 @@ public:
         }
     }
 
-    // The origins of a call (THE ORIGINS).  RESULT is the type that the call
+    // The origins of a call (the origins).  RESULT is the type that the call
     // makes: the class of a constructor, or the return type.
     void add_call_origins(tree call, std::vector<tree>& out, int depth) {
         tree callee = cp_get_callee_fndecl_nofold(call);
@@ -746,7 +746,7 @@ private:
 
 public:
     // True when the walk gives each parameter by reference that an origin
-    // names too, for THE BORROWED PARAMETERS, and not only the objects that
+    // names too, for the borrowed parameters, and not only the objects that
     // end with the frame.
     bool reads_reference_parameters_ = false;
 
@@ -780,7 +780,7 @@ bool is_rvalue_parameter(tree decl) {
         && TYPE_REF_IS_RVALUE(TREE_TYPE(decl));
 }
 
-// The callback of cp_walk_tree over the returns of a function (THE FINDING).
+// The callback of cp_walk_tree over the returns of a function (the finding).
 tree check_return(tree* node, int*, void* data) {
     ReturnWalk& walk = *static_cast<ReturnWalk*>(data);
     tree current = *node;
@@ -809,7 +809,7 @@ tree check_return(tree* node, int*, void* data) {
     return NULL_TREE;
 }
 
-// The data of the walk of the returns for THE BORROWED PARAMETERS.
+// The data of the walk of the returns for the borrowed parameters.
 struct ParameterWalk {
     OriginWalk* origins = nullptr;
     std::vector<tree>* found = nullptr;
@@ -855,7 +855,7 @@ bool is_deduced_lvalue_parameter(tree function, int index) {
 }
 
 // Gives each parameter by a const reference that an origin of a return names
-// to the kind missing-mark (THE BORROWED PARAMETERS).  An assignment gives
+// to the kind missing-mark (the borrowed parameters).  An assignment gives
 // back its object by its convention, and an rvalue reference in the result
 // forwards the parameter on, as get of an rvalue Record does, so the rule
 // reads neither.  A parameter whose type holds a borrow lends the objects of

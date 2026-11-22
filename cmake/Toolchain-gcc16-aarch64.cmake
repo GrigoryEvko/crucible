@@ -2,7 +2,7 @@
 #
 # `python3 utils/bin/setup gcc PREFIX --target aarch64-linux-gnu` builds the
 # cross compiler PREFIX/usr/bin/aarch64-linux-gnu-g++-16p, with the binutils
-# and the glibc sysroot of aarch64 below PREFIX (THE CROSS COMPILER of
+# and the glibc sysroot of aarch64 below PREFIX (the cross compiler of
 # utils/assay/setup/gcc.py).  The preset syntax-aarch64 of CMakePresets.json
 # configures a build directory with this file, and `loop syntax` parses each
 # unit of that build with the quarantine plugin (CLAUDE.md section XXII, The
@@ -14,7 +14,7 @@
 #      patches with the sanitizer libraries of the target.
 #
 # A plugin of the cross compiler is code of the host, so the patched g++ of the
-# host compiles the quarantine plugin (THE COMPILER OF THE PLUGIN of
+# host compiles the quarantine plugin (the compiler of the plugin of
 # utils/tools/quarantine/Quarantine.cmake).  CRUCIBLE_PLUGIN_BUILD_CXX names
 # that g++, with the order of cmake/Toolchain-gcc16.cmake: CRUCIBLE_CXX, then
 # CRUCIBLE_GCC16_PREFIX, then $HOME/.local/gcc16-patched-p8.

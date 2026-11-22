@@ -507,7 +507,7 @@ def file_cases(expect: testing.Expect) -> None:
 
 
 def property_cases(expect: testing.Expect) -> None:
-    """Read the program properties of a planted segment PT_GNU_PROPERTY, and refuse a note that is cut (THE PROPERTIES)."""
+    """Read the program properties of a planted segment PT_GNU_PROPERTY, and refuse a note that is cut (the properties)."""
     note = elf.property_note([(0xC0000002, struct.pack("<I", 3)), (0xC0010001, struct.pack("<I", 9))])
     stack = elf.PlantedSegment(elf.PT_GNU_STACK, 6)
     data = elf.make_file(planted_sections(), segments=[elf.PlantedSegment(elf.PT_GNU_PROPERTY, 4, note), stack])
@@ -553,7 +553,7 @@ def demangle_cases(expect: testing.Expect) -> None:
     expect("demangle of no name starts no tool", elf.demangle(()) == ())
 
 
-# Each name, with its first scope and the operator of a global operator new or delete (THE MANGLED SCOPE).
+# Each name, with its first scope and the operator of a global operator new or delete (the mangled scope).
 SCOPES = (
     ("_Znwm", "", "nw"),
     ("_ZdlPvm", "", "dl"),

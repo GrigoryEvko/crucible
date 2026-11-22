@@ -36,7 +36,7 @@ template <class T>
 }
 
 // The owner of the counter of the test, which makes the proof of its one
-// writer (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).
+// writer (the proof of the one writer of foundation/SoleWriterProof.h).
 struct CounterOwner final {
     struct Role final {};
     [[nodiscard]] static constexpr ::fixy::SoleWriterProof<CounterOwner, Role> proof() noexcept { return {}; }

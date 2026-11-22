@@ -3,12 +3,12 @@
 // A channel of Box values, behind the permissions of PermissionedChannel, in
 // one of the forms of ChannelForm.  A cell of a ring holds only a trivially
 // copyable value, and a Box is no such value.  So the channel holds a
-// PermissionedChannel of the same form over the words of a Box (THE WORD OF
-// A BOX of foundation/core/Ref.h), and the channel class is the authority of
+// PermissionedChannel of the same form over the words of a Box (the word of
+// A Box of foundation/core/Ref.h), and the channel class is the authority of
 // those words.  Each handle of this channel holds the handle of the same role
 // of the inner channel.
 //
-// THE OWNERS
+// Owners
 //     Each producer handle belongs to its producer thread, and the consumer
 //     handle belongs to the consumer thread.  A push gives the object of its
 //     Box to a word.  The ring writes the word to its cell and then publishes
@@ -18,7 +18,7 @@
 //     sees each write to the object that its producer made before the push,
 //     and the Box of the pop owns the object alone.
 //
-// THE WORDS
+// Words
 //     A word leaves the channel only as a Box.  A push that finds the ring
 //     full gives its Box back in the Option of its result, so no object is
 //     lost.  The ring gives each cell to one pop, so each word is claimed one
@@ -29,7 +29,7 @@
 //     object drops it, so the channel takes only a payload that is not linear
 //     (DroppableBoxPayload of foundation/core/Ref.h).
 //
-// THE END OF THE STREAM
+// End of the stream
 //     The end of the last producer handle ends the last producer handle of
 //     the words, so it closes the channel as fixy/concurrent/ChannelEnd.h
 //     tells.  try_receive of the consumer then gives each Box that the ring
@@ -164,7 +164,7 @@ public:
         requires(Form == ChannelForm::merge)
         : cells_{std::move(producer_root)} {}
 
-    // Each object that the ring still holds ends here (THE WORDS).  The drop
+    // Each object that the ring still holds ends here (the words).  The drop
     // holds no state, as the drain of a merge asks.
     ~PermissionedBoxChannel() {
         typename cell_channel::DrainClaim claim = cells_.claim_drain();

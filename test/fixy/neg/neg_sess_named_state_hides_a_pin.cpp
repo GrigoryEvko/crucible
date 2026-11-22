@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The name of a named state is a class with a member type `protocol`.  A
 // VendorPinned also has such a member, the protocol that it pins.  A named

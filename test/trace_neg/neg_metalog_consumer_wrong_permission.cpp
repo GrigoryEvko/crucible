@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // PermissionedMetaLog::consumer takes the Permission of the consumer tag,
 // and that parameter type is its whole admission.  This call passes the

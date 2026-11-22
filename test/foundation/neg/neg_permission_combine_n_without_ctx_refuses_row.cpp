@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // An n-ary combine without a context names no scope that may own the
 // parent it rebuilds.  That is sound only when every row is empty.  The

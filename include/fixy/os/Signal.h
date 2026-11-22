@@ -1,10 +1,10 @@
 #pragma once
 
 // The signal door of fixy: the handler of each fatal signal, the alternate
-// signal stack of a thread, and the two signal calls of the child door (THE
-// CHILD SIGNALS, below).
+// signal stack of a thread, and the two signal calls of the child door (the
+// child signals, below).
 //
-// THE HANDLERS
+// Handlers
 //   install_fatal_handlers puts one handler on SIGABRT, SIGSEGV, SIGBUS,
 //   SIGILL and SIGFPE, and keeps the action that each handler replaces.  The
 //   handler calls the report of the caller with the number of the signal.
@@ -21,20 +21,20 @@
 //   call replaced (rule R20 of misc/01_10_2026_quarantine.md).  So the gate
 //   of install_fatal_handlers asks for a context that owns Effect::Init, and
 //   the door installs the handlers one time for each process.  A second call
-//   gives Errno::ebusy and changes nothing.  THE CHILD RESET is the one
+//   gives Errno::ebusy and changes nothing.  The child reset is the one
 //   other case.
 //
-// THE CHILD RESET
+// Child reset
 //   reset_to_default(test, child, signal) puts back the default action of
 //   one fatal signal in a child of the child door of fixy/os/Process.h, so a
 //   death test sees the end by that signal.  Without it, the handler of
 //   AddressSanitizer turns a fault into the exit code 1, and the handler of
-//   THE HANDLERS writes a report first.  The call takes a context that owns
+//   The handlers write a report first.  The call takes a context that owns
 //   the Test capability, and the ForkedChild proof that only the child door
 //   gives its body.  So only a test calls it, and only in a child.  The child
 //   ends after its body, and no disposition of the parent changes.
 //
-// THE ALTERNATE STACK
+// Alternate stack
 //   The kernel delivers a signal with SA_ONSTACK on the alternate stack of
 //   the thread, when the thread has one.  So the handler of a fault that
 //   overflows the stack of a thread runs, and writes its report.
@@ -73,7 +73,7 @@ namespace fixy::signal {
 // that are safe in a signal handler.
 using FatalReport = void (*)(int signal_number) noexcept;
 
-// A fatal signal of THE HANDLERS: its default action ends the process.  The
+// A fatal signal of the handlers: its default action ends the process.  The
 // values are the numbers of Linux on x86_64 and on aarch64, and
 // src/fixy/os/Signal.cpp checks each against <signal.h>.
 enum class FatalSignal : std::uint8_t {
@@ -103,31 +103,31 @@ struct PreviousStack {
 install_fatal_handlers_(FatalReport report) noexcept;
 
 // Sets an alternate stack on the calling thread, and writes the stack that
-// it replaces into PREVIOUS.  The Option is empty when the thread keeps the
+// it replaces into previous.  The Option is empty when the thread keeps the
 // alternate stack that it has.
 [[nodiscard]] ::foundation::core::Option<::foundation::os::GuardedRegion>
 install_alternate_stack_(PreviousStack& previous) noexcept;
 
-// Puts PREVIOUS back as the alternate stack of the calling thread.
+// Puts previous back as the alternate stack of the calling thread.
 void restore_alternate_stack_(PreviousStack const& previous) noexcept;
 
-// THE CHILD SIGNALS.  The two signal calls of the child door of
+// Child signals.  The two signal calls of the child door of
 // fixy/os/Process.h, which only a test reaches.  stop_self_ raises SIGSTOP in
 // the calling process, so a child that its parent traces stops before its
-// body runs.  end_process_ sends SIGKILL to the process PROCESS, a child that
+// body runs.  end_process_ sends SIGKILL to the process with that id, a child that
 // ran to the limit of its wait.  A child that ended already ignores the
 // signal, and the wait of the door collects its end.
 void stop_self_() noexcept;
 void end_process_(std::int32_t process) noexcept;
 
-// Puts back the default action of FATAL_SIGNAL in the calling process (THE
-// CHILD RESET).  A refused sigaction ends the process.
+// Puts back the default action of fatal_signal in the calling process (the
+// child reset).  A refused sigaction ends the process.
 void reset_to_default_(FatalSignal fatal_signal) noexcept;
 
 }  // namespace detail
 
-// Puts back the default action of FATAL_SIGNAL in the child of the child
-// door that runs the call (THE CHILD RESET).  Only a test calls it, and only
+// Puts back the default action of fatal_signal in the child of the child
+// door that runs the call (the child reset).  Only a test calls it, and only
 // in the body of a child, which holds the proof.
 template <class Ctx>
     requires ::fixy::process::CtxFitsChildProcess<Ctx>
@@ -140,7 +140,7 @@ void reset_to_default(Ctx const& /*test*/, ::fixy::process::ForkedChild const& /
 template <class Ctx>
 concept CtxInstallsSignalHandlers = ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
-// Installs the handler of each fatal signal with REPORT (THE HANDLERS), and
+// Installs the handler of each fatal signal with report (the handlers), and
 // sets the alternate stack of the calling thread until the process ends.
 template <class Ctx>
     requires CtxInstallsSignalHandlers<Ctx>
@@ -150,7 +150,7 @@ install_fatal_handlers(Ctx const& /*init*/, FatalReport report) noexcept {
 }
 
 // The alternate signal stack of the calling thread, for the life of the
-// object (THE ALTERNATE STACK).  The destructor puts back the stack that the
+// object (the alternate stack).  The destructor puts back the stack that the
 // thread had before, and then it unmaps the stack of the object.  The object
 // lives on the stack of its thread: it does not copy or move, and new
 // refuses it.  A failed map ends the process, as each failed allocation of

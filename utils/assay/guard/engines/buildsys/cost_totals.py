@@ -1,13 +1,13 @@
 """cost totals — the instruction total of a build of the base configuration stays near its baseline.
 
-THE RULE instruction-total
+Rule instruction-total
     The total is the sum of the user instructions of each unit of the census
     of assay.readers.census, which BuildContext.census() reads.  A unit is an
     object of the target all or a negative fixture.  The count of a unit is
     the count of the compile that made its output.  An object gets its count
     from the record of the build launcher, and a fixture from its own record.
     A compile with no ccache and a ccache miss give the same count
-    (utils/assay/core/meter.py, A COMPILE THROUGH CCACHE).
+    (utils/assay/core/meter.py, a compile through ccache).
 
     The record of a ccache hit keeps the count of the compile that made its
     object, from the cost store (utils/assay/core/cost_store.py).  A build
@@ -16,16 +16,16 @@ THE RULE instruction-total
     The load of the host and the caches do not change it.  Two clean builds
     of one tree have sums with a difference of less than 0.01 %.
 
-THE CONFIGURATION
+Configuration
     The total changes with the configuration of the build
-    (BuildContext.configuration(), assay.core.configuration, THE
-    CONFIGURATION).  A bench target and a fuzz target add their objects, and
+    (BuildContext.configuration(), assay.core.configuration, the
+    configuration).  A bench target and a fuzz target add their objects, and
     a Release build compiles other code.  The rule judges only a build of the
     configuration BASE_CONFIGURATION, which the preset default gives.  It
     does not apply to a build of a different configuration, and it then reads
     no ledger and no census.
 
-THE LEDGER
+Ledger
     utils/ledgers/instruction-total.txt holds no configuration row, and it
     holds two total rows:
         - | x86_64-debug-asan | INSTRUCTIONS | objects | REASON
@@ -33,17 +33,17 @@ THE LEDGER
     The KIND cell holds BASE_CONFIGURATION, and the two rows give one reason.
     The module owns the head comment of the ledger,
     INSTRUCTION_LEDGER_COMMENT.  Each write gives the ledger that comment,
-    and a different head comment goes (assay.core.ledger, THE HEAD COMMENT).
+    and a different head comment goes (assay.core.ledger, the head comment).
     A change of the rule then changes the comment in the same commit.
 
-THE FINDINGS
+Findings
     The measured rule instruction-total of the registry gives the limit, in
     percent of the baseline.  The rule gives:
       growth         a total more than the baseline by more than the limit
                      gives an error.  The message names the largest compiles
       zero-baseline  a baseline of 0 gives an error, because no change has a
                      measure against it
-    A total less than the baseline gives no finding (THE POLICIES of
+    A total less than the baseline gives no finding (the policies of
     assay.core.ledger).  The baseline then stays more than the total until a
     write lowers it.
 
@@ -53,7 +53,7 @@ THE FINDINGS
       configuration  the configuration of the build cannot be read
       no-threshold   the registry has no measured rule instruction-total
       no-ledger      the ledger file is not there
-      ledger-row     a row does not obey the rows grammar or THE LEDGER
+      ledger-row     a row does not obey the rows grammar or the ledger
       census         an input of the census is there and cannot be read
       no-count       a unit has no instruction count, and the units do not
                      show a host with no counter
@@ -68,7 +68,7 @@ THE FINDINGS
     unit has an instruction count and a compile ran with no count.  The host
     then gives no counter.
 
-THE WRITE
+Write
     `guard write --rule instruction-total --build-dir DIR` writes the two
     rows again from a build of BASE_CONFIGURATION.  The write refuses a
     growth with no --reason TEXT, so a higher baseline always has a reason.
@@ -100,7 +100,7 @@ from assay.readers import census as build_census
 from assay.readers import compdb
 
 INSTRUCTION_RULE = "instruction-total"
-# The one configuration that the rule judges: the build of the preset default (THE CONFIGURATION).
+# The one configuration that the rule judges: the build of the preset default (the configuration).
 BASE_CONFIGURATION = "x86_64-debug-asan-v3"
 # The entity of each of the two total rows of the ledger.
 CENSUS_PARTS = ("objects", "fixtures")
@@ -108,7 +108,7 @@ CENSUS_PARTS = ("objects", "fixtures")
 CENSUS_NAMED = 8
 CENSUS_DEFAULT_REASON = "the measure at the last write of the ledger"
 INSTRUCTION_GIGA = 10**9
-# The head comment of the ledger, which each write gives the ledger (THE LEDGER).
+# The head comment of the ledger, which each write gives the ledger (the ledger).
 INSTRUCTION_LEDGER_COMMENT = (
     "# The ledger of the rule instruction-total: the baseline of the user instructions of the compiles of a build\n"
     f"# of the configuration {BASE_CONFIGURATION}, the build of the preset default.\n"
@@ -137,7 +137,7 @@ class CensusRefusal(rule_ledger.LedgerError):
     """An input that the rule cannot use: the build kind, the configuration, the limit, the ledger or the census.
 
     The refusal is an error finding of the rule, at a path and a line, with
-    a kind and an entity (THE FINDINGS).  It is also a LedgerError.  Then
+    a kind and an entity (the findings).  It is also a LedgerError.  Then
     `guard write` tells it and writes no ledger.
     """
 
@@ -204,7 +204,7 @@ def instruction_text(count: int) -> str:
 
 
 def census_frame(context: BuildContext, given: rule_ledger.Ledger | None = None) -> CensusFrame:
-    """Read the rule, the configuration, the limit and the ledger of the call (THE CONFIGURATION).
+    """Read the rule, the configuration, the limit and the ledger of the call (the configuration).
 
     The check of the configuration comes before the read of the limit and of the ledger.  A build of a different
     configuration then gives no finding.
@@ -297,7 +297,7 @@ def census_read(context: BuildContext, frame: CensusFrame) -> build_census.Censu
 
 
 def census_baseline(frame: CensusFrame) -> CensusTotal | None:
-    """Read the two total rows of the ledger (THE LEDGER), or give None for a ledger with no row.
+    """Read the two total rows of the ledger (the ledger), or give None for a ledger with no row.
 
     Complexity: O(r log r) for r rows.
 
@@ -355,7 +355,7 @@ def census_judged(
 ) -> list[check_report.Finding]:
     """Compare the total of the build with the total rows (the kinds growth and zero-baseline).
 
-    A total less than its rows gives no finding (THE POLICIES of assay.core.ledger), and a write lowers the rows.
+    A total less than its rows gives no finding (the policies of assay.core.ledger), and a write lowers the rows.
 
     Args:
         frame: The rule, the configuration and the limit
@@ -398,7 +398,7 @@ def census_change_text(value: int, baseline: int) -> str:
 
 
 def census_refused(frame: CensusFrame, old: CensusTotal | None, value: int, reason: str | None) -> None:
-    """Refuse a write that raises the total with no reason (THE WRITE).
+    """Refuse a write that raises the total with no reason (the write).
 
     Raises:
         LedgerError: If the write has no reason and the total increased
@@ -432,7 +432,7 @@ def census_unit_counts(units: list[build_census.Unit], kind: str) -> int:
 
 
 def instruction_counts(frame: CensusFrame, census: build_census.Census) -> tuple[int, int]:
-    """Return the user instructions of the compiles that made the objects and the fixtures (THE FINDINGS).
+    """Return the user instructions of the compiles that made the objects and the fixtures (the findings).
 
     Raises:
         NotApplicable: If no unit has an instruction count, and a compile ran with no count
@@ -496,7 +496,7 @@ def instruction_largest(census: build_census.Census) -> str:
 
 
 def instruction_findings(context: BuildContext) -> list[check_report.Finding]:
-    """Compare the instruction total of a build of BASE_CONFIGURATION with the total rows (THE FINDINGS)."""
+    """Compare the instruction total of a build of BASE_CONFIGURATION with the total rows (the findings)."""
     try:
         frame = census_frame(context)
         total = census_baseline(frame)
@@ -524,7 +524,7 @@ def instruction_findings(context: BuildContext) -> list[check_report.Finding]:
 
 
 def instruction_written(context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None) -> rule_ledger.Ledger:
-    """Write the two total rows again from a build of BASE_CONFIGURATION (THE WRITE).
+    """Write the two total rows again from a build of BASE_CONFIGURATION (the write).
 
     Raises:
         NotApplicable: If the census does not apply to the build, the build has a different configuration, or the

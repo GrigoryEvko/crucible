@@ -12,8 +12,8 @@
 //                                type
 //   [[= boundary{}]] on a class  the agent stands for a free port of a net
 //   [[= StepWeight{n}]] on a class
-//                                the step weight of the agent kind (THE
-//                                WEIGHTS of Rules.h).  With no such
+//                                the step weight of the agent kind (the
+//                                weights in Rules.h).  With no such
 //                                annotation, the step weight is 0
 //   [[= principal{}]]            on the member of the principal port.  With no
 //                                such member, the first member is principal
@@ -30,7 +30,7 @@
 //   check_rules_of<^^ns>()       check_annotations, then check_rules of the
 //                                table
 //
-// THE READS OF REFLECTION
+// Reads of reflection
 //   GCC 16 gives each annotation the type T const, so a compare of type_of
 //   with ^^T finds nothing.  The adapter compares remove_cv of the type of
 //   each annotation.
@@ -45,7 +45,7 @@
 //   pass reads the annotations of each entity one time, and each later step
 //   reads these facts.
 //
-// THE COSTS
+// Costs
 //   O(M + A * P + R) for M members of the namespace, A agents of P ports and R
 //   rules, then check_rules.  The constant arrays and the static strings cost
 //   the most.  reflect_constant_array and reflect_constant_string make one

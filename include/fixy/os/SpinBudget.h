@@ -3,7 +3,7 @@
 // The spin budget of the base: a time in nanoseconds that bounds one spin,
 // and the opaque deadline that the spin reads.
 //
-// THE RATE
+// Rate
 //   A spin converts its budget to a deadline of the counter of
 //   foundation/os/SpinHint.h one time, before the spin:
 //
@@ -29,12 +29,12 @@
 //   a budget of zero ticks, so a spin ends at its first check and its caller
 //   does the slower wait at once.
 //
-// THE DEADLINE
+// Deadline
 //   SpinDeadline holds a value of the counter.  It gives only has_passed():
 //   no count of ticks, no compare and no text.  So no result of a
 //   computation can read the time of the counter through a deadline.
 //
-// THE GATE
+// Gate
 //   The counter changes from run to run, so each read of it reads a source of
 //   nondeterminism.  SpinDeadline::after, has_passed() and the two forms each
 //   read the counter, and each takes the bare tag of Nondet, as the read of a
@@ -45,7 +45,7 @@
 //   no deadline: the hot path keeps CRUCIBLE_SPIN_PAUSE of
 //   foundation/Platform.h.
 //
-// DETERMINISM
+// Determinism
 //   A budget only chooses between a spin and the slower wait after it, such
 //   as a park.  Each of the two waits ends at the same event and gives the
 //   same value, so the result of the wait does not depend on the budget, on
@@ -55,7 +55,7 @@
 //   counters of the cores of one host agree to a small amount, so the move
 //   changes the length of one spin by that amount.
 //
-// THE FORMS
+// Forms
 //   spin_while_equal waits on a word with the word arm of the process.
 //   spin_until waits on a predicate with the plain arm of the process.  Each
 //   form ends at the deadline, and its caller then does the slower wait.
@@ -78,7 +78,7 @@ namespace fixy::time {
 namespace eff = ::foundation::effects;
 
 // A time that bounds one spin.  The 32 bits bound it to about 4.3 seconds
-// (THE RATE).
+// (the rate).
 using SpinBudget = ::foundation::core::Quantity<::foundation::core::unit::Nanosecond, std::uint32_t>;
 
 // A count of ticks of the counter of the core.
@@ -102,7 +102,7 @@ __extension__ using WideTicks = unsigned __int128;
 
 }  // namespace detail
 
-// The rate of a counter that counted TICKS in SPAN.  The shift is the
+// The rate of a counter that counted ticks in span.  The shift is the
 // largest one, at most 63, that keeps the multiplier below 2^32, and the
 // multiplier is rounded to the nearest integer.  Zero ticks, a span of zero,
 // or a rate of 2^32 ticks or more in each nanosecond give the rate of zero.
@@ -122,7 +122,7 @@ __extension__ using WideTicks = unsigned __int128;
     }
 }
 
-// The ticks of BUDGET at RATE.  The product of a 32-bit budget and a 32-bit
+// The ticks of budget at rate.  The product of a 32-bit budget and a 32-bit
 // multiplier fits in 64 bits.
 [[nodiscard]] constexpr CounterTicks ticks_of(TickRate rate, SpinBudget budget) noexcept {
     return CounterTicks{(std::uint64_t{budget.raw()} * rate.multiplier) >> rate.shift};
@@ -130,13 +130,13 @@ __extension__ using WideTicks = unsigned __int128;
 
 namespace detail {
 
-// The rate of the process, from the start-up hook (THE RATE), with no gate.
+// The rate of the process, from the start-up hook (the rate), with no gate.
 // SpinDeadline::after is its one caller.
 [[nodiscard]] TickRate read_tick_rate_() noexcept;
 
 }  // namespace detail
 
-// The rate of the process, from the start-up hook (THE RATE).  The rate is a
+// The rate of the process, from the start-up hook (the rate).  The rate is a
 // fact of the host, so the read takes the bare tag of Nondet.
 [[nodiscard]] inline TickRate tick_rate_of_process(eff::cap::Nondet /*nondet*/) noexcept {
     return detail::read_tick_rate_();
@@ -148,12 +148,12 @@ class SpinDeadline;
                                                          ::foundation::core::Atomic<std::uint32_t> const& word,
                                                          std::uint32_t expected, SpinDeadline const& deadline) noexcept;
 
-// The end of a spin (THE DEADLINE).
+// The end of a spin (the deadline).
 class SpinDeadline {
 public:
-    // The deadline BUDGET after now.  A sum past the last value of the
+    // The deadline budget after now.  A sum past the last value of the
     // counter gives the last value.  The read takes the bare tag of Nondet
-    // (THE GATE).
+    // (the gate).
     [[nodiscard]] static SpinDeadline after(eff::cap::Nondet /*nondet*/, SpinBudget budget) noexcept {
         std::uint64_t end = 0;
         if (__builtin_add_overflow(::foundation::os::read_spin_counter(),
@@ -168,7 +168,7 @@ public:
     [[nodiscard]] static constexpr SpinDeadline passed() noexcept { return SpinDeadline{0}; }
 
     // True when the counter is at the deadline or past it.  The read takes
-    // the bare tag of Nondet (THE GATE).
+    // the bare tag of Nondet (the gate).
     [[nodiscard]] bool has_passed(eff::cap::Nondet /*nondet*/) const noexcept {
         return ::foundation::os::read_spin_counter() >= ticks_;
     }
@@ -186,8 +186,8 @@ private:
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
-// Waits with the word arm of the process until WORD holds a value other than
-// EXPECTED, or until DEADLINE passes (THE FORMS).  The wait reads the counter,
+// Waits with the word arm of the process until word holds a value other than
+// expected, or until deadline passes (the forms).  The wait reads the counter,
 // so it takes the bare tag of Nondet.
 [[nodiscard]] inline ::foundation::os::SpinEnd spin_while_equal(eff::cap::Nondet /*nondet*/,
                                                                 ::foundation::core::Atomic<std::uint32_t> const& word,
@@ -197,8 +197,8 @@ private:
                                              ::foundation::os::spin_choice_of_process().word);
 }
 
-// Spins with the plain arm of the process until PREDICATE gives true, or
-// until DEADLINE passes.  True when the predicate gave true.  The predicate
+// Spins with the plain arm of the process until predicate gives true, or
+// until deadline passes.  True when the predicate gave true.  The predicate
 // runs before each check of the deadline, so a predicate that holds at the
 // start gives true with each deadline.  Complexity: one call of the
 // predicate and one read of the counter for each turn of the arm.

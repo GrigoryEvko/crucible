@@ -1,7 +1,7 @@
 // A context of a brand that the caller declared, handed to a gate that
 // asks for the context with no brand.
 //
-// VIOLATION: any translation unit can declare a state and hold its claim,
+// Violation: any translation unit can declare a state and hold its claim,
 // so a branded context that became the unbranded one would put every
 // thread through the unbranded gate.
 //

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A relation is read from the members of a namespace.  A class is not a
 // namespace, and the static_assert in every_edge_is_admitted refuses it.

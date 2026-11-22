@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Vigil::AlignmentPos is fixy::Refined<bounded_above<5>, uint8_t>, and
 // Vigil::alignment_pos_at is its one door.  The door checks the bound with a

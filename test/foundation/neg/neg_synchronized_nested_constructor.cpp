@@ -1,8 +1,8 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A public constructor of a nested class takes the class and writes its
 // plain count.  The constructor runs after the class is shared, so it is a
-// door, and it takes no proof (THE NESTED CLASSES of foundation/Transfer.h).
+// door, and it takes no proof (the nested classes of foundation/Transfer.h).
 //
 // Expected diagnostic: a door of a nested class can write the class, and the
 // diagnostic names the constructor of the handle.

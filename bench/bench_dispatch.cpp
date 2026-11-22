@@ -5,7 +5,7 @@
 //   • Isolated ReplayEngine + CrucibleContext (no Vigil wrapper)
 //   • record_op (MetaLog + TraceRing) on its own
 //   • dispatch_op in every mode: RECORDING, COMPILED steady, COMPILED + output,
-//     COMPILED MATCH-only, full 8-op iteration including auto-reset
+//     compiled match-only, full 8-op iteration including auto-reset
 //   • Divergence cold-path (end-to-end: fresh setup + divergent dispatch)
 //   • RegionCache::find_alternate
 //

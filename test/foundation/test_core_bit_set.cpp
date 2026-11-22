@@ -330,7 +330,7 @@ struct HeapSide {
 // of the indexes, and the bits past the count, which no index reaches and the
 // walk must never give.  size() counts each bit of each word, so a bit at or
 // past the count makes size() larger than the count of the members.  The walk
-// of a BitSet<N> makes its keys with no check (THE WALK of BitSet.h), so this
+// of a BitSet<N> makes its keys with no check (the walk of BitSet.h), so this
 // compare after each change is the check that each door keeps the top bits
 // clear.  Complexity: O(count).
 template <class Side>

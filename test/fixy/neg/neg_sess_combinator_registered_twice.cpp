@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A second registration of a combinator of the session layer, in a family
 // of its own, would give Send a second answer in this translation unit.

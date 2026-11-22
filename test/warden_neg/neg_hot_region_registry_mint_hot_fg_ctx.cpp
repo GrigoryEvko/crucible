@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_hot_region_registry_handle refuses the hot foreground context.
 // Its row is empty, so it holds no capability to write registry state.

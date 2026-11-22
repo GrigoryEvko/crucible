@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A ChannelBinding refers to its channel as a reference does, and the handles
 // on several threads use the channel at once.  So a binding moves to another

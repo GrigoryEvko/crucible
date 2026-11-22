@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A family of the registry of the session layer is a declaration of the
 // base (fixy/session/Registry.h).  A family that a file outside the base

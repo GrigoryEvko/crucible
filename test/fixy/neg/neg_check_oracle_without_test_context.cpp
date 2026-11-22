@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // oracle compares a family operation with its model and ends the process on
 // a difference, and only a test calls it.  A background context owns no Test

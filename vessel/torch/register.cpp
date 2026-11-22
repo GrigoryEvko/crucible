@@ -14,7 +14,7 @@
 // everything else — the signature by reflection, the schema hash, the arity,
 // the masks and the mutability from the row at that index.
 //
-// THE SHARDS
+// Shards
 //
 // One compile of the kernels of all 3110 operators used more than the hard
 // limit of 600 s CPU of a compile job (COMPILE_CPU_LIMIT_S of

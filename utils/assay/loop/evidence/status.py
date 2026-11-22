@@ -1,6 +1,6 @@
 """status — the evidence of each item of the sampled checks against its target, and the remaining work.
 
-THE ROWS
+Rows
     rows_of() gives one row for each item (assay.loop.evidence.items).  The
     row gives the name of its class, its kind of evidence, its unit, its
     name, its build and its key.  The row also gives the evidence of the
@@ -9,20 +9,20 @@ THE ROWS
     the kept failure too.  An item with no key gives the reason, and its
     evidence is 0.
 
-THE TARGETS
+Targets
     Each class has a nightly target and a release target
     (assay.loop.evidence.targets).  remaining() gives the units of evidence
     that are necessary for one of the two targets.  The wall time of one unit
     comes from the samples of the record.  An entry can then estimate the
     time of the remaining work.
 
-THE JUDGMENT
+Judgment
     judged() gives an error for each item with a kept failure, with the name
     of its class.  The failure stays until its key changes
-    (assay.loop.evidence.store, THE FAILURE).  An item with no key, or with
+    (assay.loop.evidence.store, the failure).  An item with no key, or with
     less evidence than a target, gives no finding.  table() shows it.
 
-THE OUTPUT
+Output
     status_json() gives the rows as one JSON object, with FORMAT, the list
     "rows" and the list "problems" of the builds that give no items.  An
     entry reads that object to schedule the remaining work in a time budget.
@@ -40,13 +40,13 @@ from assay.loop.evidence import items as evidence_items
 from assay.loop.evidence import store as evidence_store
 from assay.loop.evidence import targets
 
-# The format of the status object (THE OUTPUT).
+# The format of the status object (the output).
 FORMAT = "crucible-evidence-status 1"
 
 
 @dataclass(frozen=True, slots=True)
 class Row:
-    """The evidence of one item against its targets (THE ROWS)."""
+    """The evidence of one item against its targets (the rows)."""
 
     rule: str
     kind: str
@@ -63,7 +63,7 @@ class Row:
 
 
 def remaining(row: Row, is_release: bool = False) -> float:
-    """Return the units of evidence that are necessary for the nightly or the release target of a row (THE TARGETS)."""
+    """Return the units of evidence that are necessary for the nightly or the release target of a row (the targets)."""
     return max(0.0, (row.release if is_release else row.nightly) - row.value)
 
 
@@ -72,7 +72,7 @@ def rows_of(
     store: evidence_store.EvidenceStore,
     classes: Sequence[targets.Target] = targets.TARGETS,
 ) -> list[Row]:
-    """Return a row for each item of a class of `classes`, with the targets of that class (THE ROWS).
+    """Return a row for each item of a class of `classes`, with the targets of that class (the rows).
 
     Complexity: one read of the store for each item with a key.
     """
@@ -103,7 +103,7 @@ def rows_of(
 
 
 def judged(rows: Sequence[Row], place: str) -> list[check_report.Finding]:
-    """Return an error for each row with a kept failure (THE JUDGMENT).
+    """Return an error for each row with a kept failure (the judgment).
 
     Complexity: linear in the rows.
     """
@@ -133,7 +133,7 @@ def failure_json(failure: evidence_store.Failure | None) -> object:
 
 
 def status_json(rows: Sequence[Row], problems: Sequence[str] = ()) -> str:
-    """Return the rows, and the problem of each build that gives no items, as one JSON object (THE OUTPUT)."""
+    """Return the rows, and the problem of each build that gives no items, as one JSON object (the output)."""
     return json.dumps(
         {
             "format": FORMAT,

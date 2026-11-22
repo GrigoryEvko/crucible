@@ -1,6 +1,6 @@
 """prose-bans — the prose of the tree names no reference of the work, no retired axis number and no path that is gone.
 
-THE RULE
+Rule
     A comment, a docstring, a diagnostic, a script or a ledger row tells what
     the code does.  It names no task, no stage and no entry of a tracker that
     made the code.  A reader with no access to the tracker gets no meaning
@@ -9,7 +9,7 @@ THE RULE
     retired number of FX.  A guide at the root of the tree names a file by
     its path in the tree.
 
-THE KINDS
+Kinds
     coordination-ref  a reference of the work in the prose of a file.
                       COORDINATION gives its families.  They are a task, a tag
                       of a tracker, and the label of a stage, a phase or an
@@ -35,15 +35,15 @@ THE KINDS
     that is gone.  For a file that the rule cannot read, it is the path of the
     file.
 
-THE SCOPE
+Scope
     The rule reads the prose of each file that git holds, and of each new
     file that .gitignore does not match (assay.readers.prose).  It does not
     read the dated notes of misc/, this module and its plants, because they
     name references on purpose.  It gives no finding for the path of a
-    ledger row, because a row of a file that went passes (THE POLICIES of
+    ledger row, because a row of a file that went passes (the policies of
     assay.core.ledger).
 
-THE CACHE
+Cache
     The references and the axis numbers of one file come only from its path
     and its bytes.  The cache prose-bans of assay.core.cache keeps them, one
     entry for each file.  The name of an entry is the SHA-256 of this module,
@@ -148,7 +148,7 @@ GONE_ACTION = (
 
 
 def is_skipped(path: str) -> bool:
-    """Return True for a file that the rule does not read (THE SCOPE)."""
+    """Return True for a file that the rule does not read (the scope)."""
     return path == SELF or path.startswith(SKIPPED_DIRECTORIES)
 
 
@@ -217,7 +217,7 @@ class Hit:
 
 
 def hits_of(item: prose.FileProse) -> list[Hit]:
-    """Return each prose line of a file that the pattern of a kind of the file matches (THE KINDS).
+    """Return each prose line of a file that the pattern of a kind of the file matches (the kinds).
 
     Complexity: linear in the length of the prose of the file.
     """
@@ -243,7 +243,7 @@ def results_identity() -> bytes:
 
 
 def entry_name(identity: bytes, root: Path, path: str) -> str:
-    """Return the name of the entry of a file in the cache (THE CACHE): a link counts with the path of its target."""
+    """Return the name of the entry of a file in the cache (the cache): a link counts with the path of its target."""
     file = root / path
     is_link = file.is_symlink()
     data = os.fsencode(os.readlink(file)) if is_link else file.read_bytes()
@@ -302,7 +302,7 @@ def dead_path_findings(
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each reference of the work, each retired axis number and each path that is gone (THE KINDS).
+    """Give each reference of the work, each retired axis number and each path that is gone (the kinds).
 
     Raises:
         NotApplicable: If the root is not a git work tree

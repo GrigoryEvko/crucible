@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_sense_hub_v2 rejects ColdInitCtx.  The load calls
 // bpf(BPF_PROG_LOAD), which enters the kernel and waits while the

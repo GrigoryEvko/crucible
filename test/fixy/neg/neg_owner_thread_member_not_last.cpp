@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The thread of an owner ends first only when it is the last data member
 // of the owner.  A member after it ends before the thread, while the body

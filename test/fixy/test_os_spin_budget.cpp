@@ -1,7 +1,7 @@
 // The spin budget of fixy/os/SpinBudget.h: the rate of a counter from fixed
 // counts, the conversion of a budget to ticks, the rate of the process, the
 // opaque deadline, the two spin forms, the gate of Nondet, and the rule of
-// DETERMINISM.
+// Determinism.
 //
 // The determinism test receives one stream of values with a budget of zero,
 // which takes the slower wait after each empty poll, and with the largest
@@ -42,7 +42,7 @@ constexpr std::uint64_t kNanosecondsPerSecond = 1000000000U;
 constexpr SpanNanos kOneSecond{kNanosecondsPerSecond};
 constexpr SpinBudget kLargestBudget{~std::uint32_t{0}};
 
-// THE GATE: a deadline takes the bare tag of Nondet.  A load context and the
+// The gate: a deadline takes the bare tag of Nondet.  A load context and the
 // context of a test give the tag, and the foreground and a drain context do
 // not.
 static_assert(eff::CtxOwnsCapability<::fixy::BgLoadCtx, eff::Effect::Nondet>);
@@ -200,7 +200,7 @@ struct StreamDrain {
 };
 
 // A producer and a consumer of the stream, each with one end of a wire
-// channel, with the consumer budget BUDGET.
+// channel, with the consumer budget.
 [[nodiscard]] Received receive_the_stream(::fixy::BgLoadCtx const& ctx, SpinBudget budget) {
     auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, StreamTag>>();
     using Stream = cc::channel_t<std::uint64_t, 64, decltype(root)>;
@@ -217,7 +217,7 @@ struct StreamDrain {
     return received;
 }
 
-// DETERMINISM: the budget picks a spin or a sleep, and the values do not
+// Determinism: the budget picks a spin or a sleep, and the values do not
 // change.  The run with a budget of zero takes the sleep at least one time,
 // so the test reads the two paths.
 void test_the_budget_does_not_change_the_result(::fixy::BgLoadCtx const& ctx) {

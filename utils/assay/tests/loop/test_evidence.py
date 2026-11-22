@@ -28,7 +28,7 @@ def usage_cases(expect: testing.Expect) -> None:
 
 
 def status_cases(expect: testing.Expect) -> None:
-    """Hold the status of a build that is not configured, as a table and as JSON (THE SUBCOMMANDS, status)."""
+    """Hold the status of a build that is not configured, as a table and as JSON (the subcommands, status)."""
     with tempfile.TemporaryDirectory(prefix="evidence-command-") as directory, cache.scratch_root():
         missing = Path(directory) / "none"
         status, text = testing.captured(lambda: evidence.main(["status", "--build-dir", str(missing)]))

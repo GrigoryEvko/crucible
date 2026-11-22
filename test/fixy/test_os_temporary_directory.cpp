@@ -1,4 +1,4 @@
-// The temporary directory door of fixy/os/Fs.h (THE TEMPORARY DIRECTORY):
+// The temporary directory door of fixy/os/Fs.h (the temporary directory):
 // mint_temporary_directory makes a new directory under the temporary
 // directory of the host, and the end of its owner removes the tree.
 //

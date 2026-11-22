@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file must not compile.
+// Negative compile test.  This file must not compile.
 //
 // Topology::probe_tree reads a sysfs tree under another root.  It is a
 // door for a test that builds the tree it wants, so only a context that

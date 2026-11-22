@@ -7,7 +7,7 @@
 //       are libbpf-bound; expected wall-clock is ~50-200 ms per program ×
 //       7 programs (5 legacy + 2 BTF-typed) for the verifier + attach +
 //       mmap path — total in the ~300-1500 ms range with the BTF facades
-//       loaded.  Printed as a banner — NOT a bench-iteration body.
+//       loaded.  Printed as a banner — not a bench-iteration body.
 //       Putting libbpf load into a `.measure(...)` loop would be a
 //       textbook misuse: each iteration would re-attach and blow past
 //       the 1-second total budget on the first call.
@@ -46,7 +46,7 @@
 //       BPF programs' .rodata; matches CLAUDE.md's "max from cold-start
 //       cache miss" note in §VIII.
 //
-// What this bench does NOT measure:
+// What this bench does not measure:
 //   • End-to-end "from event to userspace counter" latency — that's
 //     dominated by tracepoint dispatch and BPF program execution, not
 //     by the userspace facade.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // An n-ary combine needs the pack manifest and its authoring witness.
 // The manifest for Other here is written alone, with no witness beside

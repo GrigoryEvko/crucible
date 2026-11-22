@@ -27,7 +27,7 @@
 //   sum_leading               out[n] = the tree sum of input[0, n], input[1,
 //                             n], and so on
 //
-// THE ORDER AND THE BOUNDS
+// Order and the bounds
 //   Each kernel states the order of its rounds through the base form that it
 //   calls, and the base header states the error bound of that order:
 //   Product.h for multiply, sum_all and sum_leading, and Elementwise.h for
@@ -43,22 +43,22 @@
 //   count of lanes or the host.  Each NaN of an arithmetic output is the
 //   canonical NaN 0x7FC00000.  A select or a copy keeps the bits of its value.
 //
-// THE ROLES
+// Roles
 //   Two inputs of one type take two roles of Side (foundation/core/Side.h),
 //   so no two arguments of a call can swap.  A scalar of a kernel, such as a
 //   threshold, also takes a role.  The roles of this header are in the
 //   namespace side below.
 //
-// THE CHECKS
+// Checks
 //   The views of a kernel must have the sizes of its op: a plan checks them
 //   before it runs the kernel.  A kernel whose views do not agree ends the
 //   process with the name of the kernel.  sum_all also needs an input whose
 //   elements reshape to one axis, such as a dense view.
 //
-// THE TARGET
+// Target
 //   Each kernel calls a base form whose body reads the vector width of the
 //   target, so the kernels are in the inline namespace CRUCIBLE_SIMD_TARGET
-//   (THE TARGET NAMESPACE of foundation/Platform.h).
+//   (the target namespace of foundation/Platform.h).
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -104,7 +104,7 @@ concept IeeeMode = Mode == ::foundation::core::kFpModeIeee;
 
 namespace detail {
 
-// Ends the process for a kernel whose views do not agree (THE CHECKS).  The
+// Ends the process for a kernel whose views do not agree (the checks).  The
 // body is in src/mimic/cpu/Kernels.cpp.
 [[noreturn]] CRUCIBLE_COLD void refuse_views_(::fixy::TextView kernel) noexcept;
 

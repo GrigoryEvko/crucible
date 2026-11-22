@@ -277,7 +277,7 @@ def stamp_cases(expect: testing.Expect) -> None:
 
 
 def check_cases(expect: testing.Expect) -> None:
-    """Hold the check of a parse build: it parses nothing, and only a current report keeps its unit (THE CHECK)."""
+    """Hold the check of a parse build: it parses nothing, and only a current report keeps its unit (the check)."""
     import os
 
     with tempfile.TemporaryDirectory(prefix="syntax-check-") as scratch_text:
@@ -311,8 +311,8 @@ def check_cases(expect: testing.Expect) -> None:
 def plugin_cases(expect: testing.Expect) -> None:
     """Hold a report of a different plugin: other bytes of the plugin of the build parse the unit again.
 
-    A stop of a configure could leave a plugin of different sources under the stamp of the earlier plugin (THE KEY OF
-    THE PLUGIN of utils/tools/quarantine/Quarantine.cmake).  The next configure builds the plugin of the tree again,
+    A stop of a configure could leave a plugin of different sources under the stamp of the earlier plugin (the key of
+    the plugin of utils/tools/quarantine/Quarantine.cmake).  The next configure builds the plugin of the tree again,
     with the same stamp.  A report of the stale plugin must not stay, so a batch that changed the plugin and then a
     batch that did not parse the second batch with the plugin of the tree.
     """
@@ -351,7 +351,7 @@ database.write_text(database.read_text().replace("stamp=0ld0ld", "stamp=fe5hfe5h
 
 
 def jobserver_cases(expect: testing.Expect) -> None:
-    """Hold a run with a jobserver: the builds of step 1 get no -j, and the parses hold the slots (THE JOBSERVER)."""
+    """Hold a run with a jobserver: the builds of step 1 get no -j, and the parses hold the slots (the jobserver)."""
     import os
 
     with jobserver.serving(1) as server:

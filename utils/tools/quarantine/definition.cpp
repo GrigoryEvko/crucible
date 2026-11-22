@@ -6,17 +6,17 @@
 // state of the class, such as a pointer that a bound check guards.  So the
 // rule definition-home refuses each such declaration in a header of the base.
 //
-// THE UNIT
+// Unit
 //     The rule reads one header in one unit: the header that the argument
-//     sentinel names (THE SENTINEL of plugin.h).  A header of include/ has one
+//     sentinel names (the sentinel of plugin.h).  A header of include/ has one
 //     such unit in the target all, its sentinel unit or its check file.  So
 //     each finding counts in one unit.  A unit whose main file is a source
 //     file of src/foundation/ or src/fixy/ reads the base source files of the
 //     unit: the main file and each header of those directories.  It gives the
-//     records of THE CLASSES, and the finding elsewhere of THE OUT-OF-LINE
-//     ENTITIES.  Each other unit reads nothing.
+//     records of the classes, and the finding elsewhere of the out-of-line
+//     entities.  Each other unit reads nothing.
 //
-// THE KINDS
+// Kinds
 //     friend        a friend declaration of a class that the header defines
 //                   names an entity that the header does not define: a class,
 //                   a class template, a function or a function template.  A
@@ -32,10 +32,10 @@
 //                   definition, whose partial and explicit specializations
 //                   the header defines, is no finding, because a friend
 //                   cannot name a partial specialization.  It gives the
-//                   record declared of THE CLASSES, and so does a friend
+//                   record declared of the classes, and so does a friend
 //                   class that is no template and has no definition in the
-//                   unit.  A friend of THE OUT-OF-LINE ENTITIES and a friend
-//                   of THE HOMES is no finding.  Its place is the class, and
+//                   unit.  A friend of the out-of-line entities and a friend
+//                   of the homes is no finding.  Its place is the class, and
 //                   its entity is the friend
 //     elsewhere     an entity that the header declares has its definition in
 //                   a different file of the unit.  Its place is the
@@ -43,7 +43,7 @@
 //                   a member or a friend of a class of a different file is
 //                   the kind too, at the definition
 //     undefined     an entity that the header declares has no definition in
-//                   the unit, other than a class of THE CLASSES.  Its place
+//                   the unit, other than a class of the classes.  Its place
 //                   is the declaration in the header
 //     The entities are each function, function template, class, class
 //     template and variable of a namespace of the base, and each member
@@ -57,7 +57,7 @@
 //     header defines, as it reads a class.  It reads each friend before each
 //     other entity, so a friend gives one finding and no second one.
 //
-// THE CLASSES
+// Classes
 //     A class or a class template of a namespace, which no class of the
 //     header names as a friend, can have no definition in any file.  A tag
 //     that only names a type has none, and neither has a class template whose
@@ -73,19 +73,19 @@
 //                   unit defines, at its definition
 //       header      the header of the unit, at its first line
 //       homed       a friend that a home row of the rule table names, with
-//                   the paths of the row (THE HOMES)
+//                   the paths of the row (the homes)
 //       body        an out-of-line function or static data member that a
 //                   base source file of the unit defines, by its symbol
 //     The module gives the finding elsewhere for a declared class that a
 //     header defines, that more than one file defines, or that a source file
 //     defines when the class is a template.  A class with its one definition
-//     in a base source file is admitted, as THE OUT-OF-LINE ENTITIES are.  The
+//     in a base source file is admitted, as the out-of-line entities are.  The
 //     module also gives the finding for a class and for a symbol of the
 //     records defined and body that two files define.  It refuses a build in
 //     which a header of include/foundation/ or include/fixy/ has no record
 //     header.
 //
-// THE OUT-OF-LINE ENTITIES
+// Out-of-line entities
 //     A function with external linkage, no inline, no constexpr, no consteval
 //     and no template has one definition in the program, in a source file.
 //     So has a static data member with no inline and no constexpr, and a
@@ -105,13 +105,13 @@
 //         elsewhere (the record body)
 //       - a duplicate symbol in the objects of one link is a link error.
 //
-// THE HOMES
+// Homes
 //     A friend that a home row of the class federation or owner names is no
 //     finding.  The layer order puts its definition above the header, and
 //     the rule home refuses each definition outside the paths of its row.
 //     The record homed names the row.
 //
-// THE READS
+// Reads
 //     GCC keeps one location for an entity: the location moves to the
 //     definition, and a friend declaration moves it to the friend.  So the
 //     family reads each place when the parser completes it:
@@ -130,7 +130,7 @@
 //                                     declaration, and the pattern moves to
 //                                     the definition
 //     A place in the check file of the header stands where the header stands
-//     (home.cpp, THE PLACE).
+//     (home.cpp, the place).
 //     The records of the events name a tree, and a garbage collection can
 //     free a tree and give its address to a later tree.  GCC gives each
 //     instantiation of a lambda that captures a dummy operator() with a
@@ -140,7 +140,7 @@
 //     collection does not mark goes.  GCC frees a declaration outside a
 //     collection only in duplicate_decls, and that declaration has no event.
 //
-// WHAT THE FAMILY DOES NOT READ
+// What the family does not read
 //     A forward declaration of a class, or a declaration of a function
 //     template that is no member, gives no event, and GCC moves its location
 //     to the definition.  So such a declaration is no finding when the unit
@@ -149,12 +149,12 @@
 //     it the definition, so no unit can give a second one.  A check file that
 //     includes the file of the definition after its header hides the
 //     declaration.  The control control-known-gaps of
-//     utils/plants/definition-home pins the gap.  The records of THE CLASSES
+//     utils/plants/definition-home pins the gap.  The records of the classes
 //     name a class by its scopes and its name, so a definition of a class of
 //     the same name in a function scope does not join.  A header of src/ is
 //     no header of a sentinel, and the rule does not read it.
 //
-// THE ACTIVATION
+// Activation
 //     The argument definition-home=on turns on the rule (plugin.cpp), and
 //     Quarantine.cmake gives it to each compile of the tree.  A compile with
 //     the argument sentinel reads its header, and a compile of a base source
@@ -170,7 +170,7 @@ bool is_active = false;
 
 // The classes that the header defines, in the sequence of the walk, and each
 // class of a namespace that the header declares and does not define, with
-// its place (THE KINDS, THE CLASSES).
+// its place (the kinds, the classes).
 std::vector<tree> header_classes;
 struct DeclaredClass {
     tree decl = NULL_TREE;
@@ -179,11 +179,11 @@ struct DeclaredClass {
 std::vector<DeclaredClass> declared_classes;
 
 // The place of the first declaration of each function and variable that the
-// header declares with no definition (THE READS).
+// header declares with no definition (the reads).
 std::unordered_map<tree, location_t> declaration_places;
 
 // The place of the definition of each function and variable, at its event
-// (THE READS).
+// (the reads).
 std::unordered_map<tree, location_t> definition_places;
 
 // The entities that the rule judged, so that each one gives one finding.
@@ -191,12 +191,12 @@ std::unordered_set<tree> judged;
 
 // The classes whose members and friends the rule read.  Only read_header
 // fills and reads judged, read_classes, header_classes and declared_classes,
-// in one walk of the end of the parse, and no collection runs in a walk (THE
-// COLLECTIONS of plugin.h).
+// in one walk of the end of the parse, and no collection runs in a walk (the
+// collections of plugin.h).
 std::unordered_set<tree> read_classes;
 
 // True when FILE stands where the header of the argument sentinel stands: the
-// header, and its check file (THE READS).
+// header, and its check file (the reads).
 bool is_header(const FileEntry* file) {
     if (file == nullptr || file->file_class != FileClass::base) {
         return false;
@@ -207,13 +207,13 @@ bool is_header(const FileEntry* file) {
 bool is_header_at(location_t location) { return location > BUILTINS_LOCATION && is_header(file_at(location)); }
 
 // True when FILE is a source file of the base, where an out-of-line entity has
-// its definition (THE OUT-OF-LINE ENTITIES).
+// its definition (the out-of-line entities).
 bool is_base_source(const FileEntry* file) {
     return file != nullptr && file->file_class == FileClass::base
         && (has_prefix(file->relative, "src/foundation/") || has_prefix(file->relative, "src/fixy/"));
 }
 
-// What the rule reads in this unit (THE UNIT): the header of the argument
+// What the rule reads in this unit (the unit): the header of the argument
 // sentinel, the base source file of the main file, or nothing.
 enum class Mode : std::uint8_t {
     off,
@@ -226,7 +226,7 @@ Mode unit_mode = Mode::off;
 const FileEntry* source_main = nullptr;
 
 // The file of the main file of the unit when it is a base source file, or
-// null (THE UNIT).
+// null (the unit).
 const FileEntry* base_source_main() {
     if (main_input_filename == nullptr) {
         return nullptr;
@@ -260,7 +260,7 @@ bool is_base_entity(tree decl) {
     return in_base_namespace(enclosing_namespace_of(decl, class_scope));
 }
 
-// True when DECL is no entity of THE KINDS: an erroneous, an artificial or a
+// True when DECL is no entity of the kinds: an erroneous, an artificial or a
 // builtin declaration, a clone, a deduction guide, an instantiation and an
 // explicit specialization.
 bool is_no_entity(tree decl) {
@@ -363,7 +363,7 @@ bool has_one_body_form(tree decl) {
     return DECL_CLASS_SCOPE_P(decl) || DECL_EXTERNAL(decl);
 }
 
-// True when DECL is an out-of-line entity (THE OUT-OF-LINE ENTITIES): an
+// True when DECL is an out-of-line entity (the out-of-line entities): an
 // entity of the form of has_one_body_form, in a compile that runs the rule
 // base-namespace too.
 bool is_out_of_line(tree decl) { return is_base_namespace_active() && has_one_body_form(decl); }
@@ -394,7 +394,7 @@ std::string entity_name(tree decl) {
     return qualified_name(decl);
 }
 
-// The name of the class TYPE for a record of THE CLASSES: the name of its
+// The name of the class TYPE for a record of the classes: the name of its
 // template for the pattern of a class template, so that a declaration and a
 // definition of one template give one name.
 std::string class_entity(tree type) {
@@ -413,8 +413,8 @@ std::string defined_in(location_t location) {
 }
 
 // Judges the entity DECL that the header declares at DECLARED_AT, one time
-// (THE KINDS).  MAY_BE_OUT_OF_LINE admits the cases of THE OUT-OF-LINE
-// ENTITIES: it holds for a function and a variable, and not for a class.
+// (the kinds).  MAY_BE_OUT_OF_LINE admits the cases of the out-of-line
+// entities: it holds for a function and a variable, and not for a class.
 void judge(tree decl, location_t declared_at, bool may_be_out_of_line) {
     if (!judged.insert(decl).second) {
         return;
@@ -483,7 +483,7 @@ std::string friend_text(tree entity, location_t defined_at) {
 
 // True when the class template TEMPLATE_DECL has no primary definition in
 // the unit, and the header defines each of its partial and explicit
-// specializations that the unit defines, at least one (THE KINDS).  A friend
+// specializations that the unit defines, at least one (the kinds).  A friend
 // declaration cannot name a partial specialization, so a class that gives a
 // specialization access names the template.  Complexity: linear in the
 // specializations of the template.
@@ -524,7 +524,7 @@ bool is_closed_template(tree template_decl) {
 }
 
 // The home row of the class federation or owner that names the entity DECL,
-// or null (THE HOMES).
+// or null (the homes).
 const HomeRow* home_row_of(tree decl) {
     std::string name = qualified_name(decl);
     for (const HomeRow& row : state.table.homes) {
@@ -550,7 +550,7 @@ std::string homed_text(tree entity, const HomeRow& row) {
 // True when the friend function FUNCTION, whose definition stands at
 // DEFINED_AT or nowhere in the unit, is admitted: a definition in the header,
 // or an out-of-line entity with no definition in the unit or with its
-// definition in a base source file (THE OUT-OF-LINE ENTITIES).
+// definition in a base source file (the out-of-line entities).
 bool is_admitted_friend_function(tree function, location_t defined_at) {
     if (defined_at != UNKNOWN_LOCATION && is_header_at(defined_at)) {
         return true;
@@ -568,10 +568,10 @@ location_t friend_record_place(tree entity, location_t class_place) {
 }
 
 // One friend of a class that the header defines, at the place of the class
-// (THE KINDS).  ENTITY is the declaration of the friend.  A friend of THE
-// HOMES gives the record homed.  A friend template whose specializations the
+// (the kinds).  ENTITY is the declaration of the friend.  A friend of the
+// homes gives the record homed.  A friend template whose specializations the
 // header defines, and whose primary has no definition in the unit, gives the
-// record declared of THE CLASSES, and so does a friend class that is no
+// record declared of the classes, and so does a friend class that is no
 // template and has no definition in the unit.  A friend function with no
 // definition of its own names a function of its name, and the rule admits it
 // only when it admits each function of that name, because the rule cannot
@@ -642,9 +642,9 @@ bool holds_for_owner(tree partial, tree owner) {
         && equivalently_constrained(partial, owner_template);
 }
 
-// The partial specialization of the template GENERAL that the dependent
+// The partial specialization of the template general that the dependent
 // arguments ARGUMENTS of a friend of the class OWNER name, the template
-// GENERAL when none does, or error_mark_node when the rule cannot tell: a
+// general when none does, or error_mark_node when the rule cannot tell: a
 // match of more than one, or of a constrained partial specialization whose
 // constraints do not hold for each instance of OWNER (holds_for_owner).
 // Complexity: linear in the partial specializations of the template.
@@ -664,8 +664,8 @@ tree dependent_partial(tree general, tree arguments, tree owner) {
     return found != NULL_TREE ? found : general;
 }
 
-// The partial specialization of the template GENERAL that the overload
-// resolution of the language selects for the class TYPE, the template GENERAL
+// The partial specialization of the template general that the overload
+// resolution of the language selects for the class TYPE, the template general
 // when none matches, or error_mark_node when two match.
 tree selected_partial(tree type, tree general) {
     tree selected = most_specialized_partial_spec(type, tf_none);
@@ -681,7 +681,7 @@ tree selected_partial(tree type, tree general) {
     return TREE_CODE(selected) == TREE_LIST ? TREE_VALUE(selected) : error_mark_node;
 }
 
-// The declaration that a friend class TYPE names (THE KINDS).  An explicit
+// The declaration that a friend class TYPE names (the kinds).  An explicit
 // specialization is its own class, also when the unit does not define it.  A
 // specialization with dependent arguments names the partial specialization
 // that matches them, such as `friend struct niche<View<Element, Count>>`, also
@@ -707,14 +707,14 @@ tree friend_class(tree type, tree owner) {
 }
 
 // The entity of a friend of an unknown shape: a finding, so that the rule
-// fails closed (THE KINDS).
+// fails closed (the kinds).
 std::string unknown_friend(tree value) {
     return "a friend of the tree code " + std::string(get_tree_code_name(TREE_CODE(value)));
 }
 
 // Each friend of the class TYPE that the header defines.  A friend that a
 // template parameter or a dependent name gives is no finding, and each other
-// shape that the rule cannot read is one (THE KINDS).
+// shape that the rule cannot read is one (the kinds).
 void judge_friends(tree type, location_t class_place) {
     for (tree item = CLASSTYPE_FRIEND_CLASSES(type); item != NULL_TREE; item = TREE_CHAIN(item)) {
         tree value = TREE_VALUE(item);
@@ -784,7 +784,7 @@ tree member_class_of(tree member, tree owner) {
 }
 
 // The class TYPE, which the header defines, and each member class that the
-// header defines, into header_classes one time each (THE KINDS).
+// header defines, into header_classes one time each (the kinds).
 void collect_class(tree type) {
     tree main_type = TYPE_MAIN_VARIANT(type);
     if (!CLASS_TYPE_P(main_type) || TYPE_MAIN_DECL(main_type) == NULL_TREE || !read_classes.insert(main_type).second) {
@@ -837,7 +837,7 @@ std::string class_defined_in(tree type) {
 
 // Each member class of the class TYPE, which a different file defines, that
 // the header defines out of the class: the finding elsewhere, at the
-// definition (THE OUT-OF-LINE ENTITIES).  The rule reads the member classes
+// definition (the out-of-line entities).  The rule reads the member classes
 // of TYPE, and not the classes inside them.
 void judge_foreign_member_classes(tree type) {
     for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
@@ -853,7 +853,7 @@ void judge_foreign_member_classes(tree type) {
 // One class of a namespace of the base.  A class that the header defines is
 // collected.  A class that a different file defines gives the finding of
 // each member class that the header defines out of the class.  A class that the header declares and the unit does not define
-// waits for THE CLASSES.
+// waits for the classes.
 void walk_class(tree type) {
     tree main_type = TYPE_MAIN_VARIANT(type);
     tree decl = TYPE_MAIN_DECL(main_type);
@@ -875,7 +875,7 @@ void walk_class(tree type) {
 
 // One class template of a namespace of the base.  Its template keeps the
 // location of the first declaration, and its pattern moves to the definition
-// (THE READS).  Each partial and explicit specialization that the header
+// (the reads).  Each partial and explicit specialization that the header
 // defines is collected as a class.  Complexity: linear in the
 // specializations of the template.
 void walk_class_template(tree template_decl, tree type) {
@@ -907,7 +907,7 @@ void walk_class_template(tree template_decl, tree type) {
 }
 
 // One class of a namespace that the header declares and does not define, and
-// that no friend of a class of the header names (THE CLASSES).  A definition
+// that no friend of a class of the header names (the classes).  A definition
 // in a different file of the unit is the finding elsewhere, and no definition
 // in the unit is the record declared.
 void judge_declared_class(const DeclaredClass& declared) {
@@ -926,7 +926,7 @@ void judge_declared_class(const DeclaredClass& declared) {
 
 // True when the class TYPE is a named class of a named namespace, or the
 // pattern of a class template of such a namespace, and no specialization: the
-// classes of the record defined (THE CLASSES).  An unnamed class and a class
+// classes of the record defined (the classes).  An unnamed class and a class
 // of an unnamed namespace have no name that a different file can declare.
 bool is_namespace_class(tree type) {
     tree decl = TYPE_MAIN_DECL(type);
@@ -957,7 +957,7 @@ bool is_injected_friend(tree decl) {
 }
 
 // The phase of the walk at the end: the classes first, so that each friend is
-// judged as a friend before each other entity (THE KINDS), and each other
+// judged as a friend before each other entity (the kinds), and each other
 // entity second.
 enum class Phase : std::uint8_t {
     classes,
@@ -1049,7 +1049,7 @@ location_t event_place(tree decl) {
 
 // The out-of-line entities that the base source files of the unit define, for
 // the record body, and the other functions of the base that they define, in
-// the sequence of the parse (THE CLASSES, THE OUT-OF-LINE ENTITIES).
+// the sequence of the parse (the classes, the out-of-line entities).
 std::vector<tree> source_bodies;
 std::vector<tree> source_functions;
 
@@ -1069,7 +1069,7 @@ void note_source_body(tree decl, location_t place) {
 }
 
 // PLUGIN_FINISH_DECL: a declaration of a function with no body, of a static
-// data member or of an extern variable, and the definitions of THE READS.
+// data member or of an extern variable, and the definitions of the reads.
 void on_finish_decl(void* gcc_data, void*) {
     Mode current = mode();
     tree decl = static_cast<tree>(gcc_data);
@@ -1132,8 +1132,8 @@ void drop_unmarked(std::vector<tree>& decls) {
 }
 
 // PLUGIN_GGC_MARKING: the collection marked each tree that it keeps, and each
-// tree with no mark is free after it, so each record of such a tree goes (THE
-// READS).  Complexity: linear in the records.
+// tree with no mark is free after it, so each record of such a tree goes (the
+// reads).  Complexity: linear in the records.
 void on_marking(void*, void*) {
     drop_unmarked(declaration_places);
     drop_unmarked(definition_places);
@@ -1152,8 +1152,8 @@ bool is_defined_beside(tree type, location_t place) {
 }
 
 // The finding of the definition DECL at PLACE when DECL is a member or a
-// friend of a class that the file of PLACE does not define (THE OUT-OF-LINE
-// ENTITIES).
+// friend of a class that the file of PLACE does not define (the out-of-line
+// entities).
 void judge_foreign_definition(tree decl, location_t place) {
     if (DECL_CLASS_SCOPE_P(decl)) {
         tree owner = TYPE_MAIN_VARIANT(DECL_CONTEXT(decl));
@@ -1179,7 +1179,7 @@ void judge_foreign_definition(tree decl, location_t place) {
 }
 
 // Each definition in the header of a member or a friend of a class that the
-// header does not define (THE OUT-OF-LINE ENTITIES), at the definition, in
+// header does not define (the out-of-line entities), at the definition, in
 // the sequence of the places.  Complexity: O(d log d) for the d definitions
 // of the unit.
 void judge_foreign_definitions() {
@@ -1210,8 +1210,8 @@ std::vector<tree> base_roots() {
     return roots;
 }
 
-// The record header of the unit, at the first line of the header (THE
-// CLASSES).  A unit that does not read the header gives no record, and the
+// The record header of the unit, at the first line of the header (the
+// classes).  A unit that does not read the header gives no record, and the
 // module of the rule refuses the build.
 void record_header() {
     for (const auto& [real, entry] : state.entries) {
@@ -1227,7 +1227,7 @@ void record_header() {
     }
 }
 
-// The walk of the header of the argument sentinel (THE KINDS, THE CLASSES).
+// The walk of the header of the argument sentinel (the kinds, the classes).
 // Complexity: linear in the declarations of the namespaces of the base and in
 // the members and friends of the classes of the header.
 void read_header() {
@@ -1270,7 +1270,7 @@ void read_header() {
 }
 
 // Each class of NS and of each namespace inside it that the base source file
-// of the unit defines, as the record defined (THE CLASSES).  A class of an
+// of the unit defines, as the record defined (the classes).  A class of an
 // unnamed namespace has internal linkage, so no other file defines it.
 // Complexity: linear in the declarations of the namespaces of the base.
 void record_source_classes(tree ns) {
@@ -1299,7 +1299,7 @@ void record_source_classes(tree ns) {
 }
 
 // The record body of each out-of-line entity that the base source file of
-// the unit defines: its symbol and its name (THE CLASSES).
+// the unit defines: its symbol and its name (the classes).
 void record_source_bodies() {
     for (tree decl : source_bodies) {
         tree symbol = DECL_ASSEMBLER_NAME(decl);

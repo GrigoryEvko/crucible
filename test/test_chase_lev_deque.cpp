@@ -53,7 +53,7 @@ static_assert(!std::is_copy_constructible_v<TestDeque>, "ChaseLevDeque must not 
 static_assert(!std::is_move_constructible_v<TestDeque>, "ChaseLevDeque must not be movable (interior atomics)");
 static_assert(TestDeque::capacity() == 256);
 
-// THE ENDS of fixy/concurrent/ChaseLevDeque.h.  The OwnerEnd moves to another
+// The ends of fixy/concurrent/ChaseLevDeque.h.  The OwnerEnd moves to another
 // thread, and no two threads read one.  A StealerEnd copies, and two threads
 // can use one at the same time.  The deque itself is Synchronized by its
 // cells, so a Ref of it moves to a thief.

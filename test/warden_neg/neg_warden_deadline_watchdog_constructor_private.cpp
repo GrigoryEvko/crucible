@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The constructor of DeadlineWatchdog is private, and
 // mint_deadline_watchdog is its one friend.  So no scope builds a

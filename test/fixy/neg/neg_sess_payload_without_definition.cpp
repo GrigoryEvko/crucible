@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The rule of a payload stands in the header that defines the payload
 // (fixy/session/Registry.h).  A payload class that is only declared here

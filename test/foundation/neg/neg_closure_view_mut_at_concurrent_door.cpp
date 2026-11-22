@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A door whose bodies run at the same time on other threads refuses a body
 // that reads a ViewMut of int through a reference to const.  A const ViewMut

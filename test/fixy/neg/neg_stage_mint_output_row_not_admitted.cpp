@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The output payload is a computation engaged at Row<Bg>, and the
 // startup context owns Init, Alloc and IO but not Bg.  A context with

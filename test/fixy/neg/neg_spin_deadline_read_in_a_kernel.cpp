@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A kernel can get a spin deadline by reference from its caller, but it
 // cannot read it.  has_passed takes the bare tag of Nondet, and the context

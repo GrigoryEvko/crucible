@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // An upgrade under a context hands the exclusive back to a scope that
 // runs under that context, so the context must admit the row of the tag.

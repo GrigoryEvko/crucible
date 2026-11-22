@@ -2285,7 +2285,7 @@ foundation_neg_compile_test(neg_aligned_bytes_static_window_view_leaves_frame
 foundation_neg_compile_test(neg_aligned_bytes_static_windows_too_many
   "use of deleted function .void foundation::with_mut_windows"
   "with_mut_windows takes at most max_block_windows windows")
-# A keyed block (THE LOAN KEY of foundation/core/Frame.h) lends its windows only
+# A keyed block (the loan key of foundation/core/Frame.h) lends its windows only
 # with its LoanKey, and the gate refuses a body that opens a second frame of
 # the windows with the key that it captures.  The two fixtures of
 # mint_keyed_bytes: a named block, and a brand that the caller names.
@@ -2621,7 +2621,7 @@ foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
 # The payload gate holds three checks of the statement that no door builds
-# the empty value (THE CHECK OF THE STATEMENT of foundation/core/Choice.h):
+# the empty value (the check of the statement of foundation/core/Choice.h):
 # the walk of the constructors, the walk of the members, and the place of the
 # statement in the base.  The gate is a disjunction, and CheckedStatement
 # joins the three checks, so each fixture takes a concept depth of 4, and its
@@ -2695,7 +2695,7 @@ foundation_neg_compile_test(neg_core_option_niche_statement_using
 set_property(TEST neg_core_option_niche_statement_using APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 # A word protocol states that only the empty value of the niche gives the
-# empty word (THE WORD OF A STATED PAYLOAD of foundation/core/Atomic.h).  The
+# empty word (the word of a stated payload of foundation/core/Atomic.h).  The
 # gate refuses the statement for a value whose niche states nothing, and a
 # statement that is not a niche_statement.
 foundation_neg_compile_test(neg_core_atomic_word_statement_unstated_niche
@@ -3243,7 +3243,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
     PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
 endif()
 
-# The spare storage of the growable owners (THE SPARE STORAGE of
+# The spare storage of the growable owners (the spare storage of
 # foundation/core/Heap.h).  Each program reads a slot of its owner that holds
 # no element: a GrowList and a GrowText after a clear, a SmallList on the heap
 # after take_last, and a SlotMap after remove.  Each passes only on the text
@@ -3930,8 +3930,8 @@ foundation_test(test_core_sort)
 foundation_test(test_core_golden_bits)
 
 # Two units of one program, built for x86-64 and for x86-64-v4, keep their
-# own body of each function whose source reads the vector width (THE TARGET
-# NAMESPACE of foundation/Platform.h).  The flags name x86 targets, so the
+# own body of each function whose source reads the vector width (the target
+# namespace of foundation/Platform.h).  The flags name x86 targets, so the
 # test exists only on x86_64.  The unit of the baseline target comes first on
 # the link line, so the link keeps its copy of each other shared body.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
@@ -4063,7 +4063,7 @@ foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_view_mut
 foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_brand
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
   "and it names no brand of the frame: give a plain value")
-# A keyed FixedArray (THE LOAN KEY of foundation/core/Frame.h) opens a frame
+# A keyed FixedArray (the loan key of foundation/core/Frame.h) opens a frame
 # only with its LoanKey, and the gate of each keyed door refuses a body that
 # reaches a key of the brand of the owner.  Each fixture is one route of a
 # second frame of one owner: a nested door with the captured key, a helper

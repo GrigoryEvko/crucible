@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // p sends a keyed message to a reliable third role.  The message counts in
 // the cell of the pair of p and the third role, so the mint takes the one

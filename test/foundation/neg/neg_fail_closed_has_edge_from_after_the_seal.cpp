@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A relation sealed at its header counts every member.  A member added
 // after the header changes the count, and every read of the relation

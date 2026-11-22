@@ -10,7 +10,7 @@
 // reads `this->action` is skipped at consteval for a foldable body such as
 // `return op_index;`, so the check runs from the body.
 //
-// WHAT THIS FIXTURE PROVES
+// What this fixture proves
 // ────────────────────────
 // The accessor is constexpr, so the constant evaluation below enters its
 // body.  A default DispatchResult has action == RECORD, the check finds
@@ -34,7 +34,7 @@ namespace {
 // CRUCIBLE_PRE's __builtin_trap fires at consteval.
 [[maybe_unused]] constexpr crucible::OpIndex witness = [] {
     crucible::DispatchResult result{};  // action == RECORD
-    return result.compiled_op_index();  // CRUCIBLE_PRE(action == COMPILED) VIOLATED
+    return result.compiled_op_index();  // CRUCIBLE_PRE(action == COMPILED) violated
 }();
 
 }  // namespace

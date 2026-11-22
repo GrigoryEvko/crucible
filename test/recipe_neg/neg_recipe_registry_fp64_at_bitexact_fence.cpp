@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A value at ULP_FP64 must not reach a consumer that requires BITEXACT.
 // ULP_FP64 is one tier below BITEXACT, so the refusal is structural along

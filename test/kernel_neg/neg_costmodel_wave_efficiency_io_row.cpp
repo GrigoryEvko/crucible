@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // wave_efficiency is pure arithmetic, and CtxFitsCostModel admits only a
 // context whose row is empty.  This context claims IO, so the gate refuses

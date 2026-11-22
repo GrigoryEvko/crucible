@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // ValidUtilization is a fixy::Refined over valid_utilization, the closed
 // range [0, 1], and the checked mint is its only door.  This fixture gives

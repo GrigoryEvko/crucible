@@ -265,7 +265,7 @@ void run_sequential(WorkloadInputs const& inputs, Sink& sink, ::fixy::View<Produ
     run_range(inputs, Range{0, inputs.units}, sink, ::foundation::core::foreign_first(rows));
 }
 
-// The options of the threads of the rule arm (THE CORES OF A RUN of
+// The options of the threads of the rule arm (the cores of a run of
 // bench_harness.h).  On a claim of loop bench of at least two cores, the
 // measuring thread of a fan-out takes the core of slot 0, and the threads of
 // the decision take the first cores of the order of the claim apart from it,
@@ -591,7 +591,7 @@ struct Trio {
 
 int main() {
     // The cores of the claim of loop bench, read before a Run pins the thread
-    // (THE CORES OF A RUN of bench_harness.h).
+    // (the cores of a run of bench_harness.h).
     const bench::Cores cores = bench::Cores::of_calling_thread();
     bench::print_system_info();
     bench::elevate_priority();
@@ -720,7 +720,7 @@ int main() {
         // A sequential decision runs the rule arm inline: for a small tier, for
         // each tier on one CPU, such as on a claim of one core of loop bench,
         // and for a set whose work does not pay for the starts of two threads
-        // (THE START COST of fixy/concurrent/ParallelismRule.h).  Its gate is
+        // (the start cost of fixy/concurrent/ParallelismRule.h).  Its gate is
         // the overhead against the sequential arm.  A parallel decision must
         // beat the two other arms.
         if (!dec.is_parallel()) {

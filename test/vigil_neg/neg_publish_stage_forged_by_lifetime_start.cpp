@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A lifetime start over bytes can produce an object of an implicit-lifetime
 // type with no constructor call.  The tree admits one route to a lifetime

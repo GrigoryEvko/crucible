@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Fixture 1 of 2 for kTraceNumNamesBound, the typed gate of the
 // .crtrace schema-name count.  The gate is

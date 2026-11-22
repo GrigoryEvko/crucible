@@ -579,7 +579,7 @@ template <std::size_t Count>
 //
 // The stable sort of a run has one result: the elements in the order of the
 // less function, and two equivalent elements in their order in the input
-// (THE ORDER of Sort.h).  The reference is an insertion sort of the test,
+// (the order of Sort.h).  The reference is an insertion sort of the test,
 // which moves an element only past a larger one.  sort_stably has two arms:
 // the comparator arm, driftsort, for a less function of the caller, and the
 // radix arm for Ascending from stable_sort_radix_count elements.

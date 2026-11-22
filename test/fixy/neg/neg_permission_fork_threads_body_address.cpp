@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A caller with no friendship names the body of the fork without calling
 // it: it takes the address of one instantiation, which a later call

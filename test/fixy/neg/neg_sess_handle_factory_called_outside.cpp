@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The handle factory builds a handle at a protocol position and with a
 // loop context that the caller names.  A call from a scope that is not a

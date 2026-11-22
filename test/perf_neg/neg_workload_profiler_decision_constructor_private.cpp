@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The constructor of ProfiledDecision is private, and WorkloadProfiler
 // is its one friend.  So no caller wraps a decision it wrote by hand

@@ -1,6 +1,6 @@
 """padded-list — the element type of a long list has no padding bit.
 
-THE RULE
+Rule
     With -ftrivial-auto-var-init=zero, GCC writes zero to each padding hole
     of an automatic object that has an initializer, and of each object that a
     return statement makes.  It writes one store for each hole of each
@@ -16,7 +16,7 @@ THE RULE
     plugin reads the type of each alias, variable and data member.  It also
     reads the return type and each parameter that a function takes by value.
     It reads no template, and it reads the files of include/ and src/
-    (utils/tools/quarantine/declaration.cpp, THE RULE padded-list).  The
+    (utils/tools/quarantine/declaration.cpp, the rule padded-list).  The
     plugin argument padded-list-limit is the limit of the row of
     this rule in utils/registry.txt (utils/tools/quarantine/Quarantine.cmake).
     The plugin reads each element type that has a padding bit.  It gives one
@@ -29,18 +29,18 @@ THE RULE
     A list of fewer or the same number of elements gives no line, and in the
     mode error no error.  The entity of a line is `DECLARATION: ELEMENT |
     count=N holes=H`, with the element count and the padding bits of one
-    element, and the reader gives its parts (assay.readers.sections, THE
-    ENTITIES OF THE RECORDS).  The rule keeps each line in the scope of its
+    element, and the reader gives its parts (assay.readers.sections, the
+    entities of the records).  The rule keeps each line in the scope of its
     row.  The entity of its finding is `DECLARATION: ELEMENT`, and a change
     of the count changes no key.  A list has one finding, at its first
-    position (assay.guard.engines.plugin.declarations, THE POSITION OF AN
-    ENTITY).  A line that the rule cannot read is an error.  A line of a list
+    position (assay.guard.engines.plugin.declarations, the position of an
+    entity).  A line that the rule cannot read is an error.  A line of a list
     at or below the threshold is an error of the kind threshold.  Such a line
     comes from a build with a different threshold, and no ledger row admits
     it (REFUSED_KINDS).  Each problem of the census of the runner is an error
     too.
 
-THE LEDGER
+Ledger
     utils/ledgers/padded-list.txt counts the padded lists of each file, kind
     and entity (assay.core.ledger, the policy count).  A row with no reason
     is a padded list that the tree holds at this time.  A row with a reason
@@ -65,7 +65,7 @@ from assay.readers import sections as plugin_sections
 
 RULE = "padded-list"
 # The kind of a line of a list at or below the threshold.  No ledger row admits it (assay.guard.engines.meta.runner,
-# THE REFUSED KINDS), because the object comes from a build with a different threshold.
+# the refused kinds), because the object comes from a build with a different threshold.
 THRESHOLD_KIND = "threshold"
 REFUSED_KINDS = frozenset({THRESHOLD_KIND})
 

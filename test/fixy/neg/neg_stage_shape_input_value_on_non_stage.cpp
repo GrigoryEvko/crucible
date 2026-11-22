@@ -3,7 +3,7 @@
 // about a function that is not a stage is refused at the alias rather
 // than answering with whatever the handle traits made of a plain int.
 //
-// VIOLATION: a TU asks a two-int function for its stage input value.
+// Violation: a TU asks a two-int function for its stage input value.
 //
 // Expected diagnostic: the PipelineStage constraint on
 // pipeline_stage_input_value_t fails.

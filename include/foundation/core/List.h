@@ -11,7 +11,7 @@
 //                       each other T it is empty, and the value ends with the
 //                       refusal
 //
-// THE OPERATIONS
+// Operations
 //   size()              the count of elements, at most N
 //   append(value)       puts the value after the last element, and gives a Ref
 //                       to it, or Full<T> when the list holds N elements: one
@@ -72,8 +72,8 @@ template <class T, std::size_t N>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_move_constructible_v<T>
 class FixedList;
 
-// The door of a FixedList to the raw constructors of a View (THE DOORS OF THE
-// OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant: a list
+// The door of a FixedList to the raw constructors of a View (the doors of the
+// owners above this header in foundation/core/Region.h).  The invariant: a list
 // starts the element of a slot at an append and ends it at a take or at its
 // end, so its first count slots hold live elements and no other slot does.
 // So the View of the first count slots holds live elements only.  FixedList is

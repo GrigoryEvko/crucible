@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A Vigil belongs to the thread that records into it, so run_joined refuses a
 // body that uses a Vigil through a reference from another thread

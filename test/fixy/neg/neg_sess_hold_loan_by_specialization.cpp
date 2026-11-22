@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit specializes PermHold and takes the read loan out of
 // a Borrowed from the specialization.  The loan markers befriend only

@@ -8,11 +8,11 @@
 // socket(2), so a socket handle holds a descriptor that the kernel returned
 // to a gated mint.  The door file src/fixy/os/Socket.cpp issues the call with
 // the raw primitive of foundation/os/Syscall.h.  The words of the calls come
-// from fixy/os/SocketCalls.h (THE KERNEL WORDS), so this header includes no
+// from fixy/os/SocketCalls.h (the kernel words), so this header includes no
 // system header.
 //
 // Two kinds are declared: the netlink socket of the qdisc query, and the
-// TCP stream socket whose options the test of THE SOCKET CALLS reads back
+// TCP stream socket whose options the test of the socket calls reads back
 // from the kernel.  A new kind is a tag in fixy::net::socket_kind and a row
 // of socket_table.
 // The walk at the foot of this header fails if the tag has no row.
@@ -120,7 +120,7 @@ using SocketRef = ::fixy::os::HandleRef<::fixy::os::kind::Socket<Kind>, Rights>;
 // identity names a socket only while the socket is open.
 using SocketIdentity = ::foundation::core::Id<struct SocketIdentityTag, std::uint32_t>;
 
-// THE FOREIGN SOCKET
+// Foreign socket
 //   A ForeignSocketRef is the borrow of a socket by value.  A table that
 //   stores, compares or keys a socket that it gives back to a door holds
 //   one, because a HandleRef holds the address of the descriptor of its
@@ -129,8 +129,8 @@ using SocketIdentity = ::foundation::core::Id<struct SocketIdentityTag, std::uin
 //   admit_foreign_socket, from the descriptor of a socket that a C library
 //   opened.  Each ref carries one promise of the code that made it: the
 //   owner of the socket keeps it open for the life of each copy of the ref.
-//   The ref also keeps the generation of its number (THE GENERATION OF A
-//   DESCRIPTOR of fixy/os/Fd.h), and a Handle of the base advances that
+//   The ref also keeps the generation of its number (the generation of a
+//   descriptor of fixy/os/Fd.h), and a Handle of the base advances that
 //   generation at its open, at its close and at its release to an ABI.  So a
 //   ref that outlives its Handle is not current, and each door gives ebadf
 //   for it and makes no call on the number, which the kernel can have given
@@ -202,7 +202,7 @@ public:
 
     // True when no Handle of the base opened, closed or released the number
     // of this ref since a door made it, so the number still names the socket
-    // of the ref (THE FOREIGN SOCKET).  False for the empty ref.  Complexity:
+    // of the ref (the foreign socket).  False for the empty ref.  Complexity:
     // one acquire load.
     [[nodiscard]] bool is_current() const noexcept {
         return descriptor_ >= 0 && ::fixy::fs::detail::is_descriptor_generation_(descriptor_, generation_);
@@ -216,7 +216,7 @@ public:
         return SocketIdentity{static_cast<std::uint32_t>(descriptor_)};
     }
 
-    // The raw descriptor, for a call of a C ABI only (THE ABI DESCRIPTOR of
+    // The raw descriptor, for a call of a C ABI only (the ABI descriptor of
     // fixy/os/Handle.h).  The descriptor of the empty ref, and of a ref that
     // is not current, is -1, so a C ABI gets no number of a later socket.  A
     // constant evaluation reads no generation and gives the descriptor.
@@ -250,11 +250,11 @@ int detail::ForeignSocketDoor::descriptor_of(ForeignSocketRef<Kind, Rights> borr
 
 // The ref of a socket that a C library opened, with the kind Kind and the
 // rights Rights that the caller states.  The caller keeps the socket open for
-// the life of each copy of the ref (THE FOREIGN SOCKET).  The ref keeps the
+// the life of each copy of the ref (the foreign socket).  The ref keeps the
 // generation of the number now, so a later open or close of the number by a
 // Handle of the base makes it stale.  The base does not see a close of the C
 // library, so a reuse of the number by the C library keeps the ref current.
-// Each call is inside an opt-out region of the class ABI (THE ABI DESCRIPTOR
+// Each call is inside an opt-out region of the class ABI (the ABI descriptor
 // of fixy/os/Handle.h).
 template <typename Kind, ::fixy::os::RightSet Rights>
     requires MappedSocketKind<Kind>
@@ -264,7 +264,7 @@ template <typename Kind, ::fixy::os::RightSet Rights>
 
 // The ref by value of the socket of a Handle, for a table that stores the
 // socket.  The caller keeps the Handle open for the life of each copy of the
-// ref (THE FOREIGN SOCKET), and a ref that outlives the Handle is stale.  The
+// ref (the foreign socket), and a ref that outlives the Handle is stale.  The
 // borrow of an empty Handle gives the empty ref.
 template <typename Kind, ::fixy::os::RightSet Rights>
     requires MappedSocketKind<Kind>
@@ -345,7 +345,7 @@ mint_socket(Ctx const&) noexcept {
     return SocketDoor::open_<Kind>();
 }
 
-// THE SOCKET CALLS
+// Socket calls
 //   Each call takes the borrow of a socket.  A call of the bytes takes a
 //   SocketRef, and a call of the options or the stamps takes a SocketRef or a
 //   ForeignSocketRef (SocketBorrow) with the right ioctl_socket, or read for

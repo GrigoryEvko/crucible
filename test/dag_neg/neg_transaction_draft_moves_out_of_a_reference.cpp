@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A helper takes a draft by a reference and moves it out, as a hand-over to a
 // holder does.  The caller would keep a second draft of one claim, and the two

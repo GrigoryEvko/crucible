@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_pipeline with a bare int in the stage pack.  Every element of the
 // pack has to be a stage before the chain is even asked about.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A Published region gives the region only as const (fixy/handle/Published.h),
 // and a const node gives each node that it links only as const

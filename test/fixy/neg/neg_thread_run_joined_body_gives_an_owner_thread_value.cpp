@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The value of a body of the thread door crosses from the thread of the body
 // to the caller, so it is Sendable.  A value of a class of one owner thread

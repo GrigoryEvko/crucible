@@ -15,7 +15,7 @@ from pathlib import Path
 from assay.core import proc, testing
 from assay.readers import objdump
 
-# The text of objdump -d -r for two functions, with each shape of THE LINES of the module.
+# The text of objdump -d -r for two functions, with each shape of the lines of the module.
 PLANTED = """\
 
 unit.o:     file format elf64-x86-64

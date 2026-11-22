@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_parallel_for_with_thread_options starts worker threads as
 // mint_parallel_for does, so its first context must own Bg.  A test

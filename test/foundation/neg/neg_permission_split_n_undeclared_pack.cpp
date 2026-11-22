@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // An n-ary split hands out one token per child, so a manifest must say
 // that the parent splits into exactly those children.  Only the

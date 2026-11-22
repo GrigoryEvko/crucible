@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // reset_to_default takes the ForkedChild proof, and only the child door
-// builds one, in the child, after the fork (THE CHILD DOOR of
+// builds one, in the child, after the fork (the child door of
 // fixy/os/Process.h).  A test that builds the proof itself would change a
 // signal disposition of the parent, so the constructor of the proof is
 // private.

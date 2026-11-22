@@ -1,4 +1,4 @@
-// A file of a read-only open holds no write right (THE RIGHTS of
+// A file of a read-only open holds no write right (the rights of
 // fixy/os/Handle.h).  So the full write, which asks for the write right,
 // takes no borrow of it, and the error is at the call and not in the kernel.
 

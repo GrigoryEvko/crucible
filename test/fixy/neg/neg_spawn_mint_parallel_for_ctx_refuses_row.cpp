@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Each worker of a parallel-for touches its shard of the region under the
 // context of the call, so the context must admit the row of the region.

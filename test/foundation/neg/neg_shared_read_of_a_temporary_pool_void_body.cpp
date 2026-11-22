@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The void form of with_shared_read makes the same shape check as the
 // value form.  A pool passed as an rvalue is one the caller is giving

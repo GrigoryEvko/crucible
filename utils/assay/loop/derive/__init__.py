@@ -4,7 +4,7 @@ usage: loop derive              write each generated file of REFRESH, then run e
        loop derive --check      run each check of CHECKS, and write nothing
        loop derive TARGET [ARG]...
 
-THE REFRESH
+Refresh
     A commit that moves, renames or deletes a path can leave a generated file
     that names it, and two kinds of drift need a check:
       * A path goes dead.  A sentence of the guide names a file that is no
@@ -22,7 +22,7 @@ THE REFRESH
     still red after the writes reads a list that a person keeps, so it needs
     an edit and not a second run.
 
-THE TARGETS
+Targets
     TARGETS gives the module of each target.  The command calls the function
     main of that module with the words of the target and each ARG.  For a
     target with a write and a check, --write gives the words of its write
@@ -156,7 +156,7 @@ def run_step(label: str, command: Sequence[str], root: Path) -> bool:
 
 
 def refresh(root: Path, should_write: bool) -> int:
-    """Write each generated file of REFRESH when should_write, then run each check, as THE REFRESH tells.
+    """Write each generated file of REFRESH when should_write, then run each check, as the refresh tells.
 
     Args:
         root: The tree

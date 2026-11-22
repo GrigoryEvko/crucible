@@ -9,7 +9,7 @@
 // the first part that refuses and the fix.  A door runs the check in a
 // static_assert of its body, and the verdict is the message.
 //
-// THE FACTS
+// Facts
 //     closure_facts reads each data member of the class of the body, through
 //     member_components_of of foundation/reflect/TypeComponents.h, the one
 //     read of the members of a class.  The members of a lambda are its
@@ -24,7 +24,7 @@
 //     a compiler that shows no capture field, is unreadable.  A class with
 //     more than max_capture_facts fields is unreadable too.
 //
-// THE POLICY OF A DOOR (DoorPolicy)
+// Policy of a door (DoorPolicy)
 //     crossing     SameThread: the body runs on the calling thread.
 //                  SoleThread: one body runs on one other thread while the
 //                  caller waits for it.
@@ -42,7 +42,7 @@
 //                  the door calls one body object from many threads at the
 //                  same time.
 //
-// THE RULES (check_closure)
+// Rules (check_closure)
 //     1. A body that owns a linear value (is_linear_type of
 //        foundation/Linear.h) has the grade One, and each other body has the
 //        grade Omega.  The door admits the body when the grade of the door is
@@ -71,7 +71,7 @@
 //        to a Synchronized object.
 //     The properties are those of foundation/Transfer.h.
 //
-// THE COST
+// Cost
 //     The facts read the members of the class one time.  The check asks each
 //     field only the one property that its kind and the crossing need, and it
 //     reads the linearity of the body only for a door that does not call it
@@ -95,14 +95,14 @@ namespace foundation::closure {
 
 using ::foundation::algebra::lattices::QttGrade;
 
-// The kind of a capture field (THE FACTS).
+// The kind of a capture field (the facts).
 enum class CaptureKind : unsigned char {
     OwnValue = 0,
     BorrowConst = 1,
     BorrowMut = 2,
 };
 
-// Where a door runs its body (THE POLICY OF A DOOR).
+// Where a door runs its body (the policy of a door).
 enum class Crossing : unsigned char {
     SameThread = 0,
     SoleThread = 1,
@@ -111,7 +111,7 @@ enum class Crossing : unsigned char {
     BesideCaller = 4,
 };
 
-// The policy of a door (THE POLICY OF A DOOR).
+// The policy of a door (the policy of a door).
 struct DoorPolicy {
     Crossing crossing = Crossing::SameThread;
     QttGrade calls = QttGrade::One;
@@ -122,7 +122,7 @@ struct DoorPolicy {
     bool asks_transfer_facts = true;
 };
 
-// The reason of a refusal (THE RULES).
+// The reason of a refusal (the rules).
 enum class Refusal : unsigned char {
     None = 0,
     Unreadable = 1,
@@ -147,7 +147,7 @@ struct CaptureFact {
     bool is_context = false;
 };
 
-// The facts of one callable class (THE FACTS).
+// The facts of one callable class (the facts).
 class ClosureFacts {
 public:
     [[nodiscard]] consteval std::meta::info type() const noexcept { return type_; }
@@ -189,7 +189,7 @@ namespace detail {
 
 }  // namespace detail
 
-// The facts of a callable class (THE FACTS).  It is not a template, so no
+// The facts of a callable class (the facts).  It is not a template, so no
 // unit can specialize an answer.  Complexity: linear in the members.
 [[nodiscard]] consteval auto closure_facts(std::meta::info callable) -> ClosureFacts {
     namespace refl = ::foundation::reflect;
@@ -332,7 +332,7 @@ private:
         append_(").  ");
     }
 
-    // The cause and the fix of the refusal of one field (THE RULES).  part is
+    // The cause and the fix of the refusal of one field (the rules).  part is
     // the first part of the target that refuses, or a null reflection.
     consteval void explain_(CaptureFact const& fact, std::meta::info part, Crossing crossing) noexcept {
         switch (reason_) {
@@ -425,7 +425,7 @@ namespace detail {
     return is_unique_borrow ? Refusal::NotSendable : Refusal::NotSynchronized;
 }
 
-// The refusal of one field and the part that refuses (THE RULES).
+// The refusal of one field and the part that refuses (the rules).
 struct FieldRefusal {
     Refusal reason = Refusal::None;
     std::meta::info part{};
@@ -458,7 +458,7 @@ struct FieldRefusal {
 
 }  // namespace detail
 
-// The verdict of a door with a policy on a body (THE RULES).  door is the name
+// The verdict of a door with a policy on a body (the rules).  door is the name
 // of the door, at the start of the message.  It is not a template, so no unit
 // can specialize an answer.  Complexity: linear in the fields, times the walk
 // of one property of each target.

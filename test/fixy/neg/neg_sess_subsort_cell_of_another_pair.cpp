@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The payload order keeps the answer of a pair in a cell, and the cell
 // holds the pair that it answers.  A unit cannot build a cell or copy one,

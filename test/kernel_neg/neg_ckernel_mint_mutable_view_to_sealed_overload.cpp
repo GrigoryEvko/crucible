@@ -1,22 +1,22 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: passing the result of CKernelTable::mint_mutable_view()
 // to a helper that expects a CKernelTable::SealedView.  The two views
 // share the same Carrier (CKernelTable) but differ in their Tag
 // (ckernel_state::Mutable vs ckernel_state::Sealed) — and ScopedView<C,
-// A> is NOT implicitly convertible to ScopedView<C, B> when A != B.
+// A> is not implicitly convertible to ScopedView<C, B> when A != B.
 //
 // This is the dual of neg_ckernel_register_with_sealed_view.cpp, which
 // proves the type-state discipline rejects SealedView where MutableView
 // is expected (the production register_op typed overload).  The pair
-// together proves the per-state lock is symmetric: NEITHER MutableView
+// together proves the per-state lock is symmetric: neither MutableView
 // nor SealedView can substitute for the other, even when both name the
 // same Carrier.
 //
 // HS14 — distinct mismatch class from neg_ckernel_mint_mutable_view_in_field
 // (which catches the structural Tier-2 field-storage audit).  This
 // fixture catches the value-level typed-overload-resolution gate at
-// CALL TIME — the type system rejects the wrong-state view at the
+// Call time — the type system rejects the wrong-state view at the
 // argument boundary, before the helper's body is reachable.
 
 #include <crucible/CKernel.h>

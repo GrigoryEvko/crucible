@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: passing a CKernelTable::SealedView to register_op.  The
 // typed overload only accepts MutableView — Sealed cannot substitute

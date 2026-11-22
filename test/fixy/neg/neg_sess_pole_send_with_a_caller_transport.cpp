@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A session over a pole of a channel sends through the write that the pole
 // table of its channel names, in the context of the step.  A transport of

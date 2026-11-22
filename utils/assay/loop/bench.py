@@ -1,30 +1,30 @@
 """bench — build the benches and run each one on isolated cores, with the capabilities of BPF (`loop bench`).
 
-THE STEPS FOR EACH BENCH
+Steps for each bench
     1. The command builds the bench in the build directory of the bench preset,
        with the job count of assay.core.proc (DEFAULT_JOBS).  The build is
        incremental.  A bench that is current builds nothing.  --no-build
        omits the step.
     2. A bench whose x86-64 level is above the level of the host does not
-       start, and a warning names the two levels (THE CHECK of
+       start, and a warning names the two levels (the check of
        assay.core.x86level).  The next bench runs.
     3. It runs the bench through the launcher of assay.loop.caps, when the
        build loads BPF (the cache entry BPF_ENTRY) and the launcher is ready
-       (THE CAPABILITIES).
+       (the capabilities).
     4. It runs the bench with taskset on the cores of the reserved CPUs of the
        host that no other bench holds, one core for each thread of the bench
-       (THE CORES OF A RUN).  When the host reserves no CPU, it uses the core
+       (the cores of a run).  When the host reserves no CPU, it uses the core
        of CRUCIBLE_BENCH_CORE, or no pin when that variable is not set.  It
        then warns that the results are noisy.
     5. It prints the steal time of each core during the run, and it marks a
-       run with steal time as not valid (THE STEAL TIME).
+       run with steal time as not valid (the steal time).
 
     The form --command runs one command on a claim of cores in place of the
     benches: the same locks, the same slice and the same steal check, with no
     build and no launcher.  A program that is not a bench target, such as
     vessel/torch/bench_e2e.py, runs on its cores in this form.
 
-THE CAPABILITIES
+Capabilities
     The launcher gives each bench three capabilities.  With them, the eBPF
     lines of the bench harness (SenseHub and SchedSwitch) attach.  A host
     with perf_event_paranoid 2 and unprivileged_bpf_disabled 2 attaches
@@ -43,7 +43,7 @@ THE CAPABILITIES
     sets the clocks, the reservation and the interrupt routing at boot, and the
     command only uses them.
 
-THE RESERVED CPUS
+Reserved CPUs
     The host reserves CPUs for dedicated work in one of two ways.
     read_reserved() reads the first one that the host gives:
       1. One cgroup cpuset partition: a cgroup below the root with the value
@@ -60,7 +60,7 @@ THE RESERVED CPUS
     A core of the runs is the lowest CPU of an SMT group that holds only
     reserved CPUs.  The SMT sibling of the core then stays idle.
 
-THE CORES OF A RUN
+Cores of a run
     Two threads on one core change the times of the two, so each command
     holds its cores alone, and a bench gets one core for each of its threads.
     A bench states the count of its threads with the argument CORES of
@@ -73,16 +73,16 @@ THE CORES OF A RUN
     An affinity mask has no order, so the placement also gives the bench the
     cores in the order of the claim, in the variable ORDER_VARIABLE, as
     "240,242,224".  The word ENV_PROGRAM sets it after the sudo of a
-    partition, so no policy of sudo can drop it, and the launcher of THE
-    CAPABILITIES keeps it.  The harness gives slot k the core k of that
+    partition, so no policy of sudo can drop it, and the launcher of the
+    capabilities keeps it.  The harness gives slot k the core k of that
     order, so slot 0, the measuring thread, gets the quietest core of the
-    claim (THE CORES OF A RUN of bench/bench_harness.h).
+    claim (the cores of a run of bench/bench_harness.h).
 
     claimed() takes the cores of one claim.  It reads the groups of the cores
     that share one L3 cache, from the cache of level 3 in sysfs
     (cpuN/cache/indexK/shared_cpu_list).  When sysfs gives no such cache for
     any core, the cores are one group.  The groups with fewer lines in the
-    record of THE STEAL TIME come first, and then the group of the lower
+    record of the steal time come first, and then the group of the lower
     first core.  In a group, the cores with fewer lines come first, then the
     lower numbers.  A claim that fits in one group takes all its cores in
     one group: the first group in which it holds enough free cores.  A claim
@@ -104,18 +104,18 @@ THE CORES OF A RUN
     CRUCIBLE_BENCH_CORE takes the same lock and no probe, and a claim of more
     than one core with it is refused.
 
-THE STEAL TIME
+Steal time
     The column steal of the line of a core in /proc/stat counts the time in
     which the hypervisor ran other work while the core had work, in ticks of
     the clock of the kernel.  The command reads it for each core of the claim
     before and after each run, and it prints the steal time in milliseconds
     after the output of the bench.  A run with steal time above zero on one
     of its cores is not valid, and the line says so.  A report with a
-    variation above 5 % is valid, and it asks for a second run (THE RUN of
+    variation above 5 % is valid, and it asks for a second run (the run of
     assay.loop.evidence.measurement).  A run with no pin prints no steal time.  A
     tick is 10 ms, so a pause of a few milliseconds reads as no steal.  The
     harness measures such a pause in nanoseconds for each run of a bench, and
-    it marks a run with a pause over its bound (THE PAUSE CHECK of
+    it marks a run with a pause over its bound (the pause check of
     bench/bench_harness.h).
 
     Each core with steal time in a run adds one line to the record
@@ -127,7 +127,7 @@ THE STEAL TIME
     place back one day after its last run with steal.  To clear the record of
     a host, delete the file.
 
-THE ENVIRONMENT
+Environment
     CRUCIBLE_BENCH_BUILD   The build directory of the bench preset, relative to the tree.  The default is build-bench
     CRUCIBLE_BENCH_PRESET  The preset that configures it.  The default is bench
     CRUCIBLE_BENCH_CORE    The core when the host reserves no CPU.  Not set: the bench runs with no pin
@@ -173,11 +173,11 @@ from assay.setup import pins as cmake_pin
 
 DEFAULT_BUILD = "build-bench"
 DEFAULT_PRESET = "bench"
-# The cache entry that tells if the build loads BPF programs (THE CAPABILITIES).  cmake/CrucibleBpf.cmake writes it.
+# The cache entry that tells if the build loads BPF programs (the capabilities).  cmake/CrucibleBpf.cmake writes it.
 BPF_ENTRY = "CRUCIBLE_HAVE_BPF"
 # The hot-path latency set.  bench_dispatch and bench_meta_log are not in it, because their builds drift.
 DEFAULT_TARGETS = ("bench_trace_ring", "bench_swiss_table", "bench_philox", "bench_pool_allocator")
-# The CPU directory of sysfs and the root of the cgroup v2 hierarchy (THE RESERVED CPUS).
+# The CPU directory of sysfs and the root of the cgroup v2 hierarchy (the reserved CPUs).
 CPU_ROOT = Path("/sys/devices/system/cpu")
 CGROUP_ROOT = Path("/sys/fs/cgroup")
 # The values of cpuset.cpus.partition of a valid partition.  The kernel writes "root invalid (REASON)" for a partition
@@ -186,27 +186,27 @@ PARTITION_TYPES = frozenset({"root", "isolated"})
 # The program that starts a command in a slice, by its full path.  sudo can give the command a different PATH.
 SYSTEMD_RUN = "/usr/bin/systemd-run"
 # The program that sets the variable of the order of the cores before taskset, by its full path, and the variable that
-# holds the cores in the order of the claim (THE CORES OF A RUN).
+# holds the cores in the order of the claim (the cores of a run).
 ENV_PROGRAM = "/usr/bin/env"
 ORDER_VARIABLE = "CRUCIBLE_BENCH_CORE_ORDER"
-# The directory of the lock file of each core, relative to the main work tree (THE CORES OF A RUN).
+# The directory of the lock file of each core, relative to the main work tree (the cores of a run).
 CORE_LOCK_DIR = Path(".worktrees/.grun/bench-cores")
-# The compile definition of a bench target that states the count of its cores, as NAME=COUNT (THE CORES OF A RUN).
+# The compile definition of a bench target that states the count of its cores, as NAME=COUNT (the cores of a run).
 CORES_DEFINE = "CRUCIBLE_BENCH_CORES"
 # The level of the cache whose groups of CPUs a claim keeps together, in the file level of a cache of sysfs.
 SHARED_CACHE_LEVEL = "3"
 # The time of the busy loop that probes a core for steal time, in seconds.  A core that loses 2 % of its time to the
-# hypervisor loses two ticks of 10 ms in it (THE CORES OF A RUN).
+# hypervisor loses two ticks of 10 ms in it (the cores of a run).
 PROBE_S = 1.0
 # The interval between two tries of the cores when another bench holds each one, in seconds.
 WAIT_S = 2.0
-# The statistics of the kernel with the steal column of each CPU (THE STEAL TIME).
+# The statistics of the kernel with the steal column of each CPU (the steal time).
 STAT_FILE = Path("/proc/stat")
 # The index of the column steal in the line of a CPU of STAT_FILE, after the name of the CPU.
 STEAL_COLUMN = 8
-# The record of the runs with steal time, in CORE_LOCK_DIR (THE STEAL TIME).
+# The record of the runs with steal time, in CORE_LOCK_DIR (the steal time).
 STEAL_RECORD = "steal-record.txt"
-# The age of the oldest line of the record that counts, in seconds: 24 hours (THE STEAL TIME).
+# The age of the oldest line of the record that counts, in seconds: 24 hours (the steal time).
 RECORD_AGE_S = 24 * 3600
 # The type and the FOLDER property of a bench target in the code model of CMake.  The function crucible_bench() of
 # bench/CMakeLists.txt sets the folder.
@@ -220,7 +220,7 @@ class BenchError(Exception):
 
 @dataclass(frozen=True, slots=True, order=True)
 class CoreCount:
-    """The count of the cores of one claim, at least one: one core for each thread of a bench (THE CORES OF A RUN).
+    """The count of the cores of one claim, at least one: one core for each thread of a bench (the cores of a run).
 
     Raises:
         BenchError: If the count is less than one
@@ -255,7 +255,7 @@ class Request:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """The values of THE ENVIRONMENT: the build directory relative to the tree, the preset, the core and the slice.
+    """The values of the environment: the build directory relative to the tree, the preset, the core and the slice.
 
     An empty core or slice is a variable that is not set.
     """
@@ -278,7 +278,7 @@ class Settings:
 
 @dataclass(frozen=True, slots=True)
 class Reserved:
-    """The CPUs that the host reserves, the source of the reservation and the slice of a partition (THE RESERVED CPUS).
+    """The CPUs that the host reserves, the source of the reservation and the slice of a partition (the reserved CPUs).
 
     source is "isolated", "partition" or "" when the host reserves no CPU.  slice_name is empty unless the source is a
     partition.
@@ -294,9 +294,9 @@ class Placement:
     """Where a bench runs: the cores of the claim, the reservation that holds them, and the words before the program.
 
     cores is empty when the bench runs with no pin, and else sorted.  prefix holds the words that start the program on
-    the cores.  record is the record of the runs with steal time of the claim, or None for a placement of no claim (THE
-    STEAL TIME).  order holds the cores in the order of the claim, the quietest core first, and prefix gives it to the
-    program in ORDER_VARIABLE (THE CORES OF A RUN).
+    the cores.  record is the record of the runs with steal time of the claim, or None for a placement of no claim (the
+    steal time).  order holds the cores in the order of the claim, the quietest core first, and prefix gives it to the
+    program in ORDER_VARIABLE (the cores of a run).
     """
 
     cores: tuple[int, ...]
@@ -442,7 +442,7 @@ def read_text(path: Path) -> str:
 
 
 def read_reserved(slice_name: str = "", cpu_root: Path = CPU_ROOT, cgroup_root: Path = CGROUP_ROOT) -> Reserved:
-    """Return the reserved CPUs of the host (THE RESERVED CPUS).
+    """Return the reserved CPUs of the host (the reserved CPUs).
 
     Args:
         slice_name: The slice of the partition when the host has more than one, or empty
@@ -538,7 +538,7 @@ def cache_groups(cores: tuple[int, ...], cpu_root: Path = CPU_ROOT) -> tuple[tup
     """Return the cores in groups that share one L3 cache, each group sorted, in the order of their first cores.
 
     When sysfs gives no L3 cache for any core, the cores are one group.  Else a core with no L3 cache is a group of
-    its own (THE CORES OF A RUN).  Complexity: linear in the cores, times the sysfs reads of one core.
+    its own (the cores of a run).  Complexity: linear in the cores, times the sysfs reads of one core.
     """
     core_set = frozenset(cores)
     shared = {core: shared_cache_of(core, cpu_root) for core in cores}
@@ -552,7 +552,7 @@ def cache_groups(cores: tuple[int, ...], cpu_root: Path = CPU_ROOT) -> tuple[tup
 
 
 def ranked_groups(groups: tuple[tuple[int, ...], ...], counts: dict[int, int]) -> tuple[tuple[int, ...], ...]:
-    """Return the groups in the order of a claim, and the cores of each group in that order (THE CORES OF A RUN).
+    """Return the groups in the order of a claim, and the cores of each group in that order (the cores of a run).
 
     A group with fewer lines in the record of the steal time comes first, then the group of the lower first core.  In
     a group, a core with fewer lines comes first, then the lower number.  Complexity: O(n log n) in the cores.
@@ -565,7 +565,7 @@ def placement_on(cores: tuple[int, ...], reserved: Reserved, taskset: str) -> Pl
     """Return the placement of each bench on cores of the reserved CPUs, in the slice of a partition.
 
     cores holds the cores in the order of the claim.  The words of the placement set ORDER_VARIABLE to that order
-    before taskset (THE CORES OF A RUN).
+    before taskset (the cores of a run).
     """
     held = tuple(sorted(cores))
     ordered = ",".join(str(core) for core in cores)
@@ -590,7 +590,7 @@ def placement_on(cores: tuple[int, ...], reserved: Reserved, taskset: str) -> Pl
 def read_steal_ticks(core: int, stat_file: Path = STAT_FILE) -> int | None:
     """Return the steal column of the line of a CPU of the kernel statistics, or None when the file has no such line.
 
-    Complexity: linear in the number of lines of the file (THE STEAL TIME).
+    Complexity: linear in the number of lines of the file (the steal time).
     """
     label = f"cpu{core}"
     for line in read_text(stat_file).splitlines():
@@ -601,7 +601,7 @@ def read_steal_ticks(core: int, stat_file: Path = STAT_FILE) -> int | None:
 
 
 def read_steals(cores: tuple[int, ...], stat_file: Path = STAT_FILE) -> dict[int, int | None]:
-    """Return the steal ticks of each core, or None for a core with no line in the statistics (THE STEAL TIME).
+    """Return the steal ticks of each core, or None for a core with no line in the statistics (the steal time).
 
     Complexity: linear in the cores, times the lines of the file.
     """
@@ -614,7 +614,7 @@ def tick_ms() -> float:
 
 
 def stolen_ms_of(before: dict[int, int | None], after: dict[int, int | None]) -> dict[int, float]:
-    """Return the steal time of each core with a reading before and after a run, in milliseconds (THE STEAL TIME)."""
+    """Return the steal time of each core with a reading before and after a run, in milliseconds (the steal time)."""
     stolen: dict[int, float] = {}
     for core, first in before.items():
         last = after.get(core)
@@ -627,7 +627,7 @@ def probe_steal(core: int, stat_file: Path = STAT_FILE, seconds: float = PROBE_S
     """Run a busy loop on a core for the seconds, and return the steal ticks of the core in that time.
 
     The calling thread runs on the core for the probe, and then it runs on its CPUs of before.  Returns None when the
-    thread cannot run on the core, or when the statistics have no line for it (THE CORE OF A RUN).
+    thread cannot run on the core, or when the statistics have no line for it (the core of a run).
     """
     previous = os.sched_getaffinity(0)
     try:
@@ -648,12 +648,12 @@ def probe_steal(core: int, stat_file: Path = STAT_FILE, seconds: float = PROBE_S
 
 
 def lock_dir_of(root: Path = REPO_ROOT) -> Path:
-    """Return the directory of the lock files of the cores, in the main work tree of a tree (THE CORE OF A RUN)."""
+    """Return the directory of the lock files of the cores, in the main work tree of a tree (the core of a run)."""
     return heavy.main_work_tree(root) / CORE_LOCK_DIR
 
 
 def read_steal_record(record: Path, moment: float | None = None) -> dict[int, int]:
-    """Return the count of the lines of each core in the record of the runs with steal time (THE STEAL TIME).
+    """Return the count of the lines of each core in the record of the runs with steal time (the steal time).
 
     Only a line of the last RECORD_AGE_S seconds before moment counts, so a core whose host core has no more steal
     gets its place back in a day.  A line that does not read, and a record that does not exist, count nothing.
@@ -682,7 +682,7 @@ def read_steal_record(record: Path, moment: float | None = None) -> dict[int, in
 
 
 def record_steal(record: Path, core: int, stolen_ms: float, moment: float | None = None) -> None:
-    """Add the line of one run with steal time to the record, under an exclusive lock of flock(2) (THE STEAL TIME).
+    """Add the line of one run with steal time to the record, under an exclusive lock of flock(2) (the steal time).
 
     Args:
         record: The record file
@@ -711,7 +711,7 @@ def try_lock(directory: Path, core: int) -> int | None:
     """Return the open descriptor of the lock file of a core with its exclusive lock of flock(2), or None when another
     holder has it.
 
-    The caller closes the descriptor with os.close, and the close frees the lock (THE CORES OF A RUN).
+    The caller closes the descriptor with os.close, and the close frees the lock (the cores of a run).
     """
     descriptor = os.open(directory / f"cpu{core}.lock", os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC, 0o644)
     try:
@@ -739,7 +739,7 @@ class Probed:
         self.clean: set[int] = set()
 
     def has_steal(self, core: int) -> bool:
-        """Probe a core one time, warn when it lost time to steal, and tell whether it did (THE CORES OF A RUN)."""
+        """Probe a core one time, warn when it lost time to steal, and tell whether it did (the cores of a run)."""
         if not self.is_run or core in self.clean:
             return False
         if core in self.stolen:
@@ -759,7 +759,7 @@ class Probed:
 def take_cores(
     pool: tuple[int, ...], count: CoreCount, directory: Path, probed: Probed
 ) -> list[tuple[int, int]] | None:
-    """Lock count free cores of a pool, in the order of the pool, or lock none and return None (THE CORES OF A RUN).
+    """Lock count free cores of a pool, in the order of the pool, or lock none and return None (the cores of a run).
 
     A core that another holder locks is skipped.  A core that loses time to steal in its probe is skipped, and its
     lock is freed.  When the pool has too few free cores, each lock of the try is freed, so a claim never holds a
@@ -790,7 +790,7 @@ def pools_of(
 
     A claim that fits in one group has one pool for each group with enough cores that lost no time to steal.  A
     larger claim has one pool: each group, one after another.  No pool fits a claim larger than the cores that lost no
-    time to steal (THE CORES OF A RUN).
+    time to steal (the cores of a run).
     """
     clean = tuple(tuple(core for core in group if core not in stolen) for group in groups)
     fitting = tuple(group for group in clean if len(group) >= count.value)
@@ -833,13 +833,13 @@ HOST_HOOKS = Hooks()
 def claimed(
     settings: Settings, count: CoreCount = ONE_CORE, roots: Roots = HOST_ROOTS, hooks: Hooks = HOST_HOOKS
 ) -> Iterator[Placement]:
-    """Hold count cores that no other bench holds for the block, and give their placement (THE CORES OF A RUN).
+    """Hold count cores that no other bench holds for the block, and give their placement (the cores of a run).
 
     With no reserved core and no CRUCIBLE_BENCH_CORE, the block gets no pin and no lock.  `loop evidence run
     measurement` takes a claim for each run of a bench (assay.loop.evidence.measurement).
 
     Args:
-        settings: The values of THE ENVIRONMENT
+        settings: The values of the environment
         count: The count of the cores of the claim
         roots: The directories of the locks, of sysfs and of the cgroups
         hooks: The probe, the wait and the clock
@@ -912,7 +912,7 @@ def claimed(
 def steal_verdict(
     cores: tuple[int, ...], before: dict[int, int | None], after: dict[int, int | None]
 ) -> tuple[str, bool]:
-    """Return the line of the steal time of one run and True when the run is valid by it (THE STEAL TIME).
+    """Return the line of the steal time of one run and True when the run is valid by it (the steal time).
 
     A run with no pin, or cores with no line in the statistics, give a line that says so and True.
     """
@@ -932,7 +932,7 @@ def steal_verdict(
 
 
 def uses_launcher(build_dir: Path, launcher: Path = caps.LAUNCHER) -> bool:
-    """Tell if each bench of a build runs through the launcher, and print the reason when it does not (THE CAPABILITIES).
+    """Tell if each bench of a build runs through the launcher, and print the reason when it does not (the capabilities).
 
     The answer is yes when the build loads BPF and the launcher is ready.
     """
@@ -961,7 +961,7 @@ def run(root: Path, request: Request, settings: Settings) -> int:
     Args:
         root: The source tree
         request: The command line
-        settings: The values of THE ENVIRONMENT
+        settings: The values of the environment
 
     Returns:
         The exit status
@@ -1040,7 +1040,7 @@ def read_model(build_dir: Path) -> cmake_reader.CodeModel:
 def core_counts(build_dir: Path, request: Request) -> dict[str, CoreCount]:
     """Return the count of the cores of each target of a request: the count of --cores, or the count of the bench.
 
-    Complexity: one read of the code model when --cores is not given (THE CORES OF A RUN).
+    Complexity: one read of the code model when --cores is not given (the cores of a run).
 
     Raises:
         BenchError: If the code model cannot be read, or if a definition of a count does not read
@@ -1111,7 +1111,7 @@ def stop_waiting(seconds: float) -> None:
 
 
 def l3_cases(expect: Callable[[str, bool], None], plant: Callable[[Path, str], None], work: Path, now: float) -> None:
-    """Check the claims of several cores on a planted host with the shape of the bench VM (THE CORES OF A RUN).
+    """Check the claims of several cores on a planted host with the shape of the bench VM (the cores of a run).
 
     The host has the partition bench.slice on the even CPUs 224 to 254, with each odd SMT sibling offline, and two L3
     groups of eight cores: 224 to 238 and 240 to 254.

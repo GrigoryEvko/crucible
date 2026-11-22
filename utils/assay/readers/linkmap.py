@@ -1,6 +1,6 @@
 """linkmap — the reader of the map of a link that mold writes with -Map.
 
-THE MAP
+Map
     mold writes the map of a link when the link gives -Map=FILE
     (cmake/LinkMap.cmake).  The function print_map of src/mapfile.cc of
     mold 3.0.0 gives the format.  The first line is the heading HEADING.
@@ -10,7 +10,7 @@ THE MAP
       * One space: an output chunk, such as EHDR, .text or .debug_info.  Its
         name follows the space.
       * Nine spaces: an input section of the last output chunk, with the
-        shape FILE:(SECTION) (THE FILE OF AN INPUT SECTION).
+        shape FILE:(SECTION) (the file of an input section).
       * Seventeen spaces: a symbol of the last input section.  The text of
         the symbol can hold spaces and parentheses, and the reader keeps
         none of it.
@@ -20,7 +20,7 @@ THE MAP
     hold thousands of characters.  For that reason, the reader reads one
     line at a time.
 
-THE COLUMNS
+Columns
     mold writes `VMA` in a column of 18 characters, `Size` in a column of 11
     characters and `Align` in a column of 6 characters.  Each value is at
     the right end of its column.  A value that is longer than its column
@@ -33,13 +33,13 @@ THE COLUMNS
     fills its column.  A `Size` of 11 digits, 10 GB or more, fills its
     column, and no link of the tree gives a longer one.
 
-THE FILE OF AN INPUT SECTION
+File of an input section
     FILE is a path, relative to the working directory of the link when it
     is not absolute.  It is ARCHIVE(MEMBER) for a member of an archive, and
     split_member() gives the archive and the member.  A path of a link of
     the tree holds no ":(".  FILE is then the text before the first ":(".
 
-THE INPUTS
+Inputs
     The inputs of a map are the files of its input sections, each one time,
     in the sequence of their first input section.  The map names only a
     file with a section in the output.  A shared library has no input
@@ -50,22 +50,22 @@ THE INPUTS
     only allocated sections has no line when --gc-sections removes each of
     them.
 
-WHAT THE MAP DOES NOT HOLD
+What the map does not hold
     mold writes no cause of an inclusion, no merge of the program
     properties, no discarded section and no library of `--as-needed`.  The
     rule artifacts then reads the program properties of each input file
-    (assay.guard.engines.elf.artifacts, THE CONTROL FLOW).
+    (assay.guard.engines.elf.artifacts, the control flow).
 
-THE MEMBERS AND GNU LD
+The members and GNU ld
     On 2026-10-17, mold 3.0.0 and GNU ld 2.46.1 each linked
     crucible-hwprobe, test_session_handle and libcrucible_vessel.so.  The
     maps of the two linkers named the same archive members: 31, 17 and 38.
     A planted link showed one difference.  GNU ld names
     each member that the link takes, also when --gc-sections removes each
     section of it.  mold names such a member only when it holds a section
-    that is not allocated (THE INPUTS).
+    that is not allocated (the inputs).
 
-THE USERS
+Users
     The rule artifacts reads the archive members of the map of each link
     with read_members(), and the inputs of the map of a link with
     read_inputs().
@@ -78,12 +78,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 HEADING = "               VMA       Size Align Out     In      Symbol"
-# The spaces after the third column of each kind of line (THE MAP).
+# The spaces after the third column of each kind of line (the map).
 OUTPUT_GAP = 1
 INPUT_GAP = 9
 SYMBOL_GAP = 17
 GAPS = frozenset({OUTPUT_GAP, INPUT_GAP, SYMBOL_GAP})
-# The end of the column `VMA` and of the column `Size` (THE COLUMNS).
+# The end of the column `VMA` and of the column `Size` (the columns).
 ADDRESS_END = 18
 SIZE_END = 29
 HEX_PREFIX = "0x"
@@ -93,7 +93,7 @@ SECTION_END = ")"
 
 
 class LinkMapError(ValueError):
-    """The map does not have the shape that the module reads (THE MAP), with the line of the problem."""
+    """The map does not have the shape that the module reads (the map), with the line of the problem."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +113,7 @@ def split_member(text: str) -> tuple[str, str]:
 
 
 def is_address(token: str) -> bool:
-    """Return True for an address of the map: 0, or a number in hexadecimal with the prefix 0x (THE MAP)."""
+    """Return True for an address of the map: 0, or a number in hexadecimal with the prefix 0x (the map)."""
     if token == "0":
         return True
     digits = token.removeprefix(HEX_PREFIX)
@@ -132,7 +132,7 @@ def right_value(column: str) -> str:
 
 
 def line_of(text: str, where: str, line: int) -> tuple[int, str]:
-    """Return the spaces after the column `Align` of one line, and the text after them (THE COLUMNS).
+    """Return the spaces after the column `Align` of one line, and the text after them (the columns).
 
     Raises:
         LinkMapError: If the line does not have the three columns, a kind of GAPS and a text
@@ -156,7 +156,7 @@ def line_of(text: str, where: str, line: int) -> tuple[int, str]:
 
 
 def file_of(rest: str, where: str, line: int) -> str:
-    """Return FILE of the text FILE:(SECTION) of an input section (THE FILE OF AN INPUT SECTION).
+    """Return FILE of the text FILE:(SECTION) of an input section (the file of an input section).
 
     Raises:
         LinkMapError: If the text does not have that shape
@@ -168,7 +168,7 @@ def file_of(rest: str, where: str, line: int) -> str:
 
 
 def inputs_of(lines: Iterable[str], where: str) -> tuple[str, ...]:
-    """Return the inputs of the lines of a map (THE INPUTS).  Complexity: linear in the length of the lines.
+    """Return the inputs of the lines of a map (the inputs).  Complexity: linear in the length of the lines.
 
     Raises:
         LinkMapError: If the first line is not HEADING, a line does not have its shape, or an input section comes
@@ -197,7 +197,7 @@ def inputs_of(lines: Iterable[str], where: str) -> tuple[str, ...]:
 
 
 def read_inputs(path: Path) -> tuple[str, ...]:
-    """Read the inputs of the map file of a link (THE INPUTS).
+    """Read the inputs of the map file of a link (the inputs).
 
     Complexity: linear in the length of the file, because an input section of a file can come in each output chunk.
 
@@ -216,7 +216,7 @@ def members_of(inputs: Iterable[str]) -> tuple[ArchiveMember, ...]:
 
 
 def read_members(path: Path) -> tuple[ArchiveMember, ...]:
-    """Read the archive members that the map file of a link names (THE INPUTS).  Complexity: as read_inputs().
+    """Read the archive members that the map file of a link names (the inputs).  Complexity: as read_inputs().
 
     Raises:
         LinkMapError: If the map does not have the shape that the module reads

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The record stack of a Vigil belongs to the thread that holds its producer
 // claim, and each adapter writes the records of an op into it.  So

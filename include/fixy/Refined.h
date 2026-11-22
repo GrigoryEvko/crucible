@@ -74,7 +74,7 @@ struct sealed_row_discipline<true> {
     using row_discipline = ::fixy::refined::row_discipline::sealed_refinement;
 };
 
-// THE MOVE OF A REFINEMENT: true when a move of T leaves the source with the
+// The move of a refinement: true when a move of T leaves the source with the
 // value of the target, so a predicate that held before the move holds for
 // the source too.  A move that copies the bytes does it.  A Linear or an
 // Affine of such a T does it too: its move copies the bytes in a Release
@@ -242,7 +242,7 @@ public:
         : impl_{key_{}, std::move(r).into(), typename lattice_type::element_type{}} {}
 
     // The refinement is a property of the value, so a copy preserves it, and
-    // so does a move that leaves the value in the source (THE MOVE OF A
+    // so does a move that leaves the value in the source (the move of a
     // REFINEMENT below).  Neither needs to re-check.  What a sealed
     // refinement forbids is extraction, not movement.
     //
@@ -269,7 +269,7 @@ public:
     // parameter, and the diagnostic then names the context in place of the
     // raw value.
     //
-    // THE MOVE OF A REFINEMENT
+    // Move of a refinement
     //   A move leaves the source with the value that the move of T leaves
     //   there.  The predicate holds for the source only when that value is
     //   the value before the move (refined::detail::move_keeps_value_v).  For

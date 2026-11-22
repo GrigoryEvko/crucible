@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A rewind of a channel claims the two records of the pair with one
 // priority, as a channel mint does.  The two Resources below state two

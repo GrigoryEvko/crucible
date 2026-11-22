@@ -6,7 +6,7 @@
 // foundation/algebra/Modality.h reserves ModalityKind::Stepping for
 // session handles and says why they do not instantiate Graded: the
 // grade is a protocol remainder, every operation advances it, so a
-// handle at one grade produces a handle at the NEXT grade rather than
+// handle at one grade produces a handle at the next grade rather than
 // a handle at the same grade over a new value.  Graded's operations
 // are the wrong shape for that.  The note ends by naming the contract
 // such a handle satisfies instead, a SteppingGraded concept.  This
@@ -335,7 +335,7 @@ concept AbandonmentPolicy = requires(P policy, P other, std::source_location loc
     requires(P::checks_abandonment == (P::action != AbandonAction::Ignore));
 };
 
-// THE ONE SWITCH.  Every handle in the tree defaults its policy
+// The one switch.  Every handle in the tree defaults its policy
 // parameter to this alias, and nothing in fixy/session reads NDEBUG.  A
 // Release binary and a Debug binary therefore catch a dropped protocol
 // in the same way.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // compose_at_branch is an alias template over the composition algebra of
 // the registry, so no user specialization changes the branch that a

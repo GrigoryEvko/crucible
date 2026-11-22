@@ -17,14 +17,14 @@
 //                       the door: a context that the check refuses does not
 //                       compile
 //
-// WHY
+// Why
 //   Liveness by construction (fixy/session/Liveness.h) covers one session.
 //   Two roles that each play two live sessions, and wait on them in opposite
 //   orders, deadlock.  The marked graph reads the order of the waits of each
 //   role, so it refuses that context, and it admits the same sessions in one
 //   order.
 //
-// THE SYSTEM
+// The system
 //   Each role of the context is a process, in the order of the context, with
 //   the name of the role.  Each ordered pair of roles that a message joins is
 //   one channel: the queue from the sender to the receiver, as in the typing
@@ -41,12 +41,12 @@
 //   the role.  The walk reads the type graph of fixy/session/Refinement.h, so
 //   a named state reads as its protocol, and a keyed step reads as its step.
 //
-// THE MODEL OF THE CHECK
+// The model of the check
 //   The check reads a local type as a sequence of Send and Recv steps of
 //   PeerMsg messages, and the queue of each role is empty.  The sequence
 //   runs one time to End, or it is the body of one Loop around the whole
 //   local type, which reaches its Continue.  The body of such a loop is one
-//   period of the role (THE MODEL of foundation/algebra/net/Priority.h).  A
+//   period of the role (the model of foundation/algebra/net/Priority.h).  A
 //   Loop whose body reaches End and no Continue runs one time.
 //
 //   A role that loops for ever and a role that runs one time do not fit one
@@ -58,11 +58,11 @@
 //
 //   Each other node is outside the model, and the context then has no marked
 //   system: a Loop below the top of a local type, a loop with no action in
-//   its period, a choice whose arms wait differently (THE UNION OF THE ARMS),
+//   its period, a choice whose arms wait differently (the union of the arms),
 //   a step whose payload names no peer, a wrapper, a marker and a terminal
 //   other than End.  find_context_fault names the first such node.
 //
-// THE UNION OF THE ARMS
+// The union of the arms
 //   A Select or an Offer of two or more branches is the union of its arms.
 //   The walk follows each arm at the same time.  At each step, each arm sends
 //   or receives on one channel with one move, or each arm reaches End, or
@@ -74,7 +74,7 @@
 //   with an exit, needs one context for each set of arms that the roles take
 //   together.
 //
-// THE LIMITS
+// The limits
 //   The check reads the waits, not the labels and not the payloads.  The
 //   safety of each message, whose label and payload must fit the receive, is
 //   the job of the association of fixy/session/Projection.h.  A payload that
@@ -84,9 +84,9 @@
 //   fixy/session/Watch.h, at run time, on the run that waits.  A context
 //   holds at most role_bound roles, action_bound actions and channel_bound
 //   channels.  Each bound has one constant, with its reason, in the detail
-//   namespace below (THE COSTS).
+//   namespace below (the costs).
 //
-// THE COSTS
+// The costs
 //   One walk of the type graph of each local type: linear in its distinct
 //   nodes with no choice of two or more branches, and O(N^2) for N distinct
 //   nodes at most with such choices, because each round of the walk reads
@@ -203,14 +203,14 @@ struct read_channel {
     net::ProcessId receiver{};
 };
 
-// How the local type of a role runs (THE MODEL OF THE CHECK).
+// How the local type of a role runs (the model of the check).
 enum class RunShape : std::uint8_t {
     NoAction = 0,
     RunsOnce = 1,
     Loops = 2,
 };
 
-// The bounds of a reading (THE COSTS).  This is the one place of each
+// The bounds of a reading (the costs).  This is the one place of each
 // bound: each text and each comment names the constant, so a change of a
 // bound is one line.  A context past a bound has the fault of that bound.
 //
@@ -279,9 +279,9 @@ using channel_run = bounded_run<read_channel, net::ChannelId, channel_bound>;
 using shape_run = bounded_run<RunShape, net::ProcessId, role_bound>;
 
 // The reading of a context: the fault, the type of each role, the actions
-// in the order of the roles, and the channels in their order (THE SYSTEM).
+// in the order of the roles, and the channels in their order (the system).
 // Each reading has this one type, so each reader of a reading has one
-// instance (THE COSTS).
+// instance (the costs).
 struct context_reading {
     ContextFault fault{};
     role_run roles{};
@@ -321,7 +321,7 @@ struct step_rule_memo {
 // step whose payload names no peer.  Only a complete class has a payload
 // rule (payload_rule_of of fixy/session/Classification.h).  The arguments
 // stay a transient list, because a run in static storage costs a constant
-// for each new payload (THE COSTS).  A rule that names an argument past the
+// for each new payload (the costs).  A rule that names an argument past the
 // arguments of the payload stops the build, as rule_argument_of does.
 template <class Anchor = void>
 [[nodiscard]] consteval std::meta::info peer_of_step_(tr::graph_node const& step, step_rule_memo& memo) {
@@ -374,8 +374,8 @@ struct arm_head {
         && left.act.move == right.act.move;
 }
 
-// The state of the walk of the arms of one local type (THE UNION OF THE
-// ARMS).  cursors holds the node after the last action of each arm, and
+// The state of the walk of the arms of one local type (the union of the
+// arms).  cursors holds the node after the last action of each arm, and
 // heads holds each node that a cursor reaches through its choices, one
 // time.  seen holds the round in which the expansion last read each node.
 // choice is the type of the first choice of two or more branches.
@@ -416,7 +416,7 @@ consteval void expand_arms_(tr::graph_view const& graph, arm_walk& walk) {
 }
 
 // The next step of the arm at a node, or the fault of a node that the walk
-// cannot read (THE MODEL OF THE CHECK).  The root of a graph is its node 0,
+// cannot read (the model of the check).  The root of a graph is its node 0,
 // so a Loop around the whole local type is the binder of node 0, and its
 // Continue is a back node to node 0.
 template <class Anchor = void>
@@ -460,8 +460,8 @@ template <class Anchor = void>
 
 // Pushes the actions of the local type of one role, after the actions of
 // the roles before it, and sets the shape of the role, or gives the fault of
-// the first node that the walk cannot read (THE MODEL OF THE CHECK, THE
-// UNION OF THE ARMS).  A push past action_bound counts the action, and the
+// the first node that the walk cannot read (the model of the check, the
+// union of the arms).  A push past action_bound counts the action, and the
 // walk goes on, so the reading knows the count of the actions of the
 // context.  Complexity: O(N^2) for N distinct nodes of the local type at most,
 // because each round reads each node at most one time, and a round passes
@@ -521,8 +521,8 @@ template <class Anchor = void>
 }
 
 // The first action whose channel joins a role that loops and a role that
-// runs one time, as the fault LoopMeetsRun, or NoFault (THE MODEL OF THE
-// CHECK).  A role with no action holds no channel.  Complexity: O(A).
+// runs one time, as the fault LoopMeetsRun, or NoFault (the model of the
+// check).  A role with no action holds no channel.  Complexity: O(A).
 template <class Anchor = void>
 [[nodiscard]] consteval ContextFault find_loop_meets_run_(role_run const& roles, action_run const& actions,
                                                           shape_run const& shapes) {
@@ -538,7 +538,7 @@ template <class Anchor = void>
 }
 
 // Pushes the channels of the actions, in the order of the sender and then
-// of the receiver (THE SYSTEM).  A push past channel_bound counts the
+// of the receiver (the system).  A push past channel_bound counts the
 // channel.  Complexity: O(R^2 + A).
 template <class Anchor = void>
 consteval void push_channels_(role_run const& roles, action_run const& actions, channel_run& channels) {
@@ -562,7 +562,7 @@ consteval void push_channels_(role_run const& roles, action_run const& actions, 
 
 // The fault of a reading past action_bound, or NoFault.  It names the role
 // of the first action past the bound, and the count of the actions of the
-// context (THE COSTS).
+// context (the costs).
 template <class Anchor = void>
 [[nodiscard]] consteval ContextFault find_action_bound_fault_(role_run const& roles, action_run const& actions) {
     if (!actions.is_past_bound()) return ContextFault{};
@@ -573,7 +573,7 @@ template <class Anchor = void>
 
 // The fault of a reading past channel_bound, or NoFault.  It names the
 // sender of the first channel past the bound, and the count of the channels
-// of the context (THE COSTS).
+// of the context (the costs).
 template <class Anchor = void>
 [[nodiscard]] consteval ContextFault find_channel_bound_fault_(role_run const& roles, channel_run const& channels) {
     if (!channels.is_past_bound()) return ContextFault{};
@@ -582,9 +582,9 @@ template <class Anchor = void>
         .code = ContextFaultCode::ChannelsPastTheBound, .role = role, .count = channels.pushed(), .type = roles[role]};
 }
 
-// The reading of a context (THE SYSTEM), or its first fault.  The reading
+// The reading of a context (the system), or its first fault.  The reading
 // fills its fixed arrays in place, and it keeps no array in static storage
-// (THE COSTS).  Complexity: linear in the distinct nodes of the local types,
+// (the costs).  Complexity: linear in the distinct nodes of the local types,
 // and O(R^2 + A).
 template <class Anchor = void>
 [[nodiscard]] consteval context_reading read_context(std::meta::info context) {
@@ -594,7 +594,7 @@ template <class Anchor = void>
         return reading;
     }
     // The template arguments stay transient lists, because a run in static
-    // storage costs a constant for each new list (THE COSTS).  queues and
+    // storage costs a constant for each new list (the costs).  queues and
     // locals hold the queue and the local type of each role, at the place of
     // the role.
     role_run queues{};
@@ -835,7 +835,7 @@ inline constexpr net::NetName not_live_class{"fixy::session::diagnostic [Context
 }  // namespace detail::context_net
 
 // The first fault that leaves the context with no marked system, or NoFault
-// (THE MODEL OF THE CHECK).  Complexity: linear in the distinct nodes of the
+// (the model of the check).  Complexity: linear in the distinct nodes of the
 // local types, and O(R^2 + A).
 template <typename Context>
 [[nodiscard]] consteval ContextFault find_context_fault() noexcept {
@@ -847,7 +847,7 @@ namespace detail::context_net {
 // The names of the processes and the channels of a marked system of a
 // context.  The liveness check reads a name only for the text of a refusal.
 // A name of a role costs a string in static storage, and a new text costs a
-// constant of its own (THE COSTS).  So the door checks the system with the
+// constant of its own (the costs).  So the door checks the system with the
 // plain names, and it makes the names of the roles only for the text of a
 // refusal.
 enum class SystemNames : std::uint8_t {
@@ -858,8 +858,8 @@ enum class SystemNames : std::uint8_t {
     OfRoles = 1,
 };
 
-// The marked system of a context with no fault and with an action (THE
-// SYSTEM), with the names of the form.  Each channel has the capacity that
+// The marked system of a context with no fault and with an action (the
+// system), with the names of the form.  Each channel has the capacity that
 // Channel states.  Complexity: O(C) for each action.
 template <typename Context, typename Channel, SystemNames Names>
 [[nodiscard]] consteval auto marked_system_of_context_() noexcept {
@@ -914,8 +914,8 @@ inline constexpr bool is_context_live_v =
 
 }  // namespace detail::context_net
 
-// The marked system of a context with no fault and with an action (THE
-// SYSTEM), with the names of its roles.  Each channel has the capacity that
+// The marked system of a context with no fault and with an action (the
+// system), with the names of its roles.  Each channel has the capacity that
 // Channel states.  Complexity: O(C) for each action.
 template <typename Context, typename Channel>
     requires StatesChannelCapacity<Channel>
@@ -925,7 +925,7 @@ template <typename Context, typename Channel>
 }
 
 // The verdict on the waits of a context on channels of the capacity that
-// Channel states: the refusal of its fault (THE MODEL OF THE CHECK), the
+// Channel states: the refusal of its fault (the model of the check), the
 // verdict of check_liveness on its marked system, or the admitted verdict
 // for a context with no action.  Complexity: the reading, and O(R + C + A).
 template <typename Context, typename Channel>

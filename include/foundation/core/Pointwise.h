@@ -4,7 +4,7 @@
 // output element at each index is a function of the input elements at the
 // same index.
 //
-// THE WALK
+// Walk
 //   write_pointwise(out, op, inputs...)
 //                       writes op(input...) into the element of out at each
 //                       index of the sizes, with the element of each input at
@@ -14,7 +14,7 @@
 //                       views must have equal sizes, else the walk gives
 //                       ShapeMismatch and writes nothing
 //
-// THE OP
+// Op
 // The op is an empty class (PointwiseOp) that takes one element of each input
 // and gives the element of out.  An op with no state reads no element through
 // a capture, so a visit can read only the elements at its own index.  The
@@ -22,7 +22,7 @@
 // storage duration either, as the proof of write_each of
 // foundation/core/Region.h does.
 //
-// THE ORDER
+// Order
 // A unique view names a different element at each index.  So when no input
 // shares an element with out, each visit reads only elements that no visit
 // writes, and the order of the visits changes no bit.  The walk then picks
@@ -37,16 +37,16 @@
 // order of the logical sizes, one index after the other.  Each visit then
 // reads the inputs after the writes of each visit before it.
 //
-// THE ALIAS PROOF
+// Alias proof
 // An input that is a StridedViewMut of a brand other than the brand of out
-// names a run of a different frame, so it shares no element with out (THE
-// ALIAS PROOF of foundation/core/Frame.h), with no check at run time.  For
+// names a run of a different frame, so it shares no element with out (the
+// alias proof in foundation/core/Frame.h), with no check at run time.  For
 // each other input, the walk compares the address range of its elements with
 // the address range of out, one time for each walk.  Two ranges that touch
 // count as shared, also when the two views interleave and share no element.
 // A walk with no shared input reads through restrict pointers.
 //
-// THE LANES
+// Lanes
 // An op that also takes a vec<E, W> of the Simd family for each input and
 // gives a vec<T, W> is a lane op (LaneOpOf).  The lane count W fills the
 // widest register of the target, native_vector_bytes of foundation/Simd.h: 16
@@ -84,7 +84,7 @@
 // An op that is no lane op takes the scalar path: the same order with a call
 // of the op for each element, in loops that the optimizer can vectorize.
 //
-// THE NAN RULE
+// NaN rule
 // The NaN that an arithmetic operation gives has bits that change with the
 // host and with the order of the operands that GCC picks in each compiled
 // loop.  x86 keeps the payload of one operand and gives 0xFFC00000 for
@@ -139,7 +139,7 @@ template <class Op, class T, class... Inputs>
 concept PointwiseOp = std::is_empty_v<Op> && std::is_nothrow_copy_constructible_v<Op>
                    && std::is_nothrow_invocable_r_v<T, Op const&, pointwise_element_t<Inputs> const&...>;
 
-// The rule of the NaN outputs of a pointwise op: THE NAN RULE.
+// The rule of the NaN outputs of a pointwise op: the NaN rule.
 enum class NanRule : std::uint8_t {
     // Each output of a float or a double that is a NaN is the canonical NaN.
     Canonical,
@@ -333,7 +333,7 @@ template <std::size_t Views, std::size_t Capacity>
     return plan;
 }
 
-// The plan of a pointwise walk, with the facts of THE ALIAS PROOF that pick
+// The plan of a pointwise walk, with the facts of the alias proof that pick
 // its path: is_shared when an input can name an element of out at a
 // different index, and is_restrict when no input names an element of out.
 template <std::size_t Views, std::size_t Capacity>
@@ -344,7 +344,7 @@ struct PointwisePlan {
 };
 
 // The plan of a pointwise walk over views of equal sizes that hold an
-// element: THE ORDER and THE ALIAS PROOF.  A shared input keeps the row-major
+// element: the order and the alias proof.  A shared input keeps the row-major
 // order of the logical sizes.  Else views that are each dense read one run,
 // and other views take the order of order_axes_.  write_pointwise and the walk
 // of rows share this plan.  O(rank^2 * views).
@@ -497,8 +497,8 @@ template <int W, std::size_t Views, std::size_t Capacity>
 
 // The read of an input in a tile, from its strides on a and b.
 enum class TileClass : std::uint8_t {
-    // A stride of one on b and above one on a: W loads along b, and THE
-    // TRANSPOSE NETWORK in registers.
+    // A stride of one on b and above one on a: W loads along b, and the
+    // transpose network in registers.
     Transposed,
     // A stride of one on a: one load of W elements for each position of b.
     Dense,
@@ -520,7 +520,7 @@ struct TileClasses {};
     return TileClass::General;
 }
 
-// THE TRANSPOSE NETWORK
+// Transpose network
 // The transpose of W x W elements in W registers takes log2(W) stages.  A
 // register holds runs of 16 bytes, with P elements in each run.  Stage g pairs
 // each register r whose bit g is clear with the register r + 2^g, and it
@@ -556,7 +556,7 @@ inline constexpr int run_lanes_ = static_cast<int>(16 / sizeof(E));
     return (run >= half ? width : 0) + source_run * run_lanes + offset;
 }
 
-// The register of each column after THE TRANSPOSE NETWORK, and true when the
+// The register of each column after the transpose network, and true when the
 // network gives the transpose.
 template <int W>
 struct TransposeMap {
@@ -564,7 +564,7 @@ struct TransposeMap {
     bool is_transpose = false;
 };
 
-// THE TRANSPOSE NETWORK of W registers with P elements in each run of 16
+// The transpose network of W registers with P elements in each run of 16
 // bytes, on the numbers of the elements.  O(W^2 log W) at compile time.
 template <int W, int P>
 [[nodiscard]] consteval TransposeMap<W> simulate_transpose_() noexcept {
@@ -682,8 +682,8 @@ template <class Op, std::size_t Capacity, std::size_t... Is, class T, class... E
 //
 // Each part from here to the end of this namespace calls the Simd family, or
 // calls a part that does, so its body depends on the target of the unit.  The
-// parts are in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
-// NAMESPACE of foundation/Platform.h), so each target has its own symbols.
+// parts are in the inline namespace CRUCIBLE_SIMD_TARGET (the target
+// namespace of foundation/Platform.h), so each target has its own symbols.
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
@@ -716,7 +716,7 @@ template <class E, int W>
     return fill_dead_lanes_(value, live, ::foundation::simd::detail::lane_list_t<W>{});
 }
 
-// The op of a walk under THE NAN RULE: the value of op, converted to T, with
+// The op of a walk under the NaN rule: the value of op, converted to T, with
 // the canonical NaN in place of each NaN.  The call on elements and the call
 // on lanes each take the constraint of the same call of op, so the two ops
 // are lane ops for the same elements, and each path of the walk stores the
@@ -741,8 +741,8 @@ struct CanonicalNanOp {
     }
 };
 
-// The op that the walk calls for the output element T: op under THE NAN
-// RULE for a float or a double, and op itself for each other element and
+// The op that the walk calls for the output element T: op under the NaN
+// rule for a float or a double, and op itself for each other element and
 // for an op that keeps its bits.
 template <class T, class Op>
 [[nodiscard]] constexpr auto ruled_op_(Op const& op) noexcept {
@@ -950,7 +950,7 @@ run_lane_plan_(LaneClasses<InClasses...> /*classes*/, std::index_sequence<Is...>
 // class on a.  The op then gives one register of out for each position of b,
 // and the store is dense.
 
-// One pair of stage g of THE TRANSPOSE NETWORK: the registers Low and
+// One pair of stage g of the transpose network: the registers Low and
 // Low + 2^g.
 template <int W, int P, int Stage, int Low, class Raw, int... Lane>
 CRUCIBLE_INLINE void transpose_pair_(Raw (&rows)[lane_count_<W>],
@@ -972,7 +972,7 @@ CRUCIBLE_INLINE void transpose_stage_(Raw (&rows)[lane_count_<W>],
      ...);
 }
 
-// THE TRANSPOSE NETWORK on the registers rows, with P elements in each run
+// The transpose network on the registers rows, with P elements in each run
 // of 16 bytes: W * log2(W) shuffles.  Each index is a constant, so the
 // registers stay in registers.
 template <int W, int P, int Stage = 0, class Raw>
@@ -1091,7 +1091,7 @@ template <TileClass Class, int W, class E>
 class TileSource;
 
 // A transposed input loads the W rows along b, one for each position of a,
-// and runs THE TRANSPOSE NETWORK.  The registers are a member array with a
+// and runs the transpose network.  The registers are a member array with a
 // constant index at each use, so they stay in registers.
 template <int W, class E>
 class TileSource<TileClass::Transposed, W, E> {
@@ -1478,7 +1478,7 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 // Writes op(input...) into the element of out at each index of the sizes, in
 // an order that the walk picks when no input shares an element with out:
-// THE WALK, THE ORDER, THE LANES and THE NAN RULE above.  The walk gives
+// The walk, the order, the lanes and the NaN rule above.  The walk gives
 // ShapeMismatch, and writes nothing, when the sizes of an input differ from
 // the sizes of out.  O(count) calls of the op, O(rank^2 * views) for the
 // plan, and O(rank) for the alias check of each input.

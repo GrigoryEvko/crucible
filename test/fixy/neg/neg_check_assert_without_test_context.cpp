@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // CRUCIBLE_TEST_ASSERT ends the process through the failure arm of the Check
 // family, and only a test calls it.  The foreground context owns no Test

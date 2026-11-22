@@ -1,6 +1,6 @@
 """tool-pins — each row of utils/pins.txt agrees with its holder, and the cmake and the ctest of a build with the pin.
 
-THE RULE
+Rule
     The rule calls check_table() of assay.setup.pins, which `setup check`
     calls too.  The head comment of that module gives the holder of each pin
     name and the check of each holder.  With --build-dir, the rule also holds
@@ -10,7 +10,7 @@ THE RULE
     rule has no ledger, and each finding is an error at its row of the pin
     table.
 
-THE PLANTS
+Plants
     A plant holds a planted pin table utils/pins.txt, the file build.txt of
     assay.guard.engines.buildsys.planted for its build directory, and the
     file host.txt.  host.txt tells what the host of the plant holds, in the
@@ -75,7 +75,7 @@ class PinContext(BuildContext):
 
 
 def findings(context: BuildContext) -> list[check_report.Finding]:
-    """Give the errors of check_table() for the tree and the build of the context (THE RULE)."""
+    """Give the errors of check_table() for the tree and the build of the context (the rule)."""
     if isinstance(context, PinContext):
         request = pins.TableCheck(
             context.root, context.build_dir, context.tools_root, context.oracle_root, context.proc_root, context.pid
@@ -127,7 +127,7 @@ def plant_installed(root: Path, tools_root: Path, row: rows_grammar.Row) -> None
 
 
 def read_host(root: Path, request: pins.TableCheck) -> pins.TableCheck:
-    """Write what the rows of host.txt give, and return the request with the process of the rule (THE PLANTS).
+    """Write what the rows of host.txt give, and return the request with the process of the rule (the plants).
 
     Complexity: linear in the rows.
 
@@ -171,7 +171,7 @@ def read_host(root: Path, request: pins.TableCheck) -> pins.TableCheck:
 
 
 def plant_context(plant: Path, scratch: Path) -> PinContext:
-    """Copy a plant, make its planted build and what host.txt gives, and return its context (THE PLANTS).
+    """Copy a plant, make its planted build and what host.txt gives, and return its context (the plants).
 
     Raises:
         NotApplicable: If build.txt or host.txt does not obey its rows

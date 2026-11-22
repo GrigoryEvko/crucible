@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // TransactionLog::commit requires a Ref of a region of the arena.  A Ref
 // tagged as Loaded from serialized state is a distinct provenance lane and

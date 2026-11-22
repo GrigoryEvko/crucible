@@ -1,13 +1,13 @@
 """coverage — run the gate mutants of each header of include/ in a time budget, and keep each run at its key.
 
-THE SELECTION
+Selection
     run() reads the items of the class `mutant-runs`.  An item is a header of
-    include/ of the source tree of a build.  Its key is the key of THE KEYS
+    include/ of the source tree of a build.  Its key is the key of the keys
     OF A HEADER of assay.loop.evidence.items.  run() selects the pending items
-    of the nightly target, or with is_release of the release target (THE
-    PENDING ITEMS of that module).
+    of the nightly target, or with is_release of the release target (the
+    pending items of that module).
 
-THE TREE OF THE RUN
+Tree of the run
     The run of the gate mutants writes each mutant into the source tree of
     its build (assay.mutation.run).  It puts the header back after each
     mutant.  The runner does not run the mutants in the tree of this package.
@@ -24,13 +24,13 @@ THE TREE OF THE RUN
     as it is.  The caller then owns that tree, and its build must hold the
     record of each fixture.
 
-THE RUN OF A HEADER
+Run of a header
     run_header() of assay.mutation.run runs each mutant of one header with the
-    caps of THE JOBS of that module.  The candidates of the mutants come from
+    caps of the jobs of that module.  The candidates of the mutants come from
     the units of the build, one time for each call.
       * A run adds one sample of the quantity 1 when it has no survivor.  It
         also must have no invalid mutant that the admitted gates do not admit
-        (THE ADMITTED GATES of assay.loop.evidence.items).  The facts of the
+        (the admitted gates of assay.loop.evidence.items).  The facts of the
         sample are the count of the gates and of the mutants that a test
         killed.
       * Each other run keeps the failure of the key.  The failure gives the
@@ -41,7 +41,7 @@ THE RUN OF A HEADER
         time of the run.  The header can then start.
     A SIGTERM stops the run after the header gets its bytes back.
 
-THE BUDGET
+Budget
     A header starts only when the time that the call used, with the time of
     one header, stays in the budget.  The time of one header is the wall time
     of one unit of the record of its key.  A key with no sample has the time
@@ -73,14 +73,14 @@ from assay.mutation import run as mutation_run
 from assay.readers import cmake as cmake_reader
 
 PROGRAM = "loop evidence run coverage"
-# The directory of the warm export in the work root, its tree and its lock (THE TREE OF THE RUN).
+# The directory of the warm export in the work root, its tree and its lock (the tree of the run).
 EXPORT = "evidence-export"
 TREE = "tree"
 LOCK = "tree.lock"
-# The time of one header with no sample (THE BUDGET), and the entry of the builder in the CMake cache.
+# The time of one header with no sample (the budget), and the entry of the builder in the CMake cache.
 FIRST_HEADER_S = 180.0
 MAKE_ENTRY = "CMAKE_MAKE_PROGRAM"
-# The statuses of a run of assay.mutation.run that keep a failure (THE RUN OF A HEADER).
+# The statuses of a run of assay.mutation.run that keep a failure (the run of a header).
 INVALID = "invalid"
 SURVIVED = "survived"
 KILLED = "killed"
@@ -112,13 +112,13 @@ class Outcome:
 
 
 def admitted(ledger: rule_ledger.Ledger | None, outcome: mutation_run.Outcome) -> bool:
-    """Return True when a row of the admitted gates admits the invalid mutant of an outcome (THE RUN OF A HEADER)."""
+    """Return True when a row of the admitted gates admits the invalid mutant of an outcome (the run of a header)."""
     key = mutation_run.exemption_row(outcome.header, outcome.kind, outcome.entity, outcome.original)
     return ledger is not None and key in ledger.base
 
 
 def judged(outcomes: Sequence[mutation_run.Outcome], ledger: rule_ledger.Ledger | None) -> Verdict:
-    """Return the judgment of the run of one header (THE RUN OF A HEADER)."""
+    """Return the judgment of the run of one header (the run of a header)."""
     survivors = [item for item in outcomes if item.status.startswith(SURVIVED)]
     invalid = [item for item in outcomes if item.status == INVALID and not admitted(ledger, item)]
     killed = sum(1 for item in outcomes if item.status == KILLED)
@@ -136,7 +136,7 @@ def judged(outcomes: Sequence[mutation_run.Outcome], ledger: rule_ledger.Ledger 
 def rerun_words(build_dir: Path, header: str, wall_s: float) -> tuple[str, ...]:
     """Return the command that runs the mutants of a header of the build again, after a run of wall_s seconds.
 
-    The budget of the command lets the header start (THE RUN OF A HEADER).
+    The budget of the command lets the header start (the run of a header).
     """
     loop = paths.LOOP.relative_to(paths.REPO_ROOT).as_posix()
     budget = f"{2 * max(FIRST_HEADER_S, wall_s):.0f}"
@@ -146,7 +146,7 @@ def rerun_words(build_dir: Path, header: str, wall_s: float) -> tuple[str, ...]:
 
 
 def header_time(record: evidence_store.Record | None) -> float:
-    """Return the wall time of one unit of a record, or FIRST_HEADER_S for a record with no sample (THE BUDGET)."""
+    """Return the wall time of one unit of a record, or FIRST_HEADER_S for a record with no sample (the budget)."""
     unit = None if record is None else record.unit_wall_s
     return FIRST_HEADER_S if unit is None else unit
 
@@ -159,7 +159,7 @@ def run_headers(
     budget_s: float,
     run_one: HeaderRun,
 ) -> Outcome:
-    """Run the selected headers in the budget, and add the sample or keep the failure of each one (THE BUDGET).
+    """Run the selected headers in the budget, and add the sample or keep the failure of each one (the budget).
 
     `run_one` runs the mutants of one header: the run of assay.mutation.run, or the planted run of a test.
     Complexity: one call of `run_one` for each header that starts.
@@ -199,7 +199,7 @@ def run_headers(
 def run_build(build_dir: Path, jobs: int) -> None:
     """Configure the build of the preset MUTANT_PRESET in its tree when it is not configured, and run `loop test`.
 
-    The run of `loop test` builds the target all, and it runs each fixture (THE TREE OF THE RUN).
+    The run of `loop test` builds the target all, and it runs each fixture (the tree of the run).
 
     Raises:
         CoverageError: If the configure cannot start or fails, or `loop test` cannot start
@@ -221,7 +221,7 @@ def run_build(build_dir: Path, jobs: int) -> None:
 
 @contextlib.contextmanager
 def export_build(root: Path, jobs: int) -> Iterator[Path]:
-    """Hold the lock of the warm export, give it the commit of HEAD of a tree, and give its build (THE TREE OF THE RUN).
+    """Hold the lock of the warm export, give it the commit of HEAD of a tree, and give its build (the tree of the run).
 
     Raises:
         CoverageError: If the export cannot get the commit, or its build cannot be made
@@ -276,7 +276,7 @@ def header_runner(keyed: evidence_items.HeaderKeys, build_dir: Path) -> HeaderRu
 
 
 def run_keyed(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str], target: float) -> ExitCode:
-    """Read the keys of the headers of a build, select them, and run them in the budget (THE SELECTION)."""
+    """Read the keys of the headers of a build, select them, and run them in the budget (the selection)."""
     try:
         keyed = evidence_items.mutant_keys(build_dir)
     except evidence_items.MUTANT_ERRORS as problem:
@@ -307,7 +307,7 @@ def run_keyed(build_dir: Path, budget_s: float, is_release: bool, names: Sequenc
 
 
 def run(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str], jobs: int, target: float) -> ExitCode:
-    """Run the headers of a build in the budget, in the tree of THE TREE OF THE RUN, and report.
+    """Run the headers of a build in the budget, in the tree of the tree of the run, and report.
 
     Returns:
         OK when no header kept a failure, FINDINGS when one did, MISSING_INPUT when the build gives no keys

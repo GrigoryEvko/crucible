@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A permissioned session sends a bare Permission that did not come from the
 // slots of the handle.  The session opens with a root of Region, and a second

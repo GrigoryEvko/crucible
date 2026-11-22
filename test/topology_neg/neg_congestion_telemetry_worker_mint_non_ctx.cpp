@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Minting the congestion telemetry worker needs an execution context.  An
 // int in the context slot is refused at the requires-clause, not deep

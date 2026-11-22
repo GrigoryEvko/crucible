@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // CallSiteTable::Entry stores its filename and funcname as InternedName,
 // a fixy::Tagged<fixy::HeapText, source::Interned>.  External and internal

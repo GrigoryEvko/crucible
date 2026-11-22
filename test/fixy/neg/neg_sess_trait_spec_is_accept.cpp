@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_accept is an alias template that reads the head of the protocol
 // from the registry, so no user specialization makes a Recv a take-over.

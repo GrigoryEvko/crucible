@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A spin deadline reads the counter of the core, a source of
 // nondeterminism.  So SpinDeadline::after takes the bare tag of Nondet, and

@@ -2,7 +2,7 @@
 // constructor takes a plain class that holds the raw word.  The parameter is
 // a class and not a raw value, but it holds a raw leaf, so RawWord{0} builds
 // the empty value.  The walk of the constructors counts such a class as a raw
-// value (THE CHECK OF THE STATEMENT of foundation/core/Choice.h), so the
+// value (the check of the statement of foundation/core/Choice.h), so the
 // Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

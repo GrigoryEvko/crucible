@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The result of SchemaTable::mint_mutable_view() goes to a helper that takes
 // a SchemaTable::SealedView.  The two views have the same carrier

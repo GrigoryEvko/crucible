@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The pure append of a producer endpoint of PermissionedMetaLog reads the row
 // of the context of the caller, and the gate IsPure asks that the row is

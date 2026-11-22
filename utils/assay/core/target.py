@@ -1,13 +1,13 @@
 """target — the build kind of a build, and the native tier of a host for the key of a measurement.
 
-THE BUILD KIND
+The build kind
     The one line of BUILD_DIR/build-kind.txt, which cmake/BuildLauncher.cmake
     writes from the processor, the build type, the sanitizer and analysis
     options and the x86-64 level CRUCIBLE_X86_LEVEL of the build, for
     example x86_64-debug-asan, x86_64-release-v3 or aarch64-release
     (read_kind of utils/assay/core/meter.py).
 
-THE NATIVE TIER
+The native tier
     A native flag, such as -march=native, is a request.  The compiler
     resolves it to the processor of the host.  native_tier() gives the tier
     NAME-DIGEST of that request on this host (resolved_tier()).  The
@@ -64,7 +64,7 @@ def tier_of(help_text: str) -> str:
 
 
 def resolved_tier(compiler: str, flags: list[str]) -> str:
-    """Return the tier NAME-DIGEST that the compiler gives for the target flags (THE NATIVE TIER).
+    """Return the tier NAME-DIGEST that the compiler gives for the target flags (the native tier).
 
     For a native flag, the result names the processor of the host.
 
@@ -87,7 +87,7 @@ def resolved_tier(compiler: str, flags: list[str]) -> str:
 def native_tier(compiler: str, flag: str) -> str:
     """Return the resolved tier of one native flag on this host, or an empty text when the compiler refuses the flag.
 
-    The tier names the processor of the host.  Only the key of a measurement reads it (THE NATIVE TIER).
+    The tier names the processor of the host.  Only the key of a measurement reads it (the native tier).
     """
     try:
         return resolved_tier(compiler, [flag])

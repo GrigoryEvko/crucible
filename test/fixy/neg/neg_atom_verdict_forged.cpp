@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // IsAtom refuses refined_with over a closure type, because the name of a
 // closure type is not a function of the type, and the name of an atom is

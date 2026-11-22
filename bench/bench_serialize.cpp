@@ -57,7 +57,7 @@ static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena& dag_arena, uint32
 // write of an image is cold code of the product by design (CRUCIBLE_COLD in
 // crucible/Serialize.h), so a direct call of serialize_region is a cold call.
 // After such a call in main, GCC takes the rows for cold code, and a timed
-// body of only such a call is cold code too (THE PRINT DOORS of
+// body of only such a call is cold code too (the print doors of
 // bench/bench_harness.h).  The call of a noipa function can end its block,
 // so the rows and the timed body around it stay in hot code.
 [[gnu::noipa]] static size_t serialize_through_call(::fixy::Ref<RegionNode> region, ::fixy::View<std::byte> image) {

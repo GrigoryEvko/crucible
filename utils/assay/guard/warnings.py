@@ -5,7 +5,7 @@ A rule that gives warnings and no error writes them to
 a test with no error.  `guard warnings` prints those warnings after a build or
 a test run.  In a GitHub workflow it also prints each one as an annotation.
 
-THE TOTALS
+Totals
     Before the warnings, the command prints the totals of the build
     directory.  Each total is a plain number with its unit.  No rule judges a
     total, because a CPU time and a wall time change with the load of the
@@ -16,18 +16,18 @@ THE TOTALS
         records of the test launcher.  A script test has no part
       * the link records of the build launcher and their CPU time
       * the largest sum of the peak memory of the compiles and the links
-        whose wall times overlap, an upper bound (assay.loop.history, THE COST
-        RECORDS)
+        whose wall times overlap, an upper bound (assay.loop.history, the cost
+        records)
       * the wall time of the last configure less its plugin build, and the
-        plugin build (assay.loop.history, THE CONFIGURE TIME and THE PLUGIN
-        BUILD).
+        plugin build (assay.loop.history, the configure time and the plugin
+        build).
     A unit with no time has no part in a time total, and the line of the
     total gives the count of such units.  When the census or the test
     records cannot be read, one line tells why.
 
-THE NUMBERS OF THE RULES
+Numbers of the rules
     After the totals, the command prints each line of each numbers file of
-    the warnings directory (assay.core.report, THE NUMBERS FILES).  The rule
+    the warnings directory (assay.core.report, the numbers files).  The rule
     codegen-shapes writes the counts of each pair whose family side is
     longer there.  A line of a numbers file is a plain number, and no rule
     judges it.
@@ -37,7 +37,7 @@ No run writes the file of a rule again after the rule goes from the registry.
 Before it reads the files, `guard warnings` removes the file of each rule that
 the registry does not name.  It also removes each warnings file of a measured
 rule of a policy of SILENT_POLICIES, because such a rule gives no warning
-(assay.core.budget, THE VERDICT), and no run writes its file again.  When it
+(assay.core.budget, the verdict), and no run writes its file again.  When it
 cannot read the registry, it keeps each file and tells why.  Each line that it
 writes about the files, the totals and the numbers starts with PREFIX.
 
@@ -135,7 +135,7 @@ def build_records(build_dir: Path) -> list[cost_record.CostRecord]:
 
 
 def time_lines(census: build_census.Census, times: Sequence[float | None]) -> list[str]:
-    """Return the line of each time total: the CPU time of the fixtures and of the executable tests (THE TOTALS).
+    """Return the line of each time total: the CPU time of the fixtures and of the executable tests (the totals).
 
     Complexity: linear in the units and the tests.
     """
@@ -153,7 +153,7 @@ def time_lines(census: build_census.Census, times: Sequence[float | None]) -> li
 
 
 def build_lines(records: Sequence[cost_record.CostRecord], configure: Mapping[str, object] | None) -> list[str]:
-    """Return the lines of the build totals of the records of a build directory and of its last configure (THE TOTALS).
+    """Return the lines of the build totals of the records of a build directory and of its last configure (the totals).
 
     Args:
         records: The records of the compiles and the links of the build directory
@@ -186,7 +186,7 @@ def build_lines(records: Sequence[cost_record.CostRecord], configure: Mapping[st
 
 
 def total_lines(build_dir: Path) -> list[str]:
-    """Return the line of each total of a build directory (THE TOTALS).
+    """Return the line of each total of a build directory (the totals).
 
     Complexity: linear in the files of the build directory.
     """
@@ -209,7 +209,7 @@ def total_lines(build_dir: Path) -> list[str]:
 def number_lines(warnings_dir: Path) -> list[str]:
     """Return each line of each numbers file of a warnings directory, or one line that tells why they do not read.
 
-    THE NUMBERS OF THE RULES gives the lines.  Complexity: linear in the lines of the numbers files.
+    The numbers of the rules gives the lines.  Complexity: linear in the lines of the numbers files.
     """
     try:
         numbers = check_report.read_numbers_dir(warnings_dir)

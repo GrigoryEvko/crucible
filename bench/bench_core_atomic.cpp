@@ -62,7 +62,7 @@ using Cell = fixy::Atomic<std::uint64_t>;
 using Count = fixy::Atomic<std::uint64_t, fixy::Counter>;
 using ReferenceCell = std::atomic<std::uint64_t>;
 
-// THE LAYOUT
+// Layout
 //   Each operation of a pair is one call to a function of its own, aligned
 //   to 64 bytes and never inlined, so the code around the operation does not
 //   move one side of a pair against the other.  With the operation inlined in
@@ -224,7 +224,7 @@ int main() {
 
     // The operand is an object in memory, so a row that makes it opaque for
     // the next call gives it to mark_changed(), which adds no load and no
-    // store to the loop (THE SINK of bench_harness.h).
+    // store to the loop (the sink of bench_harness.h).
     print_row("Atomic::store_release", bench::run("Atomic::store_release", [&] {
                   cell.store_release(operand);
                   bench::mark_changed(operand);

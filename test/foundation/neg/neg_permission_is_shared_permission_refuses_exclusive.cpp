@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // IsSharedPermission holds for a shared read token and not for an
 // exclusive one.  A template that asks for a shared token refuses the

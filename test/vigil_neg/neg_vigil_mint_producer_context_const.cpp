@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_producer_context claims the calling thread, so it writes the claim
 // and cannot run through a const view of the Vigil.  A reader that holds

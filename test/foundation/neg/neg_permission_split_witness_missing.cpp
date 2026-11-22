@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A split needs two traits declared together: the manifest that says the
 // parent splits into the two children, and the authoring witness beside

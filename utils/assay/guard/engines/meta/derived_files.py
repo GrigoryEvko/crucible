@@ -1,6 +1,6 @@
 """derived-files — each target of `loop derive` gives the bytes that the tree holds.
 
-THE TARGETS
+Targets
     A target of `loop derive` writes a file of the tree from other files.  The
     rule reads the findings of the function drift() of each target, and it
     gives them as its own findings:
@@ -25,7 +25,7 @@ THE TARGETS
     The targets aten-ops and session-oracle read inputs that are not in the
     tree, and their own checks hold them.
 
-THE PARSE TREES
+Parse trees
     The targets walk-units and header-lists read the parse trees of one
     context of the engine tsast (assay.guard.engines.tsast.runner).  The
     context keeps each tree, so the two targets load each tree one time.
@@ -33,7 +33,7 @@ THE PARSE TREES
     With no pinned parse kit, the rule and its witness do not apply
     (applies()).
 
-THE BUILD
+Build
     The targets mint-inventory and row-hashes read the build of --build-dir:
     the records of its objects, and the output of its program
     dump_row_hashes.  With no build directory, or with a build that does not
@@ -41,9 +41,9 @@ THE BUILD
     for it.  The run writes one plain line that names each target that it
     did not compare, with the reason.  It compares the other targets.  A
     build for a machine other than x86_64 does not apply to the golden
-    (assay.loop.derive.row_hashes, THE MACHINE).
+    (assay.loop.derive.row_hashes, the machine).
 
-THE PLANTS
+Plants
     The control control-agree holds a rule table with a witness row and the
     heavy and light rows.  It also holds a registry, the header of the
     witness row, its fixture and the manifest.  It also holds the list of the
@@ -73,12 +73,12 @@ from assay.loop.derive import header_costs, header_lists, mint_inventory, row_ha
 from assay.readers import tsast
 
 RULE = "derived-files"
-# The control that gives the first tree of each plant (THE PLANTS).
+# The control that gives the first tree of each plant (the plants).
 BASE = "control-agree"
 
 
 def applies() -> None:
-    """Return when the pinned parse kit is installed (THE PARSE TREES).  The witness runs no plant without it.
+    """Return when the pinned parse kit is installed (the parse trees).  The witness runs no plant without it.
 
     Raises:
         NotApplicable: If the pinned parse kit is not installed
@@ -90,7 +90,7 @@ def applies() -> None:
 
 
 def plant_context(plant: Path, scratch: Path) -> MetaContext:
-    """Copy the tree of the base control and then the files of a plant to a throwaway repository (THE PLANTS)."""
+    """Copy the tree of the base control and then the files of a plant to a throwaway repository (the plants)."""
     return copy_overlay(plant, scratch, BASE)
 
 
@@ -113,7 +113,7 @@ def header_part(context: MetaContext) -> list[check_report.Finding]:
 
 
 def tree_part(context: MetaContext) -> list[check_report.Finding]:
-    """Return the findings of the targets walk-units and header-lists, which read the parse trees (THE PARSE TREES).
+    """Return the findings of the targets walk-units and header-lists, which read the parse trees (the parse trees).
 
     Raises:
         NotApplicable: If the pinned parse kit is not installed
@@ -123,12 +123,12 @@ def tree_part(context: MetaContext) -> list[check_report.Finding]:
     return [*walk_units.drift(trees), *header_lists.drift(trees)]
 
 
-# The result of a target that reads a build: its findings, or the reason why the run did not compare it (THE BUILD).
+# The result of a target that reads a build: its findings, or the reason why the run did not compare it (the build).
 BuildPart = tuple[list[check_report.Finding], str | None]
 
 
 def inventory_part(context: MetaContext) -> BuildPart:
-    """Return the findings of the target mint-inventory, or the reason why the build does not apply (THE BUILD)."""
+    """Return the findings of the target mint-inventory, or the reason why the build does not apply (the build)."""
     if context.build_dir is None:
         return [], "it needs the mint records of a build, and the call gives no --build-dir"
     try:
@@ -141,7 +141,7 @@ def inventory_part(context: MetaContext) -> BuildPart:
 
 
 def golden_part(context: MetaContext) -> BuildPart:
-    """Return the findings of the target row-hashes, or the reason why the build does not apply (THE BUILD)."""
+    """Return the findings of the target row-hashes, or the reason why the build does not apply (the build)."""
     if context.build_dir is None:
         return [], "it needs the program dump_row_hashes of a build, and the call gives no --build-dir"
     try:
@@ -154,7 +154,7 @@ def golden_part(context: MetaContext) -> BuildPart:
 
 
 def skipped_line(skipped: dict[str, str]) -> str:
-    """Return the one plain line that names each target that the run did not compare, with its reason (THE BUILD)."""
+    """Return the one plain line that names each target that the run did not compare, with its reason (the build)."""
     named = " and ".join(skipped)
     reasons = "  ".join(f"{target}: {reason}." for target, reason in skipped.items())
     noun = "target" if len(skipped) == 1 else "targets"
@@ -162,10 +162,10 @@ def skipped_line(skipped: dict[str, str]) -> str:
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give the findings of each target of THE TARGETS, and one plain line for the targets that it did not compare.
+    """Give the findings of each target of the targets, and one plain line for the targets that it did not compare.
 
     Raises:
-        NotApplicable: If the pinned parse kit is not installed (THE PARSE TREES)
+        NotApplicable: If the pinned parse kit is not installed (the parse trees)
     """
     found = [*tree_part(context), *witness_part(context), *header_part(context)]
     skipped: dict[str, str] = {}

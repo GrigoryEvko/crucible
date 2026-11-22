@@ -59,7 +59,7 @@ def run_filter(program: bytes, number: int, architecture: int, arguments: tuple[
 
 
 def filter_cases(expect: testing.Expect) -> None:
-    """Check the program of the filter of each architecture on planted calls (THE CALLS)."""
+    """Check the program of the filter of each architecture on planted calls (the calls)."""
     notify, allow = tracer.RETURN_NOTIFY, tracer.RETURN_ALLOW
     x86 = tracer.ARCHITECTURES["x86_64"]
     program = tracer.filter_program(x86)
@@ -130,9 +130,9 @@ def keys_of(found: readset.ReadSet | None) -> dict[tuple[str, str], readset.Entr
 
 
 def trace_cases(expect: testing.Expect) -> None:
-    """Check the read sets of the planted programs (THE TRACE, THE CALLS).
+    """Check the read sets of the planted programs (the trace, the calls).
 
-    A traced test cannot hold a listener of its own (assay.loop.teststep, THE READ SET).  The cases then fail, because
+    A traced test cannot hold a listener of its own (assay.loop.teststep, the read set).  The cases then fail, because
     they cannot hold.
     """
     if os.environ.get(test_launcher.TRACED_ENV):

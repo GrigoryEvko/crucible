@@ -86,9 +86,9 @@ int main() {
     bench::print("\n");
 
     ::fixy::FixedArray<bench::Report, 11> reports{
-        // ── HARNESS BASELINE: the cost of one sink ────────────────────
+        // ── Harness baseline: the cost of one sink ────────────────────
         // Measures the bench-loop overhead: ++i and one sink of i.  The
-        // sink is an empty asm statement with no call (THE SINK of
+        // sink is an empty asm statement with no call (the sink of
         // bench_harness.h), so i stays in a register, and the row gives the
         // cost of the loop and of the increment.  Subtract this from a
         // single-call ring bench below to get the cost of the ring op.
@@ -97,7 +97,7 @@ int main() {
             return bench::run("HARNESS BASELINE: do_not_optimize(++i)", [&] { bench::do_not_optimize(++i); });
         }(),
 
-        // ── HARNESS BASELINE: clobber-only (no call, asm barrier) ─────
+        // ── Harness baseline: clobber-only (no call, asm barrier) ─────
         // bench::clobber_memory() is asm volatile("" ::: "memory"), a
         // compiler memory barrier with no instruction.  After the barrier
         // the loop reads i from memory again, so the difference from the
@@ -249,8 +249,8 @@ int main() {
     bench::print("\n=== compare ===\n");
 
     // Index map:
-    //   [0] HARNESS BASELINE: do_not_optimize(++i)      ← bench overhead
-    //   [1] HARNESS BASELINE: clobber + ++i             ← pure compiler-fence
+    //   [0] Harness baseline: do_not_optimize(++i)      ← bench overhead
+    //   [1] Harness baseline: clobber + ++i             ← pure compiler-fence
     //   [2] spsc_ring.try_push (single, huge cap)
     //   [3] spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip
     //   [4] spsc_ring.try_pop (pre-filled)

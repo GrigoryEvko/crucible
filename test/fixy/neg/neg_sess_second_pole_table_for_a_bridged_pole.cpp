@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit plants a second pole table, in a probe region that the plugin
 // rules admit.  The table knows the producer pole of a bridged channel and

@@ -4,8 +4,8 @@
 //
 // CLAUDE.md L3 states the load-bearing invariant of the static
 // memory planner: "Two slots whose live ranges intersect MUST NOT"
-// share byte ranges, while two dead-and-reused slots MAY.  The
-// existing unit test (test/test_memory_plan.cpp) exercises ONE
+// share byte ranges, while two dead-and-reused slots may.  The
+// existing unit test (test/test_memory_plan.cpp) exercises one
 // hand-built liveness configuration (4 slots).  That proves the
 // happy path but cannot find the planner bug class that only shows
 // up under irregular, randomly-interleaved birth/death intervals:
@@ -17,9 +17,9 @@
 //
 //   (A) Structural: plan non-null, num_slots / num_external faithful
 //       to the input, pool_bytes within the PoolAllocator ceiling.
-//   (B) No-overlap: at EVERY op boundary t in [0, max_death], the
+//   (B) No-overlap: at every op boundary t in [0, max_death], the
 //       simultaneously-live internal slots have pairwise-disjoint
-//       byte intervals — checked through the SAME canonical oracle
+//       byte intervals — checked through the same canonical oracle
 //       (live_intervals_disjoint_at in crucible/MerkleDag.h) that the
 //       negative fixtures of test/memory_neg pin, so the fuzzer and
 //       those fixtures read one predicate.
@@ -42,7 +42,7 @@
 //       internal slot regardless of the random liveness shape.
 //
 // A fresh BackgroundThread is constructed per iteration, with the
-// allocation tag of the test context.  Its constructor spawns NO pipeline
+// allocation tag of the test context.  Its constructor spawns no pipeline
 // thread (start() does that), so the only
 // state is its arena, which is reclaimed when the local dies —
 // bounding memory across the run.  test_memory_plan.cpp proves the

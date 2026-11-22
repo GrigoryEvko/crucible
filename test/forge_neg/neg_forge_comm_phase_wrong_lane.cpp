@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A fusion decision carries the lane of the FUSE phase.  A consumer that
 // demands a decision from a later phase refuses it: the two lanes are

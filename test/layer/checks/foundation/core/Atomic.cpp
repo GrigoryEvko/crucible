@@ -314,7 +314,7 @@ static_assert(!std::is_copy_constructible_v<Atomic<std::uint64_t, Counter>>
 }
 static_assert(sole_writer_checks());
 
-// THE CELL OF AN OWNER.  The cell holds its value and nothing else, and it
+// The cell of an owner.  The cell holds its value and nothing else, and it
 // does not move.  The write and the read of the owner take the proof of that
 // owner and role, and only that proof.  A proof of another owner or of
 // another role has no overload, and the cell has no read-modify-write
@@ -490,8 +490,8 @@ struct atomic_word<detail::atomic_checks::Sealed<7>>
 };
 
 // A protocol states that only the empty value of the niche gives the empty
-// word, for a value whose niche states nothing (THE WORD OF A STATED
-// PAYLOAD).
+// word, for a value whose niche states nothing (the word of a stated
+// payload).
 template <>
 struct atomic_word<detail::atomic_checks::Sealed<8>>
     : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<8>> {
@@ -522,7 +522,7 @@ static_assert(AtomicWordProtocol<Sealed<5>> && AtomicValue<Sealed<5>>);
 static_assert(!AtomicValue<Sealed<0>> && !AtomicValue<Sealed<1>> && !AtomicValue<Sealed<2>>);
 static_assert(!AtomicValue<Sealed<3>> && !AtomicValue<Sealed<4>> && !AtomicValue<Sealed<7>>);
 
-// A protocol that states THE WORD OF A STATED PAYLOAD for a value whose niche
+// A protocol that states the word of a stated payload for a value whose niche
 // states nothing is refused, and a protocol that states nothing keeps the
 // test of the word.
 static_assert(word_statement_of(^^Sealed<8>) == WordStatement::refused && !AtomicValue<Sealed<8>>);

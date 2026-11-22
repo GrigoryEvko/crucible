@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Both payloads carry an effect and the foreground context admits none.
 // The gate checks both directions, so hiding an effectful input and an

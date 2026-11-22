@@ -8,7 +8,7 @@ operation. It carries no signature: record_kernel.h
 derives that by reflection from `at::_ops::<struct>::call`, so the two can
 never disagree.
 
-WHERE THE FACTS COME FROM, and why it is not the yaml
+Where the facts come from, and why it is not the yaml
 
 The obvious source for this generator is native_functions.yaml. That
 file is not the authoritative set. Measured on fork 8be2400cf5c:
@@ -37,7 +37,7 @@ is checked to appear verbatim as a `schema_str`. That check is the third
 of three independent agreements this table rests on; the other two are in
 record_kernel.h.
 
-WHAT READS EACH INPUT
+What reads each input
 
 Each input has a real parser, and the generator uses it:
 

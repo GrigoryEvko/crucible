@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A value that is not an execution context cannot stand in for one, so the
 // mint of an attach plan refuses a bare struct.

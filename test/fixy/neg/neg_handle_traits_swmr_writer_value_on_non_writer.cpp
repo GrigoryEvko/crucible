@@ -8,7 +8,7 @@
 // The probe again has publish with exactly the right signature, and is
 // refused for holding load as well.
 //
-// VIOLATION: a TU asks a type with both single-writer members for its
+// Violation: a TU asks a type with both single-writer members for its
 // published payload.
 //
 // Expected diagnostic: the is_swmr_writer_v constraint on

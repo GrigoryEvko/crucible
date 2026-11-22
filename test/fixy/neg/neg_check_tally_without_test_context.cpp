@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A Tally counts the checks of a test, and only a test builds one.  The
 // foreground context owns no Test capability, so the concept TestContext

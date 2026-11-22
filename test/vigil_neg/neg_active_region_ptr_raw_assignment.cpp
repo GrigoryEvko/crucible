@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Mismatch class 1 of 2 for the active region of CrucibleContext: an Option
 // of a Ref of a region with no tag cannot become a
@@ -31,7 +31,7 @@ int main() {
     crucible::FakeRegionNode const region{};
     const RegionLink untagged = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
 
-    // Should FAIL: no conversion from an untagged region to the tagged slot;
+    // Should fail: no conversion from an untagged region to the tagged slot;
     // the provenance is written only through mint_tagged.
     ActiveRegionLink field = untagged;
     (void)field;

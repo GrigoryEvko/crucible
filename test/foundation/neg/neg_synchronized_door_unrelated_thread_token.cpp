@@ -1,10 +1,10 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A token that states thread_bound{} proves only that its holder is its own
 // owner thread.  Each thread can hold a token of an unrelated class, so such a
 // token proves nothing about the counter, and the door bump that takes it
-// stays a door with no proof (THE PROOF OF A DOOR of foundation/Transfer.h).
-// The key is closed, so the tie alone refuses it (THE BUILD OF A TOKEN).
+// stays a door with no proof (the proof of a door of foundation/Transfer.h).
+// The key is closed, so the tie alone refuses it (the build of a token).
 //
 // Expected diagnostic: a door is not const and takes no proof, and the
 // diagnostic names the door bump with the unrelated key.

@@ -7,7 +7,7 @@
 // overlaps the output in a different place.  The run holds bit patterns with
 // NaN, infinity, zero of each sign and denormal numbers.  The oracle is walk()
 // of foundation/core/Strided.h with the op on scalars over a copy of the run,
-// in the stated row-major order.  The oracle applies THE NAN RULE of
+// in the stated row-major order.  The oracle applies the NAN rule of
 // Pointwise.h in each step with a test of its own: the canonical NaN for each
 // NaN output of a float or a double, unless the op keeps its bits.  The
 // property compares the two runs bit for bit, each NaN too.  The sizes

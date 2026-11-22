@@ -1,4 +1,4 @@
-// The durable replace of fixy/os/Fs.h (THE DURABLE REPLACE): replace_file_at
+// The durable replace of fixy/os/Fs.h (the durable replace): replace_file_at
 // and replace_file put new bytes in place of a file through a temporary file,
 // a sync and a rename.
 //

@@ -3,7 +3,7 @@
 // record_kernel.h — one unboxed recording kernel per ATen operator, plus the
 // ATen-to-Crucible metadata bridge both recording paths share.
 //
-// WHY AN UNBOXED KERNEL
+// Why an unboxed kernel
 //
 // The boxed fallback in crucible_fallback.cpp catches every operator through
 // one handler, and pays for the reach: the dispatcher builds an IValue stack,
@@ -18,14 +18,14 @@
 // moves that operator to this path and changes nothing else, because both
 // paths build the same TraceRing::Entry from the bridge functions below.
 //
-// WHERE THE SIGNATURE COMES FROM
+// Where the signature comes from
 //
 // decltype(Op::call) is the function type of the declared call: the result
 // and the parameter types. A partial specialization takes it apart into a
 // parameter pack, which is the pack the kernel declares and the pack the
 // dispatcher calls it with.
 //
-// THREE AGREEMENTS
+// Three agreements
 //
 //   1. The declared signature equals Op::schema, the typedef PyTorch's own
 //      generator writes. Catches a fork whose call and schema drift apart.

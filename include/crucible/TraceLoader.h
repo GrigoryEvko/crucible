@@ -30,7 +30,7 @@
 //       uint16   name length, terminator excluded
 //       char     the name itself, not terminated in the file
 //
-// THE LOAD DOOR.  The loader reads the whole file into one buffer, and the
+// Load door.  The loader reads the whole file into one buffer, and the
 // check of CheckedTraceImage reads that image once: the header, each count
 // against the length of the image, and the name table to its end.  A file that
 // ends before a record or a name of its counts, a name length outside its
@@ -40,7 +40,7 @@
 // whole trace or no trace.  The decode then reads only the checked image, and
 // a refused file registers no name.
 //
-// THE FIRST FORMAT.  The loader reads the version 1 too, the format of the
+// First format.  The loader reads the version 1 too, the format of the
 // traces that the vessel recorded first.  Its op records have 80 bytes: the
 // first 80 bytes of an op record of today, with no depth, no tags and no data
 // slots.  Each op then has the depth 0, the tag INT on each scalar slot, and
@@ -209,7 +209,7 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 // the data slots of each op, and a guard word that reads the tag of a data
 // slot but not its value.  A word of an earlier version compares with no live
 // op.  The writer writes this version.  The loader reads it and the first
-// version (THE FIRST FORMAT), and it refuses each other version.
+// version (the first format), and it refuses each other version.
 inline constexpr uint32_t TRACE_FORMAT_VERSION = 7;
 
 // The length of each metadata record.  A count whose records would not fit
@@ -217,7 +217,7 @@ inline constexpr uint32_t TRACE_FORMAT_VERSION = 7;
 inline constexpr uint64_t TRACE_META_BYTES = sizeof(TensorMeta);
 
 // The first version of the format, and the lengths of its op records and its
-// metadata records (THE FIRST FORMAT).
+// metadata records (the first format).
 inline constexpr uint32_t TRACE_FORMAT_FIRST_VERSION = 1;
 inline constexpr std::size_t TRACE_FIRST_OP_BYTES = 80;
 inline constexpr std::size_t TRACE_FIRST_META_BYTES = 168;
@@ -292,7 +292,7 @@ template <CtxFitsTraceLoad Ctx>
 // and an op whose metadata runs past the metadata count gives
 // MetaRunPastCount.  A record of the first version is the first
 // TRACE_FIRST_OP_BYTES bytes of a record of today, so the op takes the depth
-// 0, the tag 0 on each scalar slot and no data slot (THE FIRST FORMAT).
+// 0, the tag 0 on each scalar slot and no data slot (the first format).
 template <std::size_t RecordBytes>
     requires(RecordBytes == sizeof(TraceOpRecord) || RecordBytes == TRACE_FIRST_OP_BYTES)
 [[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
@@ -442,8 +442,8 @@ decode_trace_meta(::fixy::View<std::byte const, sizeof(TensorMeta)> raw) noexcep
 
 namespace detail {
 
-// The offsets of the fields of a metadata record of the first version (THE
-// FIRST FORMAT).  They are fixed numbers, so a change of the layout of
+// The offsets of the fields of a metadata record of the first version (the
+// first format).  They are fixed numbers, so a change of the layout of
 // TensorMeta does not move them.
 inline constexpr std::size_t kFirstMetaSizesAt = 0;
 inline constexpr std::size_t kFirstMetaStridesAt = 64;
@@ -617,14 +617,14 @@ take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
 
 }  // namespace detail
 
-// The format of a trace file: the format of today, or the first format (THE
-// FIRST FORMAT).
+// The format of a trace file: the format of today, or the first format (the
+// first format).
 enum class TraceFormat : uint8_t {
     current,
     first,
 };
 
-// A header that check() accepted (THE LOAD DOOR): the magic CRTR, a version
+// A header that check() accepted (the load door): the magic CRTR, a version
 // that the loader reads, and counts inside their gates.  Only check() makes
 // one.
 class CheckedTraceHeader {
@@ -696,7 +696,7 @@ inline auto CheckedTraceHeader::check(::fixy::View<std::byte const, TRACE_HEADER
     return Checked{checked};
 }
 
-// An image of a trace file that check() accepted (THE LOAD DOOR): a checked
+// An image of a trace file that check() accepted (the load door): a checked
 // header, the records of its counts, and a name table that holds the names of
 // its count and ends at the end of the image.  It borrows the bytes of the
 // image, so it must not outlive them.  Only check() makes one.
@@ -876,7 +876,7 @@ template <std::size_t OpBytes, std::size_t MetaBytes>
 
 }  // namespace detail
 
-// THE WRITER
+// Writer
 //   The encoders below put each field of a record at the offset that the
 //   loader reads it from, as the integer of its width.  So the writer of a
 //   trace and the loader agree field by field.
@@ -980,7 +980,7 @@ enum class TraceNameUse : uint8_t {
     register_names,
 };
 
-// Loads the trace at path (THE LOAD DOOR).  With register_names, the schema
+// Loads the trace at path (the load door).  With register_names, the schema
 // names of the trace go into the global table through schema_table_view after
 // the whole trace decodes, each of them or none.  A name that the table
 // refuses refuses the load (NameCollision, NameTableFull), and an empty view

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // with_session runs its body on the calling thread and closes the session on
 // that thread, so it opens the session under check::Pinned.  The pinned

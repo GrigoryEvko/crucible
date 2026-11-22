@@ -16,7 +16,7 @@
 
 // The width of a group, the mask of a group and the group read the vector
 // extensions of the target.  So they are in the inline namespace
-// CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of foundation/Platform.h), and
+// CRUCIBLE_SIMD_TARGET (the target namespace of foundation/Platform.h), and
 // two units of two targets keep their own BitMask and CtrlGroup.  The names
 // that read no target stay outside it.
 

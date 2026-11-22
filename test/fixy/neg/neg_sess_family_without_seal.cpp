@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Each family of a root of registrations holds a seal for each kind of
 // registration that it holds (fixy/session/Registry.h).  A family with no

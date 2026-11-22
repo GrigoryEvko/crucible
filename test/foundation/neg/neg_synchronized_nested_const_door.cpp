@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A const door of a nested handle still writes the class through the
 // reference member of the handle.  So a const door of a nested class gets no
-// exemption, and the door bump, which takes no proof, refuses (THE NESTED
-// CLASSES of foundation/Transfer.h).
+// exemption, and the door bump, which takes no proof, refuses (the nested
+// classes of foundation/Transfer.h).
 //
 // Expected diagnostic: a door of a nested class can write the class, and the
 // diagnostic names the const door bump of the handle.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A job of run_on_publish_stage gets the doors of the publish stage through
 // its PublishStageView.  A capture of a Ref of the BackgroundThread would give

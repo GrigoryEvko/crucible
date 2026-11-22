@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Each side of mint_forked_channel opens its endpoint on its own thread, runs
 // its body there and closes the End handle there, so it opens the endpoint

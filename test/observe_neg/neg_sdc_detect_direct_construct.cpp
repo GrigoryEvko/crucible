@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_sdc_detector is the only door into a detector, and its gate
 // admits only an Init-row context.  A detector built directly from a

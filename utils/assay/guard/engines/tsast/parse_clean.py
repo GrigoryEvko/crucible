@@ -1,16 +1,16 @@
 """parse-clean — each C++ file of the tree parses with the kit, and the rule fills the tree cache.
 
-THE RULE
+Rule
     Each rule of the engine tsast reads the parse trees of the kit
     (assay.readers.tsast).  A file that does not parse is a gap in each of
     those rules at the same time, so this rule refuses each such file:
       unparseable  a C++ file whose parse gives an error
     The ledger admits the files of tsast.UNPARSEABLE, each with its reason.  A
-    row that admits no finding gives no finding (THE POLICIES of
+    row that admits no finding gives no finding (the policies of
     assay.core.ledger), and a write of the rule removes it.  The scope of the
     rule is each C++ file of the tree, also the files of the roster.
 
-THE FILL
+Fill
     The rule first gives the files of its part to tsast.fill_trees(), which
     parses each file that the tree cache does not hold, with its macro
     bodies.  ctest runs the rule in parts (--part K/N) as the setup tests of
@@ -29,7 +29,7 @@ from assay.readers import tsast
 
 RULE = "parse-clean"
 KIND = "unparseable"
-# The rule reads the part of the call through part_of() (THE PARTS of assay.guard.engines.meta.runner).
+# The rule reads the part of the call through part_of() (the parts of assay.guard.engines.meta.runner).
 READS_PARTS = True
 # The workers of the fill of all parts together: the job count of the package, as tsast gives it to one call.
 FILL_WORKERS = proc.DEFAULT_JOBS

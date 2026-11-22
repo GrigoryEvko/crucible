@@ -1,5 +1,5 @@
-// A counter of many writers has no one writer for a proof to name (THE PROOF
-// OF THE ONE WRITER of fixy/Mutation.h).  An owner makes a proof and gives it
+// A counter of many writers has no one writer for a proof to name (the proof
+// of the one writer of fixy/Mutation.h).  An owner makes a proof and gives it
 // to such a counter, so a publish with no check would race the store of
 // another writer.
 

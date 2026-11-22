@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_crash_well_formed is an alias of the answer of the crash walk, so no
 // user specialization admits a protocol that sends the crash label.

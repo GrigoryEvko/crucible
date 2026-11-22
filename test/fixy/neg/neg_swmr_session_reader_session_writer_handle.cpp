@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_reader_runtime_session runs the reader protocol over a reader
 // handle.  A writer handle cannot load, so the mint refuses it.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A crash-aware endpoint sends the label word of a keyed message, and
 // crashes before the value of its payload.  The label word and the value

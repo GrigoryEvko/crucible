@@ -38,7 +38,7 @@ constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
     return os::read_auxiliary(os::AuxiliaryEntry::page_size).expect("the auxiliary vector gives the size of a page");
 }
 
-// THE FRESH PAGES.  A case that counts the pages with no frame takes an
+// Fresh pages.  A case that counts the pages with no frame takes an
 // anonymous mapping of the kernel.  Each page holds zero, and no page has a
 // frame before a write or a populate.  No allocator touches the mapping, so
 // this holds in each build: the allocator of ThreadSanitizer writes each
@@ -60,7 +60,7 @@ using Anonymous = ::fixy::atom::mmap::with_share<::fixy::mmap::share::Anonymous>
 // The count of the fresh pages of one mapping.
 constexpr std::size_t kFreshPageCount = 8;
 
-// The fresh pages of a case (THE FRESH PAGES), for the permission of the
+// The fresh pages of a case (the fresh pages), for the permission of the
 // case.
 template <class Owner>
 [[nodiscard]] auto map_fresh_pages(Owner const& owner) {
@@ -197,7 +197,7 @@ void huge_page_advice_covers_the_whole_huge_pages() {
 // the error of the door and not of an older kernel.  qemu user mode takes the
 // advice and faults in no page, and the door then gives eopnotsupp.  The
 // emulator also refuses the THP knob, so the probe comes before the knob.
-// fresh holds the fresh pages of the case (THE FRESH PAGES).
+// fresh holds the fresh pages of the case (the fresh pages).
 void populate_faults_in_each_page_of(core::View<std::byte> const fresh) {
     std::size_t const page = page_size();
     core::View<std::byte const> const probe_page = fresh.window(page, page).expect("the page fits in the mapping");

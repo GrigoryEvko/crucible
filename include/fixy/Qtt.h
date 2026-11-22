@@ -55,7 +55,7 @@
 // build, so the wrapper is not trivially copyable: std::bit_cast builds no
 // wrapper from bytes, and an Option of a wrapper takes the owning form.
 //
-// THE CONSUME STATE
+// Consume state
 //     With the bit on, a T that declares a niche (niche<T> of
 //     foundation/core/Choice.h) holds the state in its own bytes: a consumed
 //     wrapper holds the empty value of the niche, which no valid T holds.
@@ -227,8 +227,8 @@ private:
     bool live_ = true;
 };
 
-// A tracked wrapper of T keeps its consume state in the niche of T (THE
-// CONSUME STATE).  Such a wrapper holds no bool beside T, and the base tracker
+// A tracked wrapper of T keeps its consume state in the niche of T (the
+// consume state).  Such a wrapper holds no bool beside T, and the base tracker
 // is the empty one.  The fact is a concept, because niche is an open template
 // and a gate reads it only through a concept (the rule home).
 template <class T>
@@ -350,7 +350,7 @@ private:
     using tracker_ = detail::ConsumeTracker<Grade, T>;
     using niche_state_ = ::foundation::core::detail::ConsumedNiche<T>;
 
-    // THE CONSUME STATE in the niche of T: a consumed wrapper holds the empty
+    // Consume state in the niche of T: a consumed wrapper holds the empty
     // value of the niche, and each other wrapper is live.
     static constexpr bool is_niche_tracked_ = detail::TracksInNiche<T>;
 

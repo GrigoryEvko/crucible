@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Violation: instantiating TransactionLog<N> with N = 1.  A claim in a
 // full ring keeps the slot of the active transaction and the slot of the

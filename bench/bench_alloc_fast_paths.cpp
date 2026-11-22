@@ -1,9 +1,9 @@
 // The fast paths of the heap state of the allocator of the base
-// (foundation/alloc/HeapState.h, THE FAST PATHS) on one core, against the
+// (foundation/alloc/HeapState.h, the fast paths) on one core, against the
 // pinned mimalloc and jemalloc, with the speed of light of the core, and the
 // two measures of the heap table that the owner asked for.
 //
-// THE ROWS
+// Rows
 //   Each row times blocks of 16 bytes, the class 1, and gives the mean of one
 //   operation in a window of kBatch operations.
 //   pair         allocate and release of one block on a warm bin: the two
@@ -22,20 +22,20 @@
 //   of the pinned mimalloc 3.7.0, or je_malloc and je_free of the pinned
 //   jemalloc 5.4.0.  Each call of a reference is a call.
 //
-// THE WINDOWS
+// Windows
 //   Each body runs its whole window in one call, with its calls and its sum
 //   in locals, and per_operation divides the times of the window by its
 //   operations.  The refill and the flush are calls on the unlikely branches
 //   of the loop.  GCC then loads again in each turn each value that a body
 //   holds in memory, also with integer words in the bins, because a call can
-//   write an object whose address left its frame (HOT LOOPS AND COLD CALLS).
+//   write an object whose address left its frame (hot loops and cold calls).
 //   A body of one operation, which the harness calls by reference kBatch
 //   times, thus loaded the heap in each turn.  A local keeps the heap in a
 //   register, as a loop in the body of a heap scope does (the codegen row
 //   heap_scope_pairs).  The row pair, scope opens its scope in each window,
 //   so the read of the cell runs one time for each kBatch pairs.
 //
-// THE SPEED OF LIGHT
+// Speed of light
 //   The clock is 64 dependent adds in one block of code, one cycle each, as
 //   in bench_alloc_owner_lookup.cpp.  The floor row is the loop of the pair
 //   with the work replaced by its minimum: the sum of the cursor in a
@@ -52,10 +52,10 @@
 //   section 2.9.3 (page 28) for the fusion of a compare and its branch.
 //   Section 2.9.8 also limits a window of six macro-ops to four ALU
 //   operations and two branches, and neither limit binds on a row here.
-//   luks-a is an EPYC 9754 (Zen 4c, the Zen 4 architecture).  THE GAPS below
+//   luks-a is an EPYC 9754 (Zen 4c, the Zen 4 architecture).  the gaps below
 //   give each count.
 //
-// THE MEASURES OF THE OWNER
+// Measures of the owner
 //   claim        the first allocation of a new thread: the claim of its heap
 //                in the heap table, the take of a chunk of the window, and the
 //                refill of half a bin.  kClaimThreads threads run one after
@@ -68,7 +68,7 @@
 //                only on madvise, and the page source gives the heap table no
 //                advice, so each page of a heap is a base page
 //
-// THE GAPS
+// Gaps
 //   The counts come from the timed loops of the Release code of this file,
 //   the loop of the first window from rdtsc to rdtscp in each Run::measure,
 //   with each compare and its branch as one macro-op:
@@ -91,7 +91,7 @@
 //   23 instructions, 19 macro-ops a block (a bt and its jb do not fuse): 3.17
 //   cycles of dispatch.  The fixed work of one refill or flush adds the rest.
 //
-// THE COMMAND
+// Command
 //   python3 utils/bin/loop bench bench_alloc_fast_paths
 
 #include <fixy/Core.h>
@@ -158,7 +158,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: a chain of dependent adds gives the clock of the core")
 namespace {
 
-// The dependent adds of one call of the clock body (THE SPEED OF LIGHT).
+// The dependent adds of one call of the clock body (the speed of light).
 constexpr std::uint32_t kClockAdds = 64;
 
 // kClockAdds dependent adds to the value in one block of code, which the
@@ -181,7 +181,7 @@ namespace core = ::foundation::core;
 namespace os = ::foundation::os;
 
 // The operations of one window, the windows of one row, and the windows of
-// the clock (THE ROWS).
+// the clock (the rows).
 constexpr std::size_t kBatch = 1024;
 constexpr std::size_t kSamples = 2048;
 constexpr std::size_t kClockBatch = 256;
@@ -196,7 +196,7 @@ constexpr std::size_t kClaimThreads = 512;
 // The class of each row: 16 bytes.
 constexpr alloc::SizeClass kClass{1};
 
-// The model of the core of luks-a (THE SPEED OF LIGHT): the macro-ops that the
+// The model of the core of luks-a (the speed of light): the macro-ops that the
 // core dispatches in one cycle (AMD 57647, section 2.9.8, page 30), and the
 // three memory operations of the load-store unit in one cycle, at most two of
 // them stores (AMD 57647, section 2.12, page 39).  A compare and
@@ -207,7 +207,7 @@ constexpr double kStoresPerCycle = 2.0;
 // A loop takes at least one cycle for its taken branch.
 constexpr double kFloorRowCycles = 1.0;
 
-// The work of one turn of a timed loop in the Release code (THE GAPS).
+// The work of one turn of a timed loop in the Release code (the gaps).
 struct LoopShape {
     double macro_ops = 0.0;
     double loads = 0.0;
@@ -273,7 +273,7 @@ struct HearthCallCalls {
 };
 
 // The body of the row pair: one window of kBatch allocations, each with its
-// release, and the low word of each block in the sum (THE WINDOWS).
+// release, and the low word of each block in the sum (the windows).
 template <class Calls>
 struct PairLoop {
     Calls calls;
@@ -292,7 +292,7 @@ struct PairLoop {
 };
 
 // Allocates the blocks of one window of COUNT operations into the blocks,
-// with the calls and the blocks in locals (THE WINDOWS).
+// with the calls and the blocks in locals (the windows).
 template <class Calls>
 [[gnu::always_inline]] inline void allocate_window(Calls const calls, Blocks& blocks,
                                                    core::ElementCount count) noexcept {
@@ -390,7 +390,7 @@ void warm_the_bin(Calls calls, Blocks& blocks) noexcept {
 
 // The body of the row pair, scope: one window of kBatch pairs through the
 // typed testing door of foundation/heap/HeapScope.h, each a LocalBlock of the
-// class 1, in the body of a scope that the window opens (THE WINDOWS).  The
+// class 1, in the body of a scope that the window opens (the windows).  The
 // sum of the body names no brand.
 struct ScopePairLoop {
     std::uint32_t sum = 0;
@@ -411,7 +411,7 @@ struct ScopePairLoop {
 
 // The floor of a word that stays in memory: a load, an add and a store of one
 // word in each step, so each load takes the data of the store before it.  The
-// guide gives no latency of such a load (THE SPEED OF LIGHT).
+// guide gives no latency of such a load (the speed of light).
 struct MemoryWordLoop {
     std::uint64_t word = 0;
 
@@ -459,7 +459,7 @@ struct ClockChain {
 }
 
 // The Report of one operation, from the Report of windows of OPERATIONS
-// operations each (THE WINDOWS): each time over the count.  The cv does not
+// operations each (the windows): each time over the count.  The cv does not
 // change.
 [[nodiscard]] bench::Report per_operation(bench::Report window, core::ElementCount operations) noexcept {
     double const count = static_cast<double>(operations.raw());
@@ -592,7 +592,7 @@ void print_ratios(fixy::TextView name, RowSet const& base, RowSet const& referen
     return values.at(::fixy::index<0>());
 }
 
-// The measures of the owner (THE MEASURES OF THE OWNER).
+// The measures of the owner (the measures of the owner).
 void run_owner_measures() {
     static_cast<void>(claim_ticks());
     std::uint64_t const before = resident_bytes();

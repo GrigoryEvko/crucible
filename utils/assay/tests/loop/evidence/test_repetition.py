@@ -24,7 +24,7 @@ NAMES = ("exe_ok", "exe_bad")
 
 
 def round_cases(expect: testing.Expect) -> None:
-    """Hold the rounds on the fake build tree (THE SELECTION, THE ROUNDS, THE BUDGET)."""
+    """Hold the rounds on the fake build tree (the selection, the rounds, the budget)."""
     ctest = ctest_program()
     expect("ASSAY_TEST_CTEST or the pinned ctest of PATH gives the ctest of the fake build tree", bool(ctest))
     if not ctest:

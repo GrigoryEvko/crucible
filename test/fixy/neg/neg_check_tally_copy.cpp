@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A Tally counts the checks of one test.  A copy would count a failure two
 // times, or lose the failures of the copy, so the copy constructor is

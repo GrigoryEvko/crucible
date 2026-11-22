@@ -1,13 +1,13 @@
 """erased-brand — count each spelling of a branded type that names no brand, and let no count increase.
 
-THE BRAND
+Brand
     A brand is a template parameter of a region, view, borrow or permission
     template, and it names one instance.  A spelling that names no brand,
     such as `Permission<Tag>`, gets the erased identity DefaultBrand.  Each
     token of that identity is the same as each other token of its tag.
     foundation/Brand.h gives the rules of a brand.
 
-WHY THE RULE READS THE PARSE TREE
+Why the rule reads the parse tree
     GCC folds a static_assert that is not dependent and a sizeof while it
     parses, and it keeps no use location of a type in them.  Most of the
     spellings of the tree are in a static_assert or a sizeof.  The
@@ -15,7 +15,7 @@ WHY THE RULE READS THE PARSE TREE
     the source, and the rule reads the parse tree of the pinned kit
     (assay.readers.tsast).
 
-THE BRANDED TEMPLATES
+Branded templates
     The rule finds the branded templates in the parse trees of include/, and
     it holds no list of names.  A class template or an alias template is
     branded when a template parameter of it has the name Brand.  It is
@@ -30,7 +30,7 @@ THE BRANDED TEMPLATES
     meaning.  `guard explain erased-brand` prints each branded template and
     the position of its brand (explained()).
 
-THE TEMPLATE THAT A SPELLING NAMES
+The template that a spelling names
     The name lookup of assay.readers.tsast (NameIndex) gives the template:
     the first enclosing scope that declares the name, with the
     using-declarations, the using-directives and the namespace aliases at the
@@ -41,7 +41,7 @@ THE TEMPLATE THAT A SPELLING NAMES
     body has no enclosing scope until a file expands it, and the rule counts
     its spellings in the same way.
 
-THE FILES OF THE SITES
+Files of the sites
     The scope of the row of utils/registry.txt: the headers and the tests of
     the two layers, include/foundation/, include/fixy/, test/foundation/ and
     test/fixy/, and the check files of the two layers in test/layer/checks/.
@@ -50,7 +50,7 @@ THE FILES OF THE SITES
     fixtures of test/foundation/neg/ and test/fixy/neg/ are in the scope too.
     No build compiles them, and the parse tree holds their sites.
 
-THE SITES
+Sites
     A site is a spelling of a branded template with an argument list that
     stops at the brand or before it, or names DefaultBrand.  The rule reads
     each node template_type and template_function that names a branded
@@ -62,7 +62,7 @@ THE SITES
     (tsast.macro_bodies), and it reads the sites of that tree.  An alias
     counts one time, at the alias, and not at each use.
 
-THE KINDS
+Kinds
     erased-brand        a site.  The entity is the full name of the branded
                         template.  A spelling that counts for more than one
                         template names each one, with "or" between them
@@ -72,18 +72,18 @@ THE KINDS
                         `Permission<x` can parse as an expression with the
                         operator <.  The rule does not guess the arguments of
                         such a list
-    ambiguous-template  THE BRANDED TEMPLATES
+    ambiguous-template  the branded templates
     parse               a file of the scope or of include/ that the kit does
                         not parse (the engine runner)
     REFUSED_KINDS holds the last three kinds: no ledger row admits such a
     finding, because the rule cannot count the sites of its file.
 
-THE LEDGER
+Ledger
     utils/ledgers/erased-brand.txt counts the sites of each file and each
     branded template (assay.core.ledger, the policy count).  A file with more
     sites than its row is an error: write the brand, or a generic brand
     parameter.  A file with fewer sites than its row passes, and `guard
-    write --rule erased-brand` writes the lower count (THE POLICIES of
+    write --rule erased-brand` writes the lower count (the policies of
     assay.core.ledger).  The write refuses a count that rose, and `--raise` writes it,
     for a change of the rule that reads more sites.  A ledger with no row
     refuses each site, and that is the end state.
@@ -109,9 +109,9 @@ RULE = "erased-brand"
 SITE_KIND = "erased-brand"
 UNREADABLE_KIND = "unreadable"
 AMBIGUOUS_KIND = "ambiguous-template"
-# The kinds that no ledger row admits (THE KINDS).  assay.guard.engines.meta.runner reads this name.
+# The kinds that no ledger row admits (the kinds).  assay.guard.engines.meta.runner reads this name.
 REFUSED_KINDS = frozenset({UNREADABLE_KIND, AMBIGUOUS_KIND, PARSE_KIND})
-# The directory of the declarations of the branded templates (THE BRANDED TEMPLATES).
+# The directory of the declarations of the branded templates (the branded templates).
 TEMPLATE_SCOPE = ("include/",)
 BRAND_PARAMETER = "Brand"
 ERASED_BRAND = "DefaultBrand"
@@ -273,7 +273,7 @@ def referents(node: tsast.Node, branded: Branded, lookup: Lookup | None) -> tupl
 
 @dataclass(frozen=True, slots=True)
 class Site:
-    """One site (THE SITES): its node, the name that it spells and its entity."""
+    """One site (the sites): its node, the name that it spells and its entity."""
 
     node: tsast.Node
     name: str
@@ -281,7 +281,7 @@ class Site:
 
 
 def sites_of(tree: tsast.Tree, branded: Branded, lookup: Lookup | None) -> list[Site]:
-    """Return each site of one tree (THE SITES).
+    """Return each site of one tree (the sites).
 
     Complexity: linear in the nodes of the tree.
 
@@ -311,7 +311,7 @@ def sites_of(tree: tsast.Tree, branded: Branded, lookup: Lookup | None) -> list[
 def unreadable_name(body: tsast.MacroBody, branded: Branded) -> str | None:
     """Return a branded name that a macro body spells before `<` more times than its parse holds its nodes, or None.
 
-    A body that does not parse holds no node.  Each such pair of tokens in it then counts (THE KINDS).
+    A body that does not parse holds no node.  Each such pair of tokens in it then counts (the kinds).
     Complexity: linear in the tokens of the body.
     """
     tokens = tsast.pp_tokens(body.text, body.first_row)

@@ -1,18 +1,18 @@
 """measurement — run each bench of a build in a time budget, and add each run that counts to its evidence.
 
-THE SELECTION
+Selection
     run() reads the items of the class `bench-runs` of one build: each bench
-    target of its code model (assay.loop.evidence.items, THE KEYS).  The key
+    target of its code model (assay.loop.evidence.items, the keys).  The key
     of a bench holds its program and the host.  run() selects the pending
     items of the nightly target, or with is_release of the release target
-    (THE PENDING ITEMS of that module).  A bench whose x86-64 level is above
+    (the pending items of that module).  A bench whose x86-64 level is above
     the level of the host does not run, and a line names the two levels
-    (THE CHECK of assay.core.x86level).
+    (the check of assay.core.x86level).
 
-THE RUN
+Run
     A run is one run of the program of a bench on the cores that claimed() of
     assay.loop.bench holds for that run, one core for each thread that the
-    bench states (THE CORES OF A RUN of that module).  The placement is
+    bench states (the cores of a run of that module).  The placement is
     taskset on cores of the reserved CPUs of the host that no other bench
     holds.  When the host reserves its CPUs with a partition, the run also
     starts in the slice of the partition.  The program gets the clean
@@ -20,12 +20,12 @@ THE RUN
     JSON_VARIABLE of assay.readers.bench, and it then prints its reports as a
     JSON tail.  The runner reads the load of the host and the steal time of
     each core before and after the run (assay.loop.history, others_share(),
-    and THE STEAL TIME of assay.loop.bench).  A run with steal time adds its
+    and the steal time of assay.loop.bench).  A run with steal time adds its
     lines to the record of that section.  Only one run occurs at a time,
     because two runs at the same time change the times of the two.
       * A run counts when its status is 0, the host was quiet, the cores lost
         no time to steal, and no report has a pause over the bound of the
-        harness (THE PAUSE CHECK of bench/bench_harness.h).  The host is
+        harness (the pause check of bench/bench_harness.h).  The host is
         quiet at QUIET_OTHERS_PCT of assay.loop.history.  The run adds one
         sample of the quantity 1.  A bench that does not use the reports of
         the harness prints no JSON tail.  Its run counts on a quiet host.
@@ -47,7 +47,7 @@ THE RUN
     other processes and the cores.  It also tells how the host reserves the
     cores, and the slice of its partition.
 
-THE BUDGET
+Budget
     A run starts only when the time that the call used, with the time of one
     run of the bench, stays in the budget.  The time of one run is the mean
     wall time of the samples of the record, or FIRST_RUN_S for a bench with
@@ -83,11 +83,11 @@ from assay.readers import bench as bench_reader
 from assay.readers import cmake as cmake_reader
 
 # The largest coefficient of variation and the largest spread of the windows of a report of a run with no mark, and the
-# mark of a run above it (THE RUN).
+# mark of a run above it (the run).
 RERUN_BOUND = 0.05
 AGAIN_MARK = "run again"
 # The time of one run of a bench with no sample.  The time limit of a run is a multiple of the time of one run, with a
-# floor (THE BUDGET).
+# floor (the budget).
 FIRST_RUN_S = 60.0
 LIMIT_FACTOR = 10.0
 LIMIT_FLOOR_S = 600.0
@@ -97,7 +97,7 @@ PROGRAM = "loop evidence run measurement"
 class Measured:
     """One selected bench: its name, its program, its key, its evidence, its target, the time of one run and its cores.
 
-    The runner changes the evidence and the time of one run after each run (THE RUN).  The class is then a state and
+    The runner changes the evidence and the time of one run after each run (the run).  The class is then a state and
     not a record.
     """
 
@@ -165,14 +165,14 @@ class Outcome:
 
 
 def run_time(record: evidence_store.Record | None) -> float:
-    """Return the mean wall time of the samples of a record, or FIRST_RUN_S when it has no sample (THE BUDGET)."""
+    """Return the mean wall time of the samples of a record, or FIRST_RUN_S when it has no sample (the budget)."""
     if record is None or not record.samples:
         return FIRST_RUN_S
     return sum(sample.wall_s for sample in record.samples) / len(record.samples)
 
 
 def run_once(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> Ran:
-    """Run the program of a bench one time on its placement, and read the load of the host around it (THE RUN)."""
+    """Run the program of a bench one time on its placement, and read the load of the host around it (the run)."""
     environment = dict(test_launcher.canonical_environment(proc.environment()))
     environment[bench_reader.JSON_VARIABLE] = "1"
     words = where.command((str(path),))
@@ -203,7 +203,7 @@ def run_once(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> R
 
 
 def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
-    """Return the judgment of one run: a run that counts, a run that does not count, or a failure (THE RUN)."""
+    """Return the judgment of one run: a run that counts, a run that does not count, or a failure (the run)."""
     share = "" if ran.others_pct is None else f"{ran.others_pct:.1f}"
     stolen = "" if ran.steal_ms is None else f"{ran.steal_ms:.0f}"
     facts: tuple[tuple[str, str], ...] = (*core_facts, ("others_pct", share), ("steal_ms", stolen))
@@ -237,7 +237,7 @@ def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
 
 
 def again_facts(largest_cv: float, spread: float) -> tuple[tuple[str, str], ...]:
-    """Return the facts of the mark AGAIN_MARK of a run that counts, or no fact (THE RUN).
+    """Return the facts of the mark AGAIN_MARK of a run that counts, or no fact (the run).
 
     Args:
         largest_cv: The largest coefficient of variation of the reports of the run
@@ -254,7 +254,7 @@ def again_facts(largest_cv: float, spread: float) -> tuple[tuple[str, str], ...]
 
 
 def record_run(store: evidence_store.EvidenceStore, measured: Measured, ran: Ran, verdict: Judged) -> bool:
-    """Add the sample or keep the failure of one run (THE RUN), and return True for a failure."""
+    """Add the sample or keep the failure of one run (the run), and return True for a failure."""
     rule = targets.MEASUREMENT.rule
     if verdict.failure:
         status = "limit" if ran.completed is None else str(ran.completed.exit)
@@ -276,7 +276,7 @@ def record_run(store: evidence_store.EvidenceStore, measured: Measured, ran: Ran
 def selection(
     programs: Sequence[evidence_items.Program], store: evidence_store.EvidenceStore, target: float, names: Sequence[str]
 ) -> list[Measured]:
-    """Return each bench that the runs run (THE SELECTION).
+    """Return each bench that the runs run (the selection).
 
     Complexity: one read of the store for each bench with a key.
     """
@@ -300,7 +300,7 @@ def level_selection(chosen: list[Measured], build_dir: Path) -> list[Measured]:
     """Return the selected benches that the host can run, and write a line for each bench above the host.
 
     A bench whose x86-64 level is above the level of the host does not start, because a check in the program can run
-    after code of its level (THE CHECK of assay.core.x86level).  Complexity: one read of the needs of the build.
+    after code of its level (the check of assay.core.x86level).  Complexity: one read of the needs of the build.
 
     Raises:
         x86level.LevelError: If the needs of the build or the level of the host cannot be read
@@ -318,7 +318,7 @@ def level_selection(chosen: list[Measured], build_dir: Path) -> list[Measured]:
 def next_measured(chosen: Sequence[Measured], remaining_s: float) -> Measured | None:
     """Return the pending bench with the minimum runs, then the minimum evidence, of the benches with a run that fits.
 
-    Returns None when no pending bench fits (THE BUDGET).
+    Returns None when no pending bench fits (the budget).
     """
     fitting = [measured for measured in chosen if measured.is_pending and measured.run_s <= remaining_s]
     return min(fitting, key=lambda measured: (measured.runs_now, measured.value, measured.name), default=None)
@@ -336,7 +336,7 @@ def run_benches(
 
     `place` holds the cores of one run for its block: claimed() of assay.loop.bench, or the planted placement of a
     test.  `run_one` runs one bench: run_once(), or the planted run of a test.  Complexity: one run of a program for
-    each run (THE BUDGET).
+    each run (the budget).
 
     Raises:
         bench.BenchError: If `place` refuses the claim of a run
@@ -371,9 +371,9 @@ def run_benches(
 
 
 def run(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str], jobs: int, target: float) -> ExitCode:
-    """Select the benches of a build, run them in the budget, and report (THE SELECTION, THE RUN).
+    """Select the benches of a build, run them in the budget, and report (the selection,the run).
 
-    `jobs` has no effect: only one run occurs at a time (THE RUN).
+    `jobs` has no effect: only one run occurs at a time (the run).
 
     Returns:
         OK when no run found a failure, FINDINGS when one did, MISSING_INPUT when the build cannot be read

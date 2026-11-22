@@ -631,7 +631,7 @@ private:
     [[maybe_unused]] ::fixy::FixedArray<uint8_t, 7> pad_{};
     // The count of completed iterations only goes up, and it is never reset.
     // Its type starts it at zero and steps it by one, so no bump can wrap it
-    // (THE WIDE COUNTER of fixy/Mutation.h).
+    // (the wide counter of fixy/Mutation.h).
     ::fixy::WideMonotonic<1> compiled_iterations_ = ::fixy::mint_wide_monotonic<1>();  // offset 80
     // The tag records that the background worker of the owning foreground
     // published this region. A region allocated somewhere else has a

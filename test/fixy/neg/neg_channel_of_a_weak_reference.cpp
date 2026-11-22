@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A producer can push a value and end its frame before the consumer pops it
 // on another thread.  A weak reference to an int of the frame of the producer

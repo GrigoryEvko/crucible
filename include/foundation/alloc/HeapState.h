@@ -2,20 +2,20 @@
 
 // The state of a heap of the allocator of the base, its bins and its fast
 // paths, the sentinel heap, and the cell of each thread that names its heap
-// (THE CELL).
+// (the cell).
 //
 //   HeapState          the state of one heap: the biased chunk map of its
 //                      window, the owner entry of its own chunks, a bin for
 //                      each class, and the slab heaps of its slabs, on cache
 //                      lines of its own
-//   heap.allocate(c)   one block of the class c from its bin (THE FAST PATHS)
+//   heap.allocate(c)   one block of the class c from its bin (the fast paths)
 //   heap.release(c, b) the block b of the class c back into its bin
 //   heap.census()      the counts of the chunks, slabs and blocks of the heap
-//                      (THE CENSUS, a testing door)
+//                      (the census, a testing door)
 //   heap.flush_bins()  gives each block of each bin back to its slab
 //   bin_stacks_at(s)   the address of the bin stacks of the heap whose slot
-//                      starts at s (THE BINS)
-//   sentinel_heap_     the heap of a thread before its claim (THE SENTINEL)
+//                      starts at s (the bins)
+//   sentinel_heap_     the heap of a thread before its claim (the sentinel)
 //   tls_heap_          the cell of each thread: the address of its heap
 //   current_heap()     the heap of the calling thread: one read of the cell
 //   is_sentinel(heap)  true for the sentinel heap
@@ -23,7 +23,7 @@
 //                      the heap of the calling thread after its claim
 //   thread_heap()      the same heap, with the claim on a cold branch
 //
-// THE BINS
+// Bins
 //   A bin is a stack of the addresses of free blocks of one class: three
 //   pointers into the bin stacks of the heap.  The stack of a bin is the run
 //   [full_begin, empty_end), and its blocks are the run [head, empty_end).
@@ -43,7 +43,7 @@
 //   the stacks stay the zero pages of the kernel until the first refill or
 //   release of their class.
 //
-// THE FAST PATHS
+// Fast paths
 //   Each fast path is inline, with one compare for each branch, because
 //   -fharden-compares doubles a compound condition (design 6, PF2):
 //     allocate  load head, compare it with empty_end, branch to the cold
@@ -61,7 +61,7 @@
 //   a chunk of the window.  The flush of a full bin gives back its older
 //   half, so the hot top of the stack stays.  It takes the blocks one slab
 //   at a time and writes each word of a bitmap, the summary and the free
-//   count of a slab one time (THE GIVE-BACK OF A RUN of Flush.cpp).  It ends
+//   count of a slab one time (the give-back of a run of Flush.cpp).  It ends
 //   the process when an address is outside the window of the heap, when its
 //   chunk has another owner, when its slab holds another class, when it is
 //   not the first byte of a slot, and when its slot is free already (a
@@ -73,7 +73,7 @@
 //   so each slab heap holds only the slabs of its state.  A chunk with no
 //   live block stays with the heap: the node lists give chunks back.
 //
-// THE CENSUS
+// Census
 //   census() walks the chunks of the window that the heap owns, and the
 //   slabs of each, and it counts the live slots, the empty, partial and full
 //   slabs, the slabs of each slab heap and the blocks in the bins.  A test
@@ -82,7 +82,7 @@
 //   load, also an entry that another heap writes, so its counts hold only
 //   when no other thread takes a chunk during the call.
 //
-// THE CELL
+// Cell
 //   tls_heap_ is a thread_local with the initial-exec model and constinit, so
 //   a read is the load of its offset and one load through the thread pointer,
 //   with no call of an init function of the TLS.  Its start value is the
@@ -92,7 +92,7 @@
 //   test/test_process_wide_across_libraries.cpp holds the start value in two
 //   libraries.  The cell adds 8 bytes to the static TLS of each library.
 //
-// THE SENTINEL
+// Sentinel
 //   The sentinel starts as zero bytes: no chunk map, the owner entry none,
 //   which no chunk holds, and three null pointers in each bin, so each bin
 //   is empty and full at once.  The first allocation and the first release
@@ -172,7 +172,7 @@ inline constexpr BinStackLayout kBinStacks = build_bin_stacks_();
 
 }  // namespace detail
 
-// The bytes of the bin stacks of one heap: 1,720 addresses (THE BINS).
+// The bytes of the bin stacks of one heap: 1,720 addresses (the bins).
 inline constexpr std::size_t kBinStackBytes = std::size_t{detail::kBinStacks.first[kSizeClassCount + 1]} * 8;
 
 // True for a class with a slab, 1 to 52: the classes that the refill and the
@@ -181,7 +181,7 @@ inline constexpr std::size_t kBinStackBytes = std::size_t{detail::kBinStacks.fir
     return is_size_class(size_class) && static_cast<std::uint8_t>(size_class) <= kLastMediumClass;
 }
 
-// The counts of one heap (THE CENSUS).
+// The counts of one heap (the census).
 class HeapCensus final {
 public:
     constexpr HeapCensus() noexcept = default;
@@ -231,7 +231,7 @@ private:
     ::foundation::core::ElementCount slabs_with_wrong_bitmap_{std::size_t{0}};
 };
 
-// The state of one heap (THE CELL).  The map word is at offset 0 and the own
+// The state of one heap (the cell).  The map word is at offset 0 and the own
 // entry at offset 8, the shape of the free test of the design probe.  A state
 // lives at its place, so it does not copy or move.
 class alignas(64) HeapState final {
@@ -247,8 +247,8 @@ public:
     // The owner entry of the chunks of this heap, or none for the sentinel.
     [[nodiscard]] constexpr ChunkOwner self() const noexcept { return self_; }
 
-    // One block of a class with a slab, from the bin of the class (THE FAST
-    // PATHS).  Complexity: O(1), six instructions with a constant class.  An
+    // One block of a class with a slab, from the bin of the class (the fast
+    // paths).  Complexity: O(1), six instructions with a constant class.  An
     // empty bin takes the cold refill.  The check of the class is a fatal
     // invariant, because the cold bodies of the static library call the fast
     // paths, and it folds away for a constant class.
@@ -263,7 +263,7 @@ public:
         return *head;
     }
 
-    // A block of the class back into the bin of the class (THE FAST PATHS).
+    // A block of the class back into the bin of the class (the fast paths).
     // The block came from allocate of this heap with the same class.
     // Complexity: O(1), six instructions with a constant class.  A full bin
     // takes the cold flush.
@@ -280,7 +280,7 @@ public:
         bin.head = head;
     }
 
-    // The counts of the heap (THE CENSUS).  Only the owner thread calls it.
+    // The counts of the heap (the census).  Only the owner thread calls it.
     // Complexity: linear in the chunks of the window that claims took, and in
     // the slabs of the heap.
     [[nodiscard, gnu::cold, gnu::noinline]] HeapCensus census() const noexcept;
@@ -309,7 +309,7 @@ public:
 private:
     friend struct detail::HeapStateDoor;
 
-    // One bin (THE BINS).  The three pointers of a new bin are null, so it
+    // One bin (the bins).  The three pointers of a new bin are null, so it
     // is empty and full at once.
     struct Bin final {
         AddressWord* head = nullptr;
@@ -329,8 +329,8 @@ private:
     // unlikely branch.
     [[gnu::noinline]] void flush_(SizeClass size_class, AddressWord block) noexcept;
 
-    // Takes up to WANTED free slots of the partial slab SLAB of the class,
-    // lowest first, into the words from FIRST, and gives the count.  A slab
+    // Takes up to wanted free slots of the partial slab of the class,
+    // lowest first, into the words from first, and gives the count.  A slab
     // that has no free slot after it leaves the partial heap (Refill.cpp).
     [[nodiscard]] ::foundation::core::ElementCount take_slots_(SizeClass size_class, SlabLink slab, AddressWord* first,
                                                                ::foundation::core::ElementCount wanted) noexcept;
@@ -344,9 +344,9 @@ private:
     [[nodiscard]] SlabLink start_small_unit_() noexcept;
     [[nodiscard]] SlabLink start_medium_chunk_() noexcept;
 
-    // Gives the COUNT blocks of the class from FIRST back to their slabs, one
-    // slab at a time, with the checks of THE FAST PATHS, and uses the words
-    // of the run as scratch (THE GIVE-BACK OF A RUN of Flush.cpp).
+    // Gives the count blocks of the class from first back to their slabs, one
+    // slab at a time, with the checks of the fast paths, and uses the words
+    // of the run as scratch (the give-back of a run of Flush.cpp).
     void give_back_run_(SizeClass size_class, AddressWord* first, ::foundation::core::ElementCount count) noexcept;
 
     BiasedChunkMap chunk_map_{};
@@ -367,7 +367,7 @@ private:
     // class.
     Bin bins_[kSizeClassCount + 1]{};
     // The partial slabs of each class with a slab, at the index of the
-    // class, and the empty slabs of each slab kind (THE SLAB HEAP of
+    // class, and the empty slabs of each slab kind (the slab heap of
     // foundation/alloc/SlabHeap.h).
     SlabHeap partial_[kLastMediumClass + 1]{};
     SlabHeap empty_small_{};
@@ -378,16 +378,16 @@ private:
 };
 
 // The address of the bin stacks of the heap whose slot of the heap table
-// starts at SLOT: the first byte after its HeapState (THE BINS).  This is the
+// starts at slot: the first byte after its HeapState (the bins).  This is the
 // one door of their place.  Complexity: O(1).
 [[nodiscard]] constexpr AddressWord bin_stacks_at(AddressWord slot) noexcept {
     return AddressWord{static_cast<std::uint64_t>(slot) + sizeof(HeapState)};
 }
 
-// The heap of each thread before its claim (THE SENTINEL).
+// The heap of each thread before its claim (the sentinel).
 CRUCIBLE_PROCESS_WIDE inline constinit HeapState sentinel_heap_{};
 
-// The cell of each thread (THE CELL).
+// The cell of each thread (the cell).
 CRUCIBLE_PROCESS_WIDE
 [[gnu::tls_model("initial-exec")]] inline constinit thread_local HeapState* tls_heap_ = &sentinel_heap_;
 
@@ -401,7 +401,7 @@ CRUCIBLE_PROCESS_WIDE
 // takes a fresh heap of the heap table of the root and writes the cell, and
 // a thread that holds a heap gets it back.  The cold path of each fast path
 // that meets the sentinel calls it.  src/foundation/alloc/Root.cpp holds the
-// body (THE HEAP TABLE of foundation/alloc/Root.h).
+// body (the heap table of foundation/alloc/Root.h).
 [[nodiscard, gnu::cold, gnu::noinline]] HeapState& claim_thread_heap() noexcept;
 
 // The heap of the calling thread after its claim: one read of the cell, and

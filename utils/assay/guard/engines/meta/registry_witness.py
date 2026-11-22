@@ -1,10 +1,10 @@
 """The part witness of the rule registry: each rule has its plants in the tree, and each plants directory has a rule.
 
-THE PART
+Part
     The plants of the rule ID are in utils/plants/ID/: a minimum of one plant,
     whose name starts with "plant-", and one control, whose name starts with
     "control-".  A plant can also start with "warning-" or "skip-"
-    (assay.guard.engines.meta.runner, THE WITNESS).  `guard witness --rule ID`
+    (assay.guard.engines.meta.runner, the witness).  `guard witness --rule ID`
     shows that each plant is red and each control is green, and this part
     shows that they are in the tree.  A rule with no plant then fails.  The
     part refuses:

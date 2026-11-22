@@ -1,7 +1,7 @@
 """session-oracle — the tests of test/session_oracle/ are the tests that its golden file emits.
 
-THE RULE
-    The rule calls problems() of assay.oracle.runner (THE CHECK of that
+Rule
+    The rule calls problems() of assay.oracle.runner (the check of that
     module).  The runner emits the tests of test/session_oracle/golden.csv
     again, and it compares them with the files of the tree.  It uses no
     oracle, no compiler and no build directory.  The rule gives:
@@ -20,7 +20,7 @@ THE RULE
     golden file again from the oracles.  The group `oracle` of `guard
     selftest` compiles the emitted tests, and plants a wrong row in each.
 
-THE PLANTS
+Plants
     A plant holds a planted golden file test/session_oracle/golden.csv and
     the file oracle.txt, in the rows grammar of assay.core.rows:
 
@@ -53,7 +53,7 @@ TEST_DIR = Path("test") / "session_oracle"
 
 
 def findings(context: BuildContext) -> list[check_report.Finding]:
-    """Give one error for each problem of the emitted tests of the tree, and a plain line for each bound (THE RULE)."""
+    """Give one error for each problem of the emitted tests of the tree, and a plain line for each bound (the rule)."""
     found: list[check_report.Finding] = []
     for problem in runner.problems(context.root):
         if problem.is_error:
@@ -80,7 +80,7 @@ def test_file(directory: Path, row: rows_grammar.Row) -> Path:
 
 
 def read_oracle(root: Path) -> None:
-    """Do the rows of oracle.txt in their sequence (THE PLANTS).
+    """Do the rows of oracle.txt in their sequence (the plants).
 
     Complexity: one emission for each emit row, and linear in the other rows.
 
@@ -115,7 +115,7 @@ def read_oracle(root: Path) -> None:
 
 
 def plant_context(plant: Path, scratch: Path) -> BuildContext:
-    """Copy a plant, do the rows of its oracle.txt, and return its context with no build directory (THE PLANTS).
+    """Copy a plant, do the rows of its oracle.txt, and return its context with no build directory (the plants).
 
     Raises:
         NotApplicable: If oracle.txt does not obey its rows

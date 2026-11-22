@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: a designated initializer builds the device of the host with the
 // index 0.  TensorDevice is no aggregate, so no initializer list skips its

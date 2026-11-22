@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A background context mints the pipeline, and the foreground thread
 // tries to run it.  A pipeline can move to another thread after the mint,

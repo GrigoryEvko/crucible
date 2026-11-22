@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A telemetry history stores its indices in uint16_t.  A window too
 // large for that carrier stops at a static assertion rather than wrap.

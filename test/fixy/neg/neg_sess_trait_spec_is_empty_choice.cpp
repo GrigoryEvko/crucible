@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_empty_choice is an alias template over the empty-choice algebra of
 // the registry, so no user specialization admits a choice with no branch.

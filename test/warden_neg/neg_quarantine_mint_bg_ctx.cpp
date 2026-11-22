@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_quarantine_policy refuses a background context.  A policy holds
 // the quarantine state of a process, so only a context that owns the

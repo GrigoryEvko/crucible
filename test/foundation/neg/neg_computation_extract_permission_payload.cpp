@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // HS14 fixture 2 of 2 for the authority relation in
 // foundation/effects/Computation.h.
@@ -48,7 +48,7 @@ int main() {
     RegionToken token = fp::mint_singleton_root<RegionTag>();
     PureOverPermission pure = PureOverPermission::mint_computation(std::move(token));
 
-    // THE LOAD-BEARING LINE: must FAIL to compile.  A pure-typed carrier
+    // The load-bearing line: must fail to compile.  A pure-typed carrier
     // must not hand out the region authority it is carrying.
     auto escaped = pure.extract();
     (void)escaped;

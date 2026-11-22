@@ -1,16 +1,16 @@
 """levels — build the vessel pair of each x86-64 level, install one level root, and run the vessel tests at each level.
 
-THE LEVELS
+Levels
     The engine ships one pair of vessel libraries for each x86-64 level, v1 to
-    v4, in one level root (THE LEVEL ROOT of vessel/torch/CMakeLists.txt).  The
+    v4, in one level root (the level root of vessel/torch/CMakeLists.txt).  The
     loader of the vessel picks the highest level of the host from the root
-    (THE LEVEL OF A LIBRARY of vessel/torch/crucible_native.py).
+    (the level of a library of vessel/torch/crucible_native.py).
     LEVEL_PRESETS names the configure preset of each level, release-v1 to
     release-v4.  The command reads FLAGS_VARIABLE and LEVEL_VARIABLE of each
     one from the presets file, so the flags of a level have one home, and the
     command makes no preset of its own.
 
-THE STEPS
+Steps
     For each level of LEVEL_PRESETS, in their sequence, the command does these
     steps:
       1. It configures the build directory BUILD_PREFIX-vN of the tree from the
@@ -26,7 +26,7 @@ THE STEPS
          call removes the root first, so the root holds only the libraries of
          this call.
     Then it reads the level of the host through the level probe of the root,
-    with no request (THE LEVEL OF A HOST of assay.core.x86level).  So
+    with no request (the level of a host of assay.core.x86level).  So
     REQUEST_VARIABLE in the environment of the call changes no step.  For each
     level at or below the level of the host:
       4. It runs the vessel tests of the build of the level, `ctest --test-dir
@@ -42,9 +42,9 @@ THE STEPS
     level of the host.
     The log of each step is ROOT_DIRECTORY/LOGS/vN-STEP.log.
 
-THE JOBS
+Jobs
     A lease of the slot pool in a process that holds the lock of the heavy
-    steps, or in a child of it, waits for that lock for ever (THE LOCK of
+    steps, or in a child of it, waits for that lock for ever (the lock of
     assay.loop.heavy).  So the command takes a lease only in a call by hand.
     share_of() reads the environment of the call, and Share gives the three
     ways:
@@ -55,11 +55,11 @@ THE JOBS
       JOBSERVER  MAKEFLAGS names the FIFO jobserver of the caller, such as
                  `loop heavy -j N -- loop levels`.  The build gets no -j, and
                  ninja obeys the jobserver only with no -j.  The test run
-                 keeps -j N, and ctest obeys the jobserver also with -j (THE
-                 JOBSERVER of assay.loop.affected)
+                 keeps -j N, and ctest obeys the jobserver also with -j (the
+                 jobserver of assay.loop.affected)
       STEP       a step of an entry, which holds the exclusive lock with
                  STEP_VARIABLE of assay.loop.heavy and gives no jobserver
-                 (THE WORK of assay.loop.entry).  Each build and each test run
+                 (the work of assay.loop.entry).  Each build and each test run
                  gets -j with the job count that the memory gives the jobs of
                  the vessel (jobs_for_memory() of assay.loop.heavy, with the
                  memory of one job of the vessel of assay.loop.gate), with the
@@ -89,15 +89,15 @@ from assay.loop import gate, heavy
 from assay.readers import cmake as cmake_reader
 
 PROGRAM = "loop levels"
-# The configure preset of each level, in the sequence of the levels (THE LEVELS).
+# The configure preset of each level, in the sequence of the levels (the levels).
 LEVEL_PRESETS = ("release-v1", "release-v2", "release-v3", "release-v4")
-# The cache variables of a level preset that the build of its vessel pair takes (THE STEPS, step 1).
+# The cache variables of a level preset that the build of its vessel pair takes (the steps, step 1).
 FLAGS_VARIABLE = "CMAKE_CXX_FLAGS"
 LEVEL_VARIABLE = "CRUCIBLE_X86_LEVEL"
 # The start of the name of the build directory of a level, and the directory of the level root, in the tree.
 BUILD_PREFIX = "build-vessel"
 ROOT_DIRECTORY = "build-vessel-levels"
-# The directory of the root that the loader reads, below the install prefix (THE LEVEL ROOT of
+# The directory of the root that the loader reads, below the install prefix (the level root of
 # vessel/torch/CMakeLists.txt), and the directory of the logs of a call.
 ROOT_LIBRARIES = Path("lib") / "crucible"
 LOGS = "logs"
@@ -105,7 +105,7 @@ LOGS = "logs"
 ROOT_VARIABLE = "CRUCIBLE_LEVEL_ROOT"
 # The component of the install of the vessel pair and of the probe (vessel/torch/CMakeLists.txt).
 COMPONENT = "vessel"
-# The steps of a level, in their sequence, for the names of the logs (THE STEPS).
+# The steps of a level, in their sequence, for the names of the logs (the steps).
 CONFIGURE, BUILD, INSTALL, TEST = "configure", "build", "install", "test"
 
 # A runner of one command: its words, its environment and the path of its log.  It returns the exit of the command.
@@ -117,7 +117,7 @@ class LevelsError(Exception):
 
 
 class Share(enum.Enum):
-    """The way that the builds and the test runs of a call get their jobs (THE JOBS)."""
+    """The way that the builds and the test runs of a call get their jobs (the jobs)."""
 
     LEASE = "lease"
     JOBSERVER = "jobserver"
@@ -134,7 +134,7 @@ class State(enum.StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Level:
-    """One level of THE LEVELS: its word, the flags of its preset and the build directory of its vessel pair."""
+    """One level of the levels: its word, the flags of its preset and the build directory of its vessel pair."""
 
     word: str
     flags: str
@@ -156,7 +156,7 @@ class Outcome:
 
 
 def read_levels(root: Path) -> list[Level]:
-    """Return each level of LEVEL_PRESETS from the presets file of a tree (THE LEVELS).
+    """Return each level of LEVEL_PRESETS from the presets file of a tree (the levels).
 
     Raises:
         LevelsError: If a level preset is missing, has no flags, or names a level that is not its own
@@ -183,7 +183,7 @@ def read_levels(root: Path) -> list[Level]:
 
 
 def share_of(environment: Mapping[str, str]) -> Share:
-    """Return the share of a call from its environment (THE JOBS).
+    """Return the share of a call from its environment (the jobs).
 
     A FIFO jobserver in MAKEFLAGS decides first, because `loop heavy` gives its command MAKEFLAGS and STEP_VARIABLE.
     """
@@ -197,7 +197,7 @@ def share_of(environment: Mapping[str, str]) -> Share:
 def heavy_words(root: Path, jobs: int, share: Share, words: Sequence[str]) -> list[str]:
     """Return the words of a heavy command: the command behind `loop heavy -j N` in a call by hand, else the command.
 
-    THE JOBS gives the rule.
+    The jobs section gives the rule.
     """
     if share is not Share.LEASE:
         return list(words)
@@ -205,10 +205,10 @@ def heavy_words(root: Path, jobs: int, share: Share, words: Sequence[str]) -> li
 
 
 def level_commands(level: Level, root: Path, jobs: int, share: Share) -> list[tuple[str, list[str]]]:
-    """Return the steps 1 to 3 of one level: the name of each step and its words (THE STEPS).
+    """Return the steps 1 to 3 of one level: the name of each step and its words (the steps).
 
     A build in a step gets -j with the job count of the step.  Each other build gets no -j, so it takes the jobserver
-    of the lease of `loop heavy` or of the caller (THE JOBS).
+    of the lease of `loop heavy` or of the caller (the jobs).
     """
     build_jobs = ["-j", str(jobs)] if share is Share.STEP else []
     configure = [
@@ -230,7 +230,7 @@ def level_commands(level: Level, root: Path, jobs: int, share: Share) -> list[tu
 
 
 def test_command(level: Level, root: Path, jobs: int, share: Share) -> tuple[list[str], dict[str, str]]:
-    """Return the words and the variables of the run of the vessel tests of one level (THE STEPS, step 4)."""
+    """Return the words and the variables of the run of the vessel tests of one level (the steps, step 4)."""
     words = ["ctest", "--test-dir", str(level.build), "-L", f"^{gate.VESSEL_LABEL}$", "--no-tests=error"]
     words += ["--output-on-failure", "-j", str(jobs)]
     variables = {
@@ -243,7 +243,7 @@ def test_command(level: Level, root: Path, jobs: int, share: Share) -> tuple[lis
 def run_command(words: Sequence[str], variables: Mapping[str, str], log: Path) -> int:
     """Run one command in the tree with its two outputs in a log, and return its exit (the Execute of a call).
 
-    The command gets no BUILD_PARALLEL_VARIABLE (THE JOBS).  A command past BUILD_S of assay.core.proc gives the exit
+    The command gets no BUILD_PARALLEL_VARIABLE (the jobs).  A command past BUILD_S of assay.core.proc gives the exit
     TOOL_FAILED, as a program that cannot start does, and the log gives the reason.
     """
     environment = proc.environment(dict(variables))
@@ -271,13 +271,13 @@ def run_levels(
     execute: Execute = run_command,
     host_of: Callable[[Path], int] | None = None,
 ) -> list[Outcome]:
-    """Build, install and test each level, and return the outcome of each one (THE STEPS).
+    """Build, install and test each level, and return the outcome of each one (the steps).
 
     Args:
         root: The source tree
         levels: The levels of read_levels()
-        jobs: The job count of each build and each test run (THE JOBS)
-        share: The way that the builds and the test runs get their jobs (THE JOBS)
+        jobs: The job count of each build and each test run (the jobs)
+        share: The way that the builds and the test runs get their jobs (the jobs)
         execute: The runner of one command
         host_of: The reader of the level of the host from the probe of the root, or None for the level probe
 
@@ -323,7 +323,7 @@ def run_levels(
 
 
 def main(argv: list[str]) -> int:
-    """Build, install and test each level of the tree (THE STEPS), and print the outcome of each level."""
+    """Build, install and test each level of the tree (the steps), and print the outcome of each level."""
     parser = cli.parser(PROGRAM, "Build the vessel pair of each x86-64 level, install one level root, and test it.")
     parser.add_argument("-j", "--jobs", type=int, default=heavy.SLICE)
     options = parser.parse_args(argv)

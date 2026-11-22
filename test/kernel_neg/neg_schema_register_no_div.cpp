@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A registration takes the context of its writer: the context of a Vigil's
 // producer claim, which takes the write section with one compare-exchange,

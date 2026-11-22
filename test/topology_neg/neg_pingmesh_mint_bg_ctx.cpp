@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Only an Init-row context mints a pingmesh.  A background worker records
 // measurements into a pingmesh, but it cannot create one.

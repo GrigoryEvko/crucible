@@ -1,6 +1,6 @@
 // A branded foreground context is not an argument of a new thread.
 //
-// VIOLATION: the context goes to std::jthread by value.  The thread
+// Violation: the context goes to std::jthread by value.  The thread
 // constructor makes a copy, and the new thread holds no claim of the
 // brand.
 //

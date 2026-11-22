@@ -1,15 +1,15 @@
 """repetition — run each test of a build again in a time budget, and add each pass to the evidence of its key.
 
-THE SELECTION
+Selection
     run() reads the items of the class `stress-passes` of one build.  It
-    selects the pending items (assay.loop.evidence.items, THE PENDING ITEMS)
+    selects the pending items (assay.loop.evidence.items, the pending items)
     of the nightly target, or with is_release of the release target.
 
-THE ROUNDS
+Rounds
     A round runs each selected test one time with the ctest of the build, as
     `loop test` runs a test (assay.loop.affected, run_tests()).  After the
     round, the runner gives the planner of that module the tests again, as
-    `loop test` does after a run (THE READ SET of that module).  A traced run
+    `loop test` does after a run (the read set of that module).  A traced run
     can give a test a new read set, and its pass then belongs to the key of
     that read set.  A test with inputs that changed during its run gets no
     pass.
@@ -21,7 +21,7 @@ THE ROUNDS
     The runner removes from the selection each test that gets its target or
     gives a failure.
 
-THE BUDGET
+Budget
     A round starts only when the time that the call used, with the wall time
     of the last round, stays in the budget.  Before the first round, the
     estimate is the largest wall time of one unit in the records of the
@@ -55,7 +55,7 @@ STATE_DIRECTORY = "evidence"
 class Selected:
     """One selected test: its entry, its key, its evidence, its target, its kept failure and the wall time of one pass.
 
-    The runner changes the key, the evidence and the failure after each round (THE ROUNDS).  The class is then a
+    The runner changes the key, the evidence and the failure after each round (the rounds).  The class is then a
     state and not a record.
     """
 
@@ -106,7 +106,7 @@ def record_wall_s(build_dir: Path, name: str) -> float:
 def selection(
     keys: evidence_items.TestKeys, store: evidence_store.EvidenceStore, target: float, names: Sequence[str]
 ) -> list[Selected]:
-    """Return each test that the rounds run (THE SELECTION).
+    """Return each test that the rounds run (the selection).
 
     Complexity: the planner of assay.loop.affected for each test, and one read of the store for each item with a key.
     """
@@ -137,7 +137,7 @@ def record_round(
     statuses: dict[str, ctest_reader.TestStatus],
     number: int,
 ) -> tuple[int, list[str]]:
-    """Add the pass or keep the failure of each test of one round (THE ROUNDS), and return the passes and the failures.
+    """Add the pass or keep the failure of each test of one round (the rounds), and return the passes and the failures.
 
     Complexity: the planner of assay.loop.affected for each test of the round.
     """
@@ -180,7 +180,7 @@ def run_rounds(
     budget_s: float,
     jobs: int,
 ) -> Outcome:
-    """Run rounds of the selected tests until each one gets its target or a failure, or the budget ends (THE BUDGET).
+    """Run rounds of the selected tests until each one gets its target or a failure, or the budget ends (the budget).
 
     Complexity: one run of ctest for each round.
     """
@@ -214,7 +214,7 @@ def run_rounds(
 
 
 def run(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str], jobs: int, target: float) -> ExitCode:
-    """Select the tests of a build, run the rounds, and report (THE SELECTION, THE ROUNDS).
+    """Select the tests of a build, run the rounds, and report (the selection, the rounds).
 
     Returns:
         OK when no round found a failure, FINDINGS when one did, MISSING_INPUT when the build cannot be read

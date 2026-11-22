@@ -1,13 +1,13 @@
 """header-constexpr — a header that compiles alone does no large constant evaluation, and each listed header fails alone.
 
-THE INPUTS
+Inputs
     The two rules read the compile database of the build (assay.readers.compdb)
     and two lists of test/layer/.  test/layer/CMakeLists.txt reads the same
     lists at each configure, and the rows grammar of assay.core.rows reads them
     here.  Each rule compiles a header alone with -fsyntax-only, through
     assay.core.proc, and the compile writes no object and no dependency file.
 
-THE RULE header-constexpr-ops
+Rule header-constexpr-ops
     test/layer/CMakeLists.txt compiles each header of include/ alone, in a
     one-line unit `#include <header>` in BUILD/test/layer/sentinels/LAYER/.
     The unit compiles with -fconstexpr-ops-limit at the limit of the measured
@@ -21,7 +21,7 @@ THE RULE header-constexpr-ops
 
     That list holds the admitted items of the rule, because CMake reads it.
     The rule has the policy none, and no file of utils/ledgers/ holds its
-    items (THE WRITE).  A header of
+    items (the write).  A header of
     test/layer/crucible-not-standalone.txt has no one-line unit.  The rule
     compiles each listed header two times: at the threshold and at the limit
     of its row.  It reads the diagnostics of each compile from its SARIF log
@@ -41,7 +41,7 @@ THE RULE header-constexpr-ops
     The entity of a finding is the header, relative to include/, when the
     finding names one.  A row that keeps its header gives no finding.
 
-THE WRITE
+Write
     `guard write --rule header-constexpr-ops --build-dir BUILD_DIR` writes
     test/layer/header-constexpr-ops.txt again (ops_refresh()).  The list can
     only become shorter, and the write only removes these rows:
@@ -55,7 +55,7 @@ THE WRITE
     A person corrects such a row, because the write cannot know its limit or
     its reason.
 
-THE RULE header-standalone
+Rule header-standalone
     test/layer/crucible-not-standalone.txt names each crucible header that
     cannot compile alone, `crucible/<path>.h | reason`.  Such a header has no
     sentinel.  The rule compiles each listed header alone with the command of
@@ -68,7 +68,7 @@ THE RULE header-standalone
       standalone   a listed header that compiles alone.  Remove its row, and the header gets its sentinel again
     The entity of a finding is the header, relative to include/.
 
-WHAT THE RULES CANNOT SEE
+What the rules cannot see
     The operation count measures the steps of the constant evaluator.  It
     does not count the cost of a template instantiation or of a reflection
     query.  A walk that instantiates many templates in a small number of
@@ -112,7 +112,7 @@ OPS_ERROR = "evaluation operation count exceeds limit"
 WRITE_FLAGS_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
 WRITE_FLAGS = frozenset({"-c", "-MD", "-MMD", "-MP"})
 TEXT_FLAGS = ("-fdiagnostics-color=never", "-fno-diagnostics-show-caret")
-# The compiles that run at the same time: one for each CPU of the process (assay.core.proc, THE JOB COUNT).
+# The compiles that run at the same time: one for each CPU of the process (assay.core.proc, the job count).
 JOBS = proc.DEFAULT_JOBS
 # The largest limit that a row of the list can give.
 LIMIT_MAXIMUM = 10**12
@@ -309,7 +309,7 @@ def limit_rows(
     """Return the rows of test/layer/header-constexpr-ops.txt, an error for each incorrect row, and the lines to remove.
 
     The lines to remove are the lines of the rows that the write removes
-    (THE WRITE).  Complexity: linear in the rows.
+    (the write).  Complexity: linear in the rows.
     """
     found: list[LimitRow] = []
     problems: list[check_report.Finding] = []
@@ -491,7 +491,7 @@ def judged_row(row: LimitRow, threshold: int, low: Outcome, high: Outcome) -> ch
 def ops_refresh(context: BuildContext) -> str:
     """Write test/layer/header-constexpr-ops.txt again with no row that the write removes, and tell the result.
 
-    THE WRITE gives the rows that the write removes.  Complexity: one compile
+    The write gives the rows that the write removes.  Complexity: one compile
     of each listed header at the threshold.
 
     Raises:

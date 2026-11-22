@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A named class that copies the member types of a source is not a
 // source, so the door refuses it by its family.  The deleted twin, which

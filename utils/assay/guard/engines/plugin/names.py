@@ -1,22 +1,22 @@
 """The rules that read the names of the source: the finding lines of one rule in its scope, and the rows of its ledger.
 
-THE NAMES OF THE SOURCE
+Names of the source
     The quarantine plugin reads the events of the parser for the kinds
     door-use, testing-use, detail-use and the kinds of the unchecked row of
-    the rule owners (utils/tools/quarantine/owner.cpp, THE NAMES OF THE
-    SOURCE).  Each finding line of such a kind is one use, at the position of
-    the name.  Its entity is `HOLDER: SHAPE` (THE PLACE AND THE ENTITY of
+    the rule owners (utils/tools/quarantine/owner.cpp, the names of the
+    source).  Each finding line of such a kind is one use, at the position of
+    the name.  Its entity is `HOLDER: SHAPE` (the place and the entity of
     owner.cpp).  The rules owners and door-unit use this module.
 
-THE SCOPE
+Scope
     `scoped_errors()` keeps the lines of a file in the scope of the rule.  The
     row of the rule in utils/registry.txt gives the scope
-    (assay.guard.engines.plugin.declarations, THE SCOPE).  A rule can also
+    (assay.guard.engines.plugin.declarations, the scope).  A rule can also
     give a filter of the lines, such as a scope for some kinds.  Each kept
     line gives one error, and the ledger of the rule judges it.  Each problem
     of the census of the runner is an error too.
 
-THE REASONS
+Reasons
     Each row of the ledger of such a rule gives the reason of its uses.  A row
     with no reason is an error, also with the policy count.
 
@@ -36,7 +36,7 @@ from assay.readers import sections as plugin_sections
 
 
 def reason_errors(rule: rule_registry.Rule, rows: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Give one error for each row of the ledger with no reason (THE REASONS).  Complexity: linear in the rows."""
+    """Give one error for each row of the ledger with no reason (the reasons).  Complexity: linear in the rows."""
     shown = rule_ledger.shown_path(rule.id)
     return [
         check_report.Finding(

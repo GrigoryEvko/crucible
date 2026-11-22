@@ -1,6 +1,6 @@
 """The runner of the engine meta: the context of a rule, the run of a rule against its ledger, and the witness of its plants.
 
-THE CONTEXT
+Context
     A meta rule reads a tree: the registry, the ledgers, the modules of the
     package, the plants and the tracked files.  MetaContext
     gives the root of the tree, the build directory when the call gives one,
@@ -15,7 +15,7 @@ THE CONTEXT
     the policy max or baseline judges its ledger itself.  The run then gives
     its findings unchanged.
 
-THE FAMILIES
+Families
     A family module holds more than one rule.  Its table RULES maps the ID of
     each of its rules to a Member.  A Member gives the function of the
     findings of the rule.  For a rule of the policy max or baseline, it also
@@ -30,7 +30,7 @@ THE FAMILIES
     of a module.  Each other attribute, such as plant_context, comes from the
     family module.
 
-THE PARTS
+Parts
     A call with --part K/N reads part K of N of the files of a rule.  Only a
     tsast rule whose module sets READS_PARTS to True takes --part, and that
     rule reads its files through part_of() of the context of its engine
@@ -40,9 +40,9 @@ THE PARTS
     hold each file.  The run judges only the ledger rows of the files of the
     part.  The parts of one rule run at the same time, and each part writes
     its warnings to the file RULE.partK.txt of the warnings directory
-    (assay.core.report, THE WARNINGS DIRECTORY).  A meta rule reads no part.
+    (assay.core.report, the warnings directory).  A meta rule reads no part.
 
-THE REFUSED KINDS
+Refused kinds
     A rule module can name the kinds of the findings that no ledger row
     admits, in its constant REFUSED_KINDS.  Such a finding tells that the
     rule cannot read an input, such as a file that does not parse.  The rule
@@ -50,13 +50,13 @@ THE REFUSED KINDS
     such a kind, and the ledger does not see it.  `guard write` refuses a
     finding of such a kind in each mode.
 
-THE WITNESS
+Witness
     The plants of a rule are in utils/plants/RULE/.  The prefix of the name of
     each directory tells what the rule must give on its tree:
       plant-    a minimum of one error: the rule refuses the tree
       control-  no error: the rule accepts the tree
       warning-  a minimum of one warning and no error, for example a time
-                error that a CI runner demotes (assay.core.meter, A CI RUNNER)
+                error that a CI runner demotes (assay.core.meter, a CI runner)
       skip-     no finding, because the rule does not apply to the tree: it
                 raises NotApplicable, and `guard check` exits with SKIPPED
     A plant can hold the file environment.txt, with one row `NAME | VALUE` for
@@ -79,7 +79,7 @@ THE WITNESS
     judge of its holder (assay.guard.engines.buildsys.held), and it counts
     each finding of a plant, also a warning.
 
-THE STATUS
+Status
     A run exits 0 with no error, 1 with an error, and 77 (SKIPPED, the
     SKIP_RETURN_CODE of its ctest test) when the rule does not apply to the
     tree, for example on a host with no tool of the rule.
@@ -109,7 +109,7 @@ PLANT_PREFIX = "plant-"
 CONTROL_PREFIX = "control-"
 WARNING_PREFIX = "warning-"
 SKIP_PREFIX = "skip-"
-# The prefixes of the directories of the plants of a rule (THE WITNESS).
+# The prefixes of the directories of the plants of a rule (the witness).
 PREFIXES = (PLANT_PREFIX, CONTROL_PREFIX, WARNING_PREFIX, SKIP_PREFIX)
 # The file of a plant with the variables of its run, and the variables that a plant sets only through that file.
 ENVIRONMENT_FILE = "environment.txt"
@@ -123,12 +123,12 @@ SKIPPED = 77
 # The guide of the tree: the full text that the doc field of a rule names.  CLAUDE.md at the root is the short guide,
 # and it holds no rule section.
 GUIDE = "misc/GUIDE.md"
-# The directory of the modules of the engines, relative to the root, and the table of a family module (THE FAMILIES).
+# The directory of the modules of the engines, relative to the root, and the table of a family module (the families).
 ENGINES = "utils/assay/guard/engines"
 FAMILY_TABLE = "RULES"
-# The constant of a rule module that names the kinds of the findings that no ledger row admits (THE REFUSED KINDS).
+# The constant of a rule module that names the kinds of the findings that no ledger row admits (the refused kinds).
 REFUSED_KINDS = "REFUSED_KINDS"
-# The constant of a rule module that is True when the rule reads a part of its files (THE PARTS).
+# The constant of a rule module that is True when the rule reads a part of its files (the parts).
 READS_PARTS = "READS_PARTS"
 
 
@@ -156,7 +156,7 @@ class RuleContext(Protocol):
 
 
 def parsed_part(text: str) -> tuple[int, int] | None:
-    """Return (K, N) of a part K/N with 1 <= K <= N, or None when the text is not such a part (THE PARTS)."""
+    """Return (K, N) of a part K/N with 1 <= K <= N, or None when the text is not such a part (the parts)."""
     first, slash, second = text.partition("/")
     if not slash or not first.isascii() or not first.isdigit() or not second.isascii() or not second.isdigit():
         return None
@@ -165,7 +165,7 @@ def parsed_part(text: str) -> tuple[int, int] | None:
 
 
 def part_files(root: Path, paths: Sequence[str], part: tuple[int, int]) -> list[str]:
-    """Return the files of part K of N of the paths, sorted (THE PARTS).
+    """Return the files of part K of N of the paths, sorted (the parts).
 
     Args:
         root: The root of the tree of the paths
@@ -185,7 +185,7 @@ class MetaContext:
     The guide is the path of the guide of the tree relative to its root:
     misc/GUIDE.md, or a planted guide of a plant.  The context reads the registry
     and the tracked files one time, on the first use.  A meta rule reads each
-    of its files (THE PARTS).
+    of its files (the parts).
     """
 
     __slots__ = ("_problems", "_registry", "_tracked", "build_dir", "guide", "root")
@@ -281,7 +281,7 @@ def module_file(root: Path, module: str) -> Path | None:
 
 
 def declared_rules(path: Path) -> tuple[bool, list[str]]:
-    """Return True when a module holds the function findings, and the string keys of its table RULES (THE FAMILIES).
+    """Return True when a module holds the function findings, and the string keys of its table RULES (the families).
 
     The function reads the module with the Python ast module, and it imports none.
     """
@@ -365,7 +365,7 @@ def module_name_of(rule: rule_registry.Rule, root: Path = REPO_ROOT) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Member:
-    """One rule of a family module (THE FAMILIES).
+    """One rule of a family module (the families).
 
     `findings` gives the findings of the rule on the context of its engine.
     `written` gives the new ledger of a rule of the policy max or baseline,
@@ -432,7 +432,7 @@ class FamilyRule:
 
 
 def rule_module(rule: rule_registry.Rule) -> ModuleType | FamilyRule:
-    """Import the module of a rule, and give a FamilyRule for a rule of a family module (THE FAMILIES).
+    """Import the module of a rule, and give a FamilyRule for a rule of a family module (the families).
 
     Raises:
         ModuleNotFoundError: If the rule has no module
@@ -460,8 +460,8 @@ def judged(
     A ledger that does not obey its schema gives one error, and the findings
     of the rule stay errors.  A rule of the policy max or baseline judges its
     ledger itself, so its findings stay as they are.  An error of a refused
-    kind of the rule stays an error, and the ledger does not see it (THE
-    REFUSED KINDS).  A row of such a kind then admits no finding, and a
+    kind of the rule stays an error, and the ledger does not see it (the
+    refused kinds).  A row of such a kind then admits no finding, and a
     write of the rule removes it.
 
     Args:
@@ -495,7 +495,7 @@ def judged(
 
 
 def refused_kinds(rule: rule_registry.Rule) -> frozenset[str]:
-    """Return the kinds of the findings of a rule that no ledger row admits (THE REFUSED KINDS).
+    """Return the kinds of the findings of a rule that no ledger row admits (the refused kinds).
 
     The module of the rule names them in its constant REFUSED_KINDS.  A rule with no such constant has none.
     """
@@ -503,7 +503,7 @@ def refused_kinds(rule: rule_registry.Rule) -> frozenset[str]:
 
 
 def reads_parts(rule: rule_registry.Rule) -> bool:
-    """Return True when the module of a rule sets READS_PARTS to True, and the rule then takes --part (THE PARTS)."""
+    """Return True when the module of a rule sets READS_PARTS to True, and the rule then takes --part (the parts)."""
     return getattr(rule_module(rule), READS_PARTS, False) is True
 
 
@@ -533,7 +533,7 @@ def run(
         context: The context of the engine of the rule
         warnings_dir: The directory of the warnings of a build, or None
         kept: The rows of the ledger that the run judges (judged()), or None for each row
-        key: The writer key of the warnings file (assay.core.report, THE WARNINGS DIRECTORY), when the parts of
+        key: The writer key of the warnings file (assay.core.report, the warnings directory), when the parts of
             one rule run at the same time, or None
 
     Returns:
@@ -609,7 +609,7 @@ def plants_of(rule_id: str, root: Path = REPO_ROOT) -> list[Path]:
 
 
 def plant_variables(plant: Path) -> tuple[tuple[str, str], ...]:
-    """Return the name and the value of each variable that the file environment.txt of a plant sets (THE WITNESS).
+    """Return the name and the value of each variable that the file environment.txt of a plant sets (the witness).
 
     Raises:
         ValueError: If the file does not read, does not obey the rows grammar, or a row is not `NAME | VALUE`
@@ -646,7 +646,7 @@ def planted_environment(variables: Sequence[tuple[str, str]]) -> Iterator[None]:
 def plant_verdict(name: str, found: Sequence[check_report.Finding], counts_warnings: bool) -> tuple[bool, str, str]:
     """Return if the findings on one plant hold its prefix, the text of its verdict, and the text of a failure.
 
-    `counts_warnings` makes each warning a finding of a plant and of a control too (THE WITNESS).
+    `counts_warnings` makes each warning a finding of a plant and of a control too (the witness).
     """
     errors = [item for item in found if item.level == "error"]
     warnings = [item for item in found if item.level != "error"]
@@ -673,7 +673,7 @@ def witness(
     module: ModuleType | FamilyRule | None = None,
     counts_warnings: bool = False,
 ) -> int:
-    """Run a rule on each of its plants and controls (THE WITNESS), and print each verdict.
+    """Run a rule on each of its plants and controls (the witness), and print each verdict.
 
     Args:
         rule: The rule

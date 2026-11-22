@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A const Link gives its object only as a Ref of const
 // (foundation/core/Link.h).  So a reader of a const node writes nothing

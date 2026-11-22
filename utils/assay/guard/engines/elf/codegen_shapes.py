@@ -1,10 +1,10 @@
 """codegen-shapes — a hot operation of a core family adds no instruction to its raw code, and a constant-time primitive has no branch.
 
-THE PARTS
+Parts
     The rule reads the compile database of a build
-    (assay.guard.engines.elf.runner, THE BUILD), and it has two parts:
-      core           the probe pairs of test/shape/core_shapes.cpp (THE PAIRS)
-      constant-time  the wrappers of the primitives of fixy::ct (THE WRAPPERS)
+    (assay.guard.engines.elf.runner, the build), and it has two parts:
+      core           the probe pairs of test/shape/core_shapes.cpp (the pairs)
+      constant-time  the wrappers of the primitives of fixy::ct (the wrappers)
     The core part reads the compile of the probe unit, and the
     constant-time part reads the compile of the release unit
     test/ct/dudect.cpp.  A build with no such compile is an error.  The
@@ -12,7 +12,7 @@ THE PARTS
     the rule does not apply (exit 77).  A plant gives its parts with rows
     "part NAME" of its plant.txt.
 
-THE TARGETS
+Targets
     The rule compiles each unit for each target of TARGETS: the x86-64
     baseline, x86-64-v3 and x86-64-v4.  It removes each word of the command
     that starts with TARGET_WORDS, and it adds the word -march=TARGET.  A
@@ -22,7 +22,7 @@ THE TARGETS
     target.  The walk and the normalization read the instructions of x86-64
     only.
 
-THE PAIRS
+Pairs
     test/shape/core_shapes.cpp holds two functions for each probe of PROBES.
     The function NAME does one hot operation of a family of
     include/foundation/core.  The function NAME_raw does the same work with
@@ -38,23 +38,23 @@ THE PAIRS
     test/shape/CMakeLists.txt compiles the unit with the flags of the
     foundation library of the build.  Each build then compares the two
     functions of a pair with its own level, `-fharden-` flags and contract
-    semantic, for each target (THE TARGETS).  A probe declares the
-    differences that its family side can add (THE VERDICT).  A plant gives
+    semantic, for each target (the targets).  A probe declares the
+    differences that its family side can add (the verdict).  A plant gives
     its probes with rows of its plant.txt, and PROBES does not apply to it:
 
         probe NAME [check=KIND[,KIND...]] [branch=yes] [calls=NAME[,NAME...]] [longer=N] | CLAIM
 
-THE FLAGS OF THE PAIRS
+Flags of the pairs
     The probe unit must have the code words of each unit of the target
     foundation, and no other code word.  A code word is a word of the compile
     command that changes the code.  The level, a sanitizer, a `-fharden-`
     flag and the contract semantic count too.  A word that starts with
     TARGET_WORDS does not count, because each compile of the rule replaces
-    it (THE TARGETS).  Each foundation unit must have the same code words.
+    it (the targets).  Each foundation unit must have the same code words.
     A word that does not change the code, such as a warning, an include
     directory or the debug information, is no code word.
 
-THE COMPILES
+Compiles
     The rule compiles the probe unit again into a scratch directory, one
     time for each target, with the command of the compile database less each
     word that starts with SANITIZER_WORDS.  A sanitizer adds a test to each
@@ -66,7 +66,7 @@ THE COMPILES
     targets run at the same time.  A run after a change of a header of the
     base reads the code of the change.
 
-THE WALK
+Walk
     The rule disassembles the object with assay.readers.objdump.  A function
     has a hot part, and it can have a cold part, `NAME [clone .cold]` in a
     section .text.unlikely.  The walk reads the instructions of the two parts,
@@ -83,7 +83,7 @@ THE WALK
     path has no such callee.  The verdict reads only the instructions on
     returning paths, in the sequence of their addresses, the hot part first.
 
-THE NORMALIZATION
+Normalization
     Each instruction becomes one text:
       - A general register becomes g64, g32, g16 or g8 for its width.  A
         vector register becomes v128, v256 or v512, and each register `k0`
@@ -105,7 +105,7 @@ THE NORMALIZATION
       - The mnemonic keeps its lock or rep prefix.  A constant operand and
         each other displacement stay.
 
-THE VERDICT
+Verdict
     The rule finds one longest subsequence of the texts of the two
     functions.  The family-only instructions are the instructions of NAME
     that are not in it.  Each family-only instruction has one class:
@@ -138,23 +138,23 @@ THE VERDICT
     do more work, such as a spill to the stack.  The family side can also do
     the same work with different plain instructions.
 
-THE COSTS
+Costs
     A probe that declares a difference has a known cost on the hot path.
     When its family side has more instructions than its raw side, the run
     gives a plain line with the two counts and the family-only instructions
     (cost_lines()).  The line is no finding, and it fails nothing.  A run
     with --warnings-dir writes these lines to the numbers file of the rule,
     and `guard warnings` prints them after a test run (assay.core.report,
-    THE NUMBERS FILES).  The cost then stays in the output of each test
+    the numbers files).  The cost then stays in the output of each test
     run.  The run also prints the counts of each pair, and the disassembly
     of the two functions of a probe with an error.
 
-THE WRAPPERS
+Wrappers
     The rule compiles one wrapper for each constant-time primitive of
     fixy::ct and each unsigned width.  It also compiles one wrapper of the
     eq of a static extent for each length of STATIC_EQ_LENGTHS.  It compiles
     them with the flags of each variant of a kind of build, for each target
-    (THE TARGETS).  In the disassembly of each wrapper it refuses:
+    (the targets).  In the disassembly of each wrapper it refuses:
       - a conditional branch (each jcc, jrcxz and loop): its direction shows
         the operand that it tests
       - a call, or a jump to a different function: the rule cannot see the
@@ -167,7 +167,7 @@ THE WRAPPERS
     The eq of a dynamic length is no wrapper, because its loop branches on
     the length, which is public.  The taint tests of test/ct cover it.
 
-THE FLAGS OF THE WRAPPERS
+Flags of the wrappers
     Each build takes the code words of the foundation units, with no word
     that changes with the kind of build (PER_BUILD).  The rule also removes
     the words that no variant holds (DROPPED).  Each variant adds its words
@@ -185,7 +185,7 @@ THE FLAGS OF THE WRAPPERS
     of build then fails the rule in a build of that kind, until a variant has
     it.
 
-THE CENSUSES
+Censuses
     A reflection walk in the wrapper unit stops its compile when the
     namespace of the primitives holds a function with no wrapper
     (COVERED_NAMES).  The rule reads the parse tree of each C++ file that
@@ -218,8 +218,8 @@ from assay.readers import compdb, objdump, tsast
 
 RULE = "codegen-shapes"
 # The time limit of one compile of the rule, in seconds.  It judges no compile, and it only bounds a hang, above the wall
-# guard of a test of the gate (THE HANG GUARD of assay.loop.gate).  In a test, the CPU limit of each process judges a
-# compile that runs away (THE CPU LIMIT OF A TEST of assay.loop.teststep), so a loaded host does not make the rule fail.
+# guard of a test of the gate (the hang guard of assay.loop.gate).  In a test, the CPU limit of each process judges a
+# compile that runs away (the CPU limit of a test of assay.loop.teststep), so a loaded host does not make the rule fail.
 COMPILE_LIMIT_S = proc.BUILD_S
 CORE = "core"
 CONSTANT_TIME = "constant-time"
@@ -231,7 +231,7 @@ PROBE_CMAKE = "test/shape/CMakeLists.txt"
 RELEASE_SOURCE = "test/ct/dudect.cpp"
 CT_CMAKE = "test/ct/CMakeLists.txt"
 CT_HEADER = "include/fixy/ConstantTime.h"
-# The targets of each compile of the rule, and the words of a compile command that select a target (THE TARGETS).
+# The targets of each compile of the rule, and the words of a compile command that select a target (the targets).
 TARGETS = ("x86-64", "x86-64-v3", "x86-64-v4")
 TARGET_WORDS = ("-march=", "-mtune=", "-mcpu=")
 
@@ -250,10 +250,10 @@ ANONYMOUS = "(anonymous namespace)::"
 LOCAL_CONSTANT = ".LC"
 # The prefixes that a compare of two instructions keeps.
 KEPT_PREFIXES = frozenset({"lock", "rep", "repz", "repe", "repnz", "repne"})
-# The words of a compile command that start a sanitizer.  The compile of the verdict has none of them (THE COMPILES).
+# The words of a compile command that start a sanitizer.  The compile of the verdict has none of them (the compiles).
 SANITIZER_WORDS = ("-fsanitize", "-fno-sanitize")
 # The flags that put a second test and a trap after a compare that gives a value (-fharden-compares), or on each edge
-# of a conditional branch (-fharden-conditional-branches) (THE VERDICT).  Each build type other than Debug takes
+# of a conditional branch (-fharden-conditional-branches) (the verdict).  Each build type other than Debug takes
 # -fharden-compares, and no build takes -fharden-conditional-branches (cmake/CodeFlags.cmake).  A word with the prefix
 # HARDENING_OFF turns such a flag off.
 HARDENING_FLAGS = ("-fharden-compares", "-fharden-conditional-branches")
@@ -265,7 +265,7 @@ TAG_CHECK = (
 )
 # The number of second tests after one branch: one on each of its two edges.
 HARDENING_TESTS = 2
-# The kinds of a failure path, the first kind first, each with the prefixes of the names of its callees (THE WALK).
+# The kinds of a failure path, the first kind first, each with the prefixes of the names of its callees (the walk).
 FAILURE_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("fatal", (FATAL_PREFIX, INVARIANT_EXIT)),
     ("contract", ("handle_contract_violation",)),
@@ -276,7 +276,7 @@ FAILURE_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 TRAP = "trap"
 CHECK_KINDS = frozenset({*(kind for kind, _ in FAILURE_KINDS), TRAP})
-# The callees that do not return.  A call of one ends its path (THE WALK).
+# The callees that do not return.  A call of one ends its path (the walk).
 NORETURN_NAMES = frozenset(
     {"abort", "exit", "_exit", "std::terminate", "__cxa_throw", "__cxa_rethrow", "__stack_chk_fail"}
 )
@@ -299,9 +299,9 @@ LOCAL_CALLEE = "<local>"
 INDIRECT_CALLEE = "<indirect>"
 # The distance from the address of a 32-bit relocation of a jump to the end of the jump.
 JUMP_FIELD = 4
-# The register names of x86-64 that keep their names, because each one has a specified role (THE NORMALIZATION).
+# The register names of x86-64 that keep their names, because each one has a specified role (the normalization).
 FIXED_REGISTERS = frozenset({"rsp", "esp", "sp", "spl", "rbp", "ebp", "bp", "bpl", "rip", "fs", "gs"})
-# The base of an address that THE NORMALIZATION gives no displacement.
+# The base of an address that the normalization gives no displacement.
 RIP = "rip"
 # The operands of xchg ax,ax, the nop of two bytes that aligns the code.
 XCHG_PADDING = (objdump.Register("ax"), objdump.Register("ax"))
@@ -408,7 +408,7 @@ class CompileFailed(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class Probe:
-    """The declaration of one pair of functions of the probe unit (THE VERDICT).
+    """The declaration of one pair of functions of the probe unit (the verdict).
 
     `checks` holds the kinds of the failure paths that the family side can add a check into, `branches` lets the
     family side add a branch and work in a loop, and `calls` holds the callees that the family side can add.
@@ -436,7 +436,7 @@ class Probe:
 
 # The declarations.  A probe with no declaration claims that its family operation adds no instruction to its raw
 # code.  The claim of a probe with a declaration tells its cost.  When the family side of such a pair is longer, each
-# run gives a plain line with the counts of the pair (THE COSTS).
+# run gives a plain line with the counts of the pair (the costs).
 PROBES: tuple[Probe, ...] = (
     Probe("atomic_load", "load_acquire is the acquire load of std::atomic"),
     Probe("atomic_store", "store_release is the release store of std::atomic, with no lock"),
@@ -1345,7 +1345,7 @@ PROBES: tuple[Probe, ...] = (
 
 
 def probe_of_row(row: rows_grammar.Row) -> Probe:
-    """Return the probe of a row "probe NAME KEY=VALUE... | CLAIM" of the plant.txt of a plant (THE PAIRS).
+    """Return the probe of a row "probe NAME KEY=VALUE... | CLAIM" of the plant.txt of a plant (the pairs).
 
     Raises:
         rows_grammar.RowsError: If the row does not have that shape
@@ -1438,7 +1438,7 @@ class Instruction:
 
     @property
     def head(self) -> str:
-        """The mnemonic with its lock prefix or rep prefix (THE NORMALIZATION)."""
+        """The mnemonic with its lock prefix or rep prefix (the normalization)."""
         return " ".join([*(prefix for prefix in self.prefixes if prefix in KEPT_PREFIXES), self.mnemonic])
 
     @property
@@ -1533,7 +1533,7 @@ ENTRY: Place = (0, 0)
 
 
 class StepClass(StrEnum):
-    """The class of one instruction on a returning path (THE VERDICT)."""
+    """The class of one instruction on a returning path (the verdict)."""
 
     CHECK = "check"
     BRANCH = "branch"
@@ -1545,7 +1545,7 @@ class StepClass(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Step:
-    """One instruction on a returning path, after THE NORMALIZATION.
+    """One instruction on a returning path, after the normalization.
 
     `detail` is the kind of the failure path of a check, and the callee of a call.  `head` is the mnemonic with its
     kept prefix, and `shown` is the line that objdump prints.  `is_opaque` is True when the reader gives an operand of
@@ -1564,7 +1564,7 @@ class Step:
 
 @dataclass(frozen=True, slots=True)
 class Flow:
-    """The control flow of the parts of one function (THE WALK).
+    """The control flow of the parts of one function (the walk).
 
     `successors` gives the positions that each position can go to, `callees` gives the callee of each call and of
     each jump to a different function, and `returning` holds the positions on a returning path.
@@ -1577,7 +1577,7 @@ class Flow:
 
 
 def is_noreturn(callee: str) -> bool:
-    """True when a call of the callee ends its path (THE WALK)."""
+    """True when a call of the callee ends its path (the walk)."""
     return callee in NORETURN_NAMES or callee.startswith(NORETURN_PREFIXES) or callee.endswith(NORETURN_SUFFIX)
 
 
@@ -1650,7 +1650,7 @@ def predecessors_of(successors: Mapping[Place, tuple[Place, ...]]) -> dict[Place
 
 
 def returning_places(successors: Mapping[Place, tuple[Place, ...]], exits: Iterable[Place]) -> frozenset[Place]:
-    """Return each position on a path from the entry of the hot part to an exit (THE WALK).
+    """Return each position on a path from the entry of the hot part to an exit (the walk).
 
     Complexity: linear in the edges.
     """
@@ -1659,7 +1659,7 @@ def returning_places(successors: Mapping[Place, tuple[Place, ...]], exits: Itera
 
 
 def flow_of(code: Code) -> Flow:
-    """Return the control flow of a function (THE WALK).
+    """Return the control flow of a function (the walk).
 
     A ret is an exit, and a jump to a different function is an exit too.  A trap and a call that does not return end
     a path.
@@ -1699,7 +1699,7 @@ def flow_of(code: Code) -> Flow:
 
 
 def failure_kind(flow: Flow, start: Place) -> str:
-    """Return the kind of the failure path from a position (THE WALK).
+    """Return the kind of the failure path from a position (the walk).
 
     The kind is the first kind of FAILURE_KINDS that has a callee of the path, or trap.  Complexity: linear in the
     instructions of the path.
@@ -1711,7 +1711,7 @@ def failure_kind(flow: Flow, start: Place) -> str:
 # ── The normalization ──────────────────────────────────────────────
 
 
-# The class of each name of a general register of x86-64 with no specified role (THE NORMALIZATION).
+# The class of each name of a general register of x86-64 with no specified role (the normalization).
 GENERAL_CLASSES = (
     {
         name: width
@@ -1755,19 +1755,19 @@ def register_class(word: str) -> str:
 
 
 def normalized_operand(operand: objdump.Operand) -> str:
-    """Return one operand with the class of each register, and with no displacement of rip (THE NORMALIZATION)."""
+    """Return one operand with the class of each register, and with no displacement of rip (the normalization)."""
     if isinstance(operand, objdump.Memory):
         return operand.spelling(register_class, keeps_displacement=operand.base != RIP)
     return operand.spelling(register_class)
 
 
 def normalized_operands(operands: Sequence[objdump.Operand]) -> str:
-    """Return the operands of an instruction after THE NORMALIZATION, as objdump divides them."""
+    """Return the operands of an instruction after the normalization, as objdump divides them."""
     return objdump.OPERAND_SEPARATOR.join(normalized_operand(operand) for operand in operands)
 
 
 def symbol_text(instruction: Instruction) -> str:
-    """Return the symbol of the relocation of an instruction that is no jump and no call (THE NORMALIZATION)."""
+    """Return the symbol of the relocation of an instruction that is no jump and no call (the normalization)."""
     symbol = instruction.symbol
     if symbol is None:
         return ""
@@ -1821,7 +1821,7 @@ def is_loop_edge(flow: Flow, place: Place, target: Place) -> bool:
 
 
 def steps_of(code: Code) -> tuple[Step, ...]:
-    """Return the instructions of a function on its returning paths, in sequence (THE WALK, THE NORMALIZATION).
+    """Return the instructions of a function on its returning paths, in sequence (the walk, the normalization).
 
     The instructions of a loop are the instructions on a path from the target of a loop edge back to that edge.
     Complexity: linear in the instructions of the function, and linear in the edges for each loop edge.
@@ -1878,7 +1878,7 @@ class Verdict:
 
 
 def family_only(family: Sequence[Step], raw: Sequence[Step]) -> list[Step]:
-    """Return the instructions of the family side that are not in one longest subsequence of the texts (THE VERDICT).
+    """Return the instructions of the family side that are not in one longest subsequence of the texts (the verdict).
 
     Of two subsequences of the same length, the rule always takes the same one, and each run then gives the same
     instructions.  Complexity: O(n * m) in the instructions of the two sides.
@@ -1927,7 +1927,7 @@ def is_hardened(flags: Sequence[str]) -> bool:
 
 
 def step_problem(probe: Probe, step: Step) -> str | None:
-    """Return the problem of one family-only instruction, or None when the probe declares it (THE VERDICT)."""
+    """Return the problem of one family-only instruction, or None when the probe declares it (the verdict)."""
     if step.kind is StepClass.CHECK and step.detail not in probe.checks:
         return f"the family side adds a check into a {step.detail} path: {step.shown}"
     if step.kind is StepClass.BRANCH and not probe.branches:
@@ -1944,7 +1944,7 @@ def step_problem(probe: Probe, step: Step) -> str | None:
 
 
 def verdict(probe: Probe, family: Sequence[Step], raw: Sequence[Step], hardened: bool) -> Verdict:
-    """Return the verdict of one pair (THE VERDICT).
+    """Return the verdict of one pair (the verdict).
 
     In a unit with a flag of HARDENING_FLAGS, a family-only check into a trap path that the probe does not declare is
     a second test.  The rule accepts HARDENING_TESTS of them for each family-only check and branch that the probe
@@ -1991,9 +1991,9 @@ def verdict(probe: Probe, family: Sequence[Step], raw: Sequence[Step], hardened:
 def pair_findings(
     functions: Mapping[str, Code], probes: Iterable[Probe], hardened: bool, target: str
 ) -> tuple[list[check_report.Finding], list[str], dict[str, Verdict]]:
-    """Judge each pair of the probe object of one target (THE VERDICT).
+    """Judge each pair of the probe object of one target (the verdict).
 
-    Each finding and each shown disassembly names the target (THE TARGETS).
+    Each finding and each shown disassembly names the target (the targets).
 
     Returns:
         The errors, the disassembly of each probe with an error, and the verdict of each probe
@@ -2025,7 +2025,7 @@ def pair_findings(
 
 
 def cost_lines(verdicts: Mapping[str, Verdict], probes: Iterable[Probe], target: str) -> list[str]:
-    """Return one plain line for each pair of a target with a declared cost and a longer family side (THE COSTS).
+    """Return one plain line for each pair of a target with a declared cost and a longer family side (the costs).
 
     A pair with a problem has an error, and it has no line.  Complexity: linear in the probes and their family-only
     instructions.
@@ -2064,12 +2064,12 @@ def code_flags(words: Sequence[str], source: str) -> list[str]:
 
 
 def without_target(flags: Iterable[str]) -> set[str]:
-    """Return the code words with no word that starts with TARGET_WORDS, which each compile replaces (THE TARGETS)."""
+    """Return the code words with no word that starts with TARGET_WORDS, which each compile replaces (the targets)."""
     return {flag for flag in flags if not flag.startswith(TARGET_WORDS)}
 
 
 def flag_findings(probe_flags: Sequence[str], base_flags: Sequence[Sequence[str]]) -> list[check_report.Finding]:
-    """Compare the code words of the probe unit with those of the foundation units (THE FLAGS OF THE PAIRS)."""
+    """Compare the code words of the probe unit with those of the foundation units (the flags of the pairs)."""
     messages: list[str] = []
     base_sets = [without_target(flags) for flags in base_flags]
     if not base_sets:
@@ -2096,15 +2096,15 @@ def flag_findings(probe_flags: Sequence[str], base_flags: Sequence[Sequence[str]
 
 
 def has_sanitizer(entry: compdb.CompileEntry) -> bool:
-    """True when the compile command of a row holds a sanitizer word (THE COMPILES)."""
+    """True when the compile command of a row holds a sanitizer word (the compiles)."""
     return any(word.startswith(SANITIZER_WORDS) for word in entry.argv())
 
 
 def command_words(entry: compdb.CompileEntry, obj: Path, with_sanitizers: bool, target: str | None = None) -> list[str]:
-    """Return the compile command of a row with a different object (THE COMPILES).
+    """Return the compile command of a row with a different object (the compiles).
 
     The command has no sanitizer word when `with_sanitizers` is False.  With a target, the command has no word that
-    starts with TARGET_WORDS, and it ends with -march=TARGET (THE TARGETS).  With no target, the command keeps the
+    starts with TARGET_WORDS, and it ends with -march=TARGET (the targets).  With no target, the command keeps the
     target of the build.
     """
     words: list[str] = []
@@ -2188,7 +2188,7 @@ def foundation_entries(context: runner.ElfContext) -> list[compdb.CompileEntry]:
 
 
 def planted_probes(context: runner.ElfContext) -> tuple[Probe, ...] | None:
-    """Return the probes of the plant.txt of a plant, or None for a build (THE PAIRS).
+    """Return the probes of the plant.txt of a plant, or None for a build (the pairs).
 
     Raises:
         runner.BuildError: If a probe row does not have its shape
@@ -2204,7 +2204,7 @@ def planted_probes(context: runner.ElfContext) -> tuple[Probe, ...] | None:
 def count_lines(
     verdicts: Mapping[str, Verdict], instrumented: Mapping[str, Code] | None, probes: Iterable[Probe], target: str
 ) -> list[str]:
-    """Return one line with the counts of each pair of a target, and the counts with the sanitizer (THE COSTS)."""
+    """Return one line with the counts of each pair of a target, and the counts with the sanitizer (the costs)."""
     lines: list[str] = []
     for probe in probes:
         result = verdicts[probe.name]
@@ -2219,7 +2219,7 @@ def count_lines(
 
 @dataclass(frozen=True, slots=True)
 class Examination:
-    """The result of one run of the rule (THE PARTS, THE COSTS).
+    """The result of one run of the rule (the parts, the costs).
 
     `found` holds the findings, `shown` the lines that the run prints, and `costs` the plain lines of the pairs with a
     declared cost and a longer family side (cost_lines()).
@@ -2231,9 +2231,9 @@ class Examination:
 
 
 def core_findings(context: runner.ElfContext) -> Examination:
-    """Return the findings of the core part, the lines that the run prints and the cost lines (THE COMPILES).
+    """Return the findings of the core part, the lines that the run prints and the cost lines (the compiles).
 
-    THE COSTS gives the lines.
+    The costs give the lines.
 
     Raises:
         runner.BuildError: If the build cannot be read
@@ -2257,7 +2257,7 @@ def core_findings(context: runner.ElfContext) -> Examination:
 def target_findings(probe: compdb.CompileEntry, probes: Sequence[Probe], hardened: bool, target: str) -> Examination:
     """Compile the probe unit for one target, and return the findings, the printed lines and the cost lines.
 
-    THE TARGETS, THE COMPILES and THE COSTS give the compiles and the lines.
+    The targets, the compiles and the costs give the compiles and the lines.
     """
     try:
         functions = compiled_codes(probe, False, target)
@@ -2323,7 +2323,7 @@ def split_flags(flags: Iterable[str]) -> tuple[tuple[str, ...], tuple[str, ...]]
 def variants_of(release: Sequence[str]) -> tuple[Variant, ...]:
     """Return the variants of the kinds of build from the words of PER_BUILD of the release unit.
 
-    THE FLAGS OF THE WRAPPERS gives the variants.
+    The flags of the wrappers give the variants.
     """
     verify = tuple(ENFORCE if flag == OBSERVE else flag for flag in release if flag != NDEBUG)
     return (
@@ -2354,7 +2354,7 @@ def flag_problems(
 
 
 def census_prelude() -> str:
-    """Return the reflection census, which is True when a namespace holds only covered functions (THE CENSUSES)."""
+    """Return the reflection census, which is True when a namespace holds only covered functions (the censuses)."""
     covered = ", ".join(f'"{name}"' for name in COVERED_NAMES)
     return "\n".join(
         [
@@ -2379,7 +2379,7 @@ def census_prelude() -> str:
 
 
 def wrapper_source(cases: Mapping[str, tuple[tuple[str, bool, str], ...]]) -> tuple[str, dict[str, bool]]:
-    """Return the wrapper unit, and for each wrapper True when it takes pointers (THE WRAPPERS)."""
+    """Return the wrapper unit, and for each wrapper True when it takes pointers (the wrappers)."""
     names: dict[str, bool] = {}
     ns = CT_NAMESPACE
     coverage = (
@@ -2424,7 +2424,7 @@ def instruction_text(instruction: objdump.Instruction) -> str:
 
 
 def wrapper_problems(name: str, body: Sequence[objdump.Instruction], takes_pointers: bool) -> list[str]:
-    """Return each refused instruction of one wrapper (THE WRAPPERS).
+    """Return each refused instruction of one wrapper (the wrappers).
 
     A function that takes no pointer has no public address to read.  Each memory operand of a general register then
     reads an address that a secret can make.  A function that takes pointers can read through them, but not with an
@@ -2536,7 +2536,7 @@ def grade_statements(root: Path) -> tuple[dict[str, list[tuple[int, str]]], list
     """Return the names that state the constant-time grade in each file of the roots, and each file with no tree.
 
     The rule reads the parse tree of each C++ file that git holds in
-    CTCRYPTO_ROOTS (THE CENSUSES).  Each full name counts one time.
+    CTCRYPTO_ROOTS (the censuses).  Each full name counts one time.
     Complexity: one load of each parse tree, and linear in the leaf nodes of
     names.
 
@@ -2570,7 +2570,7 @@ def grade_statements(root: Path) -> tuple[dict[str, list[tuple[int, str]]], list
 def grade_findings(root: Path, cases: Mapping[str, tuple[tuple[str, bool, str], ...]]) -> list[check_report.Finding]:
     """Return an error for each statement of the grade with no case, each incorrect case and each unparsed file.
 
-    THE CENSUSES gives the census.  An unparsed file is a file that the kit cannot parse.
+    The censuses give the census.  An unparsed file is a file that the kit cannot parse.
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -2623,7 +2623,7 @@ def grade_findings(root: Path, cases: Mapping[str, tuple[tuple[str, bool, str], 
 
 
 def constant_time_findings(context: runner.ElfContext) -> list[check_report.Finding]:
-    """Return the findings of the constant-time part (THE WRAPPERS).
+    """Return the findings of the constant-time part (the wrappers).
 
     Raises:
         runner.BuildError: If the build cannot be read
@@ -2680,9 +2680,9 @@ def parts_of(context: runner.ElfContext) -> tuple[str, ...]:
 
 
 def examine(context: runner.ElfContext) -> Examination:
-    """Return the findings of each part of the build, the lines that the run prints and the cost lines (THE PARTS).
+    """Return the findings of each part of the build, the lines that the run prints and the cost lines (the parts).
 
-    THE COSTS gives the lines.
+    The costs give the lines.
 
     Raises:
         runner.NotApplicable: If the host is not x86_64, or the call gives no build directory
@@ -2699,7 +2699,7 @@ def examine(context: runner.ElfContext) -> Examination:
 
 
 def findings(context: runner.ElfContext) -> list[check_report.Finding]:
-    """Give the findings of each part of the build (THE PARTS)."""
+    """Give the findings of each part of the build (the parts)."""
     return examine(context).found
 
 
@@ -2714,11 +2714,11 @@ def judge(rule: rule_registry.Rule, context: runner.ElfContext) -> list[check_re
 
 
 def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path | None) -> int:
-    """Run the rule on the build, write its findings, and print the counts of each pair (THE COSTS).
+    """Run the rule on the build, write its findings, and print the counts of each pair (the costs).
 
     The run also prints the disassembly of the two functions of each probe with an error, and the cost lines.  With a
-    warnings directory, it writes the cost lines to the numbers file of the rule (assay.core.report, THE NUMBERS
-    FILES).
+    warnings directory, it writes the cost lines to the numbers file of the rule (assay.core.report, the numbers
+    files).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply

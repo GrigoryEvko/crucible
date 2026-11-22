@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A translation unit says that a hand-off delegates nothing, so that a
 // crash session admits it.  The query is a concept over the facts of the

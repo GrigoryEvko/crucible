@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A LentPermission holds the token of one instance while its read loan is
 // out, and no conversion changes its brand.  If a parked token of instance

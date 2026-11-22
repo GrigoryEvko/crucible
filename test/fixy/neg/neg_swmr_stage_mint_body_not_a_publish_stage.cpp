@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A single-writer body publishes into a writer.  The second parameter of
 // this body is the producer handle of a channel, which has no publish, so

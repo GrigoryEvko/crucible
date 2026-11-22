@@ -81,7 +81,7 @@ static_assert(!CtxFitsDirectorySync<IoBlockCtx, sync_op::Fsync, directory_rights
               && !CtxFitsDirectorySync<IoBlockCtx, sync_op::None, directory_rights>);
 static_assert(!CtxFitsSync<IoOnlyCtx, sync_op::Fsync>);
 
-// The rights of each open mode (THE RIGHTS of fixy/os/Handle.h).  A map
+// The rights of each open mode (the rights of fixy/os/Handle.h).  A map
 // reads its file, so the map right goes only with the read right, and an
 // open for an append has no seek right.
 using A_Append = ::fixy::atom::fs::mode<open_mode::WriteAppend>;

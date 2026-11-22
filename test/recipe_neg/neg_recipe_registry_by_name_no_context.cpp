@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A caller that holds the context of a test runner, whose row holds Alloc,
 // IO and Block, calls RecipeRegistry::by_name and names no row.  A gate whose

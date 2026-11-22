@@ -86,7 +86,7 @@ PLANTED_TESTS: list[dict[str, object]] = [
 
 
 def block_cases(expect: testing.Expect) -> None:
-    """Hold the block of one preset and each problem of a block (THE BLOCK, THE PROBLEMS)."""
+    """Hold the block of one preset and each problem of a block (the block, the problems)."""
     gate = {"crucible": {"tier": "gate", "configuration": "x86_64-release"}}
     expect(
         "a block with a tier and a configuration reads",
@@ -129,7 +129,7 @@ def relative(item: tiers.PresetTier, build: Path, root: Path) -> tiers.PresetTie
 
 
 def read_cases(expect: testing.Expect) -> None:
-    """Hold the tiers of the presets of a planted presets file (THE BLOCK, THE PROBLEMS)."""
+    """Hold the tiers of the presets of a planted presets file (the block, the problems)."""
     found = planted_tiers()
     configure = {item.name: item for item in found.configure}
     tests = {item.name: item for item in found.tests}

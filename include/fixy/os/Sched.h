@@ -6,7 +6,7 @@
 // so every mint here returns the error of the kernel in a Result and lets the
 // caller decide.
 //
-// THE SCHEDULING FRAMES
+// Scheduling frames
 //   A scheduling proof cannot copy and cannot move, because the policy or
 //   the nice value belongs to the thread that set it.  So
 //   mint_scheduler_policy and mint_priority build the proof in their own
@@ -119,12 +119,12 @@ namespace detail {
     }
 }
 
-// THE SCHEDULING DOOR.  Each function issues its one system call for the
+// Scheduling door.  Each function issues its one system call for the
 // calling thread through foundation::os::raw_syscall, and gives the error of
 // the kernel.  The bodies are in src/fixy/os/Sched.cpp, which includes no
 // header of the kernel and no header of the C library.  A function that
-// issues one system call NAME out of line has the name NAME_sys (THE
-// AFFINITY DOOR of fixy/os/CpuPinned.h).
+// issues one system call name out of line has the name name_sys (the
+// affinity door of fixy/os/CpuPinned.h).
 
 // Sets the policy of the calling thread, with the real-time priority that
 // SCHED_FIFO and SCHED_RR read and that each other policy needs as zero.
@@ -178,8 +178,8 @@ apply_scheduler_policy(int rt_priority, std::uint64_t runtime_ns, std::uint64_t 
     }
 }
 
-// The borrow of a proof that the body of a scheduling frame takes (THE
-// SCHEDULING FRAMES).  The brand is the brand of the frame.
+// The borrow of a proof that the body of a scheduling frame takes (the
+// scheduling frames).  The brand is the brand of the frame.
 template <class Proof, class Brand>
 using ProofRef = ::foundation::core::Ref<Proof const, Brand>;
 
@@ -212,7 +212,7 @@ concept SchedFrameLeaves =
     SchedFrameBody<Body, Proof, Brand> && ::foundation::core::FrameResult<frame_result_t<Body, Proof, Brand>, Brand>
     && ::foundation::core::ChoicePayload<frame_value_t<frame_result_t<Body, Proof, Brand>>>;
 
-// Lends PROOF to BODY with the brand of the frame, and gives the value of
+// Lends proof to body with the brand of the frame, and gives the value of
 // the frame.
 template <class Brand, class Proof, class Body>
 [[nodiscard]] frame_value_t<frame_result_t<Body, Proof, Brand>> run_frame_(Proof const& proof, Body&& body) noexcept {
@@ -253,7 +253,7 @@ concept CtxFitsSchedPolicyMint = CtxFitsRuntimeAffinity<Ctx> && (detail::sched_p
 // SchedPriority<Nice>.  It is not.  The mint names SchedPriority<Nice>
 // in its return type, so without this conjunct an out-of-range nice
 // reaches that return type during substitution, and a constraint
-// failure on a CLASS template is not in the immediate context of the
+// failure on a class template is not in the immediate context of the
 // function template.  GCC 16 reports it as a hard error rather than
 // discarding the candidate, so the call site cannot recover and no
 // overload set can absorb it.  Measured, not reasoned: the deletion was
@@ -308,7 +308,7 @@ using frame_value_of_t = detail::frame_value_t<detail::frame_result_t<Body, Proo
 // error inside the mint and needs no separate concept.
 //
 // The two frame mints below set the policy or the nice value of the calling
-// thread, and lend the proof to body (THE SCHEDULING FRAMES).  The proof
+// thread, and lend the proof to body (the scheduling frames).  The proof
 // exists only inside the frame.  The policy and the nice value stay in force
 // after the frame ends.  The pack Refused takes each explicit template
 // argument after the named ones and refuses it, so no caller names the brand

@@ -7,7 +7,7 @@
 # each configure, so an edit of the run path reaches each build directory with
 # a plain configure.
 #
-# THE CACHE
+# Cache
 #     A cache entry keeps its value across configures, so a run path in the
 #     cache cannot follow an edit of a toolchain file.  The function removes
 #     each run path directory of the prefix from the cache entries
@@ -21,8 +21,8 @@
 # crucible_toolchain_run_path(PREFIX DIRECTORY)
 #
 # Set CRUCIBLE_TOOLCHAIN_RUN_PATH to DIRECTORY in the scope of the caller, and
-# remove each run path directory of PREFIX from the three cache entries (THE
-# CACHE).  Complexity: linear in the words of the three entries.
+# remove each run path directory of PREFIX from the three cache entries (the
+# cache).  Complexity: linear in the words of the three entries.
 function(crucible_toolchain_run_path prefix directory)
   set(CRUCIBLE_TOOLCHAIN_RUN_PATH "${directory}" PARENT_SCOPE)
   file(REAL_PATH "${prefix}" _crucible_real_prefix)

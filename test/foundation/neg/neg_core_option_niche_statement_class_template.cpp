@@ -2,7 +2,7 @@
 // value, and its members pass the two walks.  The gate first forms the
 // template while foundation/core/Choice.h evaluates the check, and the mark
 // of the statement still reads the file of the class template, which is
-// outside the base (THE CHECK OF THE STATEMENT of foundation/core/Choice.h).
+// outside the base (the check of the statement of foundation/core/Choice.h).
 // So the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

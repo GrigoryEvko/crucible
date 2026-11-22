@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // compute_storage_nbytes takes ExternalTensorMeta, ::fixy::Tagged<const
 // TensorMeta&, source::External>.  A TensorMeta under a different
@@ -24,7 +24,7 @@ int main() {
     auto sanitized = ::fixy::mint_tagged<::fixy::tags::source::External, const crucible::TensorMeta&>(meta)
                          .retag<::fixy::tags::source::Sanitized>();
 
-    // MUST fail: Tagged<const TensorMeta&, Sanitized> is not
+    // must fail: Tagged<const TensorMeta&, Sanitized> is not
     // ExternalTensorMeta.
     auto bytes = crucible::compute_storage_nbytes(sanitized);
     (void)bytes;

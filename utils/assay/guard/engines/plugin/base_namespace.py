@@ -1,6 +1,6 @@
 """base-namespace — a file outside the base declares nothing in a namespace of the base.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ gives a finding for each
     declaration in a namespace of the base, foundation or fixy and each
     namespace inside them, that a file outside the base spells, in each build
@@ -15,7 +15,7 @@ THE RULE
     An explicit or a partial specialization is no finding: the rules home and
     specialization-home judge it.  The rule reads the finding lines in the
     sections of the objects of the target all of one build
-    (assay.guard.engines.plugin.runner, THE SECTIONS).  The same line from two
+    (assay.guard.engines.plugin.runner, the sections).  The same line from two
     objects counts one time.
 
     The rule has no ledger, and each finding is an error.  A declaration in an

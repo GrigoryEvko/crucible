@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_hardening refuses a type that is not an execution context.  The
 // gate is IsExecCtx<Ctx> and a row that holds Init.  The two fixtures for

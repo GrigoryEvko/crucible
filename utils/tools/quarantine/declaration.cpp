@@ -2,17 +2,17 @@
 // each variable, data member, parameter and return type, each base, alias and
 // default template argument, each foreign symbol and each allocation function
 // gets its finding where the code declares it.  One walk of every namespace
-// reads the declarations at the end of the parse (THE HOOKS OF THE UNIT of
+// reads the declarations at the end of the parse (the hooks of the unit of
 // plugin.cpp), and the types that an instantiation deduces get their finding
 // at PLUGIN_PRE_GENERICIZE.
 //
-// THE FAMILY
+// Family
 //     The rules of the family read one property of a declaration, and each
-//     rule is one predicate of this file.  Their kinds are in plugin.h (THE
-//     RULES AND THE KINDS), and the module utils/assay/guard/engines/plugin/
+//     rule is one predicate of this file.  Their kinds are in plugin.h (the
+//     rules and the kinds), and the module utils/assay/guard/engines/plugin/
 //     RULE.py of each rule judges its findings against utils/ledgers/RULE.txt.
 //
-// THE SCOPE
+// Scope
 //     A rule of the family reads a declaration of a quarantined file in each
 //     unit that includes the file.  It reads a declaration of a base file only
 //     in one unit: the unit that compiles the file, or the unit whose argument
@@ -25,7 +25,7 @@
 //     (base_place).  The module of a rule keeps the findings in the scope
 //     of its row of utils/registry.txt.
 //
-// THE WALK
+// Walk
 //     PropertyWalk reads each namespace that no library file opens, at the end
 //     of the parse: each class, the pattern of each template and each
 //     explicit specialization.  At that point the body of a function that is
@@ -33,9 +33,9 @@
 //     each body that a rule reads, by DECL_UID.  A template pattern keeps its
 //     body.
 //
-// THE ENTITY OF AN OBJECT
+// Entity of an object
 //     The rule quarantine counts the same finding line from two objects one
-//     time (THE FINDINGS of utils/assay/guard/engines/plugin/quarantine.py),
+//     time (the findings of utils/assay/guard/engines/plugin/quarantine.py),
 //     and `guard list` prints the entity of each finding.  GCC prints a type with
 //     the template arguments and the parameter names of the first
 //     specialization that the unit made with the same arguments.  One
@@ -53,7 +53,7 @@
 //     One declaration then gives one finding line in each unit.
 //     record_library_object and record_raw_object give each such entity.
 //
-// THE RULE mint (CLAUDE.md section XXI)
+// Rule mint (CLAUDE.md section XXI)
 //     A mint is a function whose name starts with mint_ and does not end with
 //     an underscore, which is not deleted.  A function that only a friend
 //     declaration declares is no mint: its definition is the mint.  Each mint
@@ -99,14 +99,14 @@
 //     otherwise.  The entity of each line is the qualified name of the mint
 //     with the types of its parameters (function_signature).
 //
-// THE RULE permission-storage (CLAUDE.md section IX)
+// Rule permission-storage (CLAUDE.md section IX)
 //     A data member whose type names the class template Permission, also
 //     through a template argument, with no [[no_unique_address]], and each
 //     static data member whose type names it.  A pointer or a reference member
 //     holds no token, and it is none.  The entity is the qualified name of
 //     the member.
 //
-// THE RULE escape-doors (CLAUDE.md section XVI)
+// Rule escape-doors (CLAUDE.md section XVI)
 //     A public function of a base file that returns a reference or a raw
 //     pointer is a door.  A return of decltype(auto), of a dependent decltype
 //     or of a member type of a template that names a reference or a pointer
@@ -119,7 +119,7 @@
 //     name ends with an underscore is a door.  The entity is the
 //     function_signature of the door.
 //
-// THE SURFACE
+// Surface
 //     A caller names each member of the surface of a class through the
 //     class: its public members, the public members of each public base at
 //     each depth, and the targets of each public using-declaration.  A class
@@ -150,7 +150,7 @@
 //     at the class or at the using-declaration.  The entity of an unread base
 //     is CLASS : TYPE, and of an unread using-declaration CLASS using NAME.
 //
-// THE RULE stub-discipline (CLAUDE.md section XVIII)
+// Rule stub-discipline (CLAUDE.md section XVIII)
 //     An honesty marker is a constexpr bool with the value false whose name
 //     ends with _implemented, _attached or _ready.  A stub deprecation is the
 //     attribute deprecated with a reason that starts with CRUCIBLE_STUB:.  A
@@ -159,7 +159,7 @@
 //     its first deprecation.  The walk reads each declaration of a file, so
 //     the pair holds in the file.
 //
-// THE RULE process-wide-state (CLAUDE.md section XV)
+// Rule process-wide-state (CLAUDE.md section XV)
 //     An object is a variable with static or thread storage duration that
 //     can change: not constexpr, not const and no reference, and a definition.
 //     The macro CRUCIBLE_PROCESS_WIDE gives the attribute
@@ -180,7 +180,7 @@
 //     local.  The function of a static local of a lambda is the function that
 //     holds the lambda.
 //
-// THE THREAD-BOUND STATICS (the rule process-wide-state)
+// Thread-bound statics (the rule process-wide-state)
 //     A class that states thread_bound{} of foundation/Transfer.h belongs to
 //     one owner thread, and only the doors of foundation/Transfer.h move a
 //     value between threads.  Each thread reaches an object with static
@@ -196,11 +196,11 @@
 //     refers_deep{}, at each depth.  Each other type argument can be a brand
 //     or a tag, which names no object, and a pointer holds nothing, so the
 //     walk reads neither.  A thread_local object belongs to one thread, so it
-//     can hold such a class.  The rule reads each file of the family (THE
-//     SCOPE), so a test can hold no such global either.  A variable of a type
+//     can hold such a class.  The rule reads each file of the family (the
+//     scope), so a test can hold no such global either.  A variable of a type
 //     that depends on a template parameter is read in no instance.
 //
-// THE LOAN-KEY STATICS (the rule process-wide-state)
+// Loan-key statics (the rule process-wide-state)
 //     A loan key of foundation/core/Frame.h opens the frames of the keyed
 //     owners of its brand one at a time, because the gate of each keyed door
 //     refuses a body that reaches a key of the brand.  The gate reads what the
@@ -216,7 +216,7 @@
 //     keys of the holder.  A const part ends the path: a const key moves into
 //     no door, and a const owner lends no writer.
 //
-// THE RULE lifetime-twin (CLAUDE.md section XVI)
+// Rule lifetime-twin (CLAUDE.md section XVI)
 //     The macro CRUCIBLE_LIFETIMEBOUND gives the attribute
 //     quarantine::lifetimebound, which this plugin registers on a parameter.
 //     Its handler notes the place of each marked parameter, and a marker on
@@ -234,7 +234,7 @@
 //     pattern of each template.  The entity is the function_signature of F
 //     and the number of the parameter.
 //
-// THE BORROWED PARAMETERS (the rule lifetime-twin, the kind missing-mark)
+// Borrowed parameters (the rule lifetime-twin, the kind missing-mark)
 //     A temporary binds a parameter by a const reference, and it ends with the
 //     full expression of the call.  A result that borrows such a parameter
 //     then names an ended object.  The walk of the returns of escape.cpp
@@ -261,7 +261,7 @@
 //     would refuse a temporary.  C++ has no such parameter, so this kind
 //     holds the fact until a type of the base can.
 //
-// THE RULE witness-roster (CLAUDE.md section XXI)
+// Rule witness-roster (CLAUDE.md section XXI)
 //     A class of a base file with a door shape attests to a fact that it
 //     cannot see, and a witness row of the rule table names it.  A class with
 //     a door shape and no witness row is the kind unrostered-witness.  A
@@ -288,7 +288,7 @@
 //     preprocessor arm that no build selects gives no finding (decision 5 of
 //     misc/01_10_2026_quarantine.md).
 //
-// THE RULE padded-list (CLAUDE.md section XV, "Compile time", rule 7)
+// Rule padded-list (CLAUDE.md section XV, "Compile time", rule 7)
 //     With -ftrivial-auto-var-init=zero, GCC writes one store for each
 //     padding hole of each element of a fixed list in an automatic object,
 //     with no loop.  A fixed list is an array of a class or a union, or such
@@ -324,8 +324,8 @@
 //     the list writes no store for it (decision 5 of
 //     misc/01_10_2026_quarantine.md).
 //     A quarantined file gives its line in each unit that completes the
-//     type.  A base file gives its line only in its sentinel unit (THE
-//     SCOPE).
+//     type.  A base file gives its line only in its sentinel unit (the
+//     scope).
 
 #include "plugin.h"
 
@@ -337,8 +337,8 @@ void walk_template(tree template_decl);
 void walk_namespace(tree ns);
 
 // The finding of the declaration DECL, whose type is a raw pointer, a member
-// pointer or a C array.  Its entity is the name of the declaration (THE ENTITY
-// OF AN OBJECT).
+// pointer or a C array.  Its entity is the name of the declaration (the entity
+// of an object).
 void record_raw_object(Kind kind, tree decl) { record(kind, DECL_SOURCE_LOCATION(decl), simple_name(decl)); }
 
 // The raw pointer, the pointer to a member and the C array that TYPE, the
@@ -366,7 +366,7 @@ void record_raw_type(tree type, tree decl, Role role) {
 
 // The finding of a declaration at LOCATION whose type holds REFUSED, a
 // library class that no admit row admits.  Its entity is the class with no
-// template argument (THE ENTITY OF AN OBJECT).  LANGUAGE is null in a
+// template argument (the entity of an object).  LANGUAGE is null in a
 // quarantined file.  In a file of language_of, LANGUAGE names that file.
 void record_library_object(tree refused, location_t location, const FileEntry* language) {
     Kind kind = library_of(TYPE_MAIN_DECL(refused)) == Library::c_library ? Kind::c_library_object : Kind::std_object;
@@ -380,7 +380,7 @@ void record_library_object(tree refused, location_t location, const FileEntry* l
 // spells a placeholder, such as `auto held = make(value);` with a dependent
 // initializer.  The code holds an object of that type, as it holds one that a
 // placeholder declares outside a template.  The entity is the entity of the
-// declaration in the pattern (THE ENTITY OF AN OBJECT).  Each instantiation
+// declaration in the pattern (the entity of an object).  Each instantiation
 // and the pattern then give one finding.  The walk of a quarantined file only
 // calls it.
 void check_deduced_object(tree decl, Role role) {
@@ -980,7 +980,7 @@ void check_instantiation(tree function) {
 // qualifiers, such as fixy::Holder::mint_view(const Carrier&) const.  type_text
 // prints each template argument, also a default one, and it names each
 // template parameter by its depth and its position, such as T0_1 (library.cpp,
-// THE TEXT OF A KEY).  So each unit gives one text for one function.
+// the text of a key).  So each unit gives one text for one function.
 // Complexity: O(parameters).
 std::string function_signature(tree function) {
     std::string text = qualified_name(function) + '(';
@@ -1017,12 +1017,12 @@ namespace {
 
 // ── The family: the scope and the place ─────────────────────────────────
 
-// True when the family reads FILE in this unit (THE SCOPE).
+// True when the family reads FILE in this unit (the scope).
 bool is_property_file(const FileEntry* file) {
     return file != nullptr && (file->file_class == FileClass::quarantined || file->is_sentinel);
 }
 
-// The place of the declaration at LOCATION (THE SCOPE), or an empty place
+// The place of the declaration at LOCATION (the scope), or an empty place
 // when the family does not read its file in this unit.
 Place property_place(location_t location) {
     Place place;
@@ -1054,7 +1054,7 @@ void record_property(Kind kind, const Place& place, const std::string& entity) {
 }
 
 // The place of a declaration of a base file at LOCATION, or an empty place
-// (THE SCOPE): the rules escape-doors and witness-roster hold the base.
+// (the scope): the rules escape-doors and witness-roster hold the base.
 Place base_place(location_t location) {
     Place place = property_place(location);
     return place.file_class == FileClass::base ? place : Place{};
@@ -1277,7 +1277,7 @@ bool is_named(tree type, const char* name) {
 }
 
 // The context type of a mint whose first parameter is a reference to a const
-// context, or NULL (THE RULE mint).  The type of the function gives the
+// context, or NULL (the rulemint).  The type of the function gives the
 // parameter, and each declaration of the function shares that type.
 tree context_type(tree function, tree parameters) {
     tree first = FUNCTION_FIRST_USER_PARMTYPE(function);
@@ -1363,7 +1363,7 @@ bool is_context_gated(tree function, tree parameters, tree context) {
     return false;
 }
 
-// The record and the findings of the mint FUNCTION (THE RULE mint).
+// The record and the findings of the mint FUNCTION (the rulemint).
 // IS_PATTERN is true for the pattern of a template, whose body the unit
 // keeps.
 void check_mint(tree function, bool is_pattern) {
@@ -1417,7 +1417,7 @@ void check_mint(tree function, bool is_pattern) {
 }
 
 // The class that the alias or the typedef DECL names, when a member function
-// of the class is a mint, or NULL (THE RULE mint).  The class of a
+// of the class is a mint, or NULL (the rulemint).  The class of a
 // specialization of a class template is the class of the template, which
 // holds the member declarations.  MINT_CLASSES keeps the answer of each class.
 tree aliased_mint_class(tree decl, std::unordered_map<tree, bool>& mint_classes) {
@@ -1453,7 +1453,7 @@ tree aliased_mint_class(tree decl, std::unordered_map<tree, bool>& mint_classes)
 constexpr const char* kMintAliasDirectories[] = {"include/"};
 
 // The record of the alias or the typedef DECL of a class with a member mint,
-// in a file of kMintAliasDirectories (THE RULE mint).  A fixture can
+// in a file of kMintAliasDirectories (the rulemint).  A fixture can
 // name the mint through the alias.
 void check_mint_alias(tree decl, std::unordered_map<tree, bool>& mint_classes) {
     tree owner = aliased_mint_class(decl, mint_classes);
@@ -1505,7 +1505,7 @@ bool names_permission(tree type, int depth) {
     return false;
 }
 
-// A member whose type names a Permission (THE RULE permission-storage).  A
+// A member whose type names a Permission (the rulepermission-storage).  A
 // pointer or a reference member holds no token of its own.  A data member
 // with [[no_unique_address]] is the handle shape, and a static member never
 // is.
@@ -1546,12 +1546,12 @@ bool is_one_of(const std::string& name, const char* const* names, std::size_t co
 }
 
 // The most links of a chain of member types, bases and using-declarations
-// that the rule follows (THE SURFACE).  A longer chain is unread.
+// that the rule follows (the surface).  A longer chain is unread.
 constexpr int kSurfaceDepth = 64;
 
 const FileEntry* expansion_file(location_t location);
 
-// The classes whose members a caller names through TYPE (THE SURFACE): TYPE
+// The classes whose members a caller names through TYPE (the surface): TYPE
 // when it names no template parameter, or else the pattern of its template,
 // of each partial specialization and of each explicit specialization.  A pack
 // expansion gives its pattern, and a typename type gives the member type of
@@ -1688,8 +1688,8 @@ struct Door {
     std::string entity;
 };
 
-// The door of FUNCTION, which can hand out a raw reference or pointer (THE
-// RULE escape-doors).  An operator other than a conversion, a mint, a getter
+// The door of FUNCTION, which can hand out a raw reference or pointer (the
+// rule escape-doors).  An operator other than a conversion, a mint, a getter
 // whose name kAccessors holds and a function that is no member and whose name
 // ends with an underscore are no door.  A member that a caller names through
 // a class is part of the surface of the class, whatever its name, so a
@@ -1719,7 +1719,7 @@ Door door_of(tree function) {
     return door;
 }
 
-// A public function that hands out a raw reference or pointer (THE RULE
+// A public function that hands out a raw reference or pointer (the rule
 // escape-doors).  A private or protected member and a friend with no body
 // are no door.
 void check_escape(tree function, bool is_defined) {
@@ -1846,8 +1846,8 @@ bool keeps_subobject(tree cast_type, const std::vector<tree>& bases) {
     return target == NULL_TREE || !CLASS_TYPE_P(target) || is_self_or_base(target, bases);
 }
 
-// True when the expression NODE gives a public subobject of *this (THE
-// SURFACE).  The walk reads the tree of a body before cp_genericize, or the
+// True when the expression NODE gives a public subobject of *this (the
+// surface).  The walk reads the tree of a body before cp_genericize, or the
 // tree of a template.  An address names the subobject at a member access and
 // *this, through the casts to the class or a base: the address of the object
 // parameter, or the address of an lvalue.  An lvalue is a member access of a
@@ -1937,13 +1937,13 @@ tree walk_subobject_returns(tree* node_pointer, int* walk_subtrees, void* data) 
 
 // The DECL_UID of each member function that is not a template whose return
 // statements each give a public subobject of *this, from its body before
-// cp_genericize (THE SURFACE).  The walk of the end of the unit reads a
+// cp_genericize (the surface).  The walk of the end of the unit reads a
 // lowered body, which a sanitizer changes, so the fact comes from
 // PLUGIN_PRE_GENERICIZE.  No collection reuses a DECL_UID.
 std::unordered_set<int> subobject_getters;
 
 // True when each return statement of the member function FUNCTION of
-// CLASS_TYPE gives a public subobject of *this (THE SURFACE).  A function with
+// CLASS_TYPE gives a public subobject of *this (the surface).  A function with
 // no body or no return statement gives no such fact.  Complexity: linear in
 // the body and in the bases of the class.
 bool returns_only_public_subobjects(tree function, tree class_type) {
@@ -1960,7 +1960,7 @@ bool returns_only_public_subobjects(tree function, tree class_type) {
     return walk.saw_return && walk.is_each_subobject;
 }
 
-// True when CLASS_TYPE guards its storage (THE SURFACE): it is no aggregate,
+// True when CLASS_TYPE guards its storage (the surface): it is no aggregate,
 // or it declares a public member function that hands out a raw reference or
 // pointer to something other than the class itself or a public subobject of
 // it.  An aggregate with no such function is a named record, and its parts
@@ -2007,7 +2007,7 @@ void each_public_field(tree class_type, Visit visit, int depth) {
     }
 }
 
-// The declarations that the using-declaration USING names (THE SURFACE): the
+// The declarations that the using-declaration USING names (the surface): the
 // declarations that the front end gives, or for a dependent scope each member
 // of that name in the classes of the scope, and else in their bases.  An
 // empty list tells that the rule cannot read them.
@@ -2051,7 +2051,7 @@ void named_members(tree scope, tree name, std::vector<tree>& found, int depth) {
     }
 }
 
-// The surface of a class CLASS_TYPE of a base file (THE SURFACE): its public
+// The surface of a class CLASS_TYPE of a base file (the surface): its public
 // data members when it guards its storage, the members of each public base
 // at each depth, and the targets of each public using-declaration.  A public
 // function of a class of a base file is read at its own declaration, and a
@@ -2182,7 +2182,7 @@ bool has_only_name_letters(const std::string& text, std::size_t end, bool is_low
     return true;
 }
 
-// True when NAME is a passkey type (THE RULE witness-roster): lowercase
+// True when NAME is a passkey type (the rulewitness-roster): lowercase
 // letters and underscores that end with _key, or letters and underscores that
 // end with Key.
 bool is_passkey_type_name(const std::string& name) {
@@ -2258,7 +2258,7 @@ bool holds_expected_of(tree type, tree owner, const std::string& name, int depth
     return false;
 }
 
-// The door shapes of one class (THE RULE witness-roster).
+// The door shapes of one class (the rulewitness-roster).
 struct DoorShapes {
     bool is_strong = false;
     bool is_weak = false;
@@ -2371,7 +2371,7 @@ const std::unordered_set<std::string>& witness_names() {
     return names;
 }
 
-// A class of a base file with a door shape and no witness row (THE RULE
+// A class of a base file with a door shape and no witness row (the rule
 // witness-roster).
 void check_witness(tree type) {
     tree main_type = TYPE_MAIN_VARIANT(type);
@@ -2489,7 +2489,7 @@ void on_finish_stub_declaration(void* gcc_data, void*) {
 }
 
 // The finding of each file with a marker and no deprecation, and of each file
-// with a deprecation and no marker (THE RULE stub-discipline), in the
+// with a deprecation and no marker (the rulestub-discipline), in the
 // sequence of the paths.
 void report_stubs(const StubFiles& stubs) {
     std::vector<const StubFile*> files;
@@ -2619,7 +2619,7 @@ void check_marker_faults(tree holder, bool is_variable, bool is_templated, const
     }
 }
 
-// A variable at namespace scope or a static data member (THE RULE
+// A variable at namespace scope or a static data member (the rule
 // process-wide-state).  IS_TEMPLATED is true for a variable of a template.
 void check_process_wide_variable(tree decl, bool is_templated) {
     bool is_marked = has_process_wide_marker(decl);
@@ -2642,21 +2642,21 @@ void check_process_wide_variable(tree decl, bool is_templated) {
 }
 
 // The two walks of the static kinds: the walk of a class that states
-// thread_bound{} (THE THREAD-BOUND STATICS), and the walk of a class with the
-// annotation loan_key_mark{} through each path that is not const (THE
-// LOAN-KEY STATICS).
+// thread_bound{} (the thread-bound statics), and the walk of a class with the
+// annotation loan_key_mark{} through each path that is not const (the
+// loan-key statics).
 enum class StaticWalk : std::uint8_t {
     thread_bound,
     loan_key,
 };
 
 // The answer of each walk for each class, by its TYPE_UID, which no
-// collection reuses (THE COLLECTIONS of plugin.h).
+// collection reuses (the collections of plugin.h).
 std::unordered_map<unsigned, bool> thread_bound_classes;
 std::unordered_map<unsigned, bool> loan_key_classes;
 
-// True when TYPE holds a class of the mark of WALK (THE THREAD-BOUND STATICS,
-// THE LOAN-KEY STATICS).  A class that the walk meets again during its walk
+// True when TYPE holds a class of the mark of WALK (the thread-bound statics,
+// the loan-key statics).  A class that the walk meets again during its walk
 // holds nothing, so a type that reaches itself ends the walk.  An incomplete
 // class is read in no part.  Complexity: linear in the distinct classes that
 // the type reaches, one time for each class and each walk in a unit.
@@ -2732,8 +2732,8 @@ bool holds_static_mark(tree type, StaticWalk walk, int depth) {
 
 // A variable with static storage duration whose type holds a class that
 // states thread_bound{}, and a variable with static or thread storage
-// duration whose type reaches a loan key or a keyed owner (THE THREAD-BOUND
-// STATICS, THE LOAN-KEY STATICS).  ENTITY names it.
+// duration whose type reaches a loan key or a keyed owner (the thread-bound
+// statics, the loan-key statics).  ENTITY names it.
 void check_static_reach(tree decl, const std::string& entity) {
     if (!VAR_P(decl) || DECL_ARTIFICIAL(decl)) {
         return;
@@ -2801,8 +2801,8 @@ std::string holder_name(tree function) {
 // The functions that hold a static local in this unit, by DECL_UID.
 std::unordered_set<unsigned> holders_with_object;
 
-// The static locals of the body of FUNCTION, at the end of its parse (THE
-// RULE process-wide-state).
+// The static locals of the body of FUNCTION, at the end of its parse (the
+// rule process-wide-state).
 void check_static_locals(tree function, bool is_processing) {
     tree body = DECL_INITIAL(function);
     if (body == NULL_TREE || TREE_CODE(body) != BLOCK) {
@@ -2832,7 +2832,7 @@ void check_static_locals(tree function, bool is_processing) {
     }
 }
 
-// A marked function that holds no static local in this unit (THE RULE
+// A marked function that holds no static local in this unit (the rule
 // process-wide-state).  The walk asks at the end of the parse, after each
 // body.
 void check_marked_function(tree function) {
@@ -2849,7 +2849,7 @@ void check_marked_function(tree function) {
 // function is no instance of a template: the bindings of its scope keep it, or
 // the body of the function that declares its class keeps it, to the end of the
 // parse, and its type keeps the type of the parameter.  The walk of the end of
-// the parse reads each claim (THE COLLECTIONS of plugin.h).
+// the parse reads each claim (the collections of plugin.h).
 struct LifetimeClaim {
     tree function = NULL_TREE;
     int index = 0;
@@ -2889,7 +2889,7 @@ std::string lifetime_entity(tree function) {
     return qualified_name(owner) + "::" + simple_name(TYPE_NAME(owner)) + signature.substr(name.size());
 }
 
-// The claim of each marked parameter of FUNCTION that has no claim (THE RULE
+// The claim of each marked parameter of FUNCTION that has no claim (the rule
 // lifetime-twin).  The places of the marked parameters bound the test of a
 // place before the hash lookup.  Complexity: O(parameters).
 void note_lifetime_claims(tree function) {
@@ -3004,7 +3004,7 @@ void report_lifetime_claims() {
 // ── The borrowed parameters ─────────────────────────────────────────────
 
 // One parameter by a const reference that a return of its function borrows,
-// with no mark (THE BORROWED PARAMETERS).  The function can be an instance of
+// with no mark (the borrowed parameters).  The function can be an instance of
 // a template, and the place is the place of the parameter in its pattern.
 struct BorrowClaim {
     tree function = NULL_TREE;
@@ -3192,7 +3192,7 @@ const scoped_attribute_specs kPropertyAttributeSpecs = {"quarantine", {kProperty
 
 void on_register_attributes(void*, void*) { register_scoped_attributes(kPropertyAttributeSpecs); }
 
-// A declaration of a function that is no template (THE RULE lifetime-twin).
+// A declaration of a function that is no template (the rulelifetime-twin).
 void on_finish_lifetime_declaration(void* gcc_data, void*) {
     tree decl = static_cast<tree>(gcc_data);
     if (decl != NULL_TREE && TREE_CODE(decl) == FUNCTION_DECL) {
@@ -3201,7 +3201,7 @@ void on_finish_lifetime_declaration(void* gcc_data, void*) {
 }
 
 // The definition of a template gives the parameters of each earlier
-// declaration of its name before GCC merges the two (THE RULE lifetime-twin).
+// declaration of its name before GCC merges the two (the rulelifetime-twin).
 void on_start_function_property(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
     if (lifetime_bound_parameters.empty() || processing_template_decl == 0 || function == NULL_TREE
@@ -3233,7 +3233,7 @@ void on_finish_function_property(void* gcc_data, void*) {
 constexpr const char* kPaddedListDirectories[] = {"include/", "src/"};
 
 // True when a list of COUNT elements gives a line: more elements than the
-// threshold of the argument padded-list-limit (THE RULE padded-list).
+// threshold of the argument padded-list-limit (the rulepadded-list).
 bool is_long_list(std::uint64_t count) { return count > state.padded_list_limit; }
 
 // The size of TYPE in bits, or 0 when the size is no constant.
@@ -3397,7 +3397,7 @@ void array_ranges(tree type, RangeFacts& result, PaddingFacts& facts, int depth)
 }
 
 // The bit ranges of an object of TYPE that hold a value, joined and sorted
-// (THE RULE padded-list).  Only the value bits of a union read them.  A
+// (the rulepadded-list).  Only the value bits of a union read them.  A
 // reference holds a pointer, and a floating-point type holds the bits of its
 // precision.  A type deeper than kTypeDepth holds no value bit, and the walk
 // then fails closed.  The walk keeps the answer of each type.
@@ -3464,7 +3464,7 @@ std::uint64_t union_value_bits(tree type, PaddingFacts& facts, int depth) {
     return covered;
 }
 
-// The number of the bits of an object of TYPE that hold a value (THE RULE
+// The number of the bits of an object of TYPE that hold a value (the rule
 // padded-list).  The fields of a class do not overlap in their value bits,
 // and the value bits of a class are then the sum of the value bits of its
 // fields.  An array holds the value bits of each element.  A type deeper
@@ -3576,7 +3576,7 @@ void holder_lists(tree type, std::vector<PaddedList>& found, PaddingFacts& facts
 }
 
 // The longest fixed list of each element type with a padding bit in one
-// object of TYPE (THE RULE padded-list).  The search reads an array, and the
+// object of TYPE (the rulepadded-list).  The search reads an array, and the
 // bases and the data members of a class that is_list_holder enters.  A type
 // deeper than kTypeDepth holds no list.  The walk keeps the answer of each
 // type, so a type that holds one class two times reads that class one time.
@@ -3617,7 +3617,7 @@ bool has_line(const std::vector<PaddedList>& lists) {
 }
 
 // One line at PLACE for each list of LISTS that gives a line (is_long_list,
-// THE RULE padded-list).  DECLARATION names the declaration in the entity.
+// the rulepadded-list).  DECLARATION names the declaration in the entity.
 void record_padded_lists(Kind kind, const Place& place, const std::vector<PaddedList>& lists,
                          const std::string& declaration, PaddingFacts& facts) {
     for (const PaddedList& list : lists) {
@@ -3635,7 +3635,7 @@ void record_padded_lists(Kind kind, const Place& place, const std::vector<Padded
 // or an empty place.
 Place padded_list_place(tree decl) { return place_under(DECL_SOURCE_LOCATION(decl), kPaddedListDirectories); }
 
-// The type of an alias, a variable or a data member DECL (THE RULE
+// The type of an alias, a variable or a data member DECL (the rule
 // padded-list).  The function reads the place first, and a declaration
 // outside the scope of the rule then reads no type.
 void check_padded_declaration(tree decl, Kind kind, PaddingFacts& facts) {
@@ -3667,8 +3667,8 @@ bool can_take_list(tree function) {
     return false;
 }
 
-// The return type and each parameter by value of the function FUNCTION (THE
-// RULE padded-list).  A constructor and a destructor have no return type of
+// The return type and each parameter by value of the function FUNCTION (the
+// rule padded-list).  A constructor and a destructor have no return type of
 // their own, and a function that the compiler declares is no declaration of
 // the code.  The function reads the place first, and a function outside the
 // scope of the rule then reads no type.
@@ -3832,7 +3832,7 @@ struct PropertyWalk {
             return;
         }
         // The walk reads the members of a class only when the family reads the
-        // file of the class (THE SCOPE).
+        // file of the class (the scope).
         tree decl = TYPE_MAIN_DECL(main_type);
         if (decl == NULL_TREE || property_place(DECL_SOURCE_LOCATION(decl)).file == nullptr) {
             return;
@@ -3956,14 +3956,14 @@ struct PropertyWalk {
 };
 
 // The facts of the body of each function that is not a template, at
-// PLUGIN_PRE_GENERICIZE (THE WALK).
+// PLUGIN_PRE_GENERICIZE (the walk).
 void on_pre_genericize_property(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
     if (function == NULL_TREE) {
         return;
     }
-    // A public getter of a class of a base file, for guards_storage (THE
-    // SURFACE).
+    // A public getter of a class of a base file, for guards_storage (the
+    // surface).
     tree owner = DECL_CONTEXT(function);
     if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_IOBJ_MEMBER_FUNCTION_P(function) && is_public_member(function)
         && owner != NULL_TREE && CLASS_TYPE_P(owner) && can_hand_out(function) && in_base_file(function)
@@ -3988,7 +3988,7 @@ void note_borrowed_parameter(tree function, tree parameter, int index) {
 
 // One walk of every namespace that a system header does not own, for the
 // contract rule and for the quarantine rule, and one walk for the family
-// declaration property (THE WALK).
+// declaration property (the walk).
 void walk_declarations() {
     walk_contract_namespace(global_namespace);
     walk_namespace(global_namespace);
@@ -4000,7 +4000,7 @@ void walk_declarations() {
 }
 
 // The error of one finding of the kind thread-bound-static or loan-key-static
-// (THE THREAD-BOUND STATICS, THE LOAN-KEY STATICS), in each mode.  The message
+// (the thread-bound statics, the loan-key statics), in each mode.  The message
 // does not start with "quarantine: ", so a regex of a negative fixture reads
 // it.
 void report_static_reach(const Finding& finding) {

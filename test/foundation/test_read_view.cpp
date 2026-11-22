@@ -210,8 +210,8 @@ void test_fork_inline_inside_the_door(::fixy::TestRunnerCtx const& test) {
     ::foundation::linear::drop(std::move(config_back));
 }
 
-// A body of a borrow and of a fork gives its value back (THE VALUE OF A
-// BODY): the borrow gives the value beside the token, and the fork gives the
+// A body of a borrow and of a fork gives its value back (the value of a
+// body): the borrow gives the value beside the token, and the fork gives the
 // value of each body in child order, with Unit for a body that gives
 // nothing, and the parent last.
 void test_fork_gives_the_value_of_each_body(::fixy::TestRunnerCtx const& test) {

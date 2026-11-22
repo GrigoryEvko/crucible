@@ -514,7 +514,7 @@ CRUCIBLE_CLOSED_SURFACE(region_names, detail::ChunkCursor<int const, 3>, CursorP
 static_assert(!closed_surface<ViewCursor<int>>(region_names).is_closed());
 static_assert(!closed_surface<IndexCursor<4>>(region_names).is_closed());
 
-// A View refers to its elements (THE TRANSFER).  A View of const elements
+// A View refers to its elements (the transfer).  A View of const elements
 // moves to another thread and two threads read it.  A View of elements that
 // are not const gives T& from a const View, so it holds neither property for
 // a plain int.

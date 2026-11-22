@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The members of the door of the mints are public, and each one states
 // the whole gate of its mint.  A direct call of the door with a protocol

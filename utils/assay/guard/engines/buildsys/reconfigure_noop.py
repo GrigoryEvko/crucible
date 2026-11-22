@@ -4,7 +4,7 @@ A configure run that writes a file again with the same content makes each
 build compile objects that did not change.  A build edge that is always
 dirty does the same.  The rule finds the two.
 
-THE RULE
+Rule
     1. The rule builds the build directory with `cmake --build`.  The build
        is then current before the rule measures it.
     2. It records the symbolic links in the build directory.
@@ -55,20 +55,20 @@ THE RULE
     The rule has no ledger, and each finding is an error.  The end of the
     output of a step that explains a finding goes to the standard error.
 
-THE JOBS
+Jobs
     `cmake --build` gets no --parallel.  CMake then uses
     CMAKE_BUILD_PARALLEL_LEVEL of the environment, or else the default of
     Ninja: the number of CPUs and two.  The Ninja pools of the build
     (cmake/JobPools.cmake) hold the compiles and the links to depths that
     the host gives.
 
-THE TEST
+Test
     The rule configures a build again and builds it, and a ctest test cannot
     do that to the build that runs it.  Its ctest test runs only the witness.
     A step of the CI build job runs the rule:
         guard check --rule reconfigure-noop --build-dir BUILD_DIR
 
-THE PLANTS
+Plants
     A plant with the file CMakeLists.txt.planted is a small CMake project.
     plant_context() copies it, and configures it with the Ninja generator
     into build/ of the copy.  For a control, it then adds a comment line to
@@ -205,7 +205,7 @@ def read_links(build: Path) -> dict[str, LinkState]:
 
 
 def build_once(tree: BuildDir) -> Step:
-    """Build the directory with `cmake --build`, with the reasons of Ninja for each edge (THE JOBS)."""
+    """Build the directory with `cmake --build`, with the reasons of Ninja for each edge (the jobs)."""
     return run_step([tree.cmake, "--build", str(tree.path), "--", "-d", "explain"])
 
 
@@ -327,7 +327,7 @@ def missing_findings(context: BuildContext, build: Path) -> list[check_report.Fi
 
 
 def evaluate(context: BuildContext, explained: list[str]) -> list[check_report.Finding]:
-    """Build the directory, configure it again, build it two times, and return the findings (THE RULE).
+    """Build the directory, configure it again, build it two times, and return the findings (the rule).
 
     The end of the output of each step that explains a finding goes into explained.
 
@@ -391,7 +391,7 @@ def findings(context: BuildContext) -> list[check_report.Finding]:
 
 
 def planted_tools() -> tuple[str, str]:
-    """Return the cmake and the ninja of a planted project (THE PLANTS).
+    """Return the cmake and the ninja of a planted project (the plants).
 
     Raises:
         NotApplicable: If no cmake is at its pin, or no ninja is given or on PATH
@@ -413,7 +413,7 @@ def planted_tools() -> tuple[str, str]:
 def plant_context(plant: Path, scratch: Path) -> BuildContext:
     """Copy a planted project, configure it, make the first build of a control run CMake, and give the context.
 
-    THE PLANTS of the module text tells the steps.
+    The plants of the module text tell the steps.
 
     Raises:
         NotApplicable: If the tools are not there, or the project does not configure

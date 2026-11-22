@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The live slot of TransactionLog is
 // fixy::Tagged<Option<Ref<Transaction>>, source::Ring>.  A slot under the

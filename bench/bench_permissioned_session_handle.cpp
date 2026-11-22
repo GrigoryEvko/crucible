@@ -251,7 +251,7 @@ void print_one_send(bench::Report const& report, CallerForm form) {
 
 // ── The speed of light ───────────────────────────────────────────────
 //
-// THE FLOOR ROWS.  The floor of a send is the work of its item with no
+// Floor rows.  The floor of a send is the work of its item with no
 // handle: the add of the item, the input sink, and the write of the item
 // into the channel through the output sink.  The local floor runs that work
 // kSendsPerBody times on a channel that is local to the body, as the local
@@ -260,7 +260,7 @@ void print_one_send(bench::Report const& report, CallerForm form) {
 // The gap of a row to its floor is the cost of the handle: the liveness
 // flag, the holder check, the count of the steps and the moves.
 //
-// THE MODEL.  A send of the local floor is one add, one store of the output
+// Model.  A send of the local floor is one add, one store of the output
 // sink and the branch of the loop: three macro-ops, below the dispatch of six
 // a cycle.  The core takes one taken branch a cycle, so the model floor of a
 // send of a local form is one cycle (the Software Optimization Guide for the
@@ -268,11 +268,11 @@ void print_one_send(bench::Report const& report, CallerForm form) {
 // 2.9.8).  The floor of the caller memory adds the load of the item and the
 // store of the item of the caller.
 //
-// THE CLOCK.  kClockAdds dependent adds take one cycle each, so their time
+// Clock.  kClockAdds dependent adds take one cycle each, so their time
 // gives the cycles of one nanosecond of the core in this run.  The core can
 // run at a clock that is not the clock of the TSC.
 //
-// THE CHAIN ROWS.  A body mints a session, sends kChainSends items and ends
+// Chain rows.  A body mints a session, sends kChainSends items and ends
 // it.  The finite chain is a protocol of kChainSends sends and End, so no
 // handle of it keeps a count of its steps.  The looped chain sends the same
 // items through Loop<Send<Item, Continue>> and detaches, so each of its
@@ -296,7 +296,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: a chain of dependent adds gives the cloc
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-// kClockAdds dependent adds: one cycle each on the core (THE CLOCK).  The chain
+// kClockAdds dependent adds: one cycle each on the core (the clock).  The chain
 // runs on a local, so the value stays in a register.
 struct ClockChain {
     std::uint64_t value = 0;
@@ -310,7 +310,7 @@ struct ClockChain {
 
 using CoreClock = ::fixy::Quantity<::fixy::unit::Quotient<::fixy::unit::Cycle, ::fixy::unit::Nanosecond>, double>;
 
-// The cycles of one nanosecond of the core in this run (THE CLOCK).
+// The cycles of one nanosecond of the core in this run (the clock).
 [[nodiscard]] CoreClock measure_clock() {
     ClockChain chain{};
     bench::Report const report = bench::Run("clock").batch(kClockBatch).measure(chain);
@@ -318,7 +318,7 @@ using CoreClock = ::fixy::Quantity<::fixy::unit::Quotient<::fixy::unit::Cycle, :
     return CoreClock{report.pct.p50 > 0.0 ? kClockAdds / report.pct.p50 : 0.0};
 }
 
-// The sends of one body of a floor row, with no handle (THE FLOOR ROWS).
+// The sends of one body of a floor row, with no handle (the floor rows).
 template <CallerForm Form>
 void floor_body(FakeChannel& channel, Item& item) noexcept {
     if constexpr (Form == CallerForm::LocalHandle) {
@@ -348,7 +348,7 @@ template <CallerForm Form>
     return report;
 }
 
-// The protocol of the finite chain: kChainSends sends and End (THE CHAIN ROWS).
+// The protocol of the finite chain: kChainSends sends and End (the chain rows).
 template <std::uint32_t Count>
 struct send_chain_of {
     using type = s::Send<Item, typename send_chain_of<Count - 1>::type>;

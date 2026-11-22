@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The input payload is a plain struct that holds a computation engaged
 // at Row<IO> in a member.  No template argument of the payload names the

@@ -1,14 +1,14 @@
 """counted — the verdict and the write of a plugin rule with a ledger that counts the findings of each key.
 
-THE COUNTED RULES
+Counted rules
     The rules quarantine and heavy-include count the findings of each key in
     the rows of assay.core.ledger (the policy count).  A key is the path, the
     kind and the entity of a finding.  The rule quarantine gives the
     directory of a file as the path, and the rule heavy-include gives the
     file.  The arms of a preprocessor conditional change with the
-    configuration of a build (assay.core.configuration, THE CONFIGURATION).
+    configuration of a build (assay.core.configuration, the configuration).
     One set of rows judges each build, and the count of a key is its largest
-    count over the configurations of the landing gate (THE REDUCE of
+    count over the configurations of the landing gate (the reduce of
     assay.core.ledger):
 
         format 1
@@ -19,7 +19,7 @@ THE COUNTED RULES
     of one rule.  This module gives the run and the write that the rules
     share.
 
-THE CONTEXT
+Context
     A rule reads its build through a runner.PluginContext: root, build_dir,
     build_shown() and census().  census() gives the number of units of the
     build in its field objects, and the summary line names them.  The rule
@@ -28,18 +28,18 @@ THE CONTEXT
     of the context in `context_of`, and the rule heavy-include takes
     runner.PluginContext.
 
-THE RUN
+Run
     A run reads the ledger and the inputs of the rule first.  A ledger or an
     input that cannot be read gives one error.  The run judges the counts of
     the build against the rows of the ledger.  A count below its row passes
-    (THE POLICIES of assay.core.ledger).
+    (the policies of assay.core.ledger).
 
-THE WRITE
+Write
     `guard write --rule RULE --build-dir DIR` writes the counts of one build.
-    The counts of one build are partial, and the write lowers no row (THE
-    WRITE of assay.core.ledger).  The landing gate gives the write a build
+    The counts of one build are partial, and the write lowers no row (the
+    write of assay.core.ledger).  The landing gate gives the write a build
     of each of its configurations, and the write then lowers each row to the
-    largest count over these builds (THE REDUCE of assay.core.ledger).  A
+    largest count over these builds (the reduce of assay.core.ledger).  A
     build with a problem makes the write write nothing.  The write gives the
     ledger the head comment of the rule, and with no such comment it keeps
     the head of the file.  It refuses a count more than its row, with two
@@ -76,7 +76,7 @@ INPUT_ERRORS = (OSError, rows_grammar.RowsError, ruletable.TableError)
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class CountedRule[Inputs]:
-    """One rule with a ledger that counts the findings of each key: a path, a kind and an entity (THE COUNTED RULES).
+    """One rule with a ledger that counts the findings of each key: a path, a kind and an entity (counted rules).
 
     `findings` gives the findings of the build: each finding has a kind, and a problem has no kind.  `inputs` reads
     the inputs of the verdict from the root of the tree, and it can raise an error of INPUT_ERRORS.  `evaluate`
@@ -86,9 +86,9 @@ class CountedRule[Inputs]:
     `summary` gives the line of a run or a write: it takes the counts, the number of units and a verb.
     `admitted_kinds` are the kinds of a count that --admit can write above its row.  `refusal` is the advice of a
     write that refuses a count above its row.  `context_of` makes the context of a build from the root and the build
-    directory (THE CONTEXT).  `comment` is the head comment that each write gives the ledger (assay.core.ledger, THE
-    HEAD COMMENT).  An empty text keeps the head of the file.  `is_gone` takes the root of the tree and a key, and it
-    tells that no build of any configuration can give a finding of the key (THE WRITE).  With None, a write of one
+    directory (the context).  `comment` is the head comment that each write gives the ledger (assay.core.ledger, the
+    head comment).  An empty text keeps the head of the file.  `is_gone` takes the root of the tree and a key, and it
+    tells that no build of any configuration can give a finding of the key (the write).  With None, a write of one
     build keeps each row.
     """
 
@@ -174,10 +174,10 @@ def judge[Inputs](
 def run[Inputs](
     spec: CountedRule[Inputs], rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: Path | None
 ) -> int:
-    """Run the rule on the build of the context, judge its counts against the ledger, and write the findings (THE RUN).
+    """Run the rule on the build of the context, judge its counts against the ledger, and write the findings (the run).
 
     Returns:
-        0 with no error, 1 with an error, SKIPPED when the rule does not apply to the build (THE STATUS of the runner)
+        0 with no error, 1 with an error, SKIPPED when the rule does not apply to the build (the status of the runner)
     """
     try:
         ledger = rule_ledger.read(rule, context.root)
@@ -197,7 +197,7 @@ def run[Inputs](
 
 
 def build_counts[Inputs](spec: CountedRule[Inputs], context: runner.PluginContext) -> Counter[Key]:
-    """Return the counts of the build of the context for a write (THE WRITE).
+    """Return the counts of the build of the context for a write (the write).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -213,7 +213,7 @@ def build_counts[Inputs](spec: CountedRule[Inputs], context: runner.PluginContex
 
 
 def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the counts of the builds of the request (THE WRITE).
+    """Write the counts of the builds of the request (the write).
 
     Returns:
         0 when the ledger is written.  1 when an object has a problem, a count increased or an input cannot be read.
@@ -263,7 +263,7 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
 def without_gone_rows[Inputs](
     spec: CountedRule[Inputs], ledger: rule_ledger.Ledger, counts: Mapping[Key, int], root: Path
 ) -> rule_ledger.Ledger:
-    """Return the ledger with no row of a key that its builds do not count and that no build can give (THE WRITE).
+    """Return the ledger with no row of a key that its builds do not count and that no build can give (the write).
 
     Each removed row gives one line.  A reason row of a prefix that then holds no row goes too.  Complexity: linear in
     the rows, and one call of `is_gone` for each row with no count.

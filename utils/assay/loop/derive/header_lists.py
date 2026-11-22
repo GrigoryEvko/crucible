@@ -3,7 +3,7 @@
 usage: loop derive header-lists --write
        loop derive header-lists --check
 
-THE LISTS
+Lists
     CMake reads no header.  Two fragments of CMake give it the headers of two
     reflection walks, and each fragment is one set() command:
       test/layer/walk-headers.cmake        CRUCIBLE_WALK_HEADERS: the crucible
@@ -19,7 +19,7 @@ THE LISTS
     such a macro.  A header joins the roster list when it declares an alias permission_row or
     parent_type, or when it opens the namespace permission_rows.
 
-THE DRIFT
+Drift
     drift() derives the text of each fragment from the parse trees, and it
     compares the text with the file.  The rule derived-files
     (assay.guard.engines.meta.derived_files) gives its findings.  It refuses:
@@ -27,7 +27,7 @@ THE DRIFT
                        parse trees, also a missing fragment
       `parse`          a header that the kit cannot parse
 
-THE PARSE
+Parse
     A namespace opens at a namespace_definition with a declaration list, when
     no function body and no lambda holds it.  The names of a macro body that
     parses are its nodes of NAME_LEAVES.  The names of a different body are
@@ -36,7 +36,7 @@ THE PARSE
     parse.  A header names a macro when an identifier node of its tree is the
     name.
 
-THE MODES
+Modes
     --write     write each fragment again from the parse trees, and only when
                 its bytes change.  It writes nothing while a header does not
                 parse.
@@ -65,7 +65,7 @@ PROGRAM = "loop derive header-lists"
 CHECK = "derived-files"
 INCLUDE = "include"
 WRITE_COMMAND = "python3 utils/bin/loop derive header-lists --write"
-# The two fragments of THE LISTS, the variable that each one sets, and the lines of its head comment.
+# The two fragments of the lists, the variable that each one sets, and the lines of its head comment.
 WALK_HEADERS = "test/layer/walk-headers.cmake"
 ROSTER_HEADERS = "test/permission-row-headers.cmake"
 WALK_VARIABLE = "CRUCIBLE_WALK_HEADERS"
@@ -101,7 +101,7 @@ ROSTER_NAMESPACE = "permission_rows"
 
 @dataclass(frozen=True, slots=True)
 class HeaderLists:
-    """The crucible headers of the walk units, and the headers of the roster of the permission tags (THE LISTS).
+    """The crucible headers of the walk units, and the headers of the roster of the permission tags (the lists).
 
     Each path is relative to include/, in the sequence of the paths.
     """
@@ -112,7 +112,7 @@ class HeaderLists:
 
 @dataclass(frozen=True, slots=True)
 class Fragment:
-    """One fragment of THE LISTS: its path in the tree and its text."""
+    """One fragment of the lists: its path in the tree and its text."""
 
     path: str
     text: str
@@ -131,7 +131,7 @@ def opened_namespaces(tree: tsast.Tree) -> list[tuple[str, ...]]:
 
 
 def body_words(body: tsast.MacroBody) -> set[str]:
-    """Return each name in a macro body, and the word namespace when the body opens a namespace (THE PARSE)."""
+    """Return each name in a macro body, and the word namespace when the body opens a namespace (the parse)."""
     if not body.is_parsed:
         return {token.text for token in tsast.pp_tokens(body.text, body.first_row) if token.kind == "identifier"}
     words = {tsast.lexeme(leaf) for leaf in body.root.descendants(*NAME_LEAVES)}
@@ -174,7 +174,7 @@ def headers_of(context: TsastContext) -> list[str]:
 
 
 def unparsed(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each header of include/ that the kit cannot parse (THE DRIFT).
+    """Give an error for each header of include/ that the kit cannot parse (the drift).
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -194,7 +194,7 @@ def unparsed(context: TsastContext) -> list[check_report.Finding]:
 
 
 def header_lists(context: TsastContext) -> HeaderLists:
-    """Return the two header lists that the parse trees of include/ give (THE LISTS).
+    """Return the two header lists that the parse trees of include/ give (the lists).
 
     A header that the kit cannot parse is in no list.  Complexity: linear in the number of nodes of the trees of
     include/.
@@ -227,7 +227,7 @@ def fragment_text(variable: str, headers: tuple[str, ...], comment: tuple[str, .
 
 
 def fragments(lists: HeaderLists) -> tuple[Fragment, Fragment]:
-    """Return the two fragments of THE LISTS."""
+    """Return the two fragments of the lists."""
     return (
         Fragment(WALK_HEADERS, fragment_text(WALK_VARIABLE, lists.walk, WALK_COMMENT)),
         Fragment(ROSTER_HEADERS, fragment_text(ROSTER_VARIABLE, lists.roster, ROSTER_COMMENT)),
@@ -235,7 +235,7 @@ def fragments(lists: HeaderLists) -> tuple[Fragment, Fragment]:
 
 
 def drift(context: TsastContext) -> list[check_report.Finding]:
-    """Give an error for each header that does not parse, and for each fragment that differs (THE DRIFT).
+    """Give an error for each header that does not parse, and for each fragment that differs (the drift).
 
     Raises:
         tsast.KitMissing: If the pinned kit is not installed
@@ -297,7 +297,7 @@ def checked(root: Path) -> ExitCode:
 
 
 def main(argv: list[str]) -> int:
-    """Run one mode (THE MODES).
+    """Run one mode (the modes).
 
     Args:
         argv: The words after `loop derive header-lists`

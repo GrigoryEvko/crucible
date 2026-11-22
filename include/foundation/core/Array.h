@@ -15,7 +15,7 @@
 // its argument.  A list of fewer than N arguments is refused, so no tail of
 // an array is left with a value that no code chose.
 //
-// THE READS
+// Reads
 //   size()              N, a constant
 //   view()              the View<T const, N> of the elements: the door to a
 //                       View for code outside the base.  A View of a
@@ -30,15 +30,15 @@
 // A FixedArray has no operator[], no data() and no pointer to its
 // elements, so no read takes an index that no check proved.  An index from
 // data goes through Index<N>::check(raw), which gives an Option.  Each read
-// gives a const element.  with_element writes one element (THE ELEMENT
-// DOOR), and fill(view, value) and copy(destination, source) of the Region
-// family write the elements through the ViewMut of with_mut (THE FRAME DOOR).
+// gives a const element.  with_element writes one element (the element
+// door), and fill(view, value) and copy(destination, source) of the Region
+// family write the elements through the ViewMut of with_mut (the frame door).
 // So no two Views of one array write the same elements.
 //
 // A FixedArray copies and moves its elements, and it is trivially copyable
 // when its element is, so the ABI passes a small array in registers.
 //
-// THE HEAP ARRAY
+// Heap array
 //   The five mints put count elements in storage from the allocation door of
 //   foundation/core/Heap.h.  The allocation capability comes first in each
 //   mint, so each allocation shows at its call.  A count of zero allocates
@@ -71,10 +71,10 @@
 //   with_element(position, on_some, on_none)
 //                       the element door: on_some gets the element at a
 //                       position below size() in place, and on_none runs for
-//                       each other position (THE ELEMENT DOOR)
+//                       each other position (the element door)
 //
 // A write of one element takes with_element, and a write of the run takes
-// the frame door with_mut (THE FRAME DOOR).  So no two Views of one array
+// the frame door with_mut (the frame door).  So no two Views of one array
 // write the same elements.
 //
 // A HeapArray owns its storage alone.  A move gives the storage to the
@@ -83,7 +83,7 @@
 // holds no storage.  A HeapArray of a linear element is linear itself, so
 // each path of its holder consumes it.
 //
-// THE MASKED ARRAY
+// Masked array
 //   mint_masked_array<T, Align>(alloc, count)   the one door: count
 //                       elements from their default constructor, so an
 //                       element that does not copy passes.  The count is a
@@ -92,13 +92,13 @@
 //   at_masked(key)      the const element at key & (count - 1), with no check
 //   with_masked(key, body)
 //                       the element door: body gets the element at
-//                       key & (count - 1) in place (THE ELEMENT DOOR)
+//                       key & (count - 1) in place (the element door)
 //
 // A MaskedArray owns its storage as a HeapArray does.  It has no operator[]
 // and no pointer to its elements.  A write of one element takes
 // with_masked, and a write of the run takes the frame door with_mut.
 //
-// THE FRAME DOOR
+// Frame door
 //   array.with_mut(body)   of a FixedArray: body gets the ViewMut of the
 //                       elements in place, with the brand of the frame, and
 //                       the door gives the result of body.  The door writes
@@ -110,7 +110,7 @@
 // foundation/core/Frame.h gives the rules of the two forms.  The member door
 // carries the annotation borrow_match, as the element door does.
 //
-// THE ELEMENT DOOR
+// Element door
 //   with_element(index, body)   of a FixedArray, with an Index<N>: body gets
 //                       the element in place, as T&, for the time of the
 //                       call, and the door gives the result of body
@@ -133,7 +133,7 @@
 // concurrent writes, such as an Atomic or a pinned cell, makes such calls
 // correct.
 //
-// THE LIFETIME START
+// Lifetime start
 //   lifetime::start_as_array<T>(storage, count)
 //                       the View of count objects of T whose lifetime starts
 //                       over the bytes at storage, with no constructor.  T is
@@ -232,7 +232,7 @@ public:
 
 // The body of a keyed frame door of an owner whose elements are T and whose
 // brand is Brand: a body of FrameBody that reaches no key of the brand, over
-// elements that hold no key of the brand (THE GATE of foundation/core/Frame.h).
+// elements that hold no key of the brand (the gate of foundation/core/Frame.h).
 template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
 concept KeyedFrameBody =
     FrameBody<Body, T, Fresh, Extent> && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>;
@@ -277,8 +277,8 @@ class[[= loan_key_mark_when<IsKeyBrand<KeyBrand>>]] FixedArray final : private d
     using Storage = detail::ArrayStorage<T, N>;
     using Storage::elements_;
 
-    // An array of a key brand opens its frames only with its LoanKey (THE
-    // LOAN KEY of foundation/core/Frame.h).  An array of Unkeyed, the default,
+    // An array of a key brand opens its frames only with its LoanKey (the
+    // loan key of foundation/core/Frame.h).  An array of Unkeyed, the default,
     // has the doors with no key.
     static constexpr bool is_keyed_ = IsKeyBrand<KeyBrand>;
 
@@ -333,7 +333,7 @@ public:
     T const&
         at(Index<N>) const&& = delete("an element of a temporary FixedArray dangles at the end of the full expression");
 
-    // The frame door of one element (THE ELEMENT DOOR): body gets the
+    // The frame door of one element (the element door): body gets the
     // element at a proven index in place, for the time of the call, and the
     // door gives the result of body.  The result holds no borrow, so no
     // reference to the element leaves the door.  The door gives that result
@@ -372,7 +372,7 @@ public:
     void with_element(Index<N> index, Body&& body) const&& =
         delete("a frame door of a temporary FixedArray lends an element that the full expression ends");
 
-    // The frame door of the run in place (THE FRAME DOOR): body gets the
+    // The frame door of the run in place (the frame door): body gets the
     // ViewMut<T, Fresh, N> of the elements, with the scope brand of the
     // frame, and the door gives the result of body.  The array stays in
     // place, and the door writes no byte of it, so it copies no element.  The
@@ -406,12 +406,12 @@ public:
         delete("a keyed FixedArray opens a frame only with its LoanKey: call with_mut(std::move(key), body) or "
                "with_mut(key, body)");
 
-    // THE KEYED FRAME DOOR (THE LOAN KEY of foundation/core/Frame.h): body
+    // Keyed frame door (the loan key of foundation/core/Frame.h): body
     // gets the ViewMut<T, Fresh, N> of the elements in place, as the door with
     // no key gives it.  The key moves into the door, and the door gives it
     // back: alone for a body that gives void, and after the result in a
     // Record for each other body.  The body reaches no key of the brand of the
-    // array (THE GATE), so no code inside the frame opens a second frame of
+    // array (the gate), so no code inside the frame opens a second frame of
     // the array.  The frame brand is the scope brand of the call, so copy()
     // takes its memcpy and write_each its restrict loop as for the door with
     // no key.  Complexity: O(1), and the cost of body.
@@ -453,11 +453,11 @@ public:
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedLinearFrameBody<Body, T, KeyBrand, Fresh, N>
     void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
-    // THE KEYED ELEMENT DOOR: body gets the element at a proven index in
+    // Keyed element door: body gets the element at a proven index in
     // place, as T&, and the key comes back as with the keyed frame door: alone
     // for a body that gives void, and after the result in a Record for each
     // other body.  The borrow form keeps the key with the caller and gives
-    // the result of body.  The body reaches no key of the brand (THE GATE), so
+    // the result of body.  The body reaches no key of the brand (the gate), so
     // no code inside the call gives a second reference to the element.
     // Complexity: O(1), and the cost of body.
     template <class Body>
@@ -588,8 +588,8 @@ template <class T, std::size_t N, class... Refused>
 concept CanMintFixedArray = (sizeof...(Refused) == 0) && OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
                          && std::is_nothrow_default_constructible_v<T>;
 
-// A keyed FixedArray of N value-initialized elements and its LoanKey (THE
-// LOAN KEY of foundation/core/Frame.h): auto [array, key] =
+// A keyed FixedArray of N value-initialized elements and its LoanKey (the
+// loan key of foundation/core/Frame.h): auto [array, key] =
 // mint_fixed_array<T, N>().  The brand is the fresh brand of the call site, in
 // undeducible_brand_t, so no caller names it, and no target type sets it.
 // The array comes back as a prvalue part of the Record, so no element moves.
@@ -1025,7 +1025,7 @@ public:
         return View<T>{HeapArray::run_key_(), array.state_.first, array.state_.count};
     }
 
-    // The frame door of one element (THE ELEMENT DOOR): on_some gets the
+    // The frame door of one element (the element door): on_some gets the
     // element at position in place, for the time of the call, and at or past
     // size() on_none runs.  The two arms give the same type, which holds no
     // borrow, so no reference to the element leaves the door.  A const array
@@ -1297,7 +1297,7 @@ public:
     void at_masked(std::uint64_t) const&& = delete("an element of a temporary MaskedArray dangles at the end of the "
                                                    "full expression");
 
-    // The element door of a masked key (THE ELEMENT DOOR): body gets the
+    // The element door of a masked key (the element door): body gets the
     // element at key & (count - 1) in place, as T&, for the time of the call,
     // and the door gives the result of body.  The mask keeps each key below
     // the count, so the door has no none arm.  The result holds no borrow, so

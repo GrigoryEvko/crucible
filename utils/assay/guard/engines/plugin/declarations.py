@@ -1,13 +1,13 @@
 """The family declaration property: the lines of one rule in its scope, one position for each entity, and the mints.
 
-THE FAMILY
+Family
     The quarantine plugin gives the findings of the family declaration
-    property (utils/tools/quarantine/declaration.cpp, THE FAMILY).  Each line
+    property (utils/tools/quarantine/declaration.cpp, the family).  Each line
     of the family has a rule of the engine plugin of utils/registry.txt.  The
     module of the rule reads the lines of its rule in the census of the
-    runner (assay.guard.engines.plugin.runner, THE SECTIONS).
+    runner (assay.guard.engines.plugin.runner, the sections).
 
-THE SCOPE
+Scope
     The plugin reads a quarantined header in each unit that includes it, and
     a test file or a source file holds declarations too.  lines_of() keeps
     the lines of a file in the scope of the row of the rule.  A path of the
@@ -15,17 +15,17 @@ THE SCOPE
     file.  The scope words `base` and `quarantined` hold each file of that
     class in the rule table.
 
-THE POSITION OF AN ENTITY
+Position of an entity
     One entity can have lines at two positions.  An example is a function
     with a declaration in one header and the definition in a different
     header.  The unit of each header gives a line.  first_places() gives each
     kind and entity one line, at the first position.  The ledger row of the
     entity then names one path.
 
-THE MINTS
+Mints
     A record of the kind mint holds the facts of one mint (declaration.cpp,
-    THE RULE mint).  The reader gives these facts
-    (assay.readers.sections, THE ENTITIES OF THE RECORDS).  mints() gives one
+    the rule mint).  The reader gives these facts
+    (assay.readers.sections, the entities of the records).  mints() gives one
     mint for each entity:
     the record with the body of the mint, and else the record at the first
     position.  A record of the kind mint-alias names an alias of a class
@@ -60,7 +60,7 @@ TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
 
 @dataclass(frozen=True, slots=True)
 class Mint:
-    """One mint of the build: the position of its selected record and the facts of that record (THE MINTS)."""
+    """One mint of the build: the position of its selected record and the facts of that record (the mints)."""
 
     path: str
     line: int
@@ -90,7 +90,7 @@ def table_of(context: runner.PluginContext) -> ruletable.RuleTable:
 
 
 def in_scope(rule: rule_registry.Rule, path: str, table: ruletable.RuleTable) -> bool:
-    """Return True when the scope of the row of the rule holds a file (THE SCOPE)."""
+    """Return True when the scope of the row of the rule holds a file (the scope)."""
     file_class = table.class_of(path)[0]
     for item in rule.scope:
         if item == SCOPE_TRACKED or (item in CLASS_WORDS and file_class == item):
@@ -101,7 +101,7 @@ def in_scope(rule: rule_registry.Rule, path: str, table: ruletable.RuleTable) ->
 
 
 def lines_of(rule: rule_registry.Rule, context: runner.PluginContext) -> list[plugin_sections.Finding]:
-    """Return the lines of the rule in its scope, sorted (THE SCOPE).
+    """Return the lines of the rule in its scope, sorted (the scope).
 
     Complexity: linear in the lines of the rule, times the items of its scope.
 
@@ -115,7 +115,7 @@ def lines_of(rule: rule_registry.Rule, context: runner.PluginContext) -> list[pl
 
 
 def first_places(lines: Iterable[plugin_sections.Finding]) -> dict[tuple[str, str], plugin_sections.Finding]:
-    """Return one line for each kind and entity: the line at the first position (THE POSITION OF AN ENTITY).
+    """Return one line for each kind and entity: the line at the first position (the position of an entity).
 
     Complexity: linear in the lines.
     """
@@ -157,7 +157,7 @@ def rule_findings(
 
 
 def owner_aliases(records: Iterable[plugin_sections.Finding]) -> dict[str, frozenset[str]]:
-    """Return the names of the aliases of each class, by the full name of the class (THE MINTS).
+    """Return the names of the aliases of each class, by the full name of the class (the mints).
 
     Complexity: linear in the records.
 
@@ -202,7 +202,7 @@ def mints(context: runner.PluginContext, rule: rule_registry.Rule) -> list[Mint]
 
 
 def aliases(context: runner.PluginContext, rule: rule_registry.Rule) -> dict[str, frozenset[str]]:
-    """Return the names of the aliases of each class with a member mint in the scope of the rule (THE MINTS).
+    """Return the names of the aliases of each class with a member mint in the scope of the rule (the mints).
 
     Raises:
         NotApplicable: If the rule does not apply to the build

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A reflection as a template argument prints the entity it names.  A
 // function with internal linkage prints the same name in every

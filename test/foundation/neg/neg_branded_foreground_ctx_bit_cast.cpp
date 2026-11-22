@@ -1,6 +1,6 @@
 // A branded foreground context is not built from a byte.
 //
-// VIOLATION: a translation unit reinterprets one byte as the foreground
+// Violation: a translation unit reinterprets one byte as the foreground
 // context of a brand, and skips the claim of that brand.
 //
 // Expected diagnostic: no matching call to bit_cast, because the target

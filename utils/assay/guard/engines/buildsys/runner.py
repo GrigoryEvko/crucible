@@ -1,37 +1,37 @@
 """The runner of the engine build: the inputs of a build that the rules of one call read, and the run of the rules.
 
-THE CONTEXT
+Context
     A build rule reads one configured build directory.  Its inputs are the
     compile database, the replies of the CMake file API, build.ninja and the
     logs of Ninja.  They are also the records of the build launcher and of
     the tests, and the census of assay.readers.census.  BuildContext gives
     each input, and it reads each input one time for the rules of one call.
     A rule is a member of a family module of assay/guard/engines/buildsys/
-    (assay.guard.engines.meta.runner, THE FAMILIES), or the function findings
+    (assay.guard.engines.meta.runner, the families), or the function findings
     of a module of its own.  The run and the witness of
     assay.guard.engines.meta.runner judge the findings.
 
-THE BUILD DIRECTORY
+Build directory
     A rule with the scope word builddir reads the build directory of
     --build-dir.  require_build() raises NotApplicable when the call gives no
     build directory, and the run then exits 77.
 
-THE PATHS
+Paths
     A call can name paths with --path.  A rule that reads only the paths
     that a call names reads them from `paths`.  The run then judges only the
     ledger rows of those paths, and `guard write` writes only their rows.
     With no --path, `paths` is empty.
 
-THE KIND
+Kind
     kind() gives the build kind of BUILD_DIR/build-kind.txt
     (assay.core.meter).
 
-THE CONFIGURATION
+Configuration
     configuration() gives the name of the configuration of the build
-    (assay.core.configuration, THE CONFIGURATION).  A rule that judges only
+    (assay.core.configuration, the configuration).  A rule that judges only
     one configuration, such as the rule instruction-total, reads it.
 
-THE PLANTS
+Plants
     A plant of a build rule holds the file build.txt, which tells what its
     planted build directory holds (assay.guard.engines.buildsys.planted).  The
     witness copies the plant to a throwaway repository and makes the planted
@@ -63,7 +63,7 @@ SKIPPED = meta_runner.SKIPPED
 
 
 class BuildContext:
-    """The build that the build rules of one call read, and each input that a rule reads, read one time (THE CONTEXT).
+    """The build that the build rules of one call read, and each input that a rule reads, read one time (the context).
 
     The context keeps each input after the first read, and the rules of one
     call share it.  A reader that refuses its input raises its own error, and
@@ -100,9 +100,9 @@ class BuildContext:
             build_dir: The build directory, or None when the call gives none
             registry: The registry that gives the thresholds of the measured rules, or None for the registry of
                 this tree
-            paths: The paths that the call names with --path (THE PATHS)
-            configuration: The configuration of a planted build, or None to read it from the build (THE
-                CONFIGURATION)
+            paths: The paths that the call names with --path (the paths)
+            configuration: The configuration of a planted build, or None to read it from the build (the
+                configuration)
         """
         self.root = root
         self.build_dir = build_dir
@@ -117,7 +117,7 @@ class BuildContext:
         self._configuration = configuration
 
     def require_build(self) -> Path:
-        """Return the build directory of the call (THE BUILD DIRECTORY).
+        """Return the build directory of the call (the build directory).
 
         Raises:
             NotApplicable: If the call gives no build directory
@@ -184,7 +184,7 @@ class BuildContext:
         }
 
     def kind(self) -> str:
-        """Return the build kind of the build directory (THE KIND).
+        """Return the build kind of the build directory (the kind).
 
         Raises:
             NotApplicable: If the call gives no build directory, or the build has no kind
@@ -201,7 +201,7 @@ class BuildContext:
         return self._kind
 
     def configuration(self) -> build_config.BuildConfiguration:
-        """Return the configuration of the build (THE CONFIGURATION).
+        """Return the configuration of the build (the configuration).
 
         Raises:
             NotApplicable: If the call gives no build directory
@@ -282,7 +282,7 @@ def run(
 ) -> list[int]:
     """Run the rules on one context, and give the status of each one (assay.guard.engines.meta.runner.run()).
 
-    With paths, each run judges only the ledger rows of the paths (THE PATHS).
+    With paths, each run judges only the ledger rows of the paths (the paths).
     """
     context = BuildContext(root, build_dir, paths=paths)
     kept = context.names if context.paths else None

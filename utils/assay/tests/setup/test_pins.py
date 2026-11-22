@@ -1,6 +1,6 @@
 """The test of assay.setup.pins: the pin of CMake, the programs of a build directory, and the walk to the ctest of a run.
 
-THE CTEST RUN
+Ctest run
     The last case runs `setup check --build-dir` as a test of a scratch
     project, and a ctest of the pin runs it.  It shows that the walk finds the
     process of that ctest, and that its exe link gives the version of the
@@ -181,7 +181,7 @@ def walk_cases(expect: testing.Expect) -> None:
 
 
 def ctest_run_cases(expect: testing.Expect) -> None:
-    """Run the check of a build as a test of a scratch project with a ctest of the pin (THE CTEST RUN)."""
+    """Run the check of a build as a test of a scratch project with a ctest of the pin (the ctest run)."""
     cmake, ctest, ninja = (os.environ.get(name, "") for name in TOOLS)
     expect(f"{', '.join(TOOLS)} name the tools of the ctest run", bool(cmake and ctest and ninja))
     if not (cmake and ctest and ninja):

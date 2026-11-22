@@ -1,6 +1,6 @@
 """The registry: the rules and the permitted paths of the utils system (utils/registry.txt).
 
-THE ROWS
+The rows
     The registry obeys the rows grammar of assay.core.rows.  It has a head
     comment, a format row and two row kinds:
 
@@ -55,7 +55,7 @@ THE ROWS
     A path row gives a glob of tracked paths and what those files are.  The
     rule registry reads the path rows.
 
-LOAD AND EXAMINE
+Load and examine
     load() reads the registry and refuses the first problem.  examine() reads
     each row and returns each problem, for the rule registry.
 

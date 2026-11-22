@@ -185,7 +185,7 @@ template <class E>
 }
 
 // One directory for each process under the temporary directory of the host
-// (THE TEMPORARY DIRECTORY of fixy/os/Fs.h).  A harness that needs files on
+// (the temporary directory of fixy/os/Fs.h).  A harness that needs files on
 // disk writes them there and empties the directory at the start of each
 // input, so a persistent-mode loop does not see the files of the input
 // before.  A normal exit removes the directory.  An abort leaves it, next to

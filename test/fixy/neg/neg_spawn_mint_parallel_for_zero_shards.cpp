@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A parallel-for over zero shards visits nothing, so the door of
 // mint_parallel_for refuses N of zero.  Without that check the call

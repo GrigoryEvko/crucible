@@ -16,7 +16,7 @@
 // route.  Fixing either alone leaves the gate open, so both are
 // required — the same reason a negative fixture needs two regexes.
 //
-// VIOLATION: a TU names an init context and builds it from nothing.
+// Violation: a TU names an init context and builds it from nothing.
 //
 // Expected diagnostic: no matching constructor for that specialization.
 

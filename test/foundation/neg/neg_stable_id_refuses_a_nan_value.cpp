@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // GCC prints a NaN template argument without its payload, so two NaNs
 // with different payloads name two types and print one name.  The stable

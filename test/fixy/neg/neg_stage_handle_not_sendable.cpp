@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A stage can run on a thread of its own, so each handle of its body moves to
 // another thread (StageCrossesThreads of fixy/concurrent/Stage.h).  A consumer

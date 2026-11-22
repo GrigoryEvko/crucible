@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A View refers to the elements of its sender, and a frame of the sender
 // can hold them.  A transport can give the payload to a thread that runs

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A session over the consumer pole of a bridged channel of Labelled values
 // reads the label word of the keyed message with a read of a word of its

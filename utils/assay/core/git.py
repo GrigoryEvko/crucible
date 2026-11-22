@@ -1,6 +1,6 @@
 """The one module of the package that runs git: the files and the history of a tree, and a throwaway repository.
 
-THE COMMAND
+The command
     run() runs one git command in a tree, through assay.core.proc, with a
     time limit of TIMEOUT_S, and it returns the standard output.  A command
     that cannot start, that runs past its limit, or that exits with a status
@@ -10,7 +10,7 @@ THE COMMAND
     caller reads no output of git itself.  Each question of a caller gets a
     function here with a typed answer.
 
-THE KINDS OF THE FUNCTIONS
+The kinds of the functions
     READS_HISTORY names each function that reads a commit or a ref: the log,
     an object of a revision, HEAD or a branch.  READS_NAMES names each
     function that reads the names of the files of a tree, which .gitignore
@@ -23,7 +23,7 @@ THE KINDS OF THE FUNCTIONS
     test of this module refuses a function with no kind, and a function of
     READS_NEITHER with a second kind.
 
-THE OBJECTS
+The objects
     write_tree(), hash_object(), commit_tree(), tree_entry(),
     index_object(), set_index_entry(), tree_changes(), index_changes() and
     index_patch() write the objects of a commit.  `loop land` calls them in
@@ -33,7 +33,7 @@ THE OBJECTS
     is_ancestor() tells if a branch holds a commit, and git_dir() gives the
     git directory of one work tree.
 
-THE ISOLATION
+The isolation
     A repository variable in the environment of the caller wins over
     `git -C DIR`: with GIT_DIR set, `git -C tmp init` initializes the
     repository that GIT_DIR names again, and a later add and commit land
@@ -45,10 +45,10 @@ THE ISOLATION
     directory of -C, also when this process holds such a variable.  init()
     makes a repository and stops unless git resolves the directory itself.
 
-THE CHANGE
+The change
     change_base() gives the commit that a change starts from, and
     changed_files() gives each path that the change touches.  The rules of
-    the parse builds read them (THE CHANGE OF AN ARM of assay.loop.syntax).
+    the parse builds read them (the change of an arm of assay.loop.syntax).
     The base is the first of these commits that applies:
       * The commit that the environment variable CHANGE_BASE_VARIABLE names.
       * When HEAD is on a branch other than main, and the repository has a
@@ -63,7 +63,7 @@ THE CHANGE
         judged against its first parent.
     A root commit with no change in the working tree has no base.
 
-THE BORROWED INDEX
+The borrowed index
     borrowing_repository() makes a scratch repository.  Its object directory
     is a link to the object directory of a repository.  A tree that its index
     composes, and each blob, tree and commit that it writes, are then in that
@@ -90,13 +90,13 @@ SCRATCH_IDENTITY = {"GIT_AUTHOR_NAME": "crucible-scratch", "GIT_AUTHOR_EMAIL": "
                     "GIT_COMMITTER_NAME": "crucible-scratch", "GIT_COMMITTER_EMAIL": "crucible-scratch@invalid"}
 # The time limit of one git command, in seconds.
 TIMEOUT_S = 300.0
-# The environment variable that names the base of a change (THE CHANGE), and the branch that a work tree branches from.
+# The environment variable that names the base of a change (the change), and the branch that a work tree branches from.
 CHANGE_BASE_VARIABLE = "CRUCIBLE_CHANGE_BASE"
 MAIN_BRANCH = "main"
 # The options of `git ls-files` that list each file that is not in the index and that .gitignore does not match.
 NEW_FILE_OPTIONS = ("--others", "--exclude-standard")
-# The file of the shared git directory that a borrowing repository copies, and the mode of a new file of a tree (THE
-# BORROWED INDEX).
+# The file of the shared git directory that a borrowing repository copies, and the mode of a new file of a tree (the
+# borrowed index).
 EXCLUDE_FILE = Path("info/exclude")
 PLAIN_FILE_MODE = "100644"
 # The head line of `git status --porcelain=v2 --branch` that names the commit, and its word for no commit.
@@ -106,7 +106,7 @@ INITIAL_COMMIT = "(initial)"
 NULL_OBJECT = "0" * 40
 # The mode of an entry that names a commit of a different repository.
 GITLINK_MODE = "160000"
-# The kind of each function of this module (THE KINDS OF THE FUNCTIONS).
+# The kind of each function of this module (the kinds of the functions).
 READS_HISTORY = frozenset({
     "archive", "blobs", "change_base", "changed_files", "commit_subject", "has_no_change", "head", "index_changes",
     "index_patch", "is_ancestor", "is_clean", "is_index_clean", "message_of", "parent", "patch", "quiet_diff",
@@ -321,7 +321,7 @@ def new_files(root: Path) -> tuple[str, ...]:
 
 
 def change_base(root: Path) -> str | None:
-    """Return the full hash of the base of the change of a tree (THE CHANGE), or None for a root commit with no change.
+    """Return the full hash of the base of the change of a tree (the change), or None for a root commit with no change.
 
     Raises:
         GitError: If root is not in a git work tree, it has no commit, or the variable names no commit
@@ -341,7 +341,7 @@ def change_base(root: Path) -> str | None:
 
 
 def changed_files(root: Path, base: str) -> tuple[str, ...]:
-    """Return each path that the working tree changes against a commit, sorted (THE CHANGE).
+    """Return each path that the working tree changes against a commit, sorted (the change).
 
     The paths are each changed, added and deleted file of the diff, and each new file (new_files()).  A moved file
     gives its path at the base and its path in the working tree.  Complexity: linear in the paths of the diff.
@@ -675,7 +675,7 @@ def commit_all(root: Path, subject: str, body: str = "", date: str = "") -> str:
 
 @contextlib.contextmanager
 def borrowing_repository(root: Path) -> Iterator[Path]:
-    """Make a scratch repository that writes into the object directory of the repository of a tree (THE BORROWED INDEX).
+    """Make a scratch repository that writes into the object directory of the repository of a tree (the borrowed index).
 
     The block gets the scratch repository, and this function removes it after the block.
 
@@ -700,7 +700,7 @@ def replaced_commit(root: Path, commit: str, files: Mapping[str, bytes | None]) 
     """Write a commit with the parents and the message of a commit, and its tree with some files replaced.
 
     Each path of `files` gets its bytes.  For None, the tree does not hold the path.  A replaced file keeps its mode,
-    and a new file gets the mode of a plain file.  The objects go into the repository of root (THE BORROWED INDEX).
+    and a new file gets the mode of a plain file.  The objects go into the repository of root (the borrowed index).
     Complexity: two git commands for each file, and a constant number of other git commands.
 
     Raises:

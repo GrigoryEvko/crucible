@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Channels A and B have one payload, one capacity and one user tag.  Their
 // roots come from two call sites, so the two channels have two brands and

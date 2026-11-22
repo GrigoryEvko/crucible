@@ -7,7 +7,7 @@
 // replace of a file through a temporary file, a sync and a rename.
 //
 // An atom pack says how a file is opened — its mode, its flags, and the
-// durability and commit it is opened FOR — and the pack is read twice.
+// durability and commit it is opened for — and the pack is read twice.
 // Once for the O_* word the syscall takes, and once for the effect row
 // the calling context has to admit.
 //
@@ -103,7 +103,7 @@ inline constexpr ::fixy::atom_pack::tag_row<int> open_mode_table[] = {
      ::foundation::os::kOpenWriteOnly | ::foundation::os::kOpenCreate | ::foundation::os::kOpenExclusive},
 };
 
-// The rights of the file of each open mode (THE RIGHTS of fixy/os/Handle.h).
+// The rights of the file of each open mode (the rights of fixy/os/Handle.h).
 // A map reads its file, so only a mode that reads gives the map right.  An
 // open for an append writes each byte at the end of the file, so it gives no
 // seek right.
@@ -120,7 +120,7 @@ inline constexpr ::fixy::atom_pack::tag_row<::fixy::os::RightSet> open_mode_righ
 };
 
 // The rights of a file with no name, which the door opens for reading and
-// writing (THE TEMPORARY FILE below).
+// writing (the temporary file below).
 inline constexpr ::fixy::os::RightSet temporary_file_rights = ::fixy::os::RightSet::read | ::fixy::os::RightSet::write
                                                             | ::fixy::os::RightSet::seek | ::fixy::os::RightSet::sync
                                                             | ::fixy::os::RightSet::map;
@@ -182,38 +182,38 @@ namespace detail {
 // descriptor or a path that a zero ends, and it gives the error of the
 // kernel in its Result.  A call that a signal interrupts starts again, and
 // each other error returns.  A descriptor below zero, the descriptor of a
-// closed handle, gives EBADF and makes no system call.  DIRECTORY is the
-// descriptor of a directory, and a call reads PATH relative to it, or
+// closed handle, gives EBADF and makes no system call.  The directory is the
+// descriptor of a directory, and a call reads path relative to it, or
 // relative to the current directory for kAtCurrentDirectory.
 
-// Flushes the data of DESCRIPTOR, with the metadata that a read of the data
+// Flushes the data of descriptor, with the metadata that a read of the data
 // needs (fdatasync).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 sync_data_(int descriptor) noexcept;
 
-// Flushes the data and all the metadata of DESCRIPTOR (fsync).  On a
+// Flushes the data and all the metadata of descriptor (fsync).  On a
 // descriptor of a directory, the flush writes the entries of the directory.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 sync_all_(int descriptor) noexcept;
 
-// Renames FROM to TO under DIRECTORY, and replaces a file at TO (renameat).
+// Renames from to to under directory, and replaces a file at to (renameat).
 // The kernel reads an absolute path and a ".." part with no limit, so only
 // commit_atomic, which takes the current directory and full paths, calls
 // this and the rename below.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 rename_replacing_at_(int directory, char const* from, char const* to) noexcept;
 
-// Renames FROM to TO under DIRECTORY, and gives eexist when a file is at TO
+// Renames from to to under directory, and gives eexist when a file is at to
 // (renameat2 with RENAME_NOREPLACE).  A file system with no such rename gives
 // einval, and a kernel older than renameat2 gives enosys.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 rename_no_replace_at_(int directory, char const* from, char const* to) noexcept;
 
-// Opens PATH beneath DIRECTORY with the open flags FLAGS of
+// Opens path beneath directory with the open flags of
 // foundation/os/OpenFlags.h, and gives the descriptor (openat2 with
 // RESOLVE_BENEATH and RESOLVE_NO_MAGICLINKS).  A path that leaves the
 // directory gives exdev, and a magic link of procfs gives eloop.  The door
-// gives MODE to the kernel only when FLAGS holds kOpenCreate.  It tries again
+// gives mode to the kernel only when flags holds kOpenCreate.  It tries again
 // after eagain, as open_beneath_steps_ tells.  FileDoor is the one caller
 // that keeps the descriptor.
 [[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
@@ -224,8 +224,8 @@ open_beneath_(int directory, char const* path, int flags, std::uint32_t mode) no
 // lookup of a ".." part.  A path with no ".." part gets no eagain.
 inline constexpr std::size_t kBeneathTries = 32;
 
-// Opens with STEP until a step gives a descriptor or an error other than
-// eintr and eagain: STEP() gives the descriptor or the error of the kernel.
+// Opens with step until a step gives a descriptor or an error other than
+// eintr and eagain: step() gives the descriptor or the error of the kernel.
 // A step that a signal interrupts runs again with no bound, as each call of
 // the door file does.  A step that gives eagain runs again, and the open gives
 // eagain after kBeneathTries steps that gave it.  Complexity: at most
@@ -260,7 +260,7 @@ open_beneath_steps_(Step step) noexcept {
     return descriptor;
 }
 
-// True when PATH names an entry under DIRECTORY, and false when no entry has
+// True when path names an entry under directory, and false when no entry has
 // the name (newfstatat with kAtSymlinkNoFollow).  A symbolic link is an
 // entry, and the call does not follow it.  The kernel reads an absolute path
 // and a ".." part with no limit, so only has_entry, which takes the current
@@ -268,7 +268,7 @@ open_beneath_steps_(Step step) noexcept {
 [[nodiscard]] ::foundation::core::Result<bool, ::foundation::os::Errno> has_entry_at_(int directory,
                                                                                       char const* path) noexcept;
 
-// THE FINAL NAME
+// Final name
 //   unlinkat, mkdirat and renameat take no resolve flags.  So the door of
 //   each of them opens the directory part of its path beneath the directory
 //   (open_beneath_, with O_PATH), and it gives the call one final name under
@@ -282,7 +282,7 @@ open_beneath_steps_(Step step) noexcept {
 //   So no final name holds a slash before its end, and no final name is
 //   "..".
 
-// The split of a path for a call of one final name (THE FINAL NAME).
+// The split of a path for a call of one final name (the final name).
 struct FinalSplit {
     // The characters of the directory part, with the slash after them.  The
     // text is empty when the final name is under the directory itself, and it is
@@ -294,7 +294,7 @@ struct FinalSplit {
     bool is_whole = false;
 };
 
-// The split of PATH (THE FINAL NAME).  An empty path has no directory part,
+// The split of path (the final name).  An empty path has no directory part,
 // and the kernel gives enoent for its empty final name.  Complexity: linear
 // in the size of the path.
 [[nodiscard]] constexpr FinalSplit split_final_name_(::foundation::core::TextView path) noexcept {
@@ -322,28 +322,28 @@ struct FinalSplit {
     };
 }
 
-// Removes the entry PATH beneath DIRECTORY, which is no directory (unlinkat
+// Removes the entry path beneath directory, which is no directory (unlinkat
 // of the final name).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 unlink_beneath_(int directory, ::foundation::core::CText path) noexcept;
 
-// Makes the directory PATH beneath DIRECTORY with the permission bits MODE
-// (mkdirat of the final name).  An entry at PATH gives eexist.
+// Makes the directory path beneath directory with the permission bits mode
+// (mkdirat of the final name).  An entry at path gives eexist.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 make_directory_beneath_(int directory, ::foundation::core::CText path, std::uint32_t mode) noexcept;
 
-// Renames FROM to TO, the two beneath DIRECTORY, and replaces a file at TO
+// Renames from to to, the two beneath directory, and replaces a file at to
 // (renameat of the two final names).  When the two directory parts are the
 // same text, the door opens that directory one time.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 rename_replacing_beneath_(int directory, ::foundation::core::CText from, ::foundation::core::CText to) noexcept;
 
 // The rename of rename_replacing_beneath_, which gives eexist when a file is
-// at TO (renameat2 with RENAME_NOREPLACE).
+// at to (renameat2 with RENAME_NOREPLACE).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 rename_no_replace_beneath_(int directory, ::foundation::core::CText from, ::foundation::core::CText to) noexcept;
 
-// True when PATH names an entry beneath DIRECTORY, and false when no entry
+// True when path names an entry beneath directory, and false when no entry
 // has the name.  The door opens the whole path with O_PATH and O_NOFOLLOW
 // beneath the directory, and it closes the descriptor.  So it reads no data,
 // and a symbolic link at the last part is an entry that the door does not
@@ -351,31 +351,31 @@ rename_no_replace_beneath_(int directory, ::foundation::core::CText from, ::foun
 [[nodiscard]] ::foundation::core::Result<bool, ::foundation::os::Errno>
 has_entry_beneath_(int directory, ::foundation::core::CText path) noexcept;
 
-// Reads each byte of DESCRIPTOR from its offset to the end of the file, and
-// puts the bytes after the characters of TEXT.  It gives the count of the
-// bytes, or efbig when they do not fit below the maximum of TEXT.
+// Reads each byte of descriptor from its offset to the end of the file, and
+// puts the bytes after the characters of text.  It gives the count of the
+// bytes, or efbig when they do not fit below the maximum of text.
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 read_all_into_(int descriptor, ::foundation::core::Alloc allocation, ::foundation::core::GrowText& text) noexcept;
 
-// Reads into the COUNT bytes at FIRST until they are full or the file ends,
+// Reads into the count bytes at first until they are full or the file ends,
 // and gives the count of the bytes that it read (read_full_steps_).
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno> read_full_(int descriptor, void* first,
                                                                                           std::size_t count) noexcept;
 
-// Writes the COUNT bytes at FIRST (write_full_steps_).  A write to a pipe or
-// a socket with no reader gives epipe, and the thread gets no SIGPIPE (THE
-// PIPE SIGNAL of foundation/os/PipeSignal.h).
+// Writes the count bytes at first (write_full_steps_).  A write to a pipe or
+// a socket with no reader gives epipe, and the thread gets no SIGPIPE (the
+// pipe signal of foundation/os/PipeSignal.h).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full_(int descriptor, void const* first, std::size_t count) noexcept;
 
-// THE FULL TRANSFERS
-//   The loops of read_full_ and write_full_.  STEP moves at most REMAINING
-//   bytes at OFFSET, and gives the count that the kernel moved or the error of
-//   the kernel: STEP(OFFSET, REMAINING).  The door file gives a step that
+// Full transfers
+//   The loops of read_full_ and write_full_.  The step moves at most remaining
+//   bytes at offset, and gives the count that the kernel moved or the error of
+//   the kernel: step(offset, remaining).  The door file gives a step that
 //   issues read or write, and a test gives a step of its own.  A step that a
 //   signal interrupts runs again, and each other error ends the loop.
 
-// Reads with STEP until COUNT bytes are in, or until a step gives zero at the
+// Reads with step until count bytes are in, or until a step gives zero at the
 // end of the file.  It gives the count of the bytes.  Complexity: one step
 // for each part that the kernel fills, and one more step at the end of the
 // file.
@@ -406,7 +406,7 @@ read_full_steps_(std::size_t count, Step step) noexcept {
     return total;
 }
 
-// Writes with STEP until COUNT bytes are out.  A step that takes no byte of a
+// Writes with step until count bytes are out.  A step that takes no byte of a
 // part that is not empty gives eio, as write_all of Rust gives WriteZero.  The
 // kernel gave no error, so the next step can also take no byte, and a loop
 // that asks again does not end.  Complexity: one step for each part that the
@@ -437,18 +437,18 @@ write_full_steps_(std::size_t count, Step step) noexcept {
     return ::foundation::core::Unit{};
 }
 
-// The size in bytes of the file of DESCRIPTOR (fstat).
+// The size in bytes of the file of descriptor (fstat).
 [[nodiscard]] ::foundation::core::Result<std::int64_t, ::foundation::os::Errno> file_size_(int descriptor) noexcept;
 
-// Reads into the COUNT bytes at FIRST from the byte OFFSET of the file of
-// DESCRIPTOR, until they are full or the file ends, and gives the count of the
+// Reads into the count bytes at first from the byte offset of the file of
+// descriptor, until they are full or the file ends, and gives the count of the
 // bytes that it read (pread64 in the loop of read_full_steps_).  The read does
 // not move the offset of the descriptor.  A negative offset gives einval.
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 read_full_at_(int descriptor, void* first, std::size_t count, std::int64_t offset) noexcept;
 
-// Sets the size of the file of DESCRIPTOR to LENGTH bytes (ftruncate).  The
-// file loses each byte at LENGTH or after it, and a file shorter than LENGTH
+// Sets the size of the file of descriptor to length bytes (ftruncate).  The
+// file loses each byte at length or after it, and a file shorter than length
 // gets zero bytes up to it.  A negative length gives einval.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_size_(int descriptor, std::int64_t length) noexcept;
@@ -456,24 +456,24 @@ set_size_(int descriptor, std::int64_t length) noexcept;
 }  // namespace detail
 
 // The count of the directories that the walk of a tree removal holds open at
-// one time, from the top down (THE TREE REMOVAL below).
+// one time, from the top down (the tree removal below).
 inline constexpr std::size_t kRemoveTreeDepth = 128;
 
 namespace detail {
 
-// Removes each entry below the directory of DIRECTORY, which stays (THE TREE
-// REMOVAL).  The walk lists a new open of DIRECTORY, so the offset of
-// DIRECTORY does not move.
+// Removes each entry below the directory of directory, which stays (the tree
+// removal).  The walk lists a new open of directory, so the offset of
+// directory does not move.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 remove_entries_below_(int directory) noexcept;
 
-// Removes the entry PATH beneath DIRECTORY, and first each entry below it when
-// it is a directory (THE TREE REMOVAL).  A path whose final name is the
+// Removes the entry path beneath directory, and first each entry below it when
+// it is a directory (the tree removal).  A path whose final name is the
 // directory itself gives einval and removes nothing.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 remove_tree_beneath_(int directory, ::foundation::core::CText path) noexcept;
 
-// Removes the empty directory PATH beneath DIRECTORY (unlinkat of the final
+// Removes the empty directory path beneath directory (unlinkat of the final
 // name with AT_REMOVEDIR).  A directory that holds an entry gives enotempty.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 remove_empty_directory_beneath_(int directory, ::foundation::core::CText path) noexcept;
@@ -686,7 +686,7 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>
 open_directory(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept;
 
-// The opens of a path under a directory (THE CALLS UNDER A DIRECTORY below),
+// The opens of a path under a directory (the calls under a directory below),
 // declared here and defined below FileDoor for the same reason.
 template <typename... Atoms, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsFileMintAt<Ctx, Rights, Atoms...>
@@ -699,7 +699,7 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
 [[nodiscard]] ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>
 open_directory_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept;
 
-// The open of a file with no name under a directory (THE TEMPORARY FILE
+// The open of a file with no name under a directory (the temporary file
 // below), declared here and defined below FileDoor for the same reason.
 template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsTemporaryMint<Ctx, Rights>
@@ -857,7 +857,7 @@ open_directory(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
         FileDoor::open_directory_(::foundation::core::detail::c_text_first_(dir.value().c_text())));
 }
 
-// THE CALLS UNDER A DIRECTORY
+// Calls under a directory
 //   Each call below takes the borrow of a directory and the path of an entry
 //   under it, as a CText: a literal, or the c_text() of a
 //   foundation::os::PathText.  Each call asks for the rights of its work on
@@ -874,7 +874,7 @@ open_directory(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
 //   Each call reads its path beneath the directory.  An open gives the path
 //   to detail::open_beneath_.  A remove, a make, a rename and a check of an
 //   entry open the directory part of the path beneath the directory, and the
-//   kernel acts on one final name under it (THE FINAL NAME of the detail
+//   kernel acts on one final name under it (the final name of the detail
 //   calls).  A path that leaves the directory gives exdev: an absolute path,
 //   a ".." part that climbs above the directory, or a symbolic link whose
 //   target is outside it.  A magic link of procfs, such as /proc/self/root,
@@ -913,7 +913,7 @@ open_directory_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CTex
         ::fixy::os::detail::HandleDoor::descriptor_of(dir), ::foundation::core::detail::c_text_first_(path)));
 }
 
-// THE TEMPORARY FILE
+// Temporary file
 //   mint_temporary_file_at opens a regular file with no name in the
 //   directory of dir (O_TMPFILE), for reading and writing, with the
 //   permission bits perms.  No other process can open the file by a path,
@@ -1005,7 +1005,7 @@ has_entry(Ctx const&, ::foundation::core::CText path) noexcept {
                                  ::foundation::core::detail::c_text_first_(path));
 }
 
-// THE TREE REMOVAL
+// Tree removal
 //   remove_tree_at removes the entry at a path under a directory.  When the
 //   entry is a directory, the door first removes each entry below it.
 //   remove_entries_below removes each entry below a directory, and the
@@ -1040,7 +1040,7 @@ has_entry(Ctx const&, ::foundation::core::CText path) noexcept {
 //   entries that are left.
 
 // Removes the entry at path under dir, and first each entry below it when it
-// is a directory (THE TREE REMOVAL).
+// is a directory (the tree removal).
 template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::remove>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -1051,8 +1051,8 @@ remove_tree_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText p
     return detail::remove_tree_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path);
 }
 
-// Removes each entry below dir, and dir stays as an empty directory (THE TREE
-// REMOVAL).
+// Removes each entry below dir, and dir stays as an empty directory (the tree
+// removal).
 template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::remove>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -1063,7 +1063,7 @@ remove_entries_below(Ctx const&, DirectoryRef<Rights> dir) noexcept {
     return detail::remove_entries_below_(::fixy::os::detail::HandleDoor::descriptor_of(dir));
 }
 
-// THE TEMPORARY DIRECTORY
+// Temporary directory
 //   mint_temporary_directory makes a new directory under the temporary
 //   directory of the host, and gives its owner in a Linear.  The temporary
 //   directory of the host is the checked path of TMPDIR in the start-up record
@@ -1084,7 +1084,7 @@ remove_entries_below(Ctx const&, DirectoryRef<Rights> dir) noexcept {
 //   whose last part is a symbolic link gives eloop.
 //
 //   The end of the owner removes each entry below the directory through the
-//   descriptor of the owner (THE TREE REMOVAL), and then the empty directory by
+//   descriptor of the owner (the tree removal), and then the empty directory by
 //   its name under the temporary directory of the host.  The end reports no
 //   error, as the end of a handle does.  A process that ends with no end of the
 //   owner, such as a process that aborts, leaves the directory.
@@ -1143,7 +1143,7 @@ struct DashSplit {
     ::foundation::core::TextView tail{};
 };
 
-// The parts of TEXT at its first dash, or no value when TEXT holds no dash.
+// The parts of text at its first dash, or no value when text holds no dash.
 [[nodiscard]] constexpr ::foundation::core::Option<DashSplit>
 split_at_dash_(::foundation::core::TextView text) noexcept {
     namespace core = ::foundation::core;
@@ -1198,10 +1198,10 @@ parse_temporary_name_(::foundation::core::TextView name) noexcept {
 ::foundation::core::TextView host_temporary_text_(::fixy::env::Switches const&& switches) =
     delete("the text of temporary switches dangles at the end of the full expression");
 
-// The owner of the directory NAME of the directory DIRECTORY.  The door opens
-// NAME beneath DIRECTORY with O_PATH, O_DIRECTORY and O_NOFOLLOW, reads the
+// The owner of the directory name under the directory.  The door opens
+// name beneath directory with O_PATH, O_DIRECTORY and O_NOFOLLOW, reads the
 // owner of the open directory with fstat, and closes it.  A file and a
-// symbolic link give enotdir, and no entry gives enoent.  NAME is one final
+// symbolic link give enotdir, and no entry gives enoent.  The name is one final
 // name, with no slash.
 [[nodiscard]] ::foundation::core::Result<::fixy::process::UserId, ::foundation::os::Errno>
 directory_owner_beneath_(int directory, ::foundation::core::CText name) noexcept;
@@ -1217,7 +1217,7 @@ read_pid_namespace_() noexcept;
 template <typename Ctx>
 concept CtxFitsTemporaryDirectoryMint = CtxAdmitsFs<Ctx> && ::fixy::process::CtxFitsIdentityRead<Ctx>;
 
-// The id of the pid namespace of the process (THE IDENTITY DOOR of
+// The id of the pid namespace of the process (the identity door of
 // fixy/os/Process.h).  The door reads the status of the namespace file
 // /proc/self/ns/pid, so its context admits the file calls as well as an
 // identity read.  A host with no /proc gives enoent.
@@ -1230,7 +1230,7 @@ read_pid_namespace(Ctx const&) noexcept {
 
 class TemporaryDirectoryDoor;
 
-// The owner of a temporary directory (THE TEMPORARY DIRECTORY).
+// The owner of a temporary directory (the temporary directory).
 class [[nodiscard]] TemporaryDirectory final {
 public:
     // The empty owner holds no directory, and its end removes nothing.
@@ -1308,7 +1308,7 @@ class TemporaryDirectoryDoor final : ::foundation::NoObject<TemporaryDirectoryDo
     friend auto mint_temporary_directory(FriendCtx const& ctx) noexcept
         -> ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>;
 
-    // The body of the mint (THE TEMPORARY DIRECTORY).
+    // The body of the mint (the temporary directory).
     template <class Ctx>
     [[nodiscard]] static ::foundation::core::Result<Linear<TemporaryDirectory>, ::foundation::os::Errno>
     make_(Ctx const& ctx) noexcept;
@@ -1372,7 +1372,7 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
             });
 }
 
-// THE SWEEP
+// Sweep
 //   sweep_temporary_directories removes each tree under the temporary
 //   directory of the host that a process left with no end of its owner, such
 //   as a process that aborted.  The door lists the temporary directory of the
@@ -1388,9 +1388,9 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
 //     - The entry is a directory, and the effective user id of the process
 //       owns it.  An open with O_DIRECTORY and O_NOFOLLOW refuses a file and a
 //       symbolic link, and the owner is the owner of the open directory.
-//     - The probe of the process of the name answers gone (THE PROCESS PROBE
+//     - The probe of the process of the name answers gone (the process probe
 //       of fixy/os/Process.h).  An answer alive or unknown keeps the tree.
-//   The removal follows no symbolic link (THE TREE REMOVAL).
+//   The removal follows no symbolic link (the tree removal).
 //
 //   The report counts the trees that the sweep removed, and the trees of ended
 //   processes whose removal failed.  Other processes can make, remove and
@@ -1408,7 +1408,7 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
 //   a status read and a probe for each entry of the form and of the namespace
 //   of the caller, and the tree removal of each tree of an ended process.
 
-// What a sweep did (THE SWEEP).
+// What a sweep did (the sweep).
 struct SweepReport {
     // The count of the trees that the sweep removed.
     std::size_t removed = 0;
@@ -1426,7 +1426,7 @@ struct SweepCaller {
 
 // True when the entry name of the directory of the descriptor directory is a
 // tree of an ended process of the namespace of the caller, and the user of the
-// caller owns it (THE SWEEP).  An error of the owner read, such as enotdir for
+// caller owns it (the sweep).  An error of the owner read, such as enotdir for
 // a file or a symbolic link, keeps the entry.
 template <class Ctx>
 [[nodiscard]] bool is_stale_tree_(Ctx const& ctx, int directory, ::foundation::core::CText name,
@@ -1448,7 +1448,7 @@ template <class Ctx>
 }  // namespace detail
 
 // Removes each tree of an ended process under the temporary directory of the
-// host (THE SWEEP).  Not a mint: the door makes nothing.
+// host (the sweep).  Not a mint: the door makes nothing.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsTemporaryDirectoryMint<Ctx>
 [[nodiscard]] ::foundation::core::Result<SweepReport, ::foundation::os::Errno>
@@ -1571,7 +1571,7 @@ read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::fou
         });
 }
 
-// THE DURABLE REPLACE
+// Durable replace
 //   replace_file_at puts new bytes in place of the file name under dir in four
 //   steps.  It writes the bytes to a temporary file of its own under dir, it
 //   syncs the data of that file, it renames that file onto name, and it syncs
@@ -1600,11 +1600,11 @@ read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::fou
 //   Complexity: one open for each temporary name in use, then one write, two
 //   syncs and one rename.
 
-// The count of the temporary names that a replace tries (THE DURABLE REPLACE).
+// The count of the temporary names that a replace tries (the durable replace).
 inline constexpr std::uint64_t kReplaceTries = 64;
 
-// The gate of a replace under a directory with the rights Held (THE DURABLE
-// REPLACE): the exclusive open of the temporary file under the directory, the
+// The gate of a replace under a directory with the rights Held (the durable
+// replace): the exclusive open of the temporary file under the directory, the
 // rename onto the name and the remove after an error, and the sync of the
 // directory.
 template <typename Ctx, ::fixy::os::RightSet Held>
@@ -1618,17 +1618,17 @@ concept CtxFitsReplace = CtxFitsReplaceAt<Ctx, directory_rights>;
 
 namespace detail {
 
-// True when NAME is one final name: it is not empty, it holds no slash, and it
+// True when name is one final name: it is not empty, it holds no slash, and it
 // is not "." or "..".
 [[nodiscard]] constexpr bool is_one_final_name_(::foundation::core::TextView name) noexcept {
     return name.size() != 0 && ::foundation::core::find(name, '/').is_none()
         && name != ::foundation::core::TextView{"."} && name != ::foundation::core::TextView{".."};
 }
 
-// THE DURABLE REPLACE, with the write of the temporary file in WRITE.
-// WRITE(FILE) writes the bytes to FILE, the borrow of the temporary file, and
-// gives the Result of the write.  replace_file_at gives a WRITE that calls
-// write_full.  A test gives a WRITE of its own, such as one that stops after a
+// Durable replace, with the write of the temporary file in write.
+// write(file) writes the bytes to file, the borrow of the temporary file, and
+// gives the result of the write.  replace_file_at gives a write that calls
+// write_full.  A test gives a write of its own, such as one that stops after a
 // part of the bytes.
 template <class Ctx, ::fixy::os::RightSet Rights, class Write>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -1679,7 +1679,7 @@ replace_file_steps_(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core
 
 }  // namespace detail
 
-// Puts bytes in place of the file name under dir (THE DURABLE REPLACE).  Not
+// Puts bytes in place of the file name under dir (the durable replace).  Not
 // a mint: the door writes and renames files, and it gives no handle.
 template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsReplaceAt<Ctx, Rights>
@@ -1690,7 +1690,7 @@ replace_file_at(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core::CT
                                        [&ctx, bytes](auto file) noexcept { return write_full(ctx, file, bytes); });
 }
 
-// Puts bytes in place of the file at path (THE DURABLE REPLACE).  The parts of
+// Puts bytes in place of the file at path (the durable replace).  The parts of
 // a sanitized path hold no ".." part and no zero, so the directory part passes
 // the check of sanitize_path.
 template <eff::IsExecCtx Ctx>

@@ -1,7 +1,7 @@
 #pragma once
 
 // The processes of a loop of fake stages in the shape of the loop of the
-// Vigil (THE LOOP of fixy/concurrent/StageNet.h): a foreground, four stages
+// Vigil (the loop of fixy/concurrent/StageNet.h): a foreground, four stages
 // and the cells around them.  The foreground sends into the ring, and the
 // first stage receives from it.  The last stage sends into the count, and
 // the foreground receives from it.  A job of the foreground goes into the
@@ -147,7 +147,7 @@ using PublishJob = cc::LoopProcess<PublishName, cc::ReceivesOn<Mailbox>, cc::Sen
 using FlushArm = cc::StageLoop<ForegroundFlush, DrainProcess, DetectProcess, BuildProcess, PublishFlush>;
 using JobArm = cc::StageLoop<ForegroundJob, DrainProcess, DetectProcess, BuildProcess, PublishJob>;
 
-// The job arm of the shift of a poll (THE ARMS of fixy/concurrent/StageNet.h).
+// The job arm of the shift of a poll (the arms of fixy/concurrent/StageNet.h).
 // The last stage polls its mailbox before it receives, so a job that comes
 // after the poll waits for the next period of the stage.  The stage then
 // serves the job after its count, at the end of the period of the job.

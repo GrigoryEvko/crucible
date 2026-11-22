@@ -57,7 +57,7 @@ struct tls_tag final {};
 // atom::refined_with is parametric on the predicate that was proved.  The
 // test brings its own for the same reason as tls_tag: which predicate a
 // hot body needs is the caller's business, and H002 only asks that there
-// IS one.  The predicate has a call on an int, so a binding over an int
+// is one.  The predicate has a call on an int, so a binding over an int
 // admits it, and its mint checks it.
 struct hot_invariant final {
     constexpr bool operator()(std::same_as<int> auto count) const noexcept { return count >= 0; }
@@ -204,8 +204,8 @@ static_assert(pack_verdict_v<at::copy, at::stdio::write<at::stdio::streams::Stdo
 // the same shape as the eleven above.  Two things are worth reading for
 // rather than assuming.
 //
-// First, `hot` alone trips H001 AND H002, because both premises are
-// ABSENCES: an unstated cost and a missing refinement witness are the
+// First, `hot` alone trips H001 and H002, because both premises are
+// Absences: an unstated cost and a missing refinement witness are the
 // strict poles of Complexity and Refinement.  So the "admits the half"
 // cell for the other H rules has to satisfy those two first, which is
 // what the cost_constant and refined_with atoms in them are doing.  They
@@ -309,7 +309,7 @@ static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_wit
 // The wait family, which reads fixy/atoms/Sync.h.
 //
 // Both rules read one axis from opposite ends of its ladder, so the
-// interesting cells are the ones that show the LINE, not just the ends.
+// interesting cells are the ones that show the line, not just the ends.
 
 // W001 hot x a kernel wait.  The three lowest grades trip it and the
 // three highest do not, which is the WaitLattice's own division.
@@ -450,7 +450,7 @@ static_assert(pack_verdict_v<at::regime::hot, at::cost_constant, at::refined_wit
 // pack trips one and not the other.
 
 // B002, the containment.  An observability row must be a Subrow of the
-// binding's effect row, because Observability names which PART of that row
+// binding's effect row, because Observability names which part of that row
 // is observation.  It is not a second row and cannot widen the first.
 static_assert(!pack_verdict_v<at::observe::surface<Eff::IO>>.admits(B002),
               "a surface naming IO on a binding whose effect row is empty claims an effect it never declared");

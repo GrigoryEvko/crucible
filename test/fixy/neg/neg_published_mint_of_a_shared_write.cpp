@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A Published moves to another thread, so mint_published asks that two
 // threads can read a const object of the type (fixy/handle/Published.h).  An

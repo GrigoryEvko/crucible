@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The branch_indexed of the handle factory is the step that the
 // branch_indexed of a handle calls.  A unit plants a pole table, in a probe

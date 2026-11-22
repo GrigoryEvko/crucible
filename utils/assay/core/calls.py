@@ -1,6 +1,6 @@
 """calls — the call profile of a process of the package: the count and the time of each function or of each line.
 
-THE RECORD
+The record
     With the variable CALL_PROFILE_ENV of assay.core.meter in the environment,
     each master of utils/bin calls start() before the module of its
     subcommand.  start() enables a profile for the process.  At the end of the
@@ -16,9 +16,9 @@ THE RECORD
     has a cumulative time of KEEP_S or more.  The file then holds the import
     machinery of Python, such as _find_and_load, which has a small own time
     and a large cumulative time.  `loop audit --calls DIR` adds the files of a
-    run (THE CALL PROFILES of assay.loop.audit).
+    run (the call profiles of assay.loop.audit).
 
-THE LINES
+The lines
     With LINES_ENV of assay.core.meter set to LINES_ON, the mode is
     MODE_LINES.  The profile then records each line of the package with
     sys.monitoring (LineProfile), and it does not use cProfile.  The two
@@ -51,7 +51,7 @@ THE LINES
     71,000 events of a line.  The CPU clock of each line was about 0.04 s of
     that time.
 
-THE CALLS OF A LINE
+The calls of a line
     In the mode MODE_LINES, the file also holds a row for each line that
     calls a function of the package, and for each such function.  The row
     holds these fields:
@@ -66,21 +66,21 @@ THE CALLS OF A LINE
     goes to the last line of the package on the stack.  An example is the
     line that calls sorted() with a key of the package.  With these rows, `loop audit --lines` expands
     a hot line into the table of each function that it calls, and no list of
-    functions is necessary (THE LINES of assay.loop.audit).
+    functions is necessary (the lines of assay.loop.audit).
 
-THE FORK
+The fork
     A fork copies the profile of the parent into the child.  The handler of
     os.register_at_fork() then starts a new profile in the child, which does
     not count the work of the parent.  A child of forked() of assay.core.proc
     ends with os._exit(), which runs no handler of atexit, and it calls
     finish() first.  A child that runs a new program writes no file.
 
-THE COST
+The cost
     A profile counts each call or each line of the Python code.  A profiled
     process then runs slower, and its times are larger than the times of a
     process with no profile.  The profile is for a diagnostic run, and it
     changes no result.  The launcher of a test keeps the two variables out of
-    the key of the test (THE ENVIRONMENT of assay.loop.teststep).
+    the key of the test (the environment of assay.loop.teststep).
 
 `guard selftest tests.core.test_calls` does a test of the module.
 """
@@ -104,7 +104,7 @@ KEEP_S = 0.001
 SUFFIX = ".json"
 # The file of a built-in function in a row, as pstats gives it.  Its line is 0.
 BUILTIN_FILE = "~"
-# The modes of a profile (THE RECORD, THE LINES), and the value of LINES_ENV that selects the mode of the lines.
+# The modes of a profile (the record, the lines), and the value of LINES_ENV that selects the mode of the lines.
 MODE_FUNCTIONS = "functions"
 MODE_LINES = "lines"
 LINES_ON = "1"
@@ -114,10 +114,10 @@ TOOL_NAME = "assay.core.calls"
 
 
 class _Frame:
-    """One call of a function of the package on the stack of a thread (THE LINES).
+    """One call of a function of the package on the stack of a thread (the lines).
 
     `table` is the table of the lines of its code, which each event of a line
-    reads with no hash of a code object (THE COST).
+    reads with no hash of a code object (the cost).
     """
 
     __slots__ = ("caller", "child_ns", "code", "cpu_ns", "is_call", "key", "line", "start_ns", "table", "wall_ns")
@@ -133,7 +133,7 @@ class _Frame:
         """Start a frame of `code` at the wall time and the CPU time of `times`.
 
         `is_call` is False when a generator continues.  `caller` is the frame of the package
-        below it on the stack, or None (THE CALLS OF A LINE).
+        below it on the stack, or None (the calls of a line).
         """
         self.code = code
         self.key = id(code)
@@ -147,7 +147,7 @@ class _Frame:
 
 
 class LineProfile:
-    """The profile of the lines of this process: a stack of frames for each thread, and the counts (THE LINES).
+    """The profile of the lines of this process: a stack of frames for each thread, and the counts (the lines).
 
     Each table has the key id(code), and `codes` keeps each code object alive.
     CPython does not keep the hash of a code object, and a hash costs about
@@ -167,14 +167,14 @@ class LineProfile:
         self.lines: dict[int, dict[int, list[int]]] = {}
         # The calls, the own time and the cumulative time of each code object.
         self.functions: dict[int, list[int]] = {}
-        # The calls and the wall time of each pair of a line and a callee (THE CALLS OF A LINE).
+        # The calls and the wall time of each pair of a line and a callee (the calls of a line).
         self.calls: dict[tuple[int, int, int], list[int]] = {}
         self.depth: dict[int, int] = {}
         # The line of each instruction offset of each code object of a generator that continued after a yield.
         self.offsets: dict[int, dict[int, int]] = {}
 
     def reset(self) -> None:
-        """Remove each frame and each count.  A fork calls it in the child (THE FORK)."""
+        """Remove each frame and each count.  A fork calls it in the child (the fork)."""
         self.frames.clear()
         self.lines.clear()
         self.functions.clear()
@@ -317,7 +317,7 @@ class LineProfile:
                 return
 
     def _close(self, frame: _Frame, stack: list[_Frame], wall_ns: int, cpu_ns: int) -> None:
-        """Give the last line of a frame its time, and add the frame to the counts of its function (THE LINES)."""
+        """Give the last line of a frame its time, and add the frame to the counts of its function (the lines)."""
         if frame.line:
             last = frame.table.get(frame.line)
             if last is None:
@@ -352,7 +352,7 @@ class LineProfile:
             self._close(stack.pop(), stack, wall_ns, cpu_ns)
 
     def line_rows(self) -> list[list[object]]:
-        """Return the row of each line that ran (THE LINES).  Complexity: linear in the lines."""
+        """Return the row of each line that ran (the lines).  Complexity: linear in the lines."""
         rows: list[list[object]] = []
         for key, table in self.lines.items():
             code = self.codes[key]
@@ -363,7 +363,7 @@ class LineProfile:
         return rows
 
     def function_rows(self) -> list[list[object]]:
-        """Return the row of each function that ran, with the shape of a row of cProfile (THE LINES)."""
+        """Return the row of each function that ran, with the shape of a row of cProfile (the lines)."""
         rows: list[list[object]] = []
         for key, (calls, own_ns, cumulative_ns) in self.functions.items():
             code = self.codes[key]
@@ -372,7 +372,7 @@ class LineProfile:
         return rows
 
     def call_rows(self) -> list[list[object]]:
-        """Return the row of each pair of a line and a callee (THE CALLS OF A LINE).  Complexity: linear in the pairs."""
+        """Return the row of each pair of a line and a callee (the calls of a line).  Complexity: linear in the pairs."""
         rows: list[list[object]] = []
         for (caller_key, line, callee_key), (calls, wall_ns) in self.calls.items():
             caller, callee = self.codes[caller_key], self.codes[callee_key]
@@ -394,7 +394,7 @@ class LineProfile:
 
 @dataclass(frozen=True, slots=True)
 class Profile:
-    """The profile of this process: cProfile or the lines, the directory of the file, and the start (THE RECORD)."""
+    """The profile of this process: cProfile or the lines, the directory of the file, and the start (the record)."""
 
     profiler: cProfile.Profile | None
     lines: LineProfile | None
@@ -423,7 +423,7 @@ def _new_profile(directory: Path, is_lines: bool) -> Profile:
 
 
 def _restart_in_child() -> None:
-    """Start a new profile in the child of a fork, which does not count the work of the parent (THE FORK)."""
+    """Start a new profile in the child of a fork, which does not count the work of the parent (the fork)."""
     global _active
     if _active is None:
         return
@@ -436,7 +436,7 @@ def _restart_in_child() -> None:
 
 
 def start() -> None:
-    """Enable the profile of this process when CALL_PROFILE_ENV names a directory (THE RECORD, THE LINES)."""
+    """Enable the profile of this process when CALL_PROFILE_ENV names a directory (the record, the lines)."""
     global _active
     directory = os.environ.get(cost_meter.CALL_PROFILE_ENV, "")
     if not directory or _active is not None:
@@ -452,7 +452,7 @@ def is_kept(file: str, cumulative_s: float) -> bool:
 
 
 def rows_of(profiler: cProfile.Profile) -> list[list[object]]:
-    """Return the row of each kept function of a stopped profiler (THE RECORD).
+    """Return the row of each kept function of a stopped profiler (the record).
 
     Complexity: linear in the functions that the profiler counted.
     """
@@ -470,7 +470,7 @@ def rows_of(profiler: cProfile.Profile) -> list[list[object]]:
 
 
 def finish() -> None:
-    """Stop the profile of this process, and write its file (THE RECORD).  A second call writes nothing."""
+    """Stop the profile of this process, and write its file (the record).  A second call writes nothing."""
     global _active
     profile, _active = _active, None
     if profile is None:

@@ -86,7 +86,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
         return slot_.template alternative_<Index>(detail::SumDoor::key());
     }
 
-    // THE WALKS OF THE TAG.  The match and the compare walk the tag from the
+    // Walks of the tag.  The match and the compare walk the tag from the
     // first index.  Each step compares the tag with its index, the last step
     // too.  A tag after the last index names no alternative, because only a
     // copy of bytes writes it.  The walk then ends the process and runs no
@@ -95,7 +95,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     // optimizer folds it when it knows the tag.  Complexity: at most one
     // compare for each alternative.
 
-    // The arm at Index takes the alternative at Index (THE WALKS OF THE TAG).
+    // The arm at Index takes the alternative at Index (the walks of the tag).
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result moved_from_(Arms&&... arms) && {
         if (index_() == Index) {
@@ -110,7 +110,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     }
 
     // The compare of the alternative at Index and after, when the two tags
-    // are equal (THE WALKS OF THE TAG).  Complexity: at most one compare of a
+    // are equal (the walks of the tag).  Complexity: at most one compare of a
     // tag for each alternative, and one compare of the active alternatives.
     template <std::size_t Index>
     [[nodiscard]] constexpr bool equal_from_(OneOf const& other) const noexcept {
@@ -124,8 +124,8 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
         }
     }
 
-    // The arm at Index takes a borrow of the alternative at Index (THE WALKS
-    // OF THE TAG).
+    // The arm at Index takes a borrow of the alternative at Index (the walks
+    // of the tag).
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result borrowed_from_(Arms&&... arms) const {
         if (index_() == Index) {
@@ -139,7 +139,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     }
 
     // The arm at Index of the frame door takes the RefMut of the alternative
-    // at Index, with the brand of the frame (THE WALKS OF THE TAG).
+    // at Index, with the brand of the frame (the walks of the tag).
     template <std::size_t Index, class Result, class Brand, class... Arms>
     constexpr Result written_from_(Arms&&... arms) {
         if (index_() == Index) {
@@ -280,7 +280,7 @@ public:
     // it, so no conversion reads an alternative as another type, and arms in
     // the wrong order do not compile.  The rule borrow-match of the plugin
     // refuses an arm that assigns, moves or changes this OneOf, and an owning
-    // OneOf counts the lend (THE LEND COUNT of Choice.h).
+    // OneOf counts the lend (the lend count in Choice.h).
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
              && (std::same_as<std::invoke_result_t<Arms, Ts const&>, std::invoke_result_t<Arms...[0], Ts...[0] const&>>
@@ -325,7 +325,7 @@ public:
     // alternative at that position, and each arm gives the same type.  The
     // OneOf keeps the alternative, and the door writes no byte of the OneOf.
     // The rule borrow-match refuses an arm that assigns, moves or changes
-    // this OneOf, and an owning OneOf counts the lend (THE LEND COUNT of
+    // this OneOf, and an owning OneOf counts the lend (the lend count in
     // Choice.h).  A linear alternative has no frame door, because an arm
     // could move it out through the RefMut and leave the OneOf with it.  Each
     // explicit argument goes to the pack of the arms, so no caller names the

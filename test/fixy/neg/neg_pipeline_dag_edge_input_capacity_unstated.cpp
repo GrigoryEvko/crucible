@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A graph of two stages with one edge.  The two handles of the edge name one
 // channel and carry one payload.  The output handle states a capacity of

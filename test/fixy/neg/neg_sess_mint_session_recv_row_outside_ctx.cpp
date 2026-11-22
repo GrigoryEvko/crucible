@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The protocol receives a computation that needs IO.  The receiver then
 // holds that computation, so a received payload counts as a sent one

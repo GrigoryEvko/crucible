@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A SoleWriter proves that its holder is the one thread that writes a cell.
 // Two bodies of run_joined that read one writer through a reference to const

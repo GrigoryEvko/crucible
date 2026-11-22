@@ -1,6 +1,6 @@
 """no-shell — utils/ holds no shell script.
 
-THE RULE
+Rule
     Python can start each job that a shell script starts.  Each job of utils/
     is then a module of the package that a master starts.  The rule reads
     each file of git and each new file of utils/, but not the plants of

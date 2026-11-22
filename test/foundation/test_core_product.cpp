@@ -1,12 +1,12 @@
 // Tests of foundation/core/Product.h: the tree products of the strided views.
 //
-// The model of each output is the scalar tree of THE ORDER in
+// The model of each output is the scalar tree of the order in
 // test/product_rig.h, which reads each element through its position in the
 // array.  The oracle is the exact sum of test/exact_sum.h.  The test checks:
 //   - each output has the bits of the model, for each path (dot, row and
 //     scalar), each layout of the three views, each count of lanes, and each
 //     size around the powers of two
-//   - each output is inside the a priori bound of THE ERROR BOUND against the
+//   - each output is inside the a priori bound of the error bound against the
 //     exact sum, on drawn values of a wide exponent range
 //   - the hard cases: the two zeros, the subnormal products, the
 //     infinities, the NaN payloads that give the canonical NaN, and the

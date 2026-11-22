@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit mints a permissioned session over the producer pole of an SPSC
 // channel of int, with a protocol of its own that sends a long.  The mint

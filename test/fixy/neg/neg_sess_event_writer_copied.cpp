@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A log has one writer.  A copy of the writer is a second writer, and two
 // recorders could then append to one log from two threads.

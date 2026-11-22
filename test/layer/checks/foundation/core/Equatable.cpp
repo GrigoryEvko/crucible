@@ -109,7 +109,7 @@ static_assert(!Equatable<HoldsBitField> && !Orderable<HoldsBitField>);
 static_assert(Equatable<HoldsPart<int>> && Orderable<HoldsPart<int>> && Equatable<HoldsPart<Wide>>);
 static_assert(std::is_lt(order(HoldsPart<int>{1}, HoldsPart<int>{2})) && equal(HoldsPart<int>{3}, HoldsPart<int>{3}));
 
-// THE FLOAT RULE.  equal is the identity of the bits: +0 and -0 differ, and
+// The float rule.  equal is the identity of the bits: +0 and -0 differ, and
 // the canonical NaN equals itself.  order is the totalOrder of IEEE 754 and
 // agrees with equal.
 static_assert(!equal(0.0, -0.0) && !equal(0.0f, -0.0f));

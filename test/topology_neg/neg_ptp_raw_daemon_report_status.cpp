@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A status comes from a daemon report that a background context admitted.
 // A raw report does not convert to the tagged one, so a report nobody

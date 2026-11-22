@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A door whose bodies run at the same time on other threads refuses a body
 // that writes a plain int of its caller through a reference, because two

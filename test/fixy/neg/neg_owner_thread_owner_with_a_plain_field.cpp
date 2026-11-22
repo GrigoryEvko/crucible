@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_owner_thread hands its body a reference that is not const to the
 // owner, and the thread that starts it keeps the owner and runs on.  So two
 // threads write the owner at the same time, and the door asks that two
-// threads can write it (THE SHARED WRITE of foundation/Transfer.h).  This
+// threads can write it (the shared write of foundation/Transfer.h).  This
 // owner has a plain count that the body and the starter both write.  Rust: a
 // thread that borrows a value beside its starter needs Arc<T> with T: Sync.
 //

@@ -8,7 +8,7 @@
 //   WindowLoan<T, N>    the loan of one window of count elements at the top
 //                       of a stack, from its construction to its end
 //
-// THE LOANS
+// Loans
 //   WindowLoan loan{stack, count}   takes the count elements at the top of
 //                       the stack when they fit, and moves the top past them.
 //                       A loan that does not fit holds no window, and the top
@@ -33,7 +33,7 @@
 // holds open ends the process.  The stack does not copy or move, because each
 // open loan holds a Ref to it.
 //
-// THE OWNER THREAD
+// Owner thread
 //   A stack has one owner thread, which opens and ends each of its loans.  The
 //   top is a plain word, with no atomic step, so a loan from a second thread
 //   is a race on the top.

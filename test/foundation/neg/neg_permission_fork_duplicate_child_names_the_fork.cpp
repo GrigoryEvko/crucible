@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A manifest that lists one child tag twice would hand two bodies a token
 // for the same region.  The pack trait and its witness below say exactly

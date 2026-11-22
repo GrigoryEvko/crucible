@@ -157,7 +157,7 @@ def parse_cases(expect: testing.Expect) -> None:
     )
 
 
-# A planted module for THE PARSE CACHE: an import, a function, a class, and the import code of the module.
+# A planted module for the parse cache: an import, a function, a class, and the import code of the module.
 SHAPED_MODULE = (
     "import os\n"
     "from assay.core import rows as grammar\n"
@@ -172,7 +172,7 @@ SHAPED_MODULE = (
 
 
 def shape_cache_cases(expect: testing.Expect) -> None:
-    """Check THE PARSE CACHE: an entry that gives back its parse, a hit, a text that does not parse, and the caches off."""
+    """Check the parse cache: an entry that gives back its parse, a hit, a text that does not parse, and the caches off."""
     name, file = "assay.core.planted", "utils/assay/core/planted.py"
     parsed = inputs.parse_module(name, file, SHAPED_MODULE)
     expect(
@@ -420,7 +420,7 @@ def row_cases(expect: testing.Expect) -> None:
 
 
 def current_cases(expect: testing.Expect) -> None:
-    """Check that is_current() tells when a fact that a deriver read changed (THE FACTS OF A CALL)."""
+    """Check that is_current() tells when a fact that a deriver read changed (the facts of a call)."""
     with git.scratch_repository() as root:
         plant(root)
         deriver = inputs.Deriver(root)

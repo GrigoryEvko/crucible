@@ -4,8 +4,8 @@
 // commits to a store.
 //
 // make_scratch_directory sweeps the trees that ended processes left under the
-// temporary directory of the host (THE SWEEP of fixy/os/Fs.h), and then makes
-// a temporary directory of the base (THE TEMPORARY DIRECTORY).  The end of the
+// temporary directory of the host (the sweep of fixy/os/Fs.h), and then makes
+// a temporary directory of the base (the temporary directory).  The end of the
 // owner removes its tree.  An abort runs no end, so a test that aborts leaves
 // its tree only until the sweep of a later test.  The sweep keeps each tree of
 // a live process.  make_scratch_path gives the path of an entry under the

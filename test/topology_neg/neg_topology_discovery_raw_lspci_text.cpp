@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The lspci parser takes only text tagged as External.  A raw string does
 // not convert to the tagged type, so untrusted text cannot reach the parser

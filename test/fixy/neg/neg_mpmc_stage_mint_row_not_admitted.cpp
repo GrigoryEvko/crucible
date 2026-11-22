@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The fan-in body drains a channel whose payload carries the IO row.  The
 // foreground context admits no effect, so mint_mpmc_stage refuses the call,

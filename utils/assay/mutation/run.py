@@ -1,6 +1,6 @@
 """The run of the gate mutants of a header against the tests that can witness them.
 
-THE MUTANTS
+Mutants
     A mutant weakens one gate (assay.mutation.gates).  A test that passes on
     the header and fails on the mutant kills the mutant.  A mutant that no
     test kills shows a gate with no witness.  The run writes each mutant into
@@ -10,7 +10,7 @@ THE MUTANTS
     tree, and not on the tree.  The run uses the cmake and the ctest that the
     CMake cache of the build names (assay.setup.pins).
 
-THE CANDIDATES
+Candidates
     The candidates of a header are in three tiers:
     1. Each negative fixture whose compile reads the header
     2. Each test source that reads the header, with -fsyntax-only, for a
@@ -29,7 +29,7 @@ THE CANDIDATES
     a test can start with the test launcher `loop test-step`, and the
     candidate is then the program behind the launcher.
 
-THE PROBE
+Probe
     A mutant whose header no longer compiles alone gets its verdict from the
     first error of a unit that only includes the header (probe_verdict()).
     A refusal by a check of the header kills the mutant.  Each other error
@@ -39,7 +39,7 @@ THE PROBE
     first mutant, because no probe can then tell a mutant that does not parse
     from a killed one.
 
-THE JOBS
+Jobs
     A run does JOBS compiles at a time, a quarter of the processors and at
     most the jobs of assay.core.proc.  The caps of the candidates of one gate
     are NEGATIVE_CAP fixtures, SYNTAX_CAP compiles and RUN_CAP test
@@ -74,7 +74,7 @@ from assay.readers import cmake, compdb, sarif, tsast
 from assay.readers import ctest as ctest_reader
 from assay.setup import pins as cmake_pin
 
-# The compiles at a time and the caps of the candidates of one gate (THE JOBS).
+# The compiles at a time and the caps of the candidates of one gate (the jobs).
 JOBS = max(1, min(proc.DEFAULT_JOBS, (os.cpu_count() or 1) // 4))
 NEGATIVE_CAP = 80
 SYNTAX_CAP = 12
@@ -95,11 +95,11 @@ NINJA = shutil.which("ninja") or "ninja"
 
 
 class Stopped(BaseException):
-    """A SIGTERM stops the run, after the header with a mutant gets its bytes back (THE JOBS)."""
+    """A SIGTERM stops the run, after the header with a mutant gets its bytes back (the jobs)."""
 
 
 def stop_on_term(signum: int, _frame: FrameType | None) -> None:
-    """Stop the run on SIGTERM.  The run then puts the header back before the process ends (THE JOBS)."""
+    """Stop the run on SIGTERM.  The run then puts the header back before the process ends (the jobs)."""
     raise Stopped(f"the run stops on the signal {signum}")
 
 
@@ -331,7 +331,7 @@ def load_candidates(build: Path, deps: dict[str, list[str]]) -> list[Candidate]:
     """Return the negative fixtures, the test sources and the test executables of a configured build, as candidates.
 
     The command of a test that starts with the test launcher gives the program behind the launcher
-    (THE CANDIDATES).
+    (the candidates).
 
     Raises:
         RunError: If the tests, the compile database or the targets of the build cannot be read
@@ -546,7 +546,7 @@ def run_header(header: str, src_root: Path, candidates: list[Candidate], jobs: i
     ninja_program builds the executables of tier 3.
 
     Raises:
-        RunError: If the header does not compile alone (THE PROBE)
+        RunError: If the header does not compile alone (the probe)
     """
     header_abs = src_root / header
     original = header_abs.read_bytes()

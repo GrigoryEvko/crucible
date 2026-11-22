@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The readers of the process keep the address of the published table.  The
 // lifetime of a temporary table stops at the end of the statement, and the
@@ -12,7 +12,7 @@
 #include <crucible/CKernel.h>
 
 int main() {
-    // MUST fail: the table is a temporary.
+    // must fail: the table is a temporary.
     crucible::publish_static_ckernel_table(crucible::StaticCKernelTable{});
     return 0;
 }

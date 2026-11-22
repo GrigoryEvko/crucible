@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A split without a context names no scope that may touch the halves.
 // That is sound only when every row is empty.  The parent here was

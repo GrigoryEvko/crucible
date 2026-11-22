@@ -1,6 +1,6 @@
 // The probe of the operations of the checkpoint walk of
 // fixy/session/Checkpoint.h in each build (test/compile_cost/check_ceilings.py,
-// THE OPERATIONS).
+// the operations).
 //
 // The pair is a loop over four chains of 20 sends.  Its walk is the heaviest
 // constant evaluation of the unit, so the smallest operation limit at which

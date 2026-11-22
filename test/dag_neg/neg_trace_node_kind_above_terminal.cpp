@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Violation: minting ValidTraceNodeKindRaw with TERMINAL + 1 during
 // constant evaluation.

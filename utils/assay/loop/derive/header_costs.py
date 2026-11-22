@@ -4,7 +4,7 @@ usage: loop derive header-costs --measure BUILD_DIR [HEADER...] [--jobs N]
        loop derive header-costs --write
        loop derive header-costs --check
 
-THE ROWS
+Rows
     The rule table utils/rule-table.txt ends with the line MARKER.  A library
     header is a header that is not a file of the source root.  Each row after
     MARKER is a heavy row or a light row of a library header
@@ -17,7 +17,7 @@ THE ROWS
     A unit that includes only the header compiles three times.  The
     instructions are the median of the user instructions of the three runs,
     in the unit G of the registry (10^9 instructions).  The hardware counter
-    of assay.core.meter counts them (THE INSTRUCTION COUNT of that module).
+    of assay.core.meter counts them (the instruction count of that module).
     A count does not change with the load of the host.  The counter attaches
     to the thread that opens it.  Each thread of the pool of a measure then
     counts only its own compile.  Each run compiles with -fsyntax-only and with the flags of the reference
@@ -34,7 +34,7 @@ THE ROWS
     a row, and a measure that moves no header between heavy and light then
     compiles nothing again.
 
-THE MODES
+Modes
     --measure   measure these headers:
                   * each header of the rows
                   * each library header that a header in include/ includes,
@@ -103,7 +103,7 @@ HEADER_SUFFIXES = (".h", ".hpp")
 # The runs of each measure.  The median of three is the rule of the gauge.
 MEASURE_RUNS = 3
 MEASURE_JOBS = proc.DEFAULT_JOBS
-# The instructions of one G, the unit of a measure (THE ROWS).
+# The instructions of one G, the unit of a measure (the rows).
 GIGA = 10**9
 # The unit word of a measure cell.
 UNIT = "G"
@@ -139,7 +139,7 @@ class Costs:
 
     `head` is the text up to the marker line and with it, and `lines` is each line after it.  `costs` gives the
     measure of each header by its spelling with the angle brackets, and `rows` gives the row of each header.
-    `problems` gives an error for each problem of THE ROWS, at its line of the table.  `cell_problems` is the part of
+    `problems` gives an error for each problem of the rows, at its line of the table.  `cell_problems` is the part of
     `problems` that the measure cells give.  A measure writes each cell again, and it reads only the other problems.
     """
 
@@ -157,7 +157,7 @@ def kind_name(is_heavy_row: bool) -> str:
 
 
 def parse_cell(header: str, cell: str) -> Cost:
-    """Read the measure cell of one row (THE ROWS).
+    """Read the measure cell of one row (the rows).
 
     Raises:
         CostError: If the cell is no measure and no unmeasured reason
@@ -224,7 +224,7 @@ def row_text(cost: Cost, limit: float) -> str:
 
 
 def read_costs(root: Path) -> Costs:
-    """Read the rule table of a tree, divide it at MARKER, and find each problem of THE ROWS.
+    """Read the rule table of a tree, divide it at MARKER, and find each problem of the rows.
 
     Complexity: linear in the rows of the table.
 
@@ -290,7 +290,7 @@ def kind_problems(found: Costs, limit: float) -> list[check_report.Finding]:
 
 
 def drift(root: Path) -> list[check_report.Finding]:
-    """Return an error for each problem of THE ROWS, or else for each row with a kind that its measure does not give.
+    """Return an error for each problem of the rows, or else for each row with a kind that its measure does not give.
 
     Complexity: linear in the rows of the table.
 
@@ -306,7 +306,7 @@ def drift(root: Path) -> list[check_report.Finding]:
 
 
 def checked(root: Path) -> ExitCode:
-    """Make sure that the rows after MARKER obey THE ROWS, and write each problem.
+    """Make sure that the rows after MARKER obey the rows, and write each problem.
 
     Returns:
         OK, FINDINGS when a row has a problem, or MISSING_INPUT when the table or the registry cannot be read
@@ -330,7 +330,7 @@ def store(root: Path, head: str, lines: list[str]) -> None:
 
 
 def written(root: Path) -> ExitCode:
-    """Write the kind of each row again from its measure and the threshold of the registry (THE MODES, --write).
+    """Write the kind of each row again from its measure and the threshold of the registry (the modes, --write).
 
     The comment lines after MARKER stay, and each row stays at its position.
 
@@ -401,7 +401,7 @@ def included_headers(root: Path) -> set[str]:
 
 
 def has_accurate_count() -> bool:
-    """Return True when the host gives an accurate count of the user instructions of a child (THE ROWS)."""
+    """Return True when the host gives an accurate count of the user instructions of a child (the rows)."""
     from assay.core import meter
 
     probe = meter.open_instruction_counter()
@@ -412,7 +412,7 @@ def counted_run(argv: list[str], directory: Path) -> tuple[int | None, int]:
     """Run one compile in the calling thread, and return its user instructions or None, and its status.
 
     The count is None when the host gives no accurate count.  The counter of assay.core.meter attaches to the
-    calling thread, and the count then holds only this compile (THE ROWS).
+    calling thread, and the count then holds only this compile (the rows).
 
     Raises:
         MeasureError: If the compiler cannot start, or the run is longer than the limit TOOL_S of assay.core.proc
@@ -522,7 +522,7 @@ def host_text(compiler: str) -> str:
 
 
 def measured(root: Path, build_dir: Path, extra: list[str], jobs: int) -> ExitCode:
-    """Measure each header of THE MODES, --measure, and write the lines after MARKER again.
+    """Measure each header of the modes, --measure, and write the lines after MARKER again.
 
     Complexity: three -fsyntax-only runs and one -E run for each header, JOBS of them at the same time.
 
@@ -601,7 +601,7 @@ def measured(root: Path, build_dir: Path, extra: list[str], jobs: int) -> ExitCo
 
 
 def main(argv: list[str]) -> int:
-    """Run one mode (THE MODES).
+    """Run one mode (the modes).
 
     Args:
         argv: The words after `loop derive header-costs`

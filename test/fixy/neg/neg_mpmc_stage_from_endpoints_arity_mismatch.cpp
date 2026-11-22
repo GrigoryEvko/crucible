@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The fan-in body takes two consumer handles and one producer handle.  Only
 // one consumer endpoint and one producer endpoint are passed, so the

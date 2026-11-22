@@ -217,7 +217,7 @@ struct Canary {
 };
 
 // An owner whose body loops over its members until the stop hook ends the
-// loop (THE THREAD OF AN OWNER of fixy/os/OwnedThread.h).  The thread is the
+// loop (the thread of an owner of fixy/os/OwnedThread.h).  The thread is the
 // last member, so it ends before the canary and the cells of the loop.  The
 // body and the starter use only the atomic cells, and each member is
 // private, so the owner states synchronized{} (foundation/Transfer.h).
@@ -231,9 +231,9 @@ public:
     ~LoopingOwner() = default;
 
     // The key of the doors that start and stop the thread.  The key stays on
-    // the thread that claimed it (THE PROOF OF A DOOR of foundation/Transfer.h).
-    // Its constructor is private, so only claim_starter builds one (THE BUILD
-    // OF A TOKEN).
+    // the thread that claimed it (the proof of a door of foundation/Transfer.h).
+    // Its constructor is private, so only claim_starter builds one (the build
+    // of a token).
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {
         StarterKey() noexcept {}
         friend class LoopingOwner;
@@ -247,7 +247,7 @@ public:
     // Gives the key to the calling thread.  One atomic exchange gives it to
     // one thread for the life of the owner, and a second claim ends the
     // process.  A claim door: only the thread that won the exchange starts
-    // and stops the thread (THE DOORS OF A SYNCHRONIZED CLASS of
+    // and stops the thread (the doors of a synchronized class of
     // foundation/Transfer.h).
     [[nodiscard]] StarterKey claim_starter() noexcept {
         if (is_starter_claimed_.exchange_acq_rel(true)) {

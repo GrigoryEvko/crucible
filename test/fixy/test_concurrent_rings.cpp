@@ -100,7 +100,7 @@ using WaitPolicy = c::SpinThenPark<kWaitSpinNanos>;
 // and each producer notifies it after each push and at its end.  A producer
 // waits on room, and the consumer notifies it after each pop.
 //
-// THE STOP
+// Stop
 //   A side that finds a failure stops the case before it returns.  The stop
 //   stores its cell first and then wakes each waiter of the two counts, as
 //   the protocol of the event count asks.  Each wait also ends on the cell,
@@ -123,7 +123,7 @@ struct Waits {
     [[nodiscard]] bool should_stop() const noexcept { return is_stopped.load_acquire(); }
 };
 
-// Stops the case at the end of its scope (THE STOP).  The stop after the
+// Stops the case at the end of its scope (the stop).  The stop after the
 // last item changes nothing, because each producer pushed each of its items.
 class StopAtExit {
 public:
@@ -195,7 +195,7 @@ static_assert(std::is_same_v<typename Spsc::value_type, Plain>);
 static_assert(alignof(Spsc) >= 64);
 static_assert(alignof(Mpsc) >= 64);
 // A cell of the spacing line takes one cache line, and a packed cell takes its
-// word and its value (THE SPACING OF THE CELLS of fixy/concurrent/SequenceCells.h).
+// word and its value (the spacing of the cells of fixy/concurrent/SequenceCells.h).
 // A ring of many producers takes the spacing line by default.
 static_assert(c::SequenceCells<std::uint64_t, 8, MpscOwner, c::CellSpacing::line>::cell_bytes == 64);
 static_assert(c::SequenceCells<std::uint64_t, 8, MpscOwner, c::CellSpacing::packed>::cell_bytes == 16);
@@ -287,7 +287,7 @@ using MpscWide = c::MpscRing<int, 128, MpscOwner>;
 }
 
 // Each side of the SPSC ring keeps a cache of the index of the other side
-// (THE CACHES of fixy/concurrent/SpscRing.h).  The walk below makes each
+// (the caches of fixy/concurrent/SpscRing.h).  The walk below makes each
 // cache stale in each direction, and each call must still give the answer of
 // a fresh read: a full ring refuses, a pop frees room for the next push, an
 // empty ring gives no item, and a push gives an item to the next pop.  The
@@ -349,7 +349,7 @@ using MpscWide = c::MpscRing<int, 128, MpscOwner>;
 }
 
 // The deferred pop publishes the tail at each Interval pops, and publish_tail
-// publishes it at any time (THE DEFERRED TAIL of fixy/concurrent/SpscRing.h).
+// publishes it at any time (the deferred tail of fixy/concurrent/SpscRing.h).
 // The producer sees the free cells only after a publish, and a snapshot
 // counts the deferred pops as items.  A deferred pop can follow a plain pop.
 [[nodiscard]] int spsc_deferred_tail_follows_its_publishes() {
@@ -483,7 +483,7 @@ template <class Pop>
     return ring.empty_approx(kNondet) ? 0 : 1;
 }
 
-// One producer and one consumer of deferred pops (THE DEFERRED TAIL of
+// One producer and one consumer of deferred pops (the deferred tail of
 // fixy/concurrent/SpscRing.h).  The consumer publishes its tail before each
 // wait, so the producer sees each cell that the consumer freed.  The stream
 // keeps its order and loses no item.  Under TSan, a deferred publish that does
@@ -529,7 +529,7 @@ template <class Pop>
     return ring.empty_approx(kNondet) ? 0 : 1;
 }
 
-// The owner of the rings of the proven tests (THE PROVEN FORM of
+// The owner of the rings of the proven tests (the proven form of
 // fixy/concurrent/SpscRing.h).  Each test runs one producer and one consumer,
 // so the owner makes the proof of each side.
 struct ProvenOwner final {
@@ -1091,7 +1091,7 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
             // The wait ended at the end of the stream.
             if (got == 0 && !has_single) break;
         }
-        // The guard stops the producers that wait for room (THE STOP).
+        // The guard stops the producers that wait for room (the stop).
         if (!is_ordered) return 1;
     }
 

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A tag declares its row with a permission_row member, and the member
 // must name an effect row.  A member that names any other type is

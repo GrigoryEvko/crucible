@@ -149,7 +149,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the fenced reads of the TSC and the comp
 // A compiler barrier: no load or store moves across it, and it emits no
 // instruction.  After it, the optimizer reads each object in memory again.
 // A row calls it only where it must see the effects of its body on memory
-// (THE SINK).
+// (the sink).
 [[gnu::always_inline]] inline void clobber_memory() noexcept { asm volatile("" : : : "memory"); }
 
 // A compiler barrier that reads and writes value in memory, so the optimizer
@@ -165,11 +165,11 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ── RdtscPinned witness + pinned-overload rdtsc primitives ───────────
 //
-// Modern x86 has invariant_tsc, so cross-core TSC reads ARE comparable
+// Modern x86 has invariant_tsc, so cross-core TSC reads are comparable
 // in absolute value — but a thread that migrates BETWEEN the rdtsc_start
 // and rdtsc_end of a short-window measurement still sees pipeline-state
 // artifacts (warm-vs-cold L1, branch-predictor reset, store-buffer
-// drain on context switch).  Short-window measurements MUST be pinned
+// drain on context switch).  Short-window measurements must be pinned
 // for the duration of the pair.
 //
 // `RdtscPinned` is a move-only phantom witness — its existence at a
@@ -216,7 +216,7 @@ public:
 
 [[nodiscard, gnu::always_inline]] inline uint64_t rdtsc_end(RdtscPinned const&) noexcept { return rdtsc_end(); }
 
-// ── THE SINK ───────────────────────────────────────────────────────
+// ── Sink ───────────────────────────────────────────────────────
 //
 // do_not_optimize(value) gives value to an empty asm statement.  The
 // optimizer must compute value for the statement, and it cannot remove the
@@ -267,7 +267,7 @@ public:
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: an empty asm statement holds each value of a timed body, with no call")
 
-// The place of the operand of the sink for a type (THE SINK).
+// The place of the operand of the sink for a type (the sink).
 enum class SinkOperand : std::uint8_t {
     GeneralRegister,
     VectorRegister,
@@ -323,7 +323,7 @@ template <typename T>
     }
 }
 
-// The input sink of an object in memory (THE SINK).  The operand is the bytes
+// The input sink of an object in memory (the sink).  The operand is the bytes
 // of the object, as for a class in the form of do_not_optimize() that is not
 // const.
 template <typename T>
@@ -333,7 +333,7 @@ template <typename T>
 }
 
 // A copy of value that the optimizer does not know: the input sink of a
-// value that does not change, such as a const view of a table (THE SINK).
+// value that does not change, such as a const view of a table (the sink).
 // The copy goes through the form of do_not_optimize() that is not const, so
 // a copy of a class goes through memory.
 template <typename T>
@@ -461,7 +461,7 @@ private:
     uint64_t overhead_cycles_;
 };
 
-// ── THE ENVIRONMENT ────────────────────────────────────────────────
+// ── Environment ────────────────────────────────────────────────
 //
 // The harness reads its variables, such as CRUCIBLE_BENCH_SAMPLES and
 // CRUCIBLE_BENCH_CORE_ORDER, from /proc/self/environ: the environment of the
@@ -528,7 +528,7 @@ struct StartEnvironment {
 
 // The value of the variable name in the environment at the start, or none
 // when the variable is not set or empty, as the benches read an empty value
-// as no value (THE ENVIRONMENT).
+// as no value (the environment).
 [[nodiscard]] inline ::fixy::Option<::fixy::TextView> env_value(::fixy::TextView name) noexcept {
     ::fixy::Option<::fixy::TextView> const value = detail::start_value(name);
     for (::fixy::TextView const text : value) {
@@ -537,18 +537,18 @@ struct StartEnvironment {
     return value;
 }
 
-// ── THE CORES OF A RUN ─────────────────────────────────────────────
+// ── Cores of a run ─────────────────────────────────────────────
 //
 // loop bench gives a bench the cores of its claim as the affinity of its
 // process: one isolated core for each thread that the bench states with
-// CORES in bench/CMakeLists.txt (THE CORES OF A RUN of
+// CORES in bench/CMakeLists.txt (the cores of a run of
 // utils/assay/loop/bench.py).  The cores of a run are the isolated CPUs of
 // that affinity.
 //
 // An affinity mask has no order, so loop bench also gives the cores in the
 // order of its claim, in the variable CRUCIBLE_BENCH_CORE_ORDER, as
 // "240,242,224".  A core with fewer lines in the record of the steal time
-// comes first in that order (THE STEAL TIME of utils/assay/loop/bench.py).
+// comes first in that order (the steal time of utils/assay/loop/bench.py).
 // The slots of a run take the cores of the run in that order, and then each
 // core that the variable does not name, in ascending order.  With no such
 // variable, as under ctest, the slots take the cores in ascending order.
@@ -588,10 +588,10 @@ using ThreadSlot = ::fixy::Id<ThreadSlotTag, std::uint32_t>;
 inline constexpr ThreadSlot kMeasuringSlot{0};
 
 // The CPUs of the slots of a run, at most: the CPUs that an affinity mask of
-// the thread door can name.  A spread holds as many (THE SPREAD OF A RUN).
+// the thread door can name.  A spread holds as many (the spread of a run).
 inline constexpr std::size_t kSpreadCpus = ::fixy::AffinityMask::kBits;
 
-// The cores of a claim in the order of loop bench (THE CORES OF A RUN).
+// The cores of a claim in the order of loop bench (the cores of a run).
 using CoreOrder = ::fixy::FixedList<CpuId, kSpreadCpus>;
 
 // Where the order of the slots of a run comes from: the order of the claim of
@@ -635,7 +635,7 @@ enum class SlotOrder : std::uint8_t {
 }
 
 // The order of the variable CRUCIBLE_BENCH_CORE_ORDER of the process, or an
-// empty order when the process has no such variable (THE CORES OF A RUN).
+// empty order when the process has no such variable (the cores of a run).
 [[nodiscard]] inline CoreOrder read_core_order() noexcept;
 
 // The isolated cores of a run, in the order of its slots.  A Cores holds a
@@ -773,7 +773,7 @@ private:
     return crucible::warden::CpuSet{};
 }
 
-// ── THE SPREAD OF A RUN ────────────────────────────────────────────
+// ── Spread of a run ────────────────────────────────────────────
 //
 // A run of many threads gives slot k the CPU k of a list.  With a claim of
 // loop bench, the list is the cores of the claim in the order of their slots,
@@ -934,7 +934,7 @@ namespace detail {
 }  // namespace detail
 
 // Pins the calling thread to one core for the rest of its life, through the
-// gated door of fixy/os/Sched.h (THE CORES OF A RUN).  A worker that a body
+// gated door of fixy/os/Sched.h (the cores of a run).  A worker that a body
 // starts calls it first, with the core of its slot.  The result is the error
 // of the kernel, or einval for a core that names no CPU.
 [[nodiscard]] inline ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> pin_calling_thread_to(CpuId core) noexcept {
@@ -1009,7 +1009,7 @@ private:
 };
 
 // Calls fn with the calling thread on one core, and then gives the thread back
-// its affinity (THE CORES OF A RUN).  A thread that fn starts takes that core
+// its affinity (the cores of a run).  A thread that fn starts takes that core
 // as its affinity and keeps it, so a thread that a library starts, such as the
 // drain thread of a Vigil, runs on the core of its slot.  The result of fn is a
 // prvalue, so an object that cannot move, such as a Vigil, is built in the
@@ -1040,7 +1040,7 @@ template <class Fn>
     return static_cast<Fn&&>(fn)();
 }
 
-// ── THE PAUSE CHECK ────────────────────────────────────────────────
+// ── Pause check ────────────────────────────────────────────────
 //
 // loop bench reads the steal column of /proc/stat, which counts in ticks of
 // 10 ms, so a pause of a few milliseconds reads as no steal.  The harness
@@ -1091,7 +1091,7 @@ template <class Fn>
 // pipeline thread, before it moved to its own core.
 //
 // A Run whose pause is more than kPauseBoundNs is not valid: its row prints
-// the pause and NOT VALID, and its JSON gives paused 1.
+// the pause and not valid, and its JSON gives paused 1.
 
 // The bound of the pause check: a Run in which a thread lost more time than
 // this is not valid.  A clean isolated core of the bench VM loses less than
@@ -1144,7 +1144,7 @@ struct PauseReading {
     ::fixy::FixedList<ThreadDelay, kPauseThreads> others{};
 };
 
-// The pause of one Run (THE PAUSE CHECK).
+// The pause of one Run (the pause check).
 struct Pause {
     PauseBasis basis = PauseBasis::NotMeasured;
     // The wall time of the window, and the time that the measuring thread
@@ -1191,7 +1191,7 @@ struct ReadingAfter final {};
 }  // namespace side
 
 // The clocks of the measuring thread at one end of a window of the sampled
-// loop, in nanoseconds (THE WINDOWS).  is_read is false when a clock did not
+// loop, in nanoseconds (the windows).  is_read is false when a clock did not
 // read.
 struct WindowClock {
     std::uint64_t wall_ns = 0;
@@ -1247,7 +1247,7 @@ template <std::size_t Capacity>
                        .arrivals = delta(before.value().arrivals, after.value().arrivals)};
 }
 
-// The pause between two readings of one thread (THE PAUSE CHECK).  The
+// The pause between two readings of one thread (the pause check).  The
 // measuring thread is judged by its run delay when it made a voluntary switch,
 // and else by its lost time.  The other threads that both readings hold give
 // the longest run delay that is a pause, or else the longest run delay.
@@ -1360,8 +1360,8 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
     }));
 }
 
-// Reads the two clocks of the calling thread for the check of a window (THE
-// WINDOWS): two reads of a clock and no read of procfs, so the check makes no
+// Reads the two clocks of the calling thread for the check of a window (the
+// windows): two reads of a clock and no read of procfs, so the check makes no
 // call that can sleep inside the sampled loop.  A clock that does not read
 // gives a reading that is not read.
 [[nodiscard, gnu::noinline]] inline WindowClock read_window_clock() noexcept {
@@ -1382,7 +1382,7 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
 using ProcFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
 
 // The two files of procfs of the measuring thread that each reading of the
-// pause check reads (THE PAUSE CHECK): its status, with the count of its
+// pause check reads (the pause check): its status, with the count of its
 // voluntary switches, and its schedstat, with its run delay and its arrivals.
 // The thread opens them one time before the first reading, and each reading
 // reads them again from their start.  A file that did not open is an empty
@@ -1465,7 +1465,7 @@ inline void fill_own_pause(OwnTexts const& texts, WindowClock const& clock, Paus
     reading.basis = PauseBasis::LostTime;
 }
 
-// The first reading of the pause check (THE PAUSE CHECK): the run delay of
+// The first reading of the pause check (the pause check): the run delay of
 // each thread of the process, then the files and the clocks of the measuring
 // thread.  The listing and its opens then come before the window.  The reads
 // cost a listing of /proc/self/task and some reads of procfs, outside the
@@ -1481,7 +1481,7 @@ read_pause_before(PauseFiles const& files) noexcept {
     return ::fixy::side_as<side::ReadingBefore>(std::move(reading));
 }
 
-// The second reading of the pause check (THE PAUSE CHECK): the clocks and the
+// The second reading of the pause check (the pause check): the clocks and the
 // files of the measuring thread, then the run delay of each thread of the
 // process.  The listing and its opens then come after the window.
 [[nodiscard, gnu::noinline]] inline ::fixy::Side<side::ReadingAfter, PauseReading>
@@ -1511,7 +1511,7 @@ lost_between(::fixy::Side<side::ReadingBefore, WindowClock> const& before,
 
 // The windows whose lost time is over kPauseBoundNs, when the check of the
 // whole loop judged the measuring thread by its lost time, or no window for
-// each other basis (THE WINDOWS).  A thread that made no voluntary switch in
+// each other basis (the windows).  A thread that made no voluntary switch in
 // the loop slept in no window, so the lost time of each window is a pause.  A
 // thread that slept lost the time of its sleep too, and the clocks of a window
 // cannot tell the two apart.  Complexity: linear in the windows.
@@ -1554,9 +1554,9 @@ lost_between(::fixy::Side<side::ReadingBefore, WindowClock> const& before,
 // and the count of its involuntary switches since it started, from
 // /proc/self/task/TID/stat and status, on one line after the label.  A bench
 // of several threads prints it after a row, while its threads live, to show
-// that no two of them share a core (THE CORES OF A RUN).  A thread that is
+// that no two of them share a core (the cores of a run).  A thread that is
 // alone on its core makes an involuntary switch only for a kernel thread of
-// that core.  It is noipa, as each door that prints (THE PRINT DOORS of
+// that core.  It is noipa, as each door that prints (the print doors of
 // print()).  Complexity: one listing of /proc/self/task and two reads for
 // each thread.
 [[gnu::noipa]] inline void print_thread_cpus(::fixy::TextView label) noexcept {
@@ -1625,7 +1625,7 @@ public:
 
     // Prints each CPU with a note, and its count of notes, on one line after
     // the label.  Call it after the threads that noted joined.  It is noipa,
-    // as each door that prints (THE PRINT DOORS of print()).
+    // as each door that prints (the print doors of print()).
     [[gnu::noipa]] void print(::fixy::TextView label) const noexcept {
         using ::fixy::Sink;
         ::fixy::report(Sink::Out, "     └─ cpus of the threads of {} (cpu: notes):", label);
@@ -1970,7 +1970,7 @@ struct CI {
     };
 }
 
-// ── THE WINDOWS ────────────────────────────────────────────────────
+// ── Windows ────────────────────────────────────────────────────
 //
 // Run::measure splits its sampled loop into kWindows consecutive windows.
 // Each window takes its part of the samples and its part of the time that
@@ -1986,7 +1986,7 @@ struct CI {
 //
 // Each window has its own pause check: the time that the measuring thread
 // lost in the window, its wall time minus its CPU time, against kPauseBoundNs
-// (THE PAUSE CHECK).  paused_windows counts the windows over the bound.  The
+// (the pause check).  paused_windows counts the windows over the bound.  The
 // check reads two clocks at each end of a window and no file of procfs.  A
 // read of procfs inside the loop can sleep, and a sleep makes the check of the
 // whole loop judge the measuring thread by its run delay, which can miss a
@@ -2009,7 +2009,7 @@ struct CI {
 inline constexpr std::size_t kWindows = 5;
 inline constexpr std::size_t kMinWindowSamples = 13;
 
-// The values of the windows of one run, summed up (THE WINDOWS).  The values
+// The values of the windows of one run, summed up (the windows).  The values
 // of a Report are the p50 of its windows in nanoseconds.  A bench can sum up
 // other values of its windows, such as a throughput.
 struct WindowSpread {
@@ -2022,8 +2022,8 @@ struct WindowSpread {
     double spread = 0.0;
 };
 
-// The median and the spread of the medians of the windows of one run (THE
-// WINDOWS).  The median is the R type 7 median of percentile_interp: the
+// The median and the spread of the medians of the windows of one run (the
+// windows).  The median is the R type 7 median of percentile_interp: the
 // middle value of an odd count, and the mean of the two middle values of an
 // even count.  A value takes its rank from the values below it and the equal
 // values before it, so no sort and no compare of two floats for equality is
@@ -2096,7 +2096,7 @@ template <class... Args>
 // text and the arguments of the Report family.  A bench writes each of its
 // lines through print(), and an error line through report() to Sink::Err.
 //
-// THE PRINT DOORS
+// Print doors
 //   report() is a cold function.  GCC takes each block after a call of a cold
 //   function in main for code that runs rarely, so a report() before the rows
 //   moves the rows to cold code: GCC optimizes them for size, puts them in
@@ -2109,7 +2109,7 @@ template <class... Args>
 //   block, so GCC does not take the blocks after it for cold code.  The rows
 //   after such a call stay in the hot code of main.  The scan of the bench
 //   binaries refuses a timed body in cold code (test/bench_windows/
-//   check_windows.py, THE PLACEMENT), and its probe holds a door of the cold
+//   check_windows.py, the placement), and its probe holds a door of the cold
 //   form as its control.
 template <class... Args>
     requires(::fixy::Formattable<Args> && ...)
@@ -2288,10 +2288,10 @@ inline constexpr ::fixy::FixedArray<BpfField, 54> kBpfFields{
 
 }  // namespace detail
 
-// THE CYCLE FLOOR
+// Cycle floor
 //
 // A row whose median call takes less than kCycleFloor cycles of the TSC is
-// NOT VALID.  A body that does one load in each call takes one cycle a call,
+// Not valid.  A body that does one load in each call takes one cycle a call,
 // so a floor of one cycle marks correct rows.  A loop that lost the work of
 // its body holds only its counter, and it takes one cycle a call too, so the
 // time cannot tell the two apart.  Only an unrolled loop of the counter goes
@@ -2330,16 +2330,16 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     double cycles_per_op = 0;
 
     // The cycles of the TSC of the median call, or 0 when the TSC has no
-    // calibration (THE CYCLE FLOOR).
+    // calibration (the cycle floor).
     double p50_cycles = 0;
 
-    // The time that the threads of the run lost over the sampled loop (THE
-    // PAUSE CHECK).  A pause over kPauseBoundNs makes the run not valid.
+    // The time that the threads of the run lost over the sampled loop (the
+    // pause check).  A pause over kPauseBoundNs makes the run not valid.
     Pause pause{};
 
     // The medians of the windows of the sampled loop, how the windows were
     // judged, and the count of the windows whose own pause is over
-    // kPauseBoundNs (THE WINDOWS).  window_basis is LostTime when the windows
+    // kPauseBoundNs (the windows).  window_basis is LostTime when the windows
     // were judged, and NotMeasured when the measuring thread slept in the loop.
     WindowSpread windows{};
     PauseBasis window_basis = PauseBasis::NotMeasured;
@@ -2413,7 +2413,7 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     [[nodiscard]] bool noisy(double cv_threshold = 0.05) const noexcept { return pct.cv > cv_threshold; }
 
     // True when the median call takes less than kCycleFloor cycles of the
-    // TSC, so the row is NOT VALID (THE CYCLE FLOOR).
+    // TSC, so the row is not valid (the cycle floor).
     [[nodiscard]] bool is_below_cycle_floor() const noexcept { return p50_cycles > 0.0 && p50_cycles < kCycleFloor; }
 
     // Writes the summary line of the report to standard output, then the
@@ -2421,7 +2421,7 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
     // columns of the times are 9 bytes wide and the column of max 10 bytes,
     // and µs is two bytes of UTF-8, so a column of µs holds one character
     // less.  It is noipa, so its report() calls stay out of a caller that
-    // measures more rows after it (THE PRINT DOORS of print()).
+    // measures more rows after it (the print doors of print()).
     [[gnu::noipa]] void print_text() const noexcept {
         using ::fixy::Align;
         using ::fixy::Fixed;
@@ -2466,7 +2466,7 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         // One-line sensory summary. When BPF is attached and every
         // interesting counter is zero we still emit "└─ sched clean"
-        // as confirmation that senses ARE attached (so the reader can
+        // as confirmation that senses are attached (so the reader can
         // trust the silence). When any counter fires, only the fields
         // that actually have a delta are printed.
         print_bpf_summary_();
@@ -2511,7 +2511,7 @@ struct[[= ::foundation::transfer::sendable{}]] Report {
 
 private:
     // Prints the windows of the run inside its line, to standard output, which
-    // each caller of print_text gives (THE WINDOWS): their count, the median of
+    // each caller of print_text gives (the windows): their count, the median of
     // their p50 with two decimals in the unit of the other columns, their
     // spread in percent with one decimal, and the count of the windows over the
     // bound of the pause check.
@@ -2537,8 +2537,8 @@ private:
     }
 
     // Prints the pause of a run over kPauseBoundNs on a line of its own after
-    // the row, to standard output, which each caller of print_text gives (THE
-    // PAUSE CHECK).  The times are in microseconds.
+    // the row, to standard output, which each caller of print_text gives (the
+    // pause check).  The times are in microseconds.
     void print_pause_() const noexcept {
         using ::fixy::Sink;
         ::fixy::report(Sink::Out, "     └─ [pause] in {} ms of the sampled loop:", pause.wall_ns / 1000000);
@@ -2910,7 +2910,7 @@ public:
     // that starts threads runs far longer than a move costs.  On a claim of
     // loop bench, whose cores are all isolated, the measuring thread takes
     // the core of slot 0, and each thread of the body pins itself to a core
-    // of the slots from 1 (THE CORES OF A RUN).
+    // of the slots from 1 (the cores of a run).
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
     Run& fan_out() noexcept {
         pin_mode_ = Pin::FanOut;
@@ -3063,7 +3063,7 @@ public:
 
         SampleWindow window = start_window_(pinned_cpu);
         // The windows share the samples and the time that the cap leaves
-        // after the warmup (THE WINDOWS).
+        // after the warmup (the windows).
         const std::uint64_t used_ns = window.start_ns - start_all_ns;
         const WindowPlan plan = plan_windows_(WindowRequest{
             .samples = S,
@@ -3139,7 +3139,7 @@ private:
     };
 
     // One window of the sampled loop: its part of the samples, and the
-    // reading of the TSC after which it takes no more sample (THE WINDOWS).
+    // reading of the TSC after which it takes no more sample (the windows).
     struct WindowBound {
         std::size_t samples = 0;
         std::uint64_t deadline_tsc = 0;
@@ -3160,12 +3160,12 @@ private:
         // nanoseconds.
         std::uint64_t start_ns = 0;
         // The files of the measuring thread that the two readings of the
-        // pause check read, and the first reading (THE PAUSE CHECK).
+        // pause check read, and the first reading (the pause check).
         detail::PauseFiles pause_files{};
         ::fixy::Side<side::ReadingBefore, PauseReading> pause_before{PauseReading{}};
         // The clocks at the end of the last window, and the count of the
         // samples at the end of each window with the time that the measuring
-        // thread lost in it (THE WINDOWS).
+        // thread lost in it (the windows).
         WindowClock clock_last{};
         ::fixy::FixedList<std::size_t, kWindows> ends{};
         ::fixy::FixedList<std::uint64_t, kWindows> lost_ns{};
@@ -3218,7 +3218,7 @@ private:
         return window;
     }
 
-    // The windows of the sampled loop (THE WINDOWS): min(samples, kWindows)
+    // The windows of the sampled loop (the windows): min(samples, kWindows)
     // windows, the first samples % count of them with one more sample, and
     // each window with the end of its part of the time, from the TSC of now.
     // With no cap, or with no calibration of the TSC, a window has no end of
@@ -3244,8 +3244,8 @@ private:
     }
 
     // Reads the clocks at the end of the last window that the loop ended, and
-    // keeps the time that the measuring thread lost in that window (THE
-    // WINDOWS).  The two reads come between two samples, outside the timed
+    // keeps the time that the measuring thread lost in that window (the
+    // windows).  The two reads come between two samples, outside the timed
     // regions.
     [[gnu::noinline]] static void close_window_(SampleWindow& window) noexcept {
         WindowClock const clock = detail::read_window_clock();
@@ -3311,7 +3311,7 @@ private:
         }
 
         // The median of each window, from its samples in the order of the
-        // loop, before the sort of all the samples (THE WINDOWS).
+        // loop, before the sort of all the samples (the windows).
         ::fixy::FixedList<double, kWindows> window_medians{};
         std::size_t window_begin = 0;
         for (std::size_t const window_end : window.ends) {
@@ -3355,7 +3355,7 @@ private:
             r.p50_cycles = r.pct.p50 * tsc_hz / 1e9;
         }
         // A bench that prints its rows with no report of the harness still
-        // shows the mark of the floor, on standard error (THE CYCLE FLOOR).
+        // shows the mark of the floor, on standard error (the cycle floor).
         if (r.is_below_cycle_floor()) {
             ::fixy::report(::fixy::Sink::Err,
                            "bench: the row {} takes {} cycle a call, below {}, so its timed loop lost the work of its "
@@ -3555,8 +3555,8 @@ private:
     // out, and that selector keeps away from cpu0 and its interrupts.
     // Returns the number of CPUs that are not isolated.
     //
-    // An affinity of isolated CPUs only is a claim of loop bench (THE CORES
-    // OF A RUN).  No load balancer spreads the threads of the body there, so
+    // An affinity of isolated CPUs only is a claim of loop bench (the cores
+    // of a run).  No load balancer spreads the threads of the body there, so
     // each thread of the body pins itself to a core of its slot: a worker
     // through pin_calling_thread_to(), and the threads of a door through the
     // placement OneCpuEach over Cores::first_slots_apart of slot 0.  The
@@ -3671,7 +3671,7 @@ private:
 // the profile, the CPUs, the cores of the run, the TSC and the BPF senses.
 // Call it first in main, before a Run pins the thread.  It is noipa, so its
 // report() calls stay out of main, and the rows after it stay in the hot code
-// of main (THE PRINT DOORS of print()).
+// of main (the print doors of print()).
 [[gnu::noipa]] inline void print_system_info() {
     using ::fixy::Sink;
     using ::fixy::TextView;
@@ -3795,12 +3795,12 @@ inline void elevate_priority() noexcept {
 //   - a JSON emission block after the reports array
 //
 // Pull those into the harness so every migration is the minimum needed.
-// CRUCIBLE_BENCH_HARDENING is NOT parsed here — it's consumed by
+// CRUCIBLE_BENCH_HARDENING is not parsed here — it's consumed by
 // Run::measure() directly, so no bench-side work is required.
 
 // The text of CRUCIBLE_BENCH_CORE_ORDER comes from the environment of the
-// process at its start (THE ENVIRONMENT).  loop bench sets the variable in
-// that environment (THE CORES OF A RUN).  A file that does not read gives a
+// process at its start (the environment).  loop bench sets the variable in
+// that environment (the cores of a run).  A file that does not read gives a
 // warning and the empty order.  A text that parse_core_order() refuses ends
 // the process, because loop bench writes each such text.  Complexity: linear
 // in the environment.
@@ -3869,7 +3869,7 @@ template <std::size_t Capacity, typename Body>
     return run(name.view(), std::forward<Body>(body));
 }
 
-// THE STATE OF A ROW
+// State of a row
 //   run_with(name, state, body) times body(state) as run(name, body) times
 //   body().  The harness holds the state by value for the whole row, the
 //   body takes it as an lvalue in each call, and the call gives the state
@@ -3915,7 +3915,7 @@ template <typename State, typename Body>
 // Writes the text line of each report to standard output, in order.  A bench
 // holds its reports in an owner of the base and passes its view().  Each emit
 // function is noipa, so its report() calls stay out of a caller that measures
-// more rows after it (THE PRINT DOORS of print()).
+// more rows after it (the print doors of print()).
 [[gnu::noipa]] inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
     for (Report const& report : reports)
         report.print_text();

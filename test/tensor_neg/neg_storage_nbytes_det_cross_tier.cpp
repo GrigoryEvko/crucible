@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Storage-byte fixture #2: the DetSafe tier is part of the
 // type.  A Pure storage-byte projection cannot be silently assigned

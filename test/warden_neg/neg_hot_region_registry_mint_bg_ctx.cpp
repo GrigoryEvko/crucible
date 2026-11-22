@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_hot_region_registry_handle refuses the background drain context.
 // Registering a hot region is init work: the table backs the lock and

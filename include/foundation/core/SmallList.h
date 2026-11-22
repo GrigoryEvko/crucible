@@ -9,7 +9,7 @@
 //                       to storage on the heap, and each later growth doubles
 //                       that storage, up to the maximum of the mint
 //
-// THE MINT
+// Mint
 //   mint_small_list<T, Inline>(maximum)
 //                       the one door: an empty list that holds no heap
 //                       storage.  No append takes the list past maximum
@@ -17,7 +17,7 @@
 //                       allocation capability.  A maximum past the largest
 //                       count of a View becomes that count
 //
-// THE OPERATIONS
+// Operations
 //   append(alloc, value)   puts value after the last element, and gives Unit,
 //                       or Full<T> when the list holds maximum elements.  The
 //                       allocation capability comes first, so each growth
@@ -27,7 +27,7 @@
 //                       no value for an empty list
 //   size(), is_empty(), clear()
 //
-// THE FRAME DOORS
+// Frame doors
 //   with_view(body)     calls body with the View of the elements, and gives
 //                       the result of body.  The View gives get(position),
 //                       the loop and the iteration verbs reverse(),
@@ -37,17 +37,17 @@
 //                       the ViewMut of the elements, and the door gives the
 //                       list back (foundation/core/Frame.h)
 //
-// WHY A FRAME DOOR AND NO view() OR get()
+// Why a frame door and no view() or get()
 //   An append can move each element: the append past Inline moves them to the
 //   heap, and each growth moves them to larger storage.  A move of the list
 //   moves the inline elements too.  So a View or a Ref of an element that
 //   outlives one call would dangle after the next append or move, as it would
 //   for a GrowList.  The list gives no View, no Ref and no cursor out of a
-//   frame.  The frame doors keep THE LEND COUNT of foundation/core/Grow.h: an
+//   frame.  The frame doors keep the lend count of foundation/core/Grow.h: an
 //   append, a take, a clear, a move and the end of the list while a door lends
 //   the elements end the process, in each build.
 //
-// THE ELEMENT
+// Element
 //   The element is trivially copyable and trivially destructible, and its
 //   alignment is at most 8.  The owner core of foundation/core/Owner.h moves
 //   the state of an owner by its bytes, and the inline elements live in that
@@ -80,7 +80,7 @@
 
 namespace foundation::core {
 
-// The element of a SmallList (THE ELEMENT).
+// The element of a SmallList (the element).
 template <class T>
 concept SmallListElement =
     OwnedElement<T> && std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && alignof(T) <= 8;
@@ -129,7 +129,7 @@ namespace owner {
 // is null while the elements are inline, and then the capacity is the smaller
 // of Inline and the maximum.  So the capacity is never above the maximum, and
 // an append with room makes one compare.  A moved-from list keeps its
-// maximum.  The lend count is that of a GrowList (THE LEND COUNT of
+// maximum.  The lend count is that of a GrowList (the lend count of
 // foundation/core/Grow.h).
 template <class T, std::size_t Inline>
 struct SmallListState {
@@ -157,7 +157,7 @@ struct SmallListState {
         return empty;
     }
 
-    // Gives the heap storage back, unpoisoned (THE SPARE STORAGE of
+    // Gives the heap storage back, unpoisoned (the spare storage of
     // Heap.h).  Each element is trivially destructible, so no element needs
     // an end.
     static constexpr void release(SmallListState const& state) noexcept {
@@ -200,7 +200,7 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
 
     // Moves each element into heap storage of the next capacity, and gives
     // the old heap storage back.  The slots of the heap storage past the
-    // count are poisoned (THE SPARE STORAGE of Heap.h), and the inline slots
+    // count are poisoned (the spare storage of Heap.h), and the inline slots
     // are not, because a move of the list copies their bytes.  The count is
     // the capacity, and it is below the maximum.  The elements are trivially
     // copyable, so one copy of bytes moves them.  Complexity: one allocation
@@ -254,7 +254,7 @@ public:
     // append with room compares the count with the capacity only.  A full
     // storage then compares the count with the maximum, and grows below it.
     // An append below Inline elements allocates nothing.  A lent list ends
-    // the process (THE LEND COUNT).
+    // the process (the lend count).
     template <class Marker>
         requires AllocationCapability<Marker>
     [[nodiscard]] constexpr Result<Unit, Full<T>> append(Marker /*allocation*/, T value) & noexcept {
@@ -275,7 +275,7 @@ public:
     }
 
     // Moves the last element out, or gives no value for an empty list.  One
-    // compare.  A lent list ends the process (THE LEND COUNT).
+    // compare.  A lent list ends the process (the lend count).
     [[nodiscard]] constexpr Option<T> take_last() & noexcept {
         State& state = this->state_;
         detail::refuse_lent_owner_change_(state.lend_count);
@@ -291,8 +291,8 @@ public:
     }
 
     // The list then holds no element, and it keeps its storage.  The heap
-    // storage is then poisoned (THE SPARE STORAGE of Heap.h).  A lent list
-    // ends the process (THE LEND COUNT).
+    // storage is then poisoned (the spare storage of Heap.h).  A lent list
+    // ends the process (the lend count).
     constexpr void clear() & noexcept {
         detail::refuse_lent_owner_change_(this->state_.lend_count);
         this->state_.count = 0;
@@ -301,7 +301,7 @@ public:
         }
     }
 
-    // The frame door of the elements (THE FRAME DOORS): body gets the View
+    // The frame door of the elements (the frame doors): body gets the View
     // of the elements, and the list lends them until body returns.  The
     // result of body holds no borrow.  A const list gives a View of const
     // elements.
@@ -366,7 +366,7 @@ template <class T, std::size_t Inline>
 // into the frame, body gets the ViewMut of its elements, and the door gives
 // the list back: alone for a body that gives void, and after the result in a
 // Record for each other body.  The list lends its elements through with_view
-// for the time of the body (THE LEND COUNT), and no code outside the frame can
+// for the time of the body (the lend count), and no code outside the frame can
 // reach the list in that time.  The pack refuses each explicit argument, so no
 // caller names the brand of the frame.  Complexity: two moves of the state,
 // two plain steps of the lend count, and the cost of the body.

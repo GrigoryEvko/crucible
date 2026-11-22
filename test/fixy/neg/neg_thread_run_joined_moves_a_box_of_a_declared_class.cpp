@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A body of run_joined owns a class that holds a Box of a class that this
 // unit only declares.  The unit that defines that class can give it a member

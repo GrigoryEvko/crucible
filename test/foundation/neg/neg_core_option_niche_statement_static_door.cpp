@@ -2,7 +2,7 @@
 // constructor is private, and a public static door over it builds a value
 // from each raw word, also the empty value.  A reflection over the
 // constructors does not see such a door, so the statement is open to a type
-// of the base only (THE CHECK OF THE STATEMENT of foundation/core/Choice.h),
+// of the base only (the check of the statement of foundation/core/Choice.h),
 // and the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

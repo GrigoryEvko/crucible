@@ -1,7 +1,7 @@
 #pragma once
 
 // The values outside the error bound of a sum, for the tests of the rule of
-// the canonical NaN (THE VALUES OUTSIDE THE BOUND of foundation/core/Reduce.h):
+// the canonical NaN (the values outside the bound of foundation/core/Reduce.h):
 // the NaNs and the infinities that a run draws, and the bits that a sum form
 // gives for an output.
 

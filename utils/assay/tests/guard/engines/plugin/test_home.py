@@ -1,6 +1,6 @@
 """The test of the rule home of the engine plugin and of its ledger, on planted lines.
 
-THE CASES
+Cases
     A case gives planted finding lines to a context of the runner with a
     planted census.  A scratch tree holds a planted registry, a rule table
     with home rows and a build directory with a compile database.  The cases

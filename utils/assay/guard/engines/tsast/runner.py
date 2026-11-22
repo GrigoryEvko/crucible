@@ -1,6 +1,6 @@
 """The runner of the engine tsast: the trees that the rules of one call read, and the copy of a plant.
 
-THE CONTEXT
+Context
     A tsast rule reads the parse trees of the C++ files of a tree.  Its
     module is assay/guard/engines/tsast/ID.py, with underscores in place of
     the hyphens, and its function findings(context) gets a TsastContext.  The
@@ -9,7 +9,7 @@ THE CONTEXT
     bodies of each tree.  The run and the witness of
     assay.guard.engines.meta.runner judge the findings.
 
-THE SHARED TREES
+Shared trees
     When a call of `guard check` runs more than one rule, the rules share one
     context.  The context then keeps each tree and each list of macro bodies
     that a rule reads, so the call loads each tree one time from the tree
@@ -18,7 +18,7 @@ THE SHARED TREES
     reads it, so the memory of the call is the memory of the facts of the
     rule.
 
-THE SCOPE
+Scope
     files() gives the C++ files of a scope, sorted.  The files are the files
     that git tracks and the new files that .gitignore does not match.  A path
     of a scope is a directory that ends with "/" or one file.  The word
@@ -27,23 +27,23 @@ THE SCOPE
     their rules, so no scope holds them.  A file that tsast.UNPARSEABLE lists
     is in a scope only when the rule gives include_unparseable.
 
-THE PARSE ERRORS
+Parse errors
     The tree of a file that does not parse has a diagnostic.  The rule
     parse-clean refuses such a file.  trees() gives no such tree to the other
     rules.  findings_of() gives a rule one error of the kind parse for each
     such file that it reads, because the rule cannot read the file.
 
-THE PARTS
+Parts
     A call with --part K/N reads part K of N of the files of a rule.  Only a
     rule whose module sets READS_PARTS to True takes --part, and that rule
     calls part_of().  part_of() takes the files of the part from part_files()
-    of assay.guard.engines.meta.runner (THE PARTS of that module).  The run
+    of assay.guard.engines.meta.runner (the parts of that module).  The run
     judges only the ledger rows of the files of the part.  The parts of one rule run at the same time.  Each part writes
     its warnings to the file RULE.partK.txt of the warnings directory
-    (assay.core.report, THE WARNINGS DIRECTORY).  A part then does not
+    (assay.core.report, the warnings directory).  A part then does not
     replace or remove the warnings of a different part.
 
-THE PLANTS
+Plants
     plant_context() copies a plant to a throwaway repository
     (assay.guard.engines.meta.runner.copy_plant), so a file of a plant with
     the suffix .planted gets its name with no suffix in the copy.  The C++
@@ -65,7 +65,7 @@ from assay.core.paths import REPO_ROOT
 from assay.guard.engines.meta import runner as meta_runner
 from assay.readers import tsast
 
-# The finding kind of a file that a rule cannot read (THE PARSE ERRORS).
+# The finding kind of a file that a rule cannot read (the parse errors).
 PARSE_KIND = "parse"
 # The rule table of a tree, relative to its root.  A copy of a plant has no table, so it reads the table of this tree.
 TABLE = ruletable.TABLE.relative_to(REPO_ROOT)
@@ -81,7 +81,7 @@ def has_directory(path: str, names: frozenset[str]) -> bool:
 
 
 def is_candidate(path: str) -> bool:
-    """Return True for a file of the tree that a scope can hold: a C++ file that is not a plant (THE SCOPE).
+    """Return True for a file of the tree that a scope can hold: a C++ file that is not a plant (the scope).
 
     `loop test` reads the files of the scope of a tsast rule with this predicate (assay.loop.inputs).
     """
@@ -93,7 +93,7 @@ class TsastContext:
 
     The context reads the list of files and the rule table one time, on the
     first use.  With keep, it also keeps each tree and each list of macro
-    bodies (THE SHARED TREES).
+    bodies (the shared trees).
     """
 
     __slots__ = ("root", "build_dir", "part", "rule", "_keep", "_listed", "_table", "_trees", "_bodies", "_broken",
@@ -106,7 +106,7 @@ class TsastContext:
         Args:
             root: The root of the tree
             build_dir: The build directory, or None
-            part: (K, N) for the part K of N (THE PARTS), or None for each file
+            part: (K, N) for the part K of N (the parts), or None for each file
             keep: Whether the context keeps each tree that a rule reads, for the other rules of the call
         """
         self.root = root
@@ -123,7 +123,7 @@ class TsastContext:
         self._covered: frozenset[str] | None = None
 
     def listed(self) -> tuple[str, ...]:
-        """Return each C++ file of the tree that a scope can hold, sorted (THE SCOPE).
+        """Return each C++ file of the tree that a scope can hold, sorted (the scope).
 
         Raises:
             NotApplicable: If the root is not a git work tree
@@ -144,7 +144,7 @@ class TsastContext:
         return self._table.class_of(path)[0] == SCOPE_BASE
 
     def files(self, scope: Sequence[str], *, include_unparseable: bool = False) -> list[str]:
-        """Return the C++ files that the paths and the words of a scope hold, sorted (THE SCOPE).
+        """Return the C++ files that the paths and the words of a scope hold, sorted (the scope).
 
         Complexity: O(f * s) for f files and s items of the scope.
 
@@ -182,7 +182,7 @@ class TsastContext:
         return self.files(self.rule.scope, include_unparseable=include_unparseable)
 
     def part_of(self, paths: Sequence[str]) -> list[str]:
-        """Return the files of the part of the call, or each file with no part (THE PARTS).
+        """Return the files of the part of the call, or each file with no part (the parts).
 
         Complexity: O(f log f) for f files.
         """
@@ -201,7 +201,7 @@ class TsastContext:
 
         Each tree has the path of its file relative to the root.  A file that
         does not parse gives no tree, unless with_broken: findings_of() gives
-        the rule an error for it (THE PARSE ERRORS).
+        the rule an error for it (the parse errors).
 
         Args:
             paths: The files, relative to the root
@@ -261,7 +261,7 @@ class TsastContext:
 
 
 def plant_context(plant: Path, scratch: Path) -> TsastContext:
-    """Copy a plant to a throwaway repository (THE PLANTS), and give its context."""
+    """Copy a plant to a throwaway repository (the plants), and give its context."""
     meta_runner.copy_plant(plant, scratch)
     return TsastContext(scratch)
 
@@ -270,7 +270,7 @@ def run(rules: Sequence[rule_registry.Rule], root: Path, build_dir: Path | None,
         part: tuple[int, int] | None = None) -> list[int]:
     """Run the rules on one context, and give the status of each one (assay.guard.engines.meta.runner.run()).
 
-    The context keeps the trees when the call runs more than one rule (THE SHARED TREES).
+    The context keeps the trees when the call runs more than one rule (the shared trees).
     """
     context = TsastContext(root, build_dir, part, keep=len(rules) > 1)
     kept = context.is_covered if part is not None else None

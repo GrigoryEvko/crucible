@@ -16,7 +16,7 @@
 //   - Magic / version field corruption
 //
 // This is a unit-style round-trip test scaled up to 100K iterations
-// with random (kind × hashes) inputs.  Catches the NARROW class of
+// with random (kind × hashes) inputs.  Catches the narrow class of
 // bugs at the lowest serialization layer; full RegionNode round-trip
 // would need an arena-backed generator (future work).
 // ═══════════════════════════════════════════════════════════════════

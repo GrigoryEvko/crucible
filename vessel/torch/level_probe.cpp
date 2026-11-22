@@ -10,14 +10,14 @@
 // Its own note says exact v1, so the loader can read it as it reads the note
 // of each vessel library.
 //
-// THE C ABI
+// C ABI
 //   crucible_level_abi_version()   the ABI stamp of the probe, which the
 //                                  loader compares with its own constant
 //   crucible_level_pick(request, size)
 //                                  the level that the loader loads, 1 to 4:
 //                                  the highest level of the host, or the
 //                                  level of the request when the host has
-//                                  it.  REQUEST and SIZE give the text of
+//                                  it.  request and size give the text of
 //                                  CRUCIBLE_ISA_LEVEL, and an empty text is
 //                                  no request.  A text that is no level, and
 //                                  a level above the host, end the process
@@ -38,7 +38,7 @@ static_assert(::foundation::os::x86_level_of_target() == ::foundation::os::X86Le
 namespace crucible::vessel {
 namespace {
 
-// The ABI stamp of the probe.  Change it with each change of THE C ABI, and
+// The ABI stamp of the probe.  Change it with each change of the C ABI, and
 // change EXPECTED_LEVEL_ABI_VERSION of crucible_native.py and PROBE_ABI_VERSION
 // of utils/assay/core/x86level.py with it.  The probe carries no layout note:
 // the test launcher of the gate loads it too, and reads this stamp.

@@ -121,7 +121,7 @@ static_assert(sizeof(Option<Ref<int, CheckBrand>>) == sizeof(void*));
 static_assert(sizeof(Option<Ref<Abstract, CheckBrand>>) == sizeof(void*));
 
 // The niche of a Ref states that no door builds the null pointer, and the
-// statement passes the three checks of THE CHECK OF THE STATEMENT of
+// statement passes the three checks of the statement of
 // foundation/core/Choice.h: the constructor from a reference takes the key,
 // and the widening is a constructor template.  The members of Ref read the
 // object and write no Ref, and the statement stands in this header.
@@ -140,7 +140,7 @@ concept WritesRefInPlace = requires(O& option) { option.with_mut([](auto) noexce
 static_assert(WritesRefInPlace<Option<Ref<int, CheckBrand>>>);
 
 // The word protocol of a Ref states that only the null Ref of the niche gives
-// the empty word (THE WORD OF A STATED PAYLOAD of foundation/core/Atomic.h),
+// the empty word (the word of a stated payload of foundation/core/Atomic.h),
 // so the store of a full Option of a Ref tests no word.
 static_assert(detail::word_statement_of(^^Ref<int, CheckBrand>) == detail::WordStatement::holds);
 static_assert(AtomicValue<Option<Ref<int, CheckBrand>>>);

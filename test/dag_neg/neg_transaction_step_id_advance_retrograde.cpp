@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Transaction::step_id is fixy::Monotonic<uint64_t>.  An advance to a
 // value below the current one breaks the precondition of advance(), which

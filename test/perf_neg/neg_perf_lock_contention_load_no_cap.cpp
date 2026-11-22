@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // load_lock_contention takes the startup load context, and the parameter
 // has no default.  A call with no argument has too few arguments, so no

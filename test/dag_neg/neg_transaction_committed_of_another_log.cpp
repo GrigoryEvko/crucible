@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A CommittedTx of a keyed TransactionLog holds the brand of its log.  Two
 // mints give two logs of two brands, so a CommittedTx of one log reaches no

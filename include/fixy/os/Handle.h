@@ -8,7 +8,7 @@
 //   RightSet                 the rights of a handle: a set of named bits
 //   kind::*                  the kinds of a handle: a closed list of tags
 //
-// THE RIGHTS
+// Rights
 //   RightSet is an enum class of named bits in 64 bits.  A class type that
 //   is a template argument must have public members, so a class with a
 //   private mask cannot be one, and an enum class is the strong type that
@@ -19,12 +19,12 @@
 //   and the high 32 bits are the families of the closed table of ioctls, one
 //   bit for each family.
 //
-// THE KINDS
+// Kinds
 //   A kind is a tag of namespace kind, and HandleKind names each one, so a
 //   class of a caller is no kind.  A socket kind takes the tag of its socket
 //   (fixy/os/Socket.h), because the doors of a socket read its triple.
 //
-// THE BORROW
+// Borrow
 //   HandleRef is the one borrow of a descriptor.  It holds the address of the
 //   descriptor of its Handle, so it is a borrow for the frame doors of the
 //   base (HoldsNoBorrow of foundation/core/Choice.h), and no result of a
@@ -32,13 +32,13 @@
 //   descriptor -1, so a door makes no call through them and gives ebadf.  A
 //   borrow that outlives its Handle dangles, as each borrow does.  A table
 //   that stores a socket holds a ForeignSocketRef of fixy/os/Socket.h by
-//   value, with the generation of its number (THE GENERATION OF A
-//   DESCRIPTOR of fixy/os/Fd.h), which each Handle advances at its open, at
+//   value, with the generation of its number (the generation of a
+//   descriptor of fixy/os/Fd.h), which each Handle advances at its open, at
 //   its close and at its release to an ABI.
 //   restrict<Fewer>() gives a borrow with fewer rights, and no form gives
 //   more rights.  A borrow of a temporary Handle does not compile.
 //
-// THE DOORS
+// Doors
 //   The constructor of a Handle from a descriptor is private.  Its friends
 //   are the door classes that make the open, socket, perf_event_open and
 //   PTP open calls, and each door admits only its gated mints.  The doors of
@@ -46,7 +46,7 @@
 //   use of a namespace detail outside the base is a finding of the
 //   quarantine plugin.
 //
-// THE ABI DESCRIPTOR
+// ABI descriptor
 //   A call of a C ABI, such as a call of libbpf that takes a descriptor,
 //   reads the raw descriptor of a borrow with abi_descriptor().  A C ABI that
 //   takes the ownership of a descriptor gets it with release_to_abi(), which
@@ -197,7 +197,7 @@ public:
     // emptied.
     [[nodiscard]] constexpr bool is_open() const noexcept { return *descriptor_ >= 0; }
 
-    // The raw descriptor, for a call of a C ABI only (THE ABI DESCRIPTOR).
+    // The raw descriptor, for a call of a C ABI only (the ABI descriptor).
     // The descriptor of an empty Handle is -1.
     [[nodiscard]] constexpr int abi_descriptor() const noexcept { return *descriptor_; }
 };
@@ -228,7 +228,7 @@ class [[nodiscard]] Handle final {
     int descriptor_ = -1;
 
     // The open gave the number to this Handle, so the generation of the
-    // number advances (THE GENERATION OF A DESCRIPTOR of fixy/os/Fd.h).
+    // number advances (the generation of a descriptor of fixy/os/Fd.h).
     explicit Handle(int descriptor) noexcept : descriptor_{descriptor} {
         ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
     }
@@ -270,7 +270,7 @@ public:
     void ref() const&& = delete("the borrow of a temporary handle dangles at the end of the full expression");
 
     // Gives the descriptor to the caller, which closes it from then on, and
-    // leaves this Handle empty (THE ABI DESCRIPTOR).  The one caller is a C
+    // leaves this Handle empty (the ABI descriptor).  The one caller is a C
     // ABI that takes the ownership of a descriptor, such as a link of libbpf,
     // inside an opt-out region of the class ABI.  An empty Handle gives -1.
     // The base gives up the number, so its generation advances, and no

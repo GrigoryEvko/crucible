@@ -2,7 +2,7 @@
 // function template writes the raw word.  GCC 16 reflection gives no const
 // qualifier of a member function template, so the walk of the members
 // refuses each public member function template other than a constructor
-// template (THE CHECK OF THE STATEMENT of foundation/core/Choice.h), and the
+// template (the check of the statement of foundation/core/Choice.h), and the
 // Option of the class does not compile.
 
 #include <foundation/core/Choice.h>

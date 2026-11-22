@@ -1,6 +1,6 @@
 """The rows grammar: one reader and one writer for the registry, the ledgers, the pins, the rule table and the audit table.
 
-THE GRAMMAR
+The grammar
     file    = { line "\\n" }
     line    = blank | comment | row
     blank   = { " " | "\\t" }
@@ -10,7 +10,7 @@ THE GRAMMAR
     word    = one or more characters except " ", "\\t", "|" and "\\n"
     cell    = one or more characters except "\\n" and a "|" with no "\\" before it
 
-THE RULES OF THE READER
+The rules of the reader
     * The file is UTF-8.  decode() examines all the bytes of the file before
       parse() reads a line.  A byte that is not part of a UTF-8 sequence is
       then the first problem of the file, at its line.  A problem of the
@@ -39,14 +39,14 @@ THE RULES OF THE READER
       second row with the same key, so the order of the rows cannot change a
       result.
 
-THE WRITER
+The writer
     render() writes one row: the words with one space between them, and each
     cell after " | ", with each bar and each backslash escaped, and "-" for
     an empty cell.  write() keeps the head comment of the file, puts the
     header rows of the schema first, sorts the other rows by their keys, and
     writes the file only when its bytes change.
 
-THE COST OF THE IMPORT
+The cost of the import
     The step meters of `loop step` and `loop test-step` read the registry for
     each compile, each link and each test.  So this module imports no module
     at its top level: no `re` (5.5 ms with -S) and no `dataclasses` (13 ms
@@ -86,8 +86,8 @@ class Row:
     """One row of a file: its place, the words of its head and its cells.
 
     The class has slots and refuses an assignment after its construction, as
-    a frozen dataclass does, with no import of `dataclasses` (THE COST OF THE
-    IMPORT).
+    a frozen dataclass does, with no import of `dataclasses` (the cost of the
+    import).
     """
 
     __slots__ = ("path", "line", "words", "cells")

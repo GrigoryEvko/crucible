@@ -6,7 +6,7 @@ file API (assay.readers.cmake) and the presets of the tree.  They read no
 text of a CMake file.  A name in a CMake branch that no configure takes gives no
 finding.  Each CI leg runs the rules on the build of its own preset.
 
-THE RULE no-unity-pch
+Rule no-unity-pch
     The reflection walks of this tree see each header that a translation unit
     includes.  A unity build puts some source files into one translation
     unit.  A precompiled header puts the headers of the header file into each
@@ -38,7 +38,7 @@ THE RULE no-unity-pch
     The entity is the source, the word, the header, the target, the entry or
     the variable.  The rule has no ledger, and each finding is an error.
 
-THE RULE no-ffast-math
+Rule no-ffast-math
     CLAUDE.md §V bans the fast-math family, because each option breaks one of
     the numerical invariants of replay: `-ffast-math`,
     `-funsafe-math-optimizations`, `-fassociative-math`, `-freciprocal-math`,
@@ -71,12 +71,12 @@ THE RULE no-ffast-math
     compiles with the flag by design.  A link flag and a preset flag have no
     such row, because a row with a kind is a `ledger-row` finding.
 
-THE PLANTS
+Plants
     plant_context() makes the planted build of a plant
     (assay.guard.engines.buildsys.planted).  Then it writes each file of the
     directory planted-overlay/ of the plant into the build directory, at the
     same relative path.  It replaces the placeholders {root} and {build} of
-    THE FILE of that module.  An overlay holds a file that the rows of
+    The file of that module.  An overlay holds a file that the rows of
     build.txt cannot give, such as a compile database with the "command"
     strings of CMake.  A file NAME.removed of the overlay removes the file
     NAME of the build directory.
@@ -117,7 +117,7 @@ VENDORED = frozenset({"third_party", "external", "vendor"})
 BUILD_TREE_PREFIX = "build"
 PRESETS = "CMakePresets.json"
 CMAKE_FILE = "CMakeLists.txt"
-# Each banned flag, as the driver receives it (THE RULE no-ffast-math).
+# Each banned flag, as the driver receives it (the rule no-ffast-math).
 BANNED_FLAGS = frozenset(
     {
         "-ffast-math",
@@ -349,7 +349,7 @@ def preset_unity_findings(context: BuildContext) -> list[check_report.Finding]:
 
 
 def unity_findings(context: BuildContext) -> list[check_report.Finding]:
-    """Give each unity build and each precompiled header of the build and of the presets (THE RULE no-unity-pch).
+    """Give each unity build and each precompiled header of the build and of the presets (the rule no-unity-pch).
 
     Raises:
         NotApplicable: If the call gives no build directory
@@ -570,7 +570,7 @@ def preset_flag_findings(context: BuildContext) -> list[check_report.Finding]:
 def fast_math_findings(context: BuildContext) -> list[check_report.Finding]:
     """Give each banned flag of a compile, of a link line and of a preset, and each ledger row of an incorrect shape.
 
-    THE RULE no-ffast-math of the module text tells the rule.  The rule reads
+    The rule no-ffast-math of the module text tells the rule.  The rule reads
     a build, because a row of the ledger admits a flag of a compile of the
     build.  With no build, the judge can call each row stale.
 
@@ -592,7 +592,7 @@ def fast_math_findings(context: BuildContext) -> list[check_report.Finding]:
 def plant_context(plant: Path, scratch: Path) -> BuildContext:
     """Make the planted build of a plant, put the files of its overlay into the build directory, and give the context.
 
-    THE PLANTS of the module text tells the overlay.  Complexity: linear in
+    The plants of the module text tell the overlay.  Complexity: linear in
     the files of the plant and of its overlay.
 
     Raises:

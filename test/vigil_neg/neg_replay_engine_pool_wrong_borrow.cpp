@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // ReplayEngine::init requires a Ref of the PoolAllocator.  A fixy::Ref of
 // another owner type cannot substitute, even though each Ref has the size of

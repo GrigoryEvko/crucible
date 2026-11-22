@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A pointer to void names no ReadView, but it can hold the address of
 // the view, and a later cast gives the view back after the door has

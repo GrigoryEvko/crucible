@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The foreground context mints a graph of two foreground stages.  The
 // graph is well formed and its row is empty, so only the authority to

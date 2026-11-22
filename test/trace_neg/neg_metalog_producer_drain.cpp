@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A MetaLog producer endpoint appends only.  The consumer-side drain method
 // is structurally absent from ProducerHandle.

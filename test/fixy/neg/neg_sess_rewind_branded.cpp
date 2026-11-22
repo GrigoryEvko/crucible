@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The body of a callback entry holds a handle at End that carries the
 // brand of the body, and it rewinds that handle.  The entry takes its End

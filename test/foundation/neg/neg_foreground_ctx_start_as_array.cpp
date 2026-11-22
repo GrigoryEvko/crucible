@@ -4,7 +4,7 @@
 // type.  The source carries no_start_over_bytes, and the checked lifetime
 // start refuses every class that holds a marked member.
 //
-// VIOLATION: a translation unit starts the lifetime of a foreground
+// Violation: a translation unit starts the lifetime of a foreground
 // context over a zeroed buffer.
 //
 // Expected diagnostic: no matching call to start_as_array, because

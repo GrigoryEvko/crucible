@@ -11,7 +11,7 @@ namespace foundation::effects {
 
 namespace detail {
 
-// `effect_count` counts enumerator NAMES.  Two names can still share
+// `effect_count` counts enumerator names.  Two names can still share
 // one underlying value, which would raise the count while leaving the
 // atoms indistinguishable as bit positions: rows claiming one atom
 // would silently satisfy a gate that demands the other, and two

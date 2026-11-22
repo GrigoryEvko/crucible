@@ -1,6 +1,6 @@
 """The test of the runner of the engine plugin and of its rules quarantine and contract-specifier, on planted builds.
 
-THE PLANTED BUILD
+Planted build
     Scratch makes a throwaway git repository.  It holds each source file of
     the findings, a fake ninja, a fake ctest and a CMake cache.  It also holds
     a compile database, objects with sections and a ledger.  The fake ctest
@@ -12,7 +12,7 @@ THE PLANTED BUILD
     times, as a reduce of the landing gate gives it a build of each
     configuration.
 
-THE CASES
+Cases
     The cases hold each behavior of the ledger of the rule quarantine:
       * The key of a directory and a kind
       * The census of the fixtures: a build with no fixture run and a parse
@@ -283,7 +283,7 @@ class Scratch:
         and the text.
 
         With `is_complete`, the write gets the planted build two times, and it is a complete write that lowers the rows
-        (THE REDUCE of assay.core.ledger).  With `paths`, the write writes only the rows of those paths (THE PATHS of
+        (the reduce of assay.core.ledger).  With `paths`, the write writes only the rows of those paths (the paths of
         assay.core.ledger).
         """
         request = runner.WriteRequest(self.root, self.build, mode, reason, (self.build,) if is_complete else (), paths)
@@ -965,7 +965,7 @@ def ledger_cases(expect: testing.Expect) -> None:
 
 
 def path_cases(expect: testing.Expect) -> None:
-    """Hold a write of the rows of some paths: a new reason, and the other rows as they are (THE PATHS).
+    """Hold a write of the rows of some paths: a new reason, and the other rows as they are (the paths).
 
     The rule process-wide-state has the policy admit, and assay.core.ledger writes its ledger.  The rule quarantine
     writes its ledger itself.

@@ -237,7 +237,7 @@ def is_free(path: Path) -> bool:
 
 
 def wait_for_lock(condition: Callable[[], bool]) -> bool:
-    """Wait in steps of 1 ms until a condition of a lock holds, and tell if it holds (THE WAIT of assay.core.testing).
+    """Wait in steps of 1 ms until a condition of a lock holds, and tell if it holds (the wait of assay.core.testing).
 
     A lock changes in less than 1 ms.  A step of 20 ms makes each case slower.
     """
@@ -472,7 +472,7 @@ def lease_cases(expect: testing.Expect) -> None:
 
 
 def kill_cases(expect: testing.Expect) -> None:
-    """Hold the end of a holder on SIGKILL: the kernel frees each slot of its lease (THE POOL)."""
+    """Hold the end of a holder on SIGKILL: the kernel frees each slot of its lease (the pool)."""
     with tempfile.TemporaryDirectory(prefix="heavy-kill-") as work_text:
         root = Path(work_text)
         pool = heavy.Pool(root / "slots", 6)
@@ -494,7 +494,7 @@ def kill_cases(expect: testing.Expect) -> None:
 
 
 class HeldJob:
-    """A lease of the size of the pool in a thread of its own, whose workers each take one slot and hold it (THE POOL).
+    """A lease of the size of the pool in a thread of its own, whose workers each take one slot and hold it (the pool).
 
     The case sets the count of the workers.  A worker holds its slot until the case stops it, so the lease has no idle
     token apart from the tokens of the stopped workers.  The pump then never sees a token that is idle only because the
@@ -545,7 +545,7 @@ class HeldJob:
 
 
 def fair_cases(expect: testing.Expect) -> None:
-    """Hold the fair share of the pool: a lease gives its idle tokens above its share to a hungry lease (THE POOL).
+    """Hold the fair share of the pool: a lease gives its idle tokens above its share to a hungry lease (the pool).
 
     Job A starts alone with a worker for each slot of a pool of 8, and it takes each slot.  Job B then waits for its
     first slot, a hungry lease below its fair share of 4.  Job A stops half of its workers, so it holds idle tokens
@@ -606,7 +606,7 @@ def fair_cases(expect: testing.Expect) -> None:
 
 
 def weight_cases(expect: testing.Expect) -> None:
-    """Hold THE WEIGHT: the fair share of a lease is the pool times its weight over the sum of the weights of its class.
+    """Hold the weight: the fair share of a lease is the pool times its weight over the sum of the weights of its class.
 
     Three hungry leases of the gate share a pool of 12: one of the weight 2 and two of the weight 1.  The fair share of
     the first is 6 slots, and of each other one 3.  The case calls the pump counts on the markers, with no time.
@@ -670,7 +670,7 @@ def planted_leases(pool: heavy.Pool, *gb_per_job: float) -> list[heavy.Lease]:
 
 
 def budget_cases(expect: testing.Expect) -> None:
-    """Hold THE BUDGET: the reservations of the pool stay at most its ceiling less RESERVE_GB, and a growth fits in the
+    """Hold the budget: the reservations of the pool stay at most its ceiling less RESERVE_GB, and a growth fits in the
     free memory.
 
     The cases plant leases in a pool and call the admission of the lease directly, with no thread and no time.
@@ -805,7 +805,7 @@ def budget_cases(expect: testing.Expect) -> None:
 
 
 def priority_cases(expect: testing.Expect) -> None:
-    """Hold THE PRIORITY OF THE GATE in the pool and THE TURNSTILE.
+    """Hold the priority of the gate in the pool and the turnstile.
 
     A lease that is not of the gate gives its idle slots to a waiting lease of the gate at once.  An exclusive step
     that waits stops each new lease, and runs after the lease in flight.
@@ -872,7 +872,7 @@ def priority_cases(expect: testing.Expect) -> None:
 
 
 def start_cases(expect: testing.Expect) -> None:
-    """Hold the start of a lease beside a waiting lease of the gate: it starts with one free slot (THE POOL)."""
+    """Hold the start of a lease beside a waiting lease of the gate: it starts with one free slot (the pool)."""
     with tempfile.TemporaryDirectory(prefix="heavy-start-") as work_text:
         root = Path(work_text)
         pool = heavy.Pool(root / "slots", 8)
@@ -897,7 +897,7 @@ def start_cases(expect: testing.Expect) -> None:
 
 
 def load_cases(expect: testing.Expect) -> None:
-    """Hold THE LOAD: a lease starts and grows only into the room below the runnable limit of the pool.
+    """Hold the load: a lease starts and grows only into the room below the runnable limit of the pool.
 
     The counts read planted files and planted markers with no time.  The live case gives a lease of a planted pool a
     planted reader of the runnable tasks.  Each step waits for a state of the pool, and STATE_LIMIT_S is only the guard

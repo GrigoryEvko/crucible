@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // by_hash(ctx, hash) is a pure projection.  Init is the row of the
 // initialization phase, not of a pure lookup, so a context whose row holds

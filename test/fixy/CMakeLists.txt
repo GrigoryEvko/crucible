@@ -497,7 +497,7 @@ fixy_test(test_contexts)
 #
 # Each fixture floors on three compiler-produced regexes: the tier-5
 # reason, its own rule code or entry name — which fn's message carries
-# because tier 5 reports WHICH rule or entry refused the pack
+# because tier 5 reports which rule or entry refused the pack
 # — and the GCC bullet naming the member that evaluated false.  None of
 # the three appears in the fixture's own source, so the source echo
 # cannot satisfy the gate.
@@ -574,7 +574,7 @@ fixy_neg_compile_test(neg_rule_d002_recursion_unstated_cost
 # Six rules that could not fire until fixy/atoms/Regime.h gave Axis::Regime
 # its first atoms.  Each fixture but one is isolated to its own code, which
 # takes work rather than luck: H001's and H002's premises are both
-# ABSENCES (the Complexity and Refinement strict poles), so a bare
+# Absences (the Complexity and Refinement strict poles), so a bare
 # `regime::hot` pack trips both, and every other fixture in this group
 # carries a cost grade and a refinement witness specifically to silence
 # them.  Without those atoms each fixture would floor on a code it does
@@ -661,7 +661,7 @@ fixy_neg_compile_test(neg_rule_w002_bg_row_core_burning_spin
 # Two rules on one axis, and they are two theorems rather than one read
 # two ways.  B002 is the containment — an observability row must be a
 # Subrow of the binding's effect row, because Observability names which
-# PART of the declared row is observation and is not a second row.  B001
+# part of the declared row is observation and is not a second row.  B001
 # is the back-pressure trap the catalog already recorded for this axis,
 # kept rather than overwritten because a rule code here is stable API.
 #
@@ -1126,20 +1126,20 @@ fixy_neg_compile_test(neg_fn_default_copy_binding
 # the atom catalog rather than one file per case.
 #
 # The duplicate-axis fixture above gained a third regex in the same
-# commit, because tier 4's message now SPELLS the axis the pack graded
+# commit, because tier 4's message now spells the axis the pack graded
 # twice — "The axis graded twice here is Usage" — instead of naming the
 # template that names it.  first_duplicated_axis_ always returned an axis
 # rather than a pack position; tier4_message_ in fixy/Reject.h is what
 # spends that, the way tier5_message_ spends the rule codes.
 #
-# The eight hand fixtures are the cases NOT already covered elsewhere in
+# The eight hand fixtures are the cases not already covered elsewhere in
 # this tree; the ones that were are listed in the commit message with the
 # fixture that covers each, so this block does not duplicate them.  Two
 # deserves naming here because the reason it is here is a gap rather
 # than a choice:
 #
 #   neg_secret_transform_returns_reference is the Secret escape that
-#   does NOT go through declassify.  Secret has no other public reader,
+#   does not go through declassify.  Secret has no other public reader,
 #   so transform is the only route, and a mapping function returning a
 #   reference is the only way to walk around the policy tag.
 fixy_neg_compile_test(neg_fn_ctad_attempt
@@ -1148,8 +1148,8 @@ fixy_neg_compile_test(neg_fn_ctad_attempt
   "no matching function for call to .fixy::fn<fixy::detail::ctad::fn_ctad_blocked_use_mint_fn>::fn\\(")
 
 # Four payload shapes against one tier.  The second regex is what makes
-# them four fixtures rather than four copies: each floors on the OFFENDING
-# TYPE as the compiler spells it, so a fixture cannot pass by tripping a
+# them four fixtures rather than four copies: each floors on the offending
+# type as the compiler spells it, so a fixture cannot pass by tripping a
 # sibling's case.
 fixy_neg_compile_test(neg_fn_payload_array
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 1\\]"
@@ -1234,8 +1234,8 @@ fixy_neg_compile_test(neg_secret_transform_with_two_call_operators
   "Secret_TransformCopiesPayload")
 
 # The combinatorial half, as one walk over the atom catalog.
-# Registered as a POSITIVE test: the claims are static_asserts, so the
-# build failing IS the failure, and the run prints the shape of the input
+# Registered as a positive test: the claims are static_asserts, so the
+# build failing is the failure, and the run prints the shape of the input
 # set — how many atoms were walked, how many are refused alone and which
 # they are, how many axes contributed a same-axis pair, how many atoms
 # carry a lift — so a reader can judge whether the walk covered anything.
@@ -4642,7 +4642,7 @@ fixy_neg_compile_test(neg_chase_lev_deque_capacity_not_power_of_two
 fixy_neg_compile_test(neg_chase_lev_deque_value_not_lock_free
   "template constraint failure for .template<class T, long unsigned int Capacity>  requires  DequeValue<T> class fixy::concurrent::ChaseLevDeque."
   "required for the satisfaction of .AtomicValue<T>. .with T = <unnamed>::WideValue.")
-# The ends split the deque (THE ENDS of fixy/concurrent/ChaseLevDeque.h): the
+# The ends split the deque (the ends of fixy/concurrent/ChaseLevDeque.h): the
 # OwnerEnd does not copy, so no second owner pushes, a StealerEnd has no push,
 # and a raw pointer, which moves an object with no transfer check, is no value
 # of a deque.
@@ -5139,7 +5139,7 @@ fixy_neg_compile_test(neg_handle_traits_swmr_writer_value_on_non_writer
 
 # The three stage-shape extractors are each constrained on PipelineStage.
 # The input fixture probes a function of plain ints; the output fixture
-# probes a function whose parameters ARE the right handles as non-const
+# probes a function whose parameters are the right handles as non-const
 # rvalue references, with only the data-flow order reversed, which is the
 # sharper case; the value-preserving fixture probes a nullary, where an
 # unconstrained comparison would answer true because void equals void.
@@ -5390,7 +5390,7 @@ fixy_neg_compile_test(neg_pipeline_inline_opt_in_without_working_set
 
 # The other two are the compile-time claim asked of a stated cache size,
 # and they are two axes rather than two values on one: the oversized
-# pipeline IS opted in and fails on the size, the tiny one fits in any
+# pipeline is opted in and fails on the size, the tiny one fits in any
 # cache and fails on the missing opt-in.  Each floors on its own stage
 # body as the compiler renders it, with the working set expanded to a
 # literal the fixture source never writes.
@@ -5444,7 +5444,7 @@ fixy_neg_compile_test(neg_pipeline_dag_edge_output_capacity_unstated
 fixy_neg_compile_test(neg_pipeline_dag_edge_input_capacity_unstated
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeInputCapacityUnstated, 0, 0, 0\\}")
-# The marked system of a graph (THE MARKED SYSTEM of fixy/concurrent/
+# The marked system of a graph (the marked system of fixy/concurrent/
 # StageNet.h): the handle of an input end states no capacity.
 fixy_neg_compile_test(neg_stage_graph_input_end_states_no_capacity
   "static assertion failed: stage graph: the handle of input 0 of stage 0, an input end of the graph, states no capacity\\."
@@ -5478,14 +5478,14 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
   "required for the satisfaction of .graph_stage_pack_is<Graph, Stages \\.\\.\\.>."
   "Graph = fixy::concurrent::StageGraph<fixy::concurrent::StagePack<fixy::concurrent::Stage<&pass_through")
 
-# The door of a loop (THE LOOP of fixy/concurrent/StageNet.h), each on a loop
+# The door of a loop (the loop of fixy/concurrent/StageNet.h), each on a loop
 # of test/fixy/stage_loop_fakes.h with one wrong end: an end wired to the
 # wrong mailbox, a lock with a lost end, a foreground that waits before it
 # records, a done mark that no process takes, a wait inside a bracket of the
 # writer and inside a read, a write inside a read, a send that states no
 # capacity, and two ends of one channel that state two capacities.
 # test_pipeline_dag.cpp admits each loop with the right end.  The door over the
-# arms (THE ARMS) refuses two arms that state two capacities of one channel and
+# arms (the arms) refuses two arms that state two capacities of one channel and
 # two arms that name two writers of one lock.
 fixy_neg_compile_test(neg_stage_loop_wrong_mailbox
   "static assertion failed"
@@ -5553,7 +5553,7 @@ fixy_neg_compile_test(neg_spawn_child_without_test_context
 fixy_neg_compile_test(neg_exit_now_without_test_context
   "no matching function for call to .exit_now"
   "CtxFitsChildProcess")
-# THE CHILD RESET of fixy/os/Signal.h: a reset of a signal action from a
+# The child reset of fixy/os/Signal.h: a reset of a signal action from a
 # context with no Test capability, and a proof of a child that the test
 # builds itself.
 fixy_neg_compile_test(neg_signal_reset_without_test_context
@@ -5568,7 +5568,7 @@ fixy_neg_compile_test(neg_signal_reset_outside_child
 # with an exit code.  Only a context that owns the Test capability calls an
 # operation of the family.
 fixy_test(test_check_family)
-# THE LEND COUNT of foundation/core/Grow.h: an append, a clear, a move, a
+# The lend count of foundation/core/Grow.h: an append, a clear, a move, a
 # freeze and the end of a growable owner from a callee of a frame door end
 # the process, each in a child process of expect_dies.
 fixy_test(test_core_grow_lend)
@@ -5581,7 +5581,7 @@ fixy_neg_compile_test(neg_check_assert_without_test_context
 fixy_neg_compile_test(neg_check_pass_without_test_context
   "no matching function for call to .pass"
   "TestContext")
-# THE COUNTING CHECK: a Tally from a context with no Test capability, a Tally
+# The counting check: a Tally from a context with no Test capability, a Tally
 # that an expression builds and drops with no close, and a copy of a Tally.
 fixy_neg_compile_test(neg_check_tally_without_test_context
   "no matching function for call to .fixy::check::Tally::Tally"
@@ -6567,7 +6567,7 @@ fixy_neg_compile_test(neg_os_fs_directory_takes_no_file_fsync
   "no matching function for call to .sync<fixy::fs::sync_op::Fsync>\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::Directory"
   "mismatched types .fixy::os::kind::File. and .fixy::os::kind::Directory.")
 # A borrow gives no right that its handle lacks, names no temporary handle,
-# and leaves no frame (THE BORROW of fixy/os/Handle.h).
+# and leaves no frame (the borrow of fixy/os/Handle.h).
 fixy_neg_compile_test(neg_os_handle_restrict_adds_right
   "no matching function for call to .fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>::restrict<fixy::os::RightSet::write>\\(\\)"
   "HoldsRights<Rights, Fewer>")
@@ -6729,7 +6729,7 @@ fixy_neg_compile_test(neg_fp_log_poly_of_subnormal
 
 # test_os_spinlock acquires and releases through every door of the spin
 # gate and the blocking gate, and wakes a waiter that sleeps on the
-# blocking gate.  The cells that prove a door is CLOSED are the eight
+# blocking gate.  The cells that prove a door is closed are the eight
 # fixtures below: a refused door is a compile error, not a runtime result.
 fixy_test(test_os_spinlock)
 
@@ -6848,7 +6848,7 @@ fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
 # only declares holds no property, and no door moves it to another thread.
 # The root doors run_joined and run_beside mint the keys that a body names,
 # and they refuse a body that reaches a key of such a brand, or an owner of
-# such a brand through a borrow (THE BORROW OF A ROOT DOOR of
+# such a brand through a borrow (the borrow of a root door of
 # foundation/core/Frame.h).
 foreach(root_door_plant joined_borrow parent_key nested value_and_borrow export beside_export stage_handle_borrow)
   fixy_neg_compile_test(neg_root_door_${root_door_plant}
@@ -7155,7 +7155,7 @@ fixy_neg_compile_test(neg_blocking_guard_without_permission
   "candidate expects 3 arguments, 2 provided")
 
 # Deviation 1 of fixy/concurrent/Spawn.h, and the hole fixy/Throws.h closes: the
-# callable here carries the atom at a NAMED exception family.  A check
+# callable here carries the atom at a named exception family.  A check
 # that compares against the default specialization alone does not match
 # it.
 fixy_neg_compile_test(neg_spawn_callable_carries_throws
@@ -7706,7 +7706,7 @@ target_compile_definitions(test_qtt_tracked PRIVATE CRUCIBLE_QTT_TRACK_CONSUME=1
 
 # ── The witnessed deref ───────────────────────────────────────────────
 #
-# A borrow carries an owner tag and a brand, and leaves WHEN it may be
+# A borrow carries an owner tag and a brand, and leaves when it may be
 # read to lexical scope.  A witnessed borrow names an obligation instead
 # and exposes no accessor, so every read goes through one gate.  Two
 # obligations ship: a protocol position and an effect row.  The fixtures
@@ -7714,27 +7714,27 @@ target_compile_definitions(test_qtt_tracked PRIVATE CRUCIBLE_QTT_TRACK_CONSUME=1
 # proven live by a mutant that removes its mechanism.
 fixy_test(test_witnessed)
 
-# TEMPORAL, the refusal the whole kind exists for: the session moved on,
+# Temporal, the refusal the whole kind exists for: the session moved on,
 # and the handle it handed back is not the handle the borrow names.
 fixy_neg_compile_test(neg_witnessed_deref_at_a_later_protocol_position
   "no matching function for call to .deref\\("
   "required for the satisfaction of .Discharges<Witness, Presented>."
   "Presented = fixy::session::SessionHandle<fixy::session::End,")
 
-# TEMPORAL, presented the wrong kind of thing entirely.
+# Temporal, presented the wrong kind of thing entirely.
 fixy_neg_compile_test(neg_witnessed_deref_without_a_handle
   "no matching function for call to .deref\\("
   "Witness = fixy::session::witness::AtProtocol<fixy::session::SessionHandle<fixy::session::Send<"
   "Presented = foundation::effects::ExecCtx<")
 
-# EFFECT: the region's tag says the read costs IO, and the context's row
+# Effect: the region's tag says the read costs IO, and the context's row
 # is empty.  The same Subrow test a lend already runs, on the borrow.
 fixy_neg_compile_test(neg_witnessed_deref_ctx_refuses_the_row
   "no matching function for call to .deref\\("
   "Witness = fixy::session::witness::UnderRow<<unnamed>::Spilled>"
   "Presented = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg")
 
-# EFFECT, presented the wrong kind of thing entirely.  With the one
+# Effect, presented the wrong kind of thing entirely.  With the one
 # above, this pair is what shows the two kinds share a gate and not an
 # obligation.
 fixy_neg_compile_test(neg_witnessed_deref_with_a_handle_for_a_row
@@ -7761,7 +7761,7 @@ fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle
   "mint_witnessed_at\\(const SessionHandle<Proto, Resource, LoopCtx, Policy, PS>&&"
   "the protocol position the borrow would name is already gone")
 
-# TEMPORAL, a witness that a different state satisfies.  The witness names
+# Temporal, a witness that a different state satisfies.  The witness names
 # the full type of the handle of the mint, so a handle of another session
 # type at the same position does not pass the gate.  The read of two
 # handles of one type checks the time at run time, so the mint refuses a

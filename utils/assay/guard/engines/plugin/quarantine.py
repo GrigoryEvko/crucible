@@ -1,17 +1,17 @@
 """quarantine — the count of quarantine findings and opt-out regions in each directory and kind can only fall.
 
-THE FINDINGS
+Findings
     The rule reads the finding lines of the rule quarantine in the sections
     of the objects of the target all of one build.  The runner reads them
-    (assay.guard.engines.plugin.runner, THE SECTIONS).  The rule also reads
+    (assay.guard.engines.plugin.runner, the sections).  The rule also reads
     the census of each negative fixture of the build: the findings of the
     plugin in the source of the fixture, from the record of its run
     (assay.guard.engines.plugin.fixtures).  The same line from two objects
     counts one time, for example a finding of a header that two units
     include.  A build with no fixture run, such as a parse build, gives the
-    lines of its objects only (NO FIXTURE RUN of the fixtures module).
+    lines of its objects only (no fixture run of the fixtures module).
 
-THE KEY
+Key
     The ledger counts the findings of each directory and kind.  The directory
     of a file is its parent directory with '/' at its end, as the ledger names
     files (directory_of()).  include/fixy/os/Time.h has the directory
@@ -29,7 +29,7 @@ THE KEY
     directory with its file, its line and its entity, for a person who
     removes the findings of a directory.
 
-THE OPT-OUT REGIONS
+Opt-out regions
     A finding in an opt-out region has the kind opted-out (CLAUDE.md section
     XXII, R7).  A line of the kind region gives the file, the first line and
     the reason of each region of a unit.  The plugin refuses a region that
@@ -47,16 +47,16 @@ THE OPT-OUT REGIONS
     fixture holds.  A region in a file or a preprocessor arm that no build of
     the landing gate compiles has no row.
 
-THE KINDS OF A PROBE
+Kinds of a probe
     In the census of a fixture, the rule also counts the kinds detail-use,
-    lifetime-start, unchecked-use and door-use (THE KINDS of the fixtures
+    lifetime-start, unchecked-use and door-use (the kinds of the fixtures
     module).  Each row of such a kind is a reviewed exception, and its REASON
     cell tells what the fixtures of the directory probe.  A row of such a
     kind with no reason of its own is an error (reason_problems()).  A reason
     row of a prefix gives it no reason.  --admit with --reason TEXT writes a
     new count of such a kind.
 
-THE LEDGER
+Ledger
     utils/ledgers/quarantine.txt holds the count of each directory and kind,
     in the rows of assay.core.ledger (the policy count).  `guard write`
     writes each row through assay.core.ledger.  The rows are sorted and each
@@ -74,12 +74,12 @@ THE LEDGER
                                                a probe
 
     One set of rows judges each build.  The count of a key is its largest
-    count over the configurations of the landing gate (THE REDUCE of
+    count over the configurations of the landing gate (the reduce of
     assay.core.ledger).  The run and the write are those of
     assay.guard.engines.plugin.counted, which the rule heavy-include also
     uses.
 
-THE VERDICT
+Verdict
     * A count more than its ledger count is an error.  A change can only
       lower a count, as rule R11 of misc/01_10_2026_quarantine.md says.  A new
       finding cannot stay when a finding of a different kind or of a
@@ -87,27 +87,27 @@ THE VERDICT
     * A directory that the ledger does not hold and that has a finding is an
       error: a new directory has no finding (CLAUDE.md section XXII).
     * A count less than its ledger count gives no finding, because a ledger
-      fails only on a growth (THE POLICIES of assay.core.ledger).  The landing
-      gate writes the lower count (THE REDUCE of assay.loop.gate).
+      fails only on a growth (the policies of assay.core.ledger).  The landing
+      gate writes the lower count (the reduce of assay.loop.gate).
     * An opted-out finding of a file with no region line is an error, because
       the rule cannot give it its region.
-    * A row of a kind of a probe with no reason is an error (THE KINDS OF A
-      PROBE).
+    * A row of a kind of a probe with no reason is an error (the kinds of a
+      probe).
     * A count at its row gives no output.  `guard list --build-dir DIR --path
       DIRECTORY/` prints the findings and the regions that stay.
     * Each problem of the census of the runner is an error.  Each problem of
       the census of the fixtures, and each file that only the compiles of
-      fixtures read, is an error too (THE PROBLEMS and THE FILES OF THE
-      FIXTURES of the fixtures module).
+      fixtures read, is an error too (the problems and the files of the
+      fixtures of the fixtures module).
 
-WRITE THE LEDGER
+Write the ledger
     `guard write --rule quarantine --build-dir DIR` writes the counts of one
     build.  It lowers no row, because one build cannot see the findings of a
-    different build (THE WRITE of assay.core.ledger).  Only the landing gate
-    lowers a row (THE REDUCE of assay.core.ledger).  The rows of the
+    different build (the write of assay.core.ledger).  Only the landing gate
+    lowers a row (the reduce of assay.core.ledger).  The rows of the
     directories of the fixtures come from the builds of objects with a
     fixture run.  The reduce refuses its builds when no build of objects has
-    a fixture run (NO FIXTURE RUN of the fixtures module).  The write gives
+    a fixture run (no fixture run of the fixtures module).  The write gives
     the ledger its head comment.  It refuses a count more than its row:
     remove the new finding.
     * --raise writes such a count too.  Use it only when the plugin or the
@@ -124,12 +124,12 @@ WRITE THE LEDGER
       --raise.  The landing gate then lowers the row of the directory that the
       finding left.
 
-THE ORDER
+Order
     The test guard_plugin starts after each fixture test
     (test/CMakeLists.txt), and it then reads the records of the run.
 
-NOT APPLICABLE
-    The rule exits 77 when the runner does not apply to the build (THE STATUS
+Not applicable
+    The rule exits 77 when the runner does not apply to the build (the status
     of the runner).
 
 Usage
@@ -155,9 +155,9 @@ RULE = fixtures.RULE
 OPTED_OUT = quarantine_sections.OPTED_OUT
 REGION = quarantine_sections.REGION
 # The kinds that --admit writes with a count more than their rows: a region that covers more, a new region, and a
-# kind of a probe (THE KINDS OF A PROBE).
+# kind of a probe (the kinds of a probe).
 ADMITTED_KINDS = frozenset((OPTED_OUT, REGION, *fixtures.PROBE_KINDS))
-# The directory of a file at the root of the tree (THE KEY).
+# The directory of a file at the root of the tree (the key).
 ROOT_DIRECTORY = "./"
 # The highest character, which sorts after each reason of a region.
 LAST_CHARACTER = chr(0x10FFFF)
@@ -167,7 +167,7 @@ REFUSAL = (
     "when the plugin or the rule table changed what it reports, or when the change moves a finding to a different "
     "directory"
 )
-# The head comment that each write gives the ledger (assay.core.ledger, THE HEAD COMMENT).
+# The head comment that each write gives the ledger (assay.core.ledger, the head comment).
 LEDGER_COMMENT = (
     "# utils/ledgers/quarantine.txt — the findings of the quarantine plugin and the opt-out regions in each\n"
     "# directory and kind.\n"
@@ -241,7 +241,7 @@ LEDGER_COMMENT = (
     "#   a preset outside the gate compiles, such as the verify preset or a PGO preset, fails its build.\n"
 )
 
-# The directory, the kind and the entity of one count: the key of a row of the ledger (THE KEY).
+# The directory, the kind and the entity of one count: the key of a row of the ledger (the key).
 Key = rule_ledger.Key
 
 
@@ -249,7 +249,7 @@ Key = rule_ledger.Key
 
 
 def directory_of(path: str) -> str:
-    """Return the directory of a file of the ledger: its parent directory with '/' at its end (THE KEY).
+    """Return the directory of a file of the ledger: its parent directory with '/' at its end (the key).
 
     A file at the root has the directory ROOT_DIRECTORY.
     """
@@ -293,8 +293,8 @@ def reasons_of(
 def reason_at(starts: Sequence[tuple[int, str]], line: int) -> str | None:
     """Return the reason of the region with the last first line at or before `line`, or None with no such region.
 
-    `starts` holds the first line and the reason of each region of one file, in sorted sequence (THE OPT-OUT
-    REGIONS).  Complexity: O(log r) for r regions.
+    `starts` holds the first line and the reason of each region of one file, in sorted sequence (the opt-out
+    regions).  Complexity: O(log r) for r regions.
     """
     index = bisect.bisect_right(starts, (line, LAST_CHARACTER)) - 1
     return starts[index][1] if index >= 0 else None
@@ -316,9 +316,9 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     """Give one error for each finding line and each region of the build and its fixtures, keyed by its row.
 
     The path of a finding is the directory of its file, and its entity is the reason of its region for the kinds
-    region and opted-out (THE KEY).  The message keeps the file, the line and the entity of the line.  A problem has
+    region and opted-out (the key).  The message keeps the file, the line and the entity of the line.  A problem has
     no kind.  An opted-out finding with no region gives a problem and no count.  The lines of the census of the
-    fixtures count with the lines of the objects (THE FINDINGS).
+    fixtures count with the lines of the objects (the findings).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -356,7 +356,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def reason_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
-    """Give one error for each row of a kind of a probe with no reason of its own (THE KINDS OF A PROBE).
+    """Give one error for each row of a kind of a probe with no reason of its own (the kinds of a probe).
 
     Complexity: linear in the rows of the ledger.
     """
@@ -435,7 +435,7 @@ def evaluate(
 def summary(counts: Mapping[Key, int], units: int, verb: str) -> str:
     """Return the line that tells the findings, the regions, the rows and the directories of one run or one write.
 
-    `units` is the number of the objects and of the fixtures with a census (THE CONTEXT of the fixtures module).
+    `units` is the number of the objects and of the fixtures with a census (the context of the fixtures module).
     """
     regions = sum(count for key, count in counts.items() if key.kind == REGION)
     directories = {key.path for key in counts}
@@ -462,7 +462,7 @@ SPEC = counted.CountedRule(
 
 
 def judge(rule: rule_registry.Rule, context: runner.PluginContext) -> list[check_report.Finding]:
-    """Return the findings of the build judged against the ledger of the tree of the context (THE VERDICT).
+    """Return the findings of the build judged against the ledger of the tree of the context (the verdict).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -481,9 +481,9 @@ def run(rule: rule_registry.Rule, context: runner.PluginContext, warnings_dir: P
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the counts of the builds of the request (WRITE THE LEDGER).
+    """Write the counts of the builds of the request (write the ledger).
 
-    A write of more than one build is a reduce, and it refuses builds with no fixture run (NO FIXTURE RUN of the
+    A write of more than one build is a reduce, and it refuses builds with no fixture run (no fixture run of the
     fixtures module).
 
     Returns:

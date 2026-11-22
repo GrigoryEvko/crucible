@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_workload_profiler asks for a context whose row holds Init,
 // because a profiler is built at process startup.  The background drain

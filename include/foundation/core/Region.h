@@ -53,7 +53,7 @@
 // View<T>.  No conversion adds a const or removes it the other way, and no
 // conversion gives a fixed extent: window<N> is the checked road.
 //
-// THE UNIQUE VIEW
+// Unique view
 //   ViewMut<T, Brand>   the unique borrow of the run of an owner that a frame
 //                       door holds (foundation/core/Frame.h).  The frame doors
 //                       of the owners give it, and no other code makes one.  It
@@ -68,7 +68,7 @@
 // The loop of a View gives the cursor of foundation/core/Cursor.h, which a
 // TextView of foundation/core/Text.h gives too.
 //
-// THE WALK
+// Walk
 //   view.walk()         the head of a lazy chain of adapters and terminals of
 //                       foundation/core/Walk.h, such as
 //                       view.walk().map(fn).fold(init, step).  Each step of
@@ -81,7 +81,7 @@
 // Walk.h is below this header, and it gives dynamic_extent and
 // LengthMismatch.
 //
-// THE FOREIGN DOORS
+// Foreign doors
 //   mint_foreign_view(first, count)   the read-only View of a run that a
 //                       foreign ABI gives, such as the bytes of the fuzz
 //                       entry or the data of a tensor.  Each bit pattern of
@@ -105,7 +105,7 @@
 // family and defines the body of get itself.  A unit that includes only
 // this header then cannot give get a body of its own.
 //
-// THE PAIRS
+// Pairs
 //   view.enumerate()    each element of a View of a fixed extent with its
 //                       proven index: a Record<Index<N>, Ref<T>>.  A View of
 //                       a dynamic extent has no indices(), so it has no
@@ -124,7 +124,7 @@
 // element.  This header includes the Record family and defines the stage and
 // the cursor of enumerate().
 //
-// THE TRANSFER
+// Transfer
 //   A View refers to its elements as a reference does (refers of
 //   foundation/Transfer.h).  So a View<T const> moves to another thread and
 //   two threads read it when T is Shareable.  A View<T> that is not const
@@ -279,7 +279,7 @@ class EnumerateCursor;
 template <class T, std::size_t Extent>
 class ViewStage;
 
-// THE TYPED DOORS: each makes the View of a run that the type of its argument
+// Typed doors: each makes the View of a run that the type of its argument
 // proves, with no key and no check.  This header defines them.  The names of
 // the template parameters of a View of the doors are T and Extent: GCC names
 // a View of the parameters of any template with the names of the first
@@ -319,7 +319,7 @@ CRUCIBLE_INLINE Record<View<First>, View<Second>> for_each_chunk_pair_(View<Firs
 
 }  // namespace detail
 
-// The unique view and the range of the chunks of its split (THE UNIQUE VIEW).
+// The unique view and the range of the chunks of its split (the unique view).
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
 class ViewMut;
@@ -435,7 +435,7 @@ class[[= ::foundation::transfer::refers{}]] View {
     template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, std::size_t OtherExtent>
     friend class detail::EnumerateStage;
 
-    // THE DOORS OF THE OWNERS ABOVE THIS HEADER.
+    // Doors of the owners above this header.
     friend class FixedListSlotsDoor;
     friend class FixedHeapArrayCountDoor;
     friend class RunSetLayoutDoor;
@@ -444,7 +444,7 @@ class[[= ::foundation::transfer::refers{}]] View {
     friend class CommittedRangeDoor;
     friend class SortRunDoor;
 
-    // THE TYPED DOORS and the doors over a run that a View proves.
+    // The typed doors and the doors over a run that a View proves.
     template <class U, std::size_t Count>
         requires ViewElement<U> && ViewExtent<U, Count>
     friend constexpr View<U, Count> detail::view_of_array_(U (&array)[Count]) noexcept;
@@ -847,8 +847,8 @@ public:
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return elements_.size(); }
 
-    // The element at position, which the caller proves below size_() (THE
-    // STAGES of foundation/core/Walk.h).
+    // The element at position, which the caller proves below size_() (the
+    // stages of foundation/core/Walk.h).
     [[nodiscard]] constexpr T& at_(StageKey const& /*key*/, std::size_t position) const noexcept {
         return first_of_(BaseLayerRead{}, elements_)[position];
     }
@@ -875,8 +875,8 @@ public:
 }  // namespace detail
 
 // The bytes of a View as an argument of a report: two lower-case
-// hexadecimal digits for each byte, in the order of the View (THE
-// HEXADECIMAL TEXT of foundation/core/Report.h).  It borrows the bytes, as
+// hexadecimal digits for each byte, in the order of the View (the
+// hexadecimal text of foundation/core/Report.h).  It borrows the bytes, as
 // the View does, so it lives only for the call of the report.
 class HexBytes final {
     View<std::byte const> bytes_{};
@@ -934,7 +934,7 @@ public:
 // it converts to the ViewMut<T, Brand> of the same run.  The frame door of a
 // FixedArray gives the fixed extent.
 //
-// THE SPLIT
+// Split
 //   A split takes the parent by move, so the parts are the only writers of
 //   the run, and no two parts share an element.  Each part keeps the brand of
 //   its parent.  So two parts of one split prove no difference to a door of
@@ -947,7 +947,7 @@ public:
 // A const reference to a ViewMut is a shared borrow that keeps the brand of
 // the frame.  It reads the run, and it does not write it.  A door of a kernel
 // reads its inputs through such a reference, so the brands tell it that two
-// runs do not overlap (THE ALIAS PROOF of Frame.h).
+// runs do not overlap (the alias proof of Frame.h).
 //
 // The class states refers_unique (foundation/Transfer.h).  A ViewMut moves to
 // another thread when its element can move.  The read first_of_ gives the
@@ -1076,7 +1076,7 @@ public:
     }
 };
 
-// The range of the parts of a split into chunks (THE SPLIT): next() gives the
+// The range of the parts of a split into chunks (the split): next() gives the
 // next part, from the first element, and no value after the last part.  Each
 // call gives each part one time, so the range gives no second writer of a
 // part.  The range does not copy, and it holds the borrow of the run that is
@@ -1115,8 +1115,8 @@ public:
     }
 };
 
-// The parts [0, offset) and [offset, size()) of the run of whole, by THE
-// SPLIT, or no value when the offset is past the count.  Each part has a
+// The parts [0, offset) and [offset, size()) of the run of whole, by the
+// split, or no value when the offset is past the count.  Each part has a
 // dynamic extent and the brand of whole.  Complexity: O(1).
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 [[nodiscard]] constexpr Option<Record<ViewMut<T, Brand>, ViewMut<T, Brand>>> split_at(ViewMut<T, Brand, Extent>&& whole,
@@ -1136,7 +1136,7 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 }
 
 // The parts [0, Offset) and [Offset, Extent) of the run of a fixed extent of
-// whole, by THE SPLIT.  The type proves the offset inside the run, so the
+// whole, by the split.  The type proves the offset inside the run, so the
 // split has no check, and each part has a fixed extent and the brand of
 // whole.  Complexity: O(1).
 template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
@@ -1151,7 +1151,7 @@ split_at(ViewMut<T, Brand, Extent>&& whole) noexcept {
 
 // The range of the parts of width elements of the run of whole, from the
 // first element, and a last part of the size() % width elements when that
-// count is not zero, by THE SPLIT.  Each part has a dynamic extent and the
+// count is not zero, by the split.  Each part has a dynamic extent and the
 // brand of whole.  A width of zero ends the process.  Complexity: O(1), and
 // O(1) for each part.
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
@@ -1380,7 +1380,7 @@ enum class RunOverlap : std::uint8_t {
 // How the run of left shares storage with the run of right.  InPlace needs
 // the same first element and the same count.  An empty run shares no byte,
 // so it is Disjoint from each run.  A View has no brand, so two Views
-// prove no difference of their runs (THE ALIAS PROOF of
+// prove no difference of their runs (the alias proof of
 // foundation/core/Frame.h), and a door that reads one run while a thread
 // writes the other asks this function one time, before the threads start.
 //
@@ -1484,7 +1484,7 @@ template <class T, std::size_t Extent>
 
 namespace detail {
 
-// The root stages of the iteration verbs give the walks of THE STAGES of
+// The root stages of the iteration verbs give the walks of the stages of
 // foundation/core/Walk.h.  Each stage comes only from a View, so it holds a
 // run that a View proves.  The cursors of the stages obey the rule of a
 // ViewCursor: each cursor knows the end of its loop, a read or a step at the
@@ -1562,7 +1562,7 @@ public:
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return elements_.size(); }
 
     // The element at position from the last element, which the caller proves
-    // below size_() (THE STAGES of foundation/core/Walk.h).
+    // below size_() (the stages of foundation/core/Walk.h).
     [[nodiscard]] constexpr Element& at_(StageKey const& /*key*/, std::size_t position) const noexcept {
         return first_()[elements_.size() - 1 - position];
     }
@@ -1675,7 +1675,7 @@ public:
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return runs_(); }
 
-    // The run at position, which the caller proves below size_() (THE STAGES
+    // The run at position, which the caller proves below size_() (the stages
     // of foundation/core/Walk.h).
     [[nodiscard]] constexpr View<Element, Width> at_(StageKey const& /*key*/, std::size_t position) const noexcept {
         return View<Element, Width>{first_() + position};
@@ -1784,7 +1784,7 @@ public:
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return runs_; }
 
-    // The run at position, which the caller proves below size_() (THE STAGES
+    // The run at position, which the caller proves below size_() (the stages
     // of foundation/core/Walk.h).
     [[nodiscard]] constexpr View<Element, Width> at_(StageKey const& /*key*/, std::size_t position) const noexcept {
         return View<Element, Width>{first_() + position * Width};
@@ -1950,7 +1950,7 @@ public:
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return run_.size(); }
 
     // The element at position with its index, which the caller proves below
-    // size_() (THE STAGES of foundation/core/Walk.h).  A zip compares the
+    // size_() (the stages of foundation/core/Walk.h).  A zip compares the
     // position with its own count, so the check of the Index stays for a run
     // that starts after the position 0.
     [[nodiscard]] constexpr element_reference at_(StageKey const& /*key*/, std::size_t position) const noexcept {
@@ -2035,7 +2035,7 @@ struct CopyWord<64> {
 }
 
 // The words of copy_small_ follow the vector width of the target, so they
-// are in the target namespace (THE TARGET NAMESPACE of foundation/Platform.h).
+// are in the target namespace (the target namespace of foundation/Platform.h).
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The width of the widest word of copy_small_: the width of a vector
@@ -2147,7 +2147,7 @@ template <class T>
 // input is a ViewMut through a const reference, which keeps the brand of its
 // frame, or a View, which has no brand.  When the brand
 // of an input differs from the brand of the output, the frames of the two
-// hold two owners, and the two runs do not overlap (THE ALIAS PROOF of
+// hold two owners, and the two runs do not overlap (the alias proof of
 // foundation/core/Frame.h).  When each input proves that, the door gives
 // the compiler restrict pointers, so the loop needs no run-time alias check.
 // Each other input takes the loop of plain pointers, which the compiler
@@ -2161,7 +2161,7 @@ concept KernelInput =
     ::foundation::reflect::IsInstanceOf<In, ^^ViewMut> || ::foundation::reflect::IsInstanceOf<In, ^^View>;
 
 // An input whose run does not overlap the run of an output of the brand
-// Brand: a ViewMut of a different brand (THE ALIAS PROOF of Frame.h).
+// Brand: a ViewMut of a different brand (the alias proof of Frame.h).
 template <class In, class Brand>
 concept DisjointInput =
     ::foundation::reflect::IsInstanceOf<In, ^^ViewMut> && !std::same_as<typename In::brand_type, Brand>;

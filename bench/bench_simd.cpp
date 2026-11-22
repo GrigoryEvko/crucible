@@ -11,7 +11,7 @@
 //
 // Single-target builds only: prints arch summary at start, no
 // multi-target dispatch reporting (per the post-Path-B cleanup).
-// Correctness is NOT tested here — that's test_simd / test_dim_hash
+// Correctness is not tested here — that's test_simd / test_dim_hash
 // / test_storage_nbytes_simd / prop_*_simd_equivalence fuzzers.
 // This file is pure timing.
 // ═══════════════════════════════════════════════════════════════════

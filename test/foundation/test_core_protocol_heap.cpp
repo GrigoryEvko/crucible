@@ -1,4 +1,4 @@
-// The heap parts of the Protocol family (THE HEAP PARTS of
+// The heap parts of the Protocol family (the heap parts of
 // foundation/core/Protocol.h): the image of a class with a HeapArray and a
 // HeapText part, its hash, its decode with each refusal, and its format.
 
@@ -195,7 +195,7 @@ template <HeapDecodable T>
 
 [[nodiscard]] bool decodes_back(Message const& value) noexcept { return decodes_back_with(kWideBudget, value); }
 
-// The image is each part in order: a part of fixed size takes THE IMAGE, and
+// The image is each part in order: a part of fixed size takes the image, and
 // a heap part takes its count in 8 bytes and then its elements.
 void test_heap_image_is_the_hand_image() {
     Message const value = sample_message();
@@ -436,7 +436,7 @@ struct HeapPartShape final {
 };
 
 // The first fault of the bytes of a Message in the order of the parts, read
-// by the rules of THE HEAP PARTS with no call of decode, or a fault at 9999
+// by the rules of the heap parts with no call of decode, or a fault at 9999
 // when the bytes hold a value.  A part that the bytes cut names the offset
 // of its first byte.  A heap part whose storage needs more than the budget
 // that remains names the offset of its count.

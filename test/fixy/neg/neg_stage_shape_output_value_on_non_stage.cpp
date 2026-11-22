@@ -6,7 +6,7 @@
 //
 // Sibling of neg_stage_shape_input_value_on_non_stage.cpp.
 //
-// VIOLATION: a TU asks a function whose parameters are a producer then a
+// Violation: a TU asks a function whose parameters are a producer then a
 // consumer — the data-flow order reversed — for its stage output value.
 //
 // Expected diagnostic: the PipelineStage constraint on

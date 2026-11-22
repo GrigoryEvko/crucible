@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_pipeline with no stages at all.  A pipeline of one stage is
 // admitted, with no adjacent pair to check; a pipeline of none has

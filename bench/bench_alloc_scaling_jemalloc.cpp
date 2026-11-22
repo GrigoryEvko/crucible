@@ -1,4 +1,4 @@
-// The rows of jemalloc (THE UNITS of bench_alloc_scaling_rows.h).  Only a
+// The rows of jemalloc (the units of bench_alloc_scaling_rows.h).  Only a
 // build with the pin of jemalloc compiles this unit.
 
 #include "bench_alloc_scaling_rows.h"

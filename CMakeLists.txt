@@ -563,13 +563,13 @@ target_compile_options(crucible_dialect INTERFACE
 # file rejects a scope that has one of the two items without the other.
 include(cmake/ContractSemantic.cmake)
 
-# The crucible_fp_strict INTERFACE library defines THE FLOOR
+# The crucible_fp_strict INTERFACE library defines the floor
 # for FP discipline across every consumer of `crucible`.  PUBLIC link
 # propagates the strict-IEEE-754 flag pack to every test / bench /
 # vessel / tool / example TU.  See cmake/FpStrict.cmake for the
 # per-flag rationale.  Deliberate opt-out (bench micro-benchmarks
 # that want fast-math for measurement) is review-discoverable: the
-# target deliberately does NOT link `crucible_fp_strict` and the
+# target deliberately does not link `crucible_fp_strict` and the
 # author documents the engagement.
 include(cmake/FpStrict.cmake)
 target_link_libraries(crucible_dialect INTERFACE crucible_fp_strict)
@@ -901,7 +901,7 @@ target_link_libraries(crucible PUBLIC crucible_cipher)
 # inline asm, so no flag is necessary.
 
 # ╔═══════════════════════════════════════════════════════════════════╗
-# ║  CRUCIBLE HARDENING — 300+ compiler/linker/sanitizer flags       ║
+# ║  Crucible hardening — 300+ compiler/linker/sanitizer flags       ║
 # ║                                                                   ║
 # ║  GCC 16:   200+ individual warnings + contracts + reflection     ║
 # ║            (only supported compiler — see CLAUDE.md, §I)          ║
@@ -961,7 +961,7 @@ endif()
 # ── The x86-64 level of a build ────────────────────────────────────
 #
 # CRUCIBLE_X86_LEVEL names the x86-64 level of a build: v1, v2, v3 or v4
-# (THE X86 LEVELS of foundation/os/X86Level.h).  The last -march word of
+# (the x86 levels of foundation/os/X86Level.h).  The last -march word of
 # CMAKE_CXX_FLAGS gives the level: -march=x86-64 for v1, because GCC refuses
 # the word x86-64-v1, and -march=x86-64-v2, -v3 and -v4 for the others.  GCC
 # uses the last -march word, so that word must give the level, or the
@@ -973,7 +973,7 @@ endif()
 # such as x86_64-release-v3.  Thus a build at a level gets a configuration of
 # its own in the gate and in the ledger rows.
 #
-# THE FLOOR
+# Floor
 #   The floor of an x86_64 build is x86-64-v3.  An x86_64 build with an
 #   empty CRUCIBLE_X86_LEVEL and with no -march word in CMAKE_CXX_FLAGS
 #   gets the level v3, and the configure puts -march=x86-64-v3 at the end of
@@ -1093,7 +1093,7 @@ function(crucible_dump_asm target)
 endfunction()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 0: Debug optimization override
+# Section 0: Debug optimization override
 #
 # -O1 over -Og or -O0:
 #   * inlining is enabled (`-finline-functions`).  This is load-
@@ -1120,7 +1120,7 @@ endif()
 include(cmake/CodeFlags.cmake)
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 1: Common flags — GCC 16
+# Section 1: Common flags — GCC 16
 #            52 warning flags + the code flags of each build
 # ═══════════════════════════════════════════════════════════════
 target_compile_options(crucible_dialect INTERFACE
@@ -1208,7 +1208,7 @@ if(CRUCIBLE_WERROR)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 2: GCC 16 — MAXIMUM PARANOIA
+# Section 2: GCC 16 — maximum paranoia
 #            220+ individual warning / hardening flags
 # ═══════════════════════════════════════════════════════════════
 # The operation limit of one constant evaluation is
@@ -1371,7 +1371,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -ftemplate-backtrace-limit=0        # 200  full template errors
     -fconstexpr-ops-limit=${CRUCIBLE_CONSTEXPR_OPS_LIMIT}  # 201  the operation limit of section 2
     -Wvolatile                          # 204  deprecated volatile use
-    -Wvla-larger-than=0                 # 205  reject ALL VLAs
+    -Wvla-larger-than=0                 # 205  reject all VLAs
 
     # ── 3.14  Source integrity / C++ template tripwires (20) ─────
     -Wbidi-chars=any                    # 206  reject bidi-control source spoofing
@@ -1470,7 +1470,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 4: FORTIFY_SOURCE + defines — both compilers
+# Section 4: FORTIFY_SOURCE + defines — both compilers
 # ═══════════════════════════════════════════════════════════════
 target_compile_definitions(crucible_dialect INTERFACE
   ${CRUCIBLE_CODE_DEFINITIONS}          # 228  cmake/CodeFlags.cmake
@@ -1491,7 +1491,7 @@ if(_CRUCIBLE_PGO_COMPILE_DEFINITIONS)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 5: The zero fill of automatic variables
+# Section 5: The zero fill of automatic variables
 #
 # Each build takes -ftrivial-auto-var-init=zero (229, P2795R5) from
 # CRUCIBLE_CODE_FLAGS of cmake/CodeFlags.cmake, so this section has no
@@ -1499,13 +1499,13 @@ endif()
 # ═══════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 6: Release-only — contract policy
+# Section 6: Release-only — contract policy
 #
 # Release evaluates every P2900 clause and reports a violation through
-# `handle_contract_violation`.  Read the "READ THIS" paragraph below
+# `handle_contract_violation`.  Read the "Read this" paragraph below
 # for what happens next, which is not what the flag's name implies.  A
 # translation unit leaves this policy only by appearing in
-# CRUCIBLE_CONTRACT_IGNORE_TUS, applied in SECTION 6b at the foot of
+# CRUCIBLE_CONTRACT_IGNORE_TUS, applied in Section 6b at the foot of
 # this file.
 #
 # This inverts the previous default.  Until 2026-09-14 this block set
@@ -1527,11 +1527,11 @@ endif()
 # instantiate the recording chain, so that branch lands where nobody is
 # counting nanoseconds.
 #
-# READ THIS BEFORE ASSUMING "log and continue".  P2900 says `observe`
+# Read this before assuming "log and continue".  P2900 says `observe`
 # evaluates, reports, and resumes.  This project's handler does not
 # resume: `handle_contract_violation` in src/foundation/ContractHandler.cpp is
 # `[[gnu::weak, noreturn]]` and ends in `std::abort()`.  So a Release
-# binary under this flag CHECKS AND DIES, which is stronger than the
+# binary under this flag checks and dies, which is stronger than the
 # word "observe" suggests and is the behaviour this build now ships.
 # Making Release genuinely continue means giving that handler a
 # returning definition — it is weak, so a program can override it —
@@ -1546,7 +1546,7 @@ endif()
 # CRUCIBLE_CONTRACT_IGNORE_OPTIONS, which sets the flag and the define
 # that the family reads.
 #
-# Two caveats this flag does NOT cover, recorded here so the next
+# Two caveats this flag does not cover, recorded here so the next
 # reader does not mistake the scope:
 #
 #   1. CRUCIBLE_FATAL_INVARIANT checks in every mode, under NDEBUG and
@@ -1621,7 +1621,7 @@ if(_crucible_sanitizers)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 7: Linker hardening — both compilers
+# Section 7: Linker hardening — both compilers
 #
 # Separate code, build-id for debuginfo, and more.  Each link of the
 # tree gets full RELRO, immediate binding and a no-exec stack from the
@@ -1665,9 +1665,9 @@ if(CRUCIBLE_BENCH)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 6b: Release contract policy — the opt-out list
+# Section 6b: Release contract policy — the opt-out list
 #
-# SECTION 6 put Release on `observe`.  This block is the complete set
+# Section 6 put Release on `observe`.  This block is the complete set
 # of translation units that opt back out to `ignore`, and it is the
 # only place in the tree that may do so.  Adding a line here means
 # claiming that a measured cost justifies giving up enforcement in
@@ -1711,7 +1711,7 @@ endif()
 # Benches that merely include these headers without timing them
 # (bench_phases, bench_merkle_dag, bench_cipher, bench_serialize,
 # bench_content_hash, bench_region_cache, bench_concurrent_queues,
-# bench_metalog_session) are NOT listed, and stay on `observe`.
+# bench_metalog_session) are not listed, and stay on `observe`.
 #
 # PROVISIONAL, and the measurement says to keep it short.
 #

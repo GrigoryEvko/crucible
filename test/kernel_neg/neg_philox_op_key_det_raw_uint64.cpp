@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Philox op_key fixture #2: op_key_det() returns DetSafe<Pure,
 // uint64_t>, not a raw integer.  A caller must make the provenance

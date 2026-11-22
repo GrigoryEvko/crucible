@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An Option of a Ref refers to an object of its sender, and the object can
 // end before the receiver reads it.  A transport can give the payload to a

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A pin holds a handle on the calling thread for the run of a body, and the
 // body reaches the handle only through the pinned handle that it gets.  A

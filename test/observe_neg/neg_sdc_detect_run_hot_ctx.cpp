@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Redundant checks mutate bounded SDC event state, so run_with_redundancy
 // needs a background row.  The hot foreground context does not satisfy

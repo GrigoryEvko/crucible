@@ -1,6 +1,6 @@
 """The test of the rule codegen-shapes (assay.guard.engines.elf.codegen_shapes).
 
-THE CASES
+Cases
     The cases hold these parts of the rule:
       * The normalization of the registers, of rip and of the symbols
       * The walk of planted disassemblies: the returning paths, the failure
@@ -15,7 +15,7 @@ THE CASES
       * The reflection census and the census of the grade.
     The compile cases use the compiler that ASSAY_TEST_CXX names.
 
-THE PROBE UNIT OF THE BUILD
+Probe unit of the build
     ASSAY_TEST_BUILD_DIR names the build directory, and the registration of
     the test in test/CMakeLists.txt gives it.  The case compiles the probe
     unit for each target with the command of the verdict: the command of the
@@ -168,7 +168,7 @@ def normalization_cases(expect: testing.Expect) -> None:
 
 
 def walk_cases(expect: testing.Expect) -> None:
-    """Plant functions for each part of THE WALK, and hold the texts and the classes of their steps."""
+    """Plant functions for each part of the walk, and hold the texts and the classes of their steps."""
     fatal_inline = code_of(
         "probe",
         [
@@ -269,7 +269,7 @@ def judged(probe: shapes.Probe, family: shapes.Code, raw: shapes.Code, hardened:
 
 
 def verdict_cases(expect: testing.Expect) -> None:
-    """Plant one pair for each part of THE VERDICT, and hold its problems."""
+    """Plant one pair for each part of the verdict, and hold its problems."""
     load = code_of("probe", plain("endbr64", "mov rax,QWORD PTR [rdi]", "ret"))
     load_other = code_of("probe", plain("endbr64", "mov rcx,QWORD PTR [rsi]", "ret"))
     spill = code_of(
@@ -381,7 +381,7 @@ def verdict_cases(expect: testing.Expect) -> None:
 
 
 def flag_cases(expect: testing.Expect) -> None:
-    """Plant compile commands for each kind of finding of THE FLAGS OF THE PAIRS."""
+    """Plant compile commands for each kind of finding of the flags of the pairs."""
     base = ["g++", "-DX=1", "-Iinclude", "-std=c++26", "-fno-plt", "-O3", "-fPIC", "-Wall", "-o", "o.o", "-c", "u.cpp"]
     probe_words = ["g++", "-DX=1", "-std=c++26", "-fno-plt", "-O3", "-fPIC", "-fplugin=q.so", "-g", "-c", "p.cpp"]
     cases: tuple[tuple[str, list[str], list[str], int, tuple[str, ...]], ...] = (
@@ -456,7 +456,7 @@ def flag_cases(expect: testing.Expect) -> None:
 
 
 def probe_row_cases(expect: testing.Expect) -> None:
-    """Hold the probe rows of a plant (THE PAIRS)."""
+    """Hold the probe rows of a plant (the pairs)."""
     rows = rows_grammar.parse(
         "probe load check=fatal,trap branch=yes calls=memmove,memset | claim\n"
         "probe plain | a planted claim\n"
@@ -492,7 +492,7 @@ def probe_row_cases(expect: testing.Expect) -> None:
 
 
 def wrapper_flag_cases(expect: testing.Expect) -> None:
-    """Plant the flags of foundation units for each kind of problem of THE FLAGS OF THE WRAPPERS."""
+    """Plant the flags of foundation units for each kind of problem of the flags of the wrappers."""
     debug = [*COMMON, "-O1", "-D_GLIBCXX_ASSERTIONS=1", "-D_GLIBCXX_SANITIZE_VECTOR=1", "-fsanitize=address"]
     verify = [
         *COMMON,
@@ -722,7 +722,7 @@ def judged_probes(
 def hardening_unexplained(verdicts: dict[str, shapes.Verdict], held: Sequence[str]) -> list[str]:
     """Return each probe with a second test of the `-fharden-` flags on its family side and no such flag in its claim.
 
-    A second test is a family-only check into a trap path that the probe does not declare (THE VERDICT of the rule).
+    A second test is a family-only check into a trap path that the probe does not declare (the verdict of the rule).
     The claim of such a probe names each flag of HELD, the flags of HARDENING_FLAGS that the unit turns on.
     """
     if not held:
@@ -742,7 +742,7 @@ def hardening_unexplained(verdicts: dict[str, shapes.Verdict], held: Sequence[st
 def build_probe_cases(expect: testing.Expect) -> None:
     """Compile the probe unit of the build with and without a second test of the limits.
 
-    THE PROBE UNIT OF THE BUILD tells the case.
+    The probe unit of the build tells the case.
     """
     if platform.machine() != shapes.EXPECTED_MACHINE:
         return

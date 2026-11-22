@@ -1,22 +1,22 @@
 """evidence — the evidence of the sampled checks of the tree: its status, and the runners that add to it (`loop evidence`).
 
-THE EVIDENCE
+Evidence
     One run of a test with a result that does not change is full evidence
     for its key, and `loop test` keeps that one result (assay.loop.affected).
     A sampled check gives only a part of its evidence in one run.  The store
     of assay.loop.evidence.store adds the evidence of each run to the
     evidence of the previous runs.  It keeps the evidence by the key of the
-    inputs that the check read (assay.loop.evidence.items, THE KEYS).  Each
+    inputs that the check read (assay.loop.evidence.items, the keys).  Each
     class of sampled checks has a nightly target and a release target
     (assay.loop.evidence.targets).  A failure is evidence too, and it stays
     until its key changes.
 
-THE SUBCOMMANDS
+Subcommands
     status  Give the evidence of each item against its targets, and the
             remaining work (assay.loop.evidence.status).  With --json, print
             the rows as one JSON object, which an entry reads to schedule the
             remaining work in a time budget.  Without it, print a table and
-            the errors of THE JUDGMENT of that module.
+            the errors of the judgment of that module.
     run     Add evidence of one kind in a time budget.  The kind repetition
             runs each test of a build again (assay.loop.evidence.repetition).
             The kind search runs each property test of a build with new
@@ -35,7 +35,7 @@ Usage
     KIND         repetition, search, measurement or coverage
 
     --build-dir  A build directory that replaces the builds of the presets
-                 file (assay.loop.evidence.items, THE BUILDS)
+                 file (assay.loop.evidence.items, the builds)
     --release    Use the release target, and not the nightly target
     --item       Run only the named items
 
@@ -56,7 +56,7 @@ RUNNERS = ("repetition", "search", "measurement", "coverage")
 
 
 def status_main(directories: list[Path], as_json: bool) -> int:
-    """Give the status of the evidence of the tree (THE SUBCOMMANDS, status)."""
+    """Give the status of the evidence of the tree (the subcommands, status)."""
     from assay.loop.evidence import items as evidence_items
     from assay.loop.evidence import status as evidence_status
     from assay.loop.evidence import store as evidence_store
@@ -80,7 +80,7 @@ def status_main(directories: list[Path], as_json: bool) -> int:
 
 
 def run_main(kind: str, directories: list[Path], budget_s: float, is_release: bool, names: list[str], jobs: int) -> int:
-    """Add evidence of one kind in a time budget (THE SUBCOMMANDS, run)."""
+    """Add evidence of one kind in a time budget (the subcommands, run)."""
     from assay.core import cache
     from assay.loop import tiers
     from assay.loop.evidence import coverage, measurement, repetition, search, targets

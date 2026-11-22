@@ -1,4 +1,4 @@
-// Tests of fp::fma of foundation/core/Float.h (THE FMA): a * b + c with one
+// Tests of fp::fma of foundation/core/Float.h (the FMA): a * b + c with one
 // round to nearest even on each target.
 //
 // The oracle is the exact sum of test/exact_sum.h: the exact product and the
@@ -53,7 +53,7 @@ template <class T>
 }
 
 // The two results agree when they have the same bits, or when the two are
-// NaNs: the payload of a NaN is not part of THE FMA.
+// NaNs: the payload of a NaN is not part of the FMA.
 template <class T>
 [[nodiscard]] bool agree(T left, T right) noexcept {
     if (::fixy::fp::is_nan(left) || ::fixy::fp::is_nan(right)) {

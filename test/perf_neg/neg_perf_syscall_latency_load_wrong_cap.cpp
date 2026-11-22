@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // load_syscall_latency takes the startup load context.  A background load
 // context also claims Block, but its capability source is the background

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The global CKernelTable accessor returns
 // CKernelTableSingleton, not a raw CKernelTable*.  A raw pointer cannot

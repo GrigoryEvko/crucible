@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A nested handle of a class that states synchronized{} holds a reference to
 // the plain count of the class, and not to the class.  Its door bump writes
 // the count with no proof.  No type tells which int the reference names, so
-// the borrow counts as a write of the class (THE NESTED CLASSES of
+// the borrow counts as a write of the class (the nested classes of
 // foundation/Transfer.h).
 //
 // Expected diagnostic: a door of a nested class can write the class, and the

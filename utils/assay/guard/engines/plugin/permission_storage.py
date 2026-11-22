@@ -1,13 +1,13 @@
 """permission-storage — a Permission held as a class member is the [[no_unique_address]] member of a handle.
 
-THE RULE
+Rule
     A Permission token is linear.  A class that holds one is correct when the
     class is a handle that proves single ownership through its lifetime.  The
     mark [[no_unique_address]] folds the token to no byte, and it states the
     handle shape.  A member with no such mark can be aliased across threads,
     and the type system does not see it.  The quarantine plugin gives a
-    finding for each such member (utils/tools/quarantine/declaration.cpp, THE
-    RULE permission-storage):
+    finding for each such member (utils/tools/quarantine/declaration.cpp, the
+    rule permission-storage):
       permission-member   a data member with a type that names a Permission,
                           also through a template argument or an alias, with
                           no [[no_unique_address]]

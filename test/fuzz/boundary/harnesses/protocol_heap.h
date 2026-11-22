@@ -1,6 +1,6 @@
 #pragma once
 
-// The image of a value of run-time size (THE HEAP PARTS of
+// The image of a value of run-time size (the heap parts of
 // foundation/core/Protocol.h).  The first two bytes of the input give the
 // budget of the decode in units of 64 bytes, so the fuzzer reaches the
 // refusal of the budget, and the other bytes are the image.  The record holds

@@ -21,20 +21,20 @@
 // IEEE operations in the same order.  FusedMultiplyAdd has no lane form, so
 // the walk takes its scalar path.
 //
-// THE ORDER OF THE ROUNDS
+// Order of the rounds
 //   Each operation rounds to the type of the elements with the round to
 //   nearest even, and the build contracts no multiply and add.  The order of
 //   the operations is the order of the parentheses of the list.
 //
-// THE NAN RULE
+// NaN rule
 //   ClampBelowAtZero, ZeroAtOrBelowThreshold and Copy select or copy a value,
 //   so they state NanRule::KeepBits: a NaN keeps its bits.  A compare of a NaN
 //   is false, so ClampBelowAtZero gives a NaN for a NaN, and
 //   ZeroAtOrBelowThreshold gives v for a NaN of g or t.  Each other op is
 //   arithmetic, and the walk gives the canonical NaN for each of its NaN
-//   outputs (THE NAN RULE of Pointwise.h).
+//   outputs (the NaN rule of Pointwise.h).
 //
-// THE ERROR BOUNDS
+// Error bounds
 //   With the unit roundoff u (2^-24 for a float, 2^-53 for a double), gamma(j)
 //   = j * u / (1 - j * u), eta the largest error of a result that underflows
 //   (2^-150 for a float, 2^-1075 for a double), and y the exact value of the
@@ -53,9 +53,9 @@
 //   hold when no step overflows.  test_core_elementwise checks each bound
 //   against an oracle of a higher precision.
 //
-// THE TARGET
+// Target
 //   The lane forms read the vector types of the target, so the ops are in the
-//   inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of
+//   inline namespace CRUCIBLE_SIMD_TARGET (the target namespace of
 //   foundation/Platform.h).
 
 #include <foundation/Simd.h>
@@ -161,7 +161,7 @@ struct ScaledProductOfDifference final {
 
 // scale * factor + addend with one round, by fp::fma: the instruction where
 // the target has it, and the exact form in integers on each other target
-// (THE FMA of foundation/core/Float.h).
+// (the FMA of foundation/core/Float.h).
 struct FusedMultiplyAdd final {
     template <Float T>
     [[nodiscard]] constexpr T operator()(T scale, T factor, T addend) const noexcept {

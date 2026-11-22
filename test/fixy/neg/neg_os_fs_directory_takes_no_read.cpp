@@ -1,4 +1,4 @@
-// A directory holds no read right (THE RIGHTS of fixy/os/Handle.h).  So the
+// A directory holds no read right (the rights of fixy/os/Handle.h).  So the
 // full read, which asks for the read right, takes no borrow of a directory.
 
 #include <fixy/os/Fs.h>

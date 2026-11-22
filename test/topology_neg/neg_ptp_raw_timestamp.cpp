@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // A packet view takes a timestamp tagged as coming from PTP.  A raw
 // nanosecond count does not convert to it.

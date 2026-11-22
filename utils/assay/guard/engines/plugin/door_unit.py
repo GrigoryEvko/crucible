@@ -1,10 +1,10 @@
 """door-unit — a door is one source file, and it includes the system headers of one family.
 
-THE RULE
+Rule
     A door row of utils/rule-table.txt names the one file of the source root
     that can include a system header (CLAUDE.md section XXII, R4).  The
     quarantine plugin gives two kinds (utils/tools/quarantine/include.cpp,
-    THE DOOR UNITS):
+    the door units):
       * header-door: an include of a door header by its owner, when the owner
         is a header and no source file.  Each unit that includes the owner
         then gets the system declarations of the door.  The entity is the
@@ -15,7 +15,7 @@ THE RULE
         their declarations conflict.  The entity is the first header of each
         family.
 
-THE STALE ROWS
+Stale rows
     The owner of each door row spells an include of its header.  The rule
     reads the parse tree of each owner (assay.readers.tsast), with each arm of
     each preprocessor conditional.  A door header that only one build compiles,
@@ -26,7 +26,7 @@ THE STALE ROWS
     with no utils/rule-table.txt, such as the tree of a plant of a different
     rule, has no stale row.
 
-THE LEDGER
+Ledger
     utils/ledgers/door-unit.txt counts the findings of each file, kind and
     entity (the policy count), and each row gives a reason:
         PATH | KIND | COUNT | ENTITY | REASON
@@ -92,7 +92,7 @@ def spelled_includes(root: Path, owners: list[str]) -> dict[str, set[str]]:
 
 
 def stale_rows(root: Path) -> list[check_report.Finding]:
-    """Give an error for each door row with no owner file, or with an owner that does not include it (THE STALE ROWS).
+    """Give an error for each door row with no owner file, or with an owner that does not include it (the stale rows).
 
     Raises:
         BuildError: If the rule table or an owner cannot be read

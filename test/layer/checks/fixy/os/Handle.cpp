@@ -14,7 +14,7 @@ inline constexpr RightSet kReadWrite = RightSet::read | RightSet::write;
 using ReadFile = Handle<kind::File, kReadSeek>;
 using ReadFileRef = HandleRef<kind::File, kReadSeek>;
 
-// THE RIGHTS: the union and the subset test.
+// The rights: the union and the subset test.
 static_assert((RightSet::read | RightSet::write) == kReadWrite && (RightSet::write | RightSet::read) == kReadWrite);
 static_assert(HoldsRights<kReadWrite, RightSet::read> && HoldsRights<kReadWrite, kReadWrite>);
 static_assert(HoldsRights<RightSet::read, RightSet::none>, "each set holds the empty set");
@@ -24,13 +24,13 @@ static_assert(!std::is_convertible_v<std::uint64_t, RightSet> && !std::is_conver
               "no number becomes a set of rights");
 static_assert(std::to_underlying(RightSet::ioctl_ptp) >> 32U == 1U, "the ioctl families are the high 32 bits");
 
-// THE KINDS: the closed list.
+// The kinds: the closed list.
 struct NotAKind final {};
 static_assert(HandleKind<kind::File> && HandleKind<kind::Directory> && HandleKind<kind::PtpClock>);
 static_assert(HandleKind<kind::Socket<NotAKind>>, "a socket kind takes the tag of its socket");
 static_assert(!HandleKind<NotAKind> && !HandleKind<int> && !HandleKind<kind::File const>);
 
-// THE HANDLE: one owner, and no descriptor from a number.
+// The handle: one owner, and no descriptor from a number.
 static_assert(!std::is_copy_constructible_v<ReadFile> && !std::is_copy_assignable_v<ReadFile>);
 static_assert(std::is_nothrow_move_constructible_v<ReadFile> && std::is_nothrow_move_assignable_v<ReadFile>);
 static_assert(!std::is_constructible_v<ReadFile, int>, "a public constructor would close a descriptor of a caller");
@@ -39,7 +39,7 @@ static_assert(std::is_default_constructible_v<ReadFile>, "the empty handle claim
 static_assert(sizeof(ReadFile) == sizeof(int), "a handle is the descriptor and no more");
 static_assert(ReadFile::rights == kReadSeek && std::is_same_v<ReadFile::kind_type, kind::File>);
 
-// THE BORROW: a borrow of the base, with no right that its handle lacks.
+// The borrow: a borrow of the base, with no right that its handle lacks.
 template <class Ref, RightSet Fewer>
 concept CanRestrict = requires(Ref borrow) { borrow.template restrict<Fewer>(); };
 

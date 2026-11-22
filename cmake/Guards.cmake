@@ -94,7 +94,7 @@ endfunction()
 # Register the tests of each rule of the engine elf that has a module of its own: a row with no field
 # legacy.  guard_ID runs the rule on the objects and the compile database of this build directory, and
 # guard_ID_witness builds each plant and control of utils/plants/ID/ with the compiler of this build
-# (assay.guard.engines.elf.runner, THE PLANTS).  A rule of the engine can read the parse trees, as the
+# (assay.guard.engines.elf.runner, the plants).  A rule of the engine can read the parse trees, as the
 # census of the rule codegen-shapes does.  The guard_ID of each rule of TREES requires the fixture
 # tsast_trees, and no other test waits for the fill.  The rule registry refuses a rule that reads
 # the trees and is not in TREES, and a rule of TREES that reads no tree.  Exit 77 is a skip: the rule does
@@ -136,7 +136,7 @@ endfunction()
 # legacy.  guard_ID runs the rule on the tree, and guard_ID_witness runs it on each plant and control of
 # utils/plants/ID/.  The rule parse-clean fills the tree cache, so it runs in <parts> parts,
 # guard_parse_clean_K for K from 1, and these tests are the setup of the fixture tsast_trees.  The rule registry
-# refuses a part with no test (THE PARTS OF A RULE of assay.guard.engines.meta.registry_tests).  Each
+# refuses a part with no test (the parts of a rule of assay.guard.engines.meta.registry_tests).  Each
 # other guard_ID requires the fixture, so it starts on a full tree cache.  A witness copies each plant
 # to a scratch repository and parses only the plant (assay.guard.engines.tsast.runner), so it does not
 # wait for the fill.  Exit 77 is a skip: the rule does not apply, for example because the pinned kit is

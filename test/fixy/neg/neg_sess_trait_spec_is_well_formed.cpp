@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_well_formed is an alias template over the well-formedness algebra
 // of the registry, so no user specialization makes a send of the crash

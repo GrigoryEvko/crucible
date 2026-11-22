@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A root of mint_permission_root keeps its brand.  An implicit conversion
 // would let a call that takes the erased token drop a brand, with no name

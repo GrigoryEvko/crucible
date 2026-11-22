@@ -1,12 +1,12 @@
 """contract-specifier — no declaration of the tree has a `pre` or a `post` contract specifier.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ gives a finding of the
     kind contract-specifier for each `pre` and each `post` specifier on a
     declaration of a file in the source root, in each build and each mode
     (contract.cpp, and CLAUDE.md section XII, the contract rule).  The rule
     reads those finding lines in the sections of the objects of the target
-    all of one build (assay.guard.engines.plugin.runner, THE SECTIONS).  The
+    all of one build (assay.guard.engines.plugin.runner, the sections).  The
     same line from two objects counts one time.  The entity of a finding is
     pre or post.
 

@@ -345,7 +345,7 @@ concept CtxFitsReleaseAwareAdvise = CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice
 // that identity covers each of them.
 //
 // The file is the borrow of the Handle of the file, with the right map,
-// and also read and write for a shared map that writes (THE SOURCE OF A MAP
+// and also read and write for a shared map that writes (the source of a map
 // of fixy/os/OwnedMmap.h).  The map reads the file from the byte at offset.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand,
           ::fixy::os::RightSet Rights>

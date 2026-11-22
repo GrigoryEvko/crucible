@@ -1,6 +1,6 @@
 // The scaling rows of the primitives of the base, from one thread to many.
 //
-// THE OPS
+// Ops
 //   shared add         fetch_add_acq_rel of foundation/core/Atomic.h on one
 //                      cell that each thread of the row writes
 //   own add            the same add on a cell of each thread, each cell on a
@@ -14,7 +14,7 @@
 //   mpsc permissioned  try_push of a producer handle of the merge channel of
 //   push               fixy/concurrent/PermissionedChannel.h on each producer,
 //                      and try_pop of its consumer handle on the last thread
-//                      (THE PERMISSIONED ROWS)
+//                      (the permissioned rows)
 //   mpsc batch push    try_push_batch of kBatch items from each producer, and
 //                      try_pop_batch of up to kPopBatch items on the consumer
 //   mpsc reference     try_push and try_pop of the pinned MPMCQueue of Erik
@@ -22,11 +22,11 @@
 //                      each slot in the form of Dmitry Vyukov
 //   lanes push         try_push of fixy/concurrent/LaneRing.h into the lane
 //                      of each producer, and try_pop on the last thread, which
-//                      takes one item of each lane in turn (THE LANES)
+//                      takes one item of each lane in turn (the lanes)
 //   lanes permissioned try_push of a producer handle of a lane of the lanes
 //   push               channel of fixy/concurrent/PermissionedChannel.h, and
-//                      try_pop of its consumer handle (THE PERMISSIONED ROWS)
-//   mpsc slow push     the mpsc push, with one slow producer (THE SLOW PRODUCER)
+//                      try_pop of its consumer handle (the permissioned rows)
+//   mpsc slow push     the mpsc push, with one slow producer (the slow producer)
 //   lanes slow push    the lanes push, with one slow producer
 //   spsc push          try_push of fixy/concurrent/SpscRing.h on the main
 //                      thread, and try_pop on one consumer
@@ -40,23 +40,23 @@
 //   waits for a producer.  Each wait spins with the spin hint.  A batch op
 //   counts each item of its batch.
 //
-// THE LANES
+// Lanes
 //   The ring of lanes has kBenchLanes lanes of kLaneCapacity cells.  The
 //   producer of slot k pushes into lane k, and a row ends each lane past its
 //   producers before its threads start.  The consumer waits for the lane of
 //   its turn, so each producer of a row pushes at the pace of the slowest one.
 //   A row of more producers than lanes gives no row of a lanes op.
 //
-// THE SLOW PRODUCER
+// Slow producer
 //   In a row of a slow op, the producer of the last slot before the consumer
 //   runs kSlowPauses spin hints before each push.  The other producers push at
 //   full speed.  A row of fewer than three threads has no slow producer, and
 //   gives no row.  The shared ring of the mpsc slow push takes the items of the
 //   fast producers while the slow one waits.  The ring of lanes waits for the
-//   slow lane, which sets the pace of the whole row (THE STALL of
+//   slow lane, which sets the pace of the whole row (the stall of
 //   fixy/concurrent/LaneRing.h).
 //
-// THE PLACES OF THE CONSUMER
+// Places of the consumer
 //   The consumer of an mpsc row is the thread of the last slot of the row.
 //   Each spsc op has two rows of two threads: one with the consumer on the
 //   CPU of slot 1, in the L3 group of the producer when the claim holds a
@@ -64,14 +64,14 @@
 //   the spread outside the L3 group of the producer.  A spread with no CPU
 //   outside that group gives no row of the second place.
 //
-// THE THREADS OF A ROW
+// Threads of a row
 //   A row of N threads runs the op on N threads at the same time, one thread
-//   on the CPU of each slot 0 to N - 1 of the spread of the run (THE SPREAD
-//   OF A RUN of bench/bench_harness.h).  Slot 0 is the main thread, a
+//   on the CPU of each slot 0 to N - 1 of the spread of the run (the spread
+//   of a run of bench/bench_harness.h).  Slot 0 is the main thread, a
 //   producer.  Each other slot is a worker on a std::jthread, which pins
-//   itself to the CPU of its slot (THE RAW WORKERS).
+//   itself to the CPU of its slot (the raw workers).
 //
-// THE RAW WORKERS
+// Raw workers
 //   The rows measure the bare rings of fixy/concurrent/ and their pinned
 //   references.  The threads of a row share the rings of RowState, and a
 //   ring keeps plain positions that one side writes and the other reads.  No
@@ -79,7 +79,7 @@
 //   workers.  The rows thus keep the raw rings and raw threads as a
 //   measurement, in a MEASURE region.
 //
-// THE PERMISSIONED ROWS
+// Permissioned rows
 //   The rows of the permissioned channel run each worker beside the main
 //   thread through run_beside of fixy/os/ThreadTasks.h, and not on a raw
 //   thread.  The end of the channel of each worker moves into the body of its
@@ -89,7 +89,7 @@
 //   count of the bodies is a count of template arguments, so these rows take
 //   the counts 2, 4, 8 and 16.
 //
-// THE PHASES OF A ROW
+// Phases of a row
 //   1. The window: each thread runs the op and counts it for kWindowNs.  The
 //      row gives the items of the producers of all threads in one second, and
 //      the efficiency: that throughput over the throughput of the first row
@@ -97,7 +97,7 @@
 //      is the row of one producer and the consumer.  The pause check of the
 //      harness reads the threads over the window.
 //      The window is bench::kWindows consecutive windows of equal time, one
-//      phase each (THE WINDOWS of bench/bench_harness.h).  Each thread counts
+//      phase each (the windows of bench/bench_harness.h).  Each thread counts
 //      its items in each window, and the row gives the median and the spread
 //      of the throughput of the windows.  Each window has the pause check of
 //      the time that the main thread lost in it.
@@ -113,7 +113,7 @@
 //   The consumer adds each item that it pops into a sum, and it stores the sum
 //   at its end, so it reads each cell, as a consumer that uses its items does.
 //
-// THE COUNTS OF THREADS
+// Counts of threads
 //   With no argument, the rows have 1, 2, 4, 8 and 16 threads, up to the
 //   count of the slots.  The bench states nine cores, so loop bench gives it
 //   the eight cores of one L3 group and one core of a second group.  The rows
@@ -122,13 +122,13 @@
 //   count of threads after the rows of 1 and 2 threads, which are the bases of
 //   the efficiency.  A count above the slots or above kMaxThreads ends the run.
 //
-// THE GROUPS OF OPS
+// Groups of ops
 //   An argument add, mpsc or spsc selects the ops of that group: the two
 //   adds, the mpsc ops, or the spsc ops.  With no such argument,
 //   the run gives each group.  So two builds of one ring can run in turns:
 //       python3 utils/bin/loop bench --cores 9 --command -- BINARY spsc
 //
-// THE COMMANDS
+// Commands
 //   1 to 8 threads, one L3 group:   python3 utils/bin/loop bench bench_thread_scaling
 //   16 threads, two L3 groups:      python3 utils/bin/loop bench --cores 16 bench_thread_scaling
 //   32 threads, the shared CPUs:    python3 utils/bin/loop heavy -j 32 -- build-bench/bench/bench_thread_scaling 32
@@ -186,11 +186,11 @@ constexpr std::size_t kRingCapacity = 4096;
 // The items of one batch push, and the items of one batch pop at most.
 constexpr std::size_t kBatch = 16;
 constexpr std::size_t kPopBatch = 64;
-// The lanes of the ring of lanes and the cells of each lane (THE LANES).
+// The lanes of the ring of lanes and the cells of each lane (the lanes).
 constexpr ::fixy::concurrent::LaneCount kBenchLanes{16};
 constexpr std::size_t kLaneCapacity = 1024;
 using BenchLaneIndex = ::fixy::concurrent::LaneIndex<kBenchLanes>;
-// The spin hints of the slow producer before each push (THE SLOW PRODUCER).
+// The spin hints of the slow producer before each push (the slow producer).
 constexpr std::uint32_t kSlowPauses = 64;
 
 }  // namespace
@@ -299,7 +299,7 @@ enum class OpKind : std::uint8_t {
     SpscReferencePush,
 };
 
-// The owner of the ring of the proven rows (THE PROVEN FORM of
+// The owner of the ring of the proven rows (the proven form of
 // fixy/concurrent/SpscRing.h).  A row runs one producer and one consumer of
 // that ring, so the bench makes the proof of each side, as the channel of a
 // wire makes it for its handles.
@@ -343,12 +343,12 @@ template <OpKind Kind>
 inline constexpr bool kIsSpsc = Kind == OpKind::SpscPush || Kind == OpKind::SpscProvenPush
                              || Kind == OpKind::SpscBatchPush || Kind == OpKind::SpscReferencePush;
 
-// True for an op of the ring of lanes or of the lanes channel (THE LANES).
+// True for an op of the ring of lanes or of the lanes channel (the lanes).
 template <OpKind Kind>
 inline constexpr bool kIsLanes =
     Kind == OpKind::LanesPush || Kind == OpKind::LanesPermissionedPush || Kind == OpKind::LanesSlowPush;
 
-// True for an op with one slow producer (THE SLOW PRODUCER).
+// True for an op with one slow producer (the slow producer).
 template <OpKind Kind>
 inline constexpr bool kHasSlowProducer = Kind == OpKind::MpscSlowPush || Kind == OpKind::LanesSlowPush;
 
@@ -357,13 +357,13 @@ template <OpKind Kind>
 inline constexpr std::uint64_t kItemsPerOp =
     Kind == OpKind::MpscBatchPush || Kind == OpKind::SpscBatchPush ? kBatch : 1;
 
-// Where the consumer of a row runs (THE PLACES OF THE CONSUMER).
+// Where the consumer of a row runs (the places of the consumer).
 enum class ConsumerPlace : std::uint8_t {
     LastSlot,
     OtherL3,
 };
 
-// The phase of a row (THE PHASES OF A ROW).  The main thread writes it.  The
+// The phase of a row (the phases of a row).  The main thread writes it.  The
 // window has one phase for each of its windows, so a worker reads the window
 // in the one cell that it reads for the phase.
 enum class Phase : std::uint32_t {
@@ -404,7 +404,7 @@ enum class Role : std::uint8_t {
 struct ThreadCountTag final {};
 using ThreadCount = ::fixy::Id<ThreadCountTag, std::uint32_t>;
 
-// The pace of a producer (THE SLOW PRODUCER).
+// The pace of a producer (the slow producer).
 enum class Pace : std::uint8_t {
     full,
     slow,
@@ -435,8 +435,8 @@ struct alignas(64) CountLine {
 
 // The part of the state of a row that holds only atomics: the phase, the
 // count of the workers that wait, the shared cell and the line of each
-// thread.  A body beside the caller borrows only this part (THE PERMISSIONED
-// ROWS).
+// thread.  A body beside the caller borrows only this part (the permissioned
+// rows).
 struct RowControl {
     PhaseLine phase{};
     // The workers that wait for the window.
@@ -493,7 +493,7 @@ template <class Push>
     }
 }
 
-// The delay of the slow producer before each push (THE SLOW PRODUCER).
+// The delay of the slow producer before each push (the slow producer).
 [[gnu::always_inline]] inline void wait_for_pace(Seat const& seat) noexcept {
     if (seat.pace == Pace::full) return;
     for (std::uint32_t pause = 0; pause < kSlowPauses; ++pause) {
@@ -502,8 +502,8 @@ template <class Push>
 }
 
 // The seat of the producer of a slot of a row: lane k for the producer of slot
-// k of a lanes op (THE LANES), and the slow pace for the last producer of a
-// slow op (THE SLOW PRODUCER).  A row of a lanes op has at most kBenchLanes
+// k of a lanes op (the lanes), and the slow pace for the last producer of a
+// slow op (the slow producer).  A row of a lanes op has at most kBenchLanes
 // producers.
 template <OpKind Kind>
 [[nodiscard]] Seat seat_of(bench::ThreadSlot slot, ThreadCount threads) noexcept {
@@ -520,7 +520,7 @@ template <OpKind Kind>
     return seat;
 }
 
-// One op of a producer (THE OPS).
+// One op of a producer (the ops).
 template <OpKind Kind>
 [[gnu::always_inline]] inline void run_op(RowState& state, ThreadLine& line, Seat const& seat) noexcept {
     if constexpr (Kind == OpKind::SharedAdd) {
@@ -694,11 +694,11 @@ struct Window {
     bench::Pause pause{};
 };
 
-// The window of the main thread on the CPU of slot 0 (THE PHASES OF A ROW).
+// The window of the main thread on the CPU of slot 0 (the phases of a row).
 // It starts each window, runs the op for its part of kWindowNs, and then
 // starts the latency phase.  The check of each window reads two clocks and no
 // file of procfs, so it does not change the basis of the pause of the whole
-// window (THE WINDOWS of bench/bench_harness.h).
+// window (the windows of bench/bench_harness.h).
 template <OpKind Kind, class Op>
 [[nodiscard]] Window run_window_loop(RowControl& control, Op const& op, bench::CpuId cpu) noexcept {
     bench::CoreHold const hold{cpu};
@@ -755,7 +755,7 @@ struct RowResult {
     // The throughput of the producers in each window, in millions of items in
     // one second, summed up by its median and its spread, and the count of
     // the windows in which the main thread lost more than the bound of the
-    // pause check (THE WINDOWS of bench/bench_harness.h).
+    // pause check (the windows of bench/bench_harness.h).
     bench::WindowSpread windows{};
     std::size_t paused_windows = 0;
     bench::Pause window_pause{};
@@ -826,8 +826,8 @@ template <OpKind Kind>
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the rows of the bare rings run their workers on std::jthread")
 namespace {
 
-// The workers of one row, one std::jthread for each slot from slot 1 on (THE
-// RAW WORKERS).  A worker pins itself to the CPU of its slot before it runs,
+// The workers of one row, one std::jthread for each slot from slot 1 on (the
+// raw workers).  A worker pins itself to the CPU of its slot before it runs,
 // and keeps the pin for its life, so it restores no affinity.  The join waits
 // for each worker, and the end of the row calls it after the stop.
 class RawWorkers {
@@ -875,8 +875,8 @@ namespace {
 // joins the workers.  The main thread runs its op while it waits for the
 // counts of a worker.  A producer worker publishes its counts only after its
 // last batch of kOpsPerCheck ops.  In a lanes op, that batch can wait for room
-// until the consumer takes the next item of the lane of the main thread (THE
-// STALL of fixy/concurrent/LaneRing.h), so a main thread that waits with no
+// until the consumer takes the next item of the lane of the main thread (the
+// stall of fixy/concurrent/LaneRing.h), so a main thread that waits with no
 // push holds the row for ever.
 template <OpKind Kind, class Op>
 [[nodiscard]] RowResult finish_row(RowControl& control, ThreadCount threads, ConsumerPlace place, bench::CpuId main_cpu,
@@ -924,7 +924,7 @@ template <OpKind Kind, class Op>
 }
 
 // The end of each lane of a lanes op past the producers of the row, so the
-// turn of the consumer holds only the lanes of the producers (THE LANES).  The
+// turn of the consumer holds only the lanes of the producers (the lanes).  The
 // main thread runs it before the workers start.  Complexity: linear in the
 // lanes.
 template <OpKind Kind>
@@ -1014,7 +1014,7 @@ template <OpKind Kind, std::size_t Slot, class Channel>
 }
 
 // Runs the measure of the main thread with one worker for each body, on the
-// slots from slot on, in the order of the bodies (THE PERMISSIONED ROWS).  The
+// slots from slot on, in the order of the bodies (the permissioned rows).  The
 // continuation of each run_beside starts the next worker, so the measure runs
 // in the continuation of the last one, and each worker joins when the call
 // returns.
@@ -1218,8 +1218,8 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
         for (ThreadCount const threads : counts) {
             // A row of an op with a consumer needs a producer beside its consumer.
             if (producers_of<Kind>(threads) == 0) continue;
-            // A lanes op has a lane for each producer (THE LANES), and a slow
-            // op has a slow producer beside the main thread (THE SLOW PRODUCER).
+            // A lanes op has a lane for each producer (the lanes), and a slow
+            // op has a slow producer beside the main thread (the slow producer).
             if (kIsLanes<Kind> && producers_of<Kind>(threads) > static_cast<std::uint64_t>(kBenchLanes)) continue;
             if (kHasSlowProducer<Kind> && producers_of<Kind>(threads) < 2) continue;
             static_cast<void>(rows.append(run_row<Kind>(spread, threads, ConsumerPlace::LastSlot))
@@ -1237,7 +1237,7 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
     }
 }
 
-// The groups of ops of a run (THE GROUPS OF OPS).
+// The groups of ops of a run (the groups of ops).
 enum class OpGroup : std::uint8_t {
     Add,
     Mpsc,
@@ -1275,7 +1275,7 @@ enum class OpGroup : std::uint8_t {
     return groups;
 }
 
-// Reads the counts of the rows (THE COUNTS OF THREADS).  An argument that
+// Reads the counts of the rows (the counts of threads).  An argument that
 // names a group of ops is no count.
 [[nodiscard]] ::fixy::FixedList<ThreadCount, kMaxRows> counts_of(::fixy::os::Args const& arguments,
                                                                  bench::Spread const& spread) noexcept {
@@ -1315,7 +1315,7 @@ enum class OpGroup : std::uint8_t {
     return counts;
 }
 
-// The bench with the arguments of main (THE COUNTS OF THREADS).
+// The bench with the arguments of main (the counts of threads).
 int run_bench(::fixy::os::Args const& arguments) {
     bench::print_system_info();
     bench::elevate_priority();

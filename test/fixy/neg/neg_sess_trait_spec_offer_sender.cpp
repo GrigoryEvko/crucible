@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // offer_sender is an alias template that reads the sender that an Offer
 // names, so no user specialization changes the role that the crash

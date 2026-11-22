@@ -1,21 +1,21 @@
 """loop audit — compare the tests that `loop test` ran with its plan, and add the call profiles of a run.
 
-THE PLAN AND THE RUN
+Plan and the run
     Each call of `loop test` writes its plan, BUILD_DIR/affected-tests/plan.json
-    (THE PLAN of assay.loop.affected).  For each test, the plan holds the kind,
+    (the plan of assay.loop.affected).  For each test, the plan holds the kind,
     the reason, the shared key and the skip.  The merged JUnit report of the
     call, BUILD_DIR/affected-tests/junit.xml, gives the tests that ran.  The
     record of each test gives the wall time of its last run
     (assay.readers.ctest).  The name of the configuration of a build directory
     comes from its file build-configuration.txt.
 
-THE FINDINGS
+Findings
     missed     A test that the plan selects and that did not run.  For
                example, ctest did not start it.  A missed test is an error,
                and the command ends with ExitCode.FINDINGS.
     unplanned  A test that ran and that the plan skips.
     again      A shared key that ran in two build directories or more.  The
-               shared key holds each input of the test (THE SHARED STORE of
+               shared key holds each input of the test (the shared store of
                assay.loop.affected).  The runs after the first run of a key
                then do the same work again.
     unkeyed    A test with no shared key that ran in two build directories
@@ -26,9 +26,9 @@ THE FINDINGS
     time of the runs after the first run is the sum of their times less the
     largest time.
 
-THE CALL PROFILES
+Call profiles
     With `--calls DIR`, the command adds the call profiles that a run with
-    CALL_PROFILE_ENV of assay.core.meter wrote into DIR (THE RECORD of
+    CALL_PROFILE_ENV of assay.core.meter wrote into DIR (the record of
     assay.core.calls).  The report gives these totals:
       * For each command, such as `guard selftest` or `loop test-step`: the
         processes, the wall time, the CPU time and the import time.  The
@@ -48,9 +48,9 @@ THE CALL PROFILES
     one function.  `--command TEXT` keeps only the processes of one command,
     such as "loop fixture".
 
-THE LINES
+Lines
     A run with LINES_ENV of assay.core.meter writes the rows of the lines
-    (THE LINES of assay.core.calls).  `--lines` writes a table of each
+    (the lines of assay.core.calls).  `--lines` writes a table of each
     function with the largest cumulative time, LINE_FUNCTIONS functions, as
     line_profiler does.  `--lines TEXT` writes the table of each function
     with TEXT in its name or its path.  A table has one row for each line of
@@ -64,8 +64,8 @@ THE LINES
     tree.
 
     After the table of a function, the report expands each line into the
-    tables of the functions of the package that it calls.  THE CALLS OF A
-    LINE of assay.core.calls gives these calls.  A callee gets a table when its calls from
+    tables of the functions of the package that it calls.  The calls of a
+    line of assay.core.calls gives these calls.  A callee gets a table when its calls from
     the line take DRILL_PART or more of the wall time of the first function.
     The report goes down `--depth N` levels, DRILL_DEPTH by default.  A
     callee with a table above gets one line with its location.  A callee on
@@ -90,7 +90,7 @@ from assay.core.exit import ExitCode
 from assay.loop import affected
 from assay.readers import ctest as ctest_reader
 
-# The statuses of a test that ran (assay.readers.ctest, THE STATUS OF A TEST).
+# The statuses of a test that ran (assay.readers.ctest, the status of a test).
 RAN = frozenset({ctest_reader.TestStatus.RUN, ctest_reader.TestStatus.FAIL, ctest_reader.TestStatus.SKIPPED})
 # The file of the name of the configuration of a build directory.
 CONFIGURATION_FILE = "build-configuration.txt"
@@ -98,19 +98,19 @@ CONFIGURATION_FILE = "build-configuration.txt"
 SHOWN = 12
 # The function of the import machinery of Python.  Its cumulative time is the import time of a process.
 IMPORT_FUNCTION = "_find_and_load"
-# The names of the entry points that the list of the work in two processes does not hold (THE CALL PROFILES).
+# The names of the entry points that the list of the work in two processes does not hold (the call profiles).
 ENTRY_NAMES = frozenset(
     {"<module>", "main", "run", "run_module", "run_group", "forked_failures", "_run_child", "_fork_action"}
 )
-# The mark of the directory utils of a tree in the path of a function (THE CALL PROFILES).
+# The mark of the directory utils of a tree in the path of a function (the call profiles).
 PACKAGE_MARK = "<utils>"
 # The module of the profile itself, which the list of the work in two processes does not hold.
 PROFILE_MODULE = f"{PACKAGE_MARK}/assay/core/calls.py"
-# The fields of a call profile that hold a number (THE RECORD of assay.core.calls).
+# The fields of a call profile that hold a number (the record of assay.core.calls).
 NUMBER_FIELDS = ("pid", "parent", "start", "end", "cpu_s")
-# The number of functions that `--lines` with no text writes (THE LINES).
+# The number of functions that `--lines` with no text writes (the lines).
 LINE_FUNCTIONS = 5
-# The smallest part of the wall time of the first function, and the levels, of a callee that gets a table (THE LINES).
+# The smallest part of the wall time of the first function, and the levels, of a callee that gets a table (the lines).
 DRILL_PART = 0.05
 DRILL_DEPTH = 3
 
@@ -119,9 +119,9 @@ type MeasuredRow = tuple[str, int, str, int, int, float, float]
 # One row of a call profile: file, line, name, calls, primitive calls, own time, cumulative time (assay.core.calls).
 type FunctionRow = MeasuredRow
 type FunctionKey = tuple[str, int, str]
-# One row of the lines: file, line, full name, first line of the function, hits, wall time, CPU time (THE LINES).
+# One row of the lines: file, line, full name, first line of the function, hits, wall time, CPU time (the lines).
 type LineRow = MeasuredRow
-# The calls of a line to one callee (THE CALLS OF A LINE of assay.core.calls).  The fields are the file, the first
+# The calls of a line to one callee (the calls of a line of assay.core.calls).  The fields are the file, the first
 # line and the full name of the caller, and the line.  Then come the same three of the callee, the calls and the time.
 type CallRow = tuple[str, int, str, int, str, int, str, int, float]
 # The marked key of a caller and its line.
@@ -141,7 +141,7 @@ class Run:
 
 @dataclass(frozen=True, slots=True)
 class BuildAudit:
-    """The plan and the run of one build directory (THE PLAN AND THE RUN)."""
+    """The plan and the run of one build directory (the plan and the run)."""
 
     configuration: str
     planned: int
@@ -176,7 +176,7 @@ class CallTotal:
 
 @dataclass(frozen=True, slots=True)
 class LineTotal:
-    """The sum of one line over the call profiles: its hits, its wall time and its CPU time (THE LINES)."""
+    """The sum of one line over the call profiles: its hits, its wall time and its CPU time (the lines)."""
 
     hits: int
     wall_s: float
@@ -216,7 +216,7 @@ def configuration_of(build_dir: Path) -> str:
 
 
 def audit_build(build_dir: Path) -> BuildAudit:
-    """Compare the plan of the last call in one build directory with the tests that ran (THE FINDINGS).
+    """Compare the plan of the last call in one build directory with the tests that ran (the findings).
 
     Raises:
         AuditError: If the plan, the JUnit report or a record cannot be read
@@ -288,7 +288,7 @@ def report_groups(label: str, groups: dict[str, list[Run]]) -> None:
 
 
 def audit(build_dirs: Sequence[Path]) -> ExitCode:
-    """Write the findings of the build directories, and return FINDINGS when a selected test did not run (THE FINDINGS).
+    """Write the findings of the build directories, and return FINDINGS when a selected test did not run (the findings).
 
     Raises:
         AuditError: If the plan, the JUnit report or a record of a build directory cannot be read
@@ -347,7 +347,7 @@ def call_row(row: object) -> CallRow | None:
 
 
 def call_profile_of(path: Path, document: object) -> CallProfile:
-    """Return the call profile of one file (THE RECORD of assay.core.calls).
+    """Return the call profile of one file (the record of assay.core.calls).
 
     Raises:
         AuditError: If the document does not have the format and the shape of a call profile
@@ -382,7 +382,7 @@ def call_profile_of(path: Path, document: object) -> CallProfile:
 
 
 def read_profiles(directory: Path) -> list[CallProfile]:
-    """Read each call profile of a directory, in the sequence of the file names (THE RECORD of assay.core.calls).
+    """Read each call profile of a directory, in the sequence of the file names (the record of assay.core.calls).
 
     Raises:
         AuditError: If the directory or a profile cannot be read, or a profile has a different format or shape
@@ -408,7 +408,7 @@ def utils_of(argv: Sequence[str]) -> str:
 
 
 def marked_file(file: str, utils: str) -> str:
-    """Return the path of a function with PACKAGE_MARK for the directory utils of its tree (THE CALL PROFILES)."""
+    """Return the path of a function with PACKAGE_MARK for the directory utils of its tree (the call profiles)."""
     return PACKAGE_MARK + file.removeprefix(utils) if utils and file.startswith(utils + "/") else file
 
 
@@ -419,7 +419,7 @@ def function_location(key: FunctionKey) -> str:
 
 
 def command_totals(profiles: Sequence[CallProfile]) -> dict[str, CommandTotal]:
-    """Return the total of each command of the call profiles (THE CALL PROFILES).
+    """Return the total of each command of the call profiles (the call profiles).
 
     Complexity: linear in the rows of the call profiles.
     """
@@ -438,7 +438,7 @@ def command_totals(profiles: Sequence[CallProfile]) -> dict[str, CommandTotal]:
 
 
 def function_totals(profiles: Sequence[CallProfile]) -> dict[FunctionKey, FunctionTotal]:
-    """Return the total of each function of the call profiles (THE CALL PROFILES).
+    """Return the total of each function of the call profiles (the call profiles).
 
     Complexity: linear in the rows of the call profiles.
     """
@@ -456,7 +456,7 @@ def function_totals(profiles: Sequence[CallProfile]) -> dict[FunctionKey, Functi
 
 
 def report_calls(directory: Path, command: str = "") -> None:
-    """Write the totals of the call profiles of a directory, or of the processes of one command (THE CALL PROFILES).
+    """Write the totals of the call profiles of a directory, or of the processes of one command (the call profiles).
 
     Raises:
         AuditError: If the directory or a profile cannot be read
@@ -511,7 +511,7 @@ def report_calls(directory: Path, command: str = "") -> None:
 def line_totals(profiles: Sequence[CallProfile]) -> tuple[dict[FunctionKey, dict[int, LineTotal]], dict[str, Path]]:
     """Return the sum of each line of each function over the call profiles, and the file of a process for each marked file.
 
-    The key of a function holds its marked file, its first line and its full name (THE LINES).  Complexity:
+    The key of a function holds its marked file, its first line and its full name (the lines).  Complexity:
     linear in the rows of the lines.
     """
     sums: dict[FunctionKey, dict[int, list[float]]] = {}
@@ -533,7 +533,7 @@ def line_totals(profiles: Sequence[CallProfile]) -> tuple[dict[FunctionKey, dict
 
 
 def call_totals(profiles: Sequence[CallProfile]) -> dict[CallSite, dict[FunctionKey, CallTotal]]:
-    """Return the sum of the calls of each line to each callee over the call profiles (THE CALLS OF A LINE).
+    """Return the sum of the calls of each line to each callee over the call profiles (the calls of a line).
 
     Complexity: linear in the calls of the lines.
     """
@@ -563,7 +563,7 @@ def call_totals(profiles: Sequence[CallProfile]) -> dict[CallSite, dict[Function
 
 
 def source_lines(marked: str, process_files: dict[str, Path]) -> list[str]:
-    """Return the lines of the file of a function, from the file of a process or from this tree, or none (THE LINES)."""
+    """Return the lines of the file of a function, from the file of a process or from this tree, or none (the lines)."""
     from assay.core import meter as cost_meter
 
     candidates = [path for path in (process_files.get(marked),) if path is not None]
@@ -583,7 +583,7 @@ def write_line_table(
     process_files: dict[str, Path],
     indent: str = "",
 ) -> None:
-    """Write the table of the lines of one function, as line_profiler does (THE LINES)."""
+    """Write the table of the lines of one function, as line_profiler does (the lines)."""
     marked, first_line, _ = key
     head = f"loop audit: {indent}"
     wall_total = sum(total.wall_s for total in lines.values())
@@ -630,7 +630,7 @@ class LineReport:
 def write_callees(
     report: LineReport, key: FunctionKey, root_s: float, depth: int, path: list[FunctionKey], written: set[FunctionKey]
 ) -> None:
-    """Expand each line of a function into the tables of the functions that it calls (THE LINES).
+    """Expand each line of a function into the tables of the functions that it calls (the lines).
 
     A callee gets a table when its calls from the line take DRILL_PART or more
     of `root_s`, the wall time of the first function.  Complexity: linear in
@@ -661,7 +661,7 @@ def write_callees(
 
 
 def report_lines(directory: Path, text: str, command: str = "", depth: int = DRILL_DEPTH) -> None:
-    """Write the tables of the lines of the hot functions, or of the functions that `text` names (THE LINES).
+    """Write the tables of the lines of the hot functions, or of the functions that `text` names (the lines).
 
     After each table, the report expands the hot lines into the tables of their callees, to `depth` levels.
 

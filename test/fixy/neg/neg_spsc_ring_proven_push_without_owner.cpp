@@ -1,4 +1,4 @@
-// A ring with no owner has no proven form (THE PROVEN FORM of
+// A ring with no owner has no proven form (the proven form of
 // fixy/concurrent/SpscRing.h).  A caller that owns some other type makes a
 // proof of its own and gives it to such a ring, so the ring would publish
 // with no check for a writer that no type proves.

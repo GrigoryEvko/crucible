@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A permissioned session sends a Transferable whose token did not come from
 // the slots of the handle.  The session opens with the token of Region, and

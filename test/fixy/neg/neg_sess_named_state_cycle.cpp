@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A named state stands for the protocol of its name, and the walks of the
 // session layer follow that protocol.  Ping and Pong below name each other,

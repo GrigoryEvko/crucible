@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The compiled view of a context is minted only from the foreground
 // context of a Vigil's producer claim.  The context of another state's

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The effect row lattice carries a row as a uint64_t bitmask, so an effect
 // universe holds 64 atoms at most.  include/foundation/effects/Row.h states

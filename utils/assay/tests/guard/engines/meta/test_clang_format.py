@@ -5,7 +5,7 @@ Each case writes one line.  Exit 0 when each case holds, else 1.  The
 witness of the rule holds the verdict on each plant.  This test holds the
 parts that a plant does not show: the batches, the second run of a batch
 with an error, the cache, the ledger, the reader of the ignore file
-(assay.readers.format_ignore), and the parts (THE PARTS of
+(assay.readers.format_ignore), and the parts (the parts of
 assay.guard.engines.meta.runner), which the rule does not read.  One case holds that the
 reader ignores a file exactly when the pinned formatter ignores it.  The cases
 that run the formatter use the pinned clang-format, which `python3
@@ -45,7 +45,7 @@ LEDGER = (
 USAGE_ERROR = 2
 # A planted ignore file: a comment, a blank line, a pattern, a negated pattern, a lone `!` and a question mark.
 IGNORE_TEXT = "# planted patterns\n\ngen/generated_*.cpp\n!keep/*.h\n!\none/?.h\n"
-# The shapes of a pattern that the reader refuses (THE SHAPES THAT THE READER REFUSES of assay.readers.format_ignore).
+# The shapes of a pattern that the reader refuses (the shapes that the reader refuses of assay.readers.format_ignore).
 REFUSED_PATTERNS = ("gen/**/a.cpp", "gen/[ab].h", "gen\\a.h", "/abs/a.h", "gen/", "gen//a.h", "./a.h", "gen/../a.h")
 
 

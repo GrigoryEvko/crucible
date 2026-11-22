@@ -9,7 +9,7 @@
 //                    the value of bare hexadecimal digits as an unsigned T,
 //                    with no "0x", and the errors of parse()
 //
-// THE GRAMMAR
+// Grammar
 //   An optional '-' for a signed T.  Then "0x" and at least one hexadecimal
 //   digit (0 to 9, a to f, A to F), or at least one decimal digit.  The text
 //   holds no white space, no '+' and no character after the last digit.  A
@@ -19,7 +19,7 @@
 //   std::from_chars with base 10, with the prefix "0x" for base 16, when
 //   the text holds no character after its last digit.
 //
-// THE ERROR
+// Error
 //   A ParseError holds a kind and a position in the text:
 //
 //   no_digit               the text ends before its first digit.  The
@@ -34,7 +34,7 @@
 // The walk stops at the first error, so a text with two errors gives the
 // error of the first one.
 //
-// THE VALUE
+// Value
 //   The value collects in T: a multiply by the base and an add of the digit
 //   for a positive text, and a multiply and a subtract for a negative text.
 //   So the minimum of a signed T reads exactly.  The first digits, which

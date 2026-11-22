@@ -1,6 +1,6 @@
 #pragma once
 
-// THE PAGE DOORS
+// Page doors
 //   The lock, the unlock, the fault in and the huge page advice of the pages
 //   of a range of memory, and the setting of transparent huge pages (THP) of
 //   the process.
@@ -8,8 +8,8 @@
 //   bytes of an object or of a run of elements as such a View.  The door file
 //   src/fixy/os/Pages.cpp issues each call with the raw primitive of
 //   foundation/os/Syscall.h, and gives the error of the kernel in a Result.
-//   A function that issues one system call NAME out of line has the name
-//   NAME_sys (THE AFFINITY DOOR of fixy/os/CpuPinned.h).
+//   A function that issues one system call name out of line has the name
+//   name_sys (the affinity door of fixy/os/CpuPinned.h).
 //
 //   The kernel keeps one lock bit for each page, and not one lock for each
 //   call.  An unlock of a range unlocks each page of the range, also a page
@@ -99,37 +99,37 @@ template <class T, std::size_t Extent>
 
 namespace detail {
 
-// Locks each page that holds a byte of the BYTES bytes at FIRST, and faults
+// Locks each page that holds a byte of the range of bytes that starts at first, and faults
 // in each page that is not in memory.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 mlock_sys(void const* first, std::size_t bytes) noexcept;
 
-// Locks each page that holds a byte of the BYTES bytes at FIRST, with the
-// flags FLAGS of mlock2.
+// Locks each page that holds a byte of the range of bytes that starts at first, with the
+// flags of mlock2.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 mlock2_sys(void const* first, std::size_t bytes, unsigned flags) noexcept;
 
-// Unlocks each page that holds a byte of the BYTES bytes at FIRST.
+// Unlocks each page that holds a byte of the range of bytes that starts at first.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 munlock_sys(void const* first, std::size_t bytes) noexcept;
 
-// Gives the advice ADVICE for each whole huge page in the BYTES bytes at
-// FIRST, and gives the count of the bytes of those huge pages.  The range is
+// Gives the given advice for each whole huge page in the range of bytes that
+// starts at first, and gives the count of the bytes of those huge pages.  The range is
 // rounded inward to huge_page_bytes, because the kernel refuses an address
 // that is not aligned to a huge page.  A range with no whole huge page gives
 // zero and makes no system call.
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 madvise_sys(void const* first, std::size_t bytes, int advice) noexcept;
 
-// Faults in for a write each page that holds a byte of the BYTES bytes at
-// FIRST (MADV_POPULATE_WRITE).  The range is rounded outward to whole pages,
+// Faults in for a write each page that holds a byte of the range of bytes that
+// starts at first (MADV_POPULATE_WRITE).  The range is rounded outward to whole pages,
 // with the size of a page from the auxiliary vector.  A count of zero makes
 // no system call.  After the advice, mincore reads the residency of the first
 // page, and a page with no frame gives eopnotsupp.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 populate_sys(void const* first, std::size_t bytes) noexcept;
 
-// Reads the THP setting of the process, then sets it to NEXT, and gives the
+// Reads the THP setting of the process, then sets it to next, and gives the
 // setting of the read.  A refused set gives its error and changes nothing.
 [[nodiscard]] ::foundation::core::Result<ThpSetting, ::foundation::os::Errno> prctl_sys(ThpSetting next) noexcept;
 

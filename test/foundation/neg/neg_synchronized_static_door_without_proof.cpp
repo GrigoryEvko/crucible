@@ -1,9 +1,9 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A static member function that takes the object through a reference that is
 // not const writes the object as a door does.  The door reset writes the plain
-// count with no proof of the class, so the check refuses it (THE DOORS OF A
-// SYNCHRONIZED CLASS of foundation/Transfer.h).
+// count with no proof of the class, so the check refuses it (the doors of a
+// synchronized class of foundation/Transfer.h).
 //
 // Expected diagnostic: a door is not const and takes no proof, and the
 // diagnostic names the static door reset.

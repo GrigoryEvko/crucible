@@ -1,4 +1,4 @@
-// The level note of the two vessel libraries (THE NOTE of level_note.h).
+// The level note of the two vessel libraries (the note of level_note.h).
 //
 // Each vessel library compiles this file with its own flags, so its note
 // names its own level.  CMake gives this file CRUCIBLE_X86_LEVEL_EXACT, the

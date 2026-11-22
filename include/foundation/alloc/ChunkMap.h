@@ -1,25 +1,25 @@
 #pragma once
 
 // The window of the allocator of the base: its geometry, the id of a heap,
-// the owner entry of each chunk, and the record of a window (THE WINDOW).
+// the owner entry of each chunk, and the record of a window (the window).
 //
 //   kChunkShift, kChunkBytes       a chunk: 2 MiB at an address that is a
 //                                  whole count of 2 MiB
 //   kUnitsPerChunk                 the units of 64 KiB of one chunk: 32
 //   kExtentShift, kExtentBytes     an extent: 1 GiB, 512 chunks
 //   kChunksPerExtent               512.  The last chunk of an extent is its
-//                                  guard (THE EXTENT)
+//                                  guard (the extent)
 //   AddressWord                    the address of a byte of a window, as a
 //                                  64-bit word that no path reads through
-//   strip_tag(address)             the address with no tag byte (THE TAG
-//                                  BYTE)
+//   strip_tag(address)             the address with no tag byte (the tag
+//                                  byte)
 //   HeapId                         the id of a heap, 1 to 65,534
 //   ChunkOwner                     the entry of a chunk in the chunk map: no
 //                                  owner, a heap, or a chunk of a span
 //   ChunkIndex, UnitIndex          a chunk of a window, a unit of a chunk
 //   BiasedChunkMap                 the word that reads the owner of the
 //                                  chunk of an address with a shift and a
-//                                  load (THE MAP READ)
+//                                  load (the map read)
 //   WindowBase, RegionBase         the first byte of a window and of its
 //                                  metadata region, two roles of an
 //                                  AddressWord
@@ -31,7 +31,7 @@
 //                                  host, and slots 1 to 63 hold the windows
 //                                  of the devices
 //
-// THE WINDOW
+// Window
 //   One range of address space holds each small, medium and large block of
 //   the host.  A window is a whole count of extents, and an extent is a whole
 //   count of chunks.  So the chunk of a block is its address less the base of
@@ -39,13 +39,13 @@
 //   own, with a record of its own in the same table, so two devices never
 //   share a chunk map.
 //
-// THE EXTENT
+// Extent
 //   An extent of 1 GiB holds 512 chunks.  Its last chunk is never committed,
 //   so a linear overflow out of the last block of one extent faults in the
 //   guard before it reaches the next extent.  A window of N extents then
 //   holds 511 * N chunks that a heap can own.
 //
-// THE OWNER ENTRY
+// Owner entry
 //   The chunk map holds one ChunkOwner of 16 bits for each chunk of a window.
 //   Zero means no owner, so a map that the kernel gives as zero pages is a
 //   map of free chunks.  The value 0xFFFF means a chunk of a span.  Each
@@ -54,7 +54,7 @@
 //   of a host thread can name a heap of a device.  HeapId is not the entry:
 //   the niche of an Option<HeapId> is 0xFFFF, the value of a span.
 //
-// THE MAP READ
+// Map read
 //   A BiasedChunkMap holds the address of the map less two bytes for each
 //   chunk below the base of the window.  The entry of an address is then at
 //   the word plus (address >> kChunkShift) * 2: one shift and one load with
@@ -71,7 +71,7 @@
 //   block of it ended.  A thread that frees a block got the block through a
 //   publish that happens after the write, so the read is a plain load.
 //
-// THE TAG BYTE
+// Tag byte
 //   On aarch64 a load or a store ignores the top byte of its address (top
 //   byte ignore), so a pointer can hold a tag in its bits 56 to 63, as the
 //   memory tags of MTE and of HWASan do.  The chunk of a tagged address is
@@ -115,8 +115,8 @@ inline constexpr std::uint32_t kChunksPerExtent = std::uint32_t{1} << (kExtentSh
 enum class AddressWord : std::uint64_t {
 };
 
-// The top bits of an address that hold a tag and name no byte (THE TAG
-// BYTE): 8 on aarch64, and none on x86-64.  The other bits name the byte.
+// The top bits of an address that hold a tag and name no byte (the tag
+// byte): 8 on aarch64, and none on x86-64.  The other bits name the byte.
 #if defined(__aarch64__)
 inline constexpr std::uint32_t kTagBits = 8;
 #else
@@ -124,7 +124,7 @@ inline constexpr std::uint32_t kTagBits = 0;
 #endif
 inline constexpr std::uint64_t kAddressMask = ~std::uint64_t{0} >> kTagBits;
 
-// The address with no tag byte (THE TAG BYTE).  Complexity: O(1), one and
+// The address with no tag byte (the tag byte).  Complexity: O(1), one and
 // on aarch64, and no instruction on x86-64.
 [[nodiscard]] constexpr AddressWord strip_tag(AddressWord address) noexcept {
     return AddressWord{static_cast<std::uint64_t>(address) & kAddressMask};
@@ -149,7 +149,7 @@ using RegionBase = ::foundation::core::Side<side::RegionBase, AddressWord>;
 using WindowLength = ::foundation::core::Side<side::WindowLength, ::foundation::core::ByteCount>;
 using RegionLength = ::foundation::core::Side<side::RegionLength, ::foundation::core::ByteCount>;
 
-// The id of a heap: 1 to kLastHeapId (THE OWNER ENTRY).
+// The id of a heap: 1 to kLastHeapId (the owner entry).
 struct HeapIdTag final {};
 using HeapId = ::foundation::core::Id<HeapIdTag, std::uint16_t>;
 
@@ -166,7 +166,7 @@ using HeapSlot = ::foundation::core::Index<kHeapCount>;
     return HeapId{static_cast<std::uint16_t>(slot.raw() + kFirstHeapId)};
 }
 
-// The entry of a chunk in the chunk map (THE OWNER ENTRY).  Each value
+// The entry of a chunk in the chunk map (the owner entry).  Each value
 // between none and span is the id of a heap.
 enum class ChunkOwner : std::uint16_t {
     none = 0,
@@ -189,7 +189,7 @@ using ChunkIndex = ::foundation::core::Id<ChunkIndexTag, std::uint32_t>;
 // The index of a unit of 64 KiB in its chunk.
 using UnitIndex = ::foundation::core::Index<kUnitsPerChunk>;
 
-// True when the chunk is the guard of its extent (THE EXTENT).
+// True when the chunk is the guard of its extent (the extent).
 [[nodiscard]] constexpr bool is_guard_chunk(ChunkIndex chunk) noexcept {
     return (chunk.raw() & (kChunksPerExtent - 1)) == kChunksPerExtent - 1;
 }
@@ -205,7 +205,7 @@ struct WindowRecordDoor;
 
 }  // namespace detail
 
-// The word of the chunk map of one window (THE MAP READ).  The empty map
+// The word of the chunk map of one window (the map read).  The empty map
 // holds the word zero, and it names no window: the sentinel heap holds it
 // until the init of the root.  A forged word would read each address, so
 // the map and the record below hold a byte_seal of foundation/ByteSeal.h:
@@ -223,7 +223,7 @@ public:
     // The entry of the chunk of an address of the window of the map, with or
     // without a tag byte.  The caller proves that the address is inside the
     // window.  Complexity: O(1), one shift and one load on x86-64, one
-    // bit-field extract and one load on aarch64 (THE TAG BYTE).
+    // bit-field extract and one load on aarch64 (the tag byte).
     [[nodiscard]] ChunkOwner owner_of(AddressWord address) const noexcept {
         // The shift left drops the tag, as strip_tag does.  GCC makes this
         // form one ubfx and one load with a scaled index on aarch64.  A mask
@@ -248,7 +248,7 @@ private:
 };
 
 // The record of one window: its base, its length, its biased map and its
-// metadata region (THE WINDOW).  The empty record names no window and holds
+// metadata region (the window).  The empty record names no window and holds
 // no byte.  Each field is a word of 8 bytes, so a copy of a record moves
 // whole words.
 class WindowRecord final {
@@ -273,7 +273,7 @@ public:
     [[nodiscard]] constexpr bool is_empty() const noexcept { return length_ == 0; }
 
     // True when the address, with or without a tag byte, is inside the
-    // window (THE TAG BYTE).  One subtraction and one compare, and the empty
+    // window (the tag byte).  One subtraction and one compare, and the empty
     // record holds no address.
     [[nodiscard]] constexpr bool is_in_window(AddressWord address) const noexcept {
         return static_cast<std::uint64_t>(strip_tag(address)) - base_ < length_;
@@ -343,7 +343,7 @@ enum class WindowTableError : std::uint8_t {
     table_full,
 };
 
-// The record of each window (THE WINDOW).  A new table holds the empty record
+// The record of each window (the window).  A new table holds the empty record
 // in each slot.  The window door writes the record of a slot one time, before
 // it gives a block of the window: the record of the host at the init of the
 // root, and the record of a device at the init of the window of the device.

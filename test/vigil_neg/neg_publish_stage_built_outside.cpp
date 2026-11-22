@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The publish-stage proof admits a write to the state that the publish
 // stage owns, such as the transaction log of a Vigil.  Only the background

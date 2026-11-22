@@ -3,7 +3,7 @@
 // __atomic operation of 16 bytes, so libatomic is the speed of each program
 // that holds a std::atomic of 16 bytes.
 //
-// THE ROWS
+// Rows
 //   On one thread: a load, a store, a compare-and-swap that stores and one
 //   that refuses, of the instruction form, of the lock form and of libatomic.
 //   Each row of a form gives the ratio of its median to the median of the
@@ -15,10 +15,10 @@
 //   through a compare-and-swap writes the line, so two readers take turns to
 //   own it, and a vector move keeps the line shared.
 //
-//   The first line tells the load form of the host (THE LOAD AND THE STORE ON
+//   The first line tells the load form of the host (the load and the store on
 //   X86-64 of the header).
 //
-// THE CORES
+// Cores
 //   The bench states CORES 2 in bench/CMakeLists.txt.  loop bench gives it two
 //   isolated cores, and each thread pins itself to the core of its slot.  A run
 //   with no claim, such as a run under ctest, pins no thread.
@@ -81,7 +81,7 @@ struct FormRows final {
     bench::Report swap_refuses{};
 };
 
-// THE LAYOUT
+// Layout
 //   Each measured operation is one call to a function of its own, aligned to
 //   64 bytes and never inlined, in each form, so a change of other code does
 //   not move one form against the other.  With the operation inlined in the

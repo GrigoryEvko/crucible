@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_hot_region_registry_handle refuses a type that is not an
 // execution context at all.  IsExecCtx<Ctx> fails before the row check

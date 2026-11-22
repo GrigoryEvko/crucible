@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The member of the delegation door is public, and it states the whole
 // gate of mint_delegated_session.  A handle inside a Loop does not state

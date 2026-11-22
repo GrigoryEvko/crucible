@@ -3,7 +3,7 @@
 usage: loop syntax BUILD_DIR [-j JOBS]
        loop syntax --changed [--root ROOT]
 
-THE PARSE BUILD
+Parse build
     A parse build is a configured build directory with CRUCIBLE_SYNTAX_ONLY
     (assay.core.configuration.is_parse_build), such as a build of the presets
     syntax-x86-64 and syntax-aarch64.  It compiles the preprocessor arms of
@@ -14,7 +14,7 @@ THE PARSE BUILD
     findings in a configuration of their own (CLAUDE.md section XXII, The
     ratchet).
 
-THE RUN
+Run
     1. Ninja builds the target build.ninja first.  A change of a glob, a
        CMake file, the plugin or the rule table then makes CMake configure
        the build again.  Then the run reads the graph of the build, and
@@ -36,28 +36,28 @@ THE RUN
     3. Each compile of an object of all that loads the plugin runs with
        -fsyntax-only and with no output.  It writes the dependency file
        DEPENDENCY_FILE of its report directory, and it gets the plugin
-       argument out= of that directory (assay.readers.sections, THE REPORT OF
-       A PARSE BUILD).  A cross compiler has no native target, and it
+       argument out= of that directory (assay.readers.sections, the report of
+       a parse build).  A cross compiler has no native target, and it
        refuses -march=native.  For such a compiler, the parse drops each
        native flag of NATIVE_FLAGS that a bench target or the flag matrix
        gives.  The compiler then uses its default target.  After a parse
        with the exit 0, the run writes the stamp of the compile command into
        the stamp file of the report directory.  It also writes the key of the
-       parse into KEY_FILE (THE KEPT REPORTS).  At most JOBS parses run at
-       one time, and a jobserver can give fewer (THE JOBSERVER).  An
+       parse into KEY_FILE (the kept reports).  At most JOBS parses run at
+       one time, and a jobserver can give fewer (the jobserver).  An
        interrupt cancels each parse that did not start, and the run ends
        after the parses that run.
     4. The run prints the number of units, the number of kept reports and
        each unit that does not parse.  It also prints the wall time and the
        CPU time of the parses, and the time of step 1.
     Then `guard check --rule quarantine --build-dir BUILD_DIR` reads the
-    reports (assay.guard.engines.plugin.runner, THE SECTIONS).  One run of
+    reports (assay.guard.engines.plugin.runner, the sections).  One run of
     a parse build holds the lock LOCK_FILE of the build, and a second run
     or a check waits for it.  Two runs of `loop test` in two build
     directories can start a parse of one parse build at the same time.  The
     lock keeps the two parses apart.
 
-THE JOBSERVER
+Jobserver
     MAKEFLAGS can name the FIFO of a jobserver, as the gate of `loop land`
     gives it (assay.core.jobserver).  The parses of step 3 then share the
     jobs of that server with each other process of the server.  Each parse
@@ -66,9 +66,9 @@ THE JOBSERVER
     jobserver only with no -j.  With no such MAKEFLAGS, the parses use no
     slot, and the builds get -j JOBS.
 
-THE CHECK
-    plan_of() does step 1 of THE RUN, and it finds the units that keep their
-    reports (THE KEPT REPORTS).  It parses nothing.  locked_plan() calls it
+Check
+    plan_of() does step 1 of the run, and it finds the units that keep their
+    reports (the kept reports).  It parses nothing.  locked_plan() calls it
     with the lock of the build.  The rule parse-builds calls it, and it
     refuses a parse build with a unit that has no current report
     (assay.guard.engines.buildsys.parse_builds).
@@ -80,12 +80,12 @@ THE CHECK
     runs the parse after its build, and the test of the rule only reads the
     reports.
 
-THE KEPT REPORTS
+Kept reports
     The key of a parse is the hash of the words of the parse, of the enforce
     rows of the build (ENFORCE_FILE) and of the bytes of the plugin of the
     build (PLUGIN_FILE).  The stamp in the words names the key of the sources
     of the plugin, and a stop of a configure could leave a plugin of different
-    sources under that stamp (THE KEY OF THE PLUGIN of
+    sources under that stamp (the key of the plugin of
     utils/tools/quarantine/Quarantine.cmake).  A report of a different plugin
     then never stays.  KEY_FILE also holds
     the time when the parse started.  That time is the change time of
@@ -106,11 +106,11 @@ THE KEPT REPORTS
     parse, as in a build of Ninja.  Complexity: one stat of each different
     dependency.
 
-THE CHANGE OF AN ARM
+Change of an arm
     An arm is the code of a preprocessor conditional on a macro of an
     architecture or of an ISA extension (is_arm_macro()).  Examples of such
     a macro are __aarch64__, __AVX2__ and __ARM_NEON.  arm_files() reads the
-    change of a tree (assay.core.git, THE CHANGE) and the parse tree of each
+    change of a tree (assay.core.git, the change) and the parse tree of each
     changed C++ file (assay.readers.tsast).  It gives each such file with an
     arm in its copy in the working tree or at the base.  A change that
     removes an arm is then a change of an arm too.
@@ -124,7 +124,7 @@ THE CHANGE OF AN ARM
     prints the command that configures each parse build that is not
     configured (assay.loop.affected).  `loop test` runs `loop syntax` on each
     configured parse build after its build, also for a change with no arm,
-    and the rule parse-builds judges its reports (THE CHECK).
+    and the rule parse-builds judges its reports (the check).
     build_directory() gives the build directory of a preset from the presets
     files of a tree.
 
@@ -154,17 +154,17 @@ from assay.readers import sections as quarantine_sections
 if TYPE_CHECKING:
     from assay.readers import tsast
 
-# The prefix of the name of each input target (THE RUN, step 1).
+# The prefix of the name of each input target (the run, step 1).
 INPUT_PREFIX = "cmake_object_order_depends_target_"
 REGENERATE_TARGET = ninja.GRAPH_NAME
 # The words of a compile command that a parse drops with the word that follows each one.
 DROPPED_WITH_VALUE = frozenset({"-o", "-MF", "-MT", "-MQ"})
 # The words of a compile command that a parse drops.
 DROPPED = frozenset({"-c", "-MD", "-MMD"})
-# The native flags that a parse drops for a compiler that refuses them (THE RUN).
+# The native flags that a parse drops for a compiler that refuses them (the run).
 NATIVE_FLAGS = frozenset({"-march=native", "-mcpu=native", "-mtune=native"})
-# The dependency file, the key and the start mark of the parse of a unit, in its report directory (THE KEPT
-# REPORTS).
+# The dependency file, the key and the start mark of the parse of a unit, in its report directory (the kept
+# reports).
 DEPENDENCY_FILE = "parse.d"
 KEY_FILE = "key"
 STARTED_FILE = "started"
@@ -177,11 +177,11 @@ PARSE_TIMEOUT_S = 900.0
 INPUT_TIMEOUT_S = 1800.0
 # The lines of the errors of a unit that the run prints.
 SHOWN_ERROR_LINES = 12
-# The parses at one time, the default of -j.  Step 1 of THE RUN builds with this job count in the check too.
+# The parses at one time, the default of -j.  Step 1 of the run builds with this job count in the check too.
 JOBS = proc.DEFAULT_JOBS
-# The lock of the runs and the checks of one parse build, below the build directory (THE RUN).
+# The lock of the runs and the checks of one parse build, below the build directory (the run).
 LOCK_FILE = Path("quarantine") / "syntax.lock"
-# The presets of the parse builds, which a change of an arm makes necessary (THE CHANGE OF AN ARM).
+# The presets of the parse builds, which a change of an arm makes necessary (the change of an arm).
 PARSE_PRESETS = ("syntax-x86-64", "syntax-aarch64")
 # The architectures of the macros __NAME__ and __NAME that the compiler gives (is_arm_macro()).
 ARCHITECTURES = frozenset(
@@ -266,7 +266,7 @@ class Parsed:
 
 @dataclass(frozen=True, slots=True)
 class Planned:
-    """One unit that a run parses: the unit, the words of its parse and the key of the parse (THE KEPT REPORTS)."""
+    """One unit that a run parses: the unit, the words of its parse and the key of the parse (the kept reports)."""
 
     unit: Unit
     words: tuple[str, ...]
@@ -275,10 +275,10 @@ class Planned:
 
 @dataclass(frozen=True, slots=True)
 class Plan:
-    """The decision of THE KEPT REPORTS for each unit of a parse build (THE CHECK).
+    """The decision of the kept reports for each unit of a parse build (the check).
 
     `kept` holds each unit that keeps its report, and `planned` holds each other unit.  `report_dirs` gives the
-    report directory of each unit, and `input_s` the wall time of step 1 of THE RUN.
+    report directory of each unit, and `input_s` the wall time of step 1 of the run.
     """
 
     kept: tuple[Unit, ...]
@@ -288,7 +288,7 @@ class Plan:
 
 
 def refuses_native(compiler: str) -> bool:
-    """Return True when the compiler refuses -march=native, as a cross compiler does (THE RUN).
+    """Return True when the compiler refuses -march=native, as a cross compiler does (the run).
 
     A compiler that cannot run refuses it too, and its parse then gives the error of the compiler.
     """
@@ -336,14 +336,14 @@ def parse_words(words: tuple[str, ...], report_dir: Path, drops_native: bool = F
 
 
 def words_key(words: list[str], build_hash: str) -> str:
-    """Return the hash of the words of a parse and of the build_key() of the build (THE KEPT REPORTS)."""
+    """Return the hash of the words of a parse and of the build_key() of the build (the kept reports)."""
     import hashlib
 
     return hashlib.sha256("\0".join([*words, build_hash]).encode("utf-8", "surrogateescape")).hexdigest()
 
 
 def build_key(build_dir: Path) -> str:
-    """Return the hash of the enforce rows and of the bytes of the plugin of a build (THE KEPT REPORTS).
+    """Return the hash of the enforce rows and of the bytes of the plugin of a build (the kept reports).
 
     A file that is not there gives an empty part.  Complexity: one read of each of the two files.
     """
@@ -359,7 +359,7 @@ def build_key(build_dir: Path) -> str:
 
 
 def is_kept(unit: Unit, report_dir: Path, key: str, changed_ns: dict[str, int | None]) -> bool:
-    """Return True when the report of a unit can stay, with no parse (THE KEPT REPORTS).
+    """Return True when the report of a unit can stay, with no parse (the kept reports).
 
     `changed_ns` holds the change time of each dependency that an earlier call read, or None for a path with no file.
     Complexity: linear in the dependencies of the unit, one stat of each new one.
@@ -393,7 +393,7 @@ def is_kept(unit: Unit, report_dir: Path, key: str, changed_ns: dict[str, int | 
 
 
 def require_parse_build(build_dir: Path) -> None:
-    """Refuse a build directory that is no parse build (THE PARSE BUILD).
+    """Refuse a build directory that is no parse build (the parse build).
 
     Raises:
         ParseError: If the CMake cache of the build does not set SYNTAX_OPTION
@@ -428,7 +428,7 @@ def units_of(build_dir: Path, root: Path) -> list[Unit]:
 
 
 def build_input_targets(build_dir: Path, jobs: int) -> float:
-    """Configure the build again if it is stale or has no graph, then build each input target with Ninja (THE RUN, step 1).
+    """Configure the build again if it is stale or has no graph, then build each input target with Ninja (the run, step 1).
 
     Return the wall time of the two builds.
 
@@ -456,7 +456,7 @@ def build_input_targets(build_dir: Path, jobs: int) -> float:
 
 
 def build_job_words(jobs: int, environment: Mapping[str, str]) -> list[str]:
-    """Return the words of the jobs of `cmake --build`: none with a jobserver, else -j JOBS (THE JOBSERVER).
+    """Return the words of the jobs of `cmake --build`: none with a jobserver, else -j JOBS (the jobserver).
 
     ninja obeys the jobserver of MAKEFLAGS only when its command line gives no -j.
     """
@@ -464,7 +464,7 @@ def build_job_words(jobs: int, environment: Mapping[str, str]) -> list[str]:
 
 
 def _configure(cmake: str, build_dir: Path) -> None:
-    """Configure a build with a CMake cache and no graph again, from the source directory of its cache (THE RUN, step 1).
+    """Configure a build with a CMake cache and no graph again, from the source directory of its cache (the run, step 1).
 
     Raises:
         ParseError: If the configure does not run or does not exit with 0
@@ -487,7 +487,7 @@ def _configure(cmake: str, build_dir: Path) -> None:
 
 
 def _build_targets(cmake: str, build_dir: Path, jobs: int, targets: list[str], what: str) -> None:
-    """Build the targets with `cmake --build`, for the build of WHAT in an error.
+    """Build the targets with `cmake --build`, for the build of what in an error.
 
     Raises:
         ParseError: If the build does not run or does not exit with 0
@@ -510,8 +510,8 @@ def _build_targets(cmake: str, build_dir: Path, jobs: int, targets: list[str], w
 def parse_unit(unit: Unit, words: list[str], key: str, report_dir: Path) -> Parsed:
     """Parse one unit into its report directory, and write its stamp and its key after a parse with the exit 0.
 
-    The run removes the key and the stamp before the parse, and it reads the start time from STARTED_FILE (THE KEPT
-    REPORTS).
+    The run removes the key and the stamp before the parse, and it reads the start time from STARTED_FILE (the kept
+    reports).
     """
     report_dir.mkdir(parents=True, exist_ok=True)
     (report_dir / KEY_FILE).unlink(missing_ok=True)
@@ -538,7 +538,7 @@ def parse_unit(unit: Unit, words: list[str], key: str, report_dir: Path) -> Pars
 
 
 def parse_in_slot(item: Planned, report_dir: Path, client: jobserver.Client | None) -> Parsed:
-    """Parse one unit of the plan, and hold one slot of the jobserver for the parse when a client is given (THE JOBSERVER)."""
+    """Parse one unit of the plan, and hold one slot of the jobserver for the parse when a client is given (the jobserver)."""
     if client is None:
         return parse_unit(item.unit, list(item.words), item.key, report_dir)
     with client.held():
@@ -546,7 +546,7 @@ def parse_in_slot(item: Planned, report_dir: Path, client: jobserver.Client | No
 
 
 def prune_reports(build_dir: Path, kept_dirs: set[Path]) -> None:
-    """Remove each report directory of SYNTAX_DIRECTORY that no unit of the build has (THE RUN, step 2).
+    """Remove each report directory of SYNTAX_DIRECTORY that no unit of the build has (the run, step 2).
 
     A report directory holds the stamp file, the key file or the dependency file, and the directory of an object holds
     no other report directory.  Complexity: linear in the files of SYNTAX_DIRECTORY.
@@ -565,7 +565,7 @@ def prune_reports(build_dir: Path, kept_dirs: set[Path]) -> None:
 def partition(
     units: Sequence[Unit], report_dirs: Mapping[Unit, Path], native_refusers: frozenset[str], build_hash: str
 ) -> tuple[tuple[Unit, ...], tuple[Planned, ...]]:
-    """Return the units that keep their reports, and the parse of each other unit (THE KEPT REPORTS).
+    """Return the units that keep their reports, and the parse of each other unit (the kept reports).
 
     `native_refusers` holds each compiler that refuses -march=native, and `build_hash` is the build_key() of the
     build.  Complexity: linear in the units and their dependencies, one stat of each different dependency.
@@ -585,7 +585,7 @@ def partition(
 
 @contextlib.contextmanager
 def locked(build_dir: Path) -> Iterator[None]:
-    """Hold the lock LOCK_FILE of a parse build for the block, and wait while a different process holds it (THE RUN)."""
+    """Hold the lock LOCK_FILE of a parse build for the block, and wait while a different process holds it (the run)."""
     path = build_dir / LOCK_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as lock:
@@ -594,7 +594,7 @@ def locked(build_dir: Path) -> Iterator[None]:
 
 
 def plan_of(build_dir: Path, root: Path, jobs: int) -> Plan:
-    """Do step 1 of THE RUN, and find the units of a parse build that keep their reports (THE CHECK).
+    """Do step 1 of the run, and find the units of a parse build that keep their reports (the check).
 
     The caller holds the lock of the build (locked()).  Complexity: one build of the input targets, one compile of a
     probe for each compiler, and partition().
@@ -612,7 +612,7 @@ def plan_of(build_dir: Path, root: Path, jobs: int) -> Plan:
 
 
 def locked_plan(build_dir: Path, root: Path, jobs: int) -> Plan:
-    """Return the plan of a parse build, with the lock of the build (THE CHECK).  The call parses nothing.
+    """Return the plan of a parse build, with the lock of the build (the check).  The call parses nothing.
 
     Raises:
         ParseError: If the build is no parse build, step 1 fails, or the units of the build cannot be read
@@ -623,7 +623,7 @@ def locked_plan(build_dir: Path, root: Path, jobs: int) -> Plan:
 
 
 def run(build_dir: Path, root: Path, jobs: int) -> int:
-    """Do the run of a parse build (THE RUN), and print what it did.
+    """Do the run of a parse build (the run), and print what it did.
 
     Returns:
         0 when each unit parses, 1 when a unit does not parse or a step fails
@@ -680,7 +680,7 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
 
 
 def is_arm_macro(name: str) -> bool:
-    """Return True for a macro of an architecture or of an ISA extension that a compiler gives (THE CHANGE OF AN ARM).
+    """Return True for a macro of an architecture or of an ISA extension that a compiler gives (the change of an arm).
 
     The macros are __NAME__ and __NAME of ARCHITECTURES, each macro with the prefix ARM_PREFIX, and each macro of
     OTHER_ARCHITECTURES.  A macro __NAME__ of an ISA extension of ISA_FAMILIES or ISA_EXTENSIONS is one too.
@@ -698,7 +698,7 @@ def is_arm_macro(name: str) -> bool:
 
 
 def arm_macros(tree: tsast.Tree) -> frozenset[str]:
-    """Return each macro of is_arm_macro() that a preprocessor condition of a parse tree names (THE CHANGE OF AN ARM).
+    """Return each macro of is_arm_macro() that a preprocessor condition of a parse tree names (the change of an arm).
 
     A comment and a string hold no identifier node.  A macro name in one then counts for nothing.  Complexity: linear
     in the nodes of the tree.
@@ -716,7 +716,7 @@ def arm_macros(tree: tsast.Tree) -> frozenset[str]:
 
 
 def arm_files(root: Path) -> dict[str, frozenset[str]]:
-    """Return each changed C++ file of a tree that holds an arm, with the macros of its arms (THE CHANGE OF AN ARM).
+    """Return each changed C++ file of a tree that holds an arm, with the macros of its arms (the change of an arm).
 
     The macros of a file are those of its copy in the working tree and of its copy at the base of the change.  A tree
     with no base of a change gives no file.  Complexity: one diff, one read of each changed C++ file at the base, and
@@ -758,7 +758,7 @@ def arm_files(root: Path) -> dict[str, frozenset[str]]:
 
 
 def build_directory(root: Path, preset: str) -> Path:
-    """Return the build directory of a configure preset of the presets files of a tree (THE CHANGE OF AN ARM).
+    """Return the build directory of a configure preset of the presets files of a tree (the change of an arm).
 
     assay.readers.cmake gives the binaryDir of the preset or of a parent, with its macros expanded.
 

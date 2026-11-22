@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_trace_ring_spsc — TraceRing SPSC append/drain invariants.
 //
-// Drives the SPSC ring from a SINGLE thread (producer and consumer
+// Drives the SPSC ring from a single thread (producer and consumer
 // serialised).  Real-world cross-thread atomicity is covered by the
 // TSan suite + test_trace_ring.cpp's jthread producer/consumer — this
 // harness hunts for algorithmic/structural defects in the ring
@@ -35,7 +35,7 @@
 //   - Producer forgetting to update head on success, or consumer
 //     forgetting to update tail (one-directional cursor desync).
 //   - Parallel-array slot slip (meta_starts[slot] reading from a
-//     DIFFERENT slot than entries[slot] after a wrap).
+//     different slot than entries[slot] after a wrap).
 //   - `reset()` failing to zero head/tail/cached_tail_ — next
 //     append would inherit stale head and confuse the invariant.
 //   - Byte-level Entry mismatch (a misaligned memcpy, partial
@@ -67,7 +67,7 @@ using crucible::OpDepth;
 // avoid heap in the input (random_input.h convention).
 //
 // Sizing constraint: Schedule is passed by value from the generator
-// into the runner's stack frame, AND the check lambda allocates an
+// into the runner's stack frame, and the check lambda allocates an
 // equally-sized mirror[] on its own frame.  Each MirrorSlot holds a
 // 64-B-aligned Entry → 128 B once padded.  At MIRROR_CAPACITY=256 the
 // per-iteration zero-init cost is 32 KB × 2 = 64 KB of memset, which
@@ -161,7 +161,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
     // ── One-shot stress: fill-to-capacity + (CAP+1)-th rejects ─────
     //
-    // Runs BEFORE the property loop.  The property loop uses
+    // Runs before the property loop.  The property loop uses
     // MIRROR_CAPACITY = 4K slots, which can't reach CAP = 64K, so
     // the capacity-respect property for the full ring has to be
     // exercised separately.  We also seed a partial drain first so
@@ -283,7 +283,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             uint32_t mirror_head = 0;
             uint32_t mirror_tail = 0;
 
-            // Track the index into s.payload for the NEXT append.
+            // Track the index into s.payload for the next append.
             uint32_t pay_idx = 0;
 
             // Monotonicity witnesses.

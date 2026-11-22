@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Violation: the checked mint of ValidLayout receives int8_t{-1} in constant
 // evaluation.  Layout is dense, from Strided = 0 to SparseBsc = 5, and -1 is

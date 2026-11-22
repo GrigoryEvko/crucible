@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit gives the producer end of an SPSC channel a protocol of its own, so
 // the two ends of the channel would run protocols that are not duals.  The

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // source::Singleton is a provenance tag of its own.  A table pointer
 // tagged source::External must not satisfy a consumer that requires the

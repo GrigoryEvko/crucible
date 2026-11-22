@@ -6,7 +6,7 @@
 // Catches:
 //   - A regression in the reflected implementation.  Its bit pattern
 //     differs from the packed one on purpose, so the test checks the
-//     DIFFERENTIAL: two inputs are distinct under one implementation
+//     Differential: two inputs are distinct under one implementation
 //     exactly when they are distinct under the other
 //   - Future refactors that accidentally restore commutativity in
 //     feedback_signature (order-sensitive in current impl)
@@ -16,9 +16,9 @@
 // Strategy: re-implement the packed version inline in the
 // harness (same code as bench/bench_reflect.cpp).  For each random
 // input, compare:
-//   • reflect-version(a) vs reflect-version(b) — should DIFFER for
+//   • reflect-version(a) vs reflect-version(b) — should differ for
 //     distinct (a, b)
-//   • packed-version(a) vs packed-version(b) — should DIFFER too
+//   • packed-version(a) vs packed-version(b) — should differ too
 //   • If reflect says equal but packed says different (or vice versa),
 //     the two implementations disagree on what counts as "structural
 //     equality" — bug somewhere.
@@ -94,14 +94,14 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             if (feedback_signature_packed(a) != a_packed) return false;
 
             // Cross-implementation agreement on structural equality:
-            // both must agree whether a and b produce the SAME hash
+            // both must agree whether a and b produce the same hash
             // within their respective implementation.  If reflect
             // says "a and b distinct" but packed says "a and b same"
             // (or vice versa), the implementations disagree on what
             // counts as structural identity → bug.
             //
-            // (The hash VALUES of the two implementations differ, and
-            // that is expected.  The EQUIVALENCE RELATION of each
+            // (The hash values of the two implementations differ, and
+            // that is expected.  The equivalence relation of each
             // implementation must be the same.)
             const bool refl_says_eq = (a_refl == b_refl);
             const bool packed_says_eq = (a_packed == b_packed);

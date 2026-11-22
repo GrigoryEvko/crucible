@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The snapshot mint takes netdev counters under the kernel telemetry
 // source tag.  Raw counters do not convert to them.

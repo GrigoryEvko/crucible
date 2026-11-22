@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The effect row lattice maps each atom to one bit of a uint64_t carrier,
 // and the underlying type of an atom is uint8_t.

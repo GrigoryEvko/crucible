@@ -1,7 +1,7 @@
 // A word protocol states that only the empty value of the niche gives the
 // empty word, but the niche of the value states nothing, so a door can build
 // a value whose word is the empty word.  The gate of the protocol refuses the
-// statement (THE WORD OF A STATED PAYLOAD of foundation/core/Atomic.h), so
+// statement (the word of a stated payload of foundation/core/Atomic.h), so
 // the cell of an Option of the value does not compile.
 
 #include <foundation/core/Atomic.h>

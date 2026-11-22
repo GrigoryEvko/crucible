@@ -1,4 +1,4 @@
-// The rows of the base (THE UNITS of bench_alloc_scaling_rows.h), with the
+// The rows of the base (the units of bench_alloc_scaling_rows.h), with the
 // box channel rows, which only the base has.
 
 #include <fixy/concurrent/PermissionedBoxChannel.h>
@@ -41,7 +41,7 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
 }
 
 // The window of one box channel row: the main thread mints each Box and
-// pushes it, and a worker beside it pops each Box and drops it (THE ROWS).
+// pushes it, and a worker beside it pops each Box and drops it (the rows).
 // The worker runs through run_beside of fixy/os/ThreadTasks.h, and its body
 // owns the consumer end of the channel.
 [[nodiscard]] RowResult run_box_channel_row(bench::Spread const& spread, Placement placement,

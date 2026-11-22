@@ -1,4 +1,4 @@
-// The tree removal of fixy/os/Fs.h (THE TREE REMOVAL): remove_tree_at and
+// The tree removal of fixy/os/Fs.h (the tree removal): remove_tree_at and
 // remove_entries_below.
 //
 // The setup test test_os_remove_tree_setup makes the directory

@@ -48,28 +48,28 @@ enum class FileMode : std::uint32_t {
 
 namespace detail {
 
-// Opens PATH, which a zero ends, relative to the current directory with the
-// open flags FLAGS of foundation/os/OpenFlags.h.  The kernel reads MODE, the
-// permission bits of a file that the open makes, only when FLAGS holds
+// Opens path, which a zero ends, relative to the current directory with the
+// open flags of foundation/os/OpenFlags.h.  The kernel reads mode, the
+// permission bits of a file that the open makes, only when flags holds
 // kOpenCreate.  The result is the descriptor, or the error of the kernel.  A
 // door class of a Handle is the one caller that keeps the descriptor.
 [[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> open_descriptor_(char const* path, int flags,
                                                                                         std::uint32_t mode) noexcept;
 
-// Closes DESCRIPTOR.  The kernel releases the descriptor also when the close
+// Closes descriptor.  The kernel releases the descriptor also when the close
 // reports an error, so the caller has no error that it can act on, and the
 // door does not report one.
 void close_descriptor_(int descriptor) noexcept;
 
-// Sends the ioctl request REQUEST to DESCRIPTOR, with the address ARGUMENT
+// Sends the ioctl request to descriptor, with the address argument
 // of the memory that the request reads or writes.  The door is only for a
 // request that the kernel answers at once, such as a query of the
 // capabilities of a device, because the primitive tells ThreadSanitizer of
-// no wait for an ioctl (THE SANITIZERS of foundation/os/Syscall.h).
+// no wait for an ioctl (the sanitizers of foundation/os/Syscall.h).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcept;
 
-// THE GENERATION OF A DESCRIPTOR
+// Generation of a descriptor
 //   Each number of a descriptor below descriptor_generation_slots has a
 //   generation: a count that a Handle of fixy/os/Handle.h advances after the
 //   open that gives it the number, and before the close or the release that

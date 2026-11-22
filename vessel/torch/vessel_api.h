@@ -49,11 +49,11 @@
 // ── The layout of the library ────────────────────────────────────────
 //
 // The layout note of the library holds the digest of the layout of the
-// structs and of the function types below, and of the Vigil (THE NOTE of
+// structs and of the function types below, and of the Vigil (the note of
 // layout_note.h).  The build writes the digest and the layout of each struct
 // below into the layout table beside the library, and the loader of
 // crucible_native.py compares the note and its ctypes Structures with that
-// table before the load (THE LAYOUT OF A LIBRARY).  No version is written by
+// table before the load (the layout of a library).  No version is written by
 // hand.
 
 #pragma once
@@ -167,7 +167,7 @@ typedef struct {
 
 // The layout digest of the library: the digest of the layout of the types and
 // of the C entries that the two vessel libraries share, which the layout note
-// of the library holds too (THE NOTE of layout_note.h).  The loader reads the
+// of the library holds too (the note of layout_note.h).  The loader reads the
 // note before the load, and calls this entry after the load as its second
 // guard.  A constant return.
 CRUCIBLE_VESSEL_API uint64_t crucible_layout_digest(void) CRUCIBLE_VESSEL_NOEXCEPT;

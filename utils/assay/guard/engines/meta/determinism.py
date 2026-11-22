@@ -1,6 +1,6 @@
 """determinism — a rule module reads no clock, no git history and no state of the host, and its verdict reads the tree.
 
-THE RULE
+Rule
     A verdict reads only the tree.  The rule reads each module of SCOPE,
     the modules of the rules, and it refuses four kinds of read:
       clock    a read of the wall clock, of the date or of a time measure.
@@ -22,7 +22,7 @@ THE RULE
                assay.core.paths.listing() is sorted
     The entity of a finding is the function that holds the call.
 
-THE LEDGER
+Ledger
     A row of utils/ledgers/determinism.txt admits the findings of one kind
     in one function: `PATH | KIND | admit | ENTITY | REASON`.  The reason
     tells why no verdict reads the value.  Examples are a job count, a time
@@ -30,7 +30,7 @@ THE LEDGER
     the ledger at the base of the change.  A row that admits no finding gives
     no finding, and a write removes it.
 
-WHAT THE RULE DOES NOT READ
+What the rule does not read
     A set gives its strings in a sequence that changes with PYTHONHASHSEED.
     A test of a golden output with two values of PYTHONHASHSEED holds that
     part, and this rule does not read it.  The rule reads the calls of a
@@ -112,7 +112,7 @@ ACTION = "or add a row with the reason why no verdict reads the value"
 
 
 def is_listing(call: ast.Call, table: python_reader.Bindings) -> bool:
-    """Return True when a call gives a listing of a directory (THE RULE)."""
+    """Return True when a call gives a listing of a directory (the rule)."""
     name = python_reader.dotted(call.func, table)
     if name in LISTING_FUNCTIONS:
         return True
@@ -123,7 +123,7 @@ def is_listing(call: ast.Call, table: python_reader.Bindings) -> bool:
 
 
 def is_clock_read(call: ast.Call, table: python_reader.Bindings) -> bool:
-    """Return True when a call reads the clock (THE RULE)."""
+    """Return True when a call reads the clock (the rule)."""
     name = python_reader.dotted(call.func, table)
     if name in CLOCKS:
         return True
@@ -133,7 +133,7 @@ def is_clock_read(call: ast.Call, table: python_reader.Bindings) -> bool:
 
 
 def is_history_read(call: ast.Call, table: python_reader.Bindings) -> bool:
-    """Return True when a call reads a commit or a ref through assay.core.git (THE RULE)."""
+    """Return True when a call reads a commit or a ref through assay.core.git (the rule)."""
     name = python_reader.dotted(call.func, table)
     if name is None or not name.startswith(GIT_PREFIX):
         return False
@@ -147,7 +147,7 @@ def is_history_read(call: ast.Call, table: python_reader.Bindings) -> bool:
 
 
 def is_host_read(call: ast.Call, table: python_reader.Bindings) -> bool:
-    """Return True when a call reads the state of the host (THE RULE)."""
+    """Return True when a call reads the state of the host (the rule)."""
     return python_reader.dotted(call.func, table) in HOST_READS
 
 
@@ -158,7 +158,7 @@ def docstring_ids(tree: ast.Module) -> set[int]:
 
 
 def host_files(tree: ast.Module) -> set[int]:
-    """Return the id of each text of a module that names a file of /proc/ or /sys/ (THE RULE).
+    """Return the id of each text of a module that names a file of /proc/ or /sys/ (the rule).
 
     A text names such a file when it starts with a directory of HOST_FILES and
     holds more than the directory.  An f-string names one when its first part
@@ -209,7 +209,7 @@ def sorted_arguments(tree: ast.Module, table: python_reader.Bindings) -> set[int
 
 
 def kind_of(node: ast.AST, table: python_reader.Bindings, covered: set[int], files: set[int]) -> str | None:
-    """Return the kind of THE RULE that a node of a module gives, or None.
+    """Return the kind of the rule that a node of a module gives, or None.
 
     `covered` holds each call that sorted() sorts, and `files` each text that names a file of the kernel.
     """

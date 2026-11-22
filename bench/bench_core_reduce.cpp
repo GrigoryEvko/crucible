@@ -159,7 +159,7 @@ template <std::size_t Width>
     return left + right;
 }
 
-// The tree of THE ORDER of foundation/core/Reduce.h over count floats from
+// The tree of the order of foundation/core/Reduce.h over count floats from
 // first, count at least 1: a power of two is a balanced tree, and each other
 // count splits at the largest power of two below it.
 [[nodiscard]] float raw_tree_of(float const* first, std::size_t count) noexcept {

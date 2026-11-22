@@ -3,7 +3,7 @@
 // Negative-compile fixture (HS14 mandate) for the precondition of
 // DispatchResult::compiled_status().
 //
-// BACKGROUND
+// Background
 // ──────────
 // DispatchResult in CrucibleContext.h is a discriminated pair: `action` is
 // the discriminant, and `status` and `op_index` are the payload of the
@@ -17,7 +17,7 @@
 // (`return status;`).  CRUCIBLE_PRE lives in the function BODY, not in the
 // clause position, so it fires on the patched and the un-patched builds.
 //
-// WHAT THIS FIXTURE PROVES
+// What this fixture proves
 // ────────────────────────
 // The accessor is constexpr, so the constant evaluation below enters its
 // body.  A default DispatchResult has action == RECORD, the check finds
@@ -46,7 +46,7 @@ namespace {
 // CRUCIBLE_PRE's __builtin_trap fires at consteval.
 [[maybe_unused]] constexpr crucible::ReplayStatus witness = [] {
     crucible::DispatchResult result{};  // action == RECORD
-    return result.compiled_status();  // CRUCIBLE_PRE(action == COMPILED) VIOLATED
+    return result.compiled_status();  // CRUCIBLE_PRE(action == COMPILED) violated
 }();
 
 }  // namespace

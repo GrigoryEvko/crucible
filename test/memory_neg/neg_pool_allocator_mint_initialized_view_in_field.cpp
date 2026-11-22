@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Violation: a class type that stores a PoolAllocator::InitializedView
 // as a non-static data member.  Fires the Tier-2 reflection audit
@@ -14,8 +14,8 @@
 // HS14 — paired with neg_pool_allocator_mint_initialized_view_cross_carrier:
 //   * That one catches typed-overload resolution at call time
 //     (cross-carrier ScopedView mismatch).
-//   * THIS one catches structural lifetime escape at field-storage time.
-// Together they pin BOTH soundness gates of PoolAllocator::mint_initialized_view.
+//   * this one catches structural lifetime escape at field-storage time.
+// Together they pin both soundness gates of PoolAllocator::mint_initialized_view.
 
 #include <crucible/PoolAllocator.h>
 

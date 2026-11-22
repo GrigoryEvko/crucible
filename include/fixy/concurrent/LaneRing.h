@@ -4,7 +4,7 @@
 // which the consumer reads in one fixed order.  The order of the merged stream
 // is thus a function of the items of each lane, and not of the schedule.
 //
-// THE ORDER
+// Order
 //   Each lane is a ring of fixy/concurrent/SpscRing.h with one producer.  The
 //   consumer takes one item of each lane in turn, in the order of the lane
 //   indexes, and then starts again at the first lane of the turn.  While the
@@ -19,14 +19,14 @@
 //   for one SPSC ring, so a pop takes no tag of Nondet.  In the net of a
 //   program the ring is a fixed join of its lanes, and not a merge agent.
 //
-// THE STALL
+// Stall
 //   The consumer waits for the lane of its turn while other lanes hold items.
 //   So the slowest producer sets the pace of the stream, and a lane whose
 //   producer neither pushes nor ends it stops the stream.  Each lane of the
 //   type takes part in the turn from the start, so a lane that no producer
 //   uses must be ended.
 //
-// THE END OF A LANE
+// End of a lane
 //   The producer of a lane ends it after its last push (end_lane): a release
 //   store of the end word of the lane, on a cache line of its own.  The
 //   consumer reads that word with acquire order only after a pop that found
@@ -37,7 +37,7 @@
 //   ChannelEnd.h).  drain empties the lanes and opens each lane again for a
 //   new stream.
 //
-// THE ROOM
+// Room
 //   A pop takes one item of a lane and then one item of each other lane, so
 //   a pop that published the tail of its lane at each item would move the
 //   line of that tail between the two cores at each item of a full lane.  So
@@ -51,7 +51,7 @@
 //   wakes parked producers when it frees room wakes them after each receive
 //   of an item and after the first Empty answer after an item: no other
 //   receive publishes a tail.  The publish decides only when a producer sees
-//   room, so THE ORDER does not change.
+//   room, so the order does not change.
 //
 // THE OWNER
 //   Owner, such as the lanes channel of fixy/concurrent/PermissionedChannel.h,
@@ -74,7 +74,7 @@
 //   Each pop takes the ConsumerProof, which only Owner mints for its one
 //   consumer.
 //
-// THE COSTS
+// Costs
 //   A push is the push of one SPSC ring.  A pop is the deferred pop of one
 //   SPSC ring and a read of the turn, which only the consumer writes, on
 //   lines of their own.  The first Empty answer after an item costs a walk
@@ -119,13 +119,13 @@ enum class LaneCount : std::size_t {
 template <LaneCount Lanes>
 using LaneIndex = ::foundation::core::Index<static_cast<std::size_t>(Lanes)>;
 
-// The state of the end word of a lane (THE END OF A LANE).
+// The state of the end word of a lane (the end of a lane).
 enum class LaneEnd : std::uint8_t {
     open = 0,
     ended = 1,
 };
 
-// Whether a lane of a ring can hold deferred pops (THE ROOM).  It takes a
+// Whether a lane of a ring can hold deferred pops (the room).  It takes a
 // word of 32 bits, so the line of the turn holds no padding.
 enum class LaneTails : std::uint32_t {
     published = 0,
@@ -212,8 +212,8 @@ public:
     using row_discipline = ::fixy::row_discipline::lane_ring;
     using row_payload = T;
 
-    // The deferred pops of a lane between two publishes of its tail (THE
-    // ROOM): a quarter of the lane, and at most 64 cells, eight lines of
+    // The deferred pops of a lane between two publishes of its tail (the
+    // room): a quarter of the lane, and at most 64 cells, eight lines of
     // cells of eight bytes.  A larger interval saves little, because the
     // lines of the cells then move more often than the line of the tail.
     static constexpr std::size_t tail_interval = LaneCapacity / 4 == 0 ? 1
@@ -246,7 +246,7 @@ public:
         });
     }
 
-    // The next item of the merged stream (THE ORDER), NoItem::Empty while the
+    // The next item of the merged stream (the order), NoItem::Empty while the
     // lane of the turn is empty and open, or NoItem::Closed after the last
     // item of the last lane.  The proof names the one consumer.
     [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive(ConsumerProof const& /*proof*/) noexcept {
@@ -268,7 +268,7 @@ public:
 
     // Gives each item that the lanes hold to drop, and then opens each lane
     // again for a new stream, with the turn at lane 0.  The items come in the
-    // order of THE ORDER, with each empty lane taken as ended.  That order is
+    // order of the order above, with each empty lane taken as ended.  That order is
     // a function of the items of the lanes, so the drop can hold state.  Each
     // lane publishes its tail when it leaves the turn, so the drain ends with
     // no deferred pop.  The proof names the one consumer, and the caller holds
@@ -292,7 +292,7 @@ public:
     // Snapshots.  Each one reads the indexes of the producers, and the
     // schedule decides when the producers move them, so each one takes the
     // bare tag of Nondet.  Each one counts the deferred pops of a lane as
-    // items (THE COSTS).  Complexity: linear in the lanes.
+    // items (the costs).  Complexity: linear in the lanes.
     [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
         for (lane_type const& lane : lanes_) {
             if (!lane.ring.empty_approx(nondet)) return false;
@@ -315,7 +315,7 @@ public:
     // comes after the end of the last producer of the lane.
     [[nodiscard]] LaneEnd end_of_lane(lane_index lane) const noexcept { return lanes_.at(lane).end->load_acquire(); }
 
-    // True when each lane ended, with acquire order (THE OWNER).  Complexity:
+    // True when each lane ended, with acquire order (the owner).  Complexity:
     // linear in the lanes.
     [[nodiscard]] bool is_each_lane_ended() const noexcept {
         for (lane_type const& lane : lanes_) {
@@ -370,15 +370,15 @@ private:
     // The turn moves to the next lane of the turn, and from the last lane to
     // the first.  The type of the turn keeps its position below the count of
     // the turn, so the step has no check.  A pop of an item comes before each
-    // step, so the step also records that a lane can hold deferred pops (THE
-    // ROOM).
+    // step, so the step also records that a lane can hold deferred pops (the
+    // room).
     [[gnu::always_inline]] void step_turn_() noexcept {
         turn_.step();
         tails_ = LaneTails::deferred;
     }
 
     // Publishes the tail of each lane of the turn that holds deferred pops
-    // (THE ROOM).  A lane out of the turn published its tail when it left.
+    // (the room).  A lane out of the turn published its tail when it left.
     // Complexity: linear in the lanes of the turn.
     CRUCIBLE_COLD void publish_each_tail_() noexcept {
         for (std::size_t position = 0; position < turn_.live(); ++position) {
@@ -399,9 +399,9 @@ private:
         turn_.drop();
     }
 
-    // The receive after a pop that found the lane of the turn empty (THE END
-    // OF A LANE).  An open lane gives NoItem::Empty, after the publish of the
-    // tail of each lane (THE ROOM).  An ended lane gets one more pop after the
+    // The receive after a pop that found the lane of the turn empty (the end
+    // of a lane).  An open lane gives NoItem::Empty, after the publish of the
+    // tail of each lane (the room).  An ended lane gets one more pop after the
     // acquire read of its end, and an empty ended lane leaves the turn.  Then
     // the next lane of the turn gets its pop.
     [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {

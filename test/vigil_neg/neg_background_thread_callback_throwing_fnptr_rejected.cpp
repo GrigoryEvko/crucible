@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // BackgroundThread::RegionReadyCall is a CallRef of a noexcept signature.
 // The callback runs on the publish stage between the transaction commit and

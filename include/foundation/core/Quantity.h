@@ -32,7 +32,7 @@
 //                                with the same unit, or two quantities, with
 //                                the product or the quotient of their units
 //
-// UNITS.  A unit has a dimension and a scale.  The dimension is a vector of
+// Units.  A unit has a dimension and a scale.  The dimension is a vector of
 // five integer exponents, one for each base dimension:
 //
 //   memory   bytes                time    nanoseconds
@@ -75,7 +75,7 @@
 // compare of the Rep, a partial order.  No operation takes a float quantity
 // and an integer quantity together.
 //
-// THE INTEGER SET.  It has no + and no -, so each overflow is a choice at the
+// Integer set.  It has no + and no -, so each overflow is a choice at the
 // call site.  The operations of two quantities take one Rep, and the sum and
 // the difference take one unit.  Thus a sum of bytes and seconds does not
 // compile.  convert compiles only for two units of one dimension, and they
@@ -85,7 +85,7 @@
 // number of the coarser unit: 1500 milliseconds is no whole number of
 // seconds.  When Rep cannot hold 1000^k, 0 is the one number that converts.
 //
-// THE FLOAT SET.  Section 11.7 of misc/01_10_2026_quarantine.md approved an
+// Float set.  Section 11.7 of misc/01_10_2026_quarantine.md approved an
 // Integer Rep only, because the integer set states each overflow.  A float
 // has no overflow to choose: IEEE 754 gives each operation one result.  The
 // cost models, the precision planner and the costs of Forge compute rates in

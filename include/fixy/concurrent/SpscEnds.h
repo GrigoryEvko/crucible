@@ -1,6 +1,6 @@
 #pragma once
 
-// THE ENDS OF A SINGLE-PRODUCER, SINGLE-CONSUMER OWNER
+// Ends of a single-producer, single-consumer owner
 //   An owner of one producer side and one consumer side, such as a ring or a
 //   log, keeps the state of each side in an end.  The producer end holds the
 //   state of the producer, such as its copy of the head and its cached tail.
@@ -8,10 +8,10 @@
 //   tail.  Each end holds the Ref of its owner, so an end opens no other
 //   owner.
 //
-// THE SPLIT
+// Split
 //   mint_spsc_split builds the owner in a Box, and a split that holds the Box
 //   and the two ends.  It gives the split and one loan key for each side
-//   (THE LOAN KEY of foundation/core/Frame.h):
+//   (the loan key of foundation/core/Frame.h):
 //     auto [split, producer_key, consumer_key] = mint_spsc_split<Log>(alloc, ...);
 //   - The split holds the Box first and the two ends after it, as private
 //     members.  So the ends end before the owner, and no end outlives the
@@ -24,7 +24,7 @@
 //   - No door splits an owner that exists, and the mint refuses an owner that
 //     moves, so the Ref of an end stays valid while the split lives.
 //
-// THE DOORS
+// Doors
 //   A body borrows an end through a frame door of the split, for the time of
 //   the call.  Each door takes the loan key of its side, by move or by a
 //   borrow, and it refuses a body that reaches that key.  So no code inside a
@@ -215,7 +215,7 @@ concept SpscBorrowGivingBody =
     std::is_nothrow_invocable_v<Body&&, End&> && !std::is_void_v<std::invoke_result_t<Body&&, End&>>
     && !::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, End&>>;
 
-// The owner in a Box and its two ends (THE SPLIT).  The Box is the first
+// The owner in a Box and its two ends (the split).  The Box is the first
 // member, so the two ends end before it.  The split does not move, so the
 // Box stays in it.
 template <class Owner, class Brand>
@@ -237,7 +237,7 @@ public:
     SpscSplit& operator=(SpscSplit&&) = delete("a split holds one owner and its two ends for their life");
     ~SpscSplit() = default;
 
-    // THE PRODUCER DOOR: body gets the producer end in place.  The key moves
+    // Producer door: body gets the producer end in place.  The key moves
     // into the door, and the door gives it back: alone for a body that gives
     // void, and after the result in a Record for each other body.  The borrow
     // form keeps the key with the caller and gives the result of body.
@@ -255,7 +255,7 @@ public:
         return static_cast<Body&&>(body)(producer_);
     }
 
-    // THE CONSUMER DOOR, in the two forms of the producer door.
+    // Consumer door, in the two forms of the producer door.
     template <class Body>
         requires SpscEndBody<Body, consumer_end, consumer_brand>
     [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, consumer_end&>,
@@ -269,7 +269,7 @@ public:
         return static_cast<Body&&>(body)(consumer_);
     }
 
-    // THE DOOR OF THE TWO ENDS: body gets the producer end and the consumer
+    // Door of the two ends: body gets the producer end and the consumer
     // end, and the door borrows the two keys for the call.  The two ends are
     // two members, so the two borrows do not overlap.  The body reaches no key
     // of either side, and its result holds no borrow.  Complexity: O(1), and
@@ -281,7 +281,7 @@ public:
         return static_cast<Body&&>(body)(producer_, consumer_);
     }
 
-    // THE READ OF THE OWNER: body gets the owner as const, through the Ref of
+    // Read of the owner: body gets the owner as const, through the Ref of
     // the producer end, and the door gives the result of body.  A read opens
     // no side, so the door takes no key.  Complexity: O(1), and the cost of
     // body.

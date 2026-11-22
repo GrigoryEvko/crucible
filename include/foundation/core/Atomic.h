@@ -35,7 +35,7 @@
 // bits of a value with no padding are the value, so the compare agrees with
 // a compare of the members.
 //
-// THE WORD OF A VALUE
+// Word of a value
 //   A value that keeps an invariant, such as a Ref that is never null, is
 //   not trivially copyable, so std::bit_cast cannot make it from bytes.  Its
 //   type states a word beside its own definition: atomic_word<T> gives a
@@ -61,9 +61,9 @@
 //   of a niche.  A store of a full Option whose payload gives empty_word ends
 //   the process, because the cell would read the Option back as empty.
 //
-// THE WORD OF A STATED PAYLOAD
+// Word of a stated payload
 //   The niche of a payload of the base can state that no door builds its
-//   empty value (THE CHECK OF THE STATEMENT of foundation/core/Choice.h).  Its
+//   empty value (the check of the statement of foundation/core/Choice.h).  Its
 //   protocol can then state that only the empty value of the niche gives
 //   empty_word:
 //
@@ -74,7 +74,7 @@
 //   No door builds the empty value, so no payload gives empty_word, and the
 //   store of a full Option of such a payload tests no word.
 //
-// THE CELL OF ONE WRITER
+// Cell of one writer
 //   Atomic<T, SoleWriter<Role, Brand>> names its writer in its type, and
 //   each write takes the proof of that writer:
 //
@@ -103,7 +103,7 @@
 //   compare and one branch to a cold call at each read and each write of the
 //   writer.
 //
-// THE CELL OF AN OWNER
+// Cell of an owner
 //   Atomic<T, SoleWriterProof<Owner, Role>> names its writer in its type as
 //   the counter of one writer of fixy/Mutation.h does, with no run-time id:
 //
@@ -111,7 +111,7 @@
 //     load_owned(proof)          the value, with relaxed order, for the writer
 //     store_release(proof, v)    stores v, with release order, for the writer
 //
-//   Only Owner makes the proof (THE PROOF OF THE ONE WRITER of
+//   Only Owner makes the proof (the proof of the one writer of
 //   foundation/SoleWriterProof.h), and the proof lives for one call of
 //   Owner.  So the one writer of the cell is the code of Owner, and the type
 //   carries the check that the cell of a SoleWriter makes at run time.  A
@@ -121,7 +121,7 @@
 //   comment of Owner states how.  The read and the write of the writer
 //   compile to a plain load and a plain release store.
 //
-// THE COUNT
+// Count
 //   Atomic<T, Counter> is a count that each thread adds to, for an integer
 //   that is not bool.  No thread reads other data through it, so a change
 //   of the count needs no order:
@@ -144,11 +144,11 @@
 // bytes, so the type states that no other data shares its cache line.
 // *line and line->member borrow the cell.
 //
-// Tally is a statistics counter of 64 bits over a count (THE COUNT).  add()
+// Tally is a statistics counter of 64 bits over a count (the count).  add()
 // is a relaxed fetch-add, and read() is an acquire load.  A value of a Tally
 // orders no other data.
 //
-// THE FENCE
+// Fence
 //   fence_seq_cst() is a fence with the sequentially consistent order.  It
 //   orders each store of the calling thread before it against each load of
 //   the calling thread after it, the store-load order.  Two threads that each
@@ -163,7 +163,7 @@
 //   different cell.  The x86-64 code is a locked OR of zero to the top of
 //   the stack (lock orq $0, (%rsp)), and the aarch64 code is dmb ish.
 //
-// THE WAIT
+// Wait
 //   A cell has no wait and no notify of its own.  This header is in
 //   foundation/core and cannot include a door of the kernel.  A thread waits
 //   for a change of an Atomic<std::uint32_t> through the futex door of
@@ -202,7 +202,7 @@ struct UndeclaredWord final {};
 
 }  // namespace detail
 
-// The word protocol of a value (THE WORD OF A VALUE).  The primary template
+// The word protocol of a value (the word of a value).  The primary template
 // is empty and carries the annotation UndeclaredWord, so a type with no
 // specialization has no word.  The open mark is on the definition, because
 // the seventh GCC patch refuses an annotation on a declaration of a class
@@ -236,14 +236,14 @@ concept AtomicWordType = AtomicBitsValue<W> && (std::is_integral_v<W> || std::is
 template <class T>
 concept HasAtomicWord = !::foundation::linear::carries_annotation(^^atomic_word<T>, ^^UndeclaredWord);
 
-// The statement of THE WORD OF A STATED PAYLOAD in the protocol of a value.
+// The statement of the word of a stated payload in the protocol of a value.
 enum class WordStatement : unsigned char {
     absent,  // the protocol states nothing, and the cell tests the word
     holds,  // a niche_statement of a header of the base, for a payload whose niche states its fact
     refused,  // each other statement, which the gate of the protocol refuses
 };
 
-// The statement of THE WORD OF A STATED PAYLOAD in the protocol of the value
+// The statement of the word of a stated payload in the protocol of the value
 // that the type reflects.  The caller makes sure that the value declares a
 // word.  The function is no template, so no unit can specialize what it
 // reads.  Complexity: linear in the members of the protocol and the niche.
@@ -340,7 +340,7 @@ struct CasRefusal final {
 template <AtomicValue T, class Writer = void>
 class Atomic;
 
-// The writer of a count that each thread adds to with no order (THE COUNT).
+// The writer of a count that each thread adds to with no order (the count).
 struct Counter final {};
 
 namespace detail {
@@ -412,7 +412,7 @@ class atomic_codec {
 
     // The word of the payload of a full Option.  The empty word would read
     // back as an empty Option, so a protocol that gives it ends the process.
-    // A protocol of THE WORD OF A STATED PAYLOAD gives the empty word only for
+    // A protocol of the word of a stated payload gives the empty word only for
     // the empty value of the niche, which no door builds, so its payload gets
     // no test.
     template <class Payload>
@@ -430,7 +430,7 @@ class atomic_codec {
 
 }  // namespace detail
 
-// The key of from_word (THE WORD OF A VALUE).  Only a cell of this family
+// The key of from_word (the word of a value).  Only a cell of this family
 // makes one, and the key of T opens only the from_word of T.  The protocol
 // takes the key by reference, as the niche protocol of Choice.h takes its
 // key, so nothing copies one.  Both constructors are user-provided and
@@ -496,7 +496,7 @@ private:
     friend SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept;
 };
 
-// The proof of the one thread that writes a cell (THE CELL OF ONE WRITER).
+// The proof of the one thread that writes a cell (the cell of one writer).
 // The token holds the run-time id of its mint, 8 bytes, and only the cells of
 // this family read it.  A move gives the id to the target and leaves the id 0
 // in the source.  No mint gives 0, and no cell takes a writer of 0, so a
@@ -706,7 +706,7 @@ template <class Role, class... Arguments, class Brand>
     return SoleWriter<Role, Brand>{sole_writer_key{}, detail::next_identity_.fetch_add_acq_rel(1)};
 }
 
-// The cell of one writer (THE CELL OF ONE WRITER).  The parameter of the
+// The cell of one writer (the cell of one writer).  The parameter of the
 // brand has the name Identity, so the rule erased-brand reads no brand of the
 // primary template here.
 //
@@ -780,7 +780,7 @@ public:
     }
 };
 
-// The cell of an owner (THE CELL OF AN OWNER).  The cell hands its value to
+// The cell of an owner (the cell of an owner).  The cell hands its value to
 // each reader, so it is a cell of its payload (foundation/Transfer.h).  The
 // build takes no proof: no other thread reads the cell before its owner
 // hands it out.
@@ -819,7 +819,7 @@ public:
     }
 };
 
-// The cell of a count (THE COUNT).  An integer is its own word, so the cell
+// The cell of a count (the count).  An integer is its own word, so the cell
 // holds the value with no codec.  It is a cell of its payload
 // (foundation/Transfer.h).
 template <AtomicValue T>
@@ -903,7 +903,7 @@ public:
     [[nodiscard]] std::uint64_t read() const noexcept { return count_.load_acquire(); }
 };
 
-// The fence of the store-load order (THE FENCE).
+// The fence of the store-load order (the fence).
 CRUCIBLE_INLINE void fence_seq_cst() noexcept { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
 
 }  // namespace foundation::core

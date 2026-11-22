@@ -14,7 +14,7 @@
 //     no rule that the type cannot state.
 //
 //  3. A reset takes the proof that no thread of the owner of the flag runs
-//     (THE QUIESCENCE OF AN OWNER of fixy/os/OwnedThread.h).
+//     (the quiescence of an owner of fixy/os/OwnedThread.h).
 
 #include <fixy/os/OwnedThread.h>
 #include <foundation/Platform.h>
@@ -71,8 +71,8 @@ public:
     }
 
     // A reset is correct only where neither side can reach the flag.  The
-    // proof shows that no thread of the owner of the flag runs (THE
-    // QUIESCENCE OF AN OWNER), so the caller is the one thread that reaches
+    // proof shows that no thread of the owner of the flag runs (the
+    // quiescence of an owner), so the caller is the one thread that reaches
     // the flag.  The store is atomic, so a reset races with no read in any
     // case.  A flag that does not lie inside the owner of the proof ends the
     // process, and so does a proof whose OwnerThread holds a thread again.

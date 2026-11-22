@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Each write of the mode cell takes the proof of its one writer.  A publish
 // with no writer would give the cell a writer that no proof names.

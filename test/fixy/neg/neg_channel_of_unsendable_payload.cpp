@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A push on one thread gives the value of a channel to a pop on another
 // thread, so a value of a channel is Sendable (foundation/Transfer.h).  A raw

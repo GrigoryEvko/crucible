@@ -90,14 +90,14 @@ UNREADABLE = "a row of a kind that the code of the gate does not know\n"
 TABLE_ERROR = "rule-table.txt:525: the row kind 'linear-door' is unknown"
 # The ledger that the falls of a planted gate write.
 FALLEN = b"format 1\nrule demo\na.cpp | kind | 1 | entity | -\n"
-# The registry with the count rule demo, its ledger, and the head of that ledger, for the cases of THE MERGE.
+# The registry with the count rule demo, its ledger, and the head of that ledger, for the cases of the merge.
 MERGE_REGISTRY = "format 1\nrule demo engine=meta scope=tracked ledger=count doc=XV | a planted refusal | fix it\n"
 MERGE_LEDGER = "utils/ledgers/demo.txt"
 MERGE_LEDGER_HEAD = "format 1\nrule demo\n"
-# The generated file that the gate writes from the build of the composed tree, for the cases of THE MERGE.
+# The generated file that the gate writes from the build of the composed tree, for the cases of the merge.
 INVENTORY = "misc/mint-inventory.md"
 # The planted entry times of two requests into the queue, in seconds since the epoch, and their ISO 8601 texts in UTC
-# (THE RECORD of assay.loop.land).
+# (the record of assay.loop.land).
 FIRST_ENTRY_S = 1_800_000_000.0
 SECOND_ENTRY_S = 1_800_000_061.0
 FIRST_ENTRY = "2027-01-15T08:00:00Z"
@@ -585,7 +585,7 @@ def interaction_cases(expect: testing.Expect, work: Path) -> None:
 def finding_gate(root: Path, seen: list[tuple[gate.Candidate, bool]]) -> land.Check:
     """Return a planted gate that fails the test guard_plugin with one finding for each word of base.txt.
 
-    Each red run gives the same problem, and its items name the file of each finding (THE FAILING ITEMS of
+    Each red run gives the same problem, and its items name the file of each finding (the failing items of
     assay.loop.gate).  The gate keeps each call.
     """
 
@@ -764,7 +764,7 @@ def red_base_cases(expect: testing.Expect) -> None:
 
 
 def focus_cases(expect: testing.Expect) -> None:
-    """Hold the focus of the run of the base: it is the focus of the first run of the batch (THE RUN OF THE BASE)."""
+    """Hold the focus of the run of the base: it is the focus of the first run of the batch (the run of the base)."""
     with tempfile.TemporaryDirectory(prefix="land-focus-") as work_text:
         root = Path(work_text) / "repo"
         planted_repository(root)
@@ -1111,9 +1111,9 @@ def patch_of(root: Path, work: Path, name: str, files: Mapping[str, str]) -> Pat
 
 
 def merge_cases(expect: testing.Expect) -> None:
-    """Hold THE MERGE: a patch that does not apply as text composes by a three-way merge, or is refused on a conflict.
+    """Hold the merge: a patch that does not apply as text composes by a three-way merge, or is refused on a conflict.
 
-    The cases also hold THE INDEX AND THE WORKING TREE after a fold of the gate next to the hunk of a patch.
+    The cases also hold the index and the working tree after a fold of the gate next to the hunk of a patch.
     """
     with tempfile.TemporaryDirectory(prefix="land-merge-") as work_text:
         work = Path(work_text)
@@ -1171,7 +1171,7 @@ def max_ledger_text(rows: Mapping[str, tuple[str, str]]) -> str:
 
 
 def row_merge_cases(expect: testing.Expect, work: Path) -> None:
-    """Hold THE MERGE of the rows of a ledger: changes of adjacent keys compose, and two raises of one max row compose.
+    """Hold the merge of the rows of a ledger: changes of adjacent keys compose, and two raises of one max row compose.
 
     Each patch changes a row on a line next to a line that main changed, so `git apply` refuses its hunk, and the
     composition merges the ledger by its keys.  A row of a max ledger that main raises and a patch lowers refuses the
@@ -1319,7 +1319,7 @@ def registry_row(kinds: str, text: str) -> str:
 
 
 def registry_merge_cases(expect: testing.Expect) -> None:
-    """Hold THE MERGE of the registry: two requests that each add a kind and change the text of one row compose.
+    """Hold the merge of the registry: two requests that each add a kind and change the text of one row compose.
 
     Two changes of one word of the text still conflict.  On the old code the line merge refused the second request.
     """
@@ -1352,7 +1352,7 @@ def registry_merge_cases(expect: testing.Expect) -> None:
 
 
 def budget_reason_cases(expect: testing.Expect) -> None:
-    """Hold THE BUDGET REASON: the request file holds it, a chain gets it only from each request, and a verdict names
+    """Hold the budget reason: the request file holds it, a chain gets it only from each request, and a verdict names
     each raised row."""
     with tempfile.TemporaryDirectory(prefix="land-budget-") as work_text:
         work = Path(work_text)
@@ -1431,7 +1431,7 @@ def budget_reason_cases(expect: testing.Expect) -> None:
 
 
 def lower_cases(expect: testing.Expect) -> None:
-    """Hold THE LOWER: the request file holds the rows and the reason, each row of a chain takes the reason of its own
+    """Hold the lower: the request file holds the rows and the reason, each row of a chain takes the reason of its own
     request, and a verdict names each lowered row."""
     with tempfile.TemporaryDirectory(prefix="land-lower-") as work_text:
         work = Path(work_text)
@@ -1487,7 +1487,7 @@ def fall_cases(expect: testing.Expect, work: Path) -> None:
     patch = patch_of(root, work, "row.patch", {MERGE_LEDGER: ledger_text((3, 2, 1))})
 
     def folding(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
-        """Fold a fall of the row next to the hunk of the patch into the commit, as THE REDUCE does."""
+        """Fold a fall of the row next to the hunk of the patch into the commit, as the reduce does."""
         final = git.replaced_commit(root, candidate.commit, {MERGE_LEDGER: ledger_text((3, 1, 1)).encode()})
         return gate.Verdict(("debug",), (), 1.0, (), final, (MERGE_LEDGER,))
 
@@ -1516,7 +1516,7 @@ def inventory_text(counts: Mapping[str, int]) -> str:
 
 
 def built_cases(expect: testing.Expect) -> None:
-    """Hold THE MERGE of a file of BUILT_FILES of assay.loop.gate: the gate writes it, and the batch lands.
+    """Hold the merge of a file of BUILT_FILES of assay.loop.gate: the gate writes it, and the batch lands.
 
     Two requests of one batch each change a file and the summary row of the mint inventory, as two families that add
     fixtures at one time do.  The second patch does not apply as text after the first.  Its merge keeps the copy of the
@@ -1559,7 +1559,7 @@ def built_cases(expect: testing.Expect) -> None:
         seen: list[gate.Candidate] = []
 
         def writing(candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
-            """Write the inventory of the composed tree when the candidate names it, as THE BUILT FILES of the gate does."""
+            """Write the inventory of the composed tree when the candidate names it, as the built files of the gate does."""
             seen.append(candidate)
             if INVENTORY not in candidate.built:
                 return gate.Verdict(("debug",), (), 1.0)
@@ -1611,7 +1611,7 @@ def fixture_inventory(root: Path, commit: str) -> str:
 
 
 def writing_gate(root: Path, seen: list[gate.Candidate], before: Callable[[], None]) -> land.Check:
-    """Return a planted gate that writes the inventory of the fixtures of each candidate, as THE BUILT FILES does.
+    """Return a planted gate that writes the inventory of the fixtures of each candidate, as the built files does.
 
     The gate calls `before` at the start of each run.  It folds the inventory only when the bytes change.
     """
@@ -1629,7 +1629,7 @@ def writing_gate(root: Path, seen: list[gate.Candidate], before: Callable[[], No
 
 
 def built_race_cases(expect: testing.Expect) -> None:
-    """Hold two batches that each add a fixture, with a lost compare-and-swap between them (THE BUILT FILES).
+    """Hold two batches that each add a fixture, with a lost compare-and-swap between them (the built files).
 
     The request of the batch adds a fixture of mint_a and the copy of the inventory of its own build.  While its gate
     runs, a different lane lands a fixture of mint_b with the inventory that its gate wrote.  The summary rows of the
@@ -1678,7 +1678,7 @@ def built_race_cases(expect: testing.Expect) -> None:
 
 
 def ratchet_rows_cases(expect: testing.Expect) -> None:
-    """Hold THE RATCHET ROWS of assay.loop.gate in a refusal: the lines of the rows come after the problems."""
+    """Hold the ratchet rows of assay.loop.gate in a refusal: the lines of the rows come after the problems."""
     with tempfile.TemporaryDirectory(prefix="land-rows-") as work_text:
         root = Path(work_text) / "repo"
         planted_repository(root)
@@ -1724,7 +1724,7 @@ def flaky_once(root: Path, name: str, seen: list[tuple[gate.Candidate, bool]]) -
 
 
 def confirmation_cases(expect: testing.Expect) -> None:
-    """Hold THE CONFIRMATION: a red run that a green run of the same tree does not repeat lands the request."""
+    """Hold the confirmation: a red run that a green run of the same tree does not repeat lands the request."""
     with tempfile.TemporaryDirectory(prefix="land-confirmation-") as work_text:
         root = Path(work_text) / "repo-lone"
         head = planted_repository(root)
@@ -1759,7 +1759,7 @@ def confirmation_cases(expect: testing.Expect) -> None:
 
 
 def dependent_cases(expect: testing.Expect, work: Path) -> None:
-    """Hold THE CONFIRMATION for a request that needs an accepted request, and for a request that cannot run alone."""
+    """Hold the confirmation for a request that needs an accepted request, and for a request that cannot run alone."""
     root = work / "repo-dependent"
     head = planted_repository(root)
     seen: list[tuple[gate.Candidate, bool]] = []
@@ -1809,7 +1809,7 @@ def dependent_cases(expect: testing.Expect, work: Path) -> None:
 
 
 def focus_red_branch_cases(expect: testing.Expect, work: Path) -> None:
-    """Hold THE CONFIRMATION on a red branch with a planted gate that runs only the focus of a run of the base."""
+    """Hold the confirmation on a red branch with a planted gate that runs only the focus of a run of the base."""
     root = work / "repo-focus-red"
     planted_repository(root)
     (root / "base.txt").write_text(RED, encoding="utf-8")
@@ -1850,7 +1850,7 @@ def focus_red_branch_cases(expect: testing.Expect, work: Path) -> None:
 
 
 def flaky_cases(expect: testing.Expect) -> None:
-    """Hold THE FLAKY TESTS: the verdict of a landed request names each flaky test of its accepted run of the gate."""
+    """Hold the flaky tests: the verdict of a landed request names each flaky test of its accepted run of the gate."""
     with tempfile.TemporaryDirectory(prefix="land-flaky-") as work_text:
         root = Path(work_text) / "repo"
         planted_repository(root)
@@ -1904,7 +1904,7 @@ def drop_cases(expect: testing.Expect) -> None:
 
 
 def store_cases(expect: testing.Expect) -> None:
-    """Hold THE STORE: a damaged git store refuses the batch with its reason, runs no gate and moves no branch."""
+    """Hold the store: a damaged git store refuses the batch with its reason, runs no gate and moves no branch."""
     with tempfile.TemporaryDirectory(prefix="land-store-") as work_text:
         root = Path(work_text) / "repo"
         head = planted_repository(root)
@@ -1974,7 +1974,7 @@ FREE_BOUND_S = 60.0
 
 
 def gone_watch_cases(expect: testing.Expect) -> None:
-    """Hold the free of the entry of the stack when a request of the run leaves the queue during the run (THE STACK).
+    """Hold the free of the entry of the stack when a request of the run leaves the queue during the run (the stack).
 
     On the old code the entry stayed live until the run ended, and a batch above waited on a commit that could never
     land.
@@ -2042,7 +2042,7 @@ def short_landing(root: Path, text: str) -> None:
 def right_batch(
     root: Path, queue: Path, number: int, check: land.Check, pause: heavy.Pause
 ) -> tuple[dict[int, land.Decision], str]:
-    """Land one request with the number through a planted gate, with a right of way in the queue (THE RIGHT OF WAY).
+    """Land one request with the number through a planted gate, with a right of way in the queue (the right of way).
 
     The function returns each verdict and the printed text.
     """
@@ -2286,7 +2286,7 @@ def side_commit(root: Path, parent: str, name: str, text: str) -> str:
 
 
 class OtherEntry:
-    """The entry of a different batch in the stack, as the holder of a different lane writes it (THE STACK)."""
+    """The entry of a different batch in the stack, as the holder of a different lane writes it (the stack)."""
 
     __slots__ = ("branch", "stack")
 
@@ -2318,7 +2318,7 @@ class OtherEntry:
 
 
 def stack_cases(expect: testing.Expect) -> None:
-    """Hold THE STACK: a stack of three, a refusal in the middle, an outside push, red runs, a fold, a dead holder, the
+    """Hold the stack: a stack of three, a refusal in the middle, an outside push, red runs, a fold, a dead holder, the
     bound of the depth, and a right of way above the batch."""
     with tempfile.TemporaryDirectory(prefix="land-stack-") as work_text:
         work = Path(work_text)
@@ -2667,7 +2667,7 @@ def stack_cases(expect: testing.Expect) -> None:
 
 
 def lost_run_cases(expect: testing.Expect) -> None:
-    """Hold THE RULE OF ONE LOST RUN of THE STACK: one run at once on an older open entry, then a wait for a verdict.
+    """Hold the rule of one lost run of the stack: one run at once on an older open entry, then a wait for a verdict.
 
     The batch 1 below composes again two times, each time on a new commit with no verdict, and then the gate accepts
     its last commit.  The batch 3 on the top loses its first run, and it stacks at once on the open entry of the older
@@ -2745,7 +2745,7 @@ def lost_run_cases(expect: testing.Expect) -> None:
 
 
 def newer_entry_cases(expect: testing.Expect) -> None:
-    """Hold the wait of THE RULE OF ONE LOST RUN to the entries of its first look (THE STACK).
+    """Hold the wait of the rule of one lost run to the entries of its first look (the stack).
 
     The batch 3 loses its first two runs, because the batch 1 below it composes again two times.  While the batch 3
     waits for the verdict of the batch 1, the batch 4 stacks on the batch 1, and its run never ends.  The batch 1 then
@@ -2803,7 +2803,7 @@ def newer_entry_cases(expect: testing.Expect) -> None:
 
 
 def line_cases(expect: testing.Expect) -> None:
-    """Hold THE LINE of THE STACK: the batches that wait for a place of a full stack go in the sequence of the queue.
+    """Hold the line of the stack: the batches that wait for a place of a full stack go in the sequence of the queue.
 
     The stack holds the batches 1, 2 and 4.  The older batch 3 of a different lane waits in the line, and the batch 6
     waits too.  The batch 1 lands, and the batch 6 looks at the stack before the batch 3 does.  The free place goes to
@@ -2881,7 +2881,7 @@ def line_cases(expect: testing.Expect) -> None:
 
 
 def stack_thread_cases(expect: testing.Expect) -> None:
-    """Hold THE STACK with three real batches in threads: the top one ends its run first, and they land in order."""
+    """Hold the stack with three real batches in threads: the top one ends its run first, and they land in order."""
     with tempfile.TemporaryDirectory(prefix="land-stack-threads-") as work_text:
         work = Path(work_text)
         root, queue = work / "repo", work / "queue"
@@ -2982,7 +2982,7 @@ def series_landing(
 
 
 def series_cases(expect: testing.Expect) -> None:
-    """Hold THE SERIES: a series lands in order with its messages, a red tip, a commit that does not compose, a stack,
+    """Hold the series: a series lands in order with its messages, a red tip, a commit that does not compose, a stack,
     the merges of a branch, the words of --series, and the queue file of a series."""
     with tempfile.TemporaryDirectory(prefix="land-series-") as work_text:
         work = Path(work_text)
@@ -3214,7 +3214,7 @@ def cited_log_cases(expect: testing.Expect) -> None:
     """Hold the logs of a verdict: the run that an unread verdict cites survives the sweep of the runs until the read.
 
     The holder writes a verdict that names the logs of the first run, and then more than RUNS_KEPT runs end.  The
-    process of the request reads the verdict later and leaves the queue (THE LOGS of assay.loop.gate).
+    process of the request reads the verdict later and leaves the queue (the logs of assay.loop.gate).
     """
     with tempfile.TemporaryDirectory(prefix="land-cited-") as work_text:
         work = Path(work_text) / "work"
@@ -3424,7 +3424,7 @@ def landing_queue_cases(expect: testing.Expect, work: Path, root: Path) -> None:
 
 
 def claim_cases(expect: testing.Expect, work: Path, root: Path) -> None:
-    """Hold THE LANES: a holder takes no request that a different holder claims, and no batch beside an earlier copy."""
+    """Hold the lanes: a holder takes no request that a different holder claims, and no batch beside an earlier copy."""
     queue = land.queue_of(work, root)
     (root / "c1.txt").write_text("claimed\n", encoding="utf-8")
     (root / "c2.txt").write_text("free\n", encoding="utf-8")
@@ -3465,7 +3465,7 @@ def claim_cases(expect: testing.Expect, work: Path, root: Path) -> None:
 
 
 def deferred_claim_cases(expect: testing.Expect, work: Path) -> None:
-    """Hold the claim of a request that waits for the next batch: the holder frees it at the cut (THE LANES).
+    """Hold the claim of a request that waits for the next batch: the holder frees it at the cut (the lanes).
 
     The planted gate reads the claim of the second request while the run of the first batch goes on, as the holder of
     a different lane reads it.
@@ -3536,7 +3536,7 @@ def hold_drop_cases(expect: testing.Expect, work: Path, root: Path) -> None:
 
 
 def error_cases(expect: testing.Expect) -> None:
-    """Hold THE ERROR OF A RUN: an error of the check on one request, and an error of the run of the base too."""
+    """Hold the error of a run: an error of the check on one request, and an error of the run of the base too."""
     with tempfile.TemporaryDirectory(prefix="land-error-") as work_text:
         work = Path(work_text) / "work"
         root = Path(work_text) / "repo"
@@ -3618,7 +3618,7 @@ def hold_guarded(
 
 
 def queue_defect_cases(expect: testing.Expect) -> None:
-    """Hold an error of the read of the queue, before the holder knows its batch (THE HOLDER)."""
+    """Hold an error of the read of the queue, before the holder knows its batch (the holder)."""
     with tempfile.TemporaryDirectory(prefix="land-queue-defect-") as work_text:
         work = Path(work_text) / "work"
         root = Path(work_text) / "repo"
@@ -3931,7 +3931,7 @@ def log_lines(log: Path) -> list[str]:
 def only_first_lane(work: Path, lanes: contextlib.ExitStack) -> None:
     """Hold each lane of a work directory after the first one in the stack, so the planted processes share one lane.
 
-    THE LANES gives the lanes.  A case of one lane then holds the batch of one holder.
+    The gate gives the lanes.  A case of one lane then holds the batch of one holder.
     """
     for lane in range(1, gate.LANES):
         lanes.enter_context(gate.tree_lock(work, wait=False, lane=lane))

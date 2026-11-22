@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // evaluate_cost is pure arithmetic, and CtxFitsCostModel admits only a
 // context whose row is empty.  This context claims Bg, the authority of

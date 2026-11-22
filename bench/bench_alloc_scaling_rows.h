@@ -3,7 +3,7 @@
 // The scaling rows of the allocation door of the base and of three pinned
 // reference allocators, from one thread to many.
 //
-// THE UNITS
+// Units
 //   Each allocator compiles its rows in its own unit,
 //   bench_alloc_scaling_ALLOCATOR.cpp, and the units compile in parallel.
 //   The rows of one allocator are a large body of code under the sanitizers,
@@ -11,9 +11,9 @@
 //   bench_alloc_scaling.cpp reads the arguments, runs each unit, and prints
 //   the time ratios.
 //
-// THE ALLOCATORS
+// Allocators
 //   base       the allocation door of foundation/core/Heap.h through the
-//              owners of the base (THE BASE ADAPTER).  The door calls the
+//              owners of the base (the base adapter).  The door calls the
 //              allocator of the C library, glibc
 //   jemalloc   je_malloc, je_mallocx and je_sdallocx of the pinned jemalloc
 //   mimalloc   mi_malloc, mi_malloc_aligned, mi_free_size and
@@ -38,7 +38,7 @@
 //   prefix (utils/pins.txt).  Each release gives the bytes and the alignment
 //   of its request, as each release of the base does.
 //
-// THE ADAPTER
+// Adapter
 //   An allocator takes its place in each row through the concept
 //   AllocatorAdapter.  An adapter gives two kinds of block, and each kind
 //   takes the bytes of the request and an alignment of BlockAlignment:
@@ -58,7 +58,7 @@
 //   Each request is a multiple of 16 bytes, so no allocator rounds a request
 //   that another one does not round.
 //
-// THE BASE ADAPTER
+// Base adapter
 //   A bench has no door to the detail namespace of the base, so the base
 //   goes through its owners.  Block is the block of mint_aligned_bytes,
 //   which writes no byte.  Written is a HeapArray of bytes from
@@ -66,18 +66,18 @@
 //   storage of a Box with no object in it.  So each row measures what a
 //   caller of the base pays for the same work.
 //
-// THE TOUCH OF A ROW
+// Touch of a row
 //   The allocator rows take Block, so they measure the allocator alone.  The
 //   rows of a producer and a consumer, cache-scratch and the spans take
 //   Written: the owner writes each byte, the consumer reads the stamp, and
 //   the cost of the write is the same for each allocator.
 //
-// THE ROWS
+// Rows
 //   The eight workloads of mimalloc-bench are written again here for the
 //   adapter.  No program of mimalloc-bench is copied.
 //   larson         each thread replaces the block of a random slot of 1024
 //                  slots, 16 to 1008 bytes.  Each 16th replaced block goes to
-//                  the next thread, which releases it (THE HAND-OFF), as the
+//                  the next thread, which releases it (the hand-off), as the
 //                  objects of a server pass between its threads
 //   xmalloc        pairs of threads: the even slot writes blocks of 16 to 128
 //                  bytes and gives each to the odd slot, which releases it
@@ -101,7 +101,7 @@
 //                  goes to the next thread
 //   mstress        rounds of threads that start, replace 50000 blocks of 16
 //                  to 1008 bytes in 1024 slots, give their 1024 live blocks
-//                  to a thread of the next round, and end (THE ROUNDS)
+//                  to a thread of the next round, and end (the rounds)
 //   mleak          rounds of threads that start, replace 50000 blocks in 1024
 //                  slots, release each block and end.  The resident bytes
 //                  after the rounds show the memory that ended threads keep
@@ -121,7 +121,7 @@
 //   span           one thread takes a Written of 2, 8, 64 and 256 MiB at the
 //                  alignment of a huge page, writes each byte, and releases it
 //
-// THE HAND-OFF
+// Hand-off
 //   A row that moves blocks between threads moves them through a Mailbox: a
 //   ring of cells of one producer thread and one consumer thread.  A cell
 //   holds an owner of a block and an atomic flag.  The producer writes the
@@ -131,32 +131,32 @@
 //   channel holds only a Box, so the base has no channel of an owner of
 //   bytes.  Each allocator goes through the same Mailbox.
 //
-// THE THREADS OF A ROW
+// Threads of a row
 //   A row of N threads runs on the CPUs of the slots 0 to N - 1 of the
-//   spread of the run (THE SPREAD OF A RUN of bench/bench_harness.h), with
+//   spread of the run (the spread of a run of bench/bench_harness.h), with
 //   the CPU of the consumer of a pair row as the place of the row gives it.
 //   Slot 0 is the main thread.  Each other slot is a worker on a std::jthread
-//   that pins itself to the CPU of its slot (THE RAW WORKERS of
+//   that pins itself to the CPU of its slot (the raw workers of
 //   bench/bench_thread_scaling.cpp).
 //
-// THE PHASES OF A ROW
+// Phases of a row
 //   1. The start: each thread builds its own state and fills its live set.
 //   2. The window: bench::kWindows windows of equal time, as in
 //      bench/bench_thread_scaling.cpp.  The row gives the items of all
 //      threads in one second, the median and the spread of the windows, and
 //      the efficiency over the first row of the workload.
 //   3. The latency: the workers go on, and the main thread runs the op under
-//      Run::measure three times (THE RESOLUTION).  The first report gives
+//      Run::measure three times (the resolution).  The first report gives
 //      p50, p99 and the maximum of one op.  The second and the third report
 //      time 16 and 64 ops in each sample, and give the quantiles of the
 //      mean of one op in a sample.
 //   4. The stop: each thread stops its ops and waits for each other thread.
 //      Then no thread gives a block to another one, and each thread
 //      releases each block that it holds or that its Mailbox holds.
-//   THE ROUNDS and the rows of one thread have no window: Run::measure times
+//   The rounds and the rows of one thread have no window: Run::measure times
 //   one round or one op.
 //
-// THE RESOLUTION
+// Resolution
 //   The harness reads the TSC before and after each sample.  The TSC of the
 //   bench VM counts in steps of 22 or 23 ticks at 2.2467 GHz: a step of
 //   10 ns.  So each time of one op is a whole count of 10 ns, and a p50 of
@@ -168,21 +168,21 @@
 //   op in the first report, and a change of the p50 below 10 ns in the
 //   second and the third.
 //
-// THE STEAL OF A ROW
+// Steal of a row
 //   The steal column of /proc/stat counts, for each CPU, the time in which
 //   the hypervisor ran other work while the CPU had work, in ticks of 10 ms.
 //   A row with threads reads the column of the CPU of each slot at its start
-//   and after its stop.  A row with steal prints the steal and NOT VALID:
+//   and after its stop.  A row with steal prints the steal and not valid:
 //   other work of the host took a part of its time.  A pause below 10 ms
 //   reads as no steal, and the pause check of the harness measures it.
 //
-// THE CHECKS
+// Checks
 //   Each thread counts its allocations, its releases and its live bytes.  At
 //   the end of each row, the sums of the allocations and of the releases of
 //   all threads must agree, and the live bytes must be zero, else the
 //   process ends.  The release of each Written checks its stamp.
 //
-// THE MEMORY OF A ROW
+// Memory of a row
 //   The resident bytes of the process come from /proc/self/statm: at the
 //   start of the row, at the end of the window with the live bytes of all
 //   threads, and after the stop.  A row gives the growth over the start for
@@ -193,7 +193,7 @@
 //   alone:
 //       python3 utils/bin/loop bench --command -- BINARY jemalloc
 //
-// THE ARGUMENTS
+// Arguments
 //   An argument base, jemalloc, mimalloc, snmalloc or glibc selects that
 //   allocator, and with no such argument each allocator of the build runs.
 //   An argument that names a row, such as larson or class, selects that row,
@@ -201,14 +201,14 @@
 //   after the rows of 1 and 2 threads.  With no count, the rows have 1, 2,
 //   4, 8 and 16 threads, up to the count of the slots.
 //
-// THE COMMANDS
+// Commands
 //   1 to 8 threads, one L3 group:   python3 utils/bin/loop bench bench_alloc_scaling
 //   16 threads, two L3 groups:      python3 utils/bin/loop bench --cores 16 bench_alloc_scaling
 //   One allocator for the memory:   python3 utils/bin/loop bench --cores 9 --command -- BINARY mimalloc
 //   32 to 384 threads, on a host with no other work:
 //                                   build-bench/bench/bench_alloc_scaling 32 64 128 192 384
 //
-// THE TIME RATIOS
+// Time ratios
 //   A run of more than one allocator ends with the time of the base over the
 //   time of each reference for each row: the time of one item in a row with
 //   a window, and the p50 of one op in a row with no window.  A ratio above
@@ -262,7 +262,7 @@ constexpr std::size_t kRoundMs = 1000;
 // thread between two reads of the clock.
 constexpr std::uint64_t kItemsPerCheck = 64;
 constexpr std::uint64_t kItemsPerClock = 1024;
-// The cells of one Mailbox (THE HAND-OFF).
+// The cells of one Mailbox (the hand-off).
 constexpr std::size_t kMailboxCells = 256;
 // The draws of one thread, which its ops read in a cycle.
 constexpr std::size_t kDraws = 4096;
@@ -297,7 +297,7 @@ enum class Stamp : std::uint8_t {
     return Stamp{static_cast<std::uint8_t>(slot.raw() % 251 + 1)};
 }
 
-// The allocators of a run (THE ALLOCATORS).
+// The allocators of a run (the allocators).
 enum class AllocatorKind : std::uint8_t {
     base,
     jemalloc,
@@ -326,7 +326,7 @@ enum class AllocatorKind : std::uint8_t {
 
 constexpr std::size_t kAllocatorKinds = 5;
 
-// The rows of a run (THE ROWS).
+// The rows of a run (the rows).
 enum class RowKind : std::uint8_t {
     larson,
     xmalloc,
@@ -434,7 +434,7 @@ struct alignas(64) Tally {
 
 // ── The adapter ────────────────────────────────────────────────────────
 
-// The concept of an allocator of a row (THE ADAPTER).  Each member is
+// The concept of an allocator of a row (the adapter).  Each member is
 // static: an allocator of this bench has one state for the process.
 template <class A>
 concept AllocatorAdapter =
@@ -456,7 +456,7 @@ concept AllocatorAdapter =
         } noexcept -> std::same_as<void>;
     };
 
-// The concept of an adapter with a Constant of each size (THE ADAPTER).
+// The concept of an adapter with a Constant of each size (the adapter).
 template <class A>
 concept ConstantAdapter = AllocatorAdapter<A> && requires(typename A::template Constant<16> constant) {
     { A::template allocate_constant<16>() } noexcept -> std::same_as<typename A::template Constant<16>>;
@@ -482,7 +482,7 @@ using WrittenOf = typename A::template Written<Align>;
 // The allocation capability of the bench.
 [[nodiscard]] inline auto bench_alloc() noexcept { return eff::testing::test().alloc; }
 
-// The base through its owners (THE BASE ADAPTER).
+// The base through its owners (the base adapter).
 struct BaseAdapter {
     static constexpr AllocatorKind kind = AllocatorKind::base;
 
@@ -815,7 +815,7 @@ namespace bench_alloc {
 // ── The tallied calls ──────────────────────────────────────────────────
 
 // Each call of an adapter in a row goes through these doors, which keep the
-// Tally of the thread (THE CHECKS).
+// Tally of the thread (the checks).
 [[gnu::always_inline]] inline void count_take(Tally& tally, ByteCount bytes) noexcept {
     ++tally.allocations;
     tally.live_bytes += bytes.raw();
@@ -916,7 +916,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the Mailbox moves an owner of a block fr
 namespace bench_alloc {
 
 // The ring of one producer thread and one consumer thread that moves owners
-// of blocks (THE HAND-OFF).  The producer owns head_ and the consumer owns
+// of blocks (the hand-off).  The producer owns head_ and the consumer owns
 // tail_, each on its own cache line.
 template <class Item>
 class Mailbox {
@@ -1008,7 +1008,7 @@ template <class Item, class Body>
 
 // ── The control of a row ───────────────────────────────────────────────
 
-// The phase of a row (THE PHASES OF A ROW).  The main thread writes it.  The
+// The phase of a row (the phases of a row).  The main thread writes it.  The
 // window has one phase for each of its windows.
 enum class Phase : std::uint32_t {
     Wait,
@@ -1297,7 +1297,7 @@ struct Sh6bench {
 };
 
 // cache-scratch: one block of the main thread for each thread, then the
-// rewrite of an own block (THE ROWS).
+// rewrite of an own block (the rows).
 template <AllocatorAdapter A>
 struct CacheScratch {
     using Written = WrittenOf<A, BlockAlignment::natural>;
@@ -1431,8 +1431,8 @@ using Pair = ProducerConsumer<A, RowKind::pair>;
 // ── The memory of the process ──────────────────────────────────────────
 
 // The resident bytes of the process: the second field of /proc/self/statm,
-// a count of pages, or zero when the file does not read (THE MEMORY OF A
-// ROW).
+// a count of pages, or zero when the file does not read (the memory of a
+// row).
 [[nodiscard]] inline ByteCount read_resident() noexcept {
     ::fixy::FixedText<128> text{};
     if (::foundation::os::read_file(::fixy::CText{"/proc/self/statm"}, text).is_err()) return ByteCount{0};
@@ -1502,7 +1502,7 @@ inline void print_memory(MemoryReading const& memory) noexcept {
 // ── The results ────────────────────────────────────────────────────────
 
 // The time of one item of a row, for the time ratios of the end of a run
-// (THE TIME RATIOS).
+// (the time ratios).
 struct Summary {
     AllocatorKind allocator = AllocatorKind::base;
     RowKind row = RowKind::larson;
@@ -1530,15 +1530,15 @@ struct RowResult {
     bench::WindowSpread windows{};
     std::size_t paused_windows = 0;
     bench::Pause window_pause{};
-    // The steal of the CPUs of the row from its start to its stop (THE STEAL
-    // OF A ROW).
+    // The steal of the CPUs of the row from its start to its stop (the steal
+    // of a row).
     std::uint64_t steal_ms = 0;
     MemoryReading memory{};
-    // One report for each batch of kLatencyBatches (THE RESOLUTION).
+    // One report for each batch of kLatencyBatches (the resolution).
     ::fixy::FixedArray<bench::Report, kLatencyReports> latency{};
 };
 
-// The fatal exit of a row whose tallies do not agree (THE CHECKS).
+// The fatal exit of a row whose tallies do not agree (the checks).
 [[noreturn]] CRUCIBLE_COLD inline void refuse_tally(RowKind row, AllocatorKind allocator, Tally const& total) noexcept {
     ::fixy::fatal("the {} row of {} took {} blocks and released {}, and {} bytes stay live: a block was lost or "
                   "released two times",
@@ -1648,7 +1648,7 @@ constexpr std::uint64_t kMsPerStealTick = 10;
 constexpr std::size_t kColumnsBeforeSteal = 7;
 
 // The steal ticks of the CPU of each slot of a row, or none for a slot whose
-// CPU has no line (THE STEAL OF A ROW).
+// CPU has no line (the steal of a row).
 using StealTicks = ::fixy::FixedArray<::fixy::Option<std::uint64_t>, kMaxThreads>;
 
 // The CPU and the steal ticks of one line of /proc/stat.
@@ -1734,7 +1734,7 @@ inline constexpr std::uint64_t kWorkerOps = W::kItemsPerOp >= kItemsPerCheck ? 1
 template <class W>
 inline constexpr std::uint64_t kClockOps = W::kItemsPerOp >= kItemsPerClock ? 1 : kItemsPerClock / W::kItemsPerOp;
 
-// The stop of a thread (THE PHASES OF A ROW): it waits for each thread of
+// The stop of a thread (the phases of a row): it waits for each thread of
 // the row to stop, releases each of its blocks, and publishes its tally.
 template <class W>
 void stop_thread(RowControl& control, typename W::Shared& shared, typename W::Local& local, ThreadCount threads,
@@ -1791,7 +1791,7 @@ void run_worker(RowControl& control, typename W::Shared& shared, bench::ThreadSl
     stop_thread<W>(control, shared, local, threads, slot);
 }
 
-// The window of the main thread (THE PHASES OF A ROW of
+// The window of the main thread (the phases of a row of
 // bench/bench_thread_scaling.cpp): it starts each window, runs the op for
 // its part of kWindowNs, and then starts the latency phase.
 template <class W, class Op>
@@ -1850,8 +1850,8 @@ template <class W, class Op>
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the rows of the allocators run their workers on std::jthread")
 namespace bench_alloc {
 
-// The workers of one row, one std::jthread for each slot from slot 1 on (THE
-// THREADS OF A ROW).  A worker pins itself to the CPU of its slot.  The join
+// The workers of one row, one std::jthread for each slot from slot 1 on (the
+// threads of a row).  A worker pins itself to the CPU of its slot.  The join
 // waits for each worker.
 class RawWorkers {
 public:
@@ -1882,7 +1882,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 namespace bench_alloc {
 
 // One row of a workload with a window on the first threads.count slots
-// (THE PHASES OF A ROW).
+// (the phases of a row).
 template <AllocatorAdapter A, class W>
 [[nodiscard]] RowResult run_window_row(RowPlaces const& places, ThreadCount threads, Placement placement) {
     ::fixy::Box<RowControl> boxed = ::fixy::mint_box<RowControl>(bench_alloc());
@@ -2092,7 +2092,7 @@ void run_workload_rows(bench::Spread const& spread, ::fixy::View<ThreadCount con
 // ── The rounds ─────────────────────────────────────────────────────────
 
 // mstress and mleak: rounds of threads that start, replace blocks, and end
-// (THE ROUNDS).  A thread of an mstress round gives its live blocks to bank
+// (the rounds).  A thread of an mstress round gives its live blocks to bank
 // round % 2 at its own slot, and releases the blocks of bank (round + 1) % 2
 // at the slot (slot + round) % threads, so no two threads of a round touch
 // one array.  Each array of a slot of a bank is owned by one thread of a
@@ -2123,7 +2123,7 @@ struct RoundWorkload {
     // Gives the array of slot in bank to body, in place, through the element
     // door of the banks.  The threads of one round call the door on the one
     // array of the banks at the same time, and the door writes no state of
-    // that array.  Each thread of a round names other elements (THE ROUNDS),
+    // that array.  Each thread of a round names other elements (the rounds),
     // so no two threads write one element, and the join of the round orders
     // its writes before the next round.
     template <class Body>
@@ -2288,7 +2288,7 @@ void run_round_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const>
 // ── The rows of one thread ─────────────────────────────────────────────
 
 // The bytes of the slot of the size class at the position position of the
-// classes of the base, from 0 (THE SIZE CLASSES of foundation/alloc/Layout.h):
+// classes of the base, from 0 (the size classes of foundation/alloc/Layout.h):
 // 16 to 128 bytes in steps of 16, then four classes for each doubling to
 // 2 MiB.
 [[nodiscard]] consteval std::size_t class_bytes(std::size_t position) noexcept {
@@ -2409,7 +2409,7 @@ void run_box_channel_rows(bench::Spread const& spread, RunRecord& record);
 
 // ── The run ────────────────────────────────────────────────────────────
 
-// The allocators and the rows that the arguments select (THE ARGUMENTS).
+// The allocators and the rows that the arguments select (the arguments).
 struct Selection {
     ::fixy::FixedArray<bool, kAllocatorKinds> allocators{};
     ::fixy::FixedArray<bool, kRowKinds> rows{};
@@ -2422,7 +2422,7 @@ struct Selection {
     }
 };
 
-// The selection of the arguments, and each count of threads (THE ARGUMENTS).
+// The selection of the arguments, and each count of threads (the arguments).
 struct Arguments {
     Selection selection{};
     ::fixy::FixedList<ThreadCount, kMaxRows> counts{};
@@ -2452,7 +2452,7 @@ void run_allocator(bench::Spread const& spread, Arguments const& arguments, RunR
 }
 
 // The rows of each allocator of the build, each in its own unit
-// bench_alloc_scaling_ALLOCATOR.cpp (THE UNITS).
+// bench_alloc_scaling_ALLOCATOR.cpp (the units).
 void run_base_rows(bench::Spread const& spread, Arguments const& arguments, RunRecord& record);
 void run_glibc_rows(bench::Spread const& spread, Arguments const& arguments, RunRecord& record);
 #if defined(CRUCIBLE_BENCH_JEMALLOC)

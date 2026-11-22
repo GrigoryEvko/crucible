@@ -15,8 +15,8 @@
 namespace crucible::test {
 
 // The bits of the homes of a record.  A set bit tells that the probed names
-// of that header are in the target namespace of the unit (THE TARGET
-// NAMESPACE of foundation/Platform.h).
+// of that header are in the target namespace of the unit (the target
+// namespace of foundation/Platform.h).
 inline constexpr std::uint64_t swiss_home_bit = std::uint64_t{1} << 0;
 inline constexpr std::uint64_t philox_home_bit = std::uint64_t{1} << 1;
 inline constexpr std::uint64_t fec_home_bit = std::uint64_t{1} << 2;

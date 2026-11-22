@@ -1,6 +1,6 @@
 """The runner of the engine plugin: the sections of the objects of a build, the configuration of the build, and each rule.
 
-THE SECTIONS
+Sections
     The quarantine plugin of utils/tools/quarantine/ writes the findings of
     each unit into the section .crucible.quarantine of its object
     (assay.readers.sections).  The runner reads the section of each object of
@@ -10,17 +10,17 @@ THE SECTIONS
     time, for example a finding of a header that two units include.  A line
     of the kind region is no finding: the census keeps the first line and the
     reason of each opt-out region of each file.  The reason has one space
-    between each two words (assay.readers.sections, THE ENTITIES OF THE
-    RECORDS).
+    between each two words (assay.readers.sections, the entities of the
+    records).
 
     A build of a configuration that only parses has no object
     (assay.core.configuration.is_parse_build).  `loop syntax` parses each
     unit of all there.  The runner reads the report file of each unit in its
-    report directory (assay.readers.sections, THE REPORT OF A PARSE BUILD).
+    report directory (assay.readers.sections, the report of a parse build).
     The stamp file of that directory has the function of the stamp of a
     section.
 
-THE PROBLEMS
+Problems
     The census gives a problem for each object with a compile that loads the
     plugin and with no section.  It also gives a problem for each section
     with a stamp that is not the stamp of the compile command of its object.
@@ -29,20 +29,20 @@ THE PROBLEMS
     table.  Each rule of a call gives each problem as an error, because the
     findings of the rule are then not complete.
 
-THE WRITE
+Write
     `guard write --rule RULE --build-dir DIR` writes the ledger of a rule from
     one build.  The counts of one build are partial, and the write lowers no
-    row (THE WRITE of assay.core.ledger).  The landing gate gives one write
-    a build of each of its configurations, and that write is complete (THE
-    REDUCE of assay.core.ledger).  The write reads the counts of each build
+    row (the write of assay.core.ledger).  The landing gate gives one write
+    a build of each of its configurations, and that write is complete (the
+    reduce of assay.core.ledger).  The write reads the counts of each build
     (counts_of_builds()).  A build that the rule does not apply to, a build
     that cannot be read, and a build with a problem make the write write
     nothing.
 
-THE RULES
+Rules
     Each finding line has a rule of the engine plugin of utils/registry.txt.
     A record of the library code has a tag and no rule (assay.readers.sections,
-    THE SECTION), and no rule of the engine reads it.
+    the section), and no rule of the engine reads it.
     A rule is the function findings(context) of its module,
     assay/guard/engines/plugin/ID.py with underscores for the hyphens.  Its
     errors are its violations, and assay.core.ledger judges them against the
@@ -51,7 +51,7 @@ THE RULES
     run(rule, context, warnings_dir) and write(rule, request).  The module of
     the rule quarantine does that.
 
-THE STATUS
+Status
     A run exits 0 with no error and 1 with an error.  It exits 77, SKIPPED of
     assay.guard.engines.meta.runner, when the rule does not apply to the
     build:
@@ -83,7 +83,7 @@ from assay.readers import sections as quarantine_sections
 
 PLUGIN_ARGUMENT = "-fplugin-arg-crucible_quarantine-"
 STAMP_ARGUMENT = f"{PLUGIN_ARGUMENT}stamp="
-# The threads that read the sections of the objects: the job count of the package (THE JOB COUNT of
+# The threads that read the sections of the objects: the job count of the package (the job count of
 # assay.core.proc).
 READERS = proc.DEFAULT_JOBS
 # The rule of the region lines of a section (the head comment of utils/tools/quarantine/plugin.h).
@@ -137,7 +137,7 @@ class Census:
         return sorted(item for item in self.findings if item.rule == rule_id)
 
     def errors(self, rule_id: str) -> list[check_report.Finding]:
-        """Return each problem of the census as an error of one rule (THE PROBLEMS)."""
+        """Return each problem of the census as an error of one rule (the problems)."""
         return [check_report.Finding("error", problem.path, 0, rule_id, problem.message) for problem in self.problems]
 
     def line_errors(
@@ -160,11 +160,11 @@ class Census:
 
 @dataclass(frozen=True, slots=True)
 class WriteRequest:
-    """What one write of the ledger of a plugin rule does (THE WRITE).
+    """What one write of the ledger of a plugin rule does (the write).
 
     `mode` is the mode of assay.core.ledger.  `more_builds` holds the other builds of a reduce, after `build_dir`
-    (THE REDUCE of assay.core.ledger).  A write with no other build reads one build, and it lowers no row.  `paths`
-    holds the paths of the rows that the write writes, or none for each row (THE PATHS of assay.core.ledger).
+    (the reduce of assay.core.ledger).  A write with no other build reads one build, and it lowers no row.  `paths`
+    holds the paths of the rows that the write writes, or none for each row (the paths of assay.core.ledger).
     """
 
     root: Path
@@ -181,7 +181,7 @@ class WriteRequest:
 
     @property
     def is_partial(self) -> bool:
-        """True when the write reads one build, and its counts are partial (THE WRITE of assay.core.ledger)."""
+        """True when the write reads one build, and its counts are partial (the write of assay.core.ledger)."""
         return not self.more_builds
 
 
@@ -236,7 +236,7 @@ def read_object(path: Path, stamp: str, build_dir: Path) -> ObjectSection:
 
 
 def read_parsed(path: Path, stamp: str, build_dir: Path) -> ObjectSection:
-    """Read the report of one unit of a parse build (THE SECTIONS).  A missing report or a different stamp is a problem."""
+    """Read the report of one unit of a parse build (the sections).  A missing report or a different stamp is a problem."""
     shown = build_census.shown(path, build_dir)
     rerun = f"Run `python3 utils/bin/loop syntax {build_dir}` again"
     try:
@@ -305,7 +305,7 @@ def census_of(items: Sequence[ObjectSection]) -> Census:
 
 
 def read_census(build_dir: Path, root: Path) -> Census:
-    """Read the section of each object of all with a compile that loads the plugin (THE SECTIONS).
+    """Read the section of each object of all with a compile that loads the plugin (the sections).
 
     Complexity: linear in the sections and the finding lines of the objects.
 
@@ -353,7 +353,7 @@ class PluginContext:
         return build_census.shown(self.build_dir, self.root) if self.build_dir is not None else "-"
 
     def census(self) -> Census:
-        """Return the census of the build (THE SECTIONS).
+        """Return the census of the build (the sections).
 
         Raises:
             NotApplicable: If the call gives no build directory, or the rules do not apply to the build
@@ -397,7 +397,7 @@ def census_or_status(rule: rule_registry.Rule, context: PluginContext, warnings_
 
 
 def run_rule(rule: rule_registry.Rule, context: PluginContext, warnings_dir: Path | None) -> int:
-    """Run one rule on the build of the context, judge its findings against its ledger and write them (THE RULES).
+    """Run one rule on the build of the context, judge its findings against its ledger and write them (the rules).
 
     Returns:
         0 with no error, 1 with an error, SKIPPED when the rule does not apply
@@ -435,7 +435,7 @@ def counts_of_builds(
     counts: Callable[[PluginContext], Mapping[rule_ledger.Key, int]],
     context_of: Callable[[Path, Path | None], PluginContext] = PluginContext,
 ) -> list[Mapping[rule_ledger.Key, int]] | int:
-    """Return the counts of each build of a write, or the status of a build that the write cannot use (THE WRITE).
+    """Return the counts of each build of a write, or the status of a build that the write cannot use (the write).
 
     `counts` gives the counts of one build, and it raises BuildError for a build with a problem.  The function writes
     one line for a build that the rule does not apply to and for a build that cannot be read, and the write then
@@ -483,10 +483,10 @@ def finding_counts(rule: rule_registry.Rule, context: PluginContext) -> Counter[
 
 
 def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
-    """Write the ledger of one plugin rule from the builds of the request (THE WRITE).
+    """Write the ledger of one plugin rule from the builds of the request (the write).
 
     A module that writes its ledger itself writes it, and it refuses the paths of a request.  For each other rule,
-    assay.core.ledger writes it.  A request with paths writes only the rows of those paths (THE PATHS of
+    assay.core.ledger writes it.  A request with paths writes only the rows of those paths (the paths of
     assay.core.ledger).
 
     Returns:
@@ -532,7 +532,7 @@ def print_findings(root: Path, build_dir: Path, place: str | None, kind: str | N
     """Write each finding line and each region line of a build and of the census of its fixtures, of a place and kind.
 
     A place is a file, or a directory and each directory under it.  A place with '/' at its end selects the files of
-    that one directory, the key of a row of the rule quarantine (THE KEY of assay.guard.engines.plugin.quarantine).
+    that one directory, the key of a row of the rule quarantine (the key of assay.guard.engines.plugin.quarantine).
     The census of the fixtures gives the lines of their sources (assay.guard.engines.plugin.fixtures).
 
     Returns:

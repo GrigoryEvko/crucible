@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A brand names one region, and it carries no state.  A brand with a
 // data member would give a token bytes that no mint wrote.  No mint can

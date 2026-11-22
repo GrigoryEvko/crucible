@@ -2,7 +2,7 @@
 
 // The process doors of fixy.
 //
-// THE IDENTITY DOOR
+// Identity door
 //   The id of the calling process, the id of the calling thread and the
 //   effective user id of the process, as the kernel gives them.  The door file
 //   src/fixy/os/Process.cpp issues getpid, gettid and geteuid with the raw
@@ -18,7 +18,7 @@
 //   namespace that ended to a new namespace, and each process of the old one
 //   ended before that.
 //
-// THE PROCESS PROBE
+// Process probe
 //   probe_process(ctx, process) tells if a process of the id process lives.
 //   The door file opens a descriptor of the process with the raw pidfd_open,
 //   and it closes the descriptor at once.  The answer is one of three:
@@ -41,7 +41,7 @@
 //   process of another namespace is gone or a different process.  The probe
 //   reads the process state, so it takes the context of an identity read.
 //
-// THE CHILD DOOR
+// Child door
 //   spawn_child(test, body) starts a child process that runs body and then
 //   ends with the exit code 0.  A body can take a ForkedChild const&: the
 //   proof that it runs in the child, after the fork.  Only the child door
@@ -81,7 +81,7 @@
 //   runs gives its own child a copy, and a wait then also waits for the end
 //   of that second child.
 //
-// THE WAIT WITH A LIMIT
+// Wait with a limit
 //   wait_within(std::move(child), limit) waits for the end of the child for
 //   at most limit, and it reads no byte of the standard error of the child
 //   while the child runs.  So a child that fills its pipe keeps it full, and
@@ -91,7 +91,7 @@
 //   holds its last bytes.  The wait looks at the child one time in each tick
 //   of 100 microseconds, so it sees an end at most one tick late.
 //
-// THE TRACED CHILD
+// Traced child
 //   spawn_traced_child(test, memory, body) starts a child as spawn_child
 //   does, and the calling thread becomes its tracer.  The child calls
 //   PTRACE_TRACEME and stops itself with SIGSTOP before its body runs.  A
@@ -99,7 +99,7 @@
 //   option PTRACE_O_EXITKILL, so it ends when its tracer ends.
 //
 //   memory tells what the tracer can read.  TracedMemory::sealed keeps the
-//   child not dumpable (THE CORE DUMP of foundation/os/ChildProcess.h): the
+//   child not dumpable (the core dump of foundation/os/ChildProcess.h): the
 //   tracer reads the stops of the child, and the kernel refuses a read of its
 //   memory and of the links of /proc/PID/fd.  TracedMemory::readable makes
 //   the child dumpable before it stops, so the tracer reads them too, and a
@@ -112,7 +112,7 @@
 //   signal ends a traced child as it ends a child with no tracer.  The one
 //   exception is a stop signal: the tracer drops it, so a traced child never
 //   stays in a stop.  Each wait of a traced child has a limit, and it reads
-//   no output while the child runs (THE WAIT WITH A LIMIT).  A TracedChild
+//   no output while the child runs (the wait with a limit).  A TracedChild
 //   that no wait took ends its child with SIGKILL in its destructor.
 //
 //   The kernel takes the requests of a tracer only from the thread that
@@ -159,12 +159,12 @@ enum class ThreadId : std::uint32_t {
 enum class UserId : std::uint32_t {
 };
 
-// The id of a pid namespace: the inode number of its namespace file (THE
-// IDENTITY DOOR).
+// The id of a pid namespace: the inode number of its namespace file (the
+// identity door).
 enum class PidNamespaceId : std::uint64_t {
 };
 
-// The answer of the probe of a process (THE PROCESS PROBE).
+// The answer of the probe of a process (the process probe).
 enum class ProcessState : std::uint8_t {
     alive,
     gone,
@@ -173,7 +173,7 @@ enum class ProcessState : std::uint8_t {
 
 namespace detail {
 
-// The answer of the probe for an error of the open (THE PROCESS PROBE).
+// The answer of the probe for an error of the open (the process probe).
 [[nodiscard]] constexpr ProcessState judge_probe_error_(::foundation::os::Errno error) noexcept {
     if (error == ::foundation::os::Errno::esrch) return ProcessState::gone;
     if (error == ::foundation::os::Errno::eperm) return ProcessState::alive;
@@ -220,7 +220,7 @@ template <eff::IsExecCtx Ctx>
     return detail::current_user_();
 }
 
-// The state of the process of the id process (THE PROCESS PROBE).
+// The state of the process of the id process (the process probe).
 template <eff::IsExecCtx Ctx>
     requires CtxFitsIdentityRead<Ctx>
 [[nodiscard]] inline ProcessState probe_process(Ctx const&, ProcessId process) noexcept {
@@ -237,8 +237,8 @@ concept CtxFitsChildProcess = eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx,
 // ChildReport holds.
 inline constexpr std::size_t kChildOutputCapacity = 16384;
 
-// The longest time that a wait with a limit waits for its child (THE WAIT
-// WITH A LIMIT).
+// The longest time that a wait with a limit waits for its child (the wait
+// with a limit).
 using WaitLimit = ::foundation::core::Quantity<::foundation::core::unit::Millisecond, std::uint32_t>;
 
 // The signal that ends a child at the limit of its wait: SIGKILL.
@@ -249,7 +249,7 @@ inline constexpr std::uint8_t kLimitSignal = 9;
 // child ends before its body runs.
 inline constexpr std::uint8_t kChildTraceRefused = 126;
 
-// What the tracer of a traced child can read (THE TRACED CHILD): only its
+// What the tracer of a traced child can read (the traced child): only its
 // stops, or also its memory and the links of /proc/PID/fd.
 enum class TracedMemory : std::uint8_t {
     sealed,
@@ -310,7 +310,7 @@ public:
     }
 
     // True when the child ran to the limit of a wait with a limit, and the
-    // door ended it with kLimitSignal (THE WAIT WITH A LIMIT).
+    // door ended it with kLimitSignal (the wait with a limit).
     [[nodiscard]] bool is_ended_at_limit() const noexcept { return wait_end_ == detail::WaitEnd::at_limit; }
 
     [[nodiscard]] ::foundation::core::TextView output() const& noexcept { return output_.view(); }
@@ -331,7 +331,7 @@ private:
 };
 
 // The proof that the code that holds it runs in a child of the child door,
-// after the fork (THE CHILD DOOR).  Only spawn_child builds one, in the
+// after the fork (the child door).  Only spawn_child builds one, in the
 // child, and it gives the body a reference to it.  The proof does not copy
 // or move, so it stays in the call of the body.
 class ForkedChild final {
@@ -385,7 +385,7 @@ private:
 };
 
 // One child process that the calling thread traces, and the read end of the
-// pipe of its standard error (THE TRACED CHILD).  Only spawn_traced_child
+// pipe of its standard error (the traced child).  Only spawn_traced_child
 // makes a TracedChild that names a process, and a wait takes it.  A
 // TracedChild that no wait took ends its child with SIGKILL in its
 // destructor.
@@ -584,7 +584,7 @@ collect_child_(ChildParts parts) noexcept;
 
 // Waits for the end of the child for at most limit, ends it with
 // kLimitSignal at the limit, then reads its output to its end and gives its
-// report (THE WAIT WITH A LIMIT).  The descriptor is closed in each case.
+// report (the wait with a limit).  The descriptor is closed in each case.
 // Complexity: one look at the child in each tick, and O(n) in the bytes of
 // the output.
 [[nodiscard]] ::foundation::core::Result<ChildReport, ::foundation::os::Errno>
@@ -697,16 +697,16 @@ SyscallStop::read_text(ChildAddress address, ::foundation::core::FixedText<Capac
 }
 
 // A body of the child door: a call with no argument, or a call with the
-// proof of the child (THE CHILD DOOR).
+// proof of the child (the child door).
 template <typename Body>
 concept ChildBody = std::is_invocable_v<Body&> || std::is_invocable_v<Body&, ForkedChild const&>;
 
 // Starts a child process that runs body, and then ends with the exit code 0
-// (THE CHILD DOOR).  The parent gets the Child, or the error of the pipe or
+// (the child door).  The parent gets the Child, or the error of the pipe or
 // of the fork.  The body runs only in the child, and it may use only what is
 // safe after a fork.  A body that takes a ForkedChild gets the proof of the
 // child.  A closure that the caller gives up goes to the once door, and a
-// lent body or a function gets one call in place (THE CHILD DOOR).
+// lent body or a function gets one call in place (the child door).
 template <eff::IsExecCtx Ctx, typename Body>
     requires CtxFitsChildProcess<Ctx> && ChildBody<Body>
 [[nodiscard]] ::foundation::core::Result<Child, ::foundation::os::Errno> spawn_child(Ctx const& /*test*/,
@@ -750,7 +750,7 @@ template <eff::IsExecCtx Ctx, typename Body>
 }
 
 // Waits for the end of the child for at most limit, and reads no output
-// while the child runs (THE WAIT WITH A LIMIT).  At the limit, the door ends
+// while the child runs (the wait with a limit).  At the limit, the door ends
 // the child with kLimitSignal, and is_ended_at_limit() of the report is true.
 // The empty Child gives echild with no system call.
 [[nodiscard]] inline ::foundation::core::Result<ChildReport, ::foundation::os::Errno>
@@ -763,12 +763,12 @@ wait_within(Child&& child, WaitLimit limit) noexcept {
 }
 
 // Starts a child process that the calling thread traces, and that runs body
-// and then ends with the exit code 0 (THE TRACED CHILD).  memory tells what
+// and then ends with the exit code 0 (the traced child).  memory tells what
 // the tracer can read.  The parent gets the TracedChild, or the error of the
 // pipe, of the fork or of the trace.  The body runs only in the child, and it
 // may use only what is safe after a fork.  A closure that the caller gives up
 // goes to the once door, and a lent body or a function gets one call in place
-// (THE CHILD DOOR).
+// (the child door).
 template <eff::IsExecCtx Ctx, typename Body>
     requires CtxFitsChildProcess<Ctx> && std::is_invocable_v<Body&>
 [[nodiscard]] ::foundation::core::Result<TracedChild, ::foundation::os::Errno>
@@ -792,7 +792,7 @@ spawn_traced_child(Ctx const& /*test*/, TracedMemory memory, Body&& body) noexce
 }
 
 // Runs the traced child to its end for at most limit, and delivers each of
-// its signals other than a stop signal (THE TRACED CHILD).  The empty
+// its signals other than a stop signal (the traced child).  The empty
 // TracedChild gives echild with no system call.
 [[nodiscard]] inline ::foundation::core::Result<ChildReport, ::foundation::os::Errno>
 wait_within(TracedChild&& child, WaitLimit limit) noexcept {
@@ -829,7 +829,7 @@ trace_within(TracedChild&& child, WaitLimit limit, Visit&& visit) noexcept {
     return detail::end_trace_(run);
 }
 
-// Ends the calling process with code (THE CHILD DOOR).  No exit hook and no
+// Ends the calling process with code (the child door).  No exit hook and no
 // static destructor runs, so a child ends with no effect on the state that it
 // shares with its parent, such as a file that the parent opened.
 template <eff::IsExecCtx Ctx>

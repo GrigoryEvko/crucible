@@ -5,7 +5,7 @@
 // neither, and answer true for a nullary function because void equals
 // void.
 //
-// VIOLATION: a TU asks a nullary function whether it preserves its value.
+// Violation: a TU asks a nullary function whether it preserves its value.
 //
 // Expected diagnostic: the PipelineStage constraint on
 // pipeline_stage_is_value_preserving_v fails.

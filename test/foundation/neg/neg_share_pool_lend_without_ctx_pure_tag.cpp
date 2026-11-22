@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A lend fails while the exclusive is out, and another thread deposits the
 // exclusive at a time that the schedule decides.  So a lend takes a context

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A transaction log belongs to one thread.  Each member takes that
 // thread's owner proof, so a thread that holds no proof cannot roll the

@@ -11,7 +11,7 @@
 // refuses such a body by the types of its captures, whatever the door that
 // made the borrow and whatever its brand.
 //
-// THE WALK
+// Walk
 //   The walk reads each capture of the body (the members of its class, which
 //   the sixth patch of GCC shows) and each type that a capture reaches.  Each
 //   node of the walk is in one of three regions:
@@ -72,8 +72,8 @@
 // Such a body captures the parts that it writes.
 //
 // The walk is a function that is no template, so no unit can specialize what
-// it admits.  It reads each pair of a type and a region one time, and THE
-// MEMO keeps the verdict of each captured type and each target of an
+// it admits.  It reads each pair of a type and a region one time, and the
+// memo keeps the verdict of each captured type and each target of an
 // indirection for the translation unit.  Complexity: linear in the distinct
 // pairs that the body reaches, times the scan of the visited list, at compile
 // time only.
@@ -91,11 +91,11 @@
 namespace foundation::core {
 
 // The mark owns_its_storage of foundation/core/Owner.h names an owner whose
-// type arguments the store check reads, and no member (THE WALK).
+// type arguments the store check reads, and no member (the walk).
 
 namespace detail {
 
-// The three regions of THE WALK.  The test of a scope brand is
+// The three regions of the walk.  The test of a scope brand is
 // detail::names_scope_brand of foundation/core/Ref.h.
 enum class StoreRegion : unsigned char {
     owned,
@@ -131,7 +131,7 @@ enum class Annotated : unsigned char {
 }
 
 // True for a class with a type argument that is a scope brand: a borrow of a
-// frame (THE WALK), such as ViewMut<T, Brand>, RefMut<T, Brand> or
+// frame (the walk), such as ViewMut<T, Brand>, RefMut<T, Brand> or
 // Ref<T, Brand> of the brand of a frame.
 [[nodiscard]] consteval bool is_frame_borrow_(std::meta::info type) {
     if (!std::meta::has_template_arguments(type)) return false;
@@ -163,7 +163,7 @@ enum class Annotated : unsigned char {
     return element == ^^unsigned char || element == ^^char || element == ^^signed char || element == ^^std::byte;
 }
 
-// True for an owner of THE WALK.  A class with no annotation states nothing,
+// True for an owner of the walk.  A class with no annotation states nothing,
 // so the test reads the annotations only of a class that has some.
 [[nodiscard]] consteval bool is_storage_owner_(std::meta::info type, Annotated annotated) {
     namespace tr = ::foundation::transfer;
@@ -194,7 +194,7 @@ enum class Annotated : unsigned char {
             || tr::detail::states(type, ^^tr::refers_deep));
 }
 
-// The visited lists of THE WALK, one for each region, and the next node of
+// The visited lists of the walk, one for each region, and the next node of
 // each list.
 class StoreWalk {
 public:
@@ -240,11 +240,11 @@ private:
 
 [[nodiscard]] consteval bool reaches_slot_(std::meta::info type, StoreRegion region);
 
-// True when THE WALK from the start type in the start region reaches a
+// True when the walk from the start type in the start region reaches a
 // borrow slot in the writable region.  The start type is bare, and a class
-// type is complete or the walk refuses it.  The walk asks THE MEMO for the
+// type is complete or the walk refuses it.  The walk asks the memo for the
 // target of each pointer, borrow and borrow of a frame, so the walk of one
-// target type runs one time in a translation unit.  A cycle of THE MEMO would
+// target type runs one time in a translation unit.  A cycle of the memo would
 // need a class that holds a borrow of a frame of its own type, and such a
 // cycle stops the build with no verdict.
 [[nodiscard]] consteval bool reaches_slot_from_(std::meta::info start_type, StoreRegion start) {
@@ -322,7 +322,7 @@ private:
     return false;
 }
 
-// THE MEMO
+// Memo
 //   The verdict of one type in one region does not depend on the body that
 //   reaches it, so each translation unit computes it one time, in an
 //   instance of this variable template.  The bodies of one class capture
@@ -331,16 +331,16 @@ private:
 template <std::meta::info Type, StoreRegion Region>
 inline constexpr bool reaches_slot_from_v = reaches_slot_from_(Type, Region);
 
-// The memo of the verdict of the type in the region (THE MEMO).
+// The memo of the verdict of the type in the region (the memo).
 [[nodiscard]] consteval bool reaches_slot_(std::meta::info type, StoreRegion region) {
     std::meta::info const arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(region)};
     return std::meta::extract<bool>(std::meta::substitute(^^reaches_slot_from_v, arguments));
 }
 
-// True when THE WALK from the class of a body reaches a borrow slot in the
+// True when the walk from the class of a body reaches a borrow slot in the
 // writable region.  body is the class of the body with no reference.  The
 // class of a closure is unique to its lambda, so the walk reads its captures
-// here and asks THE MEMO for each of them.  A named class is the start of the
+// here and asks the memo for each of them.  A named class is the start of the
 // memo itself.
 [[nodiscard]] consteval bool stores_borrow_outside_(std::meta::info body, BodyForm form) {
     namespace refl = ::foundation::reflect;
@@ -364,7 +364,7 @@ inline constexpr bool reaches_slot_from_v = reaches_slot_from_(Type, Region);
 
 }  // namespace detail
 
-// A body of a frame door that stores no borrow outside the frame (THE WALK):
+// A body of a frame door that stores no borrow outside the frame (the walk):
 // no capture reaches a borrow slot that the caller can read after the call.
 // Body is the type that the door deduces for its forwarding parameter, so an
 // lvalue reference names a body that the caller holds.

@@ -32,8 +32,8 @@ namespace crucible {
 
 struct CompiledKernel;
 
-// The transfer facts of a compiled kernel, which no header defines yet (THE
-// OPAQUE TYPES of foundation/Transfer.h).  The file that defines
+// The transfer facts of a compiled kernel, which no header defines yet (the
+// opaque types of foundation/Transfer.h).  The file that defines
 // CompiledKernel must assert, beside the definition, that the definition
 // holds the statement:
 //
@@ -784,7 +784,7 @@ public:
     //
     // The two are the same 64 bits and always were, because the no-recipe
     // path folds nothing.  What the tag buys is that they are no longer the
-    // same SOURCE CODE.  Under the old shape the recipe arrived through an
+    // same source code.  Under the old shape the recipe arrived through an
     // optional method, so a producer that never called it got a
     // recipe-blind cache key and no diagnostic: the whole runtime path did
     // exactly that.  Under this shape omission does not compile, and the

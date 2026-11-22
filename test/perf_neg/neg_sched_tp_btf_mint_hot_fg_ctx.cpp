@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // mint_sched_tp_btf rejects HotFgCtx.  The hot foreground context must
 // never pay the multi-millisecond BPF program load and mmap.  This is a

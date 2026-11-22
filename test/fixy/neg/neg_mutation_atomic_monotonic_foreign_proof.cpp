@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
-// The type of a counter of one writer names the proof of that writer (THE
-// WRITER OF A COUNTER of fixy/Mutation.h), and only its Owner makes that
+// The type of a counter of one writer names the proof of that writer (the
+// writer of a counter of fixy/Mutation.h), and only its Owner makes that
 // proof.  Another class can make a proof of its own, but that proof names
 // another owner, so it does not advance the counter.
 //

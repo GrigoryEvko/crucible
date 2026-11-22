@@ -1,6 +1,6 @@
 """python-lint — a clean run of the pinned ruff, and no change from ruff format, on the package and the masters.
 
-THE RUN
+Run
     The rule starts the pinned ruff (`setup install ruff`, assay.setup.install)
     through assay.core.proc, in the directory utils/ of the tree, on each file
     of the scope (assay.guard.engines.meta.package).  It starts `ruff check`
@@ -10,18 +10,18 @@ THE RUN
     default rules of the pinned version.  With --no-cache, ruff writes no
     cache into the tree.
 
-THE RULE
+Rule
     Each issue of ruff check is a finding with the code of ruff as its kind,
     such as F401.  Each part of a file that ruff format changes is a finding
     of the kind format.  The entity is the function or the class that holds
     the line.  assay.readers.tool_reports reads the two reports.
 
-THE TOOL
+Tool
     A tree with no installed ruff at the pin gives NotApplicable, and the test
     of the rule then gives the skip status.  `python3 utils/bin/setup install
     ruff` installs it.
 
-THE THREADS
+Threads
     ruff starts one thread for each CPU of the host in its pool, and each
     thread waits in a loop for work.  On 2026-10-17, the build host had 256
     CPUs.  There, a check of the package took 2.57 s of wall time and 3.64 s
@@ -48,7 +48,7 @@ OPTIONS = ("--isolated", "--no-cache", "--target-version", "py314", "--line-leng
 FORMAT_KIND = "format"
 # The exit statuses of ruff: no issue, and issues in the report.
 CLEAN, ISSUES = 0, 1
-# The threads of the pool of ruff, and the variable that sets them (THE THREADS).
+# The threads of the pool of ruff, and the variable that sets them (the threads).
 RUFF_THREADS = 8
 THREADS_VARIABLE = "RAYON_NUM_THREADS"
 

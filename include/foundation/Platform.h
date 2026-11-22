@@ -68,7 +68,7 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
               "GCC another distance. Before you change the distance, audit each alignas(64).");
 #endif
 
-// THE TARGET NAMESPACE
+// Target namespace
 //   The source of some inline functions of the base reads the vector
 //   extensions of the target: an arm on a macro such as __AVX512F__, or a
 //   constant that such an arm sets, such as simd::native_lanes.  If a program
@@ -137,7 +137,7 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 #define CRUCIBLE_FLATTEN [[gnu::flatten]]
 #define CRUCIBLE_NOINLINE [[gnu::noinline]]
 
-// CONST is the stronger of the two. A PURE function may read memory. A CONST
+// const is the stronger of the two. A pure function may read memory. A const
 // function must derive its result from its arguments alone.
 #define CRUCIBLE_PURE [[gnu::pure, nodiscard]]
 #define CRUCIBLE_CONST [[gnu::const, nodiscard]]
@@ -238,7 +238,7 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 // trees had never once been armed, and the shape of the definition hid
 // that behind a compiler nobody builds with.
 //
-// CRUCIBLE_LIFETIMEBOUND is therefore a CLAIM, not a mechanism.  What
+// CRUCIBLE_LIFETIMEBOUND is therefore a claim, not a mechanism.  What
 // enforces it is ordinary C++ that GCC does honour: a deleted overload
 // taking an rvalue reference in the annotated position, which refuses a
 // temporary at the call site.  The rule lifetime-twin of the quarantine

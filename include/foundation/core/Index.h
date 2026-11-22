@@ -25,7 +25,7 @@
 // header defines is the cursor of that walk, so no other class of a
 // different header makes an Index with no check.
 //
-// THE CHECK AFTER A COMPARE
+// Check after a compare
 //   A word that a different invariant already bounds, such as a position of
 //   a loop or the tag of a slot, takes check() too.  When the code before it
 //   compares the word with a bound that is at most N, the optimizer knows the

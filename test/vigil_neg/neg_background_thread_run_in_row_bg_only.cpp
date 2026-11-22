@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // BackgroundThread::run_in_row takes a context whose row admits Bg, Alloc,
 // IO and Block.  This background context claims Bg alone, so the gate

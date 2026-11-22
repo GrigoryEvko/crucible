@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A ctx-bound mint reads the row of its context through row_type.  Any
 // class can declare a row_type, so a class that is not an execution

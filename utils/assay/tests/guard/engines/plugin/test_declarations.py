@@ -1,6 +1,6 @@
 """The test of the family declaration property of the engine plugin and of its rule mint, on planted lines.
 
-THE CASES
+Cases
     A case gives planted finding lines to a context of the runner with a
     planted census.  A scratch tree holds a planted registry and rule table.
     The cases hold:

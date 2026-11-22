@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A query reads the walk of a relation through the variable template
 // relation_state_at, and a translation unit can specialize a variable

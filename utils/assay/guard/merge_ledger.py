@@ -1,6 +1,6 @@
 """merge-ledger — the git merge driver of the ledgers: merge three copies of a ledger by the keys of its rows.
 
-THE DRIVER
+Driver
     git runs the driver for a file with the attribute merge=ledger, such as
     in a `git rebase` of a work tree onto main:
 
@@ -14,19 +14,19 @@ THE DRIVER
     there.  The rule of the ledger is the rule of the name of the file.
 
     The driver merges the three copies with merge() of assay.core.ledger
-    (THE MERGE), which the composition of the landing gate also calls.  In a
+    (the merge), which the composition of the landing gate also calls.  In a
     rebase, OURS is the copy of main and of the commits that the rebase
     already wrote, and THEIRS is the copy of the commit that the rebase
     writes again.  A merged ledger goes into the file OURS, and the exit is
     0.  So two changes of different keys merge, also on adjacent lines, and
     two raises of one row of a max ledger merge to the larger value.
 
-THE REFUSAL
+Refusal
     The driver refuses these merges:
-      * a conflict of THE MERGE, such as a row of a max ledger that one
+      * a conflict of the merge, such as a row of a max ledger that one
         side lowers or removes
       * a key whose counts merge by a sum.  The gate writes the measured
-        count of such a key (THE REDUCE of assay.loop.gate), but a rebase
+        count of such a key (the reduce of assay.loop.gate), but a rebase
         runs no reduce, and a sum can be too high
       * a merged ledger with no row, because such a ledger has no file
       * a path that is not the ledger of a rule of the registry, a registry
@@ -37,7 +37,7 @@ THE REFUSAL
     then goes as it goes with no driver: take the copy of main, and write
     the ledger again with `guard write` on a build.
 
-THE ACTIVATION
+Activation
     .gitattributes gives the attribute merge=ledger to utils/ledgers/*.txt.
     The configuration of the repository defines the driver:
 
@@ -58,10 +58,10 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 
-# The count of the words of a call with no labels and with the three labels (THE DRIVER).
+# The count of the words of a call with no labels and with the three labels (the driver).
 PLAIN_WORDS = 4
 LABELED_WORDS = 7
-# The labels of the conflict markers when git gives none (THE REFUSAL).
+# The labels of the conflict markers when git gives none (the refusal).
 DEFAULT_LABELS = ("base", "ours", "theirs")
 # The largest exit of `git merge-file`, the count of the conflicts.  An exit above it, or below 0, is an error.
 MOST_CONFLICTS = 127
@@ -69,11 +69,11 @@ USAGE = "usage: guard merge-ledger BASE OURS THEIRS PATH [BASE_LABEL OURS_LABEL 
 
 
 class RefusedMerge(Exception):
-    """The driver does not merge the copies by their rows (THE REFUSAL)."""
+    """The driver does not merge the copies by their rows (the refusal)."""
 
 
 def ledger_rule(root: Path, path: str) -> rule_registry.Rule:
-    """Return the rule of the ledger at a path of the tree, from the registry of the tree (THE DRIVER).
+    """Return the rule of the ledger at a path of the tree, from the registry of the tree (the driver).
 
     Raises:
         RefusedMerge: If the path is not a ledger, the registry does not read, or it has no rule of the ledger
@@ -95,10 +95,10 @@ def ledger_rule(root: Path, path: str) -> rule_registry.Rule:
 
 
 def merged_text(rule: rule_registry.Rule, files: tuple[Path, Path, Path], path: str) -> str:
-    """Return the text of the merge of the base, ours and theirs files of a ledger by its rows (THE DRIVER).
+    """Return the text of the merge of the base, ours and theirs files of a ledger by its rows (the driver).
 
     Raises:
-        RefusedMerge: If a file cannot be read, or the merge is refused (THE REFUSAL)
+        RefusedMerge: If a file cannot be read, or the merge is refused (the refusal)
     """
     try:
         texts = tuple(item.read_text(encoding="utf-8") for item in files)
@@ -120,7 +120,7 @@ def merged_text(rule: rule_registry.Rule, files: tuple[Path, Path, Path], path: 
 
 
 def line_merge(files: tuple[Path, Path, Path], labels: Sequence[str]) -> int:
-    """Merge the three files by their lines into the file ours with `git merge-file`, and give the exit (THE REFUSAL).
+    """Merge the three files by their lines into the file ours with `git merge-file`, and give the exit (the refusal).
 
     Raises:
         git.GitError: If git cannot run, or `git merge-file` gives an error
@@ -135,7 +135,7 @@ def line_merge(files: tuple[Path, Path, Path], labels: Sequence[str]) -> int:
 
 
 def main(argv: list[str]) -> int:
-    """Merge three copies of a ledger by their rows into the file ours, or by their lines on a refusal (THE DRIVER)."""
+    """Merge three copies of a ledger by their rows into the file ours, or by their lines on a refusal (the driver)."""
     if len(argv) not in (PLAIN_WORDS, LABELED_WORDS):
         check_report.write_line(USAGE, is_error=True)
         return ExitCode.USAGE

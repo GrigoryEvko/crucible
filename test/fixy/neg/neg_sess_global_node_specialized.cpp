@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An explicit specialization of a global Branch gives its next member a
 // continuation that its template argument does not give.  The projection

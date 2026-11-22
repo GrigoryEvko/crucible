@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The constructor of a DeviceSemaphore is private, and mint_device_semaphore
 // is its one friend.  A caller cannot build a descriptor around the mint.

@@ -52,7 +52,7 @@ using SpinFirst = cc::SpinThenPark<2000>;
     return events.has_waiters(eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx));
 }
 
-// THE GATE: each context takes Spin, and only a context that owns Block and
+// The gate: each context takes Spin, and only a context that owns Block and
 // Nondet takes a policy that parks.
 struct AlwaysHolds {
     [[nodiscard]] bool operator()() const noexcept { return true; }
@@ -122,7 +122,7 @@ void test_a_wait_ends_at_its_deadline(::fixy::BgLoadCtx const& ctx) {
 }
 
 // No wake is lost.  A producer publishes the rounds 1 to kRounds, each after
-// a random delay of the Philox stream of SEED, and it notifies after each
+// a random delay of the Philox stream of the seed, and it notifies after each
 // store.  Some delays are long, so the consumer parks after its budget.  The
 // consumer waits for each round with a deadline of 10 s.
 template <class Policy>

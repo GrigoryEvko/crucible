@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // by_name_pinned<T>(ctx, name) does a lookup and a tier admission over
 // registry state that does not change.  The projection does not allocate,

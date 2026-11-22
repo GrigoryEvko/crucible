@@ -3,7 +3,7 @@
 // The wire format is a 32-byte header followed by a flat payload. The header
 // is a 4-byte magic, a 4-byte version, a 1-byte node kind, 7 zero pad bytes,
 // an 8-byte merkle hash and an 8-byte content hash.  A region image ends with
-// a 32-byte checksum of each byte before it (THE CHECKSUM OF A REGION IMAGE).
+// a 32-byte checksum of each byte before it (the checksum of a region image).
 //
 // Nothing in the format is a raw pointer, so a loaded image is independent of
 // where it was written. A tensor's data pointer is written as zero, and a
@@ -413,7 +413,7 @@ inline constexpr size_t kHeaderWireBytes = 4 + 4 + 1 + kHeaderPadBytes + 8 + 8;
     return ::fixy::none;
 }
 
-// THE CHECKSUM OF A REGION IMAGE
+// Checksum of a region image
 //   A region image ends with the keyed BLAKE3 of each byte before it, under
 //   the key of kRegionChecksumKeyText.  The content hash stays the identity
 //   of the region, and it folds only the ops and the numerics.  The checksum
@@ -561,8 +561,8 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
         }
     }
 
-    // The checksum of each byte before it is the last field (THE CHECKSUM OF
-    // A REGION IMAGE).
+    // The checksum of each byte before it is the last field (the checksum of
+    // a region image).
     if (w.has_room) {
         const ::fixy::FixedArray<std::byte, kRegionChecksumBytes> checksum =
             region_checksum(image.window(0, w.pos).expect("the writer wrote inside its image"));
@@ -836,8 +836,8 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     if (first_op_schema != first_op_schema_of(ops)) [[unlikely]] {
         return ::fixy::err(LoadError::first_schema_mismatch);
     }
-    // The checksum covers the fields that no fold covers (THE CHECKSUM OF A
-    // REGION IMAGE).  It comes after the checks of the fields, so a field that
+    // The checksum covers the fields that no fold covers (the checksum of a
+    // region image).  It comes after the checks of the fields, so a field that
     // a check refuses keeps its reason.
     for (const LoadError fault : checksum_fault(image, r.pos))
         return ::fixy::err(fault);
@@ -863,7 +863,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 
 // The fault of a stored image of the region of hash, or none, with no parse of
 // its body: a header of a region of this version, the content hash hash in
-// that header, and the checksum at the end (THE CHECKSUM OF A REGION IMAGE).
+// that header, and the checksum at the end (the checksum of a region image).
 // The object store reads it before it counts an object that a writer stored
 // as durable, so a torn or a cut object does not count.  A hostile writer can
 // compute the checksum, so the load of deserialize_region stays the check of

@@ -1,6 +1,6 @@
 """contract-form — no file of the tree has a P2900 contract specifier, and no [[assume]] restates a contract.
 
-THE SPECIFIER
+Specifier
     The tree writes each precondition as `CRUCIBLE_PRE` and each
     postcondition as `CRUCIBLE_POST`, statements of the function body.
     GCC 16 does not keep the `pre` or `post` specifier of a template in a
@@ -22,7 +22,7 @@ THE SPECIFIER
     of its file.  Such a file is a probe, a fixture or a plugin test with the
     specifier as its subject.
 
-THE ASSUMPTION
+Assumption
     A function body that holds a contract macro of foundation/contracts/Pre.h
     or Post.h holds no `[[assume]]` about the values that the macro checks.
     With the ignore semantic, the macro itself gives that assumption to the
@@ -45,7 +45,7 @@ THE ASSUMPTION
     `CRUCIBLE_PRE(p != nullptr)` is not.  The entity of the kind is
     `FUNCTION: SUBJECTS`.
 
-THE SCOPE
+Scope
     Each C++ file of the tree.
 
 Complexity: linear in the number of bytes of the files, plus the product of the assumptions and the contracts of each body.
@@ -195,7 +195,7 @@ def condition_of(node: tsast.Node, macro: str, index: int) -> Condition | None:
 
 
 def assumption_findings(path: str, tree: tsast.Tree) -> list[check_report.Finding]:
-    """Return one error for each assumption about the values of a contract condition of the same body (THE ASSUMPTION).
+    """Return one error for each assumption about the values of a contract condition of the same body (the assumption).
 
     Complexity: linear in the number of nodes of the tree, plus the product of the assumptions and the contracts of
     each body.

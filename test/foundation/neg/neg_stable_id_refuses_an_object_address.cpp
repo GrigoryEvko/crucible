@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A template argument that points to an object prints the object's
 // name.  No query reads the object back to its variable, so a variable

@@ -142,21 +142,21 @@ public:
     // Physical cores across every package, deduplicated on (package, core).
     [[nodiscard]] std::size_t num_cores() const noexcept { return cores_; }
 
-    // Hardware threads the kernel reports ONLINE.  An offlined CPU keeps its
+    // Hardware threads the kernel reports online.  An offlined CPU keeps its
     // sysfs directory but does not count here, so this tracks hotplug and SMT
     // changes.  It is not the same question as `process_cpu_count()`, which
     // asks what this process is allowed to run on.
     [[nodiscard]] std::size_t num_smt_threads() const noexcept { return threads_; }
 
     // Threads per core, averaged over the machine and truncated.  On a part
-    // with SMT disabled per core it is a FLOOR, not a per-core fact: the
+    // with SMT disabled per core it is a floor, not a per-core fact: the
     // bench host with 8 of its 192 cores SMT-disabled reports 1, though 184
     // still carry two threads.  Read `l3_groups()` when the caller needs to
     // know whether one specific core has a sibling.
     [[nodiscard]] std::size_t smt_factor() const noexcept { return cores_ == 0 ? 1 : threads_ / cores_; }
 
     // The count of the CPUs of the process: the count of the affinity mask of
-    // the thread group leader when the library loads (THE CPUS OF THE PROCESS
+    // the thread group leader when the library loads (the CPUs of the process
     // in src/fixy/os/Topology.cpp).  A launcher such as taskset, or the cpuset
     // of a container, can make it fewer than the machine has.  A CPU quota
     // does not make it smaller, and a pin of a thread does not change it.
@@ -249,7 +249,7 @@ public:
     // The largest count of packages that the probe reads.
     static constexpr std::size_t package_capacity = 64;
 
-    // The packages in ascending order of id (THE PACKAGES in
+    // The packages in ascending order of id (the packages in
     // src/fixy/os/Topology.cpp).  Empty when sysfs names no CPU, and when
     // the probe refuses the facts of the packages: an L3 group or a NUMA
     // node with the CPUs of a package that the CPUs do not name, or more
@@ -349,14 +349,14 @@ private:
     void probe_linux_(std::string_view sysfs_root) noexcept;
 };
 
-// The CPUs of the node NODE of the topology that the affinity mask ALLOWED
+// The CPUs of the given node of the topology that the affinity mask allowed
 // holds.  apply_affinity_to_mask of fixy/os/Sched.h pins a thread to the
 // result, so the thread runs on the whole node, and on no CPU that its
 // cpuset refuses.  A sentinel node, a node that the topology does not name
 // and a CPU past the largest core of a mask add no CPU, and an empty result
 // asks apply_affinity_to_mask for no pin.  The walk asks numa_node_of_cpu for
-// each core that ALLOWED holds, so it reads no range of the standard library.
-// Complexity: the cores of ALLOWED times the CPUs of the host, on the cold
+// each core that allowed holds, so it reads no range of the standard library.
+// Complexity: the cores of allowed times the CPUs of the host, on the cold
 // path of a pin.
 [[nodiscard]] inline ::foundation::algebra::lattices::AffinityMask
 node_cpu_mask(Topology const& topology, ::foundation::algebra::lattices::NumaNodeId node,

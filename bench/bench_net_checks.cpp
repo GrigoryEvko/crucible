@@ -29,7 +29,7 @@
 //     of that sort reads the names, the sides and the ranges in the same
 //     loops, as the plain form of the body does, and it is the reference of
 //     the plain form.  The bare form is the reference of the sealed system,
-//     whose seal checked the form one time (THE SEALED SYSTEM of Priority.h)
+//     whose seal checked the form one time (the sealed system of Priority.h)
 //   - the walk of the chain from its boundary agent with an explicit stack,
 //     for the canonical form.  It folds the same count of words into four
 //     chains, as the body does, and its word of a kind is the index of the
@@ -41,7 +41,7 @@
 //   bare form is the reference of a sealed net, and the checked form is the
 //   reference of a plain net.
 //
-// THE SPEED OF LIGHT
+// Speed of light
 //   A chain of dependent adds gives the cycles of one nanosecond of the core
 //   in the run.  The floor row reads each wire and the kinds of its two
 //   agents, with an add for each read and no check: the minimum of a check
@@ -50,7 +50,7 @@
 //
 // A find function on a Net runs the check of the wiring and then its body.
 // A find function on a sealed net runs only its body, because seal_net
-// checked the wiring one time (THE SEALED NET of Net.h).  So the ratio of a
+// checked the wiring one time (the sealed net of Net.h).  So the ratio of a
 // row of a sealed net to its reference gives the cost of the body and of the
 // fault record, and the row of seal_net gives the cost at the boundary.  The
 // row of the canonical form against the check of the wiring stays, and the
@@ -340,7 +340,7 @@ struct WireEnds {
     return true;
 }
 
-// The floor of a check of the plain chain (THE SPEED OF LIGHT): one read of
+// The floor of a check of the plain chain (the speed of light): one read of
 // each wire and of the kind of each of its two agents, and an add for each
 // read, with no check, no table and no sort.
 [[gnu::noipa]] std::uint32_t read_each_wire(LineNet const& chain) noexcept {
@@ -608,7 +608,7 @@ template <ReferenceForm Form>
 }
 
 // The liveness of the ring as a plain sort of Kahn over the edges with no
-// token of its marked graph (THE MODEL of Priority.h): the order of each
+// token of its marked graph (the model of Priority.h): the order of each
 // process, the edge from send s to receive s of a channel with a capacity k,
 // the edge from receive s - k to send s, and one node for a send and its
 // receive on a rendezvous.  Each channel of the ring is a rendezvous, and the
@@ -948,7 +948,7 @@ constexpr std::uint32_t kClockAdds = 64;
 constexpr std::size_t kClockBatch = 256;
 
 // kClockAdds dependent adds to the value in one block of code, one cycle each
-// on the core (THE SPEED OF LIGHT).  The compiler cannot fold them.
+// on the core (the speed of light).  The compiler cannot fold them.
 [[gnu::always_inline]] inline void add_chain(std::uint64_t& value) noexcept {
 #if defined(__x86_64__)
     asm volatile(".rept %c1\n\tadd $1, %0\n\t.endr" : "+r"(value) : "i"(kClockAdds));

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_stage with a bare int where an execution context belongs.  The
 // body is a stage; the context is the only thing wrong.

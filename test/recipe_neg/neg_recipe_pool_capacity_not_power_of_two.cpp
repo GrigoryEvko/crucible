@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // RecipePool::capacity_ is a RecipePool::Capacity, which is
 // Refined<power_of_two, uint32_t>.  The probe masks with the capacity

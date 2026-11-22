@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A registration enters the write section of the table.  A writer whose
 // context owns Div spins while another writer holds the section, and the

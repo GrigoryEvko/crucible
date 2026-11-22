@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit mints a plain session over a class that holds a Ref to a pole, and
 // the pole is a specialization of a class template.  The pole names its

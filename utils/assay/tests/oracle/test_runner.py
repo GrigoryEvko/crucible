@@ -1,27 +1,27 @@
 """The test of the emitted tests of the session oracle: each clean unit exits 0, and each planted row fails.
 
-THE UNITS
+Units
     The test compiles the tests that test/session_oracle/golden.csv emits,
     against the include tree of the working tree, with the patched compiler
     of assay.core.testing.  A static test gives one unit for each shard,
     because each shard compiles alone.  A runtime test gives one unit for
     each program, because a program links and runs all its shards.  A
     program links the archives of the build that the variable
-    BUILD_DIR_VARIABLE names (THE LINK OF A PROGRAM of assay.oracle.runner).
+    BUILD_DIR_VARIABLE names (the link of a program of assay.oracle.runner).
     PROGRAM_SHARD_BUDGET gives the length of the shards of a program.  Each
     clean unit must exit 0.  A copy of the rows holds one incorrect agree row
     in each emitted test (_plant()).  Each planted unit holds the rows of the
     case of its planted row, and it must fail and name the planted case.
 
-THE PARTS
+Parts
     With `--part K/N`, the test does only the units that unit_part() of
     assay.tests.oracle gives to part K.  The part of CHECK_PART checks the
     type grammar of the emitter and the drift of assay.oracle.runner, which
     are Python work.  It builds no unit when N is more than FIRST_UNIT_PART.  Only golden.csv gives the sequence of the units, and the
     parts are then disjoint.  The group oracle of `guard selftest` gives this
-    module its part (THE PARTS of assay.tests.oracle).
+    module its part (the parts of assay.tests.oracle).
 
-THE STORE
+Store
     The store of assay.oracle.unit_store keeps the result of each unit.  A
     unit with inputs that did not change then builds nothing.  The part of
     CHECK_PART removes the expired sources of the store.
@@ -53,7 +53,7 @@ from assay.oracle.emit import (
 from assay.oracle.unit_store import UnitResult, UnitStore
 from assay.tests import oracle as oracle_parts
 
-# The group oracle gives this module the part of the call (THE PARTS).
+# The group oracle gives this module the part of the call (the parts).
 PARTED = True
 # The variable that names the build that gives the archives of a program
 # unit.  test/CMakeLists.txt sets it for each part of the group.
@@ -62,10 +62,10 @@ BUILD_DIR_VARIABLE = "ASSAY_TEST_BUILD_DIR"
 # The test is a program that fails when a row is different.  Each other
 # emitted test fails to compile.
 RUNTIME_TESTS: dict[str, tuple[str, ...]] = {"fixy_wire": WIRE_FAMILIES}
-# The units of one part at one time: the job count of the package (THE JOB
-# COUNT of assay.core.proc).  A program compiles its
+# The units of one part at one time: the job count of the package (the job
+# count of assay.core.proc).  A program compiles its
 # shards in a pool of its own.  The compile slots of the store hold the
-# compiles of all units to the same count (THE COMPILE SLOTS of
+# compiles of all units to the same count (the compile slots of
 # assay.oracle.unit_store).  Each compile parses its headers, and the longest
 # compile sets the wall time of a part.
 JOBS = proc.DEFAULT_JOBS
@@ -196,7 +196,7 @@ def runtime_programs(by_case: dict[str, list[Row]], families: tuple[str, ...]) -
 def _units_of(
     rows: list[Row], planted: list[Row], labels: dict[str, str], emitted: dict[str, list[str]]
 ) -> Iterator[tuple[str, str, list[str], str | None]]:
-    """Yield each unit in one sequence: its name, its stem, its shards and its label (THE UNITS).
+    """Yield each unit in one sequence: its name, its stem, its shards and its label (the units).
 
     The label is None for a unit of clean rows.  For a unit of planted rows,
     it is the text that the planted row prints.  The shards of each static
@@ -223,9 +223,9 @@ def _units_of(
 
 
 def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: list[Row], build_dir: Path) -> Outcome:
-    """Build and judge each unit of one part (THE UNITS, THE PARTS), and give the failures and the counts.
+    """Build and judge each unit of one part (the units, the parts), and give the failures and the counts.
 
-    A program unit links the archives of ``build_dir`` (THE LINK OF A PROGRAM of assay.oracle.runner).
+    A program unit links the archives of ``build_dir`` (the link of a program of assay.oracle.runner).
 
     Raises:
         RuntimeError: If an emitted test has no agree row to plant
@@ -295,7 +295,7 @@ def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: li
 
 
 def emitted_test_cases(expect: testing.Expect, part: tuple[int, int]) -> None:
-    """Build one part of the units, and judge each kind of failure (THE UNITS, THE PARTS)."""
+    """Build one part of the units, and judge each kind of failure (the units, the parts)."""
     cxx = testing.patched_compiler()
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", bool(cxx) and Path(cxx).is_file())
     if not cxx or not Path(cxx).is_file():
@@ -332,7 +332,7 @@ def emitted_test_cases(expect: testing.Expect, part: tuple[int, int]) -> None:
 
 
 def main(argv: list[str]) -> int:
-    """Run the cases of one part, and write one line for each (THE PARTS)."""
+    """Run the cases of one part, and write one line for each (the parts)."""
     module = __name__.removeprefix("assay.")
     part = selftest.parsed_part(argv)
     if part is None:

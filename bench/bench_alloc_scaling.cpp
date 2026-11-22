@@ -1,6 +1,6 @@
 // The run of the allocation scaling bench: it reads the arguments, runs the
 // rows of each allocator of the build, and prints the time ratios.
-// bench_alloc_scaling_rows.h holds the rows and THE ARGUMENTS.
+// bench_alloc_scaling_rows.h holds the rows and the arguments.
 
 #include <fixy/os/Args.h>
 
@@ -43,7 +43,7 @@ namespace {
     return ::fixy::none;
 }
 
-// The selection of the arguments, and each count of threads (THE ARGUMENTS).
+// The selection of the arguments, and each count of threads (the arguments).
 // Complexity: linear in the arguments.
 [[nodiscard]] Arguments arguments_of(::fixy::os::Args const& arguments, bench::Spread const& spread) noexcept {
     Arguments result{};
@@ -125,7 +125,7 @@ namespace {
 }
 
 // Prints the time of the base over the time of each reference for each row
-// that the two ran (THE TIME RATIOS).  Complexity: quadratic in the rows.
+// that the two ran (the time ratios).  Complexity: quadratic in the rows.
 void print_time_ratios(RunRecord const& record) noexcept {
     bool has_reference = false;
     for (Summary const& summary : record.summaries)

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // The source of a watchdog is an Option of a Ref, so a watchdog with no
 // source says none.  A raw pointer is no source, so a call with a null

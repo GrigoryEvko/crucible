@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // permission_handoff moves a token into a scope under that scope's
 // context, so the context must admit the row of the tag.  The token here

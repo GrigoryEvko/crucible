@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_metalog_consumer_session runs the draining protocol, so it takes the
 // consumer handle.  This call passes the producer handle, and the gate

@@ -84,7 +84,7 @@ int main() {
     print_row("plain thread_local read", plain_read);
 
     // The two rows of a store measure a store, so the barrier keeps the store
-    // of each call (THE SINK of bench_harness.h).
+    // of each call (the sink of bench_harness.h).
     bench::Report const plain_write = bench::run("plain thread_local write", [&] {
         plain_cell() = operand;
         bench::clobber_memory();

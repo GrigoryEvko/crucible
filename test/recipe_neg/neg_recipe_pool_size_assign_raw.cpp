@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // RecipePool::size_ is a RecipePool::Size, which is Monotonic<uint32_t>.
 // The only mutations are bump() and advance(), and each one keeps the

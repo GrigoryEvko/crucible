@@ -5,24 +5,24 @@
 // SdcDetector compares redundant cross-Cog compute results to catch
 // silent data corruption.  The comparison core is detail::tolerance_equal
 // <T> / bitwise_equal<T> / equivalent<T> — templated over every result
-// type, with FIVE distinct regimes: signed integral (overflow-safe
+// type, with five distinct regimes: signed integral (overflow-safe
 // modular abs-diff), unsigned integral, integral-promotion (int8/16),
 // floating-point (fabs + uint64→T tolerance cast), and the bitwise
-// memcmp fallback.  A false negative here is an UNDETECTED corruption;
+// memcmp fallback.  A false negative here is an undetected corruption;
 // a false positive is a spurious Cog quarantine — so the comparison
 // must be exactly right across the full input domain.
 //
 // test_observe_sdc_detect.cpp pins the single most important corner —
-// signed tolerance must use TRUE distance, not modular distance
+// signed tolerance must use true distance, not modular distance
 // (test_signed_tolerance_does_not_use_modular_distance) — and a small-
-// delta case, both THROUGH the SdcDetector class wrapper with a handful
+// delta case, both through the SdcDetector class wrapper with a handful
 // of hand-picked values.  It never drives the detail comparison directly
 // across the domain, never exercises float NaN/inf/±0, never checks
 // symmetry or tolerance-monotonicity, and never covers the int8/16
 // integer-promotion path or unsigned types.  This fuzzer closes that.
 //
 // ── Integer runs (8 widths) ──
-// The oracle is an INDEPENDENT 128-bit absolute difference — a DIFFERENT
+// The oracle is an independent 128-bit absolute difference — a different
 // computation from tolerance_equal's modular `(U)a - (U)b` trick (no
 // wraparound; the true magnitude in __int128 space), so a divergence is
 // a genuine bug.  Per (a, b, tolerance), corner-biased to {0, ±1, MIN,
@@ -38,7 +38,7 @@
 // float computation near the boundary), so oracle-free invariants with
 // teeth — values decoded from random bits for full NaN/inf/denormal coverage:
 //   * symmetry (fabs is sign-symmetric, holds even for NaN operands)
-//   * reflexivity for FINITE a (NaN−NaN and inf−inf are NaN → not equal,
+//   * reflexivity for finite a (NaN−NaN and inf−inf are NaN → not equal,
 //     so reflexivity is finite-only — pinned explicitly)
 //   * NaN operand ⇒ never tolerance-equal
 //   * tolerance-monotonicity: equal at t ⇒ equal at UINT64_MAX, and

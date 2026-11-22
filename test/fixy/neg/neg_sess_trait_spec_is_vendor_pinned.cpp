@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // is_vendor_pinned is an alias template that reads the head of the
 // protocol, so no user specialization gives a portable protocol a vendor.

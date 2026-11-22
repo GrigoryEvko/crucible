@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // extract must not hand out a lambda that captures a capability.  The
 // captures of a lambda are its members, so the walk over components finds
@@ -19,7 +19,7 @@ int main() {
     using Closure = decltype(closure);
     auto pure = fe::Computation<fe::Row<>, Closure>::mint_computation(std::move(closure));
 
-    // THE LOAD-BEARING LINE: must FAIL to compile.
+    // The load-bearing line: must fail to compile.
     auto escaped = std::move(pure).extract();
     (void)escaped;
     return 0;

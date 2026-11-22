@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A pipeline holds move-only stages, so a copy would duplicate every
 // linear token they hold.  The copy constructor is deleted with that

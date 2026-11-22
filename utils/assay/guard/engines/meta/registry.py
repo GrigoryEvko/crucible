@@ -1,6 +1,6 @@
 """registry — each row of the registry, and each file or test that a row names, agrees with the tree.
 
-THE PARTS
+Parts
     The rule has seven parts.  A module of this directory holds each part,
     and its docstring tells what the part refuses:
       shape    registry_shape    each row of the registry obeys its schema, and each doc field names a section of
@@ -19,7 +19,7 @@ THE PARTS
     modules finds no rule in it.  The run of the rule gives each finding of
     each part with the ID of the rule.
 
-THE BUILD
+Build
     The parts tests and kinds read a build: the tests that ctest registers,
     and the kinds that the quarantine plugin writes.  With no build
     directory, the run does the other parts.  It writes one line that names
@@ -30,14 +30,14 @@ THE BUILD
     a part does not apply (unread_parts()), because the write would remove
     the rows of that part.
 
-THE REFUSED KINDS
+Refused kinds
     The parts shape, kinds and ledgers give an error for each finding, and no
     ledger row admits a finding of their kinds.  The three holder kinds of
     the part modules, and the three kinds of the parts of a rule of the part
     tests, are refused kinds too (REFUSED_KINDS).  The ledger admits a
     finding of each other kind with a reason.
 
-THE PLANTS
+Plants
     The name of each plant and control names its part after the prefix, such
     as plant-shape-bad-doc or control-tests-registered.  plant_context() runs
     only that part on the plant, with the context of that part: the guide
@@ -67,7 +67,7 @@ from assay.guard.engines.meta import (
 from assay.guard.engines.meta.runner import PREFIXES, MetaContext, NotApplicable, copy_tree
 
 RULE = "registry"
-# The kinds that no ledger row admits (THE REFUSED KINDS).
+# The kinds that no ledger row admits (the refused kinds).
 REFUSED_KINDS = (
     registry_shape.KINDS
     | registry_kinds.KINDS
@@ -79,12 +79,12 @@ REFUSED_KINDS = (
 
 @dataclass(frozen=True, slots=True)
 class Part:
-    """One part of the rule (THE PARTS).
+    """One part of the rule (the parts).
 
     `findings` gives the findings of the part, and it raises NotApplicable
     when the part does not apply.  `plant_context` gives the context of a
     plant of the part.  `reads_build` is True for a part that reads a build
-    (THE BUILD).  `probe` raises NotApplicable when the part does not apply
+    (the build).  `probe` raises NotApplicable when the part does not apply
     to a context, with no other work, and it is None for a part that always
     applies.
     """
@@ -121,7 +121,7 @@ PARTS_BY_NAME = {part.name: part for part in PARTS}
 
 
 class PartContext(MetaContext):
-    """The context of a plant of one part (THE PLANTS): the context that the part gives, and the name of the part."""
+    """The context of a plant of one part (the plants): the context that the part gives, and the name of the part."""
 
     __slots__ = ("part_name",)
 
@@ -132,14 +132,14 @@ class PartContext(MetaContext):
 
 
 def selected_parts(context: MetaContext) -> tuple[Part, ...]:
-    """Return the parts that a run reads: the part of a plant (THE PLANTS), else each part."""
+    """Return the parts that a run reads: the part of a plant (the plants), else each part."""
     if isinstance(context, PartContext):
         return (PARTS_BY_NAME[context.part_name],)
     return PARTS
 
 
 def part_of(name: str) -> Part | None:
-    """Return the part that the name of a plant or a control names after its prefix, or None (THE PLANTS)."""
+    """Return the part that the name of a plant or a control names after its prefix, or None (the plants)."""
     for prefix in PREFIXES:
         if name.startswith(prefix):
             return PARTS_BY_NAME.get(name.removeprefix(prefix).split("-", 1)[0])
@@ -147,7 +147,7 @@ def part_of(name: str) -> Part | None:
 
 
 def unread_text(unread: list[tuple[str, str | None]]) -> str:
-    """Return the line that names the parts that a run did not do, with the reason of each one (THE BUILD).
+    """Return the line that names the parts that a run did not do, with the reason of each one (the build).
 
     A reason of None tells that the part reads a build and the run has no build directory.
     """
@@ -161,10 +161,10 @@ def unread_text(unread: list[tuple[str, str | None]]) -> str:
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give the findings of each part that the run reads, with the ID of the rule (THE PARTS).
+    """Give the findings of each part that the run reads, with the ID of the rule (the parts).
 
     Raises:
-        NotApplicable: If no part that the run reads applies (THE BUILD)
+        NotApplicable: If no part that the run reads applies (the build)
     """
     selected = selected_parts(context)
     found: list[check_report.Finding] = []
@@ -185,7 +185,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
 
 
 def unread_parts(context: MetaContext) -> list[str]:
-    """Return the name of each part that does not apply to a context, with its reason (THE BUILD).
+    """Return the name of each part that does not apply to a context, with its reason (the build).
 
     `guard write` reads this list before it runs the rule.  Complexity: one probe of each part with a probe.
     """
@@ -204,7 +204,7 @@ def unread_parts(context: MetaContext) -> list[str]:
 
 
 def plant_context(plant: Path, scratch: Path) -> MetaContext:
-    """Give the context of the part that the name of a plant names, with that part alone (THE PLANTS).
+    """Give the context of the part that the name of a plant names, with that part alone (the plants).
 
     Raises:
         NotApplicable: If the name of the plant names no part, or the part cannot prepare the plant

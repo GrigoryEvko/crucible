@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A Pure consumer refuses the polynomial form of Philox::box_muller_polynomial_det.
 //

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A unit calls the fork member of the session door directly, with two sides
 // that both send first.  No side relation of the unit admits the pair, and

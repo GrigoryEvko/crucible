@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // mint_synthetic_data_ptr takes a SyntheticAddress and no other type, so a
 // raw integer cannot become the data pointer of a tensor.

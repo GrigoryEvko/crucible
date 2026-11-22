@@ -41,7 +41,7 @@ static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_cons
                   && !std::is_move_constructible_v<SocketDoor>,
               "No object of the socket door exists.  Its private member is the only call to socket(2).");
 
-// THE FOREIGN SOCKET: a ref by value of one int and the generation of its
+// The foreign socket: a ref by value of one int and the generation of its
 // number, which no number converts to, and which the doors take beside the
 // borrow of a Handle.
 using TcpForeign = ForeignSocketRef<socket_kind::TcpStream, socket_rights>;
@@ -71,7 +71,7 @@ static_assert(!SocketBorrowWith<ForeignSocketRef<socket_kind::TcpStream, ::fixy:
                                 ::fixy::os::RightSet::ioctl_socket>,
               "a ref with fewer rights reaches no door of the rights that it lacks.");
 
-// THE KERNEL WORDS of fixy/os/SocketCalls.h are the words of the system
+// The kernel words of fixy/os/SocketCalls.h are the words of the system
 // headers.
 static_assert(socket_level == SOL_SOCKET);
 static_assert(address_family_inet == AF_INET && address_family_netlink == AF_NETLINK);
@@ -128,7 +128,7 @@ static_assert(offsetof(::foundation::os::KernelTimespec, seconds) == offsetof(::
 static_assert(offsetof(::foundation::os::KernelTimespec, nanoseconds) == offsetof(::timespec, tv_nsec));
 static_assert(timestamping_message_bytes == CMSG_LEN(3 * sizeof(::timespec)));
 
-// THE WALK of the control data.  Each case is the bytes of control messages
+// The walk of the control data.  Each case is the bytes of control messages
 // that a record of a header and its data gives.
 
 // One message: its header and the three stamps of SCM_TIMESTAMPING.

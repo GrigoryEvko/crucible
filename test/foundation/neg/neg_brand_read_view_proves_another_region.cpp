@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // A borrow proof is about the region it was borrowed from.  Two roots of
 // one tag are two regions with two brands, so a view lent from the first

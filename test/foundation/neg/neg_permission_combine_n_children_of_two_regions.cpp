@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // Two regions of one tag split into the same children tags, and each
 // child carries the brand of its own region.  An n-ary combine of one

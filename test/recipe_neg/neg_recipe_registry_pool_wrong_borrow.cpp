@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // The RecipeRegistry constructor takes a Ref of the RecipePool that owns
 // the recipes.  A Ref of the arena must not take its place, although the

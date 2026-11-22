@@ -1,6 +1,6 @@
 """cost_store — the cost of each compile that ran the compiler, for a ccache hit of the same object.
 
-THE STORE
+The store
     On a ccache hit the compiler does not run, and the step has no cost of
     its own (assay.core.record).  `loop step` (utils/assay/loop/step.py)
     writes the cost block of each compile through ccache that ran the
@@ -23,31 +23,31 @@ THE STORE
     check` takes that turn.  The entries with the oldest use go first.  The
     store has no age limit, because ccache keeps an object with no age
     limit.  ccache can then keep an object after the store dropped its entry.
-    `loop step` compiles such an object again (assay.loop.step, A HIT WITH
-    NO COST).
+    `loop step` compiles such an object again (assay.loop.step, a hit with
+    no cost).
 
-THE ORDER
+The order
     ccache stores the object of a miss after the compiler run, and then it
     exits.  A hit in a different build can read that object at once, before
     the launcher of the miss writes the cost of its step.  An interrupt of
     ccache after its store, such as the stop of the gate (assay.loop.gate,
-    THE STOP), ends the step before that write.  On 2026-11-12, a run of the
+    the stop), ends the step before that write.  On 2026-11-12, a run of the
     gate after such a stop found 3 hits with no entry.
 
     So the compiler meter of the miss writes the entry before the store of
-    ccache (assay.core.meter, A COMPILE THROUGH CCACHE).  The launcher gives
+    ccache (assay.core.meter, a compile through ccache).  The launcher gives
     the meter the inputs of the key in the variable KEY_ENV (key_inputs()).
     After a compiler run with the status 0, the meter writes the cost of
     that run under the key of the inputs (compiler_key()).  Then the
     launcher writes the cost of its full step under the same key, also for
     a step that it rejects.  The meter writes no entry when the run writes a
     different object.  A hit gets the judge of the cost of its entry, as the
-    launcher judged the compile (assay.loop.step, A CCACHE HIT).  So a hit of
+    launcher judged the compile (assay.loop.step, a ccache hit).  So a hit of
     the object of a rejected compile gets the same verdict, also when the
     hit reads the entry of the meter before the launcher of the miss judges
     its step.
 
-THE KEY
+The key
     A hit gives the object that ccache stored at the miss.  The key holds the
     SHA-256 of the bytes of the object, and a hit and its miss then give one
     digest.  The bytes alone do not identify one compile.  The tree compiles
@@ -76,14 +76,14 @@ THE KEY
     last of the two compiles writes the entry.  The difference of the two
     counts is the work of that part.
 
-THE COUNT OF AN ENTRY
+The count of an entry
     A block with no compiler count does not replace an entry that holds one
     (put()).  Such a block tells nothing about the work of the compile, and
     a hit of the key would lose its count.  A block with a count replaces
     each entry, and a hit with no count then gets the count of a later miss
-    (assay.loop.step, A HIT WITH NO COUNT).
+    (assay.loop.step, a hit with no count).
 
-THE COST
+The cost
     The key reads each byte of the object one time.  The module imports
     hashlib only in key_of(), and a link imports nothing of this module.  On
     2026-10-10, with -S, the import of hashlib took 2.4 ms.  A digest of
@@ -105,15 +105,15 @@ if TYPE_CHECKING:
 STORE_NAME = "compile-cost"
 # Changed when a key or an entry no longer means what it meant.
 FORMAT = "crucible-compile-cost 1"
-# The marks of the build directory and of the source root in a word of a key (THE KEY).
+# The marks of the build directory and of the source root in a word of a key (the key).
 BUILD_MARK = "<build>"
 ROOT_MARK = "<root>"
-# The characters that can come before a root in a word, and after it (THE KEY).
+# The characters that can come before a root in a word, and after it (the key).
 BEFORE = frozenset("=:,")
 AFTER = frozenset("/=:,")
 # The bytes of one read of the object.
 CHUNK = 1 << 20
-# The variable that gives the compiler meter of a ccache call the inputs of the key of its compile (THE ORDER).
+# The variable that gives the compiler meter of a ccache call the inputs of the key of its compile (the order).
 KEY_ENV = "CRUCIBLE_COMPILE_COST_KEY"
 
 
@@ -124,7 +124,7 @@ def store_directory() -> str | None:
 
 
 def relocated(word: str, roots: Sequence[tuple[str, str]]) -> str:
-    """Return a word of a command with each path of a root as the mark of the root (THE KEY).
+    """Return a word of a command with each path of a root as the mark of the root (the key).
 
     Args:
         word: The word
@@ -151,7 +151,7 @@ def relocated(word: str, roots: Sequence[tuple[str, str]]) -> str:
 
 
 def key_of(object_path: str, command: Sequence[str], build_dir: str | None, source_root: str) -> str | None:
-    """Return the key of the compile that made an object, or None when the object cannot be read (THE KEY).
+    """Return the key of the compile that made an object, or None when the object cannot be read (the key).
 
     Args:
         object_path: The object
@@ -196,7 +196,7 @@ def output_of(command: Sequence[str]) -> str | None:
 
 
 def key_inputs(object_path: str, command: Sequence[str], build_dir: str | None, source_root: str) -> str:
-    """Return the text of KEY_ENV for one compile: the arguments of key_of() (THE ORDER).
+    """Return the text of KEY_ENV for one compile: the arguments of key_of() (the order).
 
     Args:
         object_path: The absolute object of the step
@@ -210,7 +210,7 @@ def key_inputs(object_path: str, command: Sequence[str], build_dir: str | None, 
 
 
 def compiler_key(text: str, compiler_command: Sequence[str]) -> str | None:
-    """Return the key of the entry that a compiler run of a ccache miss writes, or None for no entry (THE ORDER).
+    """Return the key of the entry that a compiler run of a ccache miss writes, or None for no entry (the order).
 
     Args:
         text: The text of KEY_ENV, from key_inputs()
@@ -246,7 +246,7 @@ def entry_path(directory: str, key: str) -> str:
 
 
 def holds_count(block: str | None) -> bool:
-    """Tell if a cost block reads and holds a compiler count (THE COUNT OF AN ENTRY)."""
+    """Tell if a cost block reads and holds a compiler count (the count of an entry)."""
     if block is None:
         return False
     from assay.core import record
@@ -259,7 +259,7 @@ def put(key: str, block: str) -> None:
     """Write the cost block of the compile of a key into the store, through a temporary file and a rename.
 
     The call writes nothing when the caches are off.  A block with no compiler count does not replace an entry that
-    holds one (THE COUNT OF AN ENTRY).
+    holds one (the count of an entry).
 
     Raises:
         OSError: If the entry cannot be written
@@ -307,7 +307,7 @@ def get(key: str, used_at: float) -> str | None:
     """Return the cost block of the compile of a key, or None when the store holds none.
 
     The lookup touches the entry when its last touch is older than
-    TOUCH_INTERVAL before the time of the use (THE STORE).
+    TOUCH_INTERVAL before the time of the use (the store).
 
     Args:
         key: The key
@@ -333,7 +333,7 @@ def get(key: str, used_at: float) -> str | None:
 
 
 def hold_bound() -> bool:
-    """Keep the store in the byte limit of its row of LIMITS of assay.core.cache, at its turn (THE STORE).
+    """Keep the store in the byte limit of its row of LIMITS of assay.core.cache, at its turn (the store).
 
     Returns:
         True when this process took the turn.  With the caches off, or with no store, False

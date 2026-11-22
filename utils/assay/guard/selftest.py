@@ -3,7 +3,7 @@
 usage: guard selftest GROUP [--part K/N]
        guard selftest MODULE [ARG]...
 
-THE GROUPS
+Groups
     GROUP is a name with no dot, and utils/assay/tests/GROUP/ holds its test
     modules.  The command runs each module with a file name that starts with
     test_, in the sequence of their dotted names, in one Python process.  It
@@ -14,7 +14,7 @@ THE GROUPS
     on this host returns SKIPPED (77).  The exit status is the largest status
     of a module that ran, or SKIPPED when no module ran.
 
-THE MODULES
+Modules
     MODULE is the name of a module under assay, for example core.cache or
     readers.tsast.  A test module under assay.tests is its own test: the
     command calls its function main with each ARG.  For each other module,
@@ -30,7 +30,7 @@ from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.core.paths import REPO_ROOT
 
-# The directory of the test groups (THE GROUPS).
+# The directory of the test groups (the groups).
 TESTS = REPO_ROOT / "utils" / "assay" / "tests"
 USAGE = (
     "usage: guard selftest GROUP [--part K/N]  (GROUP is a directory of utils/assay/tests)\n"
@@ -39,7 +39,7 @@ USAGE = (
 
 
 def group_modules(group: str) -> list[str]:
-    """Return the dotted name of each test module of a group in the package assay, in sequence (THE GROUPS)."""
+    """Return the dotted name of each test module of a group in the package assay, in sequence (the groups)."""
     directory = TESTS / group
     return [
         ".".join(("tests", *path.relative_to(TESTS).with_suffix("").parts))
@@ -60,7 +60,7 @@ def parsed_part(words: list[str]) -> tuple[int, int] | None:
 
 
 def group_status(statuses: list[int]) -> int:
-    """Return the status of a group: the largest status of a module that ran, else SKIPPED, else OK (THE GROUPS)."""
+    """Return the status of a group: the largest status of a module that ran, else SKIPPED, else OK (the groups)."""
     ran = [status for status in statuses if status != ExitCode.SKIPPED]
     if statuses and not ran:
         return ExitCode.SKIPPED
@@ -68,7 +68,7 @@ def group_status(statuses: list[int]) -> int:
 
 
 def run_group(group: str, part: tuple[int, int]) -> int:
-    """Run each test module of a group for one part, and return the status of the group (THE GROUPS)."""
+    """Run each test module of a group for one part, and return the status of the group (the groups)."""
     names = group_modules(group)
     if not names:
         check_report.write_line(
@@ -92,7 +92,7 @@ def run_group(group: str, part: tuple[int, int]) -> int:
 
 
 def run_module(argv: list[str]) -> int:
-    """Run the test of one module (THE MODULES), and return the value of its main."""
+    """Run the test of one module (the modules), and return the value of its main."""
     name = f"assay.{argv[0]}"
     try:
         module = importlib.import_module(name)

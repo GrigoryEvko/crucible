@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test. This file must fail to compile.
 //
 // dispatch_workload_decision asks for a context whose row holds Bg,
 // because its parallel arm starts threads.  The hot foreground context

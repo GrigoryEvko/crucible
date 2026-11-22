@@ -1,8 +1,8 @@
 """brand-reentry — a branded value never reaches the mint site that made it again.
 
-THE RULE
+Rule
     The quarantine plugin of utils/tools/quarantine/ records the call graph of
-    the bodies of each unit (linear.cpp, THE SHAPES).  At the end of the unit
+    the bodies of each unit (linear.cpp, the shapes).  At the end of the unit
     it gives a line for each call with a branded argument, made in the
     function that minted the brand, whose callee can reach that function again.
     The second run mints the same brand, so a value of one run can stand in
@@ -11,7 +11,7 @@ THE RULE
     The graph holds the bodies that the unit reads, so a path through a body
     of a library, such as std::invoke, gives no line.
 
-THE LEDGER, THE WRITE
+Ledger, write
     assay.guard.engines.plugin.linear_family.
 
 Usage
@@ -44,5 +44,5 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family)."""
+    """Write the ledger of the rule from the lines of the builds of the request (the write of linear_family)."""
     return linear_family.write(rule, request)

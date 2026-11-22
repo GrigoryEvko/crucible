@@ -1,17 +1,17 @@
 """gate — build and test the commit of a landing in a warm tree, in each configuration that the change selects.
 
-THE CONFIGURATIONS
+Configurations
     CONFIGURATIONS gives each configuration of the gate: each configure
     preset with the tier gate (assay.loop.tiers), the parse presets first.  A
     configuration has the name of its preset and its build directory in the
     warm tree.  The block of the preset gives the name of the configuration
     of its build (assay.core.configuration).  A parse configuration is a
     preset that sets CRUCIBLE_SYNTAX_ONLY.  These configurations are the one
-    list of the configurations that a counted ledger holds (THE REDUCE).
+    list of the configurations that a counted ledger holds (the reduce).
     The gate reads the presets of the tree of the package, and it refuses
     presets with a problem.
 
-THE COUNTED RULES
+Counted rules
     A counted rule is a rule of the engine plugin or elf with the policy
     count or admit and a ledger with a row (counted_rules()).  Each one reads
     the objects of the target all of a build, or the reports of a parse
@@ -20,7 +20,7 @@ THE COUNTED RULES
     The run of a parse configuration checks only the rules of COUNTED_RULES
     of assay.guard.engines.buildsys.parse_builds (is_checked()).
 
-THE SELECTION
+Selection
     The gate holds one invariant: a landing cannot make a test red in a
     configuration of the gate when the test can see the change.  Each
     configuration of objects then runs for each change, in one of three
@@ -42,7 +42,7 @@ THE SELECTION
           - each configuration for a change of the quarantine plugin or of
             the rule table, and for --all-configurations.  Also for a
             candidate whose composition summed two changes of one count of a
-            ledger (assay.loop.land, THE MERGE), so THE REDUCE writes the
+            ledger (assay.loop.land, the merge), so the reduce writes the
             measured count.
       * The tests of the changed inputs, `loop test BUILD`, in each other
         configuration of objects, when the change can change each build.
@@ -58,8 +58,8 @@ THE SELECTION
         build_tests() of assay.loop.affected gives the tests that read the
         build from the build of default.  The run of default first builds
         the target build.ninja of its build, which configures the build
-        again with the change (THE THREADS).  Inputs.is_touched() of
-        assay.loop.inputs judges each one (THE TOUCH).  A test that reads no
+        again with the change (the threads).  Inputs.is_touched() of
+        assay.loop.inputs judges each one (the touch).  A test that reads no
         build gives the same result in each configuration, and default runs
         it.  When the change touches no such test, these configurations do
         not run.
@@ -67,7 +67,7 @@ THE SELECTION
     CMakePresets.json.
 
     A test of the master guard that reads no build gives the same result in
-    each configuration (THE TESTS THAT READ THE BUILD of assay.loop.affected).
+    each configuration (the tests that read the build of assay.loop.affected).
     default runs the full suite for each change.  The gate then gives each
     other configuration of the first two modes the option --build-only of
     `loop test`, which skips such a test.  The run of the base can have no
@@ -82,7 +82,7 @@ THE SELECTION
     change of the plugin or of the rule table, and for --all-configurations.
 
     The configurations of the last two modes run at the same time as the
-    configurations of the full suite (THE THREADS).  The model holds no
+    configurations of the full suite (the threads).  The model holds no
     inputs of a script test that reads a build, such as the parts of the
     test of the fixture store.  Such a test runs only in the first two
     modes.
@@ -100,21 +100,21 @@ THE SELECTION
     include/crucible/BackgroundThread.h is an example.  An arm that only one
     configuration compiles then gets its verdict in the landing of the
     change, and a count above its row fails there.  A landing that builds
-    each configuration writes each count below its row (THE REDUCE).
+    each configuration writes each count below its row (the reduce).
 
     A change that no unit of a configuration reads makes its build do
-    nothing.  A parse build then keeps the report of each unit (THE KEPT
-    REPORTS of assay.loop.syntax).
+    nothing.  A parse build then keeps the report of each unit (the kept
+    reports of assay.loop.syntax).
 
-    The vessel runs too, for a change that can change it (THE VESSEL).
+    The vessel runs too, for a change that can change it (the vessel).
 
-THE VESSEL
+Vessel
     The preset VESSEL builds the vessel against the patched PyTorch.  Its
     tier is nightly, and `loop nightly` builds and tests each target of its
     build.  No configuration of the gate compiles crucible_fallback.cpp and
     the shards of register.cpp of vessel/torch, because they need PyTorch.
     Thus the gate also runs the vessel (Mode.VESSEL), in a thread of its own
-    with a lease of its own (THE THREADS).  The vessel is not a
+    with a lease of its own (the threads).  The vessel is not a
     configuration of CONFIGURATIONS.
 
     The vessel runs for each change that can change each build
@@ -136,51 +136,51 @@ THE VESSEL
          PyTorch stops the configure with the reason
       2. The configure of the build directory, when it has no graph of Ninja
       3. `cmake --build BUILD --target` of each target of VESSEL_TARGETS,
-         with no -j (THE JOBSERVER).  Then the wait for the write of THE
-         BUILT FILES, only when the vessel reads a written file
+         with no -j (the jobserver).  Then the wait for the write of the
+         built files, only when the vessel reads a written file
          (is_read_by_vessel()).  The vessel reads no other file of
          BUILT_FILES, so its tests on the commit give the result of its tests
          on the commit of the fold
       4. `ctest --label-regex` of VESSEL_LABEL, with the jobs of the lease.
          Each red test runs one more time apart from the suite, as in step 3
-         of THE RUN OF A CONFIGURATION.  A disabled test, and a run in which
+         of the run of a configuration.  A disabled test, and a run in which
          no test runs, are problems too.  The fixtures with the label
          vessel_neg need no PyTorch, and each configuration of the gate runs
          them.
-    The round after THE REDUCE runs these steps again.  The vessel runs no
-    counted rule, no rule reconfigure-noop and no `guard warnings`, and THE
-    REDUCE reads no build of it.  The ledgers then hold the counts of the
+    The round after the reduce runs these steps again.  The vessel runs no
+    counted rule, no rule reconfigure-noop and no `guard warnings`, and the
+    reduce reads no build of it.  The ledgers then hold the counts of the
     configurations of the gate only.  The run of the base runs the red tests
     of the vessel, or each vessel test after a problem of a different kind.
     A lease reserves the memory of one job of its configuration for each
     slot: the largest kind of KIND_GB_PER_JOB of the step that holds it
-    (gb_per_job_of(), THE MEMORY and THE BUDGET of assay.loop.heavy).  A
+    (gb_per_job_of(), the memory and the budget of assay.loop.heavy).  A
     lease of `loop test` builds and tests, so it reserves the largest of
     the three kinds.  The vessel builds with the memory of a shard compile,
     and its lease then reserves the memory of a vessel test for the ctest
     step.  The lease has the weight VESSEL_WEIGHT among the leases of the
-    gate (THE WEIGHT of assay.loop.heavy).  The weight stays 1, because
+    gate (the weight of assay.loop.heavy).  The weight stays 1, because
     the shards of four runs at the same time hold much of the memory of the
     host.  The lease is capped: it never grows past the slice of the gate
-    times VESSEL_WEIGHT (THE POOL of assay.loop.heavy).
+    times VESSEL_WEIGHT (the pool of assay.loop.heavy).
 
-THE CAREFUL SELECTION
+Careful selection
     The selection reads files of the commit with the code of the gate, which
-    is the code of main (THE DRIVER of assay.loop.land).  A commit can change
+    is the code of main (the driver of assay.loop.land).  A commit can change
     the format of a file and its reader together.  An example is a new kind
     of row of the rule table and the code that reads it.  The code of the
     gate then cannot read that file.  Each read of the selection that gives
     an error then gives its widest result (careful()):
       * each parse configuration
       * the mode of the changed inputs in each other configuration of objects
-      * no counted rule, so THE REDUCE lowers no row.
+      * no counted rule, so the reduce lowers no row.
     The gate writes a line with the error.  A wider selection runs each
     configuration and each test that a narrower one runs, so the invariant
-    of THE SELECTION holds.  `loop syntax --changed` is the master of the
+    of the selection holds.  `loop syntax --changed` is the master of the
     warm tree, and an error of it also gives each parse configuration.  The
     commit then gets its verdict from its own tests.
 
-THE WARM TREE
+Warm tree
     One repository in the directory TREE of the work directory holds the
     commit of each landing.  It borrows the objects of the repository of the
     landing through the file objects/info/alternates.  move_tree() gives it
@@ -202,25 +202,25 @@ THE WARM TREE
     reads the history of the landing.  The gate refuses a warm tree in the
     work tree of the repository.
 
-THE RUN OF A CONFIGURATION
+Run of a configuration
     The HEAD of the warm tree is the commit, with no branch.  The change of the
-    tree is then the commit on its first parent (assay.core.git, THE
-    CHANGE).  The suite does not get the variable CRUCIBLE_CHANGE_BASE,
+    tree is then the commit on its first parent (assay.core.git, the
+    change).  The suite does not get the variable CRUCIBLE_CHANGE_BASE,
     because a self-test plants repositories of its own, and the variable
     names no commit of them.  `loop syntax --changed` gets the variable, with
     the commit that the composition started from.  Each configuration of a
     check runs in a thread of its own, with a lease of the slot pool of the
-    host (THE JOBSERVER, THE THREADS):
+    host (the jobserver, the threads):
       1. A build directory with no graph of Ninja gets its configure:
          `cmake --preset PRESET -B BUILD`.  A build directory whose cache
          names a compiler that its toolchain file does not resolve gets
-         `cmake --preset PRESET -B BUILD --fresh` (THE COMPILER HEAL).
+         `cmake --preset PRESET -B BUILD --fresh` (the compiler heal).
       2. A parse configuration: `loop syntax BUILD`, then `guard check
          --build-dir BUILD` of each rule of COUNTED_RULES of
          assay.guard.engines.buildsys.parse_builds, at the same time.
       3. A configuration of objects: `loop test BUILD` with the words of its
          mode, which builds the target all and runs the tests of the mode
-         (assay.loop.affected, THE SELECTION).  A retry after a move of HEAD
+         (assay.loop.affected, the selection).  A retry after a move of HEAD
          and each subsequent run of a batch run `loop test BUILD` in a
          configuration of the full suite.  That command runs only the tests
          with an input that changed, and each test of a rule that reads a
@@ -233,7 +233,7 @@ THE RUN OF A CONFIGURATION
          flaky test, and no retry hides it: the
          gate writes its name, and the verdict gives it (Verdict.flaky).
          The landing writes it in the verdict of each request of the run
-         (assay.loop.land, THE FLAKY TESTS).
+         (assay.loop.land, the flaky tests).
          An exit other than 0 with no red test rejects the commit too.  Then
          `guard warnings BUILD`.  The suite holds the ledger checks of the build
          kind, such as the tests guard_plugin and guard_artifact_symbols.
@@ -246,14 +246,14 @@ THE RUN OF A CONFIGURATION
          two times.  A build that compiles again or a dependency of the log
          of Ninja that does not exist rejects the commit.  No test of the
          suite can configure the build that runs it, so the gate runs the
-         rule.  The step runs in each mode of THE SELECTION and in THE RUN OF
-         THE BASE.  The run again after THE REDUCE does not run it.
+         rule.  The step runs in each mode of the selection and in the run of
+         the base.  The run again after the reduce does not run it.
     Each step runs the masters of the warm tree.  Then the tests of the
     commit judge the commit.  The step writes its two outputs to a log in
-    the directory of the logs of the gate (THE LOGS).  The first
-    configuration with a problem stops the others (THE STOP).
+    the directory of the logs of the gate (the logs).  The first
+    configuration with a problem stops the others (the stop).
 
-THE COMPILER HEAL
+Compiler heal
     CMake keeps the compiler of the first configure of a build directory,
     and the warm tree keeps its build directories from one landing to the
     next.  So a new default prefix of a toolchain file, such as the prefix
@@ -261,7 +261,7 @@ THE COMPILER HEAL
     by itself.  Before the build of a configuration with a graph of Ninja,
     the gate runs `loop heal BUILD PRESET` of the warm tree (heal_line()).
     That command compares the compilers of the cache with the compilers
-    that the toolchain file of the commit resolves (THE STALE COMPILER of
+    that the toolchain file of the commit resolves (the stale compiler of
     assay.loop.heal).  It runs from the warm tree, because the rules of the
     commit decide, and this copy of the gate can be older than the commit.
     When the command gives a line, the gate writes the line, which names the
@@ -271,10 +271,10 @@ THE COMPILER HEAL
     compiler, or `loop heal` removed the log of Ninja for a compiler that
     keeps its path, so Ninja builds each object again.  A cache with no
     record of its compiler heals one time and builds nothing again.  A build
-    directory with no graph of Ninja takes step 1 of THE RUN OF A
-    CONFIGURATION as it is.
+    directory with no graph of Ninja takes step 1 of the run of a
+    configuration as it is.
     `loop test` of each configuration of objects also parses each
-    configured parse build of the warm tree (THE PARSE BUILDS of
+    configured parse build of the warm tree (the parse builds of
     assay.loop.affected), also when the plan runs no parse configuration.
     Thus, before the runs start, the gate heals each configured parse build
     that no run of the plan configures, in the same way
@@ -285,12 +285,12 @@ THE COMPILER HEAL
     Outside the gate, cmake/StaleCompiler.cmake refuses such a cache in each
     configure, with the command that heals it.
 
-THE JOBSERVER
+Jobserver
     Each configuration of a check holds a lease of the slot pool of the host
-    while it runs (THE POOL of assay.loop.heavy).  The writes of THE BUILT
-    FILES and of THE REDUCE hold a lease too.  The cap of a lease is the
+    while it runs (the pool of assay.loop.heavy).  The writes of the built
+    files and of the reduce hold a lease too.  The cap of a lease is the
     slice of the gate: --jobs with SLICE of assay.loop.heavy as the most, or
-    less when the available memory is small (THE MEMORY of
+    less when the available memory is small (the memory of
     assay.loop.heavy).  Each lease has a jobserver of its own
     (assay.core.jobserver), and each command of the configuration gets the
     variable MAKEFLAGS of that jobserver.  The pump of the lease adds slots
@@ -299,7 +299,7 @@ THE JOBSERVER
     A configuration in its test phase then cannot take the jobs of a
     different configuration that waits, and the slots of the host go to each
     heavy job of the host.  The leases of the gate go before the other
-    leases of the host (THE POOL of assay.loop.heavy).  The wait for the
+    leases of the host (the pool of assay.loop.heavy).  The wait for the
     first slot watches the stop event.
     The gate holds one slot of the jobserver for each command that it runs:
     its implicit slot, or one token.  The command then runs its first job
@@ -312,27 +312,27 @@ THE JOBSERVER
     the sum of its slots over its time (Verdict.wait_seconds and
     Verdict.slot_seconds).  Its time in step_seconds starts after that wait.
 
-THE THREADS
+Threads
     Each configuration of the plan runs in a thread of its own, at the same
     time as the others.  The other configurations of objects (the last two
-    modes of THE SELECTION) run in threads of their own too.  They start
+    modes of the selection) run in threads of their own too.  They start
     when their plan is known.  A change that can change each build gives
     their plan immediately.  Else, their plan reads the touched tests of the
     build of ALWAYS.  The run of ALWAYS then first builds the target
     build.ninja of its build, which configures the build again with the
     change.  Then the other configurations start.  The checks of a parse
-    configuration run in threads of their own too.  The writes of THE REDUCE
+    configuration run in threads of their own too.  The writes of the reduce
     also run in threads of their own.
 
     The verdict gives the configurations, their times and their problems in
     the sequence of the plan and then of the other configurations.  It does
     not give them in the sequence of their ends.
 
-THE STOP
+Stop
     In the run of a commit, the first configuration with a problem stops
     the others.  A run of the base has no such stop, and a crossed row of a
     budget in the first round of a candidate with a budget reason does not
-    stop the others (THE RAISE OF A BUDGET).  Each command
+    stop the others (the raise of a budget).  Each command
     of the step looks at the stop event each STOP_POLL_S seconds.  At the
     stop, the process group of the command gets the stop of
     Running.stop() of assay.core.proc.  Its configuration then ends with no
@@ -348,12 +348,12 @@ THE STOP
     Each command of the gate has the stop word interrupt of
     assay.core.proc.  Its group gets SIGINT, and SIGKILL after STOP_GRACE_S
     seconds.  A master of the package then stops in its own way.  Its wait
-    sends SIGINT to the group of each child (AN INTERRUPT of
+    sends SIGINT to the group of each child (an interrupt of
     assay.core.proc), and ninja and ctest stop their jobs.  SIGTERM ends a
     master with no such step.  Its children run in process groups of their
     own, and they then go on in the warm tree.
 
-THE HANG GUARD
+Hang guard
     ctest gives each test of the gate the wall guard TEST_TIMEOUT_S with
     --timeout: in `loop test` (after --), in the run of the red tests alone,
     and in the run of the vessel tests.  With no such option, ctest gives a
@@ -365,7 +365,7 @@ THE HANG GUARD
     a test of the vessel, keeps its own limit.  On 2026-11-19 the slowest
     test of a loaded run took about 75 s.
 
-THE KILL FOR MEMORY
+Kill for memory
     The kernel can end a process when the host or its control group runs
     out of memory, and the process then exits 137.  Such a kill tells that
     the host was short of memory, not that the change has a defect.  Each
@@ -380,12 +380,12 @@ THE KILL FOR MEMORY
     lines of one kind tells if the reservation of that kind is too small
     (KIND_GB_PER_JOB).
 
-THE REDUCE
-    A ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A
+Reduce
+    A ledger fails only on a growth (the policies of assay.core.ledger).  A
     count below its row, and a row of the policy admit that admits no
     finding, then make no check fail.  Only the gate lowers the rows of a
     counted ledger, because one build cannot see the findings of a different
-    build (THE WRITE of assay.core.ledger).  The legs of the gate write no
+    build (the write of assay.core.ledger).  The legs of the gate write no
     ledger.
 
     The gate lowers the rows only when the first round built each
@@ -396,7 +396,7 @@ THE REDUCE
     BUILD...` of each counted rule.  The write gets the build of each
     configuration that checks the rule (is_checked()).  It takes the largest
     count of each key over these builds, and it lowers each row above that
-    count (THE REDUCE of assay.core.ledger).  Each mode of THE SELECTION
+    count (the reduce of assay.core.ledger).  Each mode of the selection
     builds the target all first, and a write then reads the full build.  The
     writes of the rules run at the same time, and each ledger has one writer.
 
@@ -409,7 +409,7 @@ THE REDUCE
     After the writes, the gate folds each ledger that a write changed into a
     new commit (replaced_commit() of assay.core.git).  The new commit has
     the parents and the message of the commit, and its tree holds these
-    ledgers.  After a write of THE BUILT FILES, the commit is the commit of
+    ledgers.  After a write of the built files, the commit is the commit of
     that write.  A landing of more than one commit gets the ledgers in its
     last commit.
 
@@ -420,14 +420,14 @@ THE REDUCE
     ledger that the gate folded can make such a check red, and the gate then
     rejects the commit.  A configuration of the full suite runs `loop test
     BUILD`, which runs each test with an input that changed, as the run
-    after a move of HEAD does.  The other configurations get the mode of THE
-    SELECTION again, with the ledgers in the change.
+    after a move of HEAD does.  The other configurations get the mode of the
+    selection again, with the ledgers in the change.
 
     The verdict gives the new commit and the ledgers, and the landing moves
     the branch to that commit.  A change that lowers counts and lands with
     --all-configurations then lands with no manual write of a ledger.
 
-THE BUILT FILES
+Built files
     BUILT_FILES gives each generated file that the gate writes from the
     build of ALWAYS, with its target of `loop derive`.  The mint inventory
     is such a file.  It needs the mint records of a full build, and a full
@@ -438,23 +438,23 @@ THE BUILT FILES
     can change it (built_selection()).  The module of the target gives the
     function is_input() of the paths that can change the file.  The modules
     of its import closure can change the file too.  A read of the selection
-    that gives an error selects each file (THE CAREFUL SELECTION).  The run
+    that gives an error selects each file (the careful selection).  The run
     of the base writes no file, because its commit is the commit that the
-    change starts from.  When the two sides of THE MERGE of
+    change starts from.  When the two sides of the merge of
     assay.loop.land change such a file, the composition keeps its own copy,
     and the candidate names the file (Candidate.built).  The gate writes
     each such file too.  The changed paths of the candidate hold each file
     that the gate writes, as they hold a merged file.  The tests that read
     such a file are then touched tests, and each configuration runs them on
-    the written file (THE SELECTION).
+    the written file (the selection).
 
     The test of the rule derived-files reads the file in each configuration
     of objects.  Thus no step of a configuration other than its compile runs
     before the write ends.  The run of ALWAYS writes each file (Step.
     settle_built()):
       1. Its configure, and the target build.ninja when the others wait for
-         it (THE THREADS)
-      2. `cmake --build BUILD` of the target all, with no -j (THE JOBSERVER)
+         it (the threads)
+      2. `cmake --build BUILD` of the target all, with no -j (the jobserver)
       3. `loop derive TARGET --write --build-dir BUILD` of the warm tree
       4. The fold of each written file that changed into a new commit
          (built_commit()).  The new commit has the parents of the commit,
@@ -464,8 +464,8 @@ THE BUILT FILES
     `cmake --build BUILD` of a configuration of objects, `loop syntax BUILD`
     of a parse configuration, and the build of the vessel targets.  Then it
     waits for the end of the write, and it runs its tests and its checks on
-    the new commit.  The vessel waits only for a file that it reads (THE
-    VESSEL).  A compile reads no git state and no file of
+    the new commit.  The vessel waits only for a file that it reads (the
+    vessel).  A compile reads no git state and no file of
     BUILT_FILES, so the move of the warm tree does not change it.  A build
     or a write that gives an error is a problem of ALWAYS, and the stop ends
     the other configurations.  The wait watches the stop event.
@@ -474,17 +474,17 @@ THE BUILT FILES
     test.log, as `loop test` does.  A build error then gives the problem of
     a build error of `loop test` (BUILD_PROBLEM).  The run of the base writes
     no built file, and `loop test` builds there.  The two runs then give the
-    same problem for one build error, and the landing compares them (THE RUN
-    OF THE BASE).
+    same problem for one build error, and the landing compares them (the run
+    of the base).
 
     A plan with no run of ALWAYS, such as the focus of a request that runs
-    alone (THE CONFIRMATION of assay.loop.land), writes each file before
-    each configuration runs (Step.write_built()).  The round after THE
-    REDUCE writes no file.  The rule derived-files of the suite compares the
+    alone (the confirmation of assay.loop.land), writes each file before
+    each configuration runs (Step.write_built()).  The round after the
+    reduce writes no file.  The rule derived-files of the suite compares the
     written file with each build.  The verdict gives each written file that
     changed (Verdict.built).
 
-THE RATCHET ROWS
+Ratchet rows
     A row of a counted ledger that must rise, or a new row, is a decision of
     the author of the change.  Examples are a row of the rule escape-doors
     and a count of the rule owners.  The gate thus writes no such row.  But
@@ -508,10 +508,10 @@ THE RATCHET ROWS
     of the writes gives one line and no row, and it does not change the
     verdict (Gate.ratchet()).  The rows
     of one build are partial, and a different configuration can give a
-    higher count (THE WRITE of assay.core.ledger).  The refusal of the
+    higher count (the write of assay.core.ledger).  The refusal of the
     landing gives the rows after the problems (assay.loop.land).
 
-THE RAISE OF A BUDGET
+Raise of a budget
     A row of a rule of BUDGET_RULES keeps a size or a cost: header-alone,
     object-size, step-cost and instruction-total.  The owner decision of
     2026-11-15 tells that a correct change that crosses such a row raises
@@ -525,13 +525,13 @@ THE RAISE OF A BUDGET
         alone too is the test of a rule of BUDGET_RULES (BUDGET_TESTS).  Each
         failing item is a finding line of such a rule (is_budget_outcome()).
         In the first round of such a candidate, an outcome of a budget does
-        not set the stop (THE STOP).  Thus each configuration ends, and the
+        not set the stop (the stop).  Thus each configuration ends, and the
         round shows each crossed row.
       * When each outcome with a problem is an outcome of a budget, the gate
         runs `guard write --rule RULE --build-dir BUILD --reason TEXT` of
         the warm tree for each such rule and configuration (Step.
         raise_budgets()).  The write of a measured rule writes each crossed
-        row with the measured value (THE WRITE of assay.core.budget).
+        row with the measured value (the write of assay.core.budget).
       * A candidate can give a row its own text (Candidate.budget_rows,
         `loop land --budget-reason ITEM=TEXT`).  The write then uses the
         plain text, or the first own text when the candidate gives no plain
@@ -545,34 +545,34 @@ THE RAISE OF A BUDGET
         line as a problem, so each requester of the run reads it.
       * A write that fails, or writes that change no row, give the ledgers
         their bytes back, and the problems of the round stay.
-      * Else the round has no problem.  THE REDUCE runs when the round built
+      * Else the round has no problem.  The reduce runs when the round built
         each configuration, and the fold puts the raised ledgers and the
         falls into the commit.  Each configuration then runs again, as after
-        THE REDUCE, and the round after the fold also runs `guard warnings`
+        the reduce, and the round after the fold also runs `guard warnings`
         and the rule reconfigure-noop for each configuration whose first
         round was red (Step.unchecked).  A crossed row in that round is a
         problem, so the candidate gets no second raise.
     The verdict gives a line for each raised row, with its old and its new
     value (Verdict.raised), and the record of the run holds the lines.
 
-THE LOWER OF A BUDGET
+Lower of a budget
     A row of a budget goes down only by an explicit write that lowers one
     named row to the largest measure of the configurations of the gate, with
-    the reason of the cut (THE LOWER of
+    the reason of the cut (the lower of
     assay.guard.engines.buildsys.cost_budgets).  An agent has the build of
     one configuration, and the gate has a build of each.  Thus a candidate
     with a lower (Candidate.lowers, `loop land --lower RULE ITEM
     --lower-reason TEXT`) lets the gate make that write in its own run.  The
     rules are those of LOWER_RULES.
       * The candidate selects each configuration, as --all-configurations
-        does (THE SELECTION).
+        does (the selection).
       * When the first round built each configuration with no problem, the
         gate runs `guard write --rule RULE --lower --row ITEM... --reason
         TEXT --build-dir BUILD...` of the warm tree for each rule and each
         reason, with the build of each configuration of objects
-        (Step.lower_budgets()).  The writes run after THE REDUCE, and the
+        (Step.lower_budgets()).  The writes run after the reduce, and the
         fold puts the lowered ledgers into the commit with the falls.  Each
-        configuration then runs again, as after THE REDUCE.  A lowered row
+        configuration then runs again, as after the reduce.  A lowered row
         holds the largest measure of the builds of the round, so the round
         after the fold measures no item above it.
       * A write that fails gives its ledger its bytes back, and the verdict
@@ -585,10 +585,10 @@ THE LOWER OF A BUDGET
     lines.  A preset of `loop nightly` or `loop release` that then measures
     more raises its row with its own reason, because the nightly is no gate.
 
-THE RUN OF THE BASE
-    A candidate with a focus is the commit of a run of the base (THE RUN OF
-    THE BASE of assay.loop.land), or of the run alone of one request (THE
-    CONFIRMATION of assay.loop.land).  The rules of this section apply to
+Run of the base
+    A candidate with a focus is the commit of a run of the base (the run of
+    the base of assay.loop.land), or of the run alone of one request (the
+    confirmation of assay.loop.land).  The rules of this section apply to
     the two.  The title of the candidate tells the kind of the run in the
     first line of the check (Candidate.title).  The focus gives each configuration with
     a problem in the run of the batch, and the tests that were red alone
@@ -596,23 +596,23 @@ THE RUN OF THE BASE
     in a thread of its own (focused_runs()).  It runs the red tests with
     `loop test BUILD --only FILE`, a parse configuration in its mode, and
     each other configuration in the mode of the changed inputs.  The vessel
-    runs in its mode (THE VESSEL).  The run of the base writes no ledger and
+    runs in its mode (the vessel).  The run of the base writes no ledger and
     folds no ledger.  Its problems then have the
     words of the problems of the batch.  A problem of a run of the base does
-    not stop the other configurations of the focus (THE STOP).  The run of
+    not stop the other configurations of the focus (the stop).  The run of
     the base gives the result of each of them, because the landing compares
     each problem of the two runs.
 
-THE VERDICT
+Verdict
     The gate has no base side: it does not compare the commit with HEAD.  A
     test that is red alone on HEAD then rejects each landing, until a commit
     corrects it.  Main must stay green.  The verdict gives the focus of each
-    configuration with a problem, for THE RUN OF THE BASE.
+    configuration with a problem, for the run of the base.
 
-THE FAILING ITEMS
+Failing items
     The verdict also gives the failing items of its problems (Verdict.items),
-    and the landing compares the items of two runs, not their problems (THE
-    RUN OF THE BASE of assay.loop.land).  Two runs can fail one test of a
+    and the landing compares the items of two runs, not their problems (the
+    run of the base of assay.loop.land).  Two runs can fail one test of a
     rule on different files.  Their problems then have the same words, but
     the problem of the batch is not the problem of the base.
       * A test that is red alone too gives one item for each finding line of
@@ -632,7 +632,7 @@ THE FAILING ITEMS
         lets ctest keep ALONE_OUTPUT_BYTES of the output of each red test.
       * Each other problem is its own item.
 
-THE LOGS
+Logs
     Each step writes its log into the directory of the logs of its gate.
     That is the directory LOGS of the work directory, or a directory of the
     run in LOGS.  hold_run() makes a new directory of a run, one above the
@@ -657,7 +657,7 @@ THE LOGS
     run before its lock.
 
     The name of a log holds its configuration and its step.  Two threads
-    then do not write one log.  The round after THE REDUCE puts AGAIN_MARK
+    then do not write one log.  The round after the reduce puts AGAIN_MARK
     after the name of the configuration (log_name()).  The logs of the first
     round then stay, such as the output of a test that was red in the suite
     and green alone.
@@ -665,14 +665,14 @@ THE LOGS
     the log SUITE_REPORT.  The next landing in the lane replaces the report in
     the build, so only that copy keeps the output of a flaky test.
 
-THE LOCK OF THE TREE
+Lock of the tree
     One landing at a time uses a warm tree.  tree_lock() holds an exclusive
     lock of flock(2) on the lock file of the warm tree of a lane in the work
     directory.  It waits for the lock, or with no wait it tells that a
     different landing holds it.  session() holds the lock of the first lane
     and gives the gate.
 
-THE LANES
+Lanes
     Up to LANES landings run at the same time, each in a warm tree of its
     own: TREE, TREE-2, TREE-3 and so on, each with its own build
     directories.  LANES is the size of the slot pool of the host divided by
@@ -685,7 +685,7 @@ THE LANES
     free only while that lock is held, so only while a holder of this copy
     of the module holds the first lane.  An earlier copy of the module takes
     only the first lane, and it reads the queue with no claim
-    (assay.loop.land, THE LANES).  It then never runs at the same time as a
+    (assay.loop.land, the lanes).  It then never runs at the same time as a
     different lane.
 
 `guard selftest tests.loop.test_gate` does a test of the module on a planted repository.
@@ -722,12 +722,12 @@ from assay.readers import ninja as ninja_reader
 from assay.setup import pins as cmake_pin
 
 # The directory of the warm tree, the lock of the tree, the directory of the logs and the lock of its runs, in the work
-# directory (THE LOGS).
+# directory (the logs).
 TREE = "tree"
 LOCK = "tree.lock"
 LOGS = "logs"
 RUNS_LOCK = "logs.lock"
-# The lock that a holder of the first lane holds, and the count of the lanes (THE LANES).  The pool caps the slots of
+# The lock that a holder of the first lane holds, and the count of the lanes (the lanes).  The pool caps the slots of
 # all the lanes together, so each lane past the slots of the busy lanes fills only idle slots.  The count comes from the
 # CPUs and not from the slots of the pool, because each lane has a warm tree of its own.  MOST_LANES caps the count: the
 # owner set 5 lanes on 2026-11-16, for 5 working agents.  A host with fewer CPUs still gets fewer lanes.
@@ -735,59 +735,59 @@ PRIMARY = "primary.lock"
 MOST_LANES = 5
 LANES = min(MOST_LANES, max(1, proc.DEFAULT_JOBS // heavy.SLICE))
 # The name of the directory of the logs of one run, before its number, the count of the ended runs that stay, and the
-# file of the directory that a live run holds a lock on (THE LOGS).
+# file of the directory that a live run holds a lock on (the logs).
 RUN_MARK = "run-"
 RUN_WIDTH = 6
 RUNS_KEPT = 24
 LIVE = ".live"
 # An ended run that an unread verdict cites stays past RUNS_KEPT while it is younger than CITED_RUN_AGE_S, and while
-# the cited runs that stay hold CITED_RUNS_BYTES or less together (THE LOGS).  On 2026-11-18, the lanes made about 16
+# the cited runs that stay hold CITED_RUNS_BYTES or less together (the logs).  On 2026-11-18, the lanes made about 16
 # runs in an hour, of a median of 7.8 MB.
 CITED_RUN_AGE_S = 24 * 3600.0
 CITED_RUNS_BYTES = 2 << 30
-# The mark after the name of the configuration in the name of a log of the round after THE REDUCE (THE LOGS).
+# The mark after the name of the configuration in the name of a log of the round after the reduce (the logs).
 AGAIN_MARK = ".again"
-# The step name of the copy of the report of the suite, which holds the output of each red test (THE LOGS).
+# The step name of the copy of the report of the suite, which holds the output of each red test (the logs).
 SUITE_REPORT = "suite.junit.xml"
-# The build files of a change that selects the release builds and ThreadSanitizer, as a C or C++ file does (THE
-# SELECTION, COMPILED_SUFFIXES of assay.loop.inputs).
+# The build files of a change that selects the release builds and ThreadSanitizer, as a C or C++ file does (the
+# selection, COMPILED_SUFFIXES of assay.loop.inputs).
 BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
 BUILD_FILE_SUFFIX = ".cmake"
 SANITIZED_PREFIXES = ("include/", "src/", "cmake/")
 BENCH_PREFIXES = ("bench/", "test/fuzz/")
 EVERY_PREFIXES = ("utils/tools/quarantine/", "utils/rule-table.txt")
 LEDGER_PREFIX = "utils/ledgers/"
-# The sentence that the gate adds to the message of a commit with a written file (THE BUILT FILES).
+# The sentence that the gate adds to the message of a commit with a written file (the built files).
 BUILT_NOTE = "The gate wrote {paths} from the build of the composed tree."
-# The words of the problem of a build error of a configuration of objects, in `loop test` and before it (THE BUILT
-# FILES).  The two give the same words, so the run of the base compares them (THE RUN OF THE BASE).
+# The words of the problem of a build error of a configuration of objects, in `loop test` and before it (the built
+# files).  The two give the same words, so the run of the base compares them (the run of the base).
 BUILD_PROBLEM = "the build or the test run gives an error"
 # The test of the suite that checks each rule of the engine plugin, the prefix of the test of a rule of the engine elf,
-# and the reason cell of a new row that the gate gives (THE RATCHET ROWS).
+# and the reason cell of a new row that the gate gives (the ratchet rows).
 PLUGIN_TEST = "guard_plugin"
 RULE_TEST_PREFIX = "guard_"
 ROW_REASON = "REASON"
 # The rules of a budget, whose rows the gate raises for a candidate with a budget reason, and the test of the suite of
-# each rule (THE RAISE OF A BUDGET).  No rule of correctness is in the list.
+# each rule (the raise of a budget).  No rule of correctness is in the list.
 BUDGET_RULES = ("header-alone", "instruction-total", "object-size", "step-cost")
 BUDGET_TESTS = {f"{RULE_TEST_PREFIX}{rule.replace('-', '_')}": rule for rule in BUDGET_RULES}
-# The rules of a budget whose named rows the gate lowers for a candidate with a lower (THE LOWER OF A BUDGET).  The rule
+# The rules of a budget whose named rows the gate lowers for a candidate with a lower (the lower of a budget).  The rule
 # instruction-total has one total and no named row, and its write with no reason lowers it.
 LOWER_RULES = ("header-alone", "object-size", "step-cost")
-# The rule of a failing item of a finding line (THE FAILING ITEMS).
+# The rule of a failing item of a finding line (the failing items).
 ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
-# The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
-# SELECTION).
+# The configuration that runs the full suite for each change.  Its build gives the tests that read a build (the
+# selection).
 ALWAYS = "default"
 # The preset of the vessel, the targets that the gate builds in its build, the label of the vessel tests, and the
-# prefix of the paths of the vessel (THE VESSEL).  TORCH_DIR of the preset names a directory in TORCH_VENV of the
+# prefix of the paths of the vessel (the vessel).  TORCH_DIR of the preset names a directory in TORCH_VENV of the
 # source tree, which holds the patched PyTorch.
 VESSEL = "vessel"
 VESSEL_TARGETS = ("crucible_vessel", "crucible_dispatch")
 VESSEL_LABEL = "vessel"
 VESSEL_PREFIX = "vessel/"
 TORCH_VENV = ".venv-torch"
-# The memory of one job of each kind of each configuration, in GB (THE BUDGET of assay.loop.heavy): the 99th
+# The memory of one job of each kind of each configuration, in GB (the budget of assay.loop.heavy): the 99th
 # percentile of the peaks of the compiles and of the tests, and the largest peak of the links.  The records of the build
 # launcher of the seven lanes gave them on 2026-11-15, from 926 to 2461 compiles, 3081 to 3817 links and about 23000
 # tests for each configuration.  A link is about as heavy as each other link, so its peak counts.  The vessel compiles
@@ -811,33 +811,33 @@ EACH_KIND = ("compile", "link", "test")
 TEST_KINDS = ("test",)
 # The share of a GB that the memory of a job of KIND_GB_PER_JOB rounds up to.
 GB_STEP = 0.1
-# The file of the work directory with one JSON line for each kill for lack of memory (THE KILL FOR MEMORY).
+# The file of the work directory with one JSON line for each kill for lack of memory (the kill for memory).
 KILL_LOG = "oom-kills.jsonl"
 # The forms of a file HEAD that names a commit: a hash of SHA-1 or of SHA-256 in lowercase hexadecimal digits, and the
-# branch with no commit that repair_head() writes when the reflog names no commit (THE WARM TREE).
+# branch with no commit that repair_head() writes when the reflog names no commit (the warm tree).
 HASH_LENGTHS = (40, 64)
 HEX_DIGITS = "0123456789abcdef"
 UNBORN_REF = "refs/heads/main"
 # The outputs that a build never leaves with no bytes, the reply directory of the CMake file API in a build
-# directory, and the number of empty outputs that the line of repair_builds() names (THE WARM TREE).
+# directory, and the number of empty outputs that the line of repair_builds() names (the warm tree).
 OUTPUT_SUFFIXES = (".o", ".a", ".so")
 REPLY_DIRECTORY = (".cmake", "api", "v1", "reply")
-# The graph of Ninja in a build directory, and the entry of the CMake cache that names the ninja of the build (THE
-# WARM TREE).
+# The graph of Ninja in a build directory, and the entry of the CMake cache that names the ninja of the build (the
+# warm tree).
 GRAPH_FILE = "build.ninja"
 NINJA_ENTRY = "CMAKE_MAKE_PROGRAM"
 EMPTY_SHOWN = 5
-# The word of a configure that drops the cache of the build directory first (THE COMPILER HEAL).
+# The word of a configure that drops the cache of the build directory first (the compiler heal).
 FRESH_WORD = "--fresh"
-# The weight of the lease of the vessel in the slot pool (THE WEIGHT of assay.loop.heavy).  With the weight 2, four runs
+# The weight of the lease of the vessel in the slot pool (the weight of assay.loop.heavy).  With the weight 2, four runs
 # of the gate built the vessel at the same time with 64 jobs each, and the host ran out of memory two times on
 # 2026-11-15.  Each lease reads the available memory one time at its start, so leases that start together each count
 # all of it.  The weight is 1 until the pool holds one memory budget for all leases.
 VESSEL_WEIGHT = 1
-# The rule that configures the build of a configuration of objects again after its first build (THE RUN OF A
-# CONFIGURATION).
+# The rule that configures the build of a configuration of objects again after its first build (the run of a
+# configuration).
 RECONFIGURE_RULE = "reconfigure-noop"
-# The engines and the policies of a counted rule (THE COUNTED RULES).
+# The engines and the policies of a counted rule (the counted rules).
 COUNTED_ENGINES = frozenset({rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF})
 COUNTED_POLICIES = frozenset({rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT})
 # The statuses of a test that count as red, the status of a skip, of a test that ran and passed, and of a disabled test.
@@ -848,21 +848,21 @@ DISABLED = ctest_reader.TestStatus.DISABLED
 # The limit of one call of `loop test` and of one configure, in seconds.
 TEST_RUN_S = 2 * proc.BUILD_S
 CONFIGURE_S = proc.TOOL_S
-# The one wall guard of a test in the gate, in seconds (THE HANG GUARD).  It is no judge of a test.  It only bounds a
+# The one wall guard of a test in the gate, in seconds (the hang guard).  It is no judge of a test.  It only bounds a
 # hang, and a test that gets to it is red and is a defect to correct.
 TEST_TIMEOUT_S = 1800
 # The room of the run of the red tests alone above the guards of its tests, in seconds: ctest starts, stops a test at
 # its guard and writes its report in that time, also on a loaded host.
 ALONE_ROOM_S = proc.TOOL_S
 # The bytes of the output of one red test that the report of the run alone keeps.  The default of ctest is 300 KB
-# (THE FAILING ITEMS).
+# (the failing items).
 ALONE_OUTPUT_BYTES = 64 * 1024 * 1024
-# A finding line of a check (THE FORMAT of assay.core.report), and the words with which ctest replaces the part of an
+# A finding line of a check (the format of assay.core.report), and the words with which ctest replaces the part of an
 # output past its limit.  The pattern has no nested repeat, so a match is linear in the length of the line.
 FINDING_LINE = re.compile(r"^(?P<path>[^\s:][^:\n]*):(?P<line>\d+): error: \[(?P<rule>[^\]\s]+)\] ", re.MULTILINE)
 CUT_MARK = "test output was removed since it exceeds the threshold"
-# The interval of the look of a command at the stop event, in seconds (THE STOP).  The other configurations wait for
-# the build of ALWAYS with the same interval (THE THREADS).  The wait between SIGINT and SIGKILL to the group of a
+# The interval of the look of a command at the stop event, in seconds (the stop).  The other configurations wait for
+# the build of ALWAYS with the same interval (the threads).  The wait between SIGINT and SIGKILL to the group of a
 # command at a stop or at its limit, in seconds.
 STOP_POLL_S = 0.2
 STOP_GRACE_S = 30.0
@@ -870,7 +870,7 @@ STOP_GRACE_S = 30.0
 
 @dataclass(frozen=True, slots=True)
 class Configuration:
-    """One configuration of the gate: a configure preset with the tier gate (THE CONFIGURATIONS).
+    """One configuration of the gate: a configure preset with the tier gate (the configurations).
 
     `build` is the build directory of the preset, relative to the tree.  `configuration_name` is the name of the
     configuration of its build (assay.core.configuration).
@@ -883,7 +883,7 @@ class Configuration:
 
 
 def configurations(root: Path) -> tuple[Configuration, ...]:
-    """Return each configure preset of a tree with the tier gate, the parse presets first (THE CONFIGURATIONS).
+    """Return each configure preset of a tree with the tier gate, the parse presets first (the configurations).
 
     Complexity: one read of the presets file, and linear in the presets.
 
@@ -909,7 +909,7 @@ def configurations(root: Path) -> tuple[Configuration, ...]:
 def vessel_configuration(root: Path) -> Configuration | None:
     """Return the configuration of the preset VESSEL of a tree, or None when the presets file gives no such preset.
 
-    THE VESSEL gives the rules.  Complexity: one read of the presets file, and linear in the presets.
+    the vessel gives the rules.  Complexity: one read of the presets file, and linear in the presets.
 
     Raises:
         GateError: If the preset has a problem, or its build directory is not in the tree
@@ -930,11 +930,11 @@ class GateError(Exception):
 
 
 class Stopped(Exception):
-    """A step of a run ends, because a different run of the check gave a problem (THE STOP)."""
+    """A step of a run ends, because a different run of the check gave a problem (the stop)."""
 
 
 class Mode(enum.Enum):
-    """How one configuration runs (THE SELECTION).  The value is the words that the gate writes before its step."""
+    """How one configuration runs (the selection).  The value is the words that the gate writes before its step."""
 
     PARSE = "parse and check"
     FULL = "build and test"
@@ -947,8 +947,8 @@ class Mode(enum.Enum):
 class Run:
     """One configuration of a run of the gate: its mode, the names of the tests of the mode TOUCHED, and --build-only.
 
-    With `is_build_only`, the run skips each test of the master guard that reads no build, and default runs it (THE
-    SELECTION).
+    With `is_build_only`, the run skips each test of the master guard that reads no build, and default runs it (the
+    selection).
     """
 
     configuration: Configuration
@@ -959,7 +959,7 @@ class Run:
 
 @dataclass(frozen=True, slots=True)
 class Focus:
-    """One configuration of a run of the base, and the tests that were red alone too in it (THE RUN OF THE BASE).
+    """One configuration of a run of the base, and the tests that were red alone too in it (the run of the base).
 
     With no names, the problem of the configuration was not a red test, and the run of the base runs the configuration.
     """
@@ -972,18 +972,18 @@ class Focus:
 class Candidate:
     """The commit of a landing: the commit that the composition started from, the commit, the paths and the focus.
 
-    `focus` is empty for the commit of a batch, and it gives the configurations of a run of the base (THE RUN OF THE
-    BASE).  `is_every` selects each configuration, as --all-configurations does (THE SELECTION).  `built` names each
-    file of BUILT_FILES that THE MERGE of assay.loop.land leaves to the gate.  The gate adds each file that the change
-    can change, and it writes each one before the tests of each configuration (THE BUILT FILES).  `title` names the
+    `focus` is empty for the commit of a batch, and it gives the configurations of a run of the base (the run of the
+    base).  `is_every` selects each configuration, as --all-configurations does (the selection).  `built` names each
+    file of BUILT_FILES that the merge of assay.loop.land leaves to the gate.  The gate adds each file that the change
+    can change, and it writes each one before the tests of each configuration (the built files).  `title` names the
     run in the first line of the check, such as "the run of the base at COMMIT".  The landing gives it, because only
     the landing knows the kind of the run.  With no title, the line names the commit.  `on_fold` gets the new commit
-    when the gate folds the built files into the commit, before the tests of each configuration (THE BUILT FILES).
-    The landing then writes that commit into its entry of the stack (THE STACK of assay.loop.land).  `budget_reason`
+    when the gate folds the built files into the commit, before the tests of each configuration (the built files).
+    The landing then writes that commit into its entry of the stack (the stack of assay.loop.land).  `budget_reason`
     is the reason of each row of a budget that the gate raises with no text of its own, or "".  `budget_rows` holds
-    the item and the text of each row with a text of its own (THE RAISE OF A BUDGET).  `lowers`
+    the item and the text of each row with a text of its own (the raise of a budget).  `lowers`
     holds the rule, the item and the reason of the cut of each row that the gate lowers, and a candidate with a lower
-    selects each configuration (THE LOWER OF A BUDGET).
+    selects each configuration (the lower of a budget).
     """
 
     head: str
@@ -1010,15 +1010,15 @@ class Verdict:
 
     `seconds` holds each wait.  `step_seconds` gives the time of each configuration after its wait for its first slot,
     in the sequence of `configurations`.  `wait_seconds` gives that wait, and `slot_seconds` the sum of the slots of
-    the configuration over its time (THE JOBSERVER).  `final` is the commit that the gate judged
-    last, and `ledgers` holds each ledger that THE REDUCE folded into it.  `final` is "" for a verdict of no commit.
-    `logs` is the directory of the logs of the run (THE LOGS).  `focus` gives each configuration with a problem (THE
-    VERDICT).  `flaky` gives each test that was red in the suite and green alone, as CONFIGURATION: TEST.  `built`
-    holds each file that the gate wrote from the build of ALWAYS and folded into `final` (THE BUILT FILES).  `rows`
-    holds the lines of THE RATCHET ROWS of a refused commit.  `items` holds the failing items of the problems (THE
-    FAILING ITEMS).  A verdict with problems and no items gets each problem as its own item.  `raised` holds a line for
-    each row of a budget that the gate raised, with the old and the new value (THE RAISE OF A BUDGET).  `lowered`
-    holds a line for each row that the gate lowered, or the line of a lower that wrote nothing (THE LOWER OF A BUDGET).
+    the configuration over its time (the jobserver).  `final` is the commit that the gate judged
+    last, and `ledgers` holds each ledger that the reduce folded into it.  `final` is "" for a verdict of no commit.
+    `logs` is the directory of the logs of the run (the logs).  `focus` gives each configuration with a problem (the
+    verdict).  `flaky` gives each test that was red in the suite and green alone, as CONFIGURATION: TEST.  `built`
+    holds each file that the gate wrote from the build of ALWAYS and folded into `final` (the built files).  `rows`
+    holds the lines of the ratchet rows of a refused commit.  `items` holds the failing items of the problems (the
+    failing items).  A verdict with problems and no items gets each problem as its own item.  `raised` holds a line for
+    each row of a budget that the gate raised, with the old and the new value (the raise of a budget).  `lowered`
+    holds a line for each row that the gate lowered, or the line of a lower that wrote nothing (the lower of a budget).
     """
 
     configurations: tuple[str, ...]
@@ -1051,12 +1051,12 @@ class Verdict:
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    """The end of the run of one configuration in a check (THE THREADS, THE STOP).
+    """The end of the run of one configuration in a check (the threads, the stop).
 
     `red` holds the tests that were red alone too, and `flaky` the tests that were red in the suite and green alone.
     `is_stopped` tells that the stop ended the run, which then has no problem of its own.  `seconds` starts after the
     wait for the first slot of the lease, and `wait_s` is that wait.  `slot_seconds` is the sum of the slots of the
-    lease over its time (THE JOBSERVER).  `items` holds the failing items of the problems (THE FAILING ITEMS).  An
+    lease over its time (the jobserver).  `items` holds the failing items of the problems (the failing items).  An
     outcome with no items gives each problem as its own item.
     """
 
@@ -1073,12 +1073,12 @@ class Outcome:
 
 @dataclass(frozen=True, slots=True)
 class BuiltFile:
-    """One generated file that the gate writes from the build of ALWAYS (THE BUILT FILES).
+    """One generated file that the gate writes from the build of ALWAYS (the built files).
 
     `target` is the target of `loop derive` that writes the file.  `module` is the module of the target.  Its function
     is_input(path) tells if a change of a path can change the file, and the modules of its import closure can change
     the file too.  `is_vessel_input` tells if the build of the vessel targets or a vessel test reads the file.  The
-    tests of the vessel then wait for the write (THE VESSEL).
+    tests of the vessel then wait for the write (the vessel).
     """
 
     target: str
@@ -1088,21 +1088,21 @@ class BuiltFile:
 
 # ── The selection ──────────────────────────────────────────────────────────
 
-# The generated files that the gate writes from the build of ALWAYS (THE BUILT FILES).
+# The generated files that the gate writes from the build of ALWAYS (the built files).
 BUILT_FILES = {
     "misc/mint-inventory.md": BuiltFile("mint-inventory", "assay.loop.derive.mint_inventory", is_vessel_input=False)
 }
 CONFIGURATIONS = configurations(paths.REPO_ROOT)
 BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
 VESSEL_CONFIGURATION = vessel_configuration(paths.REPO_ROOT)
-# The errors of a read of the selection that give its widest result (THE CAREFUL SELECTION).
+# The errors of a read of the selection that give its widest result (the careful selection).
 READ_ERRORS = (GateError, git.GitError, proc.ToolFailed, OSError, ValueError)
 
 
 def careful[Result](reading: Callable[[], Result], widest: Result, what: str, result_text: str) -> Result:
     """Return the result of a read of the selection, or its widest result when the read gives an error.
 
-    THE CAREFUL SELECTION gives the rule.  The function writes one line with the error.
+    the careful selection gives the rule.  The function writes one line with the error.
 
     Args:
         reading: The read
@@ -1120,7 +1120,7 @@ def careful[Result](reading: Callable[[], Result], widest: Result, what: str, re
 
 
 def is_build_file(path: str) -> bool:
-    """Tell if a path is a build file (THE SELECTION)."""
+    """Tell if a path is a build file (the selection)."""
     return PurePosixPath(path).name in BUILD_FILE_NAMES or path.endswith(BUILD_FILE_SUFFIX)
 
 
@@ -1130,7 +1130,7 @@ def is_compiled_change(path: str) -> bool:
 
 
 def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool) -> tuple[Configuration, ...]:
-    """Return the configurations of the full suite and the parse configurations of a change (THE SELECTION).
+    """Return the configurations of the full suite and the parse configurations of a change (the selection).
 
     The configurations are in the sequence of CONFIGURATIONS.
 
@@ -1160,7 +1160,7 @@ def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool)
 def changes_each_build(tree: Path, change: guard_inputs.Change, changed: Sequence[str]) -> bool:
     """Tell if a change can change each build: a C or C++ file, a build file, or an input of a meter of a test.
 
-    The meters are the test launcher and the fixture driver (meter_inputs() of assay.loop.affected, THE SELECTION).
+    The meters are the test launcher and the fixture driver (meter_inputs() of assay.loop.affected, the selection).
     Complexity: linear in the paths, and one parse of each module of the closures of the meters.
     """
     if any(is_compiled_change(path) for path in changed):
@@ -1171,7 +1171,7 @@ def changes_each_build(tree: Path, change: guard_inputs.Change, changed: Sequenc
 def reaches_vessel(changed: Sequence[str], is_each: bool) -> bool:
     """Tell if the vessel runs for a change: it can change each build, or it changes a path of VESSEL_PREFIX.
 
-    THE VESSEL gives the rule.  `is_each` tells that the change can change each build (changes_each_build()).
+    the vessel gives the rule.  `is_each` tells that the change can change each build (changes_each_build()).
     Complexity: linear in the paths.
     """
     return is_each or any(path.startswith(VESSEL_PREFIX) for path in changed)
@@ -1180,14 +1180,14 @@ def reaches_vessel(changed: Sequence[str], is_each: bool) -> bool:
 def is_read_by_vessel(built: Sequence[str], rows: Mapping[str, BuiltFile] = BUILT_FILES) -> bool:
     """Tell if the vessel reads a file that the gate writes for a candidate, so its tests wait for the write.
 
-    THE VESSEL gives the rule.  `built` holds the paths of the files that the gate writes, and each one is a key of
+    the vessel gives the rule.  `built` holds the paths of the files that the gate writes, and each one is a key of
     `rows`.  Complexity: linear in the paths.
     """
     return any(rows[path].is_vessel_input for path in built)
 
 
 def built_selection(tree: Path, changed: Sequence[str]) -> tuple[str, ...]:
-    """Return each file of BUILT_FILES that a change can change, sorted (THE BUILT FILES).
+    """Return each file of BUILT_FILES that a change can change, sorted (the built files).
 
     The function is_input() of the module of a row judges each path.  A path of a module of the import closure of that
     module selects the file too.  The code of the gate imports each module of a row here, and only here.
@@ -1214,7 +1214,7 @@ def built_selection(tree: Path, changed: Sequence[str]) -> tuple[str, ...]:
 
 
 def link_torch(root: Path, tree: Path) -> str | None:
-    """Give the warm tree the link TORCH_VENV to the patched PyTorch of the main work tree, or give a problem (THE VESSEL).
+    """Give the warm tree the link TORCH_VENV to the patched PyTorch of the main work tree, or give a problem (the vessel).
 
     The main work tree is the parent of the git directory that the work trees of the repository of root share.  A
     directory TORCH_VENV of the warm tree that is no link stays as it is.  A link to a different directory gets the
@@ -1242,7 +1242,7 @@ def link_torch(root: Path, tree: Path) -> str | None:
 
 
 def touches_parse_rules(tree: Path, change: guard_inputs.Change) -> bool:
-    """Tell if a change touches the inputs of a rule that a parse configuration checks (COUNTED_RULES, THE SELECTION).
+    """Tell if a change touches the inputs of a rule that a parse configuration checks (COUNTED_RULES, the selection).
 
     The caller gives the change with no C or C++ file and no build file.  A change of such a file changes the result of
     a parse build only through an arm, and `loop syntax --changed` names the parse configurations of an arm.
@@ -1257,7 +1257,7 @@ def touches_parse_rules(tree: Path, change: guard_inputs.Change) -> bool:
 
 
 def other_runs(others: Sequence[Configuration], is_each: bool, names: Sequence[str]) -> tuple[Run, ...]:
-    """Return the runs of the configurations of objects that do not run the full suite (THE SELECTION).
+    """Return the runs of the configurations of objects that do not run the full suite (the selection).
 
     Args:
         others: The configurations of objects that select() does not give
@@ -1270,11 +1270,11 @@ def other_runs(others: Sequence[Configuration], is_each: bool, names: Sequence[s
 
 
 def focused_runs(focus: Sequence[Focus], vessel: Configuration | None = VESSEL_CONFIGURATION) -> tuple[Run, ...]:
-    """Return the runs of a run of the base, one for each configuration of its focus (THE RUN OF THE BASE).
+    """Return the runs of a run of the base, one for each configuration of its focus (the run of the base).
 
     A parse configuration runs in its mode.  A configuration with red tests runs them in the mode TOUCHED, and each
     other configuration runs in the mode CHANGED.  The vessel runs in its mode, with its red tests only when the focus
-    names them (THE VESSEL).
+    names them (the vessel).
 
     Raises:
         GateError: If the focus names a configuration that the gate does not have
@@ -1299,7 +1299,7 @@ def focused_runs(focus: Sequence[Focus], vessel: Configuration | None = VESSEL_C
 
 
 def counted_rules(tree: Path) -> tuple[str, ...]:
-    """Return each counted rule of a tree, sorted (THE COUNTED RULES).
+    """Return each counted rule of a tree, sorted (the counted rules).
 
     A ledger with no row gives a write no fall and no move, and its rule is not counted.
 
@@ -1327,7 +1327,7 @@ def counted_rules(tree: Path) -> tuple[str, ...]:
 
 
 def ratchet_tests(tree: Path, counted: Sequence[str]) -> dict[str, tuple[rule_registry.Rule, ...]]:
-    """Return the counted rules of each test of the suite that checks them (THE RATCHET ROWS).
+    """Return the counted rules of each test of the suite that checks them (the ratchet rows).
 
     PLUGIN_TEST checks each rule of the engine plugin, and RULE_TEST_PREFIX with the identifier of a rule of the engine
     elf, with "_" in place of "-", names the test of that rule.  Complexity: one read of the registry, and linear in the
@@ -1358,7 +1358,7 @@ def row_kind(line: str) -> str:
 
 
 def is_budget_outcome(outcome: Outcome) -> bool:
-    """Tell if each problem of an outcome is a crossed row of a budget (THE RAISE OF A BUDGET).
+    """Tell if each problem of an outcome is a crossed row of a budget (the raise of a budget).
 
     Such an outcome has one problem: the tests that are red alone too.  Each such test is a test of BUDGET_TESTS, and
     each failing item is a finding line of a rule of BUDGET_RULES.  A test with no finding line, or with an output that
@@ -1374,7 +1374,7 @@ def is_budget_outcome(outcome: Outcome) -> bool:
 
 
 def is_budget_round(outcomes: Sequence[Outcome]) -> bool:
-    """Tell if a round has a problem, and each outcome with a problem is an outcome of a budget (THE RAISE OF A BUDGET).
+    """Tell if a round has a problem, and each outcome with a problem is an outcome of a budget (the raise of a budget).
 
     A stopped outcome tells that a different problem set the stop, so a round with one is no round of a budget.
     """
@@ -1388,7 +1388,7 @@ def with_raise_problems(outcomes: Sequence[Outcome], lines: Sequence[str]) -> li
     """Return the outcomes with the lines of a raise that wrote nothing as problems of the first outcome with a problem.
 
     The verdict gives each problem to each requester of the run, and a line of the holder reaches no requester of a
-    different process (THE RAISE OF A BUDGET).  The failing items stay, so the compare with the run of the base does
+    different process (the raise of a budget).  The failing items stay, so the compare with the run of the base does
     not change.  Complexity: linear in the outcomes.
     """
     found: list[Outcome] = []
@@ -1436,7 +1436,7 @@ def raised_lines(path: str, before: str, after: str) -> list[str]:
 def is_named_row(item: str, key: tuple[str, str, str]) -> bool:
     """Tell if an item of `--budget-reason ITEM=TEXT` names a row: its path, its path with no @build/ mark, its entity.
 
-    The cell '-' is an empty cell, and no item names it (THE RAISE OF A BUDGET).
+    The cell '-' is an empty cell, and no item names it (the raise of a budget).
     """
     path, _kind, entity = key
     return (path != "-" and item in (path, path.removeprefix(cost_meter.BUILD_PATH_PREFIX))) or (
@@ -1450,7 +1450,7 @@ def is_checked(configuration: Configuration, rule_id: str) -> bool:
 
 
 def is_each_built(outcomes: Sequence[Outcome]) -> bool:
-    """Tell if the outcomes of a round build each configuration of CONFIGURATIONS with no problem (THE REDUCE).
+    """Tell if the outcomes of a round build each configuration of CONFIGURATIONS with no problem (the reduce).
 
     Complexity: linear in the outcomes.
     """
@@ -1459,7 +1459,7 @@ def is_each_built(outcomes: Sequence[Outcome]) -> bool:
 
 
 def reduce_words(tree: Path, rule_id: str) -> list[str]:
-    """Return the words after `guard write` of the reduce of one counted rule in a tree (THE REDUCE).
+    """Return the words after `guard write` of the reduce of one counted rule in a tree (the reduce).
 
     The words give the build of each configuration that checks the rule (is_checked()).
     """
@@ -1474,7 +1474,7 @@ def reduce_words(tree: Path, rule_id: str) -> list[str]:
 
 
 def move_tree(root: Path, tree: Path, commit: str) -> None:
-    """Give the warm tree the commit, and make the tree first when it is not there (THE WARM TREE).
+    """Give the warm tree the commit, and make the tree first when it is not there (the warm tree).
 
     Raises:
         GateError: If the tree is in the work tree of the repository
@@ -1504,7 +1504,7 @@ def move_tree(root: Path, tree: Path, commit: str) -> None:
 
 
 def gb_per_job_of(name: str, kinds: Sequence[str] = EACH_KIND) -> float:
-    """Return the memory of one job of a lease of a configuration that runs jobs of `kinds`, in GB (THE BUDGET of
+    """Return the memory of one job of a lease of a configuration that runs jobs of `kinds`, in GB (the budget of
     assay.loop.heavy).
 
     The memory is the largest of the kinds in KIND_GB_PER_JOB, rounded up to GB_STEP.  A configuration with no row,
@@ -1518,7 +1518,7 @@ def gb_per_job_of(name: str, kinds: Sequence[str] = EACH_KIND) -> float:
 
 
 def repair_head(tree: Path) -> None:
-    """Give a warm tree a HEAD again, when its file HEAD holds no reference and no commit (THE WARM TREE).
+    """Give a warm tree a HEAD again, when its file HEAD holds no reference and no commit (the warm tree).
 
     A stop of the host during a write of git can leave HEAD with no bytes, and git then sees no repository in the
     tree.  The function writes the last commit of the reflog of HEAD into HEAD, so the repair of the index keeps the
@@ -1542,7 +1542,7 @@ def repair_head(tree: Path) -> None:
 
 
 def remove_untracked(tree: Path) -> None:
-    """Remove each file of a warm tree that the commit does not hold and that no ignore rule names (THE WARM TREE).
+    """Remove each file of a warm tree that the commit does not hold and that no ignore rule names (the warm tree).
 
     read-tree keeps such a file, for example a file of a batch that a stop ended, or a file that a repair of the
     index by hand left out of the index.  A census of the tree, such as the census of the fixtures, then reads it.
@@ -1565,13 +1565,13 @@ def remove_untracked(tree: Path) -> None:
 
 
 def repair_builds(tree: Path, configurations: Sequence[Configuration]) -> None:
-    """Remove the damage that a stop of the host leaves in the build directories of a warm tree (THE WARM TREE).
+    """Remove the damage that a stop of the host leaves in the build directories of a warm tree (the warm tree).
 
     A stop during a build can leave an output with no bytes, and Ninja then sees the output as built.  The function
     removes each object, archive and shared library of OUTPUT_SUFFIXES with no bytes, and Ninja builds it again.  A
     stop during a configure can leave a reply of the CMake file API with no bytes, or an index of the reply that does
     not read as JSON.  The function then removes the reply and the graph build.ninja, so the run configures the
-    build again (THE RUN OF A CONFIGURATION, step 1).  A graph that ninja cannot load goes too (unloadable_graphs()).
+    build again (the run of a configuration, step 1).  A graph that ninja cannot load goes too (unloadable_graphs()).
     The holder of the lane is the only writer of the warm tree.  Complexity: linear in the files of the build
     directories, and one load of each graph.
     """
@@ -1662,7 +1662,7 @@ def is_reply_whole(reply: Path) -> bool:
 
 
 def repair_index(tree: Path) -> None:
-    """Make the index of a warm tree again from its HEAD, when no git command can read it (THE WARM TREE).
+    """Make the index of a warm tree again from its HEAD, when no git command can read it (the warm tree).
 
     A stop of the host during a write of git can leave an index that git cannot read, such as an index that is
     shorter than its header says.  Each read-tree then fails.  The holder of the lane is the only writer of the warm
@@ -1688,9 +1688,9 @@ def build_directory(tree: Path, configuration: Configuration) -> Path:
 
 
 def log_name(configuration: Configuration, step: str, is_again: bool = False) -> str:
-    """Return the name of the log of one step of a configuration, with AGAIN_MARK in the round after THE REDUCE.
+    """Return the name of the log of one step of a configuration, with AGAIN_MARK in the round after the reduce.
 
-    THE LOGS gives the rule.  `step` is the rest of the name, such as test.log.
+    the logs gives the rule.  `step` is the rest of the name, such as test.log.
     """
     return f"{configuration.name}{AGAIN_MARK if is_again else ''}.{step}"
 
@@ -1698,7 +1698,7 @@ def log_name(configuration: Configuration, step: str, is_again: bool = False) ->
 def failing_items(
     configuration: str, names: Sequence[str], outputs: Mapping[str, str], tree: Path, commit: str
 ) -> tuple[str, ...]:
-    """Return the failing items of the tests of one configuration that are red alone too (THE FAILING ITEMS).
+    """Return the failing items of the tests of one configuration that are red alone too (the failing items).
 
     `outputs` gives the output of each test in the report of the run alone, and `commit` is the commit of the run.
     Each item is in the sequence of the tests and of their lines, with no duplicate.  Complexity: linear in the length
@@ -1729,7 +1729,7 @@ def configure_plan(
 ) -> tuple[list[str], str] | None:
     """Return the words of the configure of a build directory and the line of its heal, or None for no configure.
 
-    THE RUN OF A CONFIGURATION, step 1, and THE COMPILER HEAL give the rules.  A build directory with no graph of Ninja
+    The run of a configuration, step 1, and the compiler heal give the rules.  A build directory with no graph of Ninja
     gets the words of configure_words() and an empty line.  `heal` gives the line of `loop heal` for a build directory
     with a graph, an empty line when its cache agrees with its toolchain file.  A line gets the words with FRESH_WORD.
     """
@@ -1758,7 +1758,7 @@ def configured_program(build: Path, name: str) -> str:
 def built_commit(root: Path, commit: str, files: Mapping[str, bytes | None]) -> str:
     """Write a commit with the parents of a commit, its tree with some files replaced, and the sentence of BUILT_NOTE.
 
-    The message is the message of the commit, and then the sentence that names the files (THE BUILT FILES).
+    The message is the message of the commit, and then the sentence that names the files (the built files).
     replaced_commit() of assay.core.git gives the tree.  Complexity: the cost of replaced_commit() and three git
     commands.
 
@@ -1776,7 +1776,7 @@ def built_commit(root: Path, commit: str, files: Mapping[str, bytes | None]) -> 
 
 
 def no_cited_runs() -> frozenset[str]:
-    """Return no name of a run: a gate with no queue keeps no ended run for a verdict (THE LOGS)."""
+    """Return no name of a run: a gate with no queue keeps no ended run for a verdict (the logs)."""
     return frozenset()
 
 
@@ -1785,13 +1785,13 @@ class Gate:
     """The gate of one session: the repository, the work directory, the jobs, --all-configurations, and the memory.
 
     `jobs` is the most jobs of the lease of one configuration, with SLICE of assay.loop.heavy as the most (slice).
-    `read` is the reader of the available memory, which gives the cap of a lease (THE MEMORY of assay.loop.heavy).
-    `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (THE LOGS).  `pool` is the
-    slot pool of the leases, or None for the pool of the host (THE JOBSERVER).  `lane` names the warm tree (THE
-    LANES).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (THE VESSEL).  `oom_kills`
-    gives the count of the kills of the kernel for lack of memory (THE KILL FOR MEMORY).  `cited` gives the name of each
-    ended run that an unread verdict cites, which the sweep of the runs keeps (THE LOGS).  `test_timeout_s` is the wall
-    guard of one test (THE HANG GUARD).
+    `read` is the reader of the available memory, which gives the cap of a lease (the memory of assay.loop.heavy).
+    `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (the logs).  `pool` is the
+    slot pool of the leases, or None for the pool of the host (the jobserver).  `lane` names the warm tree (the
+    lanes).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (the vessel).  `oom_kills`
+    gives the count of the kills of the kernel for lack of memory (the kill for memory).  `cited` gives the name of each
+    ended run that an unread verdict cites, which the sweep of the runs keeps (the logs).  `test_timeout_s` is the wall
+    guard of one test (the hang guard).
     """
 
     root: Path
@@ -1809,7 +1809,7 @@ class Gate:
 
     @property
     def guard_words(self) -> list[str]:
-        """The words that give ctest the wall guard of one test (THE HANG GUARD)."""
+        """The words that give ctest the wall guard of one test (the hang guard)."""
         return ["--timeout", str(self.test_timeout_s)]
 
     @property
@@ -1819,7 +1819,7 @@ class Gate:
 
     @property
     def tree(self) -> Path:
-        """The warm tree of the lane of the gate (THE LANES)."""
+        """The warm tree of the lane of the gate (the lanes)."""
         return self.work / tree_name(self.lane)
 
     @property
@@ -1847,7 +1847,7 @@ class Gate:
         return completed.out.split()
 
     def loop_words(self, run: Run, is_plain: bool, is_again: bool = False) -> list[str]:
-        """Return the words of the mode of a run after `loop test BUILD` (THE SELECTION).
+        """Return the words of the mode of a run after `loop test BUILD` (the selection).
 
         A run of the full suite with `is_plain` runs the tests of the changed inputs.  The run of the touched tests
         writes the file of --only into the directory of the logs, with the name of its round (log_name()).  A run with
@@ -1864,7 +1864,7 @@ class Gate:
     def touched_names(self, change: guard_inputs.Change) -> tuple[str, ...]:
         """Return each touched test of the build of ALWAYS, sorted: it reads the build, and the change touches its inputs.
 
-        The run of ALWAYS configures its build with the change first (THE THREADS).
+        The run of ALWAYS configures its build with the change first (the threads).
 
         Raises:
             GateError: If the build of ALWAYS or its tests cannot be read
@@ -1891,8 +1891,8 @@ class Gate:
         """Return the runs of the configurations of objects with no full suite, for the change and `ledgers`.
 
         `is_each` tells that the change can change each build (changes_each()).  Else, the plan reads the touched tests
-        of the build of ALWAYS.  A read that gives an error gives the plan of a change that can change each build (THE
-        CAREFUL SELECTION).
+        of the build of ALWAYS.  A read that gives an error gives the plan of a change that can change each build (the
+        careful selection).
         """
         if not others:
             return ()
@@ -1913,10 +1913,10 @@ class Gate:
         )
 
     def check(self, candidate: Candidate, is_retry: bool) -> Verdict:
-        """Give the warm tree the commit, select the configurations, and run them at the same time (THE THREADS).
+        """Give the warm tree the commit, select the configurations, and run them at the same time (the threads).
 
-        A candidate with a focus runs only its focus (THE RUN OF THE BASE).  The gate writes each built file that the
-        change can change, or that the candidate names, before the tests of each configuration (THE BUILT FILES).
+        A candidate with a focus runs only its focus (the run of the base).  The gate writes each built file that the
+        change can change, or that the candidate names, before the tests of each configuration (the built files).
 
         Raises:
             GateError: If the warm tree cannot hold the commit, a step cannot start, or the candidate names a built file
@@ -2092,7 +2092,7 @@ class Gate:
         outcomes: Sequence[Outcome],
         counted: Sequence[str],
     ) -> tuple[str, ...]:
-        """Return THE RATCHET ROWS of a red round, from a step with a stop event of its own.
+        """Return the ratchet rows of a red round, from a step with a stop event of its own.
 
         The rows only aid the author.  An error of their step gives one line and no row, and the problems of the round
         stay the verdict.
@@ -2104,7 +2104,7 @@ class Gate:
             return ()
 
     def check_in_run(self, candidate: Candidate, is_retry: bool) -> Verdict:
-        """Check a candidate with its logs in a new run, which stays live until the check ends (THE LOGS).
+        """Check a candidate with its logs in a new run, which stays live until the check ends (the logs).
 
         Raises:
             GateError: If check() gives the error
@@ -2122,11 +2122,11 @@ class Step:
     """The work of one check: its commands, its threads, its leases and its stop event.
 
     `environment` is the environment of each command, without MAKEFLAGS.  Each command gets MAKEFLAGS of the lease of
-    its configuration (THE JOBSERVER).  `always_ready` tells that the build of ALWAYS holds the configure of the change
-    (THE THREADS).  `built_ready` tells that the write of THE BUILT FILES ended, and it is set from the start for a
+    its configuration (the jobserver).  `always_ready` tells that the build of ALWAYS holds the configure of the change
+    (the threads).  `built_ready` tells that the write of the built files ended, and it is set from the start for a
     candidate with no built file.  `built` holds each written file that changed, and the run of ALWAYS or
     write_built() is its one writer.  `unchecked` names each configuration whose first round ended before its checks
-    after the tests, and the round after a raise runs those checks (THE RAISE OF A BUDGET).  The thread of the check
+    after the tests, and the round after a raise runs those checks (the raise of a budget).  The thread of the check
     writes it before that round.  `raise_problems` holds each line of a crossed row with no text and of an item that
     names no crossed row, and the verdict gives each one as a problem (written_row_texts()).
     """
@@ -2168,11 +2168,11 @@ class Step:
     def leased(
         self, gb_per_job: float = heavy.GB_PER_JOB, is_capped: bool = False, weight: int = 1
     ) -> Iterator[heavy.Share]:
-        """Hold a lease of the slot pool with the slice of the gate times `weight` for the block (THE JOBSERVER).
+        """Hold a lease of the slot pool with the slice of the gate times `weight` for the block (the jobserver).
 
         `gb_per_job` is the memory of one job of the lease, and a lease with `is_capped` never grows past its slice.
-        `weight` multiplies the fair share of the lease among the leases of the gate (THE POOL, THE MEMORY and THE
-        WEIGHT of assay.loop.heavy).
+        `weight` multiplies the fair share of the lease among the leases of the gate (the pool, the memory and the
+        weight of assay.loop.heavy).
 
         Raises:
             Stopped: If the stop event is set before the lease holds a slot
@@ -2197,7 +2197,7 @@ class Step:
 
         An exception of a thread sets the stop event immediately.  After each thread ended, the first exception that is
         not Stopped goes to the caller, and Stopped goes only when each exception is Stopped.  A Stopped of a thread that
-        a different error stopped then does not hide that error (THE STOP).  The pool has at most proc.DEFAULT_JOBS
+        a different error stopped then does not hide that error (the stop).  The pool has at most proc.DEFAULT_JOBS
         threads.  Each caller gives fewer items.  Then each item gets a thread of its own, and no item waits for a
         different item.  Complexity: one thread for each item.
         """
@@ -2231,8 +2231,8 @@ class Step:
     def run_logged(self, command: list[str], log: str, share: heavy.Share, timeout_s: float) -> int:
         """Run one command in the warm tree with its two outputs in a log, in one slot of a lease, and give its exit.
 
-        The command gets MAKEFLAGS of the jobserver of the lease (THE JOBSERVER).  A command that runs longer than its
-        limit gives the exit of its end.  The command looks at the stop event each STOP_POLL_S seconds (THE STOP).
+        The command gets MAKEFLAGS of the jobserver of the lease (the jobserver).  A command that runs longer than its
+        limit gives the exit of its end.  The command looks at the stop event each STOP_POLL_S seconds (the stop).
 
         Raises:
             Stopped: If the stop event is set before the command starts, or while it runs
@@ -2269,10 +2269,10 @@ class Step:
             return completed.exit
 
     def configure(self, configuration: Configuration, share: heavy.Share, is_again: bool = False) -> str | None:
-        """Configure the build directory of a configuration, and give a problem (THE RUN OF A CONFIGURATION, step 1).
+        """Configure the build directory of a configuration, and give a problem (the run of a configuration, step 1).
 
         A build directory with no graph of Ninja gets its configure.  A build directory whose cache names a compiler
-        that its toolchain file does not resolve gets its configure with FRESH_WORD (THE COMPILER HEAL).
+        that its toolchain file does not resolve gets its configure with FRESH_WORD (the compiler heal).
 
         Raises:
             GateError: If `loop heal` of the warm tree cannot run or gives an error
@@ -2291,9 +2291,9 @@ class Step:
     def heal_parse_builds(self, plan: Sequence[Run]) -> None:
         """Configure again each configured parse build whose compiler is stale and that no run of the plan configures.
 
-        `loop test` of each configuration of objects parses each configured parse build of the warm tree (THE PARSE
-        BUILDS of assay.loop.affected), also when the plan runs no parse configuration.  A parse build that keeps the
-        compiler of its first configure then makes cmake/StaleCompiler.cmake refuse that parse (THE COMPILER HEAL).  A
+        `loop test` of each configuration of objects parses each configured parse build of the warm tree (the parse
+        builds of assay.loop.affected), also when the plan runs no parse configuration.  A parse build that keeps the
+        compiler of its first configure then makes cmake/StaleCompiler.cmake refuse that parse (the compiler heal).  A
         parse build with no graph of Ninja stays as it is, because `loop test` does not parse it.
 
         Raises:
@@ -2320,7 +2320,7 @@ class Step:
                     )
 
     def heal_line(self, configuration: Configuration, build: Path) -> str:
-        """Return the line of `loop heal` of the warm tree for a build directory, or an empty line (THE COMPILER HEAL).
+        """Return the line of `loop heal` of the warm tree for a build directory, or an empty line (the compiler heal).
 
         The command of the warm tree resolves the compilers with the rules of the commit, not of this copy of the gate.
 
@@ -2339,10 +2339,10 @@ class Step:
         return completed.out.strip()
 
     def regenerate(self, configuration: Configuration, share: heavy.Share) -> str | None:
-        """Build the target build.ninja of the build of a configuration, and give a problem (THE THREADS).
+        """Build the target build.ninja of the build of a configuration, and give a problem (the threads).
 
         The build configures the build directory again when the change touches its configure.  It gets no -j, because
-        ninja obeys the jobserver only with no -j (THE JOBSERVER).
+        ninja obeys the jobserver only with no -j (the jobserver).
 
         Raises:
             GateError: If the CMake cache of the build names no cmake
@@ -2357,7 +2357,7 @@ class Step:
     def write_built(self) -> list[Outcome]:
         """Write each built file of the candidate from the build of ALWAYS before each configuration runs.
 
-        THE BUILT FILES gives the rules: a plan with no run of ALWAYS writes the files here.  The result is an outcome
+        The built files give the rules: a plan with no run of ALWAYS writes the files here.  The result is an outcome
         of ALWAYS with each problem, or no outcome.
 
         Raises:
@@ -2376,7 +2376,7 @@ class Step:
         return []
 
     def settle_built(self, configuration: Configuration, share: heavy.Share) -> list[str]:
-        """Settle THE BUILT FILES before the tests of a configuration of objects, and give each problem.
+        """Settle the built files before the tests of a configuration of objects, and give each problem.
 
         The run of ALWAYS writes each built file and folds each one that changed (written_built()).  Each other run
         builds the target all, and then waits for the end of that write (wait_built()).
@@ -2398,7 +2398,7 @@ class Step:
         return []
 
     def wait_built(self, configuration: Configuration) -> None:
-        """Wait for the end of the write of THE BUILT FILES, watch the stop event, and write the time of a wait.
+        """Wait for the end of the write of the built files, watch the stop event, and write the time of a wait.
 
         Raises:
             Stopped: If the stop event is set before or after the end of the write
@@ -2414,11 +2414,11 @@ class Step:
             self.say(f"loop land: {configuration.name}: the run waited {waited:.0f} s for the write of the built files")
 
     def build_all(self, configuration: Configuration, share: heavy.Share) -> str | None:
-        """Build the target all of a configuration of objects, and give a problem (THE BUILT FILES).
+        """Build the target all of a configuration of objects, and give a problem (the built files).
 
-        The build gets no -j, because ninja obeys the jobserver only with no -j (THE JOBSERVER).  It writes its output
+        The build gets no -j, because ninja obeys the jobserver only with no -j (the jobserver).  It writes its output
         to the log of `loop test`, and a build error gives the problem of a build error of `loop test`.  A run of the
-        base writes no built file, so its build error then gives the same problem (THE RUN OF THE BASE).
+        base writes no built file, so its build error then gives the same problem (the run of the base).
 
         Raises:
             GateError: If the CMake cache of the build names no cmake
@@ -2433,7 +2433,7 @@ class Step:
     def written_built(self, configuration: Configuration, share: heavy.Share) -> list[str]:
         """Build the target all of ALWAYS, write each built file of the candidate, and fold each one that changed.
 
-        THE BUILT FILES gives the steps.  The result holds a problem for a configure or a build that gives an error, or
+        The built files give the steps.  The result holds a problem for a configure or a build that gives an error, or
         for each write that gives an error.  After a fold, `candidate` holds the new commit, and `built` holds each
         written file that changed.
 
@@ -2516,10 +2516,10 @@ class Step:
         return [problem for problem in self.concurrently(list(rules), check_one) if problem is not None]
 
     def reduce(self, counted: Sequence[str]) -> None:
-        """Run the reduce of each counted rule over the builds of the configurations, at the same time (THE REDUCE).
+        """Run the reduce of each counted rule over the builds of the configurations, at the same time (the reduce).
 
         Each rule has one write.  A write that refuses a count exits 1, and it writes no ledger.  The writes share one
-        lease (THE JOBSERVER).  Complexity: one write of each counted rule.
+        lease (the jobserver).  Complexity: one write of each counted rule.
         """
         if not counted:
             return
@@ -2535,7 +2535,7 @@ class Step:
             self.concurrently(list(counted), write_one)
 
     def fold(self) -> tuple[str, tuple[str, ...]]:
-        """Fold each ledger that THE REDUCE changed in the warm tree into the commit, and give the commit and the ledgers.
+        """Fold each ledger that the reduce changed in the warm tree into the commit, and give the commit and the ledgers.
 
         The warm tree moves to the new commit.  With no changed ledger, the result is the commit and no ledger.
 
@@ -2555,7 +2555,7 @@ class Step:
     def raise_budgets(self, outcomes: Sequence[Outcome]) -> tuple[str, ...]:
         """Write the crossed rows of each budget of a round with the budget reason, and give a line for each new row.
 
-        THE RAISE OF A BUDGET gives the rules.  Each rule gets one write on the build of each configuration whose test
+        the raise of a budget gives the rules.  Each rule gets one write on the build of each configuration whose test
         of the rule is red alone too.  The writes of one rule run one after the other, and the rules run at the same
         time.  A write that fails, or writes that change no row, give each ledger its bytes back and no line, so the
         problems of the round stay.  Complexity: one write for each rule and each such configuration.
@@ -2612,7 +2612,7 @@ class Step:
     ) -> bool:
         """Give each crossed row that an item of the candidate names its own text, and tell if each crossed row has one.
 
-        THE RAISE OF A BUDGET gives the rules.  The write of a rule gives each crossed row the plain text, or the first
+        the raise of a budget gives the rules.  The write of a rule gives each crossed row the plain text, or the first
         own text when the candidate gives no plain text.  Then `guard write --rule RULE --row ITEM [--kind KIND]
         --reason TEXT` gives each crossed row of an item its own text.  A crossed row with no text, an item that names
         no crossed row, and a write that fails each give a line, and the function then gives False.  Complexity:
@@ -2664,7 +2664,7 @@ class Step:
     def lower_budgets(self) -> tuple[str, ...]:
         """Lower each row that the candidate names to the largest measure of the builds of the round, and give the lines.
 
-        THE LOWER OF A BUDGET gives the rules.  Each rule gets one write for each reason, on the build of each
+        The lower of a budget gives the rules.  Each rule gets one write for each reason, on the build of each
         configuration of objects.  The writes of one rule run one after the other, and the rules run at the same time.
         A rule whose write fails gets its ledger bytes back and one line that names the log.  Complexity: one write for
         each rule and each reason.
@@ -2709,7 +2709,7 @@ class Step:
         return tuple(lines)
 
     def ratchet_rows(self, outcomes: Sequence[Outcome], counted: Sequence[str]) -> tuple[str, ...]:
-        """Return the lines of THE RATCHET ROWS of the red configurations of objects of a round.
+        """Return the lines of the ratchet rows of the red configurations of objects of a round.
 
         The writes of the rules run at the same time in one lease, and the writes of one rule run one after the other,
         because each one writes the ledger of the rule.  The caller gives the step a stop event of its own.
@@ -2743,7 +2743,7 @@ class Step:
     def rule_rows(self, rule: rule_registry.Rule, configuration: Configuration, share: heavy.Share) -> list[str]:
         """Write the ledger of a rule from the build of a configuration in the mode admit, and give its new rows.
 
-        THE RATCHET ROWS gives the rules.  The ledger of the warm tree gets its bytes back after the write.
+        the ratchet rows gives the rules.  The ledger of the warm tree gets its bytes back after the write.
         Complexity: one write, and linear in the lines of the ledger.
         """
         from assay.guard.engines.meta import runner as meta_runner
@@ -2802,9 +2802,9 @@ class Step:
     ) -> list[str]:
         """Run each red test one more time apart from the suite, and return the names of the tests that are red again.
 
-        The tests run at the same time, in one run of ctest with the jobs of the lease (THE RUN OF A CONFIGURATION).
+        The tests run at the same time, in one run of ctest with the jobs of the lease (the run of a configuration).
         The report of that run gives the status of each test.  A test with no status in the report is red.  Each test
-        has the wall guard of THE HANG GUARD.  The limit of the run is that guard for each test, the time of the tests
+        has the wall guard of the hang guard.  The limit of the run is that guard for each test, the time of the tests
         one after the other, and ALONE_ROOM_S for ctest to start, stop a test at its guard and write the report.  The
         files of the run have the name of its round (log_name()).
 
@@ -2833,7 +2833,7 @@ class Step:
         return [name for name in names if statuses.get(name, ctest_reader.TestStatus.NOTRUN) in RED]
 
     def run_parse(self, configuration: Configuration, share: heavy.Share) -> list[str]:
-        """Do steps 1 and 2 of THE RUN OF A CONFIGURATION for a parse configuration, and give each problem."""
+        """Do steps 1 and 2 of the run of a configuration for a parse configuration, and give each problem."""
         problem = self.configure(configuration, share)
         if problem is not None:
             return [problem]
@@ -2848,11 +2848,11 @@ class Step:
     def run_objects(
         self, configuration: Configuration, words: Sequence[str], share: heavy.Share, is_again: bool
     ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
-        """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
+        """Do steps 1 and 3 of the run of a configuration for a configuration of objects, and give each problem.
 
         `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  A run again after the fold does
         not run RECONFIGURE_RULE.  The run of ALWAYS first builds the target build.ninja when the other configurations
-        wait for it (THE THREADS).  Then each run settles THE BUILT FILES (settle_built()).  The second result holds the
+        wait for it (the threads).  Then each run settles the built files (settle_built()).  The second result holds the
         tests that are red alone too, and the third result the flaky tests: red in the suite and green alone.
         """
         problem = self.configure(configuration, share, is_again)
@@ -2909,7 +2909,7 @@ class Step:
     ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
         """Judge the statuses of a run of tests, and give each problem, the tests red alone too, and the flaky tests.
 
-        Each red test runs one more time apart from the suite (THE RUN OF A CONFIGURATION).  `report` is the JUnit
+        Each red test runs one more time apart from the suite (the run of a configuration).  `report` is the JUnit
         report of the run, `status` its exit, `log` the name of its log, and `program` the words of its command in a
         problem.  Complexity: linear in the statuses, and one run of ctest for the red tests.
 
@@ -2942,7 +2942,7 @@ class Step:
         self, run: Run, share: heavy.Share, is_again: bool
     ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
         """Build the vessel targets and run the vessel tests, and give each problem, the tests red alone too, and the
-        flaky tests (THE VESSEL).
+        flaky tests (the vessel).
 
         A run with names runs only the tests that it names, as a run of the base does.  A run in which no test runs,
         and a disabled test, give a problem, so the gate does not pass a vessel that it did not test.
@@ -2995,7 +2995,7 @@ class Step:
     def run_of(
         self, run: Run, share: heavy.Share, is_again: bool, is_retry: bool
     ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
-        """Run one configuration, or its tests again after THE REDUCE, and give each problem, the tests red alone too,
+        """Run one configuration, or its tests again after the reduce, and give each problem, the tests red alone too,
         and the flaky tests."""
         configuration = run.configuration
         if run.mode is Mode.VESSEL:
@@ -3008,7 +3008,7 @@ class Step:
         return self.run_objects(configuration, words, share, is_again)
 
     def log_kill(self, name: str, problem: str, gb_per_job: float) -> None:
-        """Append one line of a kill for lack of memory to KILL_LOG of the work directory (THE KILL FOR MEMORY).
+        """Append one line of a kill for lack of memory to KILL_LOG of the work directory (the kill for memory).
 
         The line holds the time, the logs of the run, the configuration, the memory of a job of its lease, and the first
         problem, which names the red test or the log of the build.  One write of a short line with the mode a keeps the
@@ -3027,10 +3027,10 @@ class Step:
     def outcome_of(self, run: Run, is_again: bool, is_retry: bool) -> Outcome:
         """Run one configuration in the thread of the caller, with a lease of its own, and give its outcome.
 
-        THE THREADS, THE STOP and THE JOBSERVER give the rules.  The time of the outcome starts after the wait for the
-        first slot of the lease.  A problem sets the stop event, other than in a run of the base (THE RUN OF THE
-        BASE), and other than a crossed row of a budget in the first round of a candidate with a budget reason (THE
-        RAISE OF A BUDGET).  An error of the run sets it too, and goes to the caller.
+        the threads, the stop and the jobserver give the rules.  The time of the outcome starts after the wait for the
+        first slot of the lease.  A problem sets the stop event, other than in a run of the base (the run of the
+        base), and other than a crossed row of a budget in the first round of a candidate with a budget reason (the
+        raise of a budget).  An error of the run sets it too, and goes to the caller.
         """
         name = run.configuration.name
         self.say(f"loop land: {name}: {'test again' if is_again else run.mode.value}")
@@ -3077,8 +3077,8 @@ class Step:
     def red_items(self, run: Run, red: Sequence[str], is_again: bool) -> tuple[str, ...]:
         """Return the failing items of the tests that are red alone too, from the report of the run alone.
 
-        A report that does not read gives no output, so each test gets the item of an unknown output (THE FAILING
-        ITEMS).
+        A report that does not read gives no output, so each test gets the item of an unknown output (the failing
+        items).
         """
         report = self.gate.logs / log_name(run.configuration, "alone.junit.xml", is_again)
         try:
@@ -3088,7 +3088,7 @@ class Step:
         return failing_items(run.configuration.name, red, outputs, self.gate.tree, self.candidate.commit)
 
     def require_problem(self, outcomes: Sequence[Outcome]) -> None:
-        """Refuse a check that the stop ended with no problem of a configuration (THE STOP).
+        """Refuse a check that the stop ended with no problem of a configuration (the stop).
 
         Only a problem or an error sets the stop event, and an error goes to the caller.  A set event with no problem
         then tells of an error that did not get to the caller.  The landing then refuses the commit, and it does not
@@ -3103,7 +3103,7 @@ class Step:
     def run_all(
         self, runs: Sequence[Run], others: Callable[[], Sequence[Run]] | None, is_again: bool, is_retry: bool
     ) -> list[Outcome]:
-        """Run each configuration at the same time, and the runs that `others` gives, and give each outcome (THE THREADS).
+        """Run each configuration at the same time, and the runs that `others` gives, and give each outcome (the threads).
 
         `others` gives the runs of the other configurations of objects.  The function calls it when the build of ALWAYS
         holds the configure of the change.  The outcomes are in the sequence of `runs`, and then of the runs of
@@ -3130,7 +3130,7 @@ class Step:
 
 
 def make_run(logs: Path, runs: Sequence[Path]) -> str:
-    """Make the directory of a new run in `logs`, one above the highest number of `runs`, and return its name (THE LOGS).
+    """Make the directory of a new run in `logs`, one above the highest number of `runs`, and return its name (the logs).
 
     A directory that a landing of an earlier copy of the module made first moves the number up by one.
     """
@@ -3158,7 +3158,7 @@ def run_bytes(run: Path) -> int:
 
 
 def removed_runs(ended: Sequence[Path], cited: Collection[str], max_age_s: float, max_bytes: int) -> list[Path]:
-    """Return the ended runs that the sweep removes, from the oldest (THE LOGS).
+    """Return the ended runs that the sweep removes, from the oldest (the logs).
 
     `ended` gives the ended runs from the oldest.  The last RUNS_KEPT of them stay.  Of the older runs, a run that a
     verdict cites stays while it is younger than `max_age_s`, and while the cited runs that stay hold `max_bytes` or
@@ -3197,7 +3197,7 @@ def hold_run(
     max_age_s: float = CITED_RUN_AGE_S,
     max_bytes: int = CITED_RUNS_BYTES,
 ) -> Iterator[str]:
-    """Make the directory of the logs of a new run, hold it live for the block, and give its name (THE LOGS).
+    """Make the directory of the logs of a new run, hold it live for the block, and give its name (the logs).
 
     The block holds an exclusive lock of flock(2) on the file LIVE of the directory.  The function also removes each
     ended run, other than the last RUNS_KEPT ended runs and the runs of `cited` in the bounds of removed_runs().  It
@@ -3219,22 +3219,22 @@ def hold_run(
 
 
 def tree_name(lane: int) -> str:
-    """Return the name of the warm tree of a lane in the work directory: TREE, then TREE-2 and TREE-3 (THE LANES)."""
+    """Return the name of the warm tree of a lane in the work directory: TREE, then TREE-2 and TREE-3 (the lanes)."""
     return TREE if lane == 0 else f"{TREE}-{lane + 1}"
 
 
 def lock_name(lane: int) -> str:
-    """Return the name of the lock file of the warm tree of a lane in the work directory (THE LANES)."""
+    """Return the name of the lock file of the warm tree of a lane in the work directory (the lanes)."""
     return LOCK if lane == 0 else f"{tree_name(lane)}.lock"
 
 
 @contextlib.contextmanager
 def tree_lock(work: Path, wait: bool = True, lane: int = 0) -> Iterator[bool]:
-    """Hold the lock of the warm tree of a lane for the block, and give True (THE LOCK OF THE TREE).
+    """Hold the lock of the warm tree of a lane for the block, and give True (the lock of the tree).
 
     With a wait, the block waits while a different landing holds the lock.  With no wait, the block gets False
     immediately when a different landing holds it, and holds nothing.  A holder of the first lane also holds the lock
-    of PRIMARY (THE LANES).
+    of PRIMARY (the lanes).
     """
     work.mkdir(parents=True, exist_ok=True)
     lock = work / lock_name(lane)
@@ -3257,8 +3257,8 @@ def tree_lock(work: Path, wait: bool = True, lane: int = 0) -> Iterator[bool]:
 def free_lane(work: Path, lanes: int = LANES) -> Iterator[int | None]:
     """Hold the lock of the first free lane of `lanes` for the block, and give its number, or None when none is free.
 
-    A lane after the first one is free only while a holder of this copy of the module holds the first lane (THE
-    LANES).  Complexity: one try of the lock of each lane.
+    A lane after the first one is free only while a holder of this copy of the module holds the first lane (the
+    lanes).  Complexity: one try of the lock of each lane.
     """
     for lane in range(lanes):
         if lane > 0 and not heavy.is_held(work / PRIMARY):
@@ -3272,7 +3272,7 @@ def free_lane(work: Path, lanes: int = LANES) -> Iterator[int | None]:
 
 @contextlib.contextmanager
 def session(root: Path, work: Path, jobs: int, is_every: bool) -> Iterator[Gate]:
-    """Hold the lock of the warm tree for the block, and give the gate (THE LOCK OF THE TREE).
+    """Hold the lock of the warm tree for the block, and give the gate (the lock of the tree).
 
     The block waits while a different landing holds the lock.
     """

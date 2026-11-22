@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """The loader of the vessel reads the x86-64 level of each library before it loads it.
 
-Each vessel library carries an ELF note with the level of its flags (THE NOTE
+Each vessel library carries an ELF note with the level of its flags (the note
 of vessel/torch/level_note.h), and the level probe libcrucible_level.so gives
-the level of the host (THE LEVEL OF A LIBRARY of crucible_native.py).
+the level of the host (the level of a library of crucible_native.py).
 
 The checks:
 
@@ -87,7 +87,7 @@ def cpuinfo_level() -> int:
 
 
 def plant(source: Path, target: Path, level: int, kind: LevelKind) -> None:
-    """Copy the probe SOURCE to TARGET, with the level LEVEL and the kind KIND in its note."""
+    """Copy the probe source to target, with the given level and kind in its note."""
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, target)
     note = crucible_native.level_note(str(source))
@@ -99,7 +99,7 @@ def plant(source: Path, target: Path, level: int, kind: LevelKind) -> None:
 
 
 def plant_without_note(source: Path, target: Path) -> None:
-    """Copy the probe SOURCE to TARGET, with a different owner in its note, so the loader finds no level note."""
+    """Copy the probe source to target, with a different owner in its note, so the loader finds no level note."""
     shutil.copyfile(source, target)
     image = bytearray(target.read_bytes())
     at = image.index(b"Crucible\0")
@@ -115,12 +115,12 @@ class Run:
         self.problems: list[str] = []
 
     def expect(self, holds: bool, text: str) -> None:
-        """Record TEXT when HOLDS is false."""
+        """Record text when holds is false."""
         if not holds:
             self.problems.append(text)
 
     def refused(self, call: Callable[[], object], needle: str, text: str) -> None:
-        """Expect CALL to raise CrucibleLevelError with NEEDLE in its message."""
+        """Expect call to raise CrucibleLevelError with needle in its message."""
         try:
             call()
         except crucible_native.CrucibleLevelError as refusal:
@@ -133,7 +133,7 @@ class Run:
 
 
 def with_environment(values: dict[str, str], call: Callable[[], object]) -> object:
-    """Run CALL with VALUES in the environment and with each other level variable removed."""
+    """Run call with values in the environment and with each other level variable removed."""
     names = (crucible_native.LEVEL_ROOT_VARIABLE, crucible_native.LEVEL_REQUEST_VARIABLE)
     cleared = {name: values.get(name, "") for name in names}
     with mock.patch.dict(os.environ, cleared):
@@ -192,12 +192,12 @@ def check_root(run: Run, build: Path, host: int, folder: Path) -> None:
             plant(build / PROBE, root / f"x86-64-v{level}" / name, level, LevelKind.EXACT)
 
     def path_of(request: str) -> str:
-        """The path that the loader takes from the root with the request REQUEST."""
+        """The path that the loader takes from the root with the given request."""
         values = {crucible_native.LEVEL_ROOT_VARIABLE: str(root), crucible_native.LEVEL_REQUEST_VARIABLE: request}
         return str(with_environment(values, lambda: crucible_native.checked_lib_path(VESSEL, None, "")))
 
     def named(path: Path, request: str) -> str:
-        """The path that the loader gives back for the named library PATH, with the request REQUEST and no root."""
+        """The path that the loader gives back for the named library path, with the given request and no root."""
         values = {crucible_native.LEVEL_REQUEST_VARIABLE: request}
         return str(with_environment(values, lambda: crucible_native.checked_lib_path(VESSEL, str(path), "")))
 
@@ -230,7 +230,7 @@ def check_refused(run: Run, build: Path, folder: Path) -> None:
         return real_cdll(path, *args, **kwargs)
 
     def load_from_root(request: str) -> object:
-        """Load the vessel library of the planted root with the request REQUEST."""
+        """Load the vessel library of the planted root with the given request."""
         values = {crucible_native.LEVEL_ROOT_VARIABLE: str(root), crucible_native.LEVEL_REQUEST_VARIABLE: request}
         return with_environment(values, crucible_native.load_vessel_library)
 
@@ -242,7 +242,7 @@ def check_refused(run: Run, build: Path, folder: Path) -> None:
                     "a root with no library of the picked level")
 
         def load_named(path: Path, request: str) -> object:
-            """Load the named vessel library PATH with the request REQUEST and no root."""
+            """Load the named vessel library path with the given request and no root."""
             values = {crucible_native.LEVEL_REQUEST_VARIABLE: request}
             return with_environment(values, lambda: crucible_native.load_vessel_library(str(path)))
 

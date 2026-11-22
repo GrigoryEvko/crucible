@@ -18,7 +18,7 @@
 // caller that reaches this class through Vigil::ring() instead carries the
 // obligation itself.
 //
-// THE TWO PUBLISHES
+// Two publishes
 //   The producer keeps its own copy of the head on its private line, and it
 //   reads its position there.  The consumer polls the head, so a load of the
 //   head by the producer can wait for a transfer of its line.  commit checks
@@ -238,9 +238,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // publish of the head (advance_sole_writer_from or
     // advance_sole_writer_by_proof) releases and get() acquires, which is the
     // edge that makes the slot writes visible across the pair.  The producer
-    // reads its own position from own_head_ (THE TWO PUBLISHES).
+    // reads its own position from own_head_ (the two publishes).
     //
-    // The type of each counter names its writer (THE WRITER OF A COUNTER of
+    // The type of each counter names its writer (the writer of a counter of
     // fixy/Mutation.h).  The ring is the owner of each proof, so only the
     // doors of the ring publish a counter.
     struct HeadWriter final {};
@@ -277,8 +277,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // consumer has not read. Monotonic enforces the direction: tail only ever
     // advances, so an observation that moved backwards is a lost acquire.
     alignas(64)::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
-    // The copy of the head of the producer, on the same private line (THE TWO
-    // PUBLISHES).  It holds the value of the head after each publish.
+    // The copy of the head of the producer, on the same private line (the two
+    // publishes).  It holds the value of the head after each publish.
     ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
 
     alignas(64)::fixy::FixedArray<Entry, CAPACITY> entries{};
@@ -368,7 +368,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // The consumer then sees the entry.  Each argument has no default, so a
     // caller cannot drop a field of the slot.  The release of the publish
     // carries the five slot writes to the consumer, and its check loads the
-    // head (THE TWO PUBLISHES).
+    // head (the two publishes).
     [[gnu::hot]] CRUCIBLE_INLINE void commit(Reservation reserved, const Entry& e, MetaIndex meta_start,
                                              ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
@@ -378,7 +378,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
     // The commit of the producer of the Vigils, which holds the proof of the
     // record path.  The type proves the one writer, so the publish loads
-    // nothing from the head (THE TWO PUBLISHES).  A token that names an old
+    // nothing from the head (the two publishes).  A token that names an old
     // head fails the step check of the publish in each build.
     [[gnu::hot]] CRUCIBLE_INLINE void commit_proven(RecordProof const& /*proof*/, Reservation reserved, const Entry& e,
                                                     MetaIndex meta_start, ScopeHash scope_hash,
