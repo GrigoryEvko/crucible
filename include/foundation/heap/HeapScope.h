@@ -63,6 +63,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/HeapState.h>
@@ -82,7 +83,7 @@ namespace detail {
 
 // The one builder of a HeapScope and the scope door of heap_tag::Owner: the
 // mint below calls it.
-struct HeapScopeDoor;
+class HeapScopeDoor;
 
 }  // namespace detail
 
@@ -179,7 +180,7 @@ public:
     void flush_bins() noexcept { heap_->flush_bins(); }
 
 private:
-    friend struct detail::HeapScopeDoor;
+    friend class detail::HeapScopeDoor;
 
     HeapScope(::foundation::alloc::HeapState& heap,
               ::foundation::permissions::Permission<heap_tag::Owner, Brand>&& owner) noexcept
@@ -189,12 +190,33 @@ private:
     [[no_unique_address]] ::foundation::permissions::Permission<heap_tag::Owner, Brand> owner_;
 };
 
+// The arguments of mint_heap_scope: a body that takes the scope by reference
+// with no throw, and gives a value that does not name the brand, as the
+// comment on the scope at the top of this header tells.
+template <class Brand, class Body>
+concept CanMintHeapScope =
+    ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, HeapScope<Brand>&>
+    && !std::is_void_v<std::invoke_result_t<Body&&, HeapScope<Brand>&>>
+    && !::foundation::core::detail::names_brand(^^std::invoke_result_t<Body&&, HeapScope<Brand>&>, ^^Brand);
+
+// The mint of a heap scope.  HeapScopeDoor names it as its one friend, and
+// this header defines it after the door.
+template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0 && CanMintHeapScope<Fresh, Body>)
+[[nodiscard]] auto mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) noexcept;
+
 namespace detail {
 
 // The scope door of heap_tag::Owner (THE SCOPE MINT of
 // foundation/permissions/Permission.h): it builds the key of the scope mint,
-// and the one caller gives it the scope brand of its own call.
-struct HeapScopeDoor {
+// and the one caller gives it the scope brand of its own call.  The door is
+// private, and mint_heap_scope is its one friend, so no other code opens a
+// scope of a brand that it names.
+class HeapScopeDoor final : ::foundation::NoObject<HeapScopeDoor> {
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0 && CanMintHeapScope<Fresh, Body>)
+    friend auto foundation::heap::mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) noexcept;
+
     template <::foundation::brand::IsBrand Brand>
     [[nodiscard]] static HeapScope<Brand> open(::foundation::alloc::HeapState& heap) noexcept {
         ::foundation::permissions::scope_mint_key<heap_tag::Owner> const key{};
@@ -204,22 +226,14 @@ struct HeapScopeDoor {
 
 }  // namespace detail
 
-// The arguments of mint_heap_scope: a body that takes the scope by reference
-// with no throw, and gives a value that does not name the brand (THE SCOPE).
-template <class Brand, class Body>
-concept CanMintHeapScope =
-    ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, HeapScope<Brand>&>
-    && !std::is_void_v<std::invoke_result_t<Body&&, HeapScope<Brand>&>>
-    && !::foundation::core::detail::names_brand(^^std::invoke_result_t<Body&&, HeapScope<Brand>&>, ^^Brand);
-
 // Calls body with the scope of the heap of the calling thread, which holds
 // the permission of its owner on the scope brand of this call site, and gives
 // the result of body.  A thread on the sentinel claims its heap first.  The
 // capability is the authority to allocate, and the scope holds no copy of it.
 // The pack refuses each explicit argument, so no caller names the brand.
-template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0 && CanMintHeapScope<Fresh, Body>)
-[[nodiscard]] auto mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) noexcept {
+auto mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) noexcept {
     static_cast<void>(capability);
     HeapScope<Fresh> scope = detail::HeapScopeDoor::open<Fresh>(::foundation::alloc::thread_heap());
     return static_cast<Body&&>(body)(scope);

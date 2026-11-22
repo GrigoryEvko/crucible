@@ -4801,6 +4801,21 @@ foundation_neg_compile_test(neg_core_sort_run_of_removed
 foundation_neg_compile_test(neg_core_start_as_array_gives_address
   "conversion from .foundation::lifetime::element_for_storage_t<const unsigned char, int>\\*. .aka .const int\\*.. to non-scalar type .const foundation::core::View<int>. requested"
   "neg_core_start_as_array_gives_address\\.cpp:12:[0-9]+: error:")
+# The scope mints of a branded strided view and of a heap scope are the only
+# doors that build a scope on a brand: a former door and a lookalike of each
+# mint are refused.
+foundation_neg_compile_test(neg_core_strided_scope_door_removed
+  ".StridedScopeDoor. in namespace .foundation::core::detail. does not name a type"
+  "neg_core_strided_scope_door_removed\\.cpp:9:[0-9]+: error:")
+foundation_neg_compile_test(neg_core_strided_scope_not_friend
+  "foundation::core::BrandedStridedView<T, Rank, Brand>::BrandedStridedView\\(foundation::core::StridedView<T, Rank>\\) \\[with T = int; long unsigned int Rank = 2; Brand = lookalike::ForgedBrand\\]. is private within this context"
+  "Strided\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_heap_scope_door_outside_mint
+  "foundation::heap::detail::HeapScopeDoor::open\\(foundation::alloc::HeapState&\\) \\[with Brand = ForgedBrand\\]. is private within this context"
+  "HeapScope\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_heap_scope_not_friend
+  "foundation::heap::detail::HeapScopeDoor::open\\(foundation::alloc::HeapState&\\) \\[with Brand = lookalike::ForgedBrand\\]. is private within this context"
+  "HeapScope\\.h:[0-9]+:[0-9]+: note: declared private here")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result

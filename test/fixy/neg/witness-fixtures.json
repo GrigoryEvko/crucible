@@ -862,6 +862,11 @@
       "constructor": "\\bPublishedObject\\("
     },
     {
+      "name": "neg_witness_heap_detail_heapscopedoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bHeapScopeDoor\\("
+    },
+    {
       "name": "neg_witness_heap_heapscope_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bHeapScope\\("
@@ -1602,6 +1607,10 @@
     },
     {
       "type": "foundation::permissions::scope_mint_key<foundation::heap::heap_tag::Owner>",
+      "header": "foundation/heap/HeapScope.h"
+    },
+    {
+      "type": "foundation::heap::detail::HeapScopeDoor",
       "header": "foundation/heap/HeapScope.h"
     },
     {

@@ -417,10 +417,6 @@ template <class T, std::size_t Rank>
 template <class T, std::size_t Rank>
 [[nodiscard]] constexpr StridedLanes<Rank> const& strided_lanes_of_(StridedView<T, Rank> const& view) noexcept;
 
-// The door of mint_strided_scope to the private constructors of a branded
-// view and of an index.  Only the mint and the branded view call it.
-struct StridedScopeDoor;
-
 template <std::size_t Rank, ::foundation::brand::IsBrand Brand>
 class StridedIndexRange;
 template <std::size_t Rank, ::foundation::brand::IsBrand Brand>
@@ -1416,13 +1412,6 @@ public:
     [[nodiscard]] static constexpr StridedIndexEnd end() noexcept { return StridedIndexEnd{}; }
 };
 
-struct StridedScopeDoor {
-    template <::foundation::brand::IsBrand Brand, class T, std::size_t Rank>
-    [[nodiscard]] static constexpr BrandedStridedView<T, Rank, Brand> open(StridedView<T, Rank> view) noexcept {
-        return BrandedStridedView<T, Rank, Brand>{view};
-    }
-};
-
 }  // namespace detail
 
 // The public name of the range that indices() of a branded strided view
@@ -1431,16 +1420,39 @@ struct StridedScopeDoor {
 template <std::size_t Rank, ::foundation::brand::IsBrand Brand>
 using StridedIndexRange = detail::StridedIndexRange<Rank, Brand>;
 
+// The arguments of mint_strided_scope: a body that takes the branded view of
+// the scope with no throw and gives a value that does not hold the brand.
+template <class T, std::size_t Rank, class Body, class Brand>
+concept CanMintStridedScope =
+    ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, BrandedStridedView<T, Rank, Brand>>
+    && !std::is_void_v<std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>>
+    && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>, ^^Brand);
+
+// The mint of a strided scope.  BrandedStridedView names it as a friend, and
+// this header defines it after BrandedStridedView.
+template <class... Refused, class T, std::size_t Rank, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0 && CanMintStridedScope<T, Rank, Body, Fresh>)
+[[nodiscard]] constexpr auto mint_strided_scope(StridedView<T, Rank> view, Body&& body) noexcept;
+
 // The strided view of one scope.  It comes only from mint_strided_scope and
 // from parallel(), and its sizes never change, so each StridedIndex<Rank,
-// Brand> stays below them.
+// Brand> stays below them.  It holds the strided view that the mint took.
+// The two friends that build one are the mint, with the fresh brand of its
+// instance, and parallel() of a branded strided view of the same brand, from
+// a strided view of the same sizes.
 template <class T, std::size_t Rank, ::foundation::brand::IsBrand Brand>
     requires ViewElement<T> && StridedRank<Rank>
 class BrandedStridedView final {
     StridedView<T, Rank> view_;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    friend struct detail::StridedScopeDoor;
+    template <class... Refused, class U, std::size_t OtherRank, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0 && CanMintStridedScope<U, OtherRank, Body, Fresh>)
+    friend constexpr auto mint_strided_scope(StridedView<U, OtherRank> view, Body&& body) noexcept;
+    template <class U, std::size_t OtherRank, ::foundation::brand::IsBrand OtherBrand>
+        requires ViewElement<U> && StridedRank<OtherRank>
+    friend class BrandedStridedView;
 
     constexpr explicit BrandedStridedView(StridedView<T, Rank> view) noexcept : view_{view} {}
 
@@ -1530,26 +1542,17 @@ public:
         if (!detail::same_sizes_(detail::strided_lanes_of_(view_), detail::strided_lanes_of_(other))) {
             return Parallel{none};
         }
-        return Parallel::some(detail::StridedScopeDoor::open<Brand>(other));
+        return Parallel::some(BrandedStridedView<U, Rank, Brand>{other});
     }
 };
-
-// The arguments of mint_strided_scope: a body that takes the branded view of
-// the scope with no throw and gives a value that does not hold the brand.
-template <class T, std::size_t Rank, class Body, class Brand>
-concept CanMintStridedScope =
-    ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, BrandedStridedView<T, Rank, Brand>>
-    && !std::is_void_v<std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>>
-    && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>, ^^Brand);
 
 // Calls body with the branded view of view, with the fresh brand of the
 // instance of the mint, and gives the result of body.  The pack refuses each
 // explicit argument, so no caller names the brand.
-template <class... Refused, class T, std::size_t Rank, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class... Refused, class T, std::size_t Rank, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0 && CanMintStridedScope<T, Rank, Body, Fresh>)
-[[nodiscard]] constexpr auto mint_strided_scope(StridedView<T, Rank> view, Body&& body) noexcept {
-    return static_cast<Body&&>(body)(detail::StridedScopeDoor::open<Fresh>(view));
+constexpr auto mint_strided_scope(StridedView<T, Rank> view, Body&& body) noexcept {
+    return static_cast<Body&&>(body)(BrandedStridedView<T, Rank, Fresh>{view});
 }
 
 // Calls body one time for each index of the branded views of one scope, in
