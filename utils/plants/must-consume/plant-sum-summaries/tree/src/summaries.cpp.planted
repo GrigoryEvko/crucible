@@ -97,4 +97,34 @@ void returned_reference_fills_after_the_consume() {
     alias.fill(Token{9});
 }
 
+// A callee that gives back the result of a callee that gives the sum back.
+Option<Token>& outer_option(Option<Token>& held) noexcept { return same_option(held); }
+
+void outer_reference_fills_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{10});
+    Option<Token>& alias = outer_option(held);
+    sink(std::move(held).expect("the Option holds the first token"));
+    alias.fill(Token{11});
+}
+
+// The result goes to a callee that keeps it, and a later call fills the
+// Option after a test.
+void kept_result_fills_after_a_test() {
+    Option<Token> held{};
+    keep(same_option(held));
+    do {
+        if (!(held.is_none())) stop();
+    } while (0);
+    fill_kept();
+}
+
+// The result goes into a reference member, which fills the Option after the
+// consume.
+void member_of_the_result_fills_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{12});
+    Keeper keeper{same_option(held)};
+    sink(std::move(held).expect("the Option holds the first token"));
+    keeper.held.fill(Token{13});
+}
+
 }  // namespace planted

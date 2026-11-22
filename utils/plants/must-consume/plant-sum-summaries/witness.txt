@@ -6,8 +6,10 @@
 # callee takes after the consume (64), a kept reference that a call after the
 # consume fills (73), a reference member that fills the Option after the
 # consume (86), and a reference that a callee gives back, whose body sees no
-# complete Option (94).  Each one gives option-unconsumed, a compile error in
-# each mode.
+# complete Option (94).  The result of such a callee aliases the Option too:
+# through a second callee that gives it back (104), in a callee that keeps it
+# (113), and in a reference member (124).  Each one gives option-unconsumed, a
+# compile error in each mode.
 compile summaries src/summaries.cpp must-consume=on errors=summaries
 flag summaries -freflection
 exit summaries fail
@@ -17,3 +19,6 @@ finding summaries must-consume option-unconsumed src/summaries.cpp:64:19 | plant
 finding summaries must-consume option-unconsumed src/summaries.cpp:73:19 | planted::kept_reference_fills_after_the_consume: held
 finding summaries must-consume option-unconsumed src/summaries.cpp:86:19 | planted::member_reference_fills_after_the_consume: held
 finding summaries must-consume option-unconsumed src/summaries.cpp:94:19 | planted::returned_reference_fills_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:104:19 | planted::outer_reference_fills_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:113:19 | planted::kept_result_fills_after_a_test: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:124:19 | planted::member_of_the_result_fills_after_the_consume: held

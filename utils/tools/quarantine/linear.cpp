@@ -2575,6 +2575,16 @@ private:
                 if (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) {
                     record_discarded(location, linear_temporary_type(argument));
                 }
+                // THE ALIASES: the result of a callee that gives a sum back,
+                // which a callee that can keep it takes by a reference that
+                // writes.
+                if (is_writing_parameter(parameter_type)) {
+                    for (tree sum : sums_given_back(argument)) {
+                        if (can_keep_reference(callee)) {
+                            note_kept_alias(sum, NULL_TREE, state);
+                        }
+                    }
+                }
                 continue;
             }
             // A reference that is not const, or an address, lets the callee
@@ -2900,6 +2910,12 @@ private:
             }
         } else if (source != NULL_TREE && source != tracked_target && is_mutable_address) {
             note_kept_alias(source, field, state);
+        } else if (source == NULL_TREE && is_mutable_address) {
+            // The result of a callee that gives a sum back in a stored address
+            // or a reference member (THE ALIASES).
+            for (tree sum : sums_given_back(value)) {
+                note_kept_alias(sum, NULL_TREE, state);
+            }
         } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)) {
             consume(source, field, state, location);
         }
@@ -2948,6 +2964,13 @@ private:
                         note_alias(referred, NULL_TREE, state);
                     } else {
                         note_kept_alias(referred, NULL_TREE, state);
+                    }
+                }
+                // The result of a callee that gives a sum back in a reference
+                // member names the sum at each later call (THE ALIASES).
+                if (referred == NULL_TREE && !TYPE_READONLY(TREE_TYPE(TREE_TYPE(field)))) {
+                    for (tree sum : sums_given_back(value)) {
+                        note_kept_alias(sum, NULL_TREE, state);
                     }
                 }
                 continue;
@@ -4435,6 +4458,9 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
         return NULL_TREE;
     }
     if (TREE_CODE(node) == RETURN_EXPR) {
+        // The result gives the parameter back when it names the parameter, or
+        // the result of a callee that can give the parameter back: a callee
+        // with that fact, or with no fact at this point.
         tree value = TREE_OPERAND(node, 0);
         for (int depth = 0; value != NULL_TREE && depth < kTypeDepth; ++depth) {
             value = tree_strip_any_location_wrapper(value);
@@ -4444,6 +4470,23 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
                        || TREE_CODE(value) == NON_LVALUE_EXPR || TREE_CODE(value) == ADDR_EXPR
                        || TREE_CODE(value) == INDIRECT_REF) {
                 value = TREE_OPERAND(value, 0);
+            } else if (TREE_CODE(value) == CALL_EXPR) {
+                tree inner = cp_get_callee_fndecl_nofold(value);
+                bool can_give_back =
+                    inner != NULL_TREE && TREE_CODE(inner) == FUNCTION_DECL
+                    && (returns_sum_reference.count(DECL_UID(inner)) != 0 || kept_fact_of(inner) == KeptFact::unknown);
+                bool is_passed = false;
+                for (int index = 0; can_give_back && index < call_expr_nargs(value); ++index) {
+                    tree argument = CALL_EXPR_ARG(value, index);
+                    while (argument != NULL_TREE
+                           && (TREE_CODE(argument) == NOP_EXPR || TREE_CODE(argument) == ADDR_EXPR
+                               || TREE_CODE(argument) == INDIRECT_REF || TREE_CODE(argument) == CONVERT_EXPR)) {
+                        argument = TREE_OPERAND(argument, 0);
+                    }
+                    is_passed = is_passed || argument == walk.parameter;
+                }
+                value = is_passed ? walk.parameter : NULL_TREE;
+                break;
             } else {
                 break;
             }
