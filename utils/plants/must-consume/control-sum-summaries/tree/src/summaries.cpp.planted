@@ -1,0 +1,74 @@
+// The forms that the summaries of a closure and of a callee admit (THE
+// SUMMARIES of linear.cpp).  Each function ends each Option of a linear
+// payload with no payload, and the rule gives no line for it.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+[[noreturn]] void stop() noexcept;
+
+// A callee whose body the unit reads first: it takes the sum by a reference
+// and keeps no reference, so its summary says so.
+bool inspect(Option<Token>& held) noexcept { return held.is_none(); }
+
+// The test after the call of the callee shows the Option empty.
+void callee_keeps_no_reference() {
+    Option<Token> held{};
+    (void)inspect(held);
+    do {
+        if (!(held.is_none())) stop();
+    } while (0);
+}
+
+// A closure that can fill the sum, which the function keeps and never calls.
+void closure_stored_and_not_called() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    auto refill = [&held] { held.fill(Token{2}); };
+    sink(std::move(held).expect("the Option holds the first token"));
+    (void)refill;
+}
+
+// A closure that fills the sum, called before the consume.
+void closure_called_before_the_consume() {
+    Option<Token> held{};
+    auto fill = [&held] { held.fill(Token{3}); };
+    fill();
+    sink(std::move(held).expect("the closure filled the Option"));
+}
+
+// A closure that only reads the sum, called after the sum is filled and before
+// the consume.
+void reading_closure_after_the_fill() {
+    Option<Token> held{};
+    auto look = [&held] { return held.is_none(); };
+    held.fill(Token{5});
+    (void)look();
+    sink(std::move(held).expect("the Option holds the token"));
+}
+
+// A closure that only reads the sum, called after the consume.
+void reading_closure_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{4});
+    auto look = [&held] { return held.is_none(); };
+    sink(std::move(held).expect("the Option holds the token"));
+    (void)look();
+}
+
+}  // namespace planted

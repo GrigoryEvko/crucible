@@ -220,6 +220,28 @@
 //     finding.  Each other linear class stays a finding, also a class with a
 //     door at the end of its scope.
 //
+// THE SUMMARIES
+//     Two facts of a body serve each later caller in the unit, at the
+//     PLUGIN_PRE_GENERICIZE of the body:
+//       * the capture fields of a closure whose sum the body of its call
+//         operator can fill: an argument of a parameter that writes it, other
+//         than the object of a consumer or of a member that empties, and the
+//         target of an assignment (note_closure_fills)
+//       * a function whose body keeps no reference parameter that names a
+//         linear sum: each use of such a parameter is the object of a member
+//         call, or an argument of a parameter that does not write, or of a
+//         callee that keeps no reference (note_kept_references).
+//     A call of a closure, and a call that takes a closure, can run its body.
+//     So after such a call, each sum that the closure captures by reference
+//     and that its summary names holds a payload again, also after a
+//     consume.  A closure with no summary can fill each such sum.  A call
+//     that takes a sum by a reference or a pointer that writes, and whose
+//     callee has no fact that it keeps no reference, makes an alias of the
+//     sum: the callee can keep the reference and fill the sum at a later
+//     point.  A callee whose body the unit genericizes after the caller, such
+//     as a template that the end of the unit instantiates, has no fact.  The
+//     facts are keyed by a UID (THE COLLECTIONS of plugin.h).
+//
 // THE SELF-MOVES
 //     A move assignment whose target and source are one object is the kind
 //     self-move, at the assignment: an operator= that takes an rvalue
@@ -620,6 +642,32 @@ bool is_linear_sum(tree type) {
     return CLASS_TYPE_P(type) && carries_annotation(TYPE_ATTRIBUTES(type), linear_names.sum) && is_linear_type(type);
 }
 
+// THE SUMMARIES: the capture fields of each closure whose reference names a
+// linear sum that the body of the call operator can fill, by the TYPE_UID of
+// the closure, and each function whose body keeps no reference parameter that
+// names a linear sum, by its DECL_UID.  No collection reuses a UID, so the
+// facts stay for the unit (THE COLLECTIONS of plugin.h).
+std::unordered_map<unsigned, std::vector<unsigned>> closure_fills;
+std::unordered_set<unsigned> keeps_no_sum_reference;
+
+// True when FIELD is a capture by reference of a linear sum.
+bool is_sum_capture(tree field) {
+    tree type = field != NULL_TREE ? TREE_TYPE(field) : NULL_TREE;
+    return type != NULL_TREE && TYPE_REF_P(type) && !TYPE_READONLY(TREE_TYPE(type)) && is_linear_sum(TREE_TYPE(type));
+}
+
+// True when a parameter of the type PARAMETER_TYPE lets the callee write its
+// argument: a reference that is not const, or a pointer to a type that is not
+// const.  The object parameter of a member that is not const is such a
+// pointer.
+bool is_writing_parameter(tree parameter_type) {
+    if (parameter_type == NULL_TREE) {
+        return false;
+    }
+    bool is_lvalue_reference = TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type);
+    return (is_lvalue_reference || TYPE_PTR_P(parameter_type)) && !TYPE_READONLY(TREE_TYPE(parameter_type));
+}
+
 // True when the function FUNCTION, or the template of an instance of it,
 // carries the annotation NAME of include/foundation/Linear.h.
 bool carries_linear_annotation(tree function, tree name) {
@@ -936,6 +984,9 @@ private:
     // Each lvalue reference local that borrows a tracked object, and that
     // object.  A move through the reference consumes the object.
     std::unordered_map<tree, tree> referent_of_;
+    // THE SUMMARIES: each capture field of a closure of this body that names a
+    // tracked sum by reference, with that sum, by the TYPE_UID of the closure.
+    std::unordered_map<unsigned, std::vector<std::pair<unsigned, tree>>> capture_targets_;
     // Each lvalue reference local, and the object that its initializer names
     // (self_move_place), also when the rule tracks no object of it (THE
     // SELF-MOVES).
@@ -2229,6 +2280,11 @@ private:
                 note_can_be_full(decl, field, state);
                 if (std::size_t slot = sum_slot(decl, field); slot != kNoParent) {
                     slots_[slot].is_borrowed = true;
+                    // THE SUMMARIES: a callee with no fact can keep the
+                    // reference and fill the sum at each later point.
+                    if (callee == NULL_TREE || keeps_no_sum_reference.count(DECL_UID(callee)) == 0) {
+                        note_alias(decl, field, state);
+                    }
                 }
             }
             bool is_rvalue_reference = TYPE_REF_P(parameter_type) && TYPE_REF_IS_RVALUE(parameter_type);
@@ -2236,8 +2292,49 @@ private:
                 consume(decl, field, state, location);
             }
         }
+        // THE SUMMARIES: the call of a closure runs its body, and a call that
+        // takes a closure can run it.
+        if (callee != NULL_TREE && LAMBDA_FUNCTION_P(callee)) {
+            apply_closure_fills(DECL_CONTEXT(callee), state);
+        }
+        for (int index = 0; index < count; ++index) {
+            tree argument_type = TREE_TYPE(argument_at(call, index));
+            argument_type =
+                argument_type != NULL_TREE && TYPE_REF_P(argument_type) ? TREE_TYPE(argument_type) : argument_type;
+            if (argument_type != NULL_TREE && LAMBDA_TYPE_P(argument_type)) {
+                apply_closure_fills(argument_type, state);
+            }
+        }
         if (callee != NULL_TREE && TREE_THIS_VOLATILE(callee)) {
             state.is_reachable = false;
+        }
+    }
+
+    // THE SUMMARIES: the body of the closure CLOSURE_TYPE can fill each sum
+    // that it captures by reference and that its summary names, so the sum
+    // holds a payload again after the call.  A closure with no summary can
+    // fill each such sum.
+    void apply_closure_fills(tree closure_type, FlowState& state) {
+        if (closure_type == NULL_TREE || !TYPE_P(closure_type) || !state.is_reachable) {
+            return;
+        }
+        unsigned uid = TYPE_UID(TYPE_MAIN_VARIANT(closure_type));
+        auto targets = capture_targets_.find(uid);
+        if (targets == capture_targets_.end()) {
+            return;
+        }
+        auto fills = closure_fills.find(uid);
+        for (const auto& [field, decl] : targets->second) {
+            bool can_fill = fills == closure_fills.end()
+                         || std::find(fills->second.begin(), fills->second.end(), field) != fills->second.end();
+            std::size_t slot = sum_slot(decl, NULL_TREE);
+            if (!can_fill || slot == kNoParent) {
+                continue;
+            }
+            if (state.get(slot) == Status::consumed || state.get(slot) == Status::maybe) {
+                set_object(state, slot, Status::live);
+            }
+            state.set_content(slot, Content::can_be_full);
         }
     }
 
@@ -2311,9 +2408,14 @@ private:
             && (TYPE_PTR_P(target_type) || (TYPE_REF_P(target_type) && TREE_CODE(target) == COMPONENT_REF))
             && !TYPE_READONLY(TREE_TYPE(target_type));
         if (source != NULL_TREE && is_reference_capture) {
-            // The closure can fill a captured sum (THE SUMS).
+            // The closure can fill a captured sum (THE SUMS), and a call of
+            // the closure applies its summary to the sum (THE SUMMARIES).
             mark_escaped(source);
             note_alias(source, field, state);
+            tree closure = TYPE_MAIN_VARIANT(TREE_TYPE(TREE_OPERAND(target, 0)));
+            if (field == NULL_TREE && sum_slot(source, NULL_TREE) != kNoParent) {
+                capture_targets_[TYPE_UID(closure)].emplace_back(DECL_UID(TREE_OPERAND(target, 1)), source);
+            }
         } else if (source != NULL_TREE && source != tracked_target && is_mutable_address) {
             note_alias(source, field, state);
         } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)) {
@@ -2349,6 +2451,12 @@ private:
                 tree referred = strip_to_tracked(value, saw_reference);
                 if (referred != NULL_TREE && LAMBDA_TYPE_P(TREE_TYPE(node))) {
                     mark_escaped(referred);
+                    // THE SUMMARIES: a call of the closure applies its summary
+                    // to this sum.
+                    if (sum_slot(referred, NULL_TREE) != kNoParent) {
+                        capture_targets_[TYPE_UID(TYPE_MAIN_VARIANT(TREE_TYPE(node)))].emplace_back(DECL_UID(field),
+                                                                                                    referred);
+                    }
                 }
                 if (referred != NULL_TREE && !TYPE_READONLY(TREE_TYPE(TREE_TYPE(field)))) {
                     note_alias(referred, NULL_TREE, state);
@@ -3642,6 +3750,180 @@ void note_accessor_field(tree function) {
     accessor_fields[static_cast<int>(DECL_UID(function))] = walk.saw_return ? walk.field : kWholeObject;
 }
 
+// The capture field of CLOSURE that NODE names in the body of its call
+// operator, through the casts, a dereference, an address and a capture
+// proxy, or null.
+tree capture_field_of(tree node, tree closure) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        switch (TREE_CODE(node)) {
+            case NOP_EXPR:
+            case CONVERT_EXPR:
+            case NON_LVALUE_EXPR:
+            case VIEW_CONVERT_EXPR:
+            case INDIRECT_REF:
+            case ADDR_EXPR:
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case VAR_DECL:
+                if (!DECL_HAS_VALUE_EXPR_P(node)) {
+                    return NULL_TREE;
+                }
+                node = DECL_VALUE_EXPR(node);
+                continue;
+            case COMPONENT_REF: {
+                tree field = TREE_OPERAND(node, 1);
+                return TREE_CODE(field) == FIELD_DECL && TYPE_MAIN_VARIANT(DECL_CONTEXT(field)) == closure ? field
+                                                                                                           : NULL_TREE;
+            }
+            default:
+                return NULL_TREE;
+        }
+    }
+    return NULL_TREE;
+}
+
+struct ClosureFillWalk {
+    tree closure = NULL_TREE;
+    std::vector<unsigned> fills;
+};
+
+void note_fill(ClosureFillWalk& walk, tree field) {
+    if (field != NULL_TREE && is_sum_capture(field)
+        && std::find(walk.fills.begin(), walk.fills.end(), DECL_UID(field)) == walk.fills.end()) {
+        walk.fills.push_back(DECL_UID(field));
+    }
+}
+
+// The uses of the body of a call operator that can fill a captured sum: an
+// argument of a parameter that writes it, and the target of an assignment.
+tree walk_closure_fills(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE || TYPE_P(node) || TREE_CODE(node) == LAMBDA_EXPR) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    auto& walk = *static_cast<ClosureFillWalk*>(data);
+    if (TREE_CODE(node) == MODIFY_EXPR || TREE_CODE(node) == INIT_EXPR) {
+        note_fill(walk, capture_field_of(TREE_OPERAND(node, 0), walk.closure));
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) != CALL_EXPR) {
+        return NULL_TREE;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(node);
+    bool is_function = callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL;
+    tree type = function_type_of(node, is_function ? callee : NULL_TREE);
+    bool is_method = type != NULL_TREE && TREE_CODE(type) == METHOD_TYPE;
+    // A consumer and a member that empties the sum fill nothing.
+    bool is_emptying_member = is_method
+                           && (FUNCTION_RVALUE_QUALIFIED(type)
+                               || (is_function && carries_linear_annotation(callee, linear_names.empties)));
+    tree parameter = type != NULL_TREE ? TYPE_ARG_TYPES(type) : NULL_TREE;
+    for (int index = 0; index < argument_count(node); ++index) {
+        tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
+        if (parameter != NULL_TREE) {
+            parameter = TREE_CHAIN(parameter);
+        }
+        if (is_writing_parameter(parameter_type) && !(index == 0 && is_emptying_member)) {
+            note_fill(walk, capture_field_of(argument_at(node, index), walk.closure));
+        }
+    }
+    return NULL_TREE;
+}
+
+// Keeps the capture fields of the closure of the call operator FUNCTION whose
+// sum its body can fill (THE SUMMARIES).  Complexity: linear in the body.
+void note_closure_fills(tree function) {
+    tree closure = DECL_CONTEXT(function);
+    if (closure == NULL_TREE || !LAMBDA_TYPE_P(closure)) {
+        return;
+    }
+    ClosureFillWalk walk;
+    walk.closure = TYPE_MAIN_VARIANT(closure);
+    tree body = DECL_SAVED_TREE(function);
+    cp_walk_tree_without_duplicates(&body, walk_closure_fills, &walk);
+    std::vector<unsigned>& kept = closure_fills[TYPE_UID(walk.closure)];
+    for (unsigned field : walk.fills) {
+        if (std::find(kept.begin(), kept.end(), field) == kept.end()) {
+            kept.push_back(field);
+        }
+    }
+}
+
+struct KeptReferenceWalk {
+    tree parameter = NULL_TREE;
+    int uses = 0;
+    int read_uses = 0;
+};
+
+// The uses of PARAMETER in a body, and the uses that keep nothing: the object
+// argument of a member call, and an argument of a call whose callee keeps no
+// reference, or whose parameter does not write.
+tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    auto& walk = *static_cast<KeptReferenceWalk*>(data);
+    if (node == NULL_TREE || TYPE_P(node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (node == walk.parameter) {
+        ++walk.uses;
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) != CALL_EXPR) {
+        return NULL_TREE;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(node);
+    bool is_function = callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL;
+    tree type = function_type_of(node, is_function ? callee : NULL_TREE);
+    bool is_method = type != NULL_TREE && TREE_CODE(type) == METHOD_TYPE;
+    bool keeps_nothing = is_function && keeps_no_sum_reference.count(DECL_UID(callee)) != 0;
+    tree parameter = type != NULL_TREE ? TYPE_ARG_TYPES(type) : NULL_TREE;
+    for (int index = 0; index < argument_count(node); ++index) {
+        tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
+        if (parameter != NULL_TREE) {
+            parameter = TREE_CHAIN(parameter);
+        }
+        bool is_reading = (is_method && index == 0) || keeps_nothing || !is_writing_parameter(parameter_type);
+        tree argument = argument_at(node, index);
+        for (int depth = 0; argument != NULL_TREE && depth < kTypeDepth; ++depth) {
+            argument = tree_strip_any_location_wrapper(argument);
+            if (TREE_CODE(argument) == NOP_EXPR || TREE_CODE(argument) == CONVERT_EXPR
+                || TREE_CODE(argument) == INDIRECT_REF || TREE_CODE(argument) == ADDR_EXPR) {
+                argument = TREE_OPERAND(argument, 0);
+                continue;
+            }
+            break;
+        }
+        if (argument == walk.parameter && is_reading) {
+            ++walk.read_uses;
+        }
+    }
+    return NULL_TREE;
+}
+
+// Keeps the function FUNCTION when its body keeps no reference parameter that
+// names a linear sum: each use of each such parameter is a read (THE
+// SUMMARIES).  Complexity: linear in the nodes of the body, for each such
+// parameter.
+void note_kept_references(tree function) {
+    tree body = DECL_SAVED_TREE(function);
+    for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
+        tree type = TREE_TYPE(parameter);
+        if (!is_writing_parameter(type) || !is_linear_sum(TREE_TYPE(type))) {
+            continue;
+        }
+        KeptReferenceWalk walk;
+        walk.parameter = parameter;
+        cp_walk_tree(&body, walk_kept_reference, &walk, nullptr);
+        if (walk.uses > walk.read_uses) {
+            return;
+        }
+    }
+    keeps_no_sum_reference.insert(DECL_UID(function));
+}
+
 void on_pre_genericize_linear(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
     // A clone of a constructor or a destructor gets a second event on a copy
@@ -3661,6 +3943,14 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
     // rule does not read the body of the accessor here (THE ACCESSORS).
     if (linear_mode.checks_must_consume && is_accessor(function)) {
         note_accessor_field(function);
+    }
+    // The summaries of a closure and of a callee serve each caller in this
+    // unit (THE SUMMARIES).
+    if (linear_mode.checks_must_consume) {
+        if (LAMBDA_FUNCTION_P(function)) {
+            note_closure_fills(function);
+        }
+        note_kept_references(function);
     }
     // The rule reads the bodies that is_body_read_here of plugin.h gives (THE
     // BODIES), and the place of the function is the place of its findings.

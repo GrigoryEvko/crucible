@@ -1,0 +1,10 @@
+# The summaries of a closure and of a callee (THE SUMMARIES of linear.cpp)
+# refuse the two routes that were known gaps of the rule: a capture by
+# reference that fills an Option after its consume (line 33), and a callee with
+# no body in the unit that can keep the reference and fill the Option after a
+# test (43).  Each one gives option-unconsumed, a compile error in each mode.
+compile summaries src/summaries.cpp must-consume=on errors=summaries
+flag summaries -freflection
+exit summaries fail
+finding summaries must-consume option-unconsumed src/summaries.cpp:33:19 | planted::alias_fills_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:43:19 | planted::callee_keeps_the_reference: held

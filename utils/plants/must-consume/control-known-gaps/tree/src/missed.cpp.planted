@@ -27,32 +27,6 @@ struct Holder {
     Option<Token> held;
 };
 
-void sink(Token&& token) noexcept;
-void keep(Option<Token>& held) noexcept;
-void fill_kept() noexcept;
-[[noreturn]] void stop() noexcept;
-
-// A capture by reference fills the Option after the consume, and the rule
-// reads the consume as the end of the sum.
-void alias_fills_after_the_consume() {
-    Option<Token> held = Option<Token>::some(Token{1});
-    auto refill = [&held] { held.fill(Token{2}); };
-    sink(std::move(held).expect("the Option holds the first token"));
-    refill();
-}
-
-// The callee keeps the reference, and a later call fills the Option through
-// it.  The rule reads each call by its signature only, so the test after the
-// first call shows the Option empty.
-void callee_keeps_the_reference() {
-    Option<Token> held{};
-    keep(held);
-    do {
-        if (!(held.is_none())) stop();
-    } while (0);
-    fill_kept();
-}
-
 // A data member of a class: the drop door ends the class, and the body of a
 // door gives no line.
 void member_ends_in_a_door() { ::foundation::linear::drop(Holder{Option<Token>::some(Token{3})}); }

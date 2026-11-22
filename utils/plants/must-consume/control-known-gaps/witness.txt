@@ -17,12 +17,12 @@ finding gaps must-consume unconsumed src/gaps.cpp:24:33 | planted::extended_temp
 finding gaps quarantine raw-pointer-object src/gaps.cpp:37:18 | place
 finding gaps quarantine c-array-object src/gaps.cpp:42:41 | row
 
-# The ends of a linear sum that the rule does not see, and that the end of a
-# full Option of a linear payload catches at run time (missed.cpp): a capture
-# by reference that fills the Option after its consume (line 38), a callee that
-# keeps the reference and fills the Option after a test (48), and a data member
-# that a drop door ends (58).  Each one gives no line.  A change that refuses
-# one of them makes this control fail, and moves it to a plant.
+# The end of a linear sum that the rule does not see, and that the end of a
+# full Option of a linear payload catches at run time (missed.cpp): a data
+# member that a drop door ends (line 32).  It gives no line.  A change that
+# refuses it makes this control fail, and moves it to a plant.  The
+# summaries of a closure and of a callee refuse the two other routes
+# (plant-sum-summaries).
 
 compile missed src/missed.cpp must-consume=on
 flag missed -freflection
