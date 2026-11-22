@@ -32,12 +32,19 @@
 //     with_mut(std::move(owner), body)   HeapArray and MaskedArray
 //                       (foundation/core/Array.h), FixedList (List.h) and
 //                       GrowList (Grow.h)
+//     with_mut(std::move(box), body)   the object of a Box
+//                       (foundation/core/Ref.h): the Box moves into the frame
+//                       and comes back, with no key
 //     array.with_mut(body)   a FixedArray, in place (Array.h), and a
 //                       FixedHeapArray, in place (FixedHeapArray.h)
-//     array.with_mut(key, body)   a keyed FixedArray, in place, with its
-//                       LoanKey (THE LOAN KEY), by move or by a borrow of the key
+//     array.with_mut(key, body)   a keyed FixedArray or a keyed
+//                       FixedHeapArray, in place, with its LoanKey (THE LOAN
+//                       KEY), by move or by a borrow of the key
 //     array.with_element(key, index, body)   one element of a keyed
-//                       FixedArray, with its LoanKey
+//                       FixedArray or of a keyed FixedHeapArray, with its LoanKey
+//     array.with_masked(key, body)   the element at key & (count - 1) of a
+//                       MaskedArray (Array.h), given to the body in place, with
+//                       no LoanKey: the key is the position
 //     with_mut_windows<T>(block, key, windows, body)   some windows of a
 //                       KeyedBytes block, with its LoanKey (foundation/AlignedBytes.h)
 //     sum.with_mut(arms...)   Option and Result (Choice.h) and OneOf (OneOf.h)
