@@ -213,14 +213,20 @@ template <class Op>
     }
 }
 
-// The plain view of an input or of the output.
+// The plain view of an input or of the output.  The output is a unique view
+// that the caller holds to write, so it gives the view of T.  A unique view
+// that comes as an input is read only, so it gives the view of T const.
 template <class T, std::size_t Rank>
 [[nodiscard]] constexpr StridedView<T, Rank> plain_view_of_(StridedView<T, Rank> const& view) noexcept {
     return view;
 }
 template <class T, std::size_t Rank, class Brand>
-[[nodiscard]] constexpr StridedView<T, Rank> plain_view_of_(StridedViewMut<T, Rank, Brand> const& view) noexcept {
-    return strided_view_of_(StridedDoor::key(), view);
+[[nodiscard]] constexpr StridedView<T, Rank> plain_view_of_(StridedViewMut<T, Rank, Brand>& view) noexcept {
+    return view.view();
+}
+template <class T, std::size_t Rank, class Brand>
+[[nodiscard]] constexpr StridedView<T const, Rank> plain_view_of_(StridedViewMut<T, Rank, Brand> const& view) noexcept {
+    return view.view();
 }
 
 // True when the type proves that the input names a run of a frame other than
@@ -358,8 +364,8 @@ plan_pointwise_(std::index_sequence<Is...> /*inputs*/, bool const (&apart)[sizeo
     using Lanes = StridedLanes<Rank>;
     constexpr std::size_t views = 1 + sizeof...(Es);
     using Views = std::make_index_sequence<views>;
-    Lanes const& shape = strided_lanes_of_(StridedDoor::key(), target);
-    Lanes const lanes[views] = {shape, strided_lanes_of_(StridedDoor::key(), sources)...};
+    Lanes const& shape = strided_lanes_of_(target);
+    Lanes const lanes[views] = {shape, strided_lanes_of_(sources)...};
     PointwisePlan<views, Lanes::capacity> planned{};
     if consteval {
         // A constant evaluation reads no address as a number, so it takes
@@ -367,12 +373,11 @@ plan_pointwise_(std::index_sequence<Is...> /*inputs*/, bool const (&apart)[sizeo
         planned.is_shared = true;
     } else {
         if constexpr (sizeof...(Es) > 0) {
-            T const* const out = strided_first_of_(StridedDoor::key(), target);
+            T const* const out = strided_first_of_(target);
             auto const relate = [&](bool is_apart, auto const& source) noexcept {
                 PointwiseRelation const relation =
                     is_apart ? PointwiseRelation::Disjoint
-                             : relation_of_(out, shape, strided_first_of_(StridedDoor::key(), source),
-                                            strided_lanes_of_(StridedDoor::key(), source));
+                             : relation_of_(out, shape, strided_first_of_(source), strided_lanes_of_(source));
                 planned.is_shared = planned.is_shared || relation == PointwiseRelation::Shared;
                 planned.is_restrict = planned.is_restrict && relation == PointwiseRelation::Disjoint;
             };
@@ -1438,42 +1443,37 @@ write_pointwise_(Op const& op, std::index_sequence<Is...> sequence, bool const (
     using Lanes = StridedLanes<Rank>;
     constexpr std::size_t views = 1 + sizeof...(Es);
     constexpr bool is_lane_op = LaneOpOf<Op, T, std::remove_const_t<Es>...>;
-    Lanes const& shape = strided_lanes_of_(StridedDoor::key(), target);
-    if (!(same_sizes_(shape, strided_lanes_of_(StridedDoor::key(), sources)) && ...)) return err(ShapeMismatch{});
+    Lanes const& shape = strided_lanes_of_(target);
+    if (!(same_sizes_(shape, strided_lanes_of_(sources)) && ...)) return err(ShapeMismatch{});
     std::size_t const count = target.count();
     if (count == 0) return Unit{};
-    T* const out = strided_first_of_(StridedDoor::key(), target);
+    T* const out = strided_first_of_(target);
     PointwisePlan<views, Lanes::capacity> const planned = plan_pointwise_(sequence, apart, target, sources...);
     WalkPlan<views, Lanes::capacity> const& plan = planned.plan;
 
     if (planned.is_shared) {
         if constexpr (is_lane_op) {
             LaneStep<Op, T> step{op};
-            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
-                                       strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out, strided_first_of_(sources)...);
         } else {
             ScalarStep<Op, T> step{op};
-            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
-                                       strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out, strided_first_of_(sources)...);
         }
         return Unit{};
     }
     if constexpr (is_lane_op) {
         if (plan.rank == 0) {
             LaneStep<Op, T> step{op};
-            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
-                                       strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out, strided_first_of_(sources)...);
         } else {
-            run_lanes_(op, plan, out, strided_first_of_(StridedDoor::key(), sources)...);
+            run_lanes_(op, plan, out, strided_first_of_(sources)...);
         }
     } else {
         if (plan.rank == 0) {
             ScalarStep<Op, T> step{op};
-            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out,
-                                       strided_first_of_(StridedDoor::key(), sources)...);
+            run_walk_<WalkRows::Fixed>(step, sequence, plan, count, out, strided_first_of_(sources)...);
         } else {
-            run_scalar_plan_(op, sequence, plan, planned.is_restrict, out,
-                             strided_first_of_(StridedDoor::key(), sources)...);
+            run_scalar_plan_(op, sequence, plan, planned.is_restrict, out, strided_first_of_(sources)...);
         }
     }
     return Unit{};

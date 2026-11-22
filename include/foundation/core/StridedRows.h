@@ -426,8 +426,8 @@ walk_rows_(Body& body, std::index_sequence<Is...> sequence, bool const (&apart)[
            StridedView<T, Rank> const& target, StridedView<Es, Rank> const&... sources) noexcept {
     using Lanes = StridedLanes<Rank>;
     constexpr std::size_t views = 1 + sizeof...(Es);
-    Lanes const& shape = strided_lanes_of_(StridedDoor::key(), target);
-    if (!(same_sizes_(shape, strided_lanes_of_(StridedDoor::key(), sources)) && ...)) return err(ShapeMismatch{});
+    Lanes const& shape = strided_lanes_of_(target);
+    if (!(same_sizes_(shape, strided_lanes_of_(sources)) && ...)) return err(ShapeMismatch{});
     if (target.count() == 0) return Unit{};
     PointwisePlan<views, Lanes::capacity> planned = plan_pointwise_(sequence, apart, target, sources...);
     // THE TILES: a plan with no shared input whose out and an input read
@@ -453,17 +453,16 @@ walk_rows_(Body& body, std::index_sequence<Is...> sequence, bool const (&apart)[
     for (std::size_t view = 0; view < views; ++view) {
         reads[view] = row_read_of_(plan.strides[view][inner]);
     }
-    T* const out = strided_first_of_(StridedDoor::key(), target);
+    T* const out = strided_first_of_(target);
     choose_row_reads_<0, views>(
         reads, [&]<RowRead OutRead, RowRead... InReads>(RowReads<OutRead, InReads...> chosen) noexcept {
             if constexpr (Lanes::capacity >= 2 && OutRead == RowRead::Unit && ((InReads == RowRead::Strided) || ...)) {
                 if (is_tiled) {
-                    run_row_tiles_<Walk>(chosen, sequence, body, plan, tile_axis, out,
-                                         strided_first_of_(StridedDoor::key(), sources)...);
+                    run_row_tiles_<Walk>(chosen, sequence, body, plan, tile_axis, out, strided_first_of_(sources)...);
                     return;
                 }
             }
-            run_rows_<Walk>(chosen, sequence, body, plan, out, strided_first_of_(StridedDoor::key(), sources)...);
+            run_rows_<Walk>(chosen, sequence, body, plan, out, strided_first_of_(sources)...);
         });
     return Unit{};
 }

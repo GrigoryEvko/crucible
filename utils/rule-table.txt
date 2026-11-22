@@ -979,7 +979,6 @@ witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedE
 # cursor come only from mint_strided_scope, so no coordinates become an index
 # of a scope.
 witness <foundation/core/Strided.h> private | foundation::core::StridedView<int, 2> | foundation::core::StridedView<int, 2>{forge::rvalue<int*>(), forge::rvalue<foundation::core::detail::StridedLanes<2>>()}
-witness <foundation/core/Strided.h> private | foundation::core::detail::StridedKey | foundation::core::detail::StridedKey{}
 witness <foundation/core/Strided.h> private | foundation::core::StridedIndex<2, forge::brand> | foundation::core::StridedIndex<2, forge::brand>{forge::rvalue<foundation::core::detail::StridedCoordinates<2>>()}
 witness <foundation/core/Strided.h> private | foundation::core::BrandedStridedView<int, 2, forge::brand> | foundation::core::BrandedStridedView<int, 2, forge::brand>{forge::rvalue<foundation::core::StridedView<int, 2>>()}
 witness <foundation/core/Strided.h> private | foundation::core::detail::StridedIndexRange<2, forge::brand> | foundation::core::detail::StridedIndexRange<2, forge::brand>{forge::rvalue<foundation::core::detail::StridedCoordinates<2>>(), forge::rvalue<unsigned long>()}
@@ -987,7 +986,7 @@ witness <foundation/core/Strided.h> private | foundation::core::detail::StridedI
 # A unique strided view comes only from mint_strided_view_mut, which consumes
 # the ViewMut of a frame and refuses an overlap, so no plain view becomes the
 # one writer of its elements.
-witness <foundation/core/Strided.h> no-match | foundation::core::StridedViewMut<int, 2, forge::brand> | foundation::core::StridedViewMut<int, 2, forge::brand>{forge::rvalue<foundation::core::StridedView<int, 2>>()}
+witness <foundation/core/Strided.h> private | foundation::core::StridedViewMut<int, 2, forge::brand> | foundation::core::StridedViewMut<int, 2, forge::brand>{forge::rvalue<foundation::core::StridedView<int, 2>>()}
 # A row, its index, its count, its steps, the offset of a view and a view of a
 # walk of rows come only from mint_strided_rows, so no number becomes a
 # position or an offset of a walk, and no pointer becomes a view of it.

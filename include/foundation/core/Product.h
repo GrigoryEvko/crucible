@@ -155,15 +155,15 @@ template <class T, std::size_t Rank, class U, std::size_t OtherRank>
                                     StridedView<U, OtherRank> const& second) noexcept {
     if (first.count() == 0 || second.count() == 0) return false;
     auto const range_end = [](auto const& view, std::uintptr_t low) noexcept {
-        auto const& lanes = strided_lanes_of_(StridedDoor::key(), view);
+        auto const& lanes = strided_lanes_of_(view);
         std::size_t span = 0;
         for (std::size_t axis = 0; axis < lanes.rank(); ++axis) {
             span += (lanes.sizes[axis] - 1) * lanes.strides[axis];
         }
         return low + (span + 1) * sizeof(typename std::remove_cvref_t<decltype(view)>::element_type);
     };
-    std::uintptr_t const first_low = __builtin_bit_cast(std::uintptr_t, strided_first_of_(StridedDoor::key(), first));
-    std::uintptr_t const second_low = __builtin_bit_cast(std::uintptr_t, strided_first_of_(StridedDoor::key(), second));
+    std::uintptr_t const first_low = __builtin_bit_cast(std::uintptr_t, strided_first_of_(first));
+    std::uintptr_t const second_low = __builtin_bit_cast(std::uintptr_t, strided_first_of_(second));
     return first_low < range_end(second, second_low) && second_low < range_end(first, first_low);
 }
 
@@ -355,9 +355,9 @@ template <class T, int Lanes>
 [[nodiscard]] Result<Unit, ProductError> multiply_by_tree_(StridedView<T, 2> const& out,
                                                            StridedView<T const, 2> const& left,
                                                            StridedView<T const, 2> const& right) noexcept {
-    auto const& out_lanes = strided_lanes_of_(StridedDoor::key(), out);
-    auto const& left_lanes = strided_lanes_of_(StridedDoor::key(), left);
-    auto const& right_lanes = strided_lanes_of_(StridedDoor::key(), right);
+    auto const& out_lanes = strided_lanes_of_(out);
+    auto const& left_lanes = strided_lanes_of_(left);
+    auto const& right_lanes = strided_lanes_of_(right);
     std::size_t const rows = out_lanes.sizes[0];
     std::size_t const columns = out_lanes.sizes[1];
     std::size_t const depth = left_lanes.sizes[1];
@@ -368,7 +368,7 @@ template <class T, int Lanes>
     if (depth != 0 && (shares_elements_(out, left) || shares_elements_(out, right))) {
         return err(ProductError::OutputOverlapsInput);
     }
-    T* const target = strided_first_of_(StridedDoor::key(), out);
+    T* const target = strided_first_of_(out);
     std::size_t const out_row = out_lanes.strides[0];
     std::size_t const out_column = out_lanes.strides[1];
     if (depth == 0) {
@@ -379,8 +379,8 @@ template <class T, int Lanes>
         }
         return Unit{};
     }
-    T const* const left_first = strided_first_of_(StridedDoor::key(), left);
-    T const* const right_first = strided_first_of_(StridedDoor::key(), right);
+    T const* const left_first = strided_first_of_(left);
+    T const* const right_first = strided_first_of_(right);
     std::size_t const left_row = left_lanes.strides[0];
     std::size_t const left_step = left_lanes.strides[1];
     std::size_t const right_step = right_lanes.strides[0];
@@ -421,14 +421,14 @@ template <class T, int Lanes>
 template <class T, int Lanes>
 [[nodiscard]] Result<Unit, ProductError> sum_strided_runs_by_tree_(StridedView<T, 1> const& out,
                                                                    StridedView<T const, 2> const& runs) noexcept {
-    auto const& out_lanes = strided_lanes_of_(StridedDoor::key(), out);
-    auto const& run_lanes = strided_lanes_of_(StridedDoor::key(), runs);
+    auto const& out_lanes = strided_lanes_of_(out);
+    auto const& run_lanes = strided_lanes_of_(runs);
     std::size_t const outputs = out_lanes.sizes[0];
     std::size_t const count = run_lanes.sizes[0];
     if (run_lanes.sizes[1] != outputs) return err(ProductError::ShapeMismatch);
     if (outputs == 0) return Unit{};
     if (count != 0 && shares_elements_(out, runs)) return err(ProductError::OutputOverlapsInput);
-    T* const target = strided_first_of_(StridedDoor::key(), out);
+    T* const target = strided_first_of_(out);
     std::size_t const out_step = out_lanes.strides[0];
     if (count == 0) {
         for (std::size_t output = 0; output < outputs; ++output) {
@@ -436,7 +436,7 @@ template <class T, int Lanes>
         }
         return Unit{};
     }
-    T const* const first = strided_first_of_(StridedDoor::key(), runs);
+    T const* const first = strided_first_of_(runs);
     std::size_t const run_step = run_lanes.strides[0];
     std::size_t const element_step = run_lanes.strides[1];
     if (count == 1 || run_step == 1) {
@@ -502,8 +502,7 @@ template <int Lanes, class T, std::size_t Rank, class Brand>
 [[nodiscard]] Result<Unit, ProductError>
 multiply_by_tree_in_lanes(StridedViewMut<T, Rank, Brand>& out, std::type_identity_t<LeftFactorOf<T>> const& left,
                           std::type_identity_t<RightFactorOf<T>> const& right) noexcept {
-    return detail::multiply_by_tree_<T, Lanes>(strided_view_of_(detail::StridedDoor::key(), out), left.value(),
-                                               right.value());
+    return detail::multiply_by_tree_<T, Lanes>(out.view(), left.value(), right.value());
 }
 
 // The matrix product with the lanes of one register of the target.
@@ -512,8 +511,7 @@ template <class T, std::size_t Rank, class Brand>
 [[nodiscard]] Result<Unit, ProductError>
 multiply_by_tree(StridedViewMut<T, Rank, Brand>& out, std::type_identity_t<LeftFactorOf<T>> const& left,
                  std::type_identity_t<RightFactorOf<T>> const& right) noexcept {
-    return detail::multiply_by_tree_<T, simd::native_lanes<T>>(strided_view_of_(detail::StridedDoor::key(), out),
-                                                               left.value(), right.value());
+    return detail::multiply_by_tree_<T, simd::native_lanes<T>>(out.view(), left.value(), right.value());
 }
 
 // The tree sum of the runs of runs, element by element, with Lanes lanes in
@@ -526,7 +524,7 @@ template <int Lanes, class T, std::size_t Rank, class Brand>
 [[nodiscard]] Result<Unit, ProductError>
 sum_strided_runs_by_tree_in_lanes(StridedViewMut<T, Rank, Brand>& out,
                                   std::type_identity_t<StridedView<T const, 2>> runs) noexcept {
-    return detail::sum_strided_runs_by_tree_<T, Lanes>(strided_view_of_(detail::StridedDoor::key(), out), runs);
+    return detail::sum_strided_runs_by_tree_<T, Lanes>(out.view(), runs);
 }
 
 // The sum of runs with the lanes of one register of the target.

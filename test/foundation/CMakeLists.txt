@@ -4415,6 +4415,15 @@ foundation_neg_compile_test(neg_core_strided_sizes_of_temporary
 foundation_neg_compile_test(neg_core_strided_dynamic_to_static
   "conversion from .StridedView<\\[\\.\\.\\.\\],18446744073709551615>."
   "to non-scalar type .StridedView<\\[\\.\\.\\.\\],2>. requested")
+# A strided view and a unique strided view of raw parts check nothing, so no
+# unit of the base reaches their constructors through a key: only the mints
+# and the operations of a view make one.
+foundation_neg_compile_test(neg_core_strided_view_forged_through_key
+  ".foundation::core::detail::StridedDoor. has not been declared"
+  "no matching function for call to .foundation::core::StridedView<int, 1>::StridedView\\(<brace-enclosed initializer list>\\).")
+foundation_neg_compile_test(neg_core_strided_view_mut_forged_through_key
+  ".foundation::core::detail::StridedDoor. has not been declared"
+  "no matching function for call to .foundation::core::StridedViewMut<int, 2, forge::brand>::StridedViewMut\\(<brace-enclosed initializer list>\\).")
 
 # The door of a unique strided view takes only the ViewMut of a frame, and a
 # unique view does not copy.

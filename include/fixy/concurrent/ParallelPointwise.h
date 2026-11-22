@@ -127,10 +127,9 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
         using Sequence = std::index_sequence_for<Inputs...>;
         core::Index<Rank> const first_axis{core::index<0>()};
         core::StridedView<T, Rank> const whole = core::detail::plain_view_of_(out);
-        core::detail::StridedLanes<Rank> const& shape = strided_lanes_of_(core::detail::StridedDoor::key(), whole);
+        core::detail::StridedLanes<Rank> const& shape = core::detail::strided_lanes_of_(whole);
         bool const is_same_shape =
-            (core::detail::same_sizes_(
-                 shape, strided_lanes_of_(core::detail::StridedDoor::key(), core::detail::plain_view_of_(inputs)))
+            (core::detail::same_sizes_(shape, core::detail::strided_lanes_of_(core::detail::plain_view_of_(inputs)))
              && ...);
         std::size_t const positions = whole.size(first_axis);
         WorkBudget const budget = detail::pointwise_budget_<Inputs...>(whole);
