@@ -60,6 +60,19 @@
 //   of a niche.  A store of a full Option whose payload gives empty_word ends
 //   the process, because the cell would read the Option back as empty.
 //
+// THE WORD OF A STATED PAYLOAD
+//   The niche of a payload of the base can state that no door builds its
+//   empty value (THE CHECK OF THE STATEMENT of foundation/core/Choice.h).  Its
+//   protocol can then state that only the empty value of the niche gives
+//   empty_word:
+//
+//     static constexpr niche_statement is_empty_word_of_niche{};
+//
+//   The gate of the protocol holds the statement: the mark of Choice.h, in a
+//   header of the base, for a payload whose niche states its fact.
+//   No door builds the empty value, so no payload gives empty_word, and the
+//   store of a full Option of such a payload tests no word.
+//
 // THE CELL OF ONE WRITER
 //   Atomic<T, SoleWriter<Role, Brand>> names its writer in its type, and
 //   each write takes the proof of that writer:
@@ -203,6 +216,26 @@ concept AtomicWordType = AtomicBitsValue<W> && (std::is_integral_v<W> || std::is
 template <class T>
 concept HasAtomicWord = !::foundation::linear::carries_annotation(^^atomic_word<T>, ^^UndeclaredWord);
 
+// The statement of THE WORD OF A STATED PAYLOAD in the protocol of a value.
+enum class WordStatement : unsigned char {
+    absent,  // the protocol states nothing, and the cell tests the word
+    holds,  // a niche_statement of a header of the base, for a payload whose niche states its fact
+    refused,  // each other statement, which the gate of the protocol refuses
+};
+
+// The statement of THE WORD OF A STATED PAYLOAD in the protocol of the value
+// that the type reflects.  The caller makes sure that the value declares a
+// word.  The function is no template, so no unit can specialize what it
+// reads.  Complexity: linear in the members of the protocol and the niche.
+consteval WordStatement word_statement_of(std::meta::info type) {
+    std::meta::info const statement =
+        ::foundation::reflect::member_named_in(std::meta::substitute(^^atomic_word, {type}),
+                                               std::meta::access_context::unprivileged(), "is_empty_word_of_niche");
+    if (statement == std::meta::info{}) return WordStatement::absent;
+    bool const is_niche_stated = std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {type}));
+    return is_niche_stated && is_base_statement(statement) ? WordStatement::holds : WordStatement::refused;
+}
+
 // The members of a word protocol.  empty_word is a constant of the word
 // type.  from_word takes the key of T, and no from_word takes the word
 // alone.  The cell copies the value out on each read and destroys no value.
@@ -216,7 +249,7 @@ concept AtomicWordMembers =
            { atomic_word<T>::from_word(key, word) } noexcept -> std::same_as<T>;
        } && !requires(typename atomic_word<T>::word_type word) {
            atomic_word<T>::from_word(word);
-       } && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_constructible_v<T>;
+       } && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_constructible_v<T> && word_statement_of(^^T) != WordStatement::refused;
 
 // An Option whose payload declares a word.  The cell derives the word of the
 // Option from the word of the payload.  IsOption of Choice.h holds for an
@@ -358,12 +391,17 @@ class atomic_codec {
 
     // The word of the payload of a full Option.  The empty word would read
     // back as an empty Option, so a protocol that gives it ends the process.
+    // A protocol of THE WORD OF A STATED PAYLOAD gives the empty word only for
+    // the empty value of the niche, which no door builds, so its payload gets
+    // no test.
     template <class Payload>
     [[nodiscard]] static constexpr storage_type payload_word_(Payload const& payload) noexcept {
         storage_type const word = atomic_word<Payload>::to_word(payload);
-        if (word == atomic_word<Payload>::empty_word) [[unlikely]] {
-            fatal("atomic_word: to_word gave empty_word for the payload of a full Option, and the cell would read the "
-                  "Option back as empty");
+        if constexpr (word_statement_of(^^Payload) != WordStatement::holds) {
+            if (word == atomic_word<Payload>::empty_word) [[unlikely]] {
+                fatal("atomic_word: to_word gave empty_word for the payload of a full Option, and the cell would read "
+                      "the Option back as empty");
+            }
         }
         return word;
     }

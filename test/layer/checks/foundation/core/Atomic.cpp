@@ -195,7 +195,7 @@ inline constexpr TextView atomic_names{
     "atomic_word atomic_word_key load_acquire store_release exchange_acq_rel cas_acq_rel cas_weak_acq_rel "
     "fetch_add_acq_rel fetch_sub_acq_rel fetch_or_acq_rel fetch_and_acq_rel fetch_xor_acq_rel fetch_max_acq_rel "
     "fetch_min_acq_rel fetch_add_relaxed fetch_sub_relaxed fetch_max_relaxed fetch_min_relaxed load_owned add read "
-    "value_type observed brand_type word_type empty_word to_word from_word"};
+    "value_type observed brand_type word_type empty_word to_word from_word is_empty_word_of_niche"};
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<int>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<std::uint64_t>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<Pair>);
@@ -468,6 +468,15 @@ struct atomic_word<detail::atomic_checks::Sealed<7>>
     }
 };
 
+// A protocol states that only the empty value of the niche gives the empty
+// word, for a value whose niche states nothing (THE WORD OF A STATED
+// PAYLOAD).
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<8>>
+    : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<8>> {
+    static constexpr bool is_empty_word_of_niche = true;
+};
+
 // Complete protocols of a value with a destructor that is not trivial, and
 // of a value with bits of its own.
 template <>
@@ -491,6 +500,12 @@ static_assert(AtomicWordProtocol<Sealed<5>> && AtomicValue<Sealed<5>>);
 // takes the key by value.
 static_assert(!AtomicValue<Sealed<0>> && !AtomicValue<Sealed<1>> && !AtomicValue<Sealed<2>>);
 static_assert(!AtomicValue<Sealed<3>> && !AtomicValue<Sealed<4>> && !AtomicValue<Sealed<7>>);
+
+// A protocol that states THE WORD OF A STATED PAYLOAD for a value whose niche
+// states nothing is refused, and a protocol that states nothing keeps the
+// test of the word.
+static_assert(word_statement_of(^^Sealed<8>) == WordStatement::refused && !AtomicValue<Sealed<8>>);
+static_assert(word_statement_of(^^Seat) == WordStatement::absent);
 
 // A value whose destructor is not trivial, a value with bits of its own, and
 // an Option of a value with a word give no word of their own.  A value that

@@ -2563,6 +2563,20 @@ foundation_neg_compile_test(neg_core_option_niche_statement_inherited
   "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = InheritedSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_inherited APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+# A word protocol states that only the empty value of the niche gives the
+# empty word (THE WORD OF A STATED PAYLOAD of foundation/core/Atomic.h).  The
+# gate refuses the statement for a value whose niche states nothing, and a
+# statement that is not a niche_statement.
+foundation_neg_compile_test(neg_core_atomic_word_statement_unstated_niche
+  "required for the satisfaction of .AtomicWordMembers<T>. \\[with T = UnstatedSeat\\]"
+  "the expression .word_statement_of\\(.*\\(\\^\\^ T\\) != foundation::core::detail::WordStatement::refused \\[with T = UnstatedSeat\\]. evaluated to .false.")
+set_property(TEST neg_core_atomic_word_statement_unstated_niche APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_atomic_word_statement_not_bool
+  "required for the satisfaction of .AtomicWordProtocol<T>. \\[with T = CountedSeat\\]"
+  "the expression .word_statement_of\\(.*\\(\\^\\^ T\\) != foundation::core::detail::WordStatement::refused \\[with T = CountedSeat\\]. evaluated to .false.")
+set_property(TEST neg_core_atomic_word_statement_not_bool APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_niche_ref_forge
   "no matching function for call to .foundation::core::niche<foundation::core::Ref<int, ForgeBrand> >::empty\\(\\)."
   "candidate expects 1 argument, 0 provided")

@@ -567,11 +567,14 @@ struct niche<Ref<T, Brand>> {
 // Only a cell makes the key of from_word, and a cell holds only words that
 // to_word gave.  So from_word lends the object of the word again, with the
 // brand of the Ref, through the door of this file.  The door takes no key of
-// the Atomic family.
+// the Atomic family.  The word of a Ref is the address of its object, and
+// only the null Ref of the niche holds the null pointer, so the protocol
+// states THE WORD OF A STATED PAYLOAD of Atomic.h.
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 struct atomic_word<Ref<T, Brand>> {
     using word_type = T*;
     static constexpr word_type empty_word = nullptr;
+    static constexpr niche_statement is_empty_word_of_niche{};
 
     [[nodiscard]] static constexpr word_type to_word(Ref<T, Brand> const& ref) noexcept {
         return __builtin_addressof(*ref);

@@ -139,6 +139,12 @@ template <class O>
 concept WritesRefInPlace = requires(O& option) { option.with_mut([](auto) noexcept {}, [] noexcept {}); };
 static_assert(WritesRefInPlace<Option<Ref<int, CheckBrand>>>);
 
+// The word protocol of a Ref states that only the null Ref of the niche gives
+// the empty word (THE WORD OF A STATED PAYLOAD of foundation/core/Atomic.h),
+// so the store of a full Option of a Ref tests no word.
+static_assert(detail::word_statement_of(^^Ref<int, CheckBrand>) == detail::WordStatement::holds);
+static_assert(AtomicValue<Option<Ref<int, CheckBrand>>>);
+
 // A Ref copies as a pointer copies, and the seal makes it not trivially
 // copyable, so std::bit_cast builds no Ref from the bytes of an address.
 static_assert(std::is_trivially_copy_constructible_v<Ref<int, CheckBrand>>);
