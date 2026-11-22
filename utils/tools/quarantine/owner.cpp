@@ -3135,7 +3135,14 @@ void judge_deduced_member(const Held& held, tree member, tree object_type, locat
     }
     tree scope = CP_DECL_CONTEXT(member);
     tree class_decl = scope != NULL_TREE && TYPE_P(scope) ? TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(scope)) : NULL_TREE;
-    if (class_decl == NULL_TREE || !may_be_held(class_decl)) {
+    tree outer = class_decl != NULL_TREE ? CP_DECL_CONTEXT(class_decl) : NULL_TREE;
+    // A door kind reads a member of its head class, or of a class that its
+    // head namespace holds directly.  The detail kind reads a member of each
+    // class that a detail namespace holds.
+    bool is_near_head = class_decl != NULL_TREE
+                     && (is_head_name(DECL_NAME(class_decl))
+                         || (outer != NULL_TREE && DECL_P(outer) && is_head_name(DECL_NAME(outer))));
+    if (class_decl == NULL_TREE || (!is_near_head && !may_be_held(class_decl))) {
         if (DECL_UID(member) < kVerdictSlots) {
             first_test.member_verdicts[DECL_UID(member)] = kVerdictFree;
         }
@@ -3145,7 +3152,7 @@ void judge_deduced_member(const Held& held, tree member, tree object_type, locat
     if (held.row == nullptr) {
         return;
     }
-    if (is_door_kind(held.row->kind)) {
+    if (is_door_kind(held.row->kind) && is_near_head) {
         record_held(held, "", location, current_function_decl, is_late_event());
     } else if (held.row->kind == Kind::detail_use) {
         judge_deduced_member(held, member, object_type, location);
