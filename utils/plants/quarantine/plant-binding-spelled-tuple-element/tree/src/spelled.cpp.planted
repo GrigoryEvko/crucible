@@ -1,0 +1,13 @@
+// A quarantined unit that spells std::tuple_element of a family type.  The
+// admit row of std::tuple_element holds only the base, so the name is a use of
+// std.
+#include <fixy/Pair.h>
+
+namespace planted {
+
+int spell(int seed) noexcept {
+    std::tuple_element<0, ::fixy::Pair>::type value = seed;
+    return value;
+}
+
+}  // namespace planted

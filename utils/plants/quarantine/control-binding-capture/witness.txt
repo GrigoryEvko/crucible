@@ -1,0 +1,10 @@
+# A structured binding of a family type, and each capture of a binding by a
+# lambda, give no finding: the compiler makes the type of the binding and of
+# its capture proxy, and the source spells no std name.  The walk of a body
+# reads no type of a capture proxy (expression.cpp, visit_body_node).
+
+compile report src/capture.cpp
+exit report pass
+
+compile error src/capture.cpp mode=error out=no
+exit error pass

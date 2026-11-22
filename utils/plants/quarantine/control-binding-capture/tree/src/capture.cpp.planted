@@ -1,0 +1,36 @@
+// A quarantined unit with a structured binding of a family type, and each
+// capture of a binding: by reference, by a generic lambda, by value and in a
+// nested lambda.  The type of a binding and of a capture proxy is the type
+// that the compiler makes, std::tuple_element<I, fixy::Pair>::type, and the
+// source spells no std name.
+#include <fixy/Pair.h>
+
+namespace planted {
+
+int bind(int seed) noexcept {
+    auto [first, second] = ::fixy::Pair{seed, seed};
+    return first + second;
+}
+
+int capture(int seed) noexcept {
+    auto [first, second] = ::fixy::Pair{seed, seed};
+    auto read = [&first, &second]() noexcept { return first + second; };
+    return read();
+}
+
+int capture_generic(int seed) noexcept {
+    auto [first, second] = ::fixy::Pair{seed, seed};
+    auto read = [&first, &second](auto scale) noexcept { return (first + second) * scale; };
+    return read(2);
+}
+
+int capture_by_value(int seed) noexcept {
+    auto [first, second] = ::fixy::Pair{seed, seed};
+    auto read = [first, second]() noexcept {
+        auto inner = [&first]() noexcept { return first; };
+        return inner() + second;
+    };
+    return read();
+}
+
+}  // namespace planted

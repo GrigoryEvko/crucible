@@ -1,0 +1,14 @@
+# The rule table of this plant.  The headers of include/fixy/ are base files
+# that give the tuple protocol of a family type, as the admit row of
+# std::tuple_element for include/foundation/core/ gives it in the tree.  Each
+# file of src/ is quarantined.
+
+layer low 0 include/fixy/
+
+allow low <cstddef>
+allow low <utility>
+
+admit std::tuple_size | a compile-time trait of the tuple protocol
+admit std::tuple_element in include/fixy/ | the tuple protocol for the structured bindings of a family type
+
+quarantine src/

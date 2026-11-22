@@ -1,0 +1,37 @@
+// A base header with a family type that gives the tuple protocol of the
+// structured bindings, as Record of foundation/core/Record.h gives it.
+#pragma once
+
+#include <cstddef>
+#include <utility>
+
+namespace fixy {
+
+class Pair {
+    int first_ = 0;
+    int second_ = 0;
+
+public:
+    constexpr Pair(int first, int second) noexcept : first_{first}, second_{second} {}
+
+    template <std::size_t Position>
+    [[nodiscard]] constexpr int const& get() const noexcept {
+        if constexpr (Position == 0) {
+            return first_;
+        } else {
+            return second_;
+        }
+    }
+};
+
+}  // namespace fixy
+
+template <>
+struct std::tuple_size<::fixy::Pair> {
+    static constexpr std::size_t value = 2;
+};
+
+template <std::size_t Position>
+struct std::tuple_element<Position, ::fixy::Pair> {
+    using type = int const;
+};

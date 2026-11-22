@@ -1,0 +1,11 @@
+# A quarantined unit spells std::tuple_element of a family type.  The admit
+# row of std::tuple_element holds only the base, so the spelled name is a
+# finding, also where a capture of a binding gives none
+# (control-binding-capture).
+
+compile report src/spelled.cpp
+exit report pass
+finding report quarantine std-entity src/spelled.cpp:9:47 | std::tuple_element::type
+
+compile error src/spelled.cpp mode=error out=no errors=report
+exit error fail

@@ -1575,6 +1575,13 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
     switch (TREE_CODE(node)) {
         case DECL_EXPR:
             check_local_decl(DECL_EXPR_DECL(node), walk);
+            // The front end walks the type of an artificial local.  The type
+            // of a capture proxy is the type that the compiler makes for the
+            // capture, such as std::tuple_element<I, R>::type& for a captured
+            // binding of a Record, and the source spells no type there.
+            if (is_capture_proxy(DECL_EXPR_DECL(node))) {
+                *walk_subtrees = 0;
+            }
             return NULL_TREE;
         case BIND_EXPR:
             for (tree variable = BIND_EXPR_VARS(node); variable != NULL_TREE; variable = DECL_CHAIN(variable)) {
