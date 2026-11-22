@@ -282,6 +282,34 @@ private:
 };
 static_assert(Synchronized<KeyedCount>);
 
+// THE NESTED CLASSES, the control of a borrow.  A nested probe holds a
+// reference to the count of hits, which two threads can write, so its door
+// needs no proof, also beside the plain part of the class.  A reference to
+// the plain part refuses (the fixture neg_synchronized_nested_part_reference).
+class[[= synchronized{}]] CountsHits {
+public:
+    class Probe {
+        ::foundation::core::Atomic<int>& hits_;
+
+        explicit Probe(::foundation::core::Atomic<int>& hits) noexcept : hits_{hits} {}
+        friend class CountsHits;
+
+    public:
+        void hit() noexcept { static_cast<void>(hits_.fetch_add_acq_rel(1)); }
+    };
+
+    CountsHits() = default;
+    CountsHits(CountsHits const&) = delete("a count of two threads does not copy");
+    CountsHits& operator=(CountsHits const&) = delete("a count of two threads does not copy");
+
+    [[nodiscard]] int limit() const noexcept { return limit_; }
+
+private:
+    ::foundation::core::Atomic<int> hits_{0};
+    int limit_ = 8;
+};
+static_assert(Synchronized<CountsHits>);
+
 // THE BUILD OF A TOKEN.  A key that each thread can build is open: an empty
 // aggregate, an aggregate whose one closed part has a default member
 // initializer, a class with a public constructor template, and a class that

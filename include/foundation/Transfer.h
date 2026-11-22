@@ -189,7 +189,9 @@
 //     when the namespace declares it too, with no query that tells a friend
 //     apart.  So the kind synchronized-friend of the rule proof-routes of the
 //     quarantine plugin refuses each friend function of a class that states
-//     synchronized{}.  One class has its doors exempt (THE EXEMPTION).
+//     synchronized{}, and each friend class that can reach the class.  The
+//     check reads the nested classes (THE NESTED CLASSES).  One class has its
+//     doors exempt (THE EXEMPTION).
 //
 // THE PROOF OF A DOOR
 //     A parameter is a proof of the class when its bare type is a token and
@@ -230,6 +232,38 @@
 //     when it is not Shareable, so no other thread copies it out of a
 //     reference to const.  A walk deeper than closed_walk_depth levels counts
 //     the class as open.
+//
+// THE NESTED CLASSES
+//     A nested class of a class that states synchronized{}, such as the
+//     handle of a channel, can write the plain parts of the class, so the
+//     check reads its doors too, at each depth.  A door of a nested class is
+//     each public or protected member function or member function template
+//     that is no destructor and not deleted, and each such constructor other
+//     than a copy and a move constructor.  The door can write the class when
+//     the nested class can write it, through a base, a member or the first
+//     type argument of a class that refers to an object, or when a parameter
+//     of the door can write it.  A reach through a reference or a pointer to
+//     const writes nothing.  The nested class also writes the class when it
+//     holds a borrow that is not const, through a reference, a pointer or a
+//     class that refers to an object, of a part that two threads cannot
+//     write.  Such a borrow can name a plain private part of the class, and
+//     no type tells which object it names.  Such a door holds the rule when the nested class
+//     is a proof holder, when it takes a proof of the class, or when it gives
+//     the token of a claim door.  A const door gets no exemption, because a
+//     pointer, a Ref or a binding of the nested class still writes the class.
+//     A nested class is a proof holder when it is itself a proof of the class,
+//     as the claim of a drain is, or when it holds one by value as its own
+//     member.  A member counts exactly when a door parameter of the same type
+//     would count, and a reference member counts never.  A nested class
+//     template and a base class of a nested class that reaches the class only
+//     through a downcast, such as the base of the pops of a consumer handle,
+//     are not read.
+//
+//     One hole stays open: a guard of a share of an own tag carries authority
+//     and does not copy, so a parameter or a member of it proves a door that
+//     writes plain state, as for a lone token.  But many holders hold a share
+//     at one time.  The door add_shared of the class PermittedCount in the
+//     check file of foundation/permissions/Permission.h plants the hole.
 //
 // THE EXEMPTION
 //     The check does not read the doors of crucible::BackgroundThread.  Nine
@@ -647,6 +681,27 @@ consteval bool refuse_unproven_door() {
 template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
 inline constexpr bool unproven_door_refusal = refuse_unproven_door<Class, Door, Part>();
 
+// The refusal of a door of a nested class with no proof (THE NESTED CLASSES).
+template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
+consteval bool refuse_unproven_nested_door() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states synchronized{} and holds a plain private part, and a door of a nested "
+                  "class of it can write the class, through this or a parameter.  The nested class holds no proof of "
+                  "the class by value, and the door takes no proof and gives no proof of the class, so two threads "
+                  "that call the door can write the part at the same time.  A const door gets no exemption, because "
+                  "a pointer, a Ref or a binding of the nested class still writes the class.  Hold the proof in the "
+                  "nested class by value, or give the door a proof of the class (THE NESTED CLASSES of "
+                  "foundation/Transfer.h).  The next three messages name the class, the door and the first plain "
+                  "part");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Part));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
+inline constexpr bool unproven_nested_door_refusal = refuse_unproven_nested_door<Class, Door, Part>();
+
 // The refusal of a member function template with no specialization for the
 // probe body (THE DOORS OF A SYNCHRONIZED CLASS): the check cannot read its
 // parameters, so it fails closed.
@@ -1002,21 +1057,215 @@ struct DoorFinding {
     return DoorFinding{.verdict = DoorVerdict::unproven};
 }
 
-// Stops the build at the first door of the class that does not hold the rule
-// (THE DOORS OF A SYNCHRONIZED CLASS).  plain names the first plain private
-// part.  The walk is unchecked, because a derived class can call a protected
-// door, and is_door then drops each private member.  Complexity: linear in
-// the members of the class, times the parameters of each door.
-consteval void check_synchronized_doors(std::meta::info type, std::meta::info plain) {
+// True when an object of the type can write the owner (THE NESTED CLASSES):
+// the type is the owner, a reference or a pointer to the owner that is not
+// const, or a class whose base, member or type argument reaches it, read by
+// the walk of foundation/reflect/TypeComponents.h.  A walk deeper than
+// closed_walk_depth levels counts as a reach, so the check fails closed.
+// Complexity: linear in the parts of the type, to closed_walk_depth levels.
+[[nodiscard]] consteval bool can_write_owner(std::meta::info type, std::meta::info owner, int depth) {
     namespace refl = ::foundation::reflect;
-    DoorFinding finding{};
-    const std::meta::info door =
-        refl::find_member(type, std::meta::access_context::unchecked(), [type, &finding](std::meta::info member) {
-            if (!is_door(member)) return false;
-            finding = verdict_of_door(member, type);
-            return finding.verdict != DoorVerdict::proven;
-        });
-    if (door == std::meta::info{}) return;
+    if (depth <= 0) return true;
+    std::meta::info target = std::meta::dealias(type);
+    if (std::meta::is_reference_type(target)) target = std::meta::remove_reference(target);
+    if (std::meta::is_pointer_type(target)) target = std::meta::remove_pointer(target);
+    if (std::meta::is_const_type(target)) return false;
+    const std::meta::info bare = refl::bare_type(target);
+    if (bare == owner) return true;
+    if (!is_class_or_union(bare) || !std::meta::is_complete_type(bare)) return false;
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
+        if (part.was_const) continue;
+        if (part.type == owner || can_write_owner(part.type, owner, depth - 1)) return true;
+    }
+    // A class that refers to or owns the object of its first type argument
+    // states it, as a Ref, a ChannelBinding and a Box do.  Each other type
+    // argument can be a tag or a brand, which names no object.
+    const bool is_first_argument_held = states(bare, ^^refers) || states(bare, ^^refers_unique)
+                                     || states(bare, ^^refers_deep) || states(bare, ^^by_arguments)
+                                     || states(bare, ^^payload_cell);
+    if (!is_first_argument_held || !std::meta::has_template_arguments(bare)) return false;
+    const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
+    if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
+    return arguments.begin()->type == owner || can_write_owner(arguments.begin()->type, owner, depth - 1);
+}
+
+// True when the type names the owner in a part, a base or a type argument,
+// at each depth, so a walk of a property of the type can come back to the
+// check of the owner.  The walk reads each class one time, so the argument
+// of a base such as Pinned, which names the class again, ends the path.  A
+// walk deeper than closed_walk_depth levels counts as a mention.
+// Complexity: linear in the components of the types that the walk reaches,
+// times the scan of the visited list.
+[[nodiscard]] consteval bool mentions_owner_walk(std::meta::info type, std::meta::info owner,
+                                                 ::foundation::reflect::TypeNodeList& visited, int depth) {
+    namespace refl = ::foundation::reflect;
+    if (depth <= 0) return true;
+    std::meta::info target = std::meta::dealias(type);
+    if (std::meta::is_reference_type(target)) target = std::meta::remove_reference(target);
+    if (std::meta::is_pointer_type(target)) target = std::meta::remove_pointer(target);
+    const std::meta::info bare = refl::bare_type(target);
+    if (bare == owner) return true;
+    if (!is_class_or_union(bare)) return false;
+    for (const refl::TypeNode& seen : visited) {
+        if (seen.type == bare) return false;
+    }
+    visited.push_back(refl::TypeNode{bare, true});
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
+        if (mentions_owner_walk(part.type, owner, visited, depth - 1)) return true;
+    }
+    for (const refl::TypeNode& part : refl::argument_components_of(refl::TypeNode{bare, true})) {
+        if (!part.is_value_argument && mentions_owner_walk(part.type, owner, visited, depth - 1)) return true;
+    }
+    return false;
+}
+
+[[nodiscard]] consteval bool mentions_owner(std::meta::info type, std::meta::info owner) {
+    ::foundation::reflect::TypeNodeList visited;
+    return mentions_owner_walk(type, owner, visited, closed_walk_depth);
+}
+
+consteval bool can_write_plain_through(std::meta::info bare, std::meta::info owner, int depth);
+
+// True when an object of the type holds a borrow that is not const, through a
+// reference, a pointer or a class that refers to an object, of a part that
+// two threads cannot write (THE NESTED CLASSES).  A borrow of the owner is a
+// reach of the owner, which can_write_owner reads.  Complexity: linear in the
+// components of the type, to closed_walk_depth levels.
+[[nodiscard]] consteval bool holds_plain_borrow(std::meta::info type, std::meta::info owner, int depth) {
+    namespace refl = ::foundation::reflect;
+    if (depth <= 0) return true;
+    std::meta::info target = std::meta::dealias(type);
+    bool is_borrow = false;
+    if (std::meta::is_reference_type(target)) {
+        target = std::meta::remove_reference(target);
+        is_borrow = true;
+    }
+    if (std::meta::is_pointer_type(target)) {
+        target = std::meta::remove_pointer(target);
+        is_borrow = true;
+    }
+    if (std::meta::is_const_type(target)) return false;
+    const std::meta::info bare = refl::bare_type(target);
+    if (is_borrow) return can_write_plain_through(bare, owner, depth - 1);
+    if (!is_class_or_union(bare) || !std::meta::is_complete_type(bare)) return false;
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
+        if (part.was_const) continue;
+        const bool is_plain = part.was_reference ? can_write_plain_through(part.type, owner, depth - 1)
+                                                 : holds_plain_borrow(part.type, owner, depth - 1);
+        if (is_plain) return true;
+    }
+    const bool is_referred = states(bare, ^^refers) || states(bare, ^^refers_unique) || states(bare, ^^refers_deep);
+    const bool is_owned = states(bare, ^^by_arguments) || states(bare, ^^payload_cell);
+    if ((!is_referred && !is_owned) || !std::meta::has_template_arguments(bare)) return false;
+    const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
+    if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
+    return is_referred ? can_write_plain_through(arguments.begin()->type, owner, depth - 1)
+                       : holds_plain_borrow(arguments.begin()->type, owner, depth - 1);
+}
+
+// True when a borrow that is not const of an object of the bare type can
+// write a part that two threads cannot write.  A type that names no owner is
+// read by the walk of the shared write.  A type that names the owner is read
+// part by part, so the walk does not come back to the check of the owner,
+// and a part that the walk cannot read counts as plain.
+consteval bool can_write_plain_through(std::meta::info bare, std::meta::info owner, int depth) {
+    namespace refl = ::foundation::reflect;
+    if (depth <= 0) return true;
+    if (bare == owner || std::meta::is_function_type(bare)) return false;
+    if (std::meta::is_void_type(bare)) return true;
+    if (!mentions_owner(bare, owner)) return !is_shared_writable(bare);
+    if (!is_class_or_union(bare) || !refl::members_readable_without_instantiation(bare)) return true;
+    // Each part of a borrowed object is borrowed too, whether the object
+    // holds it by value or by reference.
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
+        if (!part.was_const && can_write_plain_through(part.type, owner, depth - 1)) return true;
+    }
+    return false;
+}
+
+// True when the nested class is a proof holder of the owner (THE NESTED
+// CLASSES): it is itself a proof of the owner, or it holds one by value as
+// its own member.  A member counts exactly when a door parameter of the same
+// type would count, and a reference member counts never.
+[[nodiscard]] consteval bool is_proof_holder(std::meta::info nested, std::meta::info owner) {
+    namespace refl = ::foundation::reflect;
+    if (is_proof_type(nested, owner)) return true;
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{nested, true})) {
+        if (part.member == std::meta::info{} || part.was_reference || !part.is_held_by_value) continue;
+        if (is_proof_parameter(part, owner)) return true;
+    }
+    return false;
+}
+
+// True when the member is a door of a nested class (THE NESTED CLASSES): a
+// public or protected member function or member function template that is no
+// destructor and not deleted.  A constructor is a door too, apart from a copy
+// and a move constructor: it can take the owner.
+[[nodiscard]] consteval bool is_nested_door(std::meta::info member) {
+    const bool is_template = std::meta::is_function_template(member);
+    if (!std::meta::is_function(member) && !is_template) return false;
+    if (std::meta::is_private(member)) return false;
+    if (is_template) return true;
+    if (std::meta::is_destructor(member) || std::meta::is_deleted(member)) return false;
+    return !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
+}
+
+// The verdict of a door of a nested class (THE NESTED CLASSES).  The door
+// reaches the owner through this when the class reaches it, or through a
+// parameter.  A const door has no exemption, because a pointer, a Ref or a
+// binding of the class still writes the owner.  The class is no proof holder,
+// so a door that reaches the owner holds the rule when it takes a proof of
+// the owner, or when it gives the token of a claim door.
+[[nodiscard]] consteval DoorFinding verdict_of_nested_door(std::meta::info door, std::meta::info owner,
+                                                           bool does_class_reach) {
+    namespace refl = ::foundation::reflect;
+    std::meta::info function = door;
+    if (std::meta::is_function_template(door)) {
+        const std::meta::info arguments[] = {^^door_probe_body};
+        if (!std::meta::can_substitute(door, arguments)) return DoorFinding{.verdict = DoorVerdict::unreadable};
+        function = std::meta::substitute(door, arguments);
+        if (!std::meta::is_function(function) || std::meta::is_destructor(function)
+            || std::meta::is_deleted(function)) {
+            return DoorFinding{};
+        }
+    }
+    // A constructor has no type of its own in the reflection of GCC 16, so
+    // the walk reads its parameters one by one.
+    const bool is_constructor = std::meta::is_constructor(function);
+    bool does_reach_owner = does_class_reach && !is_constructor && !std::meta::is_static_member(function);
+    bool has_proof = false;
+    bool gives_proof = false;
+    std::meta::info open_token{};
+    if (!is_constructor) {
+        const std::meta::info result = refl::bare_type(std::meta::return_type_of(function));
+        gives_proof = is_claim_result(result, owner);
+        open_token = open_token_in_result(result, owner);
+    }
+    static_cast<void>(
+        refl::find_parameter(function, [owner, &does_reach_owner, &has_proof, &open_token](std::meta::info parameter) {
+            const refl::TypeNode part = refl::node_reached_indirectly(std::meta::type_of(parameter));
+            if (!part.was_const && (part.type == owner || can_write_owner(part.type, owner, closed_walk_depth))) {
+                does_reach_owner = true;
+            }
+            if (is_proof_parameter(part, owner)) has_proof = true;
+            if (open_token == std::meta::info{} && is_open_token_of(part.type, owner)) open_token = part.type;
+            return false;
+        }));
+    if (!does_reach_owner || has_proof || gives_proof) return DoorFinding{};
+    if (open_token != std::meta::info{}) return DoorFinding{.verdict = DoorVerdict::open_token, .token = open_token};
+    return DoorFinding{.verdict = DoorVerdict::unproven};
+}
+
+// Where a refused door is: a member function of the class, or of a nested
+// class of it.
+enum class DoorPlace : unsigned char {
+    member = 0,
+    nested = 1,
+};
+
+// Gives the refusal of a door of the finding, which stops the build.
+consteval void refuse_door(std::meta::info type, std::meta::info door, DoorFinding finding, std::meta::info plain,
+                           DoorPlace place) {
     if (finding.verdict == DoorVerdict::unreadable) {
         const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(door)};
         static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^unreadable_door_refusal, arguments)));
@@ -1030,7 +1279,71 @@ consteval void check_synchronized_doors(std::meta::info type, std::meta::info pl
     }
     const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(door),
                                          std::meta::reflect_constant(plain)};
+    if (place == DoorPlace::nested) {
+        static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^unproven_nested_door_refusal, arguments)));
+        return;
+    }
     static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^unproven_door_refusal, arguments)));
+}
+
+// Stops the build at the first door of a nested class of the owner, at each
+// depth, that does not hold the rule (THE NESTED CLASSES).  The walk is
+// unchecked, as the walk of the doors of the owner is.  Complexity: linear in
+// the members of each nested class, times the parameters of each door.
+consteval void check_nested_doors(std::meta::info scope, std::meta::info owner, std::meta::info plain, int depth) {
+    namespace refl = ::foundation::reflect;
+    if (depth <= 0) return;
+    static_cast<void>(refl::find_member(
+        scope, std::meta::access_context::unchecked(), [scope, owner, plain, depth](std::meta::info member) {
+            // An alias names a class of another scope, so only a class that
+            // the scope defines is a nested class.
+            if (!std::meta::is_type(member) || std::meta::is_type_alias(member)) return false;
+            const std::meta::info nested = member;
+            if (nested == owner || !is_class_or_union(nested) || !std::meta::is_complete_type(nested)
+                || std::meta::parent_of(nested) != scope) {
+                return false;
+            }
+            // Each door of a proof holder holds the rule, so the walk reads
+            // no door of it, also no template door that a probe body cannot
+            // fill.
+            if (!is_proof_holder(nested, owner)) {
+                const bool does_class_reach = can_write_owner(nested, owner, closed_walk_depth)
+                                           || holds_plain_borrow(nested, owner, closed_walk_depth);
+                DoorFinding finding{};
+                const std::meta::info door =
+                    refl::find_member(nested, std::meta::access_context::unchecked(),
+                                      [owner, does_class_reach, &finding](std::meta::info candidate) {
+                                          if (!is_nested_door(candidate)) return false;
+                                          finding = verdict_of_nested_door(candidate, owner, does_class_reach);
+                                          return finding.verdict != DoorVerdict::proven;
+                                      });
+                if (door != std::meta::info{}) refuse_door(owner, door, finding, plain, DoorPlace::nested);
+            }
+            check_nested_doors(nested, owner, plain, depth - 1);
+            return false;
+        }));
+}
+
+// Stops the build at the first door of the class that does not hold the rule
+// (THE DOORS OF A SYNCHRONIZED CLASS), and then at the first door of a nested
+// class (THE NESTED CLASSES).  plain names the first plain private part.  The
+// walk is unchecked, because a derived class can call a protected door, and
+// is_door then drops each private member.  Complexity: linear in the members
+// of the class, times the parameters of each door.
+consteval void check_synchronized_doors(std::meta::info type, std::meta::info plain) {
+    namespace refl = ::foundation::reflect;
+    DoorFinding finding{};
+    const std::meta::info door =
+        refl::find_member(type, std::meta::access_context::unchecked(), [type, &finding](std::meta::info member) {
+            if (!is_door(member)) return false;
+            finding = verdict_of_door(member, type);
+            return finding.verdict != DoorVerdict::proven;
+        });
+    if (door != std::meta::info{}) {
+        refuse_door(type, door, finding, plain, DoorPlace::member);
+        return;
+    }
+    check_nested_doors(type, type, plain, closed_walk_depth);
 }
 
 consteval void check_synchronized_statement(std::meta::info type) {

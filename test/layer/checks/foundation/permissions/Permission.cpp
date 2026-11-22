@@ -482,7 +482,24 @@ public:
 
     void add(Permission<Region, CountBrand>& /*token*/) noexcept { ++count_; }
     void add_leased(ExclusiveLease<Region, CountBrand>& /*lease*/) noexcept { ++count_; }
+    // The open hole of a share (THE NESTED CLASSES of foundation/Transfer.h):
+    // many holders hold a guard at one time, but the guard proves this door.
     void add_shared(SharedPermissionGuard<Region, CountBrand>& /*guard*/) noexcept { ++count_; }
+
+    // A nested handle that holds the exclusive token by value is a proof
+    // holder, so its door writes the count with no parameter of its own, also
+    // through a const door (THE NESTED CLASSES).
+    class Handle {
+        PermittedCount& count_;
+        Permission<Region, CountBrand> token_;
+
+        Handle(PermittedCount& count, Permission<Region, CountBrand>&& token) noexcept
+            : count_{count}, token_{static_cast<Permission<Region, CountBrand>&&>(token)} {}
+
+    public:
+        void add() noexcept { ++count_.count_; }
+        [[nodiscard]] int read() const noexcept { return count_.count_; }
+    };
 
 private:
     int count_ = 0;

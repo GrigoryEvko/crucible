@@ -1903,6 +1903,34 @@ foundation_neg_compile_test(neg_synchronized_template_door_unreadable
   "has no specialization for the probe body"
   "failed: .anonymous.::Counter"
   "Counter::set\\(Value\\)")
+# A door of a nested class that can write a synchronized class takes a proof
+# of the class, or its class holds one by value: the guard of another tag, a
+# token by reference, a const door and a public constructor each refuse.
+foundation_neg_compile_test(neg_synchronized_nested_guard_of_another_tag
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle::bump\\(\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_nested_token_by_reference
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle::bump\\(\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_nested_const_door
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle::bump\\(\\) const"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_nested_constructor
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle::Handle\\(.anonymous.::Counter&\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_nested_part_reference
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle::bump\\(\\)"
+  "Counter::count_")
 # The cell of an owner names its writer in its type, so a proof of another
 # owner of the same role does not store.
 foundation_neg_compile_test(neg_atomic_owner_cell_proof_of_another_owner
