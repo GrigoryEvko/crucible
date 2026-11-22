@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::os::Library in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::os::Library<forge::brand> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::os::Library attests to a fact that it cannot see.  The expression below is
+// fixy::os::Library<forge::brand> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -21,9 +21,13 @@ namespace forge {
 // construction, so no fixture links, and neither stand-in has a body.
 template <class T> T& lvalue() noexcept;
 template <class T> T&& rvalue() noexcept;
+
+// The brand that the expression names.  It is empty, which is all that
+// foundation::brand::IsBrand asks of a brand.
+struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::os::Library{forge::rvalue<fixy::os::detail::LibraryWord>()};
+    [[maybe_unused]] auto forged = fixy::os::Library<forge::brand>{forge::rvalue<fixy::os::detail::LibraryWord>()};
     return 0;
 }

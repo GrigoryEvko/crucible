@@ -43,34 +43,50 @@ namespace {
 namespace fo = ::fixy::os;
 namespace pwl = process_wide_libraries;
 
-// One library, loaded as the vessel libraries are loaded, or no value when
-// the loader refuses it.  The end of the owner closes the library.
-[[nodiscard]] ::fixy::Option<fo::Library> try_load(::fixy::CText path) {
-    fo::LoaderDiagnostic diagnostic{};
-    return fo::mint_library(kTest, path, ::fixy::to(diagnostic))
-        .match(
-            [](::fixy::Linear<fo::Library> loaded) {
-                return ::fixy::Option<fo::Library>::some(std::move(loaded).consume());
-            },
-            [&diagnostic, path](fo::LoaderFailure) {
-                ::fixy::report(::fixy::Sink::Err, "dlopen of {} failed: {}\n", path.view(), diagnostic.text());
-                return ::fixy::Option<fo::Library>{};
-            });
+// The report of a load that the loader refused.
+void report_refused_load(::fixy::CText path, fo::LoaderDiagnostic const& diagnostic) noexcept {
+    ::fixy::report(::fixy::Sink::Err, "dlopen of {} failed: {}\n", path.view(), diagnostic.text());
 }
 
-// One library that the test needs.
-[[nodiscard]] fo::Library load(::fixy::CText path) {
-    return try_load(path).expect("the test loads each library that it needs");
+// Calls body with the writer and the reader, which loads in the scope of the
+// writer, and closes the reader after the body.  A refused load ends the
+// process.
+template <class WriterBrand, class Body>
+void with_reader(fo::Library<WriterBrand> const& writer, Body& body) noexcept {
+    fo::LoaderDiagnostic diagnostic{};
+    fo::with_library(kTest, PROCESS_WIDE_READER_PATH, ::fixy::to(diagnostic),
+                     [&body, &writer](auto const& reader) noexcept { body(writer, reader); })
+        .match([](::fixy::Unit) noexcept {},
+               [&diagnostic](fo::LoaderFailure) noexcept {
+                   report_refused_load(PROCESS_WIDE_READER_PATH, diagnostic);
+                   ::fixy::fatal("the test loads each library that it needs");
+               });
+}
+
+// Calls body with the writer and the reader, each loaded as the vessel loads
+// its libraries, and closes the two after the body.  The two loads are two
+// call sites of the door, so the two libraries carry two brands.  A refused
+// load ends the process.
+template <class Body>
+void with_libraries(Body& body) noexcept {
+    fo::LoaderDiagnostic diagnostic{};
+    fo::with_library(kTest, PROCESS_WIDE_WRITER_PATH, ::fixy::to(diagnostic),
+                     [&body](auto const& writer) noexcept { with_reader(writer, body); })
+        .match([](::fixy::Unit) noexcept {},
+               [&diagnostic](fo::LoaderFailure) noexcept {
+                   report_refused_load(PROCESS_WIDE_WRITER_PATH, diagnostic);
+                   ::fixy::fatal("the test loads each library that it needs");
+               });
 }
 
 // The function name of the library, of the signature of its declaration in
-// process_wide_libraries.h.
-template <class Signature>
-[[nodiscard]] fo::LibraryFunction<Signature> find(fo::Library const& library, ::fixy::CText name) {
+// process_wide_libraries.h.  The function carries the brand of the library.
+template <class Signature, class Brand>
+[[nodiscard]] fo::LibraryFunction<Signature, Brand> find(fo::Library<Brand> const& library, ::fixy::CText name) {
     fo::LoaderDiagnostic diagnostic{};
     return fo::find_function<Signature>(kTest, library, name, ::fixy::to(diagnostic))
-        .match([](fo::LibraryFunction<Signature> function) { return function; },
-               [&diagnostic, name](fo::LoaderFailure) -> fo::LibraryFunction<Signature> {
+        .match([](fo::LibraryFunction<Signature, Brand> function) { return function; },
+               [&diagnostic, name](fo::LoaderFailure) -> fo::LibraryFunction<Signature, Brand> {
                    ::fixy::report(::fixy::Sink::Err, "dlsym of {} failed: {}\n", name.view(), diagnostic.text());
                    ::fixy::fatal("the test finds each entry point of its libraries");
                });
@@ -98,18 +114,18 @@ template <class Body>
 template <class Body>
 [[nodiscard]] ::fixy::process::ChildReport run_with_libraries(::fixy::TestRunnerCtx const& test, Body body) {
     ::fixy::process::Child child = ::fixy::process::spawn_child(test, [&body] noexcept {
-                                       fo::Library const writer = load(PROCESS_WIDE_WRITER_PATH);
-                                       fo::Library const reader = load(PROCESS_WIDE_READER_PATH);
-                                       body(writer, reader);
+                                       with_libraries(body);
                                    }).expect("the test starts a child");
     return ::fixy::process::wait(std::move(child)).expect("the test waits for its child");
 }
 
-void report_floor_fallbacks_in(fo::Library const& library) noexcept {
+template <class Brand>
+void report_floor_fallbacks_in(fo::Library<Brand> const& library) noexcept {
     find<decltype(process_wide_report_floor_fallbacks)>(library, "process_wide_report_floor_fallbacks")();
 }
 
-void open_init_door_in(fo::Library const& library) noexcept {
+template <class Brand>
+void open_init_door_in(fo::Library<Brand> const& library) noexcept {
     find<decltype(process_wide_open_init_door)>(library, "process_wide_open_init_door")();
 }
 
@@ -129,14 +145,13 @@ void test_one_fallback_report_for_the_process(::fixy::TestRunnerCtx const& test)
     static_cast<void>(
         os::format_kernel_fallbacks(os::running_kernel(), running_text).expect("the rows of this host fit"));
 
-    ::fixy::process::ChildReport const loaded =
-        run_with_libraries(test, [](fo::Library const&, fo::Library const&) noexcept {});
+    ::fixy::process::ChildReport const loaded = run_with_libraries(test, [](auto const&, auto const&) noexcept {});
     if (!(loaded.is_exit_with(0) && loaded.output().size() == 0)) {
         fail_claim("the load of the two libraries writes nothing before the init door");
     }
 
     ::fixy::process::ChildReport const two_units =
-        run_with_libraries(test, [](fo::Library const& writer, fo::Library const& reader) noexcept {
+        run_with_libraries(test, [](auto const& writer, auto const& reader) noexcept {
             report_floor_fallbacks_in(writer);
             report_floor_fallbacks_in(reader);
             open_init_door_in(reader);
@@ -147,7 +162,7 @@ void test_one_fallback_report_for_the_process(::fixy::TestRunnerCtx const& test)
     }
 
     ::fixy::process::ChildReport const door_first =
-        run_with_libraries(test, [](fo::Library const& writer, fo::Library const& reader) noexcept {
+        run_with_libraries(test, [](auto const& writer, auto const& reader) noexcept {
             open_init_door_in(writer);
             report_floor_fallbacks_in(reader);
             open_init_door_in(reader);
@@ -159,7 +174,8 @@ void test_one_fallback_report_for_the_process(::fixy::TestRunnerCtx const& test)
     ::fixy::check::pass(test, "  test_one_fallback_report_for_the_process: PASSED\n");
 }
 
-void test_each_object_has_one_address(fo::Library const& writer, fo::Library const& reader) {
+template <class WriterBrand, class ReaderBrand>
+void test_each_object_has_one_address(fo::Library<WriterBrand> const& writer, fo::Library<ReaderBrand> const& reader) {
     auto const writer_address = find<decltype(process_wide_object_address)>(writer, "process_wide_object_address");
     auto const reader_address = find<decltype(process_wide_object_address)>(reader, "process_wide_object_address");
     unsigned index = 0;
@@ -187,7 +203,9 @@ void test_each_object_has_one_address(fo::Library const& writer, fo::Library con
 // library reads it: the two libraries see one address on one thread, a write
 // in the writer is read in the reader on that thread, and a second thread has
 // an object of its own.
-void test_each_thread_object_is_one_for_the_thread(fo::Library const& writer, fo::Library const& reader) {
+template <class WriterBrand, class ReaderBrand>
+void test_each_thread_object_is_one_for_the_thread(fo::Library<WriterBrand> const& writer,
+                                                   fo::Library<ReaderBrand> const& reader) {
     auto const writer_address =
         find<decltype(process_wide_thread_object_address)>(writer, "process_wide_thread_object_address");
     auto const reader_address =
@@ -240,7 +258,8 @@ void test_each_thread_object_is_one_for_the_thread(fo::Library const& writer, fo
 // a new thread.  After the init of the root in the writer, the reader sees the
 // map of the host window in the sentinel.  After a claim in the writer, the
 // reader sees the same heap id on that thread.
-void test_one_heap_cell_for_the_thread(fo::Library const& writer, fo::Library const& reader) {
+template <class WriterBrand, class ReaderBrand>
+void test_one_heap_cell_for_the_thread(fo::Library<WriterBrand> const& writer, fo::Library<ReaderBrand> const& reader) {
     auto const writer_cell = find<decltype(process_wide_heap_cell_key)>(writer, "process_wide_heap_cell_key");
     auto const reader_cell = find<decltype(process_wide_heap_cell_key)>(reader, "process_wide_heap_cell_key");
     auto const writer_sentinel = find<decltype(process_wide_heap_is_sentinel)>(writer, "process_wide_heap_is_sentinel");
@@ -273,7 +292,8 @@ void test_one_heap_cell_for_the_thread(fo::Library const& writer, fo::Library co
     ::fixy::check::pass(kTest, "  test_one_heap_cell_for_the_thread: PASSED (heap id {})\n", reader_id());
 }
 
-void test_the_reader_sees_each_write(fo::Library const& writer, fo::Library const& reader) {
+template <class WriterBrand, class ReaderBrand>
+void test_the_reader_sees_each_write(fo::Library<WriterBrand> const& writer, fo::Library<ReaderBrand> const& reader) {
     find<decltype(process_wide_write)>(writer, "process_wide_write")();
     auto const classify = find<decltype(process_wide_classify)>(reader, "process_wide_classify");
     auto const schema_name = find<decltype(process_wide_schema_name)>(reader, "process_wide_schema_name");
@@ -293,8 +313,9 @@ void test_the_reader_sees_each_write(fo::Library const& writer, fo::Library cons
 // The second claim ends the process, so it runs on a second thread of a
 // child through expect_dies of the Check family.  The test process has one
 // thread at the fork, so the child may start the second thread.
-void test_the_reader_sees_the_claim(::fixy::TestRunnerCtx const& test, fo::Library const& writer,
-                                    fo::Library const& reader) {
+template <class WriterBrand, class ReaderBrand>
+void test_the_reader_sees_the_claim(::fixy::TestRunnerCtx const& test, fo::Library<WriterBrand> const& writer,
+                                    fo::Library<ReaderBrand> const& reader) {
     auto const is_usable = find<decltype(process_wide_is_brand_usable)>(reader, "process_wide_is_brand_usable");
     auto const claim_a_second_brand =
         find<decltype(process_wide_claim_a_second_brand)>(reader, "process_wide_claim_a_second_brand");
@@ -318,6 +339,16 @@ void test_the_reader_sees_the_claim(::fixy::TestRunnerCtx const& test, fo::Libra
     ::fixy::check::pass(test, "  test_the_reader_sees_the_claim: PASSED\n");
 }
 
+// True when dlopen loads the plant of the rule static-tls.  The end of the
+// scope of a load that succeeds closes the plant.
+[[nodiscard]] bool does_plant_load() noexcept {
+    fo::LoaderDiagnostic diagnostic{};
+    bool const is_loaded =
+        fo::with_library(kTest, STATIC_TLS_PLANT_PATH, ::fixy::to(diagnostic), [](auto const&) noexcept {}).is_ok();
+    if (!is_loaded) report_refused_load(STATIC_TLS_PLANT_PATH, diagnostic);
+    return is_loaded;
+}
+
 // The run-time witness of the rule static-tls.  The control and the plant come
 // from one source file, and only the size of their initial-exec block is
 // different.  The block of the control holds the limit of the rule,
@@ -325,15 +356,20 @@ void test_the_reader_sees_the_claim(::fixy::TestRunnerCtx const& test, fo::Libra
 // larger than the static TLS that glibc keeps free, and dlopen refuses it.  The
 // two sizes are the only difference, so the test does not read the text of
 // dlerror.  This case runs last, after the writer and the reader are loaded.
+// The plant loads in the scope of the control, so the control stays loaded.
 void test_static_tls_holds_the_rule_threshold() {
-    ::fixy::Option<fo::Library> const control = try_load(STATIC_TLS_CONTROL_PATH);
-    if (control.is_none()) {
+    fo::LoaderDiagnostic diagnostic{};
+    bool const is_control_loaded =
+        fo::with_library(kTest, STATIC_TLS_CONTROL_PATH, ::fixy::to(diagnostic), [](auto const&) noexcept {
+            if (does_plant_load()) {
+                fail_claim("dlopen refuses a library whose initial-exec block is larger than the free static TLS of "
+                           "glibc");
+            }
+        }).is_ok();
+    if (!is_control_loaded) {
+        report_refused_load(STATIC_TLS_CONTROL_PATH, diagnostic);
         fail_claim("a library whose initial-exec block holds the limit of the rule static-tls loads after the "
                    "writer and the reader");
-    }
-    ::fixy::Option<fo::Library> const plant = try_load(STATIC_TLS_PLANT_PATH);
-    if (plant.is_some()) {
-        fail_claim("dlopen refuses a library whose initial-exec block is larger than the free static TLS of glibc");
     }
     ::fixy::check::pass(kTest, "  test_static_tls_holds_the_rule_threshold: PASSED\n");
 }
@@ -354,14 +390,15 @@ int main(int argc, char** argv) {
     // The children of this case load the two libraries themselves, so it runs
     // before this process loads them.
     if (is_selected(::fixy::TextView{"fallbacks"})) test_one_fallback_report_for_the_process(test);
-    fo::Library const writer = load(PROCESS_WIDE_WRITER_PATH);
-    fo::Library const reader = load(PROCESS_WIDE_READER_PATH);
-    if (is_selected(::fixy::TextView{"addresses"})) test_each_object_has_one_address(writer, reader);
-    if (is_selected(::fixy::TextView{"threads"})) test_each_thread_object_is_one_for_the_thread(writer, reader);
-    if (is_selected(::fixy::TextView{"heaps"})) test_one_heap_cell_for_the_thread(writer, reader);
-    if (is_selected(::fixy::TextView{"writes"})) test_the_reader_sees_each_write(writer, reader);
-    if (is_selected(::fixy::TextView{"claim"})) test_the_reader_sees_the_claim(test, writer, reader);
-    if (is_selected(::fixy::TextView{"static_tls"})) test_static_tls_holds_the_rule_threshold();
+    auto run_cases = [&test, &is_selected](auto const& writer, auto const& reader) noexcept {
+        if (is_selected(::fixy::TextView{"addresses"})) test_each_object_has_one_address(writer, reader);
+        if (is_selected(::fixy::TextView{"threads"})) test_each_thread_object_is_one_for_the_thread(writer, reader);
+        if (is_selected(::fixy::TextView{"heaps"})) test_one_heap_cell_for_the_thread(writer, reader);
+        if (is_selected(::fixy::TextView{"writes"})) test_the_reader_sees_each_write(writer, reader);
+        if (is_selected(::fixy::TextView{"claim"})) test_the_reader_sees_the_claim(test, writer, reader);
+        if (is_selected(::fixy::TextView{"static_tls"})) test_static_tls_holds_the_rule_threshold();
+    };
+    with_libraries(run_cases);
     ::fixy::check::pass(test, "test_process_wide_across_libraries: all tests passed\n");
     return 0;
 }

@@ -2371,11 +2371,11 @@
       "header": "fixy/os/OwnedThread.h"
     },
     {
-      "type": "fixy::os::Library",
+      "type": "fixy::os::Library<forge::brand>",
       "header": "fixy/os/Loader.h"
     },
     {
-      "type": "fixy::os::LibraryFunction<int() noexcept>",
+      "type": "fixy::os::LibraryFunction<int() noexcept, forge::brand>",
       "header": "fixy/os/Loader.h"
     },
     {

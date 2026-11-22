@@ -39,13 +39,13 @@ void write_last_error(LoaderDiagnostic& diagnostic, core::TextView fallback) noe
 
 }  // namespace
 
-core::Result<Library, LoaderFailure> open_library_(core::CText path, LoaderDiagnostic& diagnostic) noexcept {
+core::Result<LibraryWord, LoaderFailure> open_library_(core::CText path, LoaderDiagnostic& diagnostic) noexcept {
     void* const handle = ::dlopen(core::detail::c_text_first_(path), RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr) {
         write_last_error(diagnostic, "the loader refused the library and gave no text");
         return core::err(LoaderFailure::refused_open);
     }
-    return LoaderDoor::make_library(LibraryWord{__builtin_bit_cast(std::uintptr_t, handle)});
+    return LibraryWord{__builtin_bit_cast(std::uintptr_t, handle)};
 }
 
 // A symbol can have the address zero with no error, so the door clears the
@@ -63,7 +63,8 @@ core::Result<SymbolWord, LoaderFailure> find_symbol_(LibraryWord handle, core::C
     return SymbolWord{__builtin_bit_cast(std::uintptr_t, address)};
 }
 
-// The end of an owner reports no error, as the end of a handle does.
+// The end of the scope of a library reports no error, as the end of a handle
+// does.
 void close_library_(LibraryWord handle) noexcept {
     static_cast<void>(::dlclose(__builtin_bit_cast(void*, std::to_underlying(handle))));
 }

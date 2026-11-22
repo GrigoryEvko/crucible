@@ -6499,16 +6499,26 @@ fixy_neg_compile_test(neg_temporary_directory_without_nondet
   "no matching function for call to .mint_temporary_directory\\(const .anonymous.::IoBlockCtx&\\)"
   "required for the satisfaction of .CtxFitsIdentityRead<Ctx>.")
 
-# The loader door.  mint_library opens and maps files, which is IO, and it
+# The loader door.  with_library opens and maps files, which is IO, and it
 # waits for the disk, which is Block.  One fixture for each missing effect.
+# A function of a library leaves no scope of the library: not in the result
+# of the body, and not in a capture of a closure that the body gives.
 fixy_test(test_os_loader)
 fixy_neg_compile_test(neg_library_without_io
-  "no matching function for call to .mint_library\\(const .anonymous.::ForegroundCtx&, const char \\[10\\], "
+  "no matching function for call to .with_library\\(const .anonymous.::ForegroundCtx&, const char \\[10\\], "
   "required for the satisfaction of .CtxFitsLibraryLoad<Ctx>.")
 
 fixy_neg_compile_test(neg_library_without_block
-  "no matching function for call to .mint_library\\(const .anonymous.::IoCtx&, const char \\[10\\], "
+  "no matching function for call to .with_library\\(const .anonymous.::IoCtx&, const char \\[10\\], "
   "required for the satisfaction of .CtxFitsLibraryLoad<Ctx>.")
+
+fixy_neg_compile_test(neg_library_function_returned_from_scope
+  "the end of the scope of with_library closes the library"
+  "neg_library_function_returned_from_scope\\.cpp:[0-9]+:[0-9]+: error:")
+
+fixy_neg_compile_test(neg_library_function_called_after_close
+  "a scope mint gives a result that holds its own scope brand"
+  "fixy::os::with_library: the result foundation::core::Result<.anonymous.::KeepsFunction::operator\\(\\)")
 
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"

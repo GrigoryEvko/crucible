@@ -1109,14 +1109,14 @@ witness <fixy/os/ThreadName.h> private | fixy::ThreadNamed<"forged"> | fixy::Thr
 # its frame is the frame that the thread reads.  Its value constructor is
 # private, and the door of mint_owned_thread is the sole friend.
 witness <fixy/os/OwnedThread.h> private | fixy::thread::OwnedThread | fixy::thread::OwnedThread{forge::rvalue<std::uint64_t>(), forge::rvalue<void*>(), forge::rvalue<void (*)(void*) noexcept>()}
-# A library owner claims that dlopen gave its handle, and its end closes the
-# library.  Its value constructor is private, and the door of mint_library is
+# A library claims that dlopen gave its handle, and its end closes the
+# library.  Its value constructor is private, and the door of with_library is
 # the sole friend.
-witness <fixy/os/Loader.h> private | fixy::os::Library | fixy::os::Library{forge::rvalue<fixy::os::detail::LibraryWord>()}
+witness <fixy/os/Loader.h> private | fixy::os::Library<forge::brand> | fixy::os::Library<forge::brand>{forge::rvalue<fixy::os::detail::LibraryWord>()}
 # A function of a library claims that dlsym found its address in a loaded
 # library.  Its value constructor is private, and the door of find_function is
 # the sole friend.
-witness <fixy/os/Loader.h> private | fixy::os::LibraryFunction<int() noexcept> | fixy::os::LibraryFunction<int() noexcept>{forge::rvalue<fixy::os::detail::SymbolWord>()}
+witness <fixy/os/Loader.h> private | fixy::os::LibraryFunction<int() noexcept, forge::brand> | fixy::os::LibraryFunction<int() noexcept, forge::brand>{forge::rvalue<fixy::os::detail::SymbolWord>()}
 # A proof of quiescence claims that no thread of its owner runs.  Its value
 # constructor is private, and the door of the OwnerThread of the owner, which
 # gives it only while the OwnerThread holds no thread, is the sole friend.
