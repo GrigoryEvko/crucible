@@ -24,9 +24,10 @@
 //   fetch_min_acq_rel(v)           stores v if v is smaller, for an integer
 //
 // The type has no operator and no conversion, so no operation takes the
-// sequentially consistent order without a name that says so.  Only two cells
-// take the relaxed order: the writer of a cell of one writer reads with it,
-// and each thread adds to a count with it (below).
+// sequentially consistent order without a name that says so.  Only three
+// cells take the relaxed order: the writer of a cell of one writer and the
+// owner of the cell of an owner read with it, and each thread adds to a count
+// with it (below).
 //
 // A value of a class type is admitted when it has one bit pattern for each
 // value.  The cell holds it as the unsigned integer of its size, and the
@@ -102,6 +103,24 @@
 //   compare and one branch to a cold call at each read and each write of the
 //   writer.
 //
+// THE CELL OF AN OWNER
+//   Atomic<T, SoleWriterProof<Owner, Role>> names its writer in its type as
+//   the counter of one writer of fixy/Mutation.h does, with no run-time id:
+//
+//     load_acquire()             the value, with acquire order, on each thread
+//     load_owned(proof)          the value, with relaxed order, for the writer
+//     store_release(proof, v)    stores v, with release order, for the writer
+//
+//   Only Owner makes the proof (THE PROOF OF THE ONE WRITER of
+//   foundation/SoleWriterProof.h), and the proof lives for one call of
+//   Owner.  So the one writer of the cell is the code of Owner, and the type
+//   carries the check that the cell of a SoleWriter makes at run time.  A
+//   proof of another owner or another role has no overload.  Each cell of
+//   one type takes the same proof type, so the owner keeps two cells apart
+//   by its structure: each object of Owner reaches only its own cell.  The
+//   comment of Owner states how.  The read and the write of the writer
+//   compile to a plain load and a plain release store.
+//
 // THE COUNT
 //   Atomic<T, Counter> is a count that each thread adds to, for an integer
 //   that is not bool.  No thread reads other data through it, so a change
@@ -160,6 +179,7 @@
 #include <foundation/OpenExtension.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
@@ -544,16 +564,18 @@ private:
 };
 
 // The writer of a cell: void for a cell that each thread can write, Counter
-// for a count that each thread adds to, or a SoleWriter for a cell of one
-// writer.  Each step of a cell is atomic, so two threads read and write one
-// cell at the same time.  A value that one thread stores, another loads, so
-// the cell is a cell of its payload: it holds each transfer property when T
-// is Sendable (foundation/Transfer.h).
+// for a count that each thread adds to, a SoleWriter for a cell of one
+// writer, or a SoleWriterProof for the cell of an owner.  Each step of a cell
+// is atomic, so two threads read and write one cell at the same time.  A
+// value that one thread stores, another loads, so the cell is a cell of its
+// payload: it holds each transfer property when T is Sendable
+// (foundation/Transfer.h).
 template <AtomicValue T, class Writer>
 class[[= ::foundation::transfer::payload_cell{}]] Atomic : ::foundation::Pinned<Atomic<T, Writer>> {
     static_assert(std::is_void_v<Writer>,
                   "Atomic<T, Writer>: the writer is void, for a cell that each thread can write, Counter, for a "
-                  "count that each thread adds to, or SoleWriter<Role, Brand>, for a cell of one writer.");
+                  "count that each thread adds to, SoleWriter<Role, Brand>, for a cell of one writer, or "
+                  "SoleWriterProof<Owner, Role>, for the cell of an owner.");
 
     using codec_type = detail::atomic_codec<T>;
     using storage_type = typename detail::atomic_storage<T>::type;
@@ -754,6 +776,45 @@ public:
 
     void store_release(SoleWriter<Role, Identity> const& writer, T value) noexcept {
         expect_writer_(writer);
+        __atomic_store_n(&value_, codec_type::to_storage_(value), __ATOMIC_RELEASE);
+    }
+};
+
+// The cell of an owner (THE CELL OF AN OWNER).  The cell hands its value to
+// each reader, so it is a cell of its payload (foundation/Transfer.h).  The
+// build takes no proof: no other thread reads the cell before its owner
+// hands it out.
+template <AtomicValue T, class Owner, class Role>
+class[[= ::foundation::transfer::payload_cell{}]] Atomic<T, ::foundation::SoleWriterProof<Owner, Role>>
+    : ::foundation::Pinned<Atomic<T, ::foundation::SoleWriterProof<Owner, Role>>> {
+    using codec_type = detail::atomic_codec<T>;
+    using storage_type = typename detail::atomic_storage<T>::type;
+    using proof_type = ::foundation::SoleWriterProof<Owner, Role>;
+
+    alignas(sizeof(storage_type)) storage_type value_{};
+
+public:
+    using value_type = T;
+
+    constexpr Atomic() noexcept
+        requires std::is_nothrow_default_constructible_v<T>
+        : value_{codec_type::to_storage_(T{})} {}
+
+    explicit constexpr Atomic(T initial) noexcept : value_{codec_type::to_storage_(initial)} {}
+
+    // A read on each thread, with acquire order.  It pairs with each
+    // store_release of the owner.
+    [[nodiscard]] T load_acquire() const noexcept {
+        return codec_type::from_storage_(__atomic_load_n(&value_, __ATOMIC_ACQUIRE));
+    }
+
+    // The read of the owner.  Each value of the cell is a value that the
+    // owner stored, so the read needs no order.
+    [[nodiscard]] T load_owned(proof_type const& /*proof*/) const noexcept {
+        return codec_type::from_storage_(__atomic_load_n(&value_, __ATOMIC_RELAXED));
+    }
+
+    void store_release(proof_type const& /*proof*/, T value) noexcept {
         __atomic_store_n(&value_, codec_type::to_storage_(value), __ATOMIC_RELEASE);
     }
 };

@@ -1903,6 +1903,11 @@ foundation_neg_compile_test(neg_synchronized_template_door_unreadable
   "has no specialization for the probe body"
   "failed: .anonymous.::Counter"
   "Counter::set\\(Value\\)")
+# The cell of an owner names its writer in its type, so a proof of another
+# owner of the same role does not store.
+foundation_neg_compile_test(neg_atomic_owner_cell_proof_of_another_owner
+  "cannot convert .foundation::SoleWriterProof<.anonymous.::OtherOwner, .anonymous.::Role>. to"
+  "Atomic<long unsigned int, foundation::SoleWriterProof<.anonymous.::Owner, .anonymous.::Role> >::proof_type&")
 foundation_neg_compile_test(neg_synchronized_static_door_without_proof
   "but a door of it is not const, takes no proof of the class"
   "failed: .anonymous.::Counter"

@@ -314,6 +314,27 @@ static_assert(!std::is_copy_constructible_v<Atomic<std::uint64_t, Counter>>
 }
 static_assert(sole_writer_checks());
 
+// THE CELL OF AN OWNER.  The cell holds its value and nothing else, and it
+// does not move.  The write and the read of the owner take the proof of that
+// owner and role, and only that proof.  A proof of another owner or of
+// another role has no overload, and the cell has no read-modify-write
+// operation.  The cell is a cell of its payload, so two threads write it.
+class CellOwner;
+class OtherCellOwner;
+using OwnedHeadCell = Atomic<std::uint64_t, ::foundation::SoleWriterProof<CellOwner, HeadRole>>;
+using OwnerProof = ::foundation::SoleWriterProof<CellOwner, HeadRole>;
+static_assert(sizeof(OwnedHeadCell) == sizeof(std::uint64_t) && alignof(OwnedHeadCell) == 8);
+static_assert(!std::is_copy_constructible_v<OwnedHeadCell> && !std::is_move_constructible_v<OwnedHeadCell>);
+static_assert(std::is_default_constructible_v<OwnedHeadCell> && std::is_constructible_v<OwnedHeadCell, std::uint64_t>);
+static_assert(StoresWith<OwnedHeadCell, OwnerProof> && LoadsOwnedWith<OwnedHeadCell, OwnerProof>);
+static_assert(LoadsAcquire<OwnedHeadCell> && !StoresWithoutProof<OwnedHeadCell>);
+static_assert(!StoresWith<OwnedHeadCell, ::foundation::SoleWriterProof<OtherCellOwner, HeadRole>>);
+static_assert(!StoresWith<OwnedHeadCell, ::foundation::SoleWriterProof<CellOwner, TailRole>>);
+static_assert(!LoadsOwnedWith<OwnedHeadCell, ::foundation::SoleWriterProof<OtherCellOwner, HeadRole>>);
+static_assert(!Exchanges<OwnedHeadCell> && !Swaps<OwnedHeadCell> && !Adds<OwnedHeadCell>);
+static_assert(::foundation::transfer::Synchronized<OwnedHeadCell> && ::foundation::transfer::Sendable<OwnedHeadCell>);
+CRUCIBLE_CLOSED_SURFACE(atomic_names, OwnedHeadCell);
+
 // ── The word of a value ───────────────────────────────────────────────
 
 // A seat number that is never zero.  The assignment is user-provided, so the
