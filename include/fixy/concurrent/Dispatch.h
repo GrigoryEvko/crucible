@@ -8,7 +8,7 @@
 //                             key of each brand that it names, closes the
 //                             window, and gives the value of the body
 //
-// THE WINDOW
+// Window
 //     The body of a dispatch reaches its owners through outside data, such as
 //     the Vigil that the thread-local pointer of PyTorch names, so no walk of
 //     its type sees them.  A flag of the calling thread carries the proof
@@ -18,10 +18,10 @@
 //     hold two keys of one brand at the same time.  The flag is the one
 //     run-time check of the owner key, and it sits at an outside entry.
 //
-// THE KEYS
+// Keys
 //     The body takes the context first, and then one key LoanKey<B>& of each
-//     brand that it names.  Each brand states dispatch_brand{} (THE DISPATCH
-//     BRAND of foundation/core/Frame.h).  The doors that start a thread mint
+//     brand that it names.  Each brand states dispatch_brand{} (the dispatch
+//     brand of foundation/core/Frame.h).  The doors that start a thread mint
 //     no key of such a brand, so a key of it lives on a thread only inside the
 //     window, and the window holds one key of each brand.  Such a key does not
 //     move, and no Ref, Box or View holds one, so the body keeps no key past
@@ -29,13 +29,13 @@
 //     door takes the body by move into its own frame, and the body runs one
 //     time as an rvalue.
 //
-// THE GATE
+// Gate
 //     The context of the call has a branded foreground source, which only a
 //     producer claim and the test witness build.  Such a source moves to no
 //     other thread, so no body of a door that starts a thread holds one, and a
 //     dispatch opens only on the thread of a claim.
 //
-// THE REDISPATCH
+// Redispatch
 //     The record kernel of the vessel runs the operation through a redispatch
 //     to PyTorch first, and each operation of that redispatch enters the
 //     record kernel again on the same thread (call_recording of
@@ -45,7 +45,7 @@
 //     record during the redispatch opens and closes its own window before the
 //     outer window opens.
 //
-// THE FLAG
+// Flag
 //     The flag is one bool of the static TLS of each thread, with the
 //     initial-exec model, so an open and a close cost one load and two stores
 //     relative to the thread pointer and no call.  CRUCIBLE_PROCESS_WIDE makes
@@ -63,13 +63,13 @@ namespace fixy::dispatch {
 
 namespace detail {
 
-// True while the calling thread is inside a dispatch window (THE FLAG).  Only
+// True while the calling thread is inside a dispatch window (the flag).  Only
 // DispatchWindow_ changes it.
 CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread_local bool is_in_dispatch_window_ =
     false;
 
 // Ends the process for a dispatch that opens inside a dispatch window of the
-// same thread (THE WINDOW).
+// same thread (the window).
 [[noreturn]] CRUCIBLE_COLD void refuse_nested_dispatch_() noexcept;
 
 // The window of one dispatch on the calling thread: the constructor opens it,
@@ -92,14 +92,14 @@ public:
 }  // namespace detail
 
 // A context that opens a dispatch: an execution context whose source is a
-// branded foreground source (THE GATE).
+// branded foreground source (the gate).
 template <typename Ctx>
 concept CtxOpensDispatch =
     ::foundation::effects::IsExecCtx<Ctx> && ::foundation::effects::IsBrandedForeground<typename Ctx::cap_type>;
 
 // A body of the dispatch door for the context Ctx: an object that is not a
 // reference and not const, that runs as an rvalue with the context and then
-// one key LoanKey<B>& of each brand that it names (THE KEYS).
+// one key LoanKey<B>& of each brand that it names (the keys).
 template <typename Body, typename Ctx>
 concept DispatchBody = !std::is_reference_v<Body> && !std::is_const_v<Body> && requires {
     typename ::foundation::core::detail::root_body_result_<Body, ::foundation::core::root_key_brands_t<Body, 1>,
@@ -108,7 +108,7 @@ concept DispatchBody = !std::is_reference_v<Body> && !std::is_const_v<Body> && r
 
 // Opens a dispatch window on the calling thread, calls the body one time with
 // the context and one fresh key of each brand that it names, closes the
-// window, and gives the value of the body (THE WINDOW).  A call inside a
+// window, and gives the value of the body (the window).  A call inside a
 // window of the same thread ends the process.
 template <typename Ctx, typename Body>
     requires(!std::is_lvalue_reference_v<Body>) && CtxOpensDispatch<Ctx> && DispatchBody<Body, Ctx>

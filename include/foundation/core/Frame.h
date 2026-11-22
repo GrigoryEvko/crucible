@@ -195,7 +195,7 @@
 //   move its key into a field that the caller reads after the call.  An owner
 //   that moves into the body by value stays admitted (BorrowsNoKeyOwner).
 //
-// THE DISPATCH BRAND
+// Dispatch brand
 //   The body of a dispatch reaches its owners through outside data, such as the
 //   Vigil of the PyTorch boundary, so the borrow walk does not apply to it.  A
 //   brand of such an owner states dispatch_brand{}.  Only the dispatch door of

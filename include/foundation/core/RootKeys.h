@@ -27,8 +27,8 @@
 // Checks
 //   The brands are distinct key brands (IsKeyBrand), so no body gets two keys
 //   of one brand, and no body gets a key of Unkeyed.  run_root_body_ mints no
-//   key of a dispatch brand, and run_dispatch_body_ mints only such keys (THE
-//   DISPATCH BRAND of foundation/core/Frame.h).  For each brand, the body,
+//   key of a dispatch brand, and run_dispatch_body_ mints only such keys (the
+//   dispatch brand of foundation/core/Frame.h).  For each brand, the body,
 //   each leading argument and the result of the body hold BorrowsNoKeyOwner of
 //   foundation/core/Frame.h.  The checks are in the entry that mints, so no
 //   door can mint with no check.  A door that starts more than one thread for
@@ -158,8 +158,8 @@ consteval bool are_distinct_key_brands_of_(KeyBrands<Brands...> /*brands*/) {
     return are_distinct_key_brands_<Brands...>();
 }
 
-// True when each brand is a dispatch brand, and true when none is (THE
-// DISPATCH BRAND of foundation/core/Frame.h).
+// True when each brand is a dispatch brand, and true when none is (the
+// dispatch brand of foundation/core/Frame.h).
 template <class... Brands>
 consteval bool are_dispatch_brands_(KeyBrands<Brands...> /*brands*/) {
     return (is_dispatch_brand_(^^Brands) && ...);
@@ -245,8 +245,8 @@ constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
     return call_with_root_keys_(Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
 }
 
-// The entry of the dispatch door of fixy/concurrent/Dispatch.h (THE DISPATCH
-// BRAND of foundation/core/Frame.h): it checks that the brands are distinct
+// The entry of the dispatch door of fixy/concurrent/Dispatch.h (the dispatch
+// brand of foundation/core/Frame.h): it checks that the brands are distinct
 // dispatch brands and that the body gives no reference, and it calls the body
 // with the leading arguments and one fresh key of each brand.  It has no borrow
 // walk and no export walk.  The body reaches its owners through outside data,

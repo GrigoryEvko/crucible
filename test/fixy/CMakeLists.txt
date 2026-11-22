@@ -6874,7 +6874,7 @@ fixy_neg_compile_test(neg_root_door_same_body_twice
   "run_joined takes each body by move, so that two bodies are two objects")
 # The dispatch door mints only keys of dispatch brands, and the doors that
 # start a thread mint none, so a frame of a holder and a dispatch inside it
-# never hold two keys of one brand (THE DISPATCH BRAND of
+# never hold two keys of one brand (the dispatch brand of
 # foundation/core/Frame.h).  A key of a dispatch brand does not move.  Only a
 # context of a claim opens a dispatch, and the door takes its body by move.
 fixy_neg_compile_test(neg_dispatch_nest_thread_side

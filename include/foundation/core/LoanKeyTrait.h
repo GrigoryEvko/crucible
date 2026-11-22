@@ -3,7 +3,7 @@
 // The trait that names a loan key, for the borrow types that refuse a key as
 // their element: Ref and Box of foundation/core/Ref.h, View and ViewMut of
 // foundation/core/Region.h, and RefMut of foundation/core/Frame.h.  Frame.h
-// defines LoanKey (THE LOAN KEY, THE DISPATCH BRAND), and the class states
+// defines LoanKey (the loan key, the dispatch brand), and the class states
 // loan_key_class_.  The header includes only <meta>, so a borrow type pays no
 // include of Frame.h for its refusal.
 
