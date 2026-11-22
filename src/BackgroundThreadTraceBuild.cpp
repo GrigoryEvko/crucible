@@ -22,8 +22,7 @@
 
 namespace crucible {
 
-void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs,
-                                              uint32_t total_outputs) {
+void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_outputs) {
     // Power-of-two capacity at a load factor below one half.  The unique
     // pointer count is the output count plus a small external fraction.
     uint32_t raw_map_size = ::fixy::max(
@@ -36,10 +35,6 @@ void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, ui
     // Unique storages are bounded by the outputs plus external headroom.
     uint32_t needed_slots = ::fixy::max(MIN_SCRATCH_SLOT_CAP, ::fixy::saturating_add(total_outputs, uint32_t{1024}));
 
-    // Data-flow edges are bounded by the inputs, alias edges by the
-    // outputs.
-    uint32_t needed_edges = ::fixy::max(MIN_SCRATCH_EDGE_CAP, ::fixy::saturating_add(total_inputs, total_outputs));
-
     if (needed_map > map_cap_.get()) {
         map_cap_.advance(needed_map);
         scratch_map_ = ::fixy::mint_masked_array<PtrSlot>(a, map_cap_.get());
@@ -49,12 +44,6 @@ void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, ui
 
     if (needed_slots > slot_cap_max_.get()) {
         slot_cap_max_.advance(needed_slots);
-        scratch_slots_ = ::fixy::mint_heap_array(a, slot_cap_max_.get(), SlotInfo{});
-    }
-
-    if (needed_edges > edge_cap_max_.get()) {
-        edge_cap_max_.advance(needed_edges);
-        scratch_edges_ = ::fixy::mint_heap_array(a, edge_cap_max_.get(), Edge{});
     }
 }
 
@@ -127,10 +116,10 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         return ::fixy::err(BuildRefusal::UnrecordedNest);
     }
 
-    ensure_scratch_buffers(a, total_inputs, total_outputs);
+    ensure_scratch_buffers(a, total_outputs);
 
-    // The ops keep their tensor metadata in a buffer of the region, beside
-    // their other arrays.  A published region lives as long as its memory.
+    // The ops keep their tensor metadata in a run of the region, beside
+    // their other runs.  A published region lives as long as its memory.
     // Activation, the region cache and the store read its ops after the
     // publish stage releases this run of the metadata log.  The foreground
     // then writes new records over the run.  The build copies the run, and
@@ -148,28 +137,41 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         total_metas = static_cast<uint32_t>(run_length);
     }
 
+    // The slots of this call: at most slot_cap slots, and at most one slot
+    // for each input and each output, because each new slot comes from one.
+    const uint32_t slot_cap =
+        ::fixy::min(slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
+    const uint32_t most_slots = ::fixy::min(slot_cap, total_inputs + total_outputs);
+
+    // The arena of the region holds each run of the region in its first
+    // block: the bytes of each run, and at most the alignment of its element
+    // for the bump of its first element.  The sum of the alignments is above
+    // zero, so the block is too.  A larger run takes a block of its own.
+    const size_t region_bytes = size_t{count} * sizeof(TraceEntry) + size_t{total_metas} * sizeof(TensorMeta)
+                              + size_t{total_scalars} * sizeof(int64_t) + size_t{total_inputs} * sizeof(OpIndex)
+                              + (size_t{total_inputs} + total_outputs) * sizeof(SlotId)
+                              + size_t{most_slots} * sizeof(TensorSlot) + alignof(TraceEntry) + alignof(TensorMeta)
+                              + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId) + alignof(TensorSlot);
+    ::fixy::Box<::fixy::BumpArena> region_arena = ::fixy::mint_box<::fixy::BumpArena>(a, region_bytes);
+
     // The ops of the region, one for each entry of the trace.  The column of
     // the ops takes the brand of the scope, so one index of an op reads it
     // with no check.
-    ::fixy::HeapArray<TraceEntry> op_buffer = ::fixy::mint_heap_array(a, count, TraceEntry{});
-    const auto op_data = trace_data.parallel(op_buffer.view()).expect("the op buffer holds one op for each entry");
+    const ::fixy::View<TraceEntry> op_run = region_arena->array(a, count, TraceEntry{});
+    const auto op_data = trace_data.parallel(op_run).expect("the op run holds one op for each entry");
 
-    ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::mint_heap_array(a, total_metas, TensorMeta{});
+    const ::fixy::View<TensorMeta> meta_run = region_arena->array(a, total_metas, TensorMeta{});
     if (first_meta.is_valid()) {
-        meta_log_.get()->copy_run(first_meta.raw(), meta_buffer.view());
+        meta_log_.get()->copy_run(first_meta.raw(), meta_run);
     }
 
-    // The other arrays of the ops: the scalars, the producer of each input,
+    // The other runs of the ops: the scalars, the producer of each input,
     // and the slot ids of the inputs and then the outputs of each op.  Each
-    // op takes its windows in order, so a cursor for each buffer gives the
+    // op takes its windows in order, so a cursor for each run gives the
     // start of the next window.
-    ::fixy::HeapArray<int64_t> scalar_buffer = ::fixy::mint_heap_array(a, total_scalars, int64_t{0});
-    ::fixy::HeapArray<OpIndex> producer_buffer = ::fixy::mint_heap_array(a, total_inputs, OpIndex{});
-    ::fixy::HeapArray<SlotId> slot_buffer = ::fixy::mint_heap_array(a, total_inputs + total_outputs, SlotId{});
-    const ::fixy::View<TensorMeta> meta_run = meta_buffer.view();
-    const ::fixy::View<int64_t> scalar_run = scalar_buffer.view();
-    const ::fixy::View<OpIndex> producer_run = producer_buffer.view();
-    const ::fixy::View<SlotId> slot_run = slot_buffer.view();
+    const ::fixy::View<int64_t> scalar_run = region_arena->array(a, total_scalars, int64_t{0});
+    const ::fixy::View<OpIndex> producer_run = region_arena->array(a, total_inputs, OpIndex{});
+    const ::fixy::View<SlotId> slot_run = region_arena->array(a, total_inputs + total_outputs, SlotId{});
     size_t scalar_cursor = 0;
     size_t producer_cursor = 0;
     size_t slot_cursor = 0;
@@ -183,25 +185,19 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         map_gen_ = 1;
     }
 
-    // Value-initialize only the portion this call uses.  The window of the
-    // slots is exactly the slot_cap slots of this call, so a slot id below
-    // slot_cap reads its slot with the one compare of the window.
-    uint32_t slot_cap = ::fixy::min(slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
-    const ::fixy::View<SlotInfo> local_slots =
-        scratch_slots_.view().window(0, slot_cap).expect("the slot scratch holds slot_cap_max_ slots");
-    for (SlotInfo& slot_info : local_slots) {
-        slot_info = SlotInfo{};
-    }
+    // The slots and the edges of the build are runs of the scratch arena,
+    // which end with its epoch.  The run of the slots is exactly the
+    // slot_cap slots of this call, so a slot id below slot_cap reads its slot
+    // with the one compare of the run.  Each input and each output adds at
+    // most one edge, and num_edges bounds every read of the edges.
+    const ::fixy::View<SlotInfo> local_slots = scratch.array(a, slot_cap, SlotInfo{});
     uint32_t next_slot_raw = 0;
-
-    // The edge buffer needs no initialization: num_edges bounds every
-    // read.
+    const ::fixy::View<Edge> local_edges = scratch.array(a, total_inputs + total_outputs, Edge{});
     uint32_t num_edges = 0;
 
-    // Hoisted into locals because the compiler cannot prove the writes
-    // below into the buffers of the region do not alias *this, and would
-    // otherwise reload each member on every access.
-    const ::fixy::View<Edge> local_edges = scratch_edges_.view();
+    // Hoisted into a local because the compiler cannot prove the writes
+    // below into the runs of the region do not alias *this, and would
+    // otherwise reload the member on every access.
     const uint8_t local_gen = map_gen_;
 
     // The ops whose nest is open, for the rule of the same storage below.
@@ -210,7 +206,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         uint32_t op = 0;
         OpDepth depth{};
     };
-    ::fixy::HeapArray<NestMark> nest_stack = ::fixy::mint_heap_array(a, count, NestMark{});
+    const ::fixy::View<NestMark> nest_stack = scratch.array(a, count, NestMark{});
     uint32_t nest_top = 0;
 
     // The fold object owns the seed, the per-op mix and the finalizer,
@@ -329,11 +325,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         // i, and the op before them has the depth of op i or less.  The
         // stack keeps the ops whose nest is open, with depths that do not
         // decrease to its top.  O(1) amortized for each op.
-        while (nest_top > 0 && nest_stack.view().get(nest_top - 1).expect("the stack holds its top")->depth > te.depth)
+        while (nest_top > 0 && nest_stack.get(nest_top - 1).expect("the stack holds its top")->depth > te.depth)
             --nest_top;
         const uint32_t nest_start =
-            nest_top == 0 ? 0 : nest_stack.view().get(nest_top - 1).expect("the stack holds its top")->op + 1;
-        *nest_stack.view().get(nest_top).expect("the stack holds at most one mark for each op") =
+            nest_top == 0 ? 0 : nest_stack.get(nest_top - 1).expect("the stack holds its top")->op + 1;
+        *nest_stack.get(nest_top).expect("the stack holds at most one mark for each op") =
             NestMark{.op = i, .depth = te.depth};
         ++nest_top;
 
@@ -514,44 +510,59 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     // Each slot of the build becomes a TensorSlot of the region, in the
     // order of the slot ids.  compute_memory_plan sets the offset later.  An
     // external slot lives before the region, so its birth is op zero.
-    uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
+    const uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
     const ::fixy::View<SlotInfo const> built_slots =
         local_slots.window(0, num_slots).expect("the slots of the build are below slot_cap");
-    ::fixy::HeapArray<TensorSlot> slots =
-        ::fixy::mint_heap_array_with<TensorSlot>(a, num_slots, [built_slots](size_t slot_idx) noexcept {
-            SlotInfo const& info = *built_slots.get(slot_idx).expect("the slot of each position is built");
-            return TensorSlot{.offset_bytes = 0,
-                              .nbytes = info.nbytes,
-                              .birth_op = info.is_external ? OpIndex{0} : info.birth_op,
-                              .death_op = info.death_op,
-                              .dtype = info.dtype,
-                              .device_type = info.device_type,
-                              .device_idx = info.device_idx,
-                              .layout = info.layout,
-                              .is_external = info.is_external,
-                              .pad = {},
-                              .slot_id = SlotId{static_cast<uint32_t>(slot_idx)},
-                              .pad2 = {}};
-        });
+    const ::fixy::View<TensorSlot> tensor_slots = region_arena->array(a, num_slots, TensorSlot{});
+    uint32_t slot_idx = 0;
+    for (const auto [info, slot] :
+         built_slots.walk().try_zip(tensor_slots.walk()).expect("the run of the slots holds each slot of the build")) {
+        *slot = TensorSlot{.offset_bytes = 0,
+                           .nbytes = info->nbytes,
+                           .birth_op = info->is_external ? OpIndex{0} : info->birth_op,
+                           .death_op = info->death_op,
+                           .dtype = info->dtype,
+                           .device_type = info->device_type,
+                           .device_idx = info->device_idx,
+                           .layout = info->layout,
+                           .is_external = info->is_external,
+                           .pad = {},
+                           .slot_id = SlotId{slot_idx},
+                           .pad2 = {}};
+        ++slot_idx;
+    }
 
     const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(a, scratch);
-    graph->ops = op_buffer.view();
-    graph->slots = slots.view();
+    graph->ops = op_run;
+    graph->slots = tensor_slots;
     graph->num_slots.set(num_slots);
     graph->content_hash = content_fold.finish();
     graph->max_meta_end.set(max_meta_end);
     build_csr(a, scratch, *graph,
               local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"), count);
 
+    // The arena moves into the region with its runs.  A move of a Box moves
+    // no byte of the arena.
+    BuiltRegion::Runs runs{};
+    runs.set_count<BuiltRegion::kOps>(count);
+    runs.set<BuiltRegion::kOps>(op_run);
+    runs.set_count<BuiltRegion::kMetas>(total_metas);
+    runs.set<BuiltRegion::kMetas>(meta_run);
+    runs.set_count<BuiltRegion::kScalars>(total_scalars);
+    runs.set<BuiltRegion::kScalars>(scalar_run);
+    runs.set_count<BuiltRegion::kProducers>(total_inputs);
+    runs.set<BuiltRegion::kProducers>(producer_run);
+    runs.set_count<BuiltRegion::kSlotIds>(total_inputs + total_outputs);
+    runs.set<BuiltRegion::kSlotIds>(slot_run);
+    runs.set_count<BuiltRegion::kSlots>(num_slots);
+    runs.set<BuiltRegion::kSlots>(tensor_slots);
     return BuiltTrace{.graph = graph,
-                      .region = BuiltRegion{BuiltRegion::Parts{.ops = std::move(op_buffer),
-                                                               .metas = std::move(meta_buffer),
-                                                               .scalars = std::move(scalar_buffer),
-                                                               .producers = std::move(producer_buffer),
-                                                               .slot_ids = std::move(slot_buffer),
-                                                               .slots = std::move(slots),
-                                                               .content_hash = graph->content_hash,
-                                                               .numerics = numerics}}};
+                      .region = BuiltRegion{BuiltRegion::Parts{
+                          .arena = ::fixy::mint_heap_array_with<::fixy::Box<::fixy::BumpArena>>(
+                              a, 1, [&region_arena](size_t) noexcept { return std::move(region_arena); }),
+                          .runs = runs,
+                          .content_hash = graph->content_hash,
+                          .numerics = numerics}}};
 }
 
 }  // namespace crucible

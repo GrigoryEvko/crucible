@@ -695,56 +695,85 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor
 // The memory goes to a slot of the region store before the region becomes
 // visible, so each region that a holder can name has an owner.  A store with
 // no free slot discards the region, as a reset discards a stale region.
+//
+// The node and the plan of the region are locals until the region memory
+// takes them.  Each takes its writes through its element door, and the link
+// of the node leaves the door through a local, as the erased Ref of the
+// protocol of the store.  A move of a HeapArray keeps its storage, so the
+// node keeps its address in the store.  Then one element door of the store
+// writes the region memory, and the region becomes visible after it.
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
-    ::fixy::Option<::fixy::Ref<RegionMemory>> free_slot{};
-    for (RegionMemory& slot : region_store_) {
-        if (slot.node.size() == 0) {
-            free_slot = ::fixy::some(::fixy::erase_brand(::fixy::to(slot)));
-            break;
-        }
-    }
+    ::fixy::Option<size_t> free_slot = ::fixy::find_if(
+        region_store_.view(), [](RegionMemory const& memory) noexcept { return memory.node.size() == 0; });
     if (free_slot.is_none()) [[unlikely]] {
         ++regions_dropped_full_;
         return;
     }
-    RegionMemory& memory = *std::move(free_slot).expect("the test above found a free slot");
-    memory = RegionMemory{
-        .parts = std::move(parts),
-        .node = ::fixy::mint_heap_array_with<RegionNode>(bg.alloc, 1, [](size_t) noexcept { return RegionNode{}; }),
-        .plan = {},
-        .published = {},
-        .left_generation = NOT_LEFT};
-    RegionNode& region = *memory.node.get(0).expect("the region memory holds one node");
-    // RegionNode and MemoryPlan hold Views that can write, so the node and
-    // the plan read the buffers of the parts, not the Views of const.
-    init_region_node(region, memory.parts.ops_.view(), memory.parts.content_hash(), memory.parts.numerics());
-    const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots().size());
-    if (num_slots > 0) {
-        memory.plan =
-            ::fixy::mint_heap_array_with<MemoryPlan>(bg.alloc, 1, [](size_t) noexcept { return MemoryPlan{}; });
-        MemoryPlan& plan_storage = *memory.plan.get(0).expect("the region memory holds one plan");
-        // The plan lives in the memory of the region, outside the epoch, so
-        // the body writes its link and the result of the epoch holds none.
-        // The sweep gives a Ref of the storage of the plan.  A refused plan
-        // leaves the region with no plan, so the region stays on eager.
-        publish_scratch_.with_epoch([&]() noexcept {
-            region.plan = make_plan_link(
-                compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots_.view()).ok());
-        });
+    const size_t free_position = std::move(free_slot).expect("the test above found a free slot");
+
+    ::fixy::HeapArray<RegionNode> node =
+        ::fixy::mint_heap_array_with<RegionNode>(bg.alloc, 1, [](size_t) noexcept { return RegionNode{}; });
+    ::fixy::HeapArray<MemoryPlan> plan{};
+    if (parts.slots().size() > 0) {
+        plan = ::fixy::mint_heap_array_with<MemoryPlan>(bg.alloc, 1, [](size_t) noexcept { return MemoryPlan{}; });
     }
+    // RegionNode and MemoryPlan hold Views that can write, so the node and
+    // the plan read the writing runs of the parts, not the Views of const.
+    const ::fixy::View<TraceEntry> ops = parts.runs_.view<BuiltRegion::kOps>();
+    const ::fixy::View<TensorSlot> slots = parts.runs_.view<BuiltRegion::kSlots>();
+    const ContentHash content_hash = parts.content_hash();
+    const NumericsHash numerics = parts.numerics();
+    ::fixy::BumpArena& scratch = publish_scratch_;
+    RegionLink published{};
+    ConstRegionLink const_published{};
+    node.with_element(
+        0,
+        [this, &bg, &plan, &scratch, &published, &const_published, ops, slots, content_hash,
+         numerics](RegionNode& region) noexcept {
+            init_region_node(region, ops, content_hash, numerics);
+            // The plan lives in the memory of the region, outside the epoch,
+            // so the body writes its link and the result of the epoch holds
+            // none.  The sweep gives a Ref of the storage of the plan.  A
+            // refused plan leaves the region with no plan, so the region
+            // stays on eager.  A region with no slot has no plan.
+            plan.with_element(
+                0,
+                [this, &bg, &scratch, &region, slots](MemoryPlan& plan_storage) noexcept {
+                    scratch.with_epoch([&]() noexcept {
+                        region.plan = make_plan_link(compute_memory_plan(bg.alloc, plan_storage, scratch, slots).ok());
+                    });
+                },
+                [] noexcept {});
+            recompute_merkle(region);
+            published = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
+            const_published = ConstRegionLink::some(::fixy::erase_brand(::fixy::to(region)));
+        },
+        [] noexcept { ::fixy::fatal("the node of a region holds one element"); });
 
-    recompute_merkle(region);
-    const RegionLink published = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
-    last_published_ = ConstRegionLink::some(::fixy::erase_brand(::fixy::to(region)));
+    region_store_.with_element(
+        free_position,
+        [&parts, &node, &plan, const_published, reset_point](RegionMemory& memory) noexcept {
+            memory = RegionMemory{.parts = std::move(parts),
+                                  .node = std::move(node),
+                                  .plan = std::move(plan),
+                                  .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
+                                  .left_generation = NOT_LEFT};
+        },
+        [] noexcept { ::fixy::fatal("the search above found a free slot of the region store"); });
+    last_published_ = const_published;
 
-    memory.published = PublishedRegion{.region = last_published_, .reset_point = reset_point};
-
+    RegionNode& region = *RegionLink{published}.expect("the element door of the node wrote its link");
     uncompiled_regions_.push(region);
     active_region_.store_release(published);
     owner_marks_ = RegionMarks{};
-    // The callback gets a proof of its own, which dies with the call.
-    (*region_ready_)(bg, PublishStage{}, memory.published);
+    // The callback gets a proof of its own, which dies with the call, and
+    // the record in the slot of the store, whose address it can keep.
+    (*region_ready_)(bg, PublishStage{},
+                     region_store_.view()
+                         .get(free_position)
+                         .expect("the search above found a free slot of the region store")
+                         ->published);
     sweep_regions_(stage);
 }
 
@@ -756,22 +785,53 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 // region that the write does not name.  With no foreground, the sweep
 // releases a region with no holder at once.  Complexity: O(S * H) for S slots
 // and H held regions.
+//
+// The sweep reads each slot through the View of the const store, and then
+// writes the step for the slot through the element door of the store.
 void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
-    for (RegionMemory& memory : region_store_) {
-        if (memory.node.size() == 0) continue;
-        const ConstRegionLink region =
-            ConstRegionLink::some(::fixy::erase_brand(memory.node.get(0).expect("a used slot holds its node")));
-        if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, owner_marks_.handed)) {
-            memory.left_generation = NOT_LEFT;
-            continue;
+    // The write of the sweep to one slot.
+    enum class SweepStep : uint8_t {
+        None,  // a free slot, or a region that a holder names or that waits for a write of the foreground
+        Keep,  // the last published region or the handed region
+        MarkLeft,  // the first sweep that found the region out of the view of the foreground
+        Release,
+    };
+    const uint64_t generation = owner_marks_.foreground_generation;
+    for (size_t position = 0; position < region_store_.size(); ++position) {
+        const RegionMemory& memory =
+            *region_store_.view().get(position).expect("the position is below the count of the store");
+        SweepStep step = SweepStep::None;
+        if (memory.node.size() != 0) {
+            const ConstRegionLink region =
+                ConstRegionLink::some(::fixy::erase_brand(memory.node.get(0).expect("a used slot holds its node")));
+            if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, owner_marks_.handed)) {
+                step = SweepStep::Keep;
+            } else if (owner_marks_.has_foreground && memory.left_generation == NOT_LEFT) {
+                step = SweepStep::MarkLeft;
+            } else if (!is_held_(region) && !(owner_marks_.has_foreground && generation <= memory.left_generation)) {
+                step = SweepStep::Release;
+            }
         }
-        if (owner_marks_.has_foreground && memory.left_generation == NOT_LEFT) {
-            memory.left_generation = owner_marks_.foreground_generation;
-            continue;
-        }
-        if (is_held_(region)) continue;
-        if (owner_marks_.has_foreground && owner_marks_.foreground_generation <= memory.left_generation) continue;
-        memory = RegionMemory{};
+        if (step == SweepStep::None) continue;
+        region_store_.with_element(
+            position,
+            [step, generation](RegionMemory& slot) noexcept {
+                switch (step) {
+                    case SweepStep::Keep:
+                        slot.left_generation = NOT_LEFT;
+                        break;
+                    case SweepStep::MarkLeft:
+                        slot.left_generation = generation;
+                        break;
+                    case SweepStep::Release:
+                        slot = RegionMemory{};
+                        break;
+                    case SweepStep::None:
+                    default:
+                        break;
+                }
+            },
+            [] noexcept { ::fixy::fatal("the position is below the count of the store"); });
     }
 }
 
@@ -788,13 +848,15 @@ bool BackgroundThread::is_held_(ConstRegionLink region) const noexcept {
 }
 
 void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) noexcept {
-    for (RegionMemory& memory : region_store_) {
-        if (memory.node.size() == 0) continue;
-        if (::fixy::same_target(::fixy::some(memory.node.get(0).expect("a used slot holds its node")), region)) {
-            memory.left_generation = NOT_LEFT;
-            return;
-        }
-    }
+    ::fixy::Option<size_t> kept = ::fixy::find_if(region_store_.view(), [region](RegionMemory const& memory) noexcept {
+        return memory.node.size() != 0
+            && ::fixy::same_target(::fixy::some(memory.node.get(0).expect("a used slot holds its node")), region);
+    });
+    if (kept.is_none()) return;
+    region_store_.with_element(
+        std::move(kept).expect("the test above found the slot"),
+        [](RegionMemory& memory) noexcept { memory.left_generation = NOT_LEFT; },
+        [] noexcept { ::fixy::fatal("the search above found the slot of the region"); });
 }
 
 uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {

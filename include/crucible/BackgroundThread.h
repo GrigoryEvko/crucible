@@ -606,71 +606,75 @@ private:
     ::fixy::AtomicMonotonic<uint64_t> works_built_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
 public:
-    // The parts of one built region, each in a buffer of the exact count.
-    // The build stage makes them, a message moves them to the publish stage,
-    // and the publish stage gives them to the region store, or frees them
-    // when it discards the region.  The payload walk of the pipeline channels
-    // reads each member (fixy/concurrent/PayloadRow.h).
+    // The parts of one built region, each a run of the exact count in the
+    // arena of the region.  The build stage makes them, a message moves them
+    // to the publish stage, and the publish stage gives them to the region
+    // store, or frees them when it discards the region.  The payload walk of
+    // the pipeline channels reads each member (fixy/concurrent/PayloadRow.h).
     //
     // A region moves between threads (foundation/Transfer.h).  Each op points
-    // into the buffers of its own region, which move with it, and no object
+    // into the runs of its own region, which move with it, and no object
     // outside the region points into them, so the region states the property
     // that the pointers of its ops hide.
     //
-    // The buffers are private, because an assignment to one buffer would
-    // free the storage that the ops still name.  The region gives Views of
-    // const of its buffers, and it moves only as a whole.  Only
-    // BackgroundThread builds a region with parts.  The default region is
-    // empty, as in a commit message.
+    // The arena owns each run, and each run came out of the arena one time.
+    // The arena is on the heap, so a move of the region moves no run.  The
+    // runs are private, because an assignment to one run would lose the
+    // storage that the ops still name.  The region gives Views of const of
+    // its runs, and it moves only as a whole.  Only BackgroundThread builds a
+    // region with parts, and only the publish stage writes the ops and the
+    // slots of a region.  The default region holds no arena and no run, as
+    // in a commit message.
     class[[= ::foundation::transfer::sendable{}]] BuiltRegion {
     public:
         BuiltRegion() noexcept = default;
 
-        [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return ops_.view(); }
-        [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return metas_.view(); }
-        [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return scalars_.view(); }
-        [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return producers_.view(); }
-        [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return slot_ids_.view(); }
-        [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return slots_.view(); }
+        [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return runs_.view<kOps>(); }
+        [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return runs_.view<kMetas>(); }
+        [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return runs_.view<kScalars>(); }
+        [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return runs_.view<kProducers>(); }
+        [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return runs_.view<kSlotIds>(); }
+        [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return runs_.view<kSlots>(); }
         [[nodiscard]] ContentHash content_hash() const noexcept { return content_hash_; }
         [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
 
     private:
         friend struct BackgroundThread;
 
-        // The parts of one build.  The ops point into the other buffers.
+        // The index and the slot of the count of each run.  The ops point into
+        // the other runs: the tensor metadata, the scalars, the producer of
+        // each input, and the slot ids of the inputs and the outputs.  The
+        // slots are the slots of the memory plan.
+        static constexpr size_t kOps = 0;
+        static constexpr size_t kMetas = 1;
+        static constexpr size_t kScalars = 2;
+        static constexpr size_t kProducers = 3;
+        static constexpr size_t kSlotIds = 4;
+        static constexpr size_t kSlots = 5;
+        using Runs = ::fixy::RunSet<uint32_t, ::fixy::RunOf<TraceEntry, kOps>, ::fixy::RunOf<TensorMeta, kMetas>,
+                                    ::fixy::RunOf<int64_t, kScalars>, ::fixy::RunOf<OpIndex, kProducers>,
+                                    ::fixy::RunOf<SlotId, kSlotIds>, ::fixy::RunOf<TensorSlot, kSlots>>;
+
+        // The parts of one build: the arena of the region, in an array of
+        // one Box, and the runs that the arena gave.
         struct Parts {
-            ::fixy::HeapArray<TraceEntry> ops{};
-            ::fixy::HeapArray<TensorMeta> metas{};
-            ::fixy::HeapArray<int64_t> scalars{};
-            ::fixy::HeapArray<OpIndex> producers{};
-            ::fixy::HeapArray<SlotId> slot_ids{};
-            ::fixy::HeapArray<TensorSlot> slots{};
+            ::fixy::HeapArray<::fixy::Box<::fixy::BumpArena>> arena{};
+            Runs runs{};
             ContentHash content_hash{};
             NumericsHash numerics{};
         };
 
         explicit BuiltRegion(Parts&& parts) noexcept
-            : ops_{std::move(parts.ops)},
-              metas_{std::move(parts.metas)},
-              scalars_{std::move(parts.scalars)},
-              producers_{std::move(parts.producers)},
-              slot_ids_{std::move(parts.slot_ids)},
-              slots_{std::move(parts.slots)},
+            : arena_{std::move(parts.arena)},
+              runs_{parts.runs},
               content_hash_{parts.content_hash},
               numerics_{parts.numerics} {}
 
-        ::fixy::HeapArray<TraceEntry> ops_{};
-        // The tensor metadata of the ops.  An op points into this buffer.
-        ::fixy::HeapArray<TensorMeta> metas_{};
-        // The scalars, the producer of each input, and the slot ids of the
-        // inputs and the outputs of the ops.  An op points into these
-        // buffers.
-        ::fixy::HeapArray<int64_t> scalars_{};
-        ::fixy::HeapArray<OpIndex> producers_{};
-        ::fixy::HeapArray<SlotId> slot_ids_{};
-        // The slots of the memory plan.
-        ::fixy::HeapArray<TensorSlot> slots_{};
+        // The arena that owns each run below: one Box in the region of a
+        // build, and none in the default region.  An Option of a Box would
+        // state the same, but the payload walk refuses an Option.
+        ::fixy::HeapArray<::fixy::Box<::fixy::BumpArena>> arena_{};
+        Runs runs_{};
         ContentHash content_hash_{};
         // The numerics hash that the content hash folds.
         NumericsHash numerics_{};
@@ -1437,7 +1441,6 @@ public:
 
     static constexpr uint32_t MIN_PTR_MAP_CAP = 4096;
     static constexpr uint32_t MIN_SCRATCH_SLOT_CAP = 8192;
-    static constexpr uint32_t MIN_SCRATCH_EDGE_CAP = 16384;
     // std::bit_ceil is undefined at 2^31, so the cap stops one power below.
     static constexpr uint32_t MAX_PTR_MAP_CAP = uint32_t{1} << 30;
 
@@ -1501,23 +1504,22 @@ public:
     };
 
 private:
-    // The scratch of the build stage, which is its one user.  The map has a
-    // power-of-two capacity, so its mask wraps each probe.
+    // The map of the build stage, which is its one user.  The map has a
+    // power-of-two capacity, so its mask wraps each probe.  The slots and
+    // the edges of one build are runs of the build arena.
     ::fixy::MaskedArray<PtrSlot> scratch_map_;
-    ::fixy::HeapArray<SlotInfo> scratch_slots_;
-    ::fixy::HeapArray<Edge> scratch_edges_;
     uint8_t map_gen_ = 0;
 
-    // Zero means not yet allocated.
+    // Zero means not yet allocated.  The cap of the slots bounds the slots
+    // of one build.
     ::fixy::Monotonic<uint32_t> map_cap_ = ::fixy::mint_monotonic<uint32_t>(0);
     ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
-    ::fixy::Monotonic<uint32_t> edge_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
 
     // build_trace_ calls this after its scan of the trace, which supplies
-    // exact counts.  Buffers grow and never shrink, so the cost amortizes
-    // across iterations.  It writes the scratch of the build stage, as
-    // build_trace_ does.
-    void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs, uint32_t total_outputs);
+    // exact counts.  The map and the cap of the slots grow and never shrink,
+    // so the cost amortizes across iterations.  It writes the scratch of the
+    // build stage, as build_trace_ does.
+    void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_outputs);
 
 public:
     // The bytes of the storage of a slot that the tensor reaches: from the
