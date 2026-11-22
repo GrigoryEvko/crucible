@@ -263,7 +263,8 @@ void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
                 perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
             Channel channel{std::move(producer_root)};
             auto consumer = channel.consumer(std::move(consumer_perm));
-            channel.drain([](std::uint64_t) noexcept {});
+            Channel::DrainClaim claim{channel};
+            channel.drain(claim, [](std::uint64_t) noexcept {});
             ::foundation::linear::drop(std::move(consumer));
         },
         ::fixy::TextView{"a drain of a merge channel while its consumer handle lives."});

@@ -91,7 +91,8 @@ void drain_while_a_producer_lives() {
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
     [[maybe_unused]] auto held = lend(channel, kFirst);
-    channel.drain([](int) noexcept {});
+    Lanes::DrainClaim claim{channel};
+    channel.drain(claim, [](int) noexcept {});
 }
 
 // A refused door ends the process, so each attack runs in a child through
@@ -164,9 +165,12 @@ void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
     }
     CRUCIBLE_TEST_ASSERT(test, channel.is_closed());
     ::fixy::FixedList<int, 4> drained{};
-    channel.drain([&drained](int item) noexcept {
-        static_cast<void>(drained.append(item).expect("the drain gives at most four items"));
-    });
+    {
+        Lanes::DrainClaim claim{channel};
+        channel.drain(claim, [&drained](int item) noexcept {
+            static_cast<void>(drained.append(item).expect("the drain gives at most four items"));
+        });
+    }
     CRUCIBLE_TEST_ASSERT(test, drained.size() == 3);
     CRUCIBLE_TEST_ASSERT(test, *drained.get(0).expect("a first item") == 11);
     CRUCIBLE_TEST_ASSERT(test, *drained.get(1).expect("a second item") == 21);
@@ -197,7 +201,7 @@ void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
     auto withdrawn = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
     CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && channel.producer(kFirst).is_none());
     auto back = channel.with_recombined_access(
-        std::move(withdrawn), std::move(consumer_perm),
+        Lanes::RecombinedParts{.root = std::move(withdrawn), .consumer = std::move(consumer_perm)},
         [](Lanes::ring_type& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
     channel.deposit_producer_root(std::move(back.root));
     CRUCIBLE_TEST_ASSERT(test, !channel.is_exclusive_active());

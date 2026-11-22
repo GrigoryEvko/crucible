@@ -110,10 +110,8 @@ concept GivesRecombinedAccess = requires(
     channel.with_recombined_access(std::move(whole), [](typename Channel::ring_type&) noexcept {});
 };
 template <typename Channel>
-concept GivesLeasedAccess = requires(
-    Channel& channel, typename Channel::producer_lease&& root,
-    ::foundation::permissions::Permission<typename Channel::consumer_tag, WitnessBrand>&& consumer) {
-    channel.with_recombined_access(std::move(root), std::move(consumer), [](typename Channel::ring_type&) noexcept {});
+concept GivesLeasedAccess = requires(Channel& channel, typename Channel::RecombinedParts&& parts) {
+    channel.with_recombined_access(std::move(parts), [](typename Channel::ring_type&) noexcept {});
 };
 template <typename Channel>
 concept HasRootDoors = requires(Channel& channel) { channel.try_withdraw_producer_root(); };

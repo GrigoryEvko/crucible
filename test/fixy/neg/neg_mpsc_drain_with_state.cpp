@@ -17,7 +17,8 @@ using Channel =
 
 [[maybe_unused]] int attempt(Channel& channel) noexcept {
     int count = 0;
-    channel.drain([&count](int) noexcept { ++count; });
+    Channel::DrainClaim claim{channel};
+    channel.drain(claim, [&count](int) noexcept { ++count; });
     return count;
 }
 

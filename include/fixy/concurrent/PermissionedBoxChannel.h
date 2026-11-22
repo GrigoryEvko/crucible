@@ -167,7 +167,8 @@ public:
     // Each object that the ring still holds ends here (THE WORDS).  The drop
     // holds no state, as the drain of a merge asks.
     ~PermissionedBoxChannel() {
-        cells_.drain([](word_type word) noexcept { static_cast<void>(open_(word)); });
+        typename cell_channel::DrainClaim claim{cells_};
+        cells_.drain(claim, [](word_type word) noexcept { static_cast<void>(open_(word)); });
     }
 
     class[[= ::foundation::linear::linear_when<Form == ChannelForm::wire>]] ProducerHandle {

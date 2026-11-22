@@ -247,6 +247,11 @@ public:
     // the Option of the handle in a caller give a false maybe-uninitialized
     // error of GCC 16 at -O1 with TSan, because the compiler does not see that
     // the Option holds no handle on the path where the pool lent no share.
+    //
+    // A claim door (THE DOORS OF A SYNCHRONIZED CLASS of foundation/
+    // Transfer.h): one compare-exchange of the pool makes the share, and the
+    // handle holds it.  After the compare-exchange the door writes only the
+    // handle, and a reader handle reads the snapshot with atomic steps.
     [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderHandle> reader() noexcept {
         auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(reader_pool_);
         if (lent.is_none()) return ::fixy::none;

@@ -248,9 +248,9 @@ template <class Channel>
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
     Mpsc channel{std::move(producer_root)};
     auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
-    auto returned =
-        channel.with_recombined_access(std::move(root), std::move(consumer_perm),
-                                       [](Mpsc::ring_type& ring) noexcept { static_cast<void>(ring.try_push(41)); });
+    auto returned = channel.with_recombined_access(
+        Mpsc::RecombinedParts{.root = std::move(root), .consumer = std::move(consumer_perm)},
+        [](Mpsc::ring_type& ring) noexcept { static_cast<void>(ring.try_push(41)); });
     channel.deposit_producer_root(std::move(returned.root));
     auto consumer = channel.consumer(std::move(returned.consumer));
     const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
