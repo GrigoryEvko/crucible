@@ -28,6 +28,6 @@ struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::BrandedView<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()};
+    [[maybe_unused]] auto forged = foundation::core::BrandedView<int, forge::brand>{forge::rvalue<foundation::core::View<int>>()};
     return 0;
 }

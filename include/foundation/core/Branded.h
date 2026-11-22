@@ -78,15 +78,6 @@ class BrandedEnumerateRange;
 template <class Element, ::foundation::brand::IsBrand Brand>
 class BrandedEnumerateCursor;
 
-// The door of mint_branded_scope to the private constructor of a
-// BrandedView.  Only the mint calls it.
-struct BrandedScopeDoor {
-    template <::foundation::brand::IsBrand Brand, class T>
-    [[nodiscard]] static constexpr BrandedView<T, Brand> open(T* first, std::size_t count) noexcept {
-        return BrandedView<T, Brand>{first, static_cast<std::uint32_t>(count)};
-    }
-};
-
 }  // namespace detail
 
 // An index below the count of the BrandedView of Brand.  The value
@@ -268,24 +259,52 @@ using BrandedIndexRange = detail::BrandedIndexRange<Brand>;
 template <class Element, ::foundation::brand::IsBrand Brand>
 using BrandedEnumerateRange = detail::BrandedEnumerateRange<Element, Brand>;
 
+// The arguments of mint_branded_scope: a body that takes the BrandedView of
+// the scope with no throw and gives a value that does not hold the brand.
+template <class T, class Body, class Brand>
+concept CanMintBrandedScope =
+    ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, BrandedView<T, Brand>>
+    && !std::is_void_v<std::invoke_result_t<Body&&, BrandedView<T, Brand>>>
+    && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedView<T, Brand>>, ^^Brand);
+
+// The mint of a branded scope.  BrandedView names it as a friend, and this
+// header defines it after BrandedView.
+template <class... Refused, class T, std::size_t Extent, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0 && CanMintBrandedScope<T, Body, Fresh>)
+[[nodiscard]] constexpr auto mint_branded_scope(View<T, Extent> view, Body&& body) noexcept;
+
 // The View of one branded scope.  It comes only from mint_branded_scope,
 // and its count never changes, so each BrandedIndex<Brand> stays below it.
+// It holds the View that the mint took, and the mint bounds its count by
+// max_branded_count.  The two friends that build a BrandedView are the mint,
+// with the fresh brand of its instance, and parallel() of a BrandedView of
+// the same brand, from a View of the same count.
 template <class T, ::foundation::brand::IsBrand Brand>
 class BrandedView final {
-    T* first_ = nullptr;
-    std::uint32_t count_ = 0;
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    View<T> run_{};
 
-    friend struct detail::BrandedScopeDoor;
+    template <class... Refused, class U, std::size_t Extent, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0 && CanMintBrandedScope<U, Body, Fresh>)
+    friend constexpr auto mint_branded_scope(View<U, Extent> view, Body&& body) noexcept;
+    template <class U, ::foundation::brand::IsBrand OtherBrand>
+    friend class BrandedView;
 
-    constexpr BrandedView(T* first, std::uint32_t count) noexcept : first_{first}, count_{count} {}
+    constexpr explicit BrandedView(View<T> run) noexcept : run_{run} {}
 
 public:
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
+    // The count, which the mint bounds by max_branded_count.  The assume
+    // gives the optimizer that bound, so a loop over the indexes of 4 bytes
+    // needs no extension of the index to the count.
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        std::size_t const count = run_.size();
+        [[assume(count <= detail::max_branded_count)]];
+        return count;
+    }
 
     // The plain View of the elements.  It has no brand, so an index of the
     // scope proves nothing about it.
-    [[nodiscard]] constexpr View<T> view() const noexcept { return detail::view_over_(first_, size()); }
+    [[nodiscard]] constexpr View<T> view() const noexcept { return run_; }
 
     [[nodiscard]] constexpr ViewCursor<T> begin() const noexcept { return view().begin(); }
     [[nodiscard]] constexpr ViewCursor<T> end() const noexcept { return view().end(); }
@@ -307,19 +326,20 @@ public:
 
     // The element at an index of this view.  The brand proves the index below
     // the count, so the read has no check.  The assume reads a local copy of
-    // the count.  An assume that reads the member count_ makes GCC 16 keep
-    // the view in memory, and a loop then stores the view again for each read.
+    // the count.  An assume that reads the member of the count makes GCC 16
+    // keep the view in memory, and a loop then stores the view again for each
+    // read.
     [[nodiscard]] constexpr T& at(BrandedIndex<Brand> index) const noexcept {
         std::size_t const position = index.raw();
-        std::size_t const count = count_;
+        std::size_t const count = size();
         [[assume(position < count)]];
-        return first_[position];
+        return first_of_(detail::BaseLayerRead{}, run_)[position];
     }
 
     // The loop `for (auto [index, element] : view.enumerate())`: each element
     // with its index, and a Ref with the brand of the scope.
     [[nodiscard]] constexpr BrandedEnumerateRange<T, Brand> enumerate() const noexcept {
-        return BrandedEnumerateRange<T, Brand>{first_, size()};
+        return BrandedEnumerateRange<T, Brand>{first_of_(detail::BaseLayerRead{}, run_), size()};
     }
 
     // The BrandedView of other with the brand of this scope, or no value when
@@ -332,33 +352,22 @@ public:
         if (other.size() != size()) {
             return Option<BrandedView<U, Brand>>{none};
         }
-        U* const first = count_ == 0 ? nullptr : first_of_(detail::BaseLayerRead{}, other);
-        return Option<BrandedView<U, Brand>>::some(detail::BrandedScopeDoor::open<Brand>(first, count_));
+        return Option<BrandedView<U, Brand>>::some(BrandedView<U, Brand>{View<U>{other}});
     }
 };
 
-// The arguments of mint_branded_scope: a body that takes the BrandedView of
-// the scope with no throw and gives a value that does not hold the brand.
-template <class T, class Body, class Brand>
-concept CanMintBrandedScope =
-    ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, BrandedView<T, Brand>>
-    && !std::is_void_v<std::invoke_result_t<Body&&, BrandedView<T, Brand>>>
-    && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedView<T, Brand>>, ^^Brand);
-
 // Calls body with the BrandedView of view, with the fresh brand of the
-// instance of the mint, and gives the result of body.  A View of more than 0xFFFFFFFF elements
-// ends the process.  The pack refuses each explicit argument, so no caller
-// names the brand.
-template <class... Refused, class T, std::size_t Extent, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+// instance of the mint, and gives the result of body.  A View of more than
+// 0xFFFFFFFF elements ends the process.  The pack refuses each explicit
+// argument, so no caller names the brand.
+template <class... Refused, class T, std::size_t Extent, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0 && CanMintBrandedScope<T, Body, Fresh>)
-[[nodiscard]] constexpr auto mint_branded_scope(View<T, Extent> view, Body&& body) noexcept {
+constexpr auto mint_branded_scope(View<T, Extent> view, Body&& body) noexcept {
     std::size_t const count = view.size();
     if (count > detail::max_branded_count) [[unlikely]] {
         fatal("a branded scope over a View of {} elements, past the count that an index of 4 bytes proves", count);
     }
-    T* const first = count == 0 ? nullptr : first_of_(detail::BaseLayerRead{}, view);
-    return static_cast<Body&&>(body)(detail::BrandedScopeDoor::open<Fresh>(first, count));
+    return static_cast<Body&&>(body)(BrandedView<T, Fresh>{View<T>{view}});
 }
 
 }  // namespace foundation::core

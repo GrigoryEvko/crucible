@@ -4787,6 +4787,11 @@ foundation_neg_compile_test(neg_core_sort_run_door_forged
 foundation_neg_compile_test(neg_core_sort_run_door_not_friend
   "foundation::core::SortRunDoor::fixed_run_\\(Element\\*\\) \\[with long unsigned int Count = 4; Element = int\\]. is private within this context"
   "Sort\\.h:[0-9]+:[0-9]+: note: declared private here")
+# The former door of the branded scope built a BrandedView of any brand and
+# any count.  The mint and parallel() are the only builders of a BrandedView.
+foundation_neg_compile_test(neg_core_branded_scope_door_removed
+  ".BrandedScopeDoor. in namespace .foundation::core::detail. does not name a type"
+  "neg_core_branded_scope_door_removed\\.cpp:9:[0-9]+: error:")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result

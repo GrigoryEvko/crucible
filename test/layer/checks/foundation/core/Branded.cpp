@@ -25,7 +25,11 @@ static_assert(std::is_trivially_destructible_v<BrandedIndex<CheckBrand>>);
 // becomes an index.
 static_assert(!std::is_convertible_v<BrandedIndex<CheckBrand>, BrandedIndex<OtherBrand>>);
 static_assert(!std::is_constructible_v<BrandedIndex<CheckBrand>, std::uint32_t>);
-static_assert(!std::is_constructible_v<BrandedView<int, CheckBrand>, int*, std::uint32_t>);
+static_assert(!std::is_constructible_v<BrandedView<int, CheckBrand>, View<int>>);
+
+// A branded view holds the View that its mint took, and no other byte.
+static_assert(sizeof(BrandedView<int, CheckBrand>) == sizeof(View<int>));
+static_assert(alignof(BrandedView<int, CheckBrand>) == alignof(View<int>));
 
 // The body of a scope gives a value that does not hold the brand.
 struct GivesCount final {
