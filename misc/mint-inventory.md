@@ -190,7 +190,7 @@ that the axis does not apply to the row.
 | `mint_owned_region(T0_0*, std::size_t, foundation::permissions::Permission<T0_1, T0_2>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 30 |
 | `mint_owned_region(foundation::effects::Alloc, T0_1&, std::size_t, foundation::permissions::Permission<T0_2, T0_3>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 30 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
-| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 21 |
+| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 23 |
 | `mint_refined_constant` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
