@@ -70,9 +70,13 @@ struct alignas(Element) CallerBytes {
     ::fixy::FixedArray<std::byte, sizeof(Element) * Count + 1> bytes{};
 };
 
+// The C entries take and give the raw pointers of the C interface, and a
+// CrucibleMeta holds C arrays and a pointer, so each call of an entry and each
+// write of a record is in an ABI region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case calls the C entries of the vessel library with raw pointers")
+
 // The record of a contiguous float tensor of four elements at a synthetic
 // address.  No code reads through the address.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case writes a CrucibleMeta of vessel_api.h with a synthetic address")
 [[nodiscard]] CrucibleMeta record_at(crucible::SyntheticAddress address) noexcept {
     CrucibleMeta record{};
     record.sizes[0] = 4;
@@ -85,11 +89,6 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case writes a CrucibleMeta of vessel_api
     record.storage_nbytes = 16;
     return record;
 }
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-
-// The C entries take and give the raw pointers of the C interface, so each
-// call of an entry is in an ABI region.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case calls the C entries of the vessel library with raw pointers")
 
 // The place of the array of a caller in its bytes: the first byte, which has
 // the alignment of the element, or one byte past it, which does not.

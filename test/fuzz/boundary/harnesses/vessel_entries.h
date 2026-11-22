@@ -309,7 +309,7 @@ inline void check_name(InputCursor& cursor, NameForm form) noexcept {
 }
 
 // Writes one command of each kind into seed.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the seed writes the records of a C caller")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the harness reads and writes the fields of a CrucibleMeta of a C caller")
 inline void append_commands(SeedWriter& seed) noexcept {
     CrucibleMeta held{};
     held.sizes[0] = 3;
