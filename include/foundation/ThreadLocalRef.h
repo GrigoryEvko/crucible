@@ -213,6 +213,10 @@ claim_thread_local_index_(ThreadLocalTypeIds key) noexcept {
 
 }  // namespace detail
 
+// The public name of the two words of a key, which cell_ids() of a handle
+// type gives.
+using ThreadLocalTypeIds = detail::ThreadLocalTypeIds;
+
 template <typename Tag, typename T>
     requires ThreadLocalValue<T> && ::foundation::reflect::HasStableIdentity<Tag>
 class [[nodiscard]] ThreadLocalRef {
@@ -246,7 +250,7 @@ public:
     constexpr ThreadLocalRef() noexcept = default;
 
     // The two words of the key of the cell of this handle type (THE KEY).
-    [[nodiscard]] static consteval detail::ThreadLocalTypeIds cell_ids() noexcept { return key_; }
+    [[nodiscard]] static consteval ThreadLocalTypeIds cell_ids() noexcept { return key_; }
 
     constexpr ThreadLocalRef(ThreadLocalRef const&) noexcept = default;
     constexpr ThreadLocalRef(ThreadLocalRef&&) noexcept = default;

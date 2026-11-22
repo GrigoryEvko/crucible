@@ -142,6 +142,11 @@ public:
 
 }  // namespace detail
 
+// The public name of the text of one block, which row_mismatch_message_v
+// gives.  A caller can name its type and read size(), data() and view().
+template <std::size_t Capacity>
+using row_mismatch_text = detail::char_buffer<Capacity>;
+
 // The buffer is sized to the exact sum of the literals and the rendered
 // names, so the returned type differs per instantiation. That is
 // required: only a value of a complete type can be a constant expression

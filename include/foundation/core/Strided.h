@@ -1398,6 +1398,12 @@ struct StridedScopeDoor {
 
 }  // namespace detail
 
+// The public name of the range that indices() of a branded strided view
+// gives.  A caller can name its type and call its begin() and end().  The
+// constructor stays private.
+template <std::size_t Rank, ::foundation::brand::IsBrand Brand>
+using StridedIndexRange = detail::StridedIndexRange<Rank, Brand>;
+
 // The strided view of one scope.  It comes only from mint_strided_scope and
 // from parallel(), and its sizes never change, so each StridedIndex<Rank,
 // Brand> stays below them.
@@ -1463,13 +1469,13 @@ public:
     // Each index of this view, in the row-major order of the walk: the loop
     // `for (auto index : view.indices())`.  A view with no element gives no
     // index, and a view of rank zero gives one.
-    [[nodiscard]] constexpr detail::StridedIndexRange<Rank, Brand> indices() const noexcept {
+    [[nodiscard]] constexpr StridedIndexRange<Rank, Brand> indices() const noexcept {
         auto const& lanes = strided_lanes_of_(detail::StridedDoor::key(), view_);
         auto sizes = detail::StridedCoordinates<Rank>::of_rank(lanes.rank());
         for (std::size_t axis = 0; axis < lanes.rank(); ++axis) {
             sizes.values[axis] = lanes.sizes[axis];
         }
-        return detail::StridedIndexRange<Rank, Brand>{sizes, view_.count()};
+        return StridedIndexRange<Rank, Brand>{sizes, view_.count()};
     }
 
     // The element at an index of this view.  The brand proves each

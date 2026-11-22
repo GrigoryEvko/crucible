@@ -260,6 +260,14 @@ public:
 
 }  // namespace detail
 
+// The public names of the two ranges that a branded view gives: indices()
+// and enumerate().  A caller can name the type of a range and call its
+// begin() and end().  The constructors stay private.
+template <::foundation::brand::IsBrand Brand>
+using BrandedIndexRange = detail::BrandedIndexRange<Brand>;
+template <class Element, ::foundation::brand::IsBrand Brand>
+using BrandedEnumerateRange = detail::BrandedEnumerateRange<Element, Brand>;
+
 // The View of one branded scope.  It comes only from mint_branded_scope,
 // and its count never changes, so each BrandedIndex<Brand> stays below it.
 template <class T, ::foundation::brand::IsBrand Brand>
@@ -293,8 +301,8 @@ public:
 
     // Each index of this view, in order: the loop
     // `for (BrandedIndex<Brand> index : view.indices())`.
-    [[nodiscard]] constexpr detail::BrandedIndexRange<Brand> indices() const noexcept {
-        return detail::BrandedIndexRange<Brand>{size()};
+    [[nodiscard]] constexpr BrandedIndexRange<Brand> indices() const noexcept {
+        return BrandedIndexRange<Brand>{size()};
     }
 
     // The element at an index of this view.  The brand proves the index below
@@ -310,8 +318,8 @@ public:
 
     // The loop `for (auto [index, element] : view.enumerate())`: each element
     // with its index, and a Ref with the brand of the scope.
-    [[nodiscard]] constexpr detail::BrandedEnumerateRange<T, Brand> enumerate() const noexcept {
-        return detail::BrandedEnumerateRange<T, Brand>{first_, size()};
+    [[nodiscard]] constexpr BrandedEnumerateRange<T, Brand> enumerate() const noexcept {
+        return BrandedEnumerateRange<T, Brand>{first_, size()};
     }
 
     // The BrandedView of other with the brand of this scope, or no value when
