@@ -1126,8 +1126,17 @@ class _VesselLib:
         self._lib.crucible_destroy(h)
 
     def flush(self, h: int) -> None:
-        """Wait until the background thread has drained the ring."""
-        self._lib.crucible_flush(h)
+        """Wait until the background thread of the Vigil processed each recorded op.
+
+        crucible_flush gives 1 when the work is complete, and 0 when the
+        background thread stopped first.  The ops after the stop stay
+        unprocessed, so a stop is an error, as in crucible_mode.
+
+        Raises:
+            RuntimeError: If the background thread stopped before the flush completed
+        """
+        if self._lib.crucible_flush(h) == 0:
+            raise RuntimeError("the background thread of the Vigil stopped before the flush completed")
 
     def is_compiled(self, h: int) -> bool:
         """True once the Vigil replays a region instead of recording one."""
@@ -1867,6 +1876,10 @@ class CrucibleNative:
 
         Requires at least 2 complete iterations for the IterationDetector
         to have built a region.  Returns True on success.
+
+        Raises:
+            RuntimeError: If the context is not active, or if the background
+                thread stopped before the flush completed
         """
         if not self._vessel or not self._handle:
             raise RuntimeError("export_trace() requires active CrucibleNative context")
@@ -1895,7 +1908,11 @@ class CrucibleNative:
     # ── Queries ──────────────────────────────────────────────────────
 
     def flush(self) -> None:
-        """Wait until bg thread has fully processed all recorded ops."""
+        """Wait until the background thread processed each recorded op.
+
+        Raises:
+            RuntimeError: If the background thread stopped before the flush completed
+        """
         if self._vessel and self._handle:
             self._vessel.flush(self._handle)
 
