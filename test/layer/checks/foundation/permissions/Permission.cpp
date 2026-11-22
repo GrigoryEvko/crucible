@@ -471,7 +471,7 @@ static_assert(are_tokens_sendable_and_not_shareable<::foundation::brand::Default
 // TOKEN of foundation/Transfer.h).  So a token of an own tag proves a door of
 // a class that states synchronized{}, and so does the lease of a pool, whose
 // constructor is private.  The guard of a share proves no such door, because
-// many holders hold a share at one time (Share): the fixtures
+// many holders hold a share at one time (the share): the fixtures
 // neg_synchronized_door_takes_a_share and neg_synchronized_nested_holds_a_share
 // refuse it.
 class[[= ::foundation::transfer::synchronized{}]] PermittedCount {

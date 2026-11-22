@@ -284,10 +284,9 @@ include/foundation/effects/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/effects/ | replace-pending:<bit> | 2 | - | -
 include/foundation/effects/ | replace-pending:<string_view> | 2 | - | -
 include/foundation/effects/ | replace-pending:<vector> | 2 | - | -
-include/foundation/permissions/ | base-std-entity | 120 | - | -
-include/foundation/permissions/ | base-std-object | 31 | - | -
+include/foundation/permissions/ | base-std-entity | 113 | - | -
+include/foundation/permissions/ | base-std-object | 30 | - | -
 include/foundation/permissions/ | replace-pending:<array> | 2 | - | -
-include/foundation/permissions/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<optional> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<string_view> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<tuple> | 2 | - | -

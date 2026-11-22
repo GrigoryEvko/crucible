@@ -58,7 +58,7 @@ using Snap = AtomicSnapshot<std::uint64_t>;
 // A ring of two lanes of 16 cells each.  The round trip pushes into the lane
 // of the turn and receives the item, so each receive steps the turn.
 // The owner of the ring of lanes of the round trip.  It mints the proof of a
-// lane and the proof of the consumer (Writers of fixy/concurrent/LaneRing.h),
+// lane and the proof of the consumer (the writers of fixy/concurrent/LaneRing.h),
 // because one thread pushes into each lane and pops.
 struct TwoLanesOwner final {
     using Ring = ::fixy::concurrent::LaneRing<std::uint64_t, 16, ::fixy::concurrent::LaneCount{2}, TwoLanesOwner>;

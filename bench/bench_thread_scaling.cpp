@@ -310,7 +310,7 @@ struct ProvenOwner final {
     [[nodiscard]] static constexpr auto consumer() noexcept { return Ring::consumer_proof{}; }
 };
 
-// The owner of the MPSC rings of the rows (Writers of
+// The owner of the MPSC rings of the rows (the writers of
 // fixy/concurrent/MpscRing.h).  A row runs one consumer of a ring, so the
 // bench makes the proof of the consumer, as the channel of a merge makes it
 // for its handle.
@@ -322,7 +322,7 @@ struct MpscOwner final {
     [[nodiscard]] static constexpr auto consumer() noexcept { return Ring::consumer_proof{}; }
 };
 
-// The owner of the ring of lanes of the rows (Writers of
+// The owner of the ring of lanes of the rows (the writers of
 // fixy/concurrent/LaneRing.h).  Each producer of a row holds one lane, and one
 // thread pops, so the bench mints the proof of a lane for each push of its
 // producer, and the proof of the consumer for each pop, as the lanes channel

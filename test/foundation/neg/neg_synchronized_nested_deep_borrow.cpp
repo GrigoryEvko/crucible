@@ -3,7 +3,7 @@
 // A nested handle of a class that states synchronized{} holds a reference to
 // a plain class whose plain int lies four levels down.  No type tells which
 // object the reference names, so the handle can write a plain part of the
-// class, and its door bump takes no proof (Nested classes of
+// class, and its door bump takes no proof (the nested classes of
 // foundation/Transfer.h).  The walk of a borrow reads each level of the class.
 //
 // Expected diagnostic: a door of a nested class can write the class, and the

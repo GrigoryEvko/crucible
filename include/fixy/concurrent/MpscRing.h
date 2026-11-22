@@ -47,7 +47,7 @@
 //   The tail has one writer, the consumer, and each pop takes the proof of
 //   the consumer, which only Owner makes.  A pop reads the value of a cell
 //   and frees the cell with a read ticket, which the ring mints only under
-//   that proof (Proof of a ticket of fixy/concurrent/SequenceCells.h).
+//   that proof (the proof of a ticket of fixy/concurrent/SequenceCells.h).
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -87,7 +87,7 @@ public:
     using row_discipline = ::fixy::row_discipline::mpsc_ring;
     using row_payload = T;
     using owner_type = Owner;
-    // The proof of the one consumer, which only Owner makes (Writers).
+    // The proof of the one consumer, which only Owner makes (the writers).
     using consumer_proof = ::fixy::SoleWriterProof<Owner, MpscConsumerRole>;
 
     static_assert(std::has_single_bit(Capacity), "fixy::concurrent::MpscRing<T, Capacity>: Capacity must be a power "
@@ -165,7 +165,7 @@ public:
         }
     }
 
-    // Each pop takes the proof of the one consumer (Writers).  A pop is
+    // Each pop takes the proof of the one consumer (the writers).  A pop is
     // a merge: the schedule of the producers decides the order of the items,
     // so two runs with the same inputs can pop two sequences.  Thus each pop
     // also takes the bare tag of Nondet.
@@ -256,7 +256,7 @@ private:
 
     // The write ticket of a ticket that the compare-and-swap of the head won,
     // and the read ticket of the ticket at the tail, under the proof of the
-    // consumer (Proof of a ticket of fixy/concurrent/SequenceCells.h).
+    // consumer (the proof of a ticket of fixy/concurrent/SequenceCells.h).
     [[nodiscard, gnu::always_inline]] static constexpr typename cells_type::WriteTicket
     write_ticket_(CellTicket ticket) noexcept {
         return typename cells_type::WriteTicket{ticket};

@@ -4,7 +4,7 @@
 // share of an own tag by value, and its door writes the plain count of the
 // class through its reference to the class.  Many handles hold a share at one
 // time, so two of them write the count at the same time.  A held share makes
-// no proof holder (Share of foundation/Transfer.h).  The control holds the
+// no proof holder (the share of foundation/Transfer.h).  The control holds the
 // exclusive token by value: the class Handle of PermittedCount in the check
 // file of foundation/permissions/Permission.h.
 //

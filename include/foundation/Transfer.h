@@ -200,7 +200,7 @@
 //     a Permission, a SoleWriter and an ExclusiveLease, or a class that states
 //     thread_bound{}, such as the claim of a producer.  A reference to const
 //     of a token counts only when the token is not Shareable, so no two
-//     threads read one token, and a share counts never (Share).  The token
+//     threads read one token, and a share counts never (the share).  The token
 //     is tied to the class when it is the class or a member class of it, or
 //     when one of its type arguments is the class, a member class of it, or a
 //     type that a member alias of the class names.  So a token of an unrelated class, or
@@ -939,7 +939,7 @@ enum class MakerSet : unsigned char {
 
 // True when the node of a parameter is a proof of the owner (THE PROOF OF A
 // DOOR).  A reference to const of a token counts only when the token is not
-// Shareable, and a share counts never (Share).
+// Shareable, and a share counts never (the share).
 [[nodiscard]] consteval bool is_proof_parameter(::foundation::reflect::TypeNode parameter, std::meta::info owner) {
     if (!is_proof_type(parameter.type, owner) || states(parameter.type, ^^shares)) return false;
     if (!parameter.was_reference || !parameter.was_const) return true;

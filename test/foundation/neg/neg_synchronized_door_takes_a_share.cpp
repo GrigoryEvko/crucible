@@ -4,7 +4,7 @@
 // class, and it takes the guard of a share of an own tag as its proof.  Many
 // holders hold a share of one pool at one time, so two holders write the
 // count at the same time.  The guard states shares{}, and a share proves no
-// door (Share of foundation/Transfer.h).
+// door (the share of foundation/Transfer.h).
 //
 // Expected diagnostic: the door add_shared takes no proof of the class.
 

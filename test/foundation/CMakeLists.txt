@@ -1927,7 +1927,7 @@ foundation_neg_compile_test(neg_synchronized_nested_constructor
   "Counter::Handle::Handle\\(.anonymous.::Counter&\\)"
   "Counter::count_")
 # Many holders hold a share at one time, so a share proves no door: as a
-# parameter of a door and as a member of a nested class (Share).
+# parameter of a door and as a member of a nested class (the share).
 foundation_neg_compile_test(neg_synchronized_door_takes_a_share
   "but a door of it is not const, takes no proof of the class"
   "failed: .anonymous.::Counter"

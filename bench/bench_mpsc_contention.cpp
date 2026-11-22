@@ -68,7 +68,7 @@ constexpr std::size_t kSamples = 32;  // ≥30 for Mann-Whitney
 constexpr std::size_t kWarmup = 3;
 constexpr std::size_t kMaxWallMs = 60000;
 
-// The owner of the ring.  It makes the proof of the one consumer (Writers
+// The owner of the ring.  It makes the proof of the one consumer (the writers
 // of fixy/concurrent/MpscRing.h), which the drain worker holds.
 struct RingOwner final {
     [[nodiscard]] static constexpr ::fixy::SoleWriterProof<RingOwner, ::fixy::concurrent::MpscConsumerRole>

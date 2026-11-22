@@ -1,6 +1,6 @@
 // Negative-compile test.  This file must fail to compile.
 //
-// A push into a lane takes the proof of the lane, not its index (Writers
+// A push into a lane takes the proof of the lane, not its index (the writers
 // of fixy/concurrent/LaneRing.h).  An index names a lane, but each thread can
 // name it, so a push with an index would let two threads write the SPSC ring
 // of one lane.

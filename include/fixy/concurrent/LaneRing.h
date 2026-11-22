@@ -55,7 +55,7 @@
 //
 // THE OWNER
 //   Owner, such as the lanes channel of fixy/concurrent/PermissionedChannel.h,
-//   mints the proofs of the ring (Writers).  Each thread can read the end
+//   mints the proofs of the ring (the writers).  Each thread can read the end
 //   of a lane and the end of the stream, so the producer door of a channel
 //   refuses a lane that ended.
 //
@@ -67,7 +67,7 @@
 //   cache of the tail and the cells that it fills.  Each push takes the
 //   LaneProof of that lane, which only Owner mints, one time for each holder
 //   of the lane, such as under the claim of the lane of a channel.  The SPSC
-//   ring of the lane then takes the proof of its one producer (Proven form
+//   ring of the lane then takes the proof of its one producer (the proven form
 //   of fixy/concurrent/SpscRing.h).  The end of a lane takes the same proof,
 //   and the end word is atomic.  The consumer writes the consumer side of each
 //   SPSC ring, the turn, the state of the tails and the lanes of the turn.
@@ -166,7 +166,7 @@ public:
     using lane_index = LaneIndex<Lanes>;
     using owner_type = Owner;
 
-    // The proof of the one producer of one lane (Writers).  Only Owner
+    // The proof of the one producer of one lane (the writers).  Only Owner
     // mints one.  It moves with the holder of the lane, and it does not copy.
     class[[= ::foundation::linear::authority{}]][[= ::foundation::transfer::not_shareable{}]] LaneProof final {
         lane_index lane_{::foundation::core::index<0>()};
@@ -189,7 +189,7 @@ public:
         [[nodiscard]] constexpr lane_index lane() const noexcept { return lane_; }
     };
 
-    // The proof of the one consumer (Writers).  Only Owner mints one, for
+    // The proof of the one consumer (the writers).  Only Owner mints one, for
     // the call of its consumer, and it does not copy or move.
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] ConsumerProof final {
         // The seal refuses each byte route, such as std::bit_cast, so no bytes
@@ -235,7 +235,7 @@ public:
         });
     }
 
-    // The producer of the lane of the proof ends it after its last push (End
+    // The producer of the lane of the proof ends it after its last push (the end
     // of a lane).  A second end of one lane in a stream ends the process.  The
     // end of a lane is an Atomic, which the consumer reads at the same time.
     void end_lane(LaneProof const& proof) noexcept {
@@ -347,7 +347,7 @@ private:
 
     // The proof of the one producer of the SPSC ring of a lane.  The ring
     // names this ring as its owner, so only this ring makes it, and only a push
-    // that takes the proof of its lane calls it (Writers).
+    // that takes the proof of its lane calls it (the writers).
     [[nodiscard, gnu::always_inline]] static constexpr typename lane_type::ring_type::producer_proof
     prove_lane_producer_() noexcept {
         return typename lane_type::ring_type::producer_proof{};
@@ -436,7 +436,7 @@ private:
     // its end word, so no two lanes share a line.  The proof of a lane admits
     // each write of the producer side of its SPSC ring and of its end word, and
     // the proof of the consumer admits each write of the consumer side
-    // (Writers).
+    // (the writers).
     ::foundation::core::FixedArray<lane_type, lane_count> lanes_{};
 
     // The consumer is the one reader and the one writer of the turn: the lanes

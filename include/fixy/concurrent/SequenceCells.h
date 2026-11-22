@@ -124,7 +124,7 @@ class[[= ::foundation::transfer::synchronized{}]] SequenceCells
     [[nodiscard]] Cell const& cell_(CellTicket ticket) const noexcept { return cells_[ticket.raw() & MASK]; }
 
 public:
-    // The proof of the one writer of the value of a ticket (Proof of a
+    // The proof of the one writer of the value of a ticket (the proof of a
     // ticket).  Only Owner mints one, after its claim of the ticket.
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriteTicket final {
         CellTicket ticket_{std::uint64_t{0}};
@@ -145,7 +145,7 @@ public:
         ~WriteTicket() = default;
     };
 
-    // The proof of the one reader of the value of a ticket (Proof of a
+    // The proof of the one reader of the value of a ticket (the proof of a
     // ticket).  Only Owner mints one, under the proof of its one reader.
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] ReadTicket final {
         CellTicket ticket_{std::uint64_t{0}};
