@@ -1779,7 +1779,7 @@ crucible_neg_compile_test(neg_ptp_raw_timestamp
     "could not convert .42. from .unsigned int. to .crucible::topology::PtpTimestampNs."
     "fixy::Tagged<long unsigned int, fixy::tags::source::Ptp>")
 crucible_neg_compile_test(neg_ptp_open_raw_device_index
-    "no matching function for call to .open_ptp_clock\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&, int\\)"
+    "no matching function for call to .open_ptp_clock\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >&, int\\)"
     "cannot convert .0. \\(type .int.\\) to type .crucible::topology::PtpDeviceIndex.")
 crucible_neg_compile_test(neg_ptp_open_ctx_lacks_block
     "no matching function for call to .open_ptp_clock\\(fixy::BgDrainCtx&,"
