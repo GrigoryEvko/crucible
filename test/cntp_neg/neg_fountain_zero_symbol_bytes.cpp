@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Fountain fixture #2: each source symbol must carry at least one byte.
 // SymbolBytes=0 violates the FountainShape concept.

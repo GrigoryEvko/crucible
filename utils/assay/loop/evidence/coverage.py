@@ -3,7 +3,7 @@
 Selection
     run() reads the items of the class `mutant-runs`.  An item is a header of
     include/ of the source tree of a build.  Its key is the key of the keys
-    OF A HEADER of assay.loop.evidence.items.  run() selects the pending items
+    of a header of assay.loop.evidence.items.  run() selects the pending items
     of the nightly target, or with is_release of the release target (the
     pending items of that module).
 

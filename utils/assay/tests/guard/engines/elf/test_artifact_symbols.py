@@ -1,6 +1,6 @@
 """The test of the rule artifact-symbols (assay.guard.engines.elf.artifact_symbols).
 
-THE CASES
+Cases
     The cases hold these parts of the rule:
       * The class of a symbol, and the mark of an import
       * The providers of the compiler and of a link line, and the owner of a
@@ -17,7 +17,7 @@ THE CASES
     registration of the test in test/CMakeLists.txt gives the compiler of the
     build.
 
-THE PLANTED BUILD DIRECTORY
+Planted build directory
     Scratch compiles the units of UNITS, and it makes the archives of the
     libraries planted_tree, foundation, fixy and crucible from them.  It also
     makes a shared library and an archive of LINKED_UNITS in a directory that
@@ -241,7 +241,7 @@ def archived(archive: Path, objects: Iterable[Path]) -> None:
 
 
 def class_cases(expect: testing.Expect) -> None:
-    """Hold the class and the mark of each kind of symbol (THE CLASS OF A SYMBOL)."""
+    """Hold the class and the mark of each kind of symbol (the class of a symbol)."""
     for symbol, wanted in (
         ("_Znwm", "alloc"),
         ("_ZdlPvm", "alloc"),
@@ -416,7 +416,7 @@ def class_cases(expect: testing.Expect) -> None:
 
 
 def provider_cases(expect: testing.Expect) -> None:
-    """Hold the providers of the compiler and of a link line, and the owner of each kind of name (THE PROVIDERS)."""
+    """Hold the providers of the compiler and of a link line, and the owner of each kind of name (the providers)."""
     compiler = runner.plant_compiler()
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", compiler is not None)
     if compiler is None:
@@ -474,7 +474,7 @@ def provider_cases(expect: testing.Expect) -> None:
 
 
 def ledger_cases(expect: testing.Expect) -> None:
-    """Hold the shapes of the ledger (THE LEDGER): each malformed ledger is refused, and the good one is read."""
+    """Hold the shapes of the ledger (the ledger): each malformed ledger is refused, and the good one is read."""
     for name, body in (
         ("a row with three cells", "@build/lib.a | ratchet | 1 | _ZSt9terminatev\n"),
         ("a row with an unknown mark", "@build/lib.a | maybe | 1 | _Zx | -\n"),
@@ -501,7 +501,7 @@ def ledger_cases(expect: testing.Expect) -> None:
 
 
 def artifact_cases(expect: testing.Expect) -> None:
-    """Plant a throw, a downcast and their look-alikes in archives, and hold the verdict of each (THE TWO PROPERTIES)."""
+    """Plant a throw, a downcast and their look-alikes in archives, and hold the verdict of each (the two properties)."""
     compiler = runner.plant_compiler()
     expect("ASSAY_TEST_CXX or CRUCIBLE_GCC16_PREFIX names the patched compiler", compiler is not None)
     if compiler is None:
@@ -627,7 +627,7 @@ def artifact_cases(expect: testing.Expect) -> None:
 
 
 def hidden_cases(expect: testing.Expect) -> None:
-    """Plant the records of the library code in objects, and hold the names that each object hides (THE HIDDEN IMPORTS).
+    """Plant the records of the library code in objects, and hold the names that each object hides (the hidden imports).
 
     The undefined name getenv is hidden only when a live section of a function or a named variable names it.  No
     record of the object then connects to it.
@@ -678,7 +678,7 @@ def hidden_cases(expect: testing.Expect) -> None:
 class Scratch:
     """A planted build directory with the archives of three libraries, a build kind, a reply and a ledger.
 
-    THE PLANTED BUILD DIRECTORY tells what the directory holds.
+    The planted build directory tells what the directory holds.
     """
 
     def __init__(self, root: Path, compiler: str, rule: rule_registry.Rule) -> None:

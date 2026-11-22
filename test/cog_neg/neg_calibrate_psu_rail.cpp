@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // Calibration is defined only for a Cog kind that has both a TargetCaps
 // schema and an opcode latency table. A PSU rail has neither, so the

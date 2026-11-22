@@ -68,7 +68,7 @@ Level
     (the need of a test of cmake/TestLevel.cmake).  The value is a list of
     levels with commas, and the need is the highest one.  Before the program
     starts, the subcommand reads the level of the host through the level
-    probe of the build (the level OF A HOST of assay.core.x86level).  A host
+    probe of the build (the level of a host of assay.core.x86level).  A host
     below the need ends the subcommand with the skip code SKIP_CODE of that
     module, and the test does not start, because a check in the program can
     run after code of its level.  The line of the skip names the level of the

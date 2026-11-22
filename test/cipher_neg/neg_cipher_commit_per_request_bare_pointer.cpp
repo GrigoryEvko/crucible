@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::commit_per_request refuses a bare region pointer.  Each commit
 // entry point takes a region in a lifetime band, so the caller states the

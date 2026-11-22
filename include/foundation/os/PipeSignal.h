@@ -3,7 +3,7 @@
 // The block of SIGPIPE in one thread, for a write that must not end the
 // process by SIGPIPE.
 //
-// THE PIPE SIGNAL
+// Pipe signal
 //   A write to a pipe or a socket whose reader has gone raises SIGPIPE in the
 //   thread of the write, and the default action ends the process.  A send
 //   takes MSG_NOSIGNAL, but write(2) has no such flag.  So a write that must
@@ -19,7 +19,7 @@
 //   process sends during the write merges with the signal of the write, so
 //   the destructor takes it too.
 //
-// THE RAW CALLS
+// Raw calls
 //   The block issues rt_sigprocmask and rt_sigtimedwait raw, in
 //   src/foundation/os/Syscall.cpp, with a set that holds only SIGPIPE.  The
 //   enumeration Syscall names neither call, so no door can issue them with a
@@ -30,7 +30,7 @@
 //   nothing and does not change errno, so the report sink can hold a block in
 //   a signal handler.  The wait has a time of zero, so it does not block, and
 //   ThreadSanitizer keeps no state of a mask, so the two calls need no route
-//   (THE SANITIZERS of foundation/os/Syscall.h).
+//   (the sanitizers of foundation/os/Syscall.h).
 //
 // The block lives on the stack of its thread: it does not copy or move, and
 // new refuses it.  This header is in the floor layer F0_os of the rule
@@ -56,7 +56,7 @@ void release_pipe_signal_(bool was_blocked, bool has_broken_pipe) noexcept;
 }  // namespace detail
 
 // The block of SIGPIPE in the calling thread, for the life of the object
-// (THE PIPE SIGNAL).
+// (the pipe signal).
 class PipeSignalBlock final {
 public:
     [[nodiscard]] static PipeSignalBlock block_calling_thread() noexcept { return PipeSignalBlock{}; }

@@ -92,7 +92,7 @@ void put_signed(Window& window, std::uint64_t bits) noexcept {
 
 // ── The text of a floating value ─────────────────────────────────────
 //
-// Report.h gives the form of the text (THE TEXT OF A FLOAT).  The digits come
+// Report.h gives the form of the text (the text of a float).  The digits come
 // from the free-format algorithm of Steele and White, in the form of Burger
 // and Dybvig ("Printing Floating-Point Numbers Quickly and Accurately", PLDI
 // 1996), with exact natural numbers.  The value is r / s, and m_plus / s and
@@ -522,8 +522,8 @@ void put_float(Window& window, std::uint64_t bits, FloatLayout layout) noexcept 
 
 // ── The fixed text of a float and the padded text ──────────────────────
 //
-// Report.h gives the two forms (THE FIXED TEXT OF A FLOAT and THE PADDED
-// TEXT).  A finite double is mantissa * 2^exponent, so value * 10^decimals is
+// Report.h gives the two forms (the fixed text of a float and the padded
+// text).  A finite double is mantissa * 2^exponent, so value * 10^decimals is
 // mantissa * 10^decimals * 2^exponent.  With an exponent of at least zero
 // that is an integer.  With a negative exponent -k, the quotient by 2^k is
 // rounded with its remainder: up when the remainder is more than half of

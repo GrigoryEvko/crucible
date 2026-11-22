@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A privileged apply takes a declared configuration. A raw plan never
 // passed the mint or its validator, and it does not convert to one.

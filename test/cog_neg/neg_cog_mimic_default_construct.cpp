@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A default CogMimic had no identity and held default caps under the
 // Calibrated tag, a claim that no calibration made.  The default

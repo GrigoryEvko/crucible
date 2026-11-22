@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cross-constraint coverage for the
 // row-aware cache API.  The `_in_row` template carries TWO

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // ValidCipherHead refuses a zero hash written as a literal.  Zero is the
 // sentinel for "no commit yet": a head of zero is a step that cannot be

@@ -1,9 +1,9 @@
-// The bodies of the flush of a heap of the allocator of the base (THE FAST
-// PATHS of foundation/alloc/HeapState.h): the flush of a full bin, the
+// The bodies of the flush of a heap of the allocator of the base (the fast
+// paths of foundation/alloc/HeapState.h): the flush of a full bin, the
 // give-back of a run of blocks to their slabs with each check, and the flush
 // of each bin of the testing door.  This file holds no variable.
 //
-// THE GIVE-BACK OF A RUN
+// Give-back of a run
 //   A flush gives back the older half of a bin, and the blocks of a half
 //   usually lie in one slab and in few words of its bitmap.  So the give-back
 //   takes the blocks one slab at a time, as the flush of a thread cache of
@@ -24,7 +24,7 @@
 //   the window and of the slab, and only a block that fails it takes the
 //   branch that keeps it for a later pass or ends the process.  Then one
 //   multiply gives the slot, and the low word of the same product checks the
-//   first byte of a slot (THE SLOT OF AN OFFSET of
+//   first byte of a slot (the slot of an offset of
 //   foundation/alloc/Metadata.h).  One test of the bit finds a second
 //   release.  A second release of one block in one run sets the bit of
 //   the open word, or of a word that an earlier step of the pass wrote, so the
@@ -71,7 +71,7 @@ struct BadRelease final {
     return std::uint32_t{static_cast<std::uint8_t>(size_class)};
 }
 
-// The fatal texts of a give-back, out of its loop (THE GIVE-BACK OF A RUN).
+// The fatal texts of a give-back, out of its loop (the give-back of a run).
 [[noreturn]] CRUCIBLE_COLD void die_outside_window(BadRelease release) noexcept {
     core::fatal("foundation: a release gave the address {} to the heap {}, and the address is outside the window of "
                 "the heap",

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A calibrated measurement row carries ordered latency quantiles with a
 // positive median. The zero default sentinel is not a measured sample,

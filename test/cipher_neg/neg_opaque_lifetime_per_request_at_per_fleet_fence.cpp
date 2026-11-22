@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::commit_per_fleet refuses a region whose lifetime band is
 // PER_REQUEST.  The entry point writes to the cold tier, which is durable

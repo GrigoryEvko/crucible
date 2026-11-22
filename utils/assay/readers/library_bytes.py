@@ -1,8 +1,8 @@
 """library_bytes — the bytes of each class of code in a static library, from DWARF.
 
-THE MEASURE
+Measure
     read_measure() reads the code bodies of each object of an archive
-    (assay.readers.dwarf, THE CODE BODIES).  The declaring file of a body
+    (assay.readers.dwarf, the code bodies).  The declaring file of a body
     gives its class (CLASSES):
       `ours`        a relative path, or a file in a directory of the tree,
                     such as the source root or the build directory
@@ -17,9 +17,9 @@ THE MEASURE
     measure does not count it.  The library bytes of an archive are the
     exclusive bytes of its bodies of the classes libstdc++, compiler and
     system (LIBRARY_CLASSES).  `guard bom` prints the measure of an artifact
-    (assay.guard.bom, THE LAYERS).
+    (assay.guard.bom, the layers).
 
-THE COMDAT GROUPS
+COMDAT groups
     A body in a section of a COMDAT group counts only in the first member of
     the archive with a group of that signature.  A link keeps that copy.  A
     body of each other section counts in each member.
@@ -52,7 +52,7 @@ class MeasureError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Places:
-    """The directories that give the class of a declaring file (THE MEASURE): ours, and the toolchain."""
+    """The directories that give the class of a declaring file (the measure): ours, and the toolchain."""
 
     ours: tuple[str, ...]
     toolchain: tuple[str, ...]
@@ -68,12 +68,12 @@ class Measure:
 
     @property
     def library(self) -> int:
-        """The library bytes of the archive (THE MEASURE)."""
+        """The library bytes of the archive (the measure)."""
         return sum(self.classes.get(name, 0) for name in LIBRARY_CLASSES)
 
 
 def places_of(ours: Sequence[Path], prefix: Path) -> Places:
-    """Return the directories of the tree and the toolchain prefix, each also with its links resolved (THE MEASURE)."""
+    """Return the directories of the tree and the toolchain prefix, each also with its links resolved (the measure)."""
     mine = sorted({text for item in ours for text in (str(item), str(item.resolve()))}, key=len, reverse=True)
     toolchain = sorted({str(prefix), str(prefix.resolve())}, key=len, reverse=True)
     return Places(tuple(mine), tuple(toolchain))
@@ -87,7 +87,7 @@ def under(path: str, directories: Sequence[str]) -> str:
 def class_of(file: str, is_artificial: bool, places: Places) -> str | None:
     """Return the class of the declaring file of a body, or None for a body with no file that the compiler does not make.
 
-    THE MEASURE gives the classes.
+    The measure gives the classes.
     """
     if not file:
         return GENERATED if is_artificial else None
@@ -112,7 +112,7 @@ def comdat_signatures(member: elf.Member) -> dict[int, str]:
 
 
 def read_measure(path: Path, places: Places) -> Measure:
-    """Read the code bodies of each member of an archive, and give its measure (THE MEASURE, THE COMDAT GROUPS).
+    """Read the code bodies of each member of an archive, and give its measure (the measure, the COMDAT groups).
 
     Complexity: linear in the debug sections of the members.
 

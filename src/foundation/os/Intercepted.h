@@ -2,14 +2,14 @@
 
 // The calls of the floor that go to the C library (src/foundation/os/Intercepted.cpp).
 //
-// THE ROUTES
+// Routes
 //   The routes of the raw system call primitive in a build with
 //   ThreadSanitizer, for a call that can block, for a map and an unmap, and
-//   for a call that opens or closes a descriptor (THE SANITIZERS of
+//   for a call that opens or closes a descriptor (the sanitizers of
 //   foundation/os/Syscall.h).  Only src/foundation/os/Syscall.cpp calls them,
 //   and only a build with ThreadSanitizer.
 //
-// THE PROCESS CALLS
+// Process calls
 //   fork, waitpid and _exit of the C library, in each build.  The deny rows
 //   of utils/rule-table.txt refuse a raw clone, fork, exit and exit_group: the
 //   C library runs the fork hooks, keeps the state of its threads, and the

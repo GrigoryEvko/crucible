@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // NUMA placement of interrupts and queues is a property of a NIC port.
 // The constraint of verify_numa_pinning refuses CogKind::Gpu before a

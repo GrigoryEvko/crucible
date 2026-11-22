@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_restore refuses a cold band over another value type.  The value
 // type is part of the restore boundary: a Cold<int> handle cannot pass as

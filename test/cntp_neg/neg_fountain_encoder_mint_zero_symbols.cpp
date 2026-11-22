@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The fountain mint gate holds the shape of the codec as well as the
 // context.  The context fits, but an encoder with no source symbol has no

@@ -1,6 +1,6 @@
 """ninja — the build graph, the build log and the dependency log of one build directory.
 
-THE BUILD GRAPH
+Build graph
     graph(build_dir) reads BUILD_DIR/build.ninja through the lexical syntax
     of the Ninja manual: the build statements, their variables, the default
     targets and the pools.  A line that ends with an unescaped '$' continues
@@ -18,7 +18,7 @@ THE BUILD GRAPH
     rule with the prefix CXX_COMPILER__ or C_COMPILER__.  A link or an
     archive has a rule with the shape <LANG>_<KIND>_LINKER__.
 
-THE BUILD LOG
+Build log
     log(build_dir) reads BUILD_DIR/.ninja_log.  Its first line gives the
     version, `# ninja log vN`.  In the versions 5 to 7, a record has five
     fields with a tab between them:
@@ -34,7 +34,7 @@ THE BUILD LOG
     compares two such reads: an output with a new or changed record ran
     between the two reads.
 
-THE DEPENDENCY LOG
+Dependency log
     deps(build_dir, outputs) runs `ninja -t deps` with the ninja of the CMake
     cache, CMAKE_MAKE_PROGRAM (assay.readers.cmake), and it checks the exit
     status.  Each output gets one Deps: the state of its list, the files of
@@ -48,7 +48,7 @@ THE DEPENDENCY LOG
     With no output, deps() gives each list of the log that an edge of the
     graph can use.  inputs(build_dir, target) runs `ninja -t inputs TARGET`.
 
-THE STEP OF A MISSING LIST
+Step of a MISSING list
     An output can be there with no record in the build log and no list in
     the dependency log.  Ninja records the two after the step of the output
     ends with no error.  The build launcher of the tree (`loop step`) writes
@@ -61,12 +61,12 @@ THE STEP OF A MISSING LIST
     In the two cases, the next build runs the step again.  An output with no
     record of a step came from a different build, or from no build.
 
-ERRORS
+Errors
     NinjaError names the file or the command, and the program that writes
     the file.  NotNinja, a subclass, tells that a generator other than Ninja
     made the build, or that no configure wrote build.ninja.
 
-THE DRY RUN
+Dry run
     Each tool of ninja runs with -n.  With no -n, ninja opens .ninja_deps
     and .ninja_log for a write, and it recompacts a log that holds many
     dead records.  A build that links each artifact again makes such a log.
@@ -74,7 +74,7 @@ THE DRY RUN
     two recompactions.  The dependency lists of each object then went from
     .ninja_deps.  With -n, ninja reads the two logs and writes no log.
 
-THE COST
+Cost
     graph() reads build.ninja of the tree in about 0.5 s.  log() reads
     .ninja_log in less than 0.1 s.  deps() starts ninja, which reads
     build.ninja and .ninja_deps, about 0.2 s for the tree, and it reads the
@@ -98,7 +98,7 @@ GRAPH_NAME = "build.ninja"
 LOG_NAME = ".ninja_log"
 DEPS_NAME = ".ninja_deps"
 LOG_HEAD = "# ninja log v"
-# The versions of the build log that have the five fields of THE BUILD LOG.
+# The versions of the build log that have the five fields of the build log.
 LOG_VERSIONS = range(5, 8)
 LOG_FIELDS = 5
 GRAPH_WRITER = "CMake writes it at each configure of the build directory, for example `cmake --preset default`"
@@ -125,7 +125,7 @@ class NotNinja(NinjaError):
 
 
 class DepsState(enum.StrEnum):
-    """The state of the list of one output in the dependency log (THE DEPENDENCY LOG)."""
+    """The state of the list of one output in the dependency log (the dependency log)."""
 
     VALID = "VALID"
     STALE = "STALE"
@@ -347,7 +347,7 @@ def _ninja_text(path: Path, missing: str) -> str:
 
 
 def graph(build_dir: Path) -> Graph:
-    """Return the build statements, their variables, the default targets and the pools of build.ninja (THE BUILD GRAPH).
+    """Return the build statements, their variables, the default targets and the pools of build.ninja (the build graph).
 
     CMake writes its pools into CMakeFiles/rules.ninja.  The reader then reads
     the pool statements of build.ninja and of each file that an include
@@ -508,7 +508,7 @@ def _ninja_program(build_dir: Path) -> str:
 def _run_tool(build_dir: Path, words: Sequence[str]) -> str:
     """Run one tool of the ninja of a build directory, check its exit status, and return its standard output.
 
-    The tool runs with -n, and ninja then writes no log (THE DRY RUN).  A byte of the output that is not UTF-8 stays as a surrogate escape, and a
+    The tool runs with -n, and ninja then writes no log (the dry run).  A byte of the output that is not UTF-8 stays as a surrogate escape, and a
     path in the output then names its file.
 
     Raises:
@@ -563,7 +563,7 @@ def _parse_deps(text: str) -> list[tuple[str, DepsState, tuple[str, ...]]]:
 
 
 def _step_cause(path: str) -> str:
-    """Return the cause of a MISSING list from the record of the step of an output (THE STEP OF A MISSING LIST).
+    """Return the cause of a MISSING list from the record of the step of an output (the step of a MISSING list).
 
     The text is empty when the output is not there, or when no record of a
     step names it.  The caller found no record of the output in the build log.
@@ -591,7 +591,7 @@ def _step_cause(path: str) -> str:
 def _why(build_dir: Path, output: str, state: DepsState, records: Mapping[str, LogRecord]) -> str:
     """Return why the list of one output is not VALID, or an empty text for a VALID list.
 
-    THE DEPENDENCY LOG and THE STEP OF A MISSING LIST give the reasons.
+    The dependency log and the step of a MISSING list give the reasons.
     """
     if state == DepsState.VALID:
         return ""
@@ -615,7 +615,7 @@ def _why(build_dir: Path, output: str, state: DepsState, records: Mapping[str, L
 
 
 def deps(build_dir: Path, outputs: Sequence[str] = ()) -> dict[str, Deps]:
-    """Return the list of each output in the dependency log of a build directory (THE DEPENDENCY LOG).
+    """Return the list of each output in the dependency log of a build directory (the dependency log).
 
     Args:
         build_dir: The build directory

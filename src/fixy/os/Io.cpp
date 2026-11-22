@@ -182,7 +182,7 @@ core::Result<std::size_t, os::Errno> send_file_(int destination, int source, std
     std::int64_t offset = source_offset;
     // The destination can be a socket or a pipe with no reader, and sendfile
     // has no MSG_NOSIGNAL.  The block of the signal holds for the whole loop
-    // (THE PIPE SIGNAL of foundation/os/PipeSignal.h), as in write_full_.
+    // (the pipe signal of foundation/os/PipeSignal.h), as in write_full_.
     os::PipeSignalBlock block = os::PipeSignalBlock::block_calling_thread();
     core::Result<std::size_t, os::Errno> moved = transfer(length, [&](std::size_t rest) -> Step {
         return os::result_of(

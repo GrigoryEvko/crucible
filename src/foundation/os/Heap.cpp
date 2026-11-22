@@ -5,7 +5,7 @@
 // GCC, so the file includes no system header.  Each builtin compiles to a
 // call of the function of the C library with the same name, and this member
 // of the archive of foundation is the one member that imports malloc,
-// calloc, aligned_alloc and free (rule R5, THE DOORS of the rule
+// calloc, aligned_alloc and free (rule R5, the doors of the rule
 // artifact-symbols).
 // The allocator of the C library owns the state of the
 // heap, so the door issues no raw system call.
@@ -53,7 +53,7 @@ constexpr std::size_t kHugePageBytes = std::size_t{2} << 20;
 // still suggests the attribute for a function that has it, also when the
 // definition spells it again, so the suggestion is off for these bodies.
 //
-// The two words come from a Layout (THE WORDS OF A LAYOUT of Heap.h), so the
+// The two words come from a Layout (the words of a layout of Heap.h), so the
 // bytes are above zero and the alignment is a power of two, and no body tests
 // them again.
 #pragma GCC diagnostic push
@@ -87,7 +87,7 @@ void heap_release_(void* storage, ::foundation::alloc::Layout /*layout*/) noexce
 
 #if defined(__SANITIZE_ADDRESS__)
 
-// The bodies of the door of THE SPARE STORAGE of Heap.h, in a build with
+// The bodies of the door of the spare storage of Heap.h, in a build with
 // AddressSanitizer.
 void heap_poison_(void const* first, std::size_t bytes) noexcept { ::foundation::os::poison_bytes(first, bytes); }
 

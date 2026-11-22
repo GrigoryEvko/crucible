@@ -11,7 +11,7 @@
 // derives the minimum from them.  A new enumerator with a newer release
 // raises the minimum with no other edit.
 //
-// THE FEATURE CALLS
+// Feature calls
 //   A feature call is a call that the caller of a door chooses, and that no
 //   other door needs: renameat2 for the commit that refuses an existing
 //   target, copy_file_range for the copy between two files, io_uring_setup
@@ -32,7 +32,7 @@
 // a message on standard error that names the two releases.  The check keeps
 // the release that it read for running_kernel(), and holds no other state.
 //
-// THE FLAGS
+// Flags
 //   A flag is a word that a door passes in an argument of a call, such as an
 //   advice of madvise, a flag of the setup of a ring of io_uring, or the
 //   name of a socket option.  A kernel older than the release of a flag

@@ -5,7 +5,7 @@ usage:
     setup install --print-bin TOOL    print the program of an installed TOOL.  No network
     setup install --print-dir TOOL    print the install directory of TOOL, also when it is absent.  No network
 
-THE TOOLS
+Tools
     tree-sitter  The tree-sitter kit (the pins tree-sitter-kit,
                  tree-sitter-runtime and tree-sitter-grammar of utils/pins.txt):
                  the CLI of the runtime fork and the C++ grammar fork.  The
@@ -99,7 +99,7 @@ THE BUILT TOOL
     the plugin and the GCC disagree.  afl-cc finds the plugin in ../lib/afl
     beside its own program, so the directory works at each path.
 
-THE SOURCES OF THE BENCH
+Sources of the bench
     fluxsort, x86-simd-sort, rapidhash, rigtorp-spscqueue, rigtorp-mpmcqueue,
     blake3, mimalloc and snmalloc are rows of via=archive with no platform: the
     archive of GitHub of one commit, which serves each host.  jemalloc is the
@@ -111,7 +111,7 @@ THE SOURCES OF THE BENCH
     and ASM languages, which only bench/CMakeLists.txt enables.  The row of
     each source names its license.
 
-THE PIP TOOLS
+Pip tools
     mypy and ruff are rows of via=pip.  The install writes the file
     `requirements.txt` of pip with the URL and the SHA-256 of each pin of the
     tool.  The file is in a temporary directory that the install removes
@@ -121,7 +121,7 @@ THE PIP TOOLS
     different SHA-256, and a package that the file does not hold.  The tool
     goes into the tools directory, and not into the Python of the user.
 
-FAIL-CLOSED PINNING
+Fail-closed pinning
     The download must have the SHA-256 of its pin.  The install does not read
     a SHA256SUMS file of a release: a release that uploads an asset again
     uploads its SHA256SUMS again, so the file shows only that the two agree.
@@ -134,7 +134,7 @@ FAIL-CLOSED PINNING
     directory that holds the headers of the bench and its license file.  A
     failure at each step installs nothing.
 
-THE DIRECTORIES
+Directories
     Each tool lives in the tools directory of assay.core.cache (tools_root()),
     outside each checkout, so each checkout, each work tree and the warm tree
     of the gate use one install.  The name of the directory of a tool holds
@@ -149,14 +149,14 @@ THE DIRECTORIES
     stamp: the install writes it last, so a directory with no stamp is an
     install that did not complete.
 
-THE BOUND
+Bound
     A use of a tool touches .last-use in its directory when the last touch is
     more than one hour old.  An install removes each other directory of the
     same tool that no run used for UNUSED_DAYS days, so a checkout on an older
     pin keeps its tool.  It also removes a staging directory that a stopped
     install left for more than one day.
 
-ON A CI RUNNER
+On a CI runner
     With GITHUB_PATH set, an install of the kit or of cmake appends its bin
     directory to that file, so each later step of the job finds the program.
 
@@ -210,7 +210,7 @@ INSTALL_COMMAND = "python3 utils/bin/setup install"
 # The fixture that only the fork of the kit parses: a conditional inside an argument list.  The upstream
 # grammar reports an error node there, and the fork reports the conditional.
 KIT_FIXTURE = "void g(int);\nvoid f() {\n    g(\n#ifdef A\n        1\n#else\n        2\n#endif\n    );\n}\n"
-# The options of pip for a tool of via=pip (THE PIP TOOLS): no configuration file and no environment of pip, no index,
+# The options of pip for a tool of via=pip (the pip tools): no configuration file and no environment of pip, no index,
 # a hash for each package, wheels only, no cache, and no warning about the packages of the Python that runs pip.
 PIP_OPTIONS = ("--isolated", "--no-index", "--require-hashes", "--only-binary", ":all:", "--no-cache-dir",
                "--disable-pip-version-check", "--no-input", "--no-warn-conflicts")
@@ -237,7 +237,7 @@ class InstallError(Exception):
         self.status = status
 
 
-# ── The directories (THE DIRECTORIES, THE BOUND) ───────────────────
+# ── The directories (the sections Directories and Bound) ───────────
 
 
 def digest_tag(digest: str) -> str:
@@ -474,7 +474,7 @@ def required_pins(name: str, requires: tuple[str, ...], pin: pin_table.Pin, tabl
 
 
 def tool_digest(tool: Tool, pin: pin_table.Pin, table: Pins) -> str:
-    """Return the SHA-256 that names the directory of a tool (THE DIRECTORIES).
+    """Return the SHA-256 that names the directory of a tool (the directories).
 
     It is the digest of the pin.  For a tool with more pins, it is the
     SHA-256 of the name and the digest of each of its pins.  For a built tool,
@@ -749,7 +749,7 @@ def unpack_wheel(package: str, download_path: Path, staging: Path, pin: pin_tabl
     return out
 
 
-# The tools of via=pip (THE PIP TOOLS).
+# The tools of via=pip (the pip tools).
 
 # The pins of the packages of mypy, other than the pin mypy.
 MYPY_REQUIRES = ("ast-serialize", "librt", "mypy-extensions", "pathspec", "typing-extensions")
@@ -766,7 +766,7 @@ def pip_command(arguments: list[str]) -> list[str]:
 
 
 def pip_install(tool: Tool, pin: pin_table.Pin, table: Pins, staging: Path) -> Path:
-    """Install the pins of a tool of via=pip into staging/out/site with pip, and return staging/out (THE PIP TOOLS).
+    """Install the pins of a tool of via=pip into staging/out/site with pip, and return staging/out (the pip tools).
 
     Raises:
         InstallError: With the status UNSUPPORTED when this Python has no pip, and NOT_PINNED when pip refuses a pin
@@ -857,7 +857,7 @@ def pip_stamp_matches(requires: tuple[str, ...], directory: Path, pin: pin_table
     return None
 
 
-# The sources of the bench (THE SOURCES OF THE BENCH).
+# The sources of the bench (the sources of the bench).
 
 # The files that the source of each tool must hold: the headers that the bench includes and the license.
 SOURCE_FILES = {
@@ -1129,7 +1129,7 @@ def installed(name: str, root: Path | None = None, table: Pins | None = None) ->
 
 
 def program(name: str, root: Path | None = None, table: Pins | None = None) -> Path:
-    """Return what --print-bin prints for an installed tool (THE TOOLS), and record its use.
+    """Return what --print-bin prints for an installed tool (the tools), and record its use.
 
     Raises:
         InstallError: As installed() does

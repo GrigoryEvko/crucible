@@ -75,7 +75,7 @@ def protocol_cases(expect: testing.Expect) -> None:
 
 
 def try_take_cases(expect: testing.Expect) -> None:
-    """Hold a take that does not wait, and the descriptor of the FIFO for select(2) (THE CLIENT)."""
+    """Hold a take that does not wait, and the descriptor of the FIFO for select(2) (the client)."""
     with jobserver.serving(2) as server, jobserver.connected(server.path) as client:
         first, second = client.try_take(), client.try_take()
         started = time.monotonic()
@@ -220,7 +220,7 @@ def child_cases(expect: testing.Expect) -> None:
 
 
 def valve_cases(expect: testing.Expect) -> None:
-    """Hold THE VALVE: a server with fewer tokens, the idle count, a put, and a pull of only the idle tokens."""
+    """Hold the valve: a server with fewer tokens, the idle count, a put, and a pull of only the idle tokens."""
     with jobserver.serving(8, 2) as server, jobserver.valve(server.path) as opened:
         expect(
             f"a server of 8 jobs with 2 tokens gives -j8 and holds 2 idle tokens: {server.makeflags}",

@@ -3,7 +3,7 @@
 // BackgroundThread::compute_memory_plan (L3 Memory).
 //
 // CLAUDE.md L3 states the load-bearing invariant of the static
-// memory planner: "Two slots whose live ranges intersect MUST NOT"
+// memory planner: "Two slots whose live ranges intersect must not"
 // share byte ranges, while two dead-and-reused slots may.  The
 // existing unit test (test/test_memory_plan.cpp) exercises one
 // hand-built liveness configuration (4 slots).  That proves the

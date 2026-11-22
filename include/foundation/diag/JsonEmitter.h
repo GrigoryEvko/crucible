@@ -4,7 +4,7 @@
 // their nesting and the version number are an external contract. Adding
 // a field is safe. Renaming or removing one is not.
 //
-// THE OUTPUT
+// Output
 //   A record and a line go to a sink of the Report family (Sink::Out or
 //   Sink::Err) through the sink write of foundation/core/Report.h, which
 //   issues the raw write of foundation/os/Syscall.h.  The emitter calls no

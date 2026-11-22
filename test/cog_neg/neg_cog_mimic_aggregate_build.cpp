@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // CogMimic was an aggregate, so a caller could bind an identity to caps of
 // its own choice with no context, and the context gate of mint_cog_mimic

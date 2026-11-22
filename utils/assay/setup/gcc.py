@@ -7,7 +7,7 @@ usage: setup gcc PREFIX [JOBS] [--target TRIPLET] [--work DIR] [--time-limit SEC
                path as CRUCIBLE_CXX.
     JOBS       The number of make jobs.  The default is the CPU count of the
                process.
-    --target   Build a cross compiler for TRIPLET (THE CROSS COMPILER).  The
+    --target   Build a cross compiler for TRIPLET (the cross compiler).  The
                compiler is PREFIX/usr/bin/TRIPLET-g++-16p.
     --work     Keep the source tree and the object tree in DIR.  A second run
                with the same DIR does not download again, and make continues
@@ -33,7 +33,7 @@ The build uses git, tar, make, flex, a C and C++ compiler, and the development
 files of GMP, MPFR, MPC, ISL, zlib and zstd.  On Fedora:
     dnf install gcc-c++ make flex git tar gmp-devel mpfr-devel libmpc-devel isl-devel zlib-devel libzstd-devel
 
-THE CROSS COMPILER
+Cross compiler
     aarch64-linux-gnu is the one target of CROSS_TARGETS.  Before the build,
     the command unpacks three packages of Fedora 44, each with the SHA-256 of
     its pin (CrossPackage):
@@ -53,8 +53,8 @@ THE CROSS COMPILER
 
     The install holds the plugin headers of the cross compiler.  A plugin of
     that compiler is code of the host.  The patched g++ of the host compiles
-    it with those headers (utils/tools/quarantine/Quarantine.cmake, THE
-    COMPILER OF THE PLUGIN).  cmake/Toolchain-gcc16-aarch64.cmake finds the
+    it with those headers (utils/tools/quarantine/Quarantine.cmake, the
+    compiler of the plugin).  cmake/Toolchain-gcc16-aarch64.cmake finds the
     cross compiler.
 
 A repository variable in the environment of the caller wins over `git -C`.
@@ -90,8 +90,8 @@ HEADERS = ("gmp.h", "mpfr.h", "mpc.h", "isl/version.h", "zlib.h", "zstd.h")
 # The configuration of the build, after --prefix=PREFIX/usr.
 CONFIGURE = ("--program-suffix=-16p", "--enable-languages=c,c++,lto", "--disable-multilib", "--disable-bootstrap",
              "--enable-checking=release", "--with-system-zlib")
-# The configuration of a cross build, after --prefix, --target, --program-prefix and --with-sysroot (THE CROSS
-# COMPILER).  An explicit suffix stops the prefix TRIPLET- that configure gives the programs of a cross build by
+# The configuration of a cross build, after --prefix, --target, --program-prefix and --with-sysroot (the cross
+# compiler).  An explicit suffix stops the prefix TRIPLET- that configure gives the programs of a cross build by
 # default.  configure_words() then gives the prefix and the suffix.
 CROSS_CONFIGURE = ("--program-suffix=-16p", "--enable-languages=c,c++,lto", "--disable-multilib",
                    "--enable-checking=release", "--with-system-zlib", "--disable-libgomp", "--disable-libitm",
@@ -405,7 +405,7 @@ def unpack_package(pin: pin_table.Pin, prefix: Path, destination: Path, scratch:
 
 
 def unpack_cross_packages(target: CrossTarget, prefix: Path, table: tuple[pin_table.Pin, ...]) -> None:
-    """Unpack each package of a cross target below the prefix or below its sysroot (THE CROSS COMPILER).
+    """Unpack each package of a cross target below the prefix or below its sysroot (the cross compiler).
 
     The package of the glibc holds no lib and no lib64 at the top of the sysroot, and its libraries are in usr/.
     The function then links lib to usr/lib and lib64 to usr/lib64, as a host with a merged /usr has them.

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Reed-Solomon fixture #1: Reed-Solomon needs at least one data shard.
 // K=0 violates the ReedSolomonShape concept before any object exists.

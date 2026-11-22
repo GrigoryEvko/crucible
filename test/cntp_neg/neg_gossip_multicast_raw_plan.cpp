@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The XDP program of a gossip plan comes from a plan that
 // mint_gossip_multicast_plan declared.  A raw spec does not convert to the

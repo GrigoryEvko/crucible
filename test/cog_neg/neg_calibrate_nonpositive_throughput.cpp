@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A calibrated throughput is a finite positive rate. Zero is a probe
 // that measured nothing, so the positive conjunct refuses it at the

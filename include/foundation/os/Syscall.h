@@ -2,7 +2,7 @@
 
 // The raw system call primitive of the base.
 //
-// THE PRIMITIVE
+// Primitive
 //   raw_syscall issues one system call that the enumeration Syscall names,
 //   with at most six argument words.  It returns the raw signed word of the
 //   kernel: a value, or the error number E as the word -E, with E from 1 to
@@ -30,7 +30,7 @@
 //   file issues rt_sigprocmask and rt_sigtimedwait with a set that holds only
 //   SIGPIPE, and with no enumerator.
 //
-// THE SANITIZERS
+// Sanitizers
 //   ThreadSanitizer delivers a signal only inside a call that it intercepts,
 //   or inside a call that it knows to block.  A raw call that can block
 //   (can_block) is out of its sight, and no handler of a signal then runs
@@ -194,7 +194,7 @@ private:
     std::uint64_t bits_ = 0;
 };
 
-// Issues one system call (THE PRIMITIVE), and returns the raw signed word of
+// Issues one system call (the primitive), and returns the raw signed word of
 // the kernel.  The words that the call does not read can stay empty.
 [[nodiscard]] long raw_syscall(Syscall call, Word first = {}, Word second = {}, Word third = {}, Word fourth = {},
                                Word fifth = {}, Word sixth = {}) noexcept;

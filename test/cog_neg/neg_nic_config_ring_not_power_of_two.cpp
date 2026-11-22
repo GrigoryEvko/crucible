@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A ring size is a power of two in [256, 8192]. The checked mint runs
 // the bound at compile time, so 1000 stops the constant evaluation.

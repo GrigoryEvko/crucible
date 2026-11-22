@@ -1,6 +1,6 @@
 """The reader of the reports of mypy, ruff and clang-format.
 
-THE REPORTS
+Reports
     mypy writes one JSON object on each line of its standard output.  The
     object has the keys file, line, column, message, code and severity.
     `ruff check` and `ruff format --check` write one JSON array.  Each object
@@ -15,7 +15,7 @@ THE REPORTS
     attributes offset and length, in bytes, and its text replaces those bytes.
     A file that .clang-format-ignore names gives no document.
 
-THE ISSUES
+Issues
     mypy_issues() and ruff_issues() give each issue as a ToolIssue: the path
     as the tool gives it, the line, the column, the code and the message.  A
     note of mypy is not an issue, because it adds a hint to the issue before
@@ -74,7 +74,7 @@ class FormatDocument:
 
 
 def mypy_issues(text: str) -> tuple[ToolIssue, ...]:
-    """Return each issue of the output of `mypy --output json`, with no note (THE ISSUES).
+    """Return each issue of the output of `mypy --output json`, with no note (the issues).
 
     Complexity: linear in the length of the text.
 
@@ -137,7 +137,7 @@ def clang_format_documents(text: str) -> tuple[FormatDocument, ...]:
     Complexity: linear in the length of the text.
 
     Raises:
-        ReportError: If the text holds a part that is not a document of the shape of THE REPORTS
+        ReportError: If the text holds a part that is not a document of the shape of the reports
     """
     found: list[FormatDocument] = []
     parts = text.split(XML_DECLARATION)

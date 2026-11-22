@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::mint_open_view refuses the cold startup context.  Its row admits
 // IO but not Block, and a write through an open view flushes object files

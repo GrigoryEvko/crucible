@@ -1,6 +1,6 @@
 """The reader of a .clang-format-ignore file: its patterns, and the files that they ignore.
 
-THE FILE
+File
     clang-format reads the file .clang-format-ignore of the directory of a
     file to format, or of the nearest directory above it.  The file holds one
     pattern on each line.  clang-format removes the spaces at the two ends of
@@ -9,7 +9,7 @@ THE FILE
     spaces after the `!`.  A `!` with nothing after it holds no pattern.  A
     pattern is relative to the directory of the file.
 
-THE MATCH
+Match
     clang-format (clang/lib/Format/MatchFilePath.cpp) matches a pattern to
     the whole path of a file.  `*` matches each run of characters with no
     `/`, and `?` matches one character that is not `/`.  Each other character
@@ -19,7 +19,7 @@ THE MATCH
     file is ignored at the first pattern that matches it and is not negated,
     or that does not match it and is negated (IgnoreFile.is_ignored()).
 
-THE SHAPES THAT THE READER REFUSES
+Shapes that the reader refuses
     The reader reads only the shapes above.  It refuses a pattern with `[`,
     `\\`, `**`, a `/` at its start or at its end, or an empty part, a part
     `.` or a part `..`.  clang-format gives some of these shapes a meaning
@@ -36,7 +36,7 @@ from pathlib import Path
 COMMENT = "#"
 NEGATION = "!"
 SEPARATOR = "/"
-# The parts of a pattern that the reader refuses (THE SHAPES THAT THE READER REFUSES).
+# The parts of a pattern that the reader refuses (the shapes that the reader refuses).
 REFUSED_TEXTS = ("[", "\\", "**")
 REFUSED_PARTS = frozenset({"", ".", ".."})
 
@@ -62,7 +62,7 @@ class Pattern:
 
 
 def matches(pattern: str, path: str) -> bool:
-    """Return True when a pattern of THE MATCH matches the whole path, relative to the directory of the file.
+    """Return True when a pattern of the match matches the whole path, relative to the directory of the file.
 
     Complexity: linear in the parts of the path, with one match of each part.
     """
@@ -75,12 +75,12 @@ def matches(pattern: str, path: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class IgnoreFile:
-    """The patterns of a .clang-format-ignore file, in their sequence (THE FILE)."""
+    """The patterns of a .clang-format-ignore file, in their sequence (the file)."""
 
     patterns: tuple[Pattern, ...] = ()
 
     def is_ignored(self, path: str) -> bool:
-        """Return True when clang-format ignores the file of a path relative to the directory of the file (THE MATCH).
+        """Return True when clang-format ignores the file of a path relative to the directory of the file (the match).
 
         Complexity: linear in the patterns, with one match of each.
         """
@@ -88,7 +88,7 @@ class IgnoreFile:
 
 
 def refusal(text: str) -> str | None:
-    """Return the reason that the reader refuses a pattern (THE SHAPES THAT THE READER REFUSES), or None."""
+    """Return the reason that the reader refuses a pattern (the shapes that the reader refuses), or None."""
     refused = next((item for item in REFUSED_TEXTS if item in text), None)
     if refused is not None:
         return f"the pattern {text!r} holds {refused!r}, which the reader does not read"
@@ -98,7 +98,7 @@ def refusal(text: str) -> str | None:
 
 
 def parse(text: str, shown: str) -> IgnoreFile:
-    """Return the patterns of the text of a .clang-format-ignore file (THE FILE).
+    """Return the patterns of the text of a .clang-format-ignore file (the file).
 
     Raises:
         IgnoreError: If a pattern has a shape that the reader refuses
@@ -122,7 +122,7 @@ def parse(text: str, shown: str) -> IgnoreFile:
 
 
 def read(path: Path, shown: str) -> IgnoreFile:
-    """Read a .clang-format-ignore file, or give an empty file when the path does not exist (THE FILE).
+    """Read a .clang-format-ignore file, or give an empty file when the path does not exist (the file).
 
     Raises:
         IgnoreError: If the file cannot be read, is not UTF-8, or has a pattern that the reader refuses

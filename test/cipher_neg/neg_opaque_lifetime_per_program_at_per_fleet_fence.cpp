@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::commit_per_fleet refuses a region whose lifetime band is
 // PER_PROGRAM.  Program-scoped state, such as the scratch of one model

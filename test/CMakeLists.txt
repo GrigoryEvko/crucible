@@ -176,13 +176,13 @@ crucible_script_test(NAME harness_output
 # The harness times a loop of calls of the body of a row.  A body that reads
 # a value that does not change, with no input sink, loses its work: the
 # optimizer reads the value one time before the loop, and the loop holds only
-# its counter (THE SINK of bench/bench_harness.h).  The probe
+# its counter (the sink of bench/bench_harness.h).  The probe
 # bench_windows/probe_windows.cpp holds such a body and the same body with
 # its input sink.  The test reads the object of the probe with
 # bench_windows/check_windows.py, which must accept the first body and refuse
-# the second (THE PROBE).  Two more rows come after a print: the row after
+# the second (the probe).  Two more rows come after a print: the row after
 # bench::print must be in hot code, and the control after a door of the cold
-# form must be in cold code (THE PLACEMENT).  The probe is the control of the
+# form must be in cold code (the placement).  The probe is the control of the
 # scan of the windows of each bench, which only a bench preset builds
 # (bench/CMakeLists.txt).
 # The test needs the code of a Release build of x86-64 with no profile
@@ -220,7 +220,7 @@ set_tests_properties(compile_ceilings PROPERTIES SKIP_RETURN_CODE 77)
 # array fails, through the raw loop on a C array as the floor.  In a tsan or
 # optimized build, a door above its measure with a margin of 10 % fails.  A
 # build of another kind and a host with no exact instruction counter give a
-# skip (THE CEILINGS of test/compile_cost/check_door_cost.py).
+# skip (the ceilings of test/compile_cost/check_door_cost.py).
 crucible_script_test(NAME compile_door_cost
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/compile_cost/check_door_cost.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
 set_tests_properties(compile_door_cost PROPERTIES SKIP_RETURN_CODE 77)
@@ -266,7 +266,7 @@ endif()
 # Two units of one program, built for the two shipped levels x86-64-v3 and
 # x86-64-v4, keep their own body of each function of SwissTable.h,
 # PhiloxSimd.h, cntp/Fec.h and cntp/Fountain.h whose source reads the vector
-# width (THE TARGET NAMESPACE of foundation/Platform.h).  The flags name x86
+# width (the target namespace of foundation/Platform.h).  The flags name x86
 # targets, so the test exists only on x86_64.  The unit of the baseline level
 # comes first on the link line, so the link keeps its copy of each other
 # shared body.
@@ -581,7 +581,7 @@ set_tests_properties(cache_dir_self_test PROPERTIES
 # runs only when a person regenerates golden.csv.
 #
 # The group has SESSION_ORACLE_SELF_TEST_PARTS disjoint parts, and each part
-# is one test.  THE PARTS of utils/assay/tests/oracle/__init__.py gives the
+# is one test.  The parts of utils/assay/tests/oracle/__init__.py gives the
 # work of each part.  Part 0 checks the emitter, part 1 runs the cases of the
 # store, and part 2 the cases of the spelled roots.  Each other part builds
 # its share of the units of the emitted tests, one unit in each part in turn.
@@ -601,7 +601,7 @@ foreach(part RANGE ${session_oracle_last_part})
   crucible_script_test(NAME selftest_oracle_${part}
     COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest oracle
             --part ${part}/${SESSION_ORACLE_SELF_TEST_PARTS})
-  # A program unit links the archives of this build (THE LINK OF A PROGRAM of
+  # A program unit links the archives of this build (the link of a program of
   # utils/assay/oracle/runner.py).
   set_tests_properties(selftest_oracle_${part} PROPERTIES
     LABELS "ci_guard;session_oracle"
@@ -4710,7 +4710,7 @@ set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
 # step-memory and step-cost of utils/registry.txt while the test runs.  The fixture
 # driver holds them for a fixture.  The rule registry (test guard_registry)
 # refuses a test that the two do not run.  The test reads the level probe and
-# the needs of this build (THE NEED OF A TEST of cmake/TestLevel.cmake).
+# the needs of this build (the need of a test of cmake/TestLevel.cmake).
 crucible_script_test(NAME test_launcher_self_test
   COMMAND ${CMAKE_COMMAND} -E env ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}
           python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_teststep)
@@ -4833,7 +4833,7 @@ endforeach()
 # The preset vessel sets it, and the entries `loop nightly` and `loop release`
 # build and test that preset.  The gate of `loop land` builds the vessel
 # libraries of that preset and runs the tests with the label vessel, for each
-# change that can change them (THE VESSEL of utils/assay/loop/gate.py).
+# change that can change them (the vessel of utils/assay/loop/gate.py).
 # CRUCIBLE_VESSEL_PYTHON is the interpreter of the PyTorch that TORCH_DIR
 # names.  The default is the interpreter of the virtual environment that
 # holds TORCH_DIR, when one exists.
@@ -4900,8 +4900,8 @@ set_tests_properties(selftest_mutation PROPERTIES LABELS "ci_guard" SKIP_RETURN_
 
 # Each guard test of this directory that reads the parse trees starts on a
 # full tree cache.  The rule parse-clean runs in eight parts, and each part
-# parses the C++ files of the part with their macro bodies (THE PARTS OF THE
-# FILL in utils/assay/readers/tsast.py).  These parts are the setup tests of
+# parses the C++ files of the part with their macro bodies (the parts of the
+# fill in utils/assay/readers/tsast.py).  These parts are the setup tests of
 # the fixture tsast_trees.  Each test of a tsast rule requires the fixture
 # (cmake/Guards.cmake), and each other test with the label ast gets it here.
 # Without the fixture, a guard that starts cold parses each file again.  ctest

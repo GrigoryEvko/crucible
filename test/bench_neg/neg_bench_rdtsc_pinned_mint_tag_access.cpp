@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
-// RdtscPinned witness — mismatch class #2 of 2: PRIVATE
-// mint_tag ACCESS.
+// RdtscPinned witness — mismatch class #2 of 2: private
+// mint_tag access.
 //
 // The only ctor on RdtscPinned takes a private nested `mint_tag` type
 // as its second parameter.  Only `BenchHarness` (declared as friend)

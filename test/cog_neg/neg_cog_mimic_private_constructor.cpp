@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // The constructor of CogMimic that binds an identity is private, and
 // mint_cog_mimic is its one friend.  So a caller that holds an identity,

@@ -6,7 +6,7 @@ pattern in prose reads each file through this module.  It gives its pattern to
 Pattern.  This module is a reader.  It can read the text of a node of the parse
 tree and call the module re.
 
-THE PROSE OF A FILE
+Prose of a file
     prose_of() gives the prose lines of each file, each with its one-based
     line.  The kind of the file gives its prose:
       * C++ (tsast.is_in_cpp_scope): the comment, string and raw string
@@ -25,7 +25,7 @@ THE PROSE OF A FILE
     problem that tells the error.  A Python file that does not tokenize has
     no lines and a problem too.
 
-THE SEARCH
+Search
     Pattern holds one regular expression, compiled one time.  first() gives
     the first text of a line that the expression matches, or None.
 
@@ -76,7 +76,7 @@ class FileProse:
 
 
 class Pattern:
-    """A regular expression that a rule refuses in prose (THE SEARCH)."""
+    """A regular expression that a rule refuses in prose (the search)."""
 
     __slots__ = ("_compiled",)
 
@@ -104,7 +104,7 @@ def split_spans(spans: Sequence[tuple[int, str]]) -> tuple[ProseLine, ...]:
 
 
 def cpp_prose(path: str, tree: tsast.Tree) -> FileProse:
-    """Return the prose of one parsed C++ file, or its problem when its parse has an error (THE PROSE OF A FILE).
+    """Return the prose of one parsed C++ file, or its problem when its parse has an error (the prose of a file).
 
     Complexity: linear in the nodes of the tree and in the length of each macro body.
     """
@@ -144,7 +144,7 @@ def python_prose(path: str, data: bytes) -> FileProse:
 
 
 def text_lines(data: bytes) -> tuple[ProseLine, ...]:
-    """Return each line of a file with no parser, or no line for a binary file (THE PROSE OF A FILE).
+    """Return each line of a file with no parser, or no line for a binary file (the prose of a file).
 
     Complexity: linear in the length of the file.
     """
@@ -158,7 +158,7 @@ def text_lines(data: bytes) -> tuple[ProseLine, ...]:
 
 
 def prose_of(root: Path, paths: Sequence[str]) -> Iterator[FileProse]:
-    """Yield the prose of each file, in the sequence of the paths (THE PROSE OF A FILE).
+    """Yield the prose of each file, in the sequence of the paths (the prose of a file).
 
     The C++ files go to the parse in one batch, and the tree cache of tsast
     gives each tree that it holds.  The function keeps the lines of each C++

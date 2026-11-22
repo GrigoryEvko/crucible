@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The Linear mint builds its value in place, and a rule handle has no
 // public constructor from a slot and a generation.  So the mint cannot

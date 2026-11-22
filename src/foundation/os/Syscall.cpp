@@ -391,7 +391,7 @@ static_assert(each_blocking_call_has_a_route(),
 #endif
 
 #if defined(__SANITIZE_THREAD__)
-// The futex route of a build with ThreadSanitizer (THE SANITIZERS of
+// The futex route of a build with ThreadSanitizer (the sanitizers of
 // foundation/os/Syscall.h).  The command of the operation word, without the
 // two flags, tells what the call does for the sanitizer.
 [[nodiscard]] detail::FutexRole futex_role(std::uint64_t operation) noexcept {
@@ -442,7 +442,7 @@ long issue_watched_open(detail::OpenWords const& words) noexcept {
 }
 #endif
 
-// THE PIPE SIGNAL (foundation/os/PipeSignal.h).  The signal set of the kernel
+// Pipe signal (foundation/os/PipeSignal.h).  The signal set of the kernel
 // holds 64 signals on x86_64 and on aarch64, with the bit N - 1 for the
 // signal N.  So the set of the one signal SIGPIPE is one word, and the kernel
 // refuses a set of a different size with EINVAL.  No enumerator of Syscall
@@ -474,7 +474,7 @@ void refuse_a_failed_mask_change(long word) noexcept {
     }
 }
 
-// THE KERNEL FLOOR.  The first release of each architecture: x86_64 has each
+// Kernel floor.  The first release of each architecture: x86_64 has each
 // call of the 2.6.0 table at 2.6.0, and aarch64 came in 3.7.0 with each call
 // of the generic table.
 #if defined(__x86_64__)
@@ -598,8 +598,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
     return added > kFirstRelease ? added : kFirstRelease;
 }
 
-// True when the call is a feature that the caller of a door chooses (THE
-// FEATURE CALLS of foundation/os/KernelFloor.h): renameat2 gives the commit
+// True when the call is a feature that the caller of a door chooses (the
+// feature calls of foundation/os/KernelFloor.h): renameat2 gives the commit
 // that refuses an existing target, copy_file_range the copy between two
 // files, io_uring_setup the ring of io_uring, sched_setattr and sched_getattr
 // the scheduling attributes, mlock2 the lock of a page when it faults in, and
@@ -612,7 +612,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 }
 
 // The largest release that an enumerator of Syscall needs, other than a
-// feature call, and that a flag of the need each_call needs (THE FLAGS of
+// feature call, and that a flag of the need each_call needs (the flags of
 // foundation/os/KernelFloor.h).  The walks read each enumerator, so a new
 // call or a new flag joins the derivation with no other edit.
 [[nodiscard]] consteval KernelVersion derive_minimum_kernel() noexcept {
@@ -725,7 +725,7 @@ void append_release(char* bytes, std::size_t capacity, std::size_t& at, KernelVe
 // Writes the bytes to standard error, again after a short write and after a
 // signal.  The process ends after the write, so a write that fails has no
 // caller to tell, and the function stops.  A standard error with no reader
-// gives epipe and no SIGPIPE (THE PIPE SIGNAL of foundation/os/PipeSignal.h),
+// gives epipe and no SIGPIPE (the pipe signal of foundation/os/PipeSignal.h),
 // so the process ends by the trap of the check.
 void write_to_standard_error(char const* bytes, std::size_t count) noexcept {
     constexpr int kStandardError = 2;
@@ -835,7 +835,7 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
 #if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
     // Only the interceptors of mmap and munmap reset the shadow of a range.
     // The interceptor of AddressSanitizer resets a large range with a new map
-    // of its shadow pages, and it touches no page (THE SANITIZERS of
+    // of its shadow pages, and it touches no page (the sanitizers of
     // foundation/os/Syscall.h).
     if (call == Syscall::mmap) {
         return detail::map_intercepted(first.bits(), second.bits(), third.bits(), fourth.bits(), fifth.bits(),

@@ -22,7 +22,7 @@ namespace {
 namespace core = ::foundation::core;
 
 // Writes the text of the last failed call of the loader on the calling thread
-// into the diagnostic (THE DIAGNOSTIC of fixy/os/Loader.h).  The text of
+// into the diagnostic (the diagnostic of fixy/os/Loader.h).  The text of
 // dlerror ends with a zero, and the door copies it up to the zero or up to
 // kLoaderDiagnosticBytes characters.  No text writes the text FALLBACK.
 void write_last_error(LoaderDiagnostic& diagnostic, core::TextView fallback) noexcept {

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::record_event refuses the background drain context.  Bg names
 // the background thread and does not imply IO or Block, and the drain row

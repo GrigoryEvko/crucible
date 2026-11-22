@@ -17,7 +17,7 @@ namespace fixy::futex {
 
 namespace {
 
-// THE WORD: the kernel reads the 32 bits at the address of the cell.  The
+// Word: the kernel reads the 32 bits at the address of the cell.  The
 // cell of an Atomic has one member, the word, and a class of the standard
 // layout puts its first member at its own address.
 static_assert(std::is_standard_layout_v<FutexWord>, "the futex word must have the standard layout");

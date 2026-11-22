@@ -12,7 +12,7 @@
 //     to the same byte (we hit this earlier with ScalarType::Undefined)
 //
 // Strategy: for each iteration, generate two recipes that differ in
-// EXACTLY ONE field; assert their hashes differ.  Iterating across
+// exactly one field; assert their hashes differ.  Iterating across
 // the fields and many random base recipes exercises every field's
 // contribution to the hash.
 //

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A handle names one virtual function of a declared plan. Its
 // constructor from a parent and an index is private, so a caller cannot

@@ -43,7 +43,7 @@ def cache_cases(expect: testing.Expect) -> None:
 
 
 def name_cases(expect: testing.Expect) -> None:
-    """Hold the name of a configuration: the build kind and the word of each option that is on (THE CONFIGURATION)."""
+    """Hold the name of a configuration: the build kind and the word of each option that is on (the configuration)."""
     with tempfile.TemporaryDirectory(prefix="test-configuration-") as work:
         build = Path(work)
         try:

@@ -3,7 +3,7 @@
 // that the source names get their finding here, at the place of the expression
 // or the declaration that names them.
 //
-// THE OWNER ROWS
+// Owner rows
 //     The rule table gives the sites of an entity in a row:
 //         owner RULE KIND ENTITY [PATH...] [by=FUNCTION] | REASON
 //     A use of ENTITY, or of a declaration inside it, stands only at a site of
@@ -20,7 +20,7 @@
 //     primitive with the enumerator NAME.  A lambda is a part of the function
 //     that holds it.
 //
-// THE CLAIMS (the rule syscalls)
+// Claims (the rule syscalls)
 //     The rule table names the system calls and the primitive of the base:
 //         syscall NAME... | REASON
 //         primitive FUNCTION | REASON
@@ -33,7 +33,7 @@
 //     of a primitive is an enumerator, and its name is the name of the system
 //     call.
 //
-// THE DENIED CALLS (the rule syscalls)
+// Denied calls (the rule syscalls)
 //     The rule table names the system calls that the base does not issue raw:
 //         deny NAME... | REASON
 //     A call of syscall() with the number of the macro SYS_NAME, and a call of
@@ -41,7 +41,7 @@
 //     base and each quarantined file that a build compiles.  No ledger row
 //     admits it.
 //
-// THE PLACE AND THE ENTITY
+// Place and the entity
 //     The place of a use is the place of its expression (place_of), in a base
 //     or a quarantined file.  The entity of a finding is HOLDER: SHAPE.  A use
 //     that the replacement list of a macro of a base or a quarantined file
@@ -61,7 +61,7 @@
 //     syscall(), or FUNCTION(NAME) for a call of a primitive whose last name
 //     is FUNCTION with the enumerator NAME.
 //
-// THE WALKS
+// Walks
 //     The walk of a body of expression.cpp gives each node of a walked file
 //     to check_owned_node, and each node of the function of the dynamic
 //     initializers of the unit.  A walked file is a quarantined file, a file
@@ -71,15 +71,15 @@
 //     initializer of such a file, also a specialization of a template of a
 //     different file, such as a specialization of std::hash.
 //
-// WHAT THE FAMILY DOES NOT READ
+// What the family does not read
 //     Code that no unit of a counted build compiles: a macro body that no unit
 //     expands, a preprocessor arm that no build selects, and vessel/torch with
 //     no TORCH_DIR (decision 5 of section 18.23 of
 //     misc/01_10_2026_quarantine.md).  A name that the front end folds while
 //     it parses, such as an operand of sizeof or a condition of a
 //     static_assert outside a template, holds no call that runs.  The rule
-//     quarantine reads such a name from the event of the parser (THE FOLDED
-//     NAMES).
+//     quarantine reads such a name from the event of the parser (the folded
+//     names).
 
 #include "plugin.h"
 
@@ -525,7 +525,7 @@ void check_type_use(tree type, location_t location) { record_named_entities(type
 // and the source does not spell it.  A using-enum-declaration gives one
 // using-declaration of each enumerator, at the location after its semicolon.
 // The source spells no enumerator there, and the parsed name of the
-// enumeration is its use (THE FOLDED NAMES).
+// enumeration is its use (the folded names).
 void check_using(tree decl) {
     location_t location = DECL_SOURCE_LOCATION(decl);
     tree scope = USING_DECL_SCOPE(decl);
@@ -638,12 +638,12 @@ void check_named(tree named, location_t location, int arguments, tree explicit_a
     }
 }
 
-// ── The owner rules (THE OWNER ROWS, THE CLAIMS) ────────────────────────
+// ── The owner rules (the owner rows, the claims) ────────────────────────
 
 namespace {
 
 // The claim trees, and the names of the directories that keep a file out of
-// them (THE CLAIMS).
+// them (the claims).
 constexpr const char* kClaimTrees[] = {"include/", "src/", "vessel/"};
 constexpr const char* kClaimExcluded[] = {"test", "bench", "examples", "third_party", "external", "vendor"};
 constexpr char kClaimExcludedPrefix[] = "build";
@@ -657,7 +657,7 @@ constexpr std::size_t kSyscallMacroPrefixLength = sizeof kSyscallMacroPrefix - 1
 
 // The names that the owner rules compare, as identifiers, made one time.  Each
 // identifier is a root to the end of the parse, and the rules read the sets
-// only in the parse, so the sets stay valid (THE COLLECTIONS of plugin.h).
+// only in the parse, so the sets stay valid (the collections of plugin.h).
 struct OwnerIndex {
     bool is_ready = false;
     std::unordered_set<tree> last_names;  // the last name of each entity of an owner row
@@ -719,7 +719,7 @@ bool is_primitive_function(tree function) {
     return false;
 }
 
-// True when the claim trees hold the file RELATIVE (THE CLAIMS).
+// True when the claim trees hold the file RELATIVE (the claims).
 // Complexity: O(length of RELATIVE).
 bool is_claim_file(const std::string& relative) {
     bool is_in_tree = false;
@@ -852,7 +852,7 @@ bool is_copied_call(tree call, tree callee) {
 }
 
 // The holder of a use at LOCATION in the body of FUNCTION, or in an
-// initializer when FUNCTION is null (THE PLACE AND THE ENTITY).
+// initializer when FUNCTION is null (the place and the entity).
 std::string holder_text(tree function, location_t location) {
     std::string macro = spelling_macro_of(location);
     if (!macro.empty()) {
@@ -873,7 +873,7 @@ Place owned_place(location_t location) {
 }
 
 // True when a use at PLACE in the body of FUNCTION stands at a site of ROW
-// (THE OWNER ROWS).
+// (the owner rows).
 bool is_at_site(const OwnerRow& row, const Place& place, tree function) {
     if (row.paths.empty() && row.function.empty()) {
         return false;
@@ -1053,8 +1053,8 @@ std::string first_enumerator_name(tree call) {
 }
 
 // A finding of the kind denied-syscall for a raw call of the system call NAME
-// at LOCATION in the body of FUNCTION, when a deny row names NAME (THE DENIED
-// CALLS).
+// at LOCATION in the body of FUNCTION, when a deny row names NAME (the denied
+// calls).
 void check_denied_call(const std::string& name, const std::string& shape, location_t location, tree function) {
     if (name.empty() || owner_index.denied_names.count(name) == 0) {
         return;
@@ -1065,7 +1065,7 @@ void check_denied_call(const std::string& name, const std::string& shape, locati
     }
 }
 
-// One call: each system call of a syscall row that it makes (THE CLAIMS), the
+// One call: each system call of a syscall row that it makes (the claims), the
 // owner rows of the system call of syscall(), and the owner rows of each name
 // of a call that a pattern does not resolve.
 void check_owned_call(tree call, location_t location, tree function) {
@@ -1132,10 +1132,10 @@ void check_owned_call(tree call, location_t location, tree function) {
     }
 }
 
-// ── The names of the source (THE NAMES OF THE SOURCE) ───────────────────
+// ── The names of the source (the names of the source) ───────────────────
 
 // The name of a detail namespace, the prefixes of the shapes of a friend and
-// of a deduced use (THE DEDUCED USES), the shapes of a member splice and of a
+// of a deduced use (the deduced uses), the shapes of a member splice and of a
 // walked return, and the files of the classes of the rule of the open static
 // members.
 constexpr char kDetailName[] = "detail";
@@ -1156,14 +1156,14 @@ constexpr const char* kElementAccessors[] = {"operator[]", "operator*", "operato
 // The rounds of the taint of the local variables of one function, and the
 // depth of a folded constant that the walked return reads.
 constexpr int kTraceDepth = 8;
-// THE FIRST TEST
+// First test
 //     PLUGIN_NAME_USE gives an event for each name that the parser looks up,
 //     and a large unit gives some hundred thousand events.  Almost no event
 //     names a declaration that a rule can judge, so the handler reads the
 //     verdict of the declaration first, by its DECL_UID, and the current
 //     namespace.  Only the first event of a declaration, a judged use, an
 //     overload set and a use in a namespace that is not quiet read more.
-// The verdicts of THE FIRST TEST, and the length of their list.
+// The verdicts of the first test, and the length of their list.
 constexpr unsigned char kVerdictFree = 1;
 constexpr unsigned char kVerdictJudged = 2;
 constexpr unsigned char kVerdictUnchecked = 3;
@@ -1199,7 +1199,7 @@ struct FileRange {
 // time when the plugin loads.  Each identifier is a root to the end of the
 // parse, and a namespace is in the bindings of its parent, and the rules read
 // these lists and the cache of the namespaces only in the parse.  So they stay
-// valid (THE COLLECTIONS of plugin.h).
+// valid (the collections of plugin.h).
 struct NameRules {
     bool has_rows = false;  // the table has a row of a kind that reads_spelled_names
     bool is_ready = false;  // build_name_rules made the lists
@@ -1232,8 +1232,8 @@ struct NameRules {
     // and the outermost detail namespace of a row that holds it, or null.
     tree last_scope = NULL_TREE;
     tree last_scope_head = NULL_TREE;
-    // Each function whose body uses the unchecked function (THE WALKED
-    // RETURN) and whose DECL_UID has no slot in FirstTest::marks, and each
+    // Each function whose body uses the unchecked function (the walked
+    // return) and whose DECL_UID has no slot in FirstTest::marks, and each
     // pattern of a counted file, which the walk at the end of the parse reads.
     // The template of a pattern keeps the pattern, and the bindings of its
     // scope keep the template, so a collection does not free it.
@@ -1245,13 +1245,13 @@ struct NameRules {
     // class.  A qualified friend is such a name (check_door_friends).
     std::unordered_set<unsigned long long> class_heads;
     // The file, the line and the entity of each finding of the kind detail-use
-    // of a name that the source spells (spelled_line_key, THE DEDUCED USES).
+    // of a name that the source spells (spelled_line_key, the deduced uses).
     std::unordered_set<std::string> spelled_detail_lines;
 };
 
 NameRules name_rules;
 
-// The state of THE FIRST TEST: the verdict of each declaration that an event
+// The state of the first test: the verdict of each declaration that an event
 // of PLUGIN_NAME_USE named, by its DECL_UID, and the current namespace when it
 // is quiet.  A verdict is 0 before the first read, kVerdictFree when no rule
 // can judge a use of the declaration, and kVerdictJudged when a rule can.  The
@@ -1272,7 +1272,7 @@ NameRules name_rules;
 // declaration.  The lists are static and never free memory, so they do not
 // move the heap of the compiler.
 //
-// THE FIRST TEST reads the location of an event before its declaration.  A
+// The first test reads the location of an event before its declaration.  A
 // use at an ordinary location of a file outside the root never gives a
 // finding (owned_place), and it marks no function of a counted file, so the
 // event leaves at once.  Most events of a unit name a library declaration
@@ -1288,7 +1288,7 @@ struct FirstTest {
     location_t outside_length = 0;
     location_t inside_first = 0;
     location_t inside_length = 0;
-    // The file of the inside range is counted (THE FOLDED NAMES): a
+    // The file of the inside range is counted (the folded names): a
     // quarantined file, or a file of language_of.
     bool is_inside_counted = false;
     tree quiet_namespace = NULL_TREE;
@@ -1610,7 +1610,7 @@ bool is_late_event() {
 
 // The holder text of a use at LOCATION in the body of FUNCTION: the macro
 // that spells it, the function_signature of the pattern of its holder, or
-// namespace-scope (THE PLACE AND THE ENTITY).
+// namespace-scope (the place and the entity).
 std::string name_holder_text(tree function, location_t location, bool is_macro_read) {
     if (is_macro_read) {
         std::string macro = spelling_macro_of(location);
@@ -1633,9 +1633,9 @@ std::string spelled_line_key(const Place& place, const std::string& entity) {
 // base file counts in its sentinel unit, and a late event counts in each unit
 // (is_late_event).  A use of a kind of the unchecked row (is_unchecked_kind)
 // that the body of a macro spells also counts at the expansion point of the
-// macro, in the scope of the expansion (THE NAMES OF THE SOURCE).  A use of the
-// kind detail-use of a spelled name keeps the key of its line (THE DEDUCED
-// USES).
+// macro, in the scope of the expansion (the names of the source).  A use of the
+// kind detail-use of a spelled name keeps the key of its line (the deduced
+// uses).
 void record_named(Kind kind, const OwnerRow* row, const std::string& shape, location_t location, tree function,
                   bool is_late) {
     Place place = owned_place(location);
@@ -1676,7 +1676,7 @@ void for_each_enclosing(tree function, Visit&& visit) {
 }
 
 // Marks FUNCTION, and each function that holds the lambda FUNCTION, as a user
-// of the unchecked function (THE WALKED RETURN): the mark kMarkUncheckedUser,
+// of the unchecked function (the walked return): the mark kMarkUncheckedUser,
 // or the set of NameRules for a DECL_UID with no slot.
 void mark_unchecked(tree function) {
     for_each_enclosing(function, [](tree enclosing) {
@@ -1697,7 +1697,7 @@ inline bool is_unchecked_user(tree function) {
                                : name_rules.unchecked_users_without_slot.count(uid) != 0;
 }
 
-// The mark of THE WALKED RETURN for a declaration that the body of the current
+// The mark of the walked return for a declaration that the body of the current
 // function names: the unchecked function.
 void note_walk_marks(tree decl) {
     if (DECL_NAME(decl) == name_rules.unchecked_name && name_rules.unchecked_row != nullptr
@@ -1768,7 +1768,7 @@ bool is_at_detail_site(const OwnerRow& row, location_t location) {
 // A use inside a detail namespace of a detail row, in a file outside the
 // sites of that row: code that a file outside the layer puts into a detail
 // namespace of the layer.  Only a quarantined file can hold such a use, and
-// the last line map answers most events (THE NAMES OF THE SOURCE).
+// the last line map answers most events (the names of the source).
 [[gnu::noinline]] void check_detail_scope(location_t location) {
     if (current_namespace != name_rules.last_scope) {
         name_rules.last_scope = current_namespace;
@@ -1849,7 +1849,7 @@ Held named_head(tree decl) {
     return row != nullptr && is_door_kind(row->kind) ? Held{row, scope} : Held{};
 }
 
-// The verdict of DECL at its first event (THE FIRST TEST): kVerdictUnchecked
+// The verdict of DECL at its first event (the first test): kVerdictUnchecked
 // for the unchecked function, kVerdictJudged when a use of DECL can name the
 // head of a row, and kVerdictFree otherwise.  The tests read the name of DECL
 // against the bits of the head names before any other read.  Complexity:
@@ -1879,8 +1879,8 @@ unsigned char verdict_of(tree decl) {
 // the unchecked function when IS_UNCHECKED.  A use in a base file that is not
 // the sentinel of the unit, at a location that no macro expansion gives,
 // outside an instantiation, never counts: the use, and a class that the parser
-// reads around it, are in that file.  Such a use leaves after the mark of THE
-// WALKED RETURN, with no read of the source.
+// reads around it, are in that file.  Such a use leaves after the mark of the
+// walked return, with no read of the source.
 void judge_name_use(tree decl, location_t location, bool is_unchecked) {
     if (is_unchecked && current_function_decl != NULL_TREE) {
         mark_unchecked(current_function_decl);
@@ -1987,7 +1987,7 @@ inline bool may_name_head(tree decl) {
     judge_verdict(decl, location, kVerdictFree);
 }
 
-// An event of DECL that THE FIRST TEST did not end: a use that a rule can
+// An event of DECL that the first test did not end: a use that a rule can
 // judge, a use in a namespace that is not quiet, and each event of a
 // declaration whose DECL_UID has no slot in the list.
 [[gnu::noinline]] void judge_event(tree decl, location_t location) {
@@ -2000,7 +2000,7 @@ inline bool may_name_head(tree decl) {
     judge_verdict(decl, location, verdict);
 }
 
-// THE FIRST TEST of an event of DECL.  A declaration with the verdict
+// The first test of an event of DECL.  A declaration with the verdict
 // kVerdictFree, in a quiet namespace, leaves after one read of the list of
 // verdicts by its DECL_UID and one test of the current namespace, with no read
 // of a name or of the line table.  The first event of a declaration goes to
@@ -2020,14 +2020,14 @@ inline void judge_decl_event(tree decl, location_t location) {
     judge_event(decl, location);
 }
 
-// THE DEDUCED USES below.
+// The deduced uses below.
 void judge_deduced_name(tree node, location_t location);
 void note_published_alias(tree type, location_t location);
 
-// An event of an overload set: THE FIRST TEST of its first function in the
+// An event of an overload set: the first test of its first function in the
 // usual shapes, a member function and a function, and named_decl for each
 // other node that is no declaration.  A member function also gives its
-// deduced use (THE DEDUCED USES).
+// deduced use (the deduced uses).
 [[gnu::noinline]] void judge_overload_event(tree node, location_t location) {
     if (BASELINK_P(node) && name_rules.has_detail_rows) {
         judge_deduced_name(node, location);
@@ -2042,7 +2042,7 @@ void note_published_alias(tree type, location_t location);
 
 // True when LOCATION is an ordinary location of a file outside the root.  The
 // function keeps the range of the file of an ordinary LOCATION in the state of
-// THE FIRST TEST: the outside range for a file outside the root, and the inside
+// the first test: the outside range for a file outside the root, and the inside
 // range for each other file.  A location of a macro expansion keeps no range.
 [[gnu::noinline]] bool judge_location(location_t location) {
     bool is_adhoc = IS_ADHOC_LOC(location);
@@ -2066,9 +2066,9 @@ void note_published_alias(tree type, location_t location);
     return false;
 }
 
-// ── The folded names (THE FOLDED NAMES) ─────────────────────────────────
+// ── The folded names (the folded names) ─────────────────────────────────
 
-// THE FOLDED NAMES
+// Folded names
 //     The front end folds a constant expression and an unevaluated operand
 //     while it parses.  A call of strlen in a constant initializer, an
 //     alignof, a noexcept, a type trait, a static_assert and a template
@@ -2130,7 +2130,7 @@ constexpr unsigned char kLibrary = 2;
 // unevaluated operand.  A declaration of the library is in the bindings of its
 // namespace, in the members of its class or in the specialization tables of
 // the front end, and its identifier names it.  The judge reads the record at
-// the end of the parse (THE COLLECTIONS of plugin.h).
+// the end of the parse (the collections of plugin.h).
 struct ParsedName {
     const FileEntry* file = nullptr;
     int line = 0;
@@ -2147,7 +2147,7 @@ struct ParsedName {
     bool is_member = false;
 };
 
-// The parsed names that one walked name claims (THE FOLDED NAMES): the
+// The parsed names that one walked name claims (the folded names): the
 // nearest one, each one of a type around its line, and each one of a declared
 // type on its line and before it.
 enum class Claim : std::uint8_t {
@@ -2177,7 +2177,7 @@ struct WalkedName {
 // function, when the unit defines it.  The judge reads only the parameters of
 // a function that the unit defines, and the type of the function keeps them:
 // the cgraph keeps such a function, and the bindings of its scope keep a
-// template (THE COLLECTIONS of plugin.h).
+// template (the collections of plugin.h).
 struct DeclaredParameters {
     unsigned uid = 0;
     std::vector<std::pair<tree, location_t>> parameters;
@@ -2203,7 +2203,7 @@ struct FoldedNames {
 FoldedNames folded_names;
 
 // The library verdict of each declaration by its DECL_UID, 0 before its first
-// read (library_of).  The list is zero at load, as the lists of THE FIRST TEST
+// read (library_of).  The list is zero at load, as the lists of the first test
 // are, and a declaration with a DECL_UID of kVerdictSlots or more gets its
 // verdict at each read.
 std::array<unsigned char, kVerdictSlots> library_name_verdicts{};
@@ -2223,8 +2223,8 @@ bool is_library_decl(tree decl) {
     return is_library;
 }
 
-// A place of a counted file: a quarantined file, or a file of language_of (THE
-// BASE KINDS of plugin.h).
+// A place of a counted file: a quarantined file, or a file of language_of (the
+// base kinds of plugin.h).
 bool counts_folded_name(const Place& place) {
     return place.file != nullptr && (place.file_class == FileClass::quarantined || language_of(place) != nullptr);
 }
@@ -2433,7 +2433,7 @@ tree identifier_of(tree decl) {
 }
 
 // The parsed name of NODE at LOCATION, when NODE names a library declaration
-// in a counted file (THE FOLDED NAMES).  A namespace and an enumerator name
+// in a counted file (the folded names).  A namespace and an enumerator name
 // no finding, and neither does a data member that IS_MEMBER marks, the member
 // of a class member access.  A splice spells no name, so a name that is not
 // IS_SPELLED takes no test of the spelling.  A first test of the library
@@ -2523,7 +2523,7 @@ long name_distance(int line, int column, const ParsedName& parsed) {
     return static_cast<long>(std::abs(parsed.line - line)) * 100000L + std::abs(parsed.column - column);
 }
 
-// The claims of THE FOLDED NAMES, and the judgment of each parsed name that no
+// The claims of the folded names, and the judgment of each parsed name that no
 // walked name claims.  Complexity: O((p + w) log (p + w)) for p parsed and w
 // walked names, and O(p * w) for the names of one identifier of one file.
 void judge_folded() {
@@ -2639,8 +2639,8 @@ void judge_folded() {
 // directly (plugin_name_use_func) with a declaration, an overload set or a
 // BASELINK, and never with null.  An event at a location of the last file
 // outside the root leaves after one test of the location.  Each other event
-// keeps its parsed name (THE FOLDED NAMES), and each event that THE FIRST
-// TEST does not end goes to a function of its own, so the callback saves no
+// keeps its parsed name (the folded names), and each event that the first
+// test does not end goes to a function of its own, so the callback saves no
 // register.
 void on_name_use(tree node, location_t location, void*) {
     if (location - first_test.outside_first < first_test.outside_length) {
@@ -2789,9 +2789,9 @@ void on_using_form(void* gcc_data, void*) {
     }
 }
 
-// ── The deduced uses (THE DEDUCED USES) ─────────────────────────────────
+// ── The deduced uses (the deduced uses) ─────────────────────────────────
 
-// THE DEDUCED USES
+// Deduced uses
 //     A use of a class of a detail namespace can spell no name of that
 //     namespace: a type that decltype or auto deduces, a template parameter,
 //     or an alias of a file outside the base.  So the rule also counts each
@@ -2836,7 +2836,7 @@ void on_using_form(void* gcc_data, void*) {
 
 // The TYPE_UID of each class, and the DECL_UID of each class template, that a
 // public alias of the base names (note_published_alias).  A UID is never used
-// again, so the sets stay true after a collection (THE COLLECTIONS of
+// again, so the sets stay true after a collection (the collections of
 // plugin.h).
 struct PublishedClasses {
     std::unordered_set<unsigned> classes;
@@ -2873,7 +2873,7 @@ tree class_template_of(tree type) {
 }
 
 // True when a public alias of the base names the class TYPE or its class
-// template (THE DEDUCED USES).
+// template (the deduced uses).
 bool is_published(tree type) {
     tree main = TYPE_MAIN_VARIANT(type);
     if (published_classes.classes.count(TYPE_UID(main)) != 0) {
@@ -2889,7 +2889,7 @@ bool is_published(tree type) {
 // detail row, with public access in a class.  The event of the declaration
 // comes before the parser gives a member its access, so the access of the
 // class decides.  An alias of a dependent type names each class of its class
-// template (THE DEDUCED USES).
+// template (the deduced uses).
 void note_published_alias(tree type, location_t location) {
     if (!name_rules.has_detail_rows || type == NULL_TREE || !TYPE_P(type) || current_function_decl != NULL_TREE) {
         return;
@@ -2937,7 +2937,7 @@ struct DeducedUse {
     bool is_published = false;
 };
 
-// The deduced use of MEMBER through the class REACHED (THE DEDUCED USES): a
+// The deduced use of MEMBER through the class REACHED (the deduced uses): a
 // member function or a data member of a class of a detail row, through a
 // class of a detail row.  Each other pair gives a use with no row.  The query
 // states the facts of a use and judges none, so a second kind, such as the
@@ -2979,7 +2979,7 @@ DeducedUse deduced_use_of(tree member, tree reached) {
 // The one record of the deduced use USE at LOCATION in the body of FUNCTION:
 // the kind detail-use with the shape "deduced HEAD" for a use that is no
 // public use, unless the holder spells a name of the same head on the line
-// (THE DEDUCED USES).  Each reader of a deduced use gives it here, so a kind
+// (the deduced uses).  Each reader of a deduced use gives it here, so a kind
 // of a second row that reads such a use can read it here too.
 void record_deduced_use(const DeducedUse& use, location_t location, tree function, bool is_late) {
     if (use.held.row == nullptr || use.is_special || use.is_published) {
@@ -2996,8 +2996,8 @@ void record_deduced_use(const DeducedUse& use, location_t location, tree functio
     record_named(Kind::detail_use, use.held.row, kDeducedPrefix + shape_of(use.held), location, function, is_late);
 }
 
-// A call of a constructor at NODE of the walk of a body of FUNCTION (THE
-// DEDUCED USES).  A copy of a default argument or of a default member
+// A call of a constructor at NODE of the walk of a body of FUNCTION (the
+// deduced uses).  A copy of a default argument or of a default member
 // initializer has the place of its declaration, as for check_owned_call.
 void check_deduced_call(tree node, location_t location, tree function) {
     if (!name_rules.has_detail_rows || (TREE_CODE(node) != CALL_EXPR && TREE_CODE(node) != AGGR_INIT_EXPR)) {
@@ -3042,7 +3042,7 @@ tree visit_deduced_node(tree* node_pointer, int* walk_subtrees, void* data) {
 
 // The calls of a constructor of the body of the instantiation FUNCTION of a
 // pattern of a quarantined file.  The walk of a body reads no instantiation,
-// and a pattern holds no call that a dependent type makes (THE DEDUCED USES).
+// and a pattern holds no call that a dependent type makes (the deduced uses).
 // A lambda is a function of its own.  Complexity: O(nodes of the body).
 void check_deduced_instance(tree function) {
     if (!name_rules.has_detail_rows || DECL_SAVED_TREE(function) == NULL_TREE) {
@@ -3067,7 +3067,7 @@ bool spells_member_at(tree member, location_t location) {
 }
 
 // A member access of MEMBER, which the detail row of HELD holds, through an
-// object of the class OBJECT_TYPE (THE DEDUCED USES).  A use at an ordinary
+// object of the class OBJECT_TYPE (the deduced uses).  A use at an ordinary
 // location of a site of the row costs one test of the last line map.
 void judge_deduced_member(const Held& held, tree member, tree object_type, location_t location) {
     if (!linemap_location_from_macro_expansion_p(line_table, location) && is_at_detail_site(*held.row, location)) {
@@ -3080,7 +3080,7 @@ void judge_deduced_member(const Held& held, tree member, tree object_type, locat
 }
 
 // A qualified name of a member function that names its class through a class
-// of a detail row, such as Stage::make() (THE DEDUCED USES).  NODE is the
+// of a detail row, such as Stage::make() (the deduced uses).  NODE is the
 // BASELINK of the event, and its access class is the class that the name
 // names.  A function whose scopes have no head name leaves after one read of
 // the list of the member verdicts.
@@ -3111,7 +3111,7 @@ void judge_deduced_member(const Held& held, tree member, tree object_type, locat
 
 // The member of a class member access: a member of a class of a head of a door
 // kind, the unchecked function through an object, a member that a splice
-// designates, and a member of a class of a detail row (THE DEDUCED USES).  A
+// designates, and a member of a class of a detail row (the deduced uses).  A
 // member of a class whose scopes have no head name costs a walk of its scopes,
 // and the list of the member verdicts keeps that verdict for each later
 // access.
@@ -3162,12 +3162,12 @@ void judge_deduced_member(const Held& held, tree member, tree object_type, locat
 // The callback of each event of PLUGIN_MEMBER_ACCESS.  The front end calls it
 // directly (plugin_member_access_func), at parse time and at the instantiation
 // of a template.  An access in a counted file keeps its member as a parsed name
-// (THE FOLDED NAMES): the front end can fold a call of a member function, such
+// (the folded names): the front end can fold a call of a member function, such
 // as std::array<int, 3>{}.size() in a constant initializer, and the walk of a
 // pattern cannot resolve a dependent member.  A splice of a member spells no
 // name of the member.  An access at a location of the last file outside the
-// root leaves after one test of the location.  For the rules of THE NAMES OF
-// THE SOURCE, an access to a data member that no rule can judge, with no
+// root leaves after one test of the location.  For the rules of the names of
+// the source, an access to a data member that no rule can judge, with no
 // splice, leaves after one read of the list of member verdicts.
 void on_member_access(tree node, tree object_type, location_t location, bool is_splice, void*) {
     bool is_outside = location - first_test.outside_first < first_test.outside_length
@@ -3187,7 +3187,7 @@ void on_member_access(tree node, tree object_type, location_t location, bool is_
 }
 
 // The reflection of a library namespace and the splice of a library entity in
-// a counted file (THE FOLDED NAMES).  The parser gives each other name of a
+// a counted file (the folded names).  The parser gives each other name of a
 // reflect-expression an event of PLUGIN_NAME_USE.  A splice spells no name of
 // the entity that it designates.
 void note_reflection_name(const plugin_reflection_data& data) {
@@ -3212,7 +3212,7 @@ void note_reflection_name(const plugin_reflection_data& data) {
     }
 }
 
-// A reflection and a splice: the names of THE FOLDED NAMES, a reflection of
+// A reflection and a splice: the names of the folded names, a reflection of
 // the access class or of a namespace that holds it, and a splice that
 // designates a member of an object.
 void on_reflection(void* gcc_data, void*) {
@@ -3243,7 +3243,7 @@ void on_reflection(void* gcc_data, void*) {
     }
 }
 
-// ── The walked return (THE WALKED RETURN) ───────────────────────────────
+// ── The walked return (the walked return) ───────────────────────────────
 
 // The expression inside the wrappers that keep its value: a location wrapper,
 // a conversion, an indirection, an address, a temporary and a cleanup point.
@@ -3424,7 +3424,7 @@ bool is_call_derived(tree call, const Taint& taint, int depth) {
 // True when NODE gives a member of a class that an open walk found: the
 // result of an open walk, define_static_array over one, an element of one, a
 // local variable that one of these sets, and a folded constant that holds a
-// reflection of a member of a class (THE WALKED RETURN).
+// reflection of a member of a class (the walked return).
 bool is_walk_derived(tree node, const Taint& taint, int depth) {
     node = stripped_value(node);
     if (node == NULL_TREE || depth > kTypeDepth) {
@@ -3598,7 +3598,7 @@ void check_walked_return(tree function, bool is_pattern) {
     }
 }
 
-// ── The declarations of the names (THE NAMES OF THE SOURCE) ─────────────
+// ── The declarations of the names (the names of the source) ─────────────
 
 // The place of the declaration at LOCATION: its expansion point, so a
 // declaration that a macro writes counts where the macro expands.
@@ -3731,7 +3731,7 @@ void check_named_node(tree node, location_t location, tree function) {
 }
 
 // Keeps each pattern, which the end of the unit reads, after the walks of the
-// patterns marked their uses (THE WALKED RETURN).  check_walked_return reads
+// patterns marked their uses (the walked return).  check_walked_return reads
 // the place of a pattern only when the pattern has a mark.
 void on_finish_parse_function_names(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
@@ -3744,7 +3744,7 @@ void on_finish_parse_function_names(void* gcc_data, void*) {
     }
 }
 
-// THE WALKED RETURN of each function that is not a template, before the front
+// The walked return of each function that is not a template, before the front
 // end lowers its body.
 void on_pre_genericize_names(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
@@ -3762,7 +3762,7 @@ void on_pre_genericize_names(void* gcc_data, void*) {
 }  // namespace
 
 // Each use of an entity of an owner row among the operands of NODE, and each
-// call of a system call (THE OWNER ROWS, THE CLAIMS).  A list and a braced
+// call of a system call (the owner rows, the claims).  A list and a braced
 // initializer hold operands too.  A unit with no owner row and no syscall row
 // pays one test.  Complexity: O(operands of NODE).
 void check_owned_node(tree node, location_t location, tree function) {
@@ -3792,7 +3792,7 @@ void check_owned_node(tree node, location_t location, tree function) {
     }
 }
 
-// The declarations of THE NAMES OF THE SOURCE, from the walk of the family
+// The declarations of the names of the source, from the walk of the family
 // declaration property: a class at namespace scope in a detail namespace, the
 // friends of a class that name a door, a variable or a static data member, a
 // function, and an alias or a typedef.  Each one costs a test of a set when
@@ -3836,7 +3836,7 @@ void check_named_alias(tree decl) {
     }
 }
 
-// THE WALKED RETURN of each pattern of a counted file, after the walks of the
+// The walked return of each pattern of a counted file, after the walks of the
 // patterns marked their uses.  A unit with no pattern pays two tests.
 void walk_owner() {
     if (!has_owner_rows()) {
@@ -3854,7 +3854,7 @@ void walk_owner() {
 }
 
 // A library declaration, an overload set or a BASELINK that a walk reads at
-// LOCATION: the walked names of THE FOLDED NAMES.
+// LOCATION: the walked names of the folded names.
 void note_walked_decl(tree named, location_t location) {
     tree functions = named != NULL_TREE && BASELINK_P(named) ? BASELINK_FUNCTIONS(named) : named;
     tree first = functions != NULL_TREE && TREE_CODE(functions) == OVERLOAD ? OVL_FIRST(functions) : functions;
@@ -3897,9 +3897,9 @@ void note_walked_identifier(tree identifier, location_t location) {
     add_walked(place_of(location, Scope::quarantine), location, identifier, Claim::nearest);
 }
 
-// The judge of THE FOLDED NAMES at the end of the parse (plugin.cpp,
+// The judge of the folded names at the end of the parse (plugin.cpp,
 // walk_unit), and then the release of the records, so no record of a tree
-// lives into the middle end (THE COLLECTIONS of plugin.h).
+// lives into the middle end (the collections of plugin.h).
 void judge_folded_names() {
     judge_folded();
     folded_names.parsed = {};
@@ -3917,8 +3917,8 @@ plugin_callback_func direct_callback(Direct callback) {
     return reinterpret_cast<plugin_callback_func>(reinterpret_cast<void (*)()>(callback));
 }
 
-// Registers the events of THE FOLDED NAMES, and the other events of THE NAMES
-// OF THE SOURCE when the table has a row of a kind that reads them.  A unit
+// Registers the events of the folded names, and the other events of the names
+// of the source when the table has a row of a kind that reads them.  A unit
 // with no such row pays no other event.
 void register_owner(const char* plugin_name) {
     for (int code = 0; code < MAX_TREE_CODES; ++code) {

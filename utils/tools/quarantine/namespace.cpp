@@ -6,23 +6,23 @@
 // So the rule base-namespace refuses each declaration in a namespace of the
 // base that a file outside the base spells.
 //
-// THE NAMESPACES
+// Namespaces
 //     A namespace of the base is the namespace foundation or fixy of the global
 //     namespace, and each namespace inside it: a named, an inline and an
 //     unnamed namespace.  A namespace with one of these names inside a
 //     different namespace is no namespace of the base.
 //
-// THE FILES
+// Files
 //     A file of the base is a file that a layer row of the rule table holds,
 //     and the check file of a header of the base, which stands where its header
-//     stands (home.cpp, THE PLACE).  The rule judges each other file of the
+//     stands (home.cpp, the place).  The rule judges each other file of the
 //     source root and of the build directory, other than a host file and a
 //     kernel file.  The place of a site is the expansion point of its location
-//     (home.cpp, THE PLACE), so a declaration that a macro of the base makes in
+//     (home.cpp, the place), so a declaration that a macro of the base makes in
 //     a different file stands in that file.
 //
-// THE KINDS
-//     declaration       a declaration of a namespace of the base: a function, a
+// Kinds
+//     declaration      a declaration of a namespace of the base: a function, a
 //                       variable, a class, an enumeration, a concept, an alias,
 //                       a typedef, a deduction guide, a namespace alias and a
 //                       using-declaration.  A redeclaration of an entity of the
@@ -48,7 +48,7 @@
 //     in a different namespace is no site, because no lookup of the base reads
 //     it.
 //
-// THE READS
+// Reads
 //     GCC keeps one location for an entity, and a redeclaration merges into
 //     the first declaration.  The location moves to a definition, and it stays
 //     at the first declaration for each other redeclaration.  So the family
@@ -71,7 +71,7 @@
 //     One site gives one finding, because the key of a finding holds its place
 //     and its entity (add_finding of plugin.h).
 //
-// WHAT THE FAMILY DOES NOT READ
+// What the family does not read
 //     A forward declaration of a class or of a class template gives no event,
 //     and GCC moves the location of a class to its definition.  So a forward
 //     declaration of a class that a file of the base defines later is no site.
@@ -80,7 +80,7 @@
 //     overload that a qualified call ::name of the base can reach.  The control
 //     control-known-gaps of utils/plants/base-namespace pins the two gaps.
 //
-// THE ERRORS
+// Errors
 //     Each finding is a compile error in each build and each mode
 //     (is_each_mode_kind of plugin.h).  The message of an error does not start
 //     with "quarantine: ", so the driver of the negative fixtures keeps it, and
@@ -88,7 +88,7 @@
 //     it in an opt-out region of the reason class PROBE:, and the rule
 //     quarantine counts the opted-out finding with the reason of the region.
 //
-// THE ACTIVATION
+// Activation
 //     The argument base-namespace=on turns on the rule (plugin.cpp), and
 //     Quarantine.cmake gives it to each compile of the tree.  A compile of a
 //     plant of a different rule has no such argument.
@@ -101,7 +101,7 @@ namespace {
 
 bool is_active = false;
 
-// The names of the two roots of the base (THE NAMESPACES).
+// The names of the two roots of the base (the namespaces).
 struct Names {
     tree foundation = NULL_TREE;
     tree fixy = NULL_TREE;
@@ -111,7 +111,7 @@ Names names;
 
 // A using-directive of the global namespace in a judged file, which the end
 // of the parse judges against the files of the base that the unit reads after
-// it (THE KINDS).
+// it (the kinds).
 struct GlobalDirective {
     location_t location = UNKNOWN_LOCATION;
     std::string entity;
@@ -123,7 +123,7 @@ std::vector<GlobalDirective> global_directives;
 // time.
 std::unordered_set<tree> walked_namespaces;
 
-// True when the rule judges a declaration in FILE (THE FILES): a file of the
+// True when the rule judges a declaration in FILE (the files): a file of the
 // root or of the build directory that is not of the base, not a host file
 // and not a kernel file.  A check file of a header of the base counts as its
 // header.  Complexity: O(rows) on the first request for each file.
@@ -175,13 +175,13 @@ void record_site(Kind kind, location_t location, const std::string& entity) {
 }
 
 // True when TYPE is an instance or a specialization of a class template.  The
-// rules home and specialization-home judge such a class (THE KINDS).
+// rules home and specialization-home judge such a class (the kinds).
 bool is_template_class_instance(tree type) {
     return type != NULL_TREE && CLASS_TYPE_P(type) && CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE
         && CLASSTYPE_USE_TEMPLATE(type) != 0;
 }
 
-// True when DECL is no site of its own (THE KINDS): an artificial
+// True when DECL is no site of its own (the kinds): an artificial
 // declaration, an instantiation, a specialization, a friend that an instance
 // injects, and a function that a friend declaration declares.
 bool is_no_site(tree decl) {
@@ -216,11 +216,11 @@ bool is_no_site(tree decl) {
 }
 
 // The site of DECL at LOCATION, when DECL is a declaration of a namespace of
-// the base or a member of a class of the base (THE KINDS).  A member of a
+// the base or a member of a class of the base (the kinds).  A member of a
 // class that a judged file defines is no site, because the class is the site,
 // and a member of an instance or of a specialization is no site either.  When
 // LOCATION is no judged place and MAY_READ_PARSER holds, the place is the last
-// token that the parser read (THE READS).
+// token that the parser read (the reads).
 void judge_declaration(tree decl, location_t location, bool may_read_parser) {
     if (is_no_site(decl)) {
         return;
@@ -247,7 +247,7 @@ void judge_declaration(tree decl, location_t location, bool may_read_parser) {
 
 // PLUGIN_FINISH_DECL: a variable, a function with no body, a typedef and an
 // alias.  A function of a namespace that a class body completes is a friend,
-// and no site (THE KINDS).
+// and no site (the kinds).
 void on_finish_decl(void* gcc_data, void*) {
     tree decl = static_cast<tree>(gcc_data);
     if (decl == NULL_TREE || !DECL_P(decl) || current_function_decl != NULL_TREE) {

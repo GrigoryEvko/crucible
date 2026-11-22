@@ -74,7 +74,7 @@ def writes_two_streams() -> tuple[str, int]:
 
 
 def output_cases(expect: testing.Expect) -> None:
-    """Check the output of one action of a case (THE OUTPUT OF A CASE)."""
+    """Check the output of one action of a case (the output of a case)."""
     result, text = testing.captured(writes_two_streams)
     expect(
         "captured gives the result of the action and the two streams in the sequence of the writes",
@@ -115,7 +115,7 @@ def held_of(named: str) -> tuple[str | None, list[bool]]:
 
 
 def environment_cases(expect: testing.Expect) -> None:
-    """Check that environment_variable() sets or removes a variable for its block only (THE ENVIRONMENT OF A CASE)."""
+    """Check that environment_variable() sets or removes a variable for its block only (the environment of a case)."""
     name = "ASSAY_TEST_PLANTED_VARIABLE"
     with testing.environment_variable(name, "outer"):
         with testing.environment_variable(name, "inner"):
@@ -139,7 +139,7 @@ def environment_cases(expect: testing.Expect) -> None:
 
 
 def program_cases(expect: testing.Expect) -> None:
-    """Check that planted_program() writes a script that runs with the Python of this process (THE PLANTED PROGRAM)."""
+    """Check that planted_program() writes a script that runs with the Python of this process (the planted program)."""
     with tempfile.TemporaryDirectory(prefix="assay-testing-") as scratch:
         program = testing.planted_program(Path(scratch), "tool", "import sys\nprint(' '.join(sys.argv[1:]))\n")
         is_executable = os.access(program, os.X_OK)
@@ -151,7 +151,7 @@ def program_cases(expect: testing.Expect) -> None:
 
 
 def wait_cases(expect: testing.Expect) -> None:
-    """Check wait_until() (THE WAIT) and is_gone() (THE END OF A PROCESS) with short limits."""
+    """Check wait_until() (the wait) and is_gone() (the end of a process) with short limits."""
     calls: list[int] = []
 
     def holds_on_third_call() -> bool:

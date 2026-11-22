@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::commit_per_program refuses a bare region pointer.  The warm tier
 // outlives one request, so the gate demands a band that states a scope of

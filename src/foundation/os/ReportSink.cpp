@@ -11,7 +11,7 @@
 // pipe still runs the handler of a signal.  test_contract_handler shows this
 // under the tsan preset.
 //
-// Each write holds a block of SIGPIPE (THE PIPE SIGNAL of
+// Each write holds a block of SIGPIPE (the pipe signal of
 // foundation/os/PipeSignal.h).  So a stream with no reader gives epipe and no
 // signal, and the write stops.  A report must not end the process by a signal
 // that the caller did not choose.  A fatal exit writes through the sink, and

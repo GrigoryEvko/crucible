@@ -83,7 +83,7 @@ def planted_numbers(count: int) -> Iterator[int]:
 def restart_profile(directory: Path | None, is_lines: bool = False) -> None:
     """End the profile that this child got from its parent, and start the profile of a case in `directory`, or none.
 
-    With `is_lines`, the new profile records the lines (THE LINES of assay.core.calls).
+    With `is_lines`, the new profile records the lines (the lines of assay.core.calls).
     """
     calls.finish()
     if directory is None:
@@ -103,7 +103,7 @@ def calls_of(profile: audit.CallProfile, name: str) -> list[int]:
 
 
 def kept_cases(expect: testing.Expect) -> None:
-    """Check the functions that a profile keeps (THE RECORD)."""
+    """Check the functions that a profile keeps (the record)."""
     expect(
         "a function of the package goes into the file, also with no time",
         calls.is_kept(f"{cost_meter.UTILS}/assay/core/rows.py", 0.0),
@@ -119,7 +119,7 @@ def kept_cases(expect: testing.Expect) -> None:
 
 
 def record_cases(expect: testing.Expect) -> None:
-    """Check the file of one profile, a second finish(), and a process with no variable (THE RECORD)."""
+    """Check the file of one profile, a second finish(), and a process with no variable (the record)."""
     with tempfile.TemporaryDirectory(prefix="assay-calls-") as scratch:
         directory = Path(scratch) / "profiles"
 
@@ -202,7 +202,7 @@ def line_calls(profile: audit.CallProfile, caller: str, callee: str) -> dict[int
 
 
 def line_cases(expect: testing.Expect) -> None:
-    """Check the profile of the lines: the hits, the calls, a recursion, a generator and a fork (THE LINES)."""
+    """Check the profile of the lines: the hits, the calls, a recursion, a generator and a fork (the lines)."""
     loop_line = planted_loop.__code__.co_firstlineno + 4
     body_line = planted_numbers.__code__.co_firstlineno + 3
     with tempfile.TemporaryDirectory(prefix="assay-calls-") as scratch:

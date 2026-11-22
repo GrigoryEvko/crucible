@@ -1,4 +1,4 @@
-// The run-time arm of the keyed hash of foundation/core/KeyedHash.h (THE ARMS
+// The run-time arm of the keyed hash of foundation/core/KeyedHash.h (the arms
 // of that header): the rows for a message of one chunk, and for a longer
 // message the lanes or the stacked rows for its chunks and for each level of
 // their parents.  The arm is in a source of the base, so each unit that
@@ -7,7 +7,7 @@
 //
 // The helpers of the arm follow the vector instructions of the target, so
 // they are in the target namespace.  The entry compute_keyed_hash_ is outside
-// it (THE ENTRY of the header): one symbol serves a caller of each level, and
+// it (the entry of the header): one symbol serves a caller of each level, and
 // it runs the arm of the level of this build.
 
 #include <foundation/core/KeyedHash.h>
@@ -26,7 +26,7 @@
 namespace foundation::core::detail {
 
 // The run-time compression follows the vector instructions of the target, so
-// it is in the target namespace (THE TARGET NAMESPACE of
+// it is in the target namespace (the target namespace of
 // foundation/Platform.h).
 inline namespace CRUCIBLE_SIMD_TARGET {
 

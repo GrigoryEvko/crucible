@@ -1,6 +1,6 @@
 """The reader of ctest: the tests that a build directory registers, the results of a run, and the record of each test.
 
-THE INPUTS
+Inputs
     * The test list.  `ctest --show-only=json-v1` prints the registered tests
       of a configured build directory as JSON.  CMake has evaluated each
       function, loop, subdirectory and property call, so the command and the
@@ -11,13 +11,13 @@ THE INPUTS
       testcase for each test that the run selected, with the name of the test
       and its status: run, fail, notrun or disabled.  ctest writes notrun for
       two different cases, and the message of the child element skipped tells
-      them apart (THE STATUS OF A TEST).
+      them apart (the status of a test).
     * The record of each test.  `loop test-step` and `loop fixture` write
       BUILD_DIR/test-records/NAME.test.cost after each run of a test, and
-      assay.core.record reads it (THE RECORDS of that module).  It holds the
+      assay.core.record reads it (the records of that module).  It holds the
       result, the status, the program and the cost of the last run.
 
-THE STATUS OF A TEST
+Status of a test
     results() gives each test of a JUnit report one status of TestStatus:
       RUN       the test ran, and it ended with the status 0
       FAIL      the test ran and gave a failure, or it ran longer than its
@@ -33,7 +33,7 @@ THE STATUS OF A TEST
     A skip is the verdict of the test itself.  A test that did not run has no
     verdict, and ctest gives a status that is not 0 for its run.
 
-THE CALL OF A TEST
+Call of a test
     The backtrace of a test in the JSON gives the stack of CMake calls that
     registered it, from the add_test.  A test of the tree comes from add_test,
     or from crucible_script_test() of cmake/TestLauncher.cmake, which puts the
@@ -43,9 +43,9 @@ THE CALL OF A TEST
     file that registers the test.  The add_test in the function is not that
     call.
 
-THE TEST DIRECTORY OF A RUN
+Test directory of a run
     A caller can run the tests of one build directory in more than one ctest
-    run at the same time (THE SHARDS of assay.loop.affected).  Two such runs
+    run at the same time (the shards of assay.loop.affected).  Two such runs
     must not write the same files of Testing/, such as LastTest.log and the
     cost data.  mirror_tests() makes a different directory in which ctest
     reads the tests of the build directory.  Its CTestTestfile.cmake holds one
@@ -54,23 +54,23 @@ THE TEST DIRECTORY OF A RUN
     with the longest time in its cost data first.  A directory with no cost
     data then gets a copy of the cost data of the build directory.
 
-THE MERGE OF REPORTS
+Merge of reports
     A caller can run the tests of one selection in more than one ctest run.
     For example, assay.loop.affected runs the layers of the property DEPENDS
-    one after the other (THE LAYERS).  Each run writes its own JUnit report.  merge_reports() writes
+    one after the other (the layers).  Each run writes its own JUnit report.  merge_reports() writes
     one report with each test case of the reports, in their sequence.  The
     root of the first report is the root of the merged report.  The counts
     of SUITE_COUNTS and the time of the root are the sums of the reports.  A
     reader of the merged report then sees one run.
 
-WHAT THE READER GIVES
+What the reader gives
     tests() gives each registered test as a TestEntry: its name, its command,
     its properties, and the CMake file and the line of its call.  With a
     label, it gives only the tests with that label.  parse() reads the JSON of
     a listing.  results() gives the status of each test of a JUnit report
-    (THE STATUS OF A TEST).  merge_reports() writes one report from the
-    reports of more than one run (THE MERGE OF REPORTS).  mirror_tests() makes
-    a test directory of a run (THE TEST DIRECTORY OF A RUN).  costs() gives the
+    (the status of a test).  merge_reports() writes one report from the
+    reports of more than one run (the merge of reports).  mirror_tests() makes
+    a test directory of a run (the test directory of a run).  costs() gives the
     last record of each test by its name, as a TestRecord of
     assay.core.record.
 
@@ -97,7 +97,7 @@ if TYPE_CHECKING:
     from xml.etree import ElementTree
 
 TIMEOUT_S = 300.0
-# The calls that register a test, from the innermost frame of a backtrace (THE CALL OF A TEST).
+# The calls that register a test, from the innermost frame of a backtrace (the call of a test).
 REGISTRATION_COMMANDS = frozenset({"add_test", "crucible_script_test"})
 LABELS = "LABELS"
 # The command of ctest that writes each input, for the message of an error.
@@ -110,7 +110,7 @@ class CtestError(RuntimeError):
 
 
 class TestStatus(enum.StrEnum):
-    """The status of one test of a JUnit report of ctest (THE STATUS OF A TEST)."""
+    """The status of one test of a JUnit report of ctest (the status of a test)."""
 
     RUN = "run"
     FAIL = "fail"
@@ -120,7 +120,7 @@ class TestStatus(enum.StrEnum):
 
 
 # The status of each value of the attribute status that ctest writes in a JUnit report.  SKIPPED has no value of its
-# own: ctest writes notrun, and the message of the element skipped gives the skip (THE STATUS OF A TEST).
+# own: ctest writes notrun, and the message of the element skipped gives the skip (the status of a test).
 JUNIT_STATUSES = {
     "run": TestStatus.RUN,
     "fail": TestStatus.FAIL,
@@ -131,12 +131,12 @@ JUNIT_STATUSES = {
 SKIP_CODE_MESSAGE = "SKIP_RETURN_CODE="
 # The message of the element skipped when the output of a test agrees with its skip expression.
 SKIP_OUTPUT_MESSAGE = "SKIP_REGULAR_EXPRESSION_MATCHED"
-# The integer counts and the time of the root element testsuite of a JUnit report.  A merge adds them (THE MERGE OF
-# REPORTS).
+# The integer counts and the time of the root element testsuite of a JUnit report.  A merge adds them (the merge of
+# reports).
 SUITE_COUNTS = ("tests", "failures", "disabled", "skipped")
 SUITE_TIME = "time"
-# The test file that ctest reads in a test directory, and the cost data that it writes there (THE TEST DIRECTORY OF A
-# RUN).
+# The test file that ctest reads in a test directory, and the cost data that it writes there (the test directory of a
+# run).
 TEST_FILE = "CTestTestfile.cmake"
 COST_DATA = Path("Testing") / "Temporary" / "CTestCostData.txt"
 
@@ -180,7 +180,7 @@ def _frames(record: Mapping[str, object], graph: Mapping[str, object]) -> list[t
 
 
 def call_of(record: Mapping[str, object], graph: Mapping[str, object]) -> tuple[str, int]:
-    """Return the CMake file and the line of the call that registers one test (THE CALL OF A TEST), or "" and 0."""
+    """Return the CMake file and the line of the call that registers one test (the call of a test), or "" and 0."""
     call = ("", 0)
     for file, line, command in _frames(record, graph):
         if command not in REGISTRATION_COMMANDS:
@@ -256,7 +256,7 @@ def tests(build_dir: Path, label: str | None = None, test_dir: Path | None = Non
     """Return each test that a build directory registers, or with a label each test that has the label.
 
     The ctest of the cache of the build directory reads the tests of test_dir, or of the build directory when the
-    caller gives no test_dir.  A test directory of mirror_tests() holds no cache (THE TEST DIRECTORY OF A RUN).
+    caller gives no test_dir.  A test directory of mirror_tests() holds no cache (the test directory of a run).
 
     Raises:
         CtestError: If ctest cannot run or fails, or its output is not the JSON of the listing
@@ -276,7 +276,7 @@ def tests(build_dir: Path, label: str | None = None, test_dir: Path | None = Non
 
 
 def is_skip(message: str) -> bool:
-    """Tell if the message of the element skipped of a test case gives a skip of the test (THE STATUS OF A TEST)."""
+    """Tell if the message of the element skipped of a test case gives a skip of the test (the status of a test)."""
     return message.startswith(SKIP_CODE_MESSAGE) or message == SKIP_OUTPUT_MESSAGE
 
 
@@ -298,7 +298,7 @@ def outputs(report: Path) -> dict[str, str]:
 
 
 def results(report: Path) -> dict[str, TestStatus]:
-    """Return the status of each test of a JUnit report that `ctest --output-junit` wrote (THE STATUS OF A TEST).
+    """Return the status of each test of a JUnit report that `ctest --output-junit` wrote (the status of a test).
 
     A test case with no status and a child failure has the status fail.  A test case with no status and no child
     failure has the status run.
@@ -344,7 +344,7 @@ def report_root(report: Path) -> ElementTree.Element:
 
 
 def merge_reports(reports: Sequence[Path], target: Path) -> None:
-    """Write one JUnit report with each test case of the reports, in their sequence (THE MERGE OF REPORTS).
+    """Write one JUnit report with each test case of the reports, in their sequence (the merge of reports).
 
     The write goes through a temporary file and a rename.  A reader then sees no half of the report.  Complexity:
     linear in the bytes of the reports.
@@ -380,7 +380,7 @@ def merge_reports(reports: Sequence[Path], target: Path) -> None:
 
 
 def mirror_tests(build_dir: Path, directory: Path) -> None:
-    """Make a directory in which a ctest run reads the tests of a build directory (THE TEST DIRECTORY OF A RUN).
+    """Make a directory in which a ctest run reads the tests of a build directory (the test directory of a run).
 
     The function writes the test file only when its text changes.  It copies the cost data of the build directory
     only into a directory with no cost data.  The runs in a directory keep their own cost data.

@@ -20,7 +20,7 @@ namespace fixy::detail {
 
 namespace {
 
-// THE MASK: the kernel reads or writes sizeof(AffinityMask) bytes at the
+// Mask: the kernel reads or writes sizeof(AffinityMask) bytes at the
 // address of the mask.  The mask has one member, its array of words, and a
 // class of the standard layout puts its first member at its own address.
 static_assert(std::is_standard_layout_v<AffinityMask> && std::is_trivially_copyable_v<AffinityMask>,

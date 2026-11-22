@@ -46,8 +46,8 @@ static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::IO, eff:
 // own.
 using BgComp = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
 
-// A FixedArray reports the row of its element, also with a key brand (THE
-// LOAN KEY of foundation/core/Frame.h).
+// A FixedArray reports the row of its element, also with a key brand (the
+// loan key of foundation/core/Frame.h).
 struct PayloadKeyBrand final {};
 static_assert(std::is_same_v<payload_row_t<::foundation::core::FixedArray<BgComp, 2>>, eff::Row<eff::Effect::Bg>>);
 static_assert(std::is_same_v<payload_row_t<::foundation::core::FixedArray<BgComp, 2, PayloadKeyBrand>>,

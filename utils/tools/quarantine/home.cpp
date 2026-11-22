@@ -6,11 +6,11 @@
 // entity is at home, and gives a finding for each site of the entity outside
 // its home.
 //
-// THE ROWS
+// Rows
 //     The rule table (utils/rule-table.txt) gives each home in a row:
 //         home CLASS ENTITY [PATH...] | REASON
 //         home-args CLASS ENTITY [PATH...] | REASON
-//     CLASS is a class of THE CLASSES, and ENTITY is a qualified name.  An
+//     CLASS is a class of the classes, and ENTITY is a qualified name.  An
 //     ENTITY of one name names each namespace of that name.  A PATH admits
 //     each file that it holds: a directory each file under it, and a file that
 //     file.  A row with no path admits no file.  The row of an entity also
@@ -19,9 +19,9 @@
 //     row decides: the row of a class decides for the class, and the row of
 //     its namespace decides for each class with no row of its own.
 //     A home-args row also admits a specialization in the file that defines
-//     each of its arguments (THE ARGUMENTS).
+//     each of its arguments (the arguments).
 //
-// THE CLASSES
+// Classes
 //     The class of a row selects the sites of its entity and the kind of a
 //     site outside its home:
 //       federation  the definition of the entity, each explicit or partial
@@ -29,7 +29,7 @@
 //                   class inside it: federation-outside-home
 //       owner       the definition of a class: owner-outside-home
 //       combine     the definition of a function named combine_ids:
-//                   combine-outside-home, and THE BODY OF combine_ids
+//                   combine-outside-home, and the body of combine_ids
 //       split       each explicit or partial specialization, and each explicit
 //                   specialization of a member: away-from-arguments
 //       trait       each explicit or partial specialization, each explicit
@@ -37,7 +37,7 @@
 //                   namespace of a row: outside-home
 //     A site that a path of its row admits is the record at-home.
 //
-// THE SITES
+// Sites
 //     An explicit specialization and a partial specialization are on the lists
 //     of their template (DECL_TEMPLATE_INSTANTIATIONS and
 //     DECL_TEMPLATE_SPECIALIZATIONS), also when the unit only declares them.
@@ -52,18 +52,18 @@
 //     location of the definition, so the walk reads the definition of a
 //     member that stands outside its class at its own place.
 //
-// THE TEMPLATES WITH NO ROW
+// Templates with no row
 //     A class template, a variable template or a function template that no
 //     row governs is a template of the rule specialization-home
 //     (specialization.cpp), also when it carries the open mark.  The family
-//     reads its sites, as THE SITES tells, and gives each site with its
+//     reads its sites, as the section Sites tells, and gives each site with its
 //     template arguments to that rule.  A row of a class template or a
 //     variable template replaces that rule for the template.  A function
 //     template stays a template of that rule also when a row governs it: each
 //     explicit specialization of it is a friend of each class that befriends
 //     the template, so no row admits one outside its home.
 //
-// THE PLACE
+// Place
 //     The place of a site is the expansion point of its location.  A
 //     declaration that a macro makes stands in the file that expands the
 //     macro.  A site in a header
@@ -71,7 +71,7 @@
 //     test/layer/checks/LAYER/PATH.cpp, stands where include/LAYER/PATH.h
 //     stands, because it holds the checks of that header (CLAUDE.md section XV).
 //
-// THE ARGUMENTS
+// Arguments
 //     A specialization of a home-args row is beside its arguments when each
 //     top-level template argument is a class type that does not depend on a
 //     template parameter, and the file that defines the class is the file of
@@ -79,18 +79,18 @@
 //     template is defined.  A pointer, a reference, an enumeration, a value
 //     and a pack are no tags.
 //
-// THE SCOPE
+// Scope
 //     The hooks and the lists cost little, so each unit reads each site that
 //     it compiles.  Two reads walk trees, and a unit reads a file with them
 //     only in these cases: the unit compiles the file, the argument sentinel
 //     names the file, or no sentinel names the file.  A quarantined header
 //     outside include/ has no sentinel, and a header of include/ that the
 //     list of the argument not-standalone names has none either, because it
-//     cannot compile alone (THE SENTINEL of plugin.h).  The two reads read such
-//     a header in each unit that includes it.  They are THE BODY OF
-//     combine_ids and THE GATES.
+//     cannot compile alone (the sentinel of plugin.h).  The two reads read such
+//     a header in each unit that includes it.  They are the body of
+//     combine_ids and the gates.
 //
-// THE BODY OF combine_ids
+// Body of combine_ids
 //     The class combine gives second-body for a function named combine_ids
 //     outside the namespace of its row, and for a function or a lambda whose
 //     body holds the salt 0x9e3779b97f4a7c15, a shift left by 6, a shift right
@@ -98,7 +98,7 @@
 //     declaration with a name that holds combine_ids and more, such as
 //     combine_ids_runtime.
 //
-// THE GATES
+// Gates
 //     A gate is a concept definition or a requires-clause in a header of
 //     include/foundation/, include/fixy/ or include/crucible/, or in the check
 //     file of such a header.  A gate that reads a template that a unit can
@@ -108,10 +108,10 @@
 //     include/crucible/ also a template of include/crucible/.  A concept, a
 //     function that is not a template and a sealed template are closed, but a
 //     dependent call with no qualifier keeps each function template that it
-//     names open (THE SEALED TEMPLATES).  Each gate reads each template one
+//     names open (the sealed templates).  Each gate reads each template one
 //     time.
 //
-// THE SEALED TEMPLATES
+// Sealed templates
 //     The rule specialization-home makes each specialization of a template
 //     with no row outside its home a compile error (specialization.cpp).  So
 //     a class template or a variable template is sealed when the unit defines
@@ -153,10 +153,10 @@
 //     sealed templates gives the leaves of the cycle, and a chain longer than
 //     kSealDepth is open.
 //
-// WHAT THE FAMILY DOES NOT READ
+// What the family does not read
 //     Code that no unit of the build compiles, such as a BPF C header that
 //     clang compiles.  A gate and a body in a function body, such as a lambda
-//     with a requires-clause, outside THE BODY OF combine_ids.  A use of a
+//     with a requires-clause, outside the body of combine_ids.  A use of a
 //     name, and not its declaration.
 
 #include "plugin.h"
@@ -165,7 +165,7 @@ namespace crucible_plugin {
 
 namespace {
 
-// The salt and the finalizer of combine_ids (THE BODY OF combine_ids).
+// The salt and the finalizer of combine_ids (the body of combine_ids).
 constexpr unsigned long long kCombineSalt = 0x9E3779B97F4A7C15ULL;
 constexpr char kCombineName[] = "combine_ids";
 constexpr std::size_t kCombineLength = sizeof kCombineName - 1;
@@ -176,7 +176,7 @@ constexpr char kHeaderTree[] = "include/";
 constexpr const char* kLayerTrees[] = {"include/foundation/", "include/fixy/"};
 constexpr char kCrucibleTree[] = "include/crucible/";
 
-// The kind of a site outside its home, for each class (THE CLASSES).
+// The kind of a site outside its home, for each class (the classes).
 Kind outside_kind_of(HomeClass home_class) {
     switch (home_class) {
         case HomeClass::federation:
@@ -229,8 +229,8 @@ std::unordered_map<tree, Home> template_homes;
 std::unordered_map<tree, int> gate_kinds;  // the open kind of a template, or kClosedTemplate
 std::unordered_set<tree> walked;
 // The open leaves of each sealed template whose walk is complete, and the
-// depth of each sealed template whose walk has not finished (THE SEALED
-// TEMPLATES).
+// depth of each sealed template whose walk has not finished (the sealed
+// templates).
 std::unordered_map<tree, std::vector<tree>> sealed_leaves;
 std::unordered_map<tree, int> sealing;
 
@@ -256,7 +256,7 @@ void build_index() {
 
 // ── The place ───────────────────────────────────────────────────────────
 
-// site_place(), file_at() and read_as() of THE PLACE stand after this
+// site_place(), file_at() and read_as() of the place stand after this
 // namespace, because the family specialization home reads them too.
 
 bool has_any_prefix(const std::string& path, std::initializer_list<const char*> prefixes) {
@@ -268,7 +268,7 @@ bool has_any_prefix(const std::string& path, std::initializer_list<const char*> 
     return false;
 }
 
-// True when the family reads the trees of FILE in this unit (THE SCOPE).
+// True when the family reads the trees of FILE in this unit (the scope).
 bool is_scope_file(const FileEntry* file) {
     if (file == nullptr || file->file_class == FileClass::outside) {
         return false;
@@ -327,7 +327,7 @@ const HomeRow* own_row(tree node) {
     return found != index_of_rows.qualified.end() ? found->second : nullptr;
 }
 
-// The innermost row of NODE and of its scopes (THE ROWS), and the scope that
+// The innermost row of NODE and of its scopes (the rows), and the scope that
 // the row names.  Complexity: O(depth of the scopes).
 const HomeRow* governing_row(tree node, tree& named) {
     int depth = 0;
@@ -373,7 +373,7 @@ std::unordered_set<std::string> at_home_keys;
 
 // One site of an entity at LOCATION: an at-home line when a path of its row
 // admits the place, and a finding when nothing admits it.  BESIDE says that
-// the specialization is beside its arguments (THE ARGUMENTS).
+// the specialization is beside its arguments (the arguments).
 void record_site(const Home& home, location_t location, bool is_beside = false) {
     Place place = site_place(location);
     if (place.file == nullptr) {
@@ -414,15 +414,15 @@ bool is_function_template(tree template_decl) {
 }
 
 // The explicit specializations of each function template that the hooks read
-// (THE SEALED TEMPLATES).  GCC keeps them on no list that a plugin can read.
+// (the sealed templates).  GCC keeps them on no list that a plugin can read.
 // The bindings of its scope keep a template, and the table decl_specializations
 // of pt.cc keeps each explicit specialization, to the end of the parse, and
 // each reader of the map runs in the parse.  So no collection frees a kept
-// tree, and the map is not cleared (THE COLLECTIONS of plugin.h).
+// tree, and the map is not cleared (the collections of plugin.h).
 std::unordered_map<tree, std::vector<tree>> function_specializations;
 
 // The home of a class template or a variable template: its row, or no home
-// (THE TEMPLATES WITH NO ROW).  Complexity: O(depth of the scopes) on the
+// (the templates with no row).  Complexity: O(depth of the scopes) on the
 // first request.
 const Home& home_of_template(tree template_decl) {
     tree general = most_general_template(template_decl);
@@ -444,7 +444,7 @@ const Home& home_of_template(tree template_decl) {
 }
 
 // The file that defines a class type that is a template argument, or null for
-// a type that is no tag (THE ARGUMENTS).  A template parameter, a pack
+// a type that is no tag (the arguments).  A template parameter, a pack
 // expansion and a dependent name are no tags.
 const FileEntry* tag_file(tree argument) {
     if (argument == NULL_TREE || !TYPE_P(argument)) {
@@ -490,7 +490,7 @@ bool is_tag_of(tree argument, const FileEntry* site) {
 }
 
 // True when each top-level argument of ARGUMENTS is a tag that the file of
-// LOCATION defines (THE ARGUMENTS).
+// LOCATION defines (the arguments).
 bool is_beside_arguments(tree arguments, location_t location) {
     const FileEntry* site = file_at(location);
     tree inner = arguments != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(arguments) : NULL_TREE;
@@ -507,7 +507,7 @@ bool is_beside_arguments(tree arguments, location_t location) {
 
 // One site of TEMPLATE_DECL with the template arguments ARGUMENTS at
 // LOCATION: a site of its row, or a site of the rule specialization-home for
-// a template with no row (THE TEMPLATES WITH NO ROW).
+// a template with no row (the templates with no row).
 void record_template_site(const Home& home, tree template_decl, tree arguments, location_t location) {
     if (home.is_set()) {
         record_site(home, location, home.row->is_args && is_beside_arguments(arguments, location));
@@ -516,7 +516,7 @@ void record_template_site(const Home& home, tree template_decl, tree arguments, 
     }
 }
 
-// Each explicit and each partial specialization of TEMPLATE_DECL (THE SITES).
+// Each explicit and each partial specialization of TEMPLATE_DECL (the sites).
 void read_specializations(tree template_decl) {
     if (!is_class_template(template_decl) && !is_variable_template(template_decl)) {
         return;
@@ -589,8 +589,8 @@ void read_member_specialization(tree decl) {
 // reads, so the hooks read it, also a declaration with no body and a deleted
 // one.  An explicit specialization of a member of an implicit instantiation is
 // a site of the class template (read_member_specialization).  Each site goes
-// to the rule specialization-home, also for a template of a row (THE
-// TEMPLATES WITH NO ROW).
+// to the rule specialization-home, also for a template of a row (the
+// templates with no row).
 void read_function_specialization(tree decl) {
     if (decl == NULL_TREE || TREE_CODE(decl) != FUNCTION_DECL || DECL_ARTIFICIAL(decl)
         || DECL_LANG_SPECIFIC(decl) == nullptr || !DECL_TEMPLATE_SPECIALIZATION(decl)
@@ -673,7 +673,7 @@ void read_combine_definition(tree function) {
     add_home_finding(Kind::combine_second_body, site_place(location), qualified_name(function));
 }
 
-// The facts of THE BODY OF combine_ids that a walk of one body finds.
+// The facts of the body of combine_ids that a walk of one body finds.
 struct ShapeFacts {
     tree mix = NULL_TREE;  // the identifier fmix64 of the unit
     bool has_salt = false;
@@ -768,7 +768,7 @@ tree visit_shape(tree* node_pointer, int* walk_subtrees, void* data) {
 }
 
 // A function or a lambda of a scope file whose body has the shape of
-// combine_ids (THE BODY OF combine_ids).  A function named combine_ids is a
+// combine_ids (the body of combine_ids).  A function named combine_ids is a
 // site of its name, and not of its body.
 void read_body_shape(tree function) {
     if (is_combine_name(DECL_NAME(function)) || DECL_SAVED_TREE(function) == NULL_TREE
@@ -803,7 +803,7 @@ void read_body_shape(tree function) {
 // ── The gates ───────────────────────────────────────────────────────────
 
 // True when the unit holds an explicit or a partial specialization of the
-// class template GENERAL in the home file of GENERAL (THE SEALED TEMPLATES).
+// class template GENERAL in the home file of GENERAL (the sealed templates).
 // Complexity: linear in the specializations of GENERAL.
 bool has_specialization_at_home(tree general) {
     const FileEntry* home = file_at(defining_location(general));
@@ -832,7 +832,7 @@ bool has_specialization_at_home(tree general) {
 }
 
 // True when GENERAL is a template of the namespace foundation or fixy whose
-// home is a header of the two layers (THE SEALED TEMPLATES).  The rule
+// home is a header of the two layers (the sealed templates).  The rule
 // base-namespace refuses its definition in a file outside the base.
 bool is_base_root_template(tree general) {
     if (!is_base_namespace_active()) {
@@ -850,8 +850,8 @@ bool is_base_root_template(tree general) {
     return file != nullptr && has_any_prefix(read_as(file->relative), {kLayerTrees[0], kLayerTrees[1]});
 }
 
-// True when the most general template GENERAL is sealed (THE SEALED
-// TEMPLATES).  The walk at the end of the parse asks it, so the unit holds
+// True when the most general template GENERAL is sealed (the sealed
+// templates).  The walk at the end of the parse asks it, so the unit holds
 // each definition and each specialization that it reads.
 bool is_sealed_template(tree general) {
     if (!is_specialization_home_active() || (home_of_template(general).is_set() && !is_function_template(general))) {
@@ -871,7 +871,7 @@ bool is_sealed_template(tree general) {
     return is_defined && read_template_home(general);
 }
 
-// The open kind of TEMPLATE_DECL for a gate (THE GATES): kLayerTemplate for a
+// The open kind of TEMPLATE_DECL for a gate (the gates): kLayerTemplate for a
 // template of the two layers, kCrucibleTemplate for a template of
 // include/crucible/, and kClosedTemplate for a concept and each other
 // template.
@@ -905,20 +905,20 @@ int gate_kind(tree template_decl) {
 // is no open read: an explicit specialization of the class replaces the gate
 // too.  A member of a different instance of the same template is an open read.
 // The walk of the definition of a sealed template reads each type that the
-// definition names, too (THE SEALED TEMPLATES).
+// definition names, too (the sealed templates).
 struct GateReads {
     bool is_crucible = false;
     bool is_definition = false;
     // A walk at the event of a folded initializer keeps each template and
     // each class that it reads in DEFERRED, and the walk of the definition
-    // reads them at the end of the parse (THE FOLDED SPECIALIZATIONS).
+    // reads them at the end of the parse (the folded specializations).
     bool is_deferred = false;
     std::vector<tree> deferred;
     std::vector<tree> templates;
     std::vector<tree> owners;
 };
 
-// THE FOLDED SPECIALIZATIONS
+// Folded specializations
 //     The front end replaces the initializer of a constexpr variable with its
 //     value.  An explicit specialization does not depend on a template
 //     parameter, so the definition of a sealed template keeps no read of the
@@ -930,7 +930,7 @@ struct GateReads {
 //     class template.  The specialization tables of pt.cc keep such an object
 //     and each class instance, and the bindings of its scope keep a template,
 //     to the end of the parse.  Each reader of the map runs in the parse, so
-//     no collection frees a kept tree (THE COLLECTIONS of plugin.h).
+//     no collection frees a kept tree (the collections of plugin.h).
 std::unordered_map<tree, std::vector<tree>> folded_reads;
 
 // The bound of a chain of sealed templates.  A longer chain is open, so the
@@ -979,7 +979,7 @@ void note_arguments(GateReads& reads, tree arguments, int depth) {
 
 // One read of TEMPLATE_DECL with the template arguments ARGUMENTS, or
 // NULL_TREE.  An open template is one read.  A sealed template gives the
-// open leaves of its definition and of its arguments (THE SEALED TEMPLATES).
+// open leaves of its definition and of its arguments (the sealed templates).
 void note_open(GateReads& reads, tree template_decl, tree arguments) {
     if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL) {
         return;
@@ -1081,7 +1081,7 @@ void note_template_name(GateReads& reads, tree name, tree arguments) {
 
 // Each class template instance that a type of the definition of a sealed
 // template names, through each pointer, reference, array, signature and
-// decltype (THE SEALED TEMPLATES).  A gate names a type with no read, but the
+// decltype (the sealed templates).  A gate names a type with no read, but the
 // definition of a sealed template can give the type to the gate.
 void scan_type(GateReads& reads, tree type, int depth) {
     if (type == NULL_TREE || !TYPE_P(type) || depth >= kTypeDepth) {
@@ -1143,8 +1143,8 @@ void note_unsealed(GateReads& reads, tree template_decl) {
 // A dependent call that argument-dependent lookup completes at each
 // instantiation, such as `admit(value)`.  A different file can give the call
 // a new overload in the namespace of a type of its arguments, so each
-// function template that the call names stays open, also a sealed one (THE
-// SEALED TEMPLATES).  The arguments of a template-id are reads as each other
+// function template that the call names stays open, also a sealed one (the
+// sealed templates).  The arguments of a template-id are reads as each other
 // expression is.
 void note_adl_call(GateReads& reads, tree callee) {
     tree arguments = NULL_TREE;
@@ -1216,7 +1216,7 @@ tree visit_gate(tree* node_pointer, int* walk_subtrees, void* data) {
 void walk_class_definition(GateReads& reads, tree type, int depth);
 
 // The type and the initializer of a variable or of a data member, and the
-// reads of its initializer before a fold (THE FOLDED SPECIALIZATIONS).
+// reads of its initializer before a fold (the folded specializations).
 void walk_variable(GateReads& reads, tree variable) {
     scan_type(reads, TREE_TYPE(variable), 0);
     tree initial = DECL_INITIAL(variable);
@@ -1236,7 +1236,7 @@ void walk_variable(GateReads& reads, tree variable) {
     }
 }
 
-// True when OBJECT is an object of THE FOLDED SPECIALIZATIONS: an explicit
+// True when OBJECT is an object of the folded specializations: an explicit
 // specialization of a variable template, or a static data member of an
 // explicit specialization of a class template.
 bool is_folded_specialization(tree object) {
@@ -1251,7 +1251,7 @@ bool is_folded_specialization(tree object) {
 }
 
 // PLUGIN_FOLDED_INITIALIZER: the reads of the initializer of an object of THE
-// FOLDED SPECIALIZATIONS, before the fold.
+// Folded specializations, before the fold.
 void on_folded_initializer_home(void* gcc_data, void*) {
     const auto* data = static_cast<const plugin_folded_initializer_data*>(gcc_data);
     if (data == nullptr || data->original == NULL_TREE || data->original == error_mark_node
@@ -1412,7 +1412,7 @@ void walk_definition(GateReads& reads, tree general) {
 }
 
 // The open leaves of the sealed template GENERAL: each open template that
-// its definition reads, at each depth (THE SEALED TEMPLATES).  A template
+// its definition reads, at each depth (the sealed templates).  A template
 // whose walk has not finished gives no leaf, and a walk that met one keeps
 // no result, unless the template is GENERAL itself.  A chain longer than
 // kSealDepth gives GENERAL as its own leaf, so the walk fails closed.
@@ -1471,7 +1471,7 @@ void read_gate(tree expression, location_t location, tree decl) {
 }
 
 // True when the gates of the file of LOCATION count: a header of the three
-// layers or its check file, read in this unit (THE SCOPE).
+// layers or its check file, read in this unit (the scope).
 bool is_gate_file(location_t location) {
     const FileEntry* file = file_at(location);
     if (!is_scope_file(file)) {
@@ -1483,7 +1483,7 @@ bool is_gate_file(location_t location) {
 
 // True when a gate file can be a scope file of this unit: the main file or the
 // sentinel is a header of the three layers or its check file, or the unit
-// reads a header of the three layers that cannot compile alone (THE SCOPE).
+// reads a header of the three layers that cannot compile alone (the scope).
 // Most units compile a file outside them, and then read no gate.  The first
 // call comes from the walk at the end of the parse, so state.entries holds each
 // file that the unit read.  Complexity: linear in the files of the unit, one
@@ -1571,7 +1571,7 @@ location_t site_location(tree decl) {
     return DECL_SOURCE_LOCATION(decl);
 }
 
-// The site of DECL under ROW, which names the scope NAMED (THE SITES).
+// The site of DECL under ROW, which names the scope NAMED (the sites).
 // IS_CLASS says that DECL is a class.
 void read_row_site(tree decl, const HomeRow& row, tree named, bool is_class) {
     Home home;
@@ -1622,9 +1622,9 @@ enum class MemberWalk : std::uint8_t {
     full,  // each member: a row governs the class, or a scope file defines it
 };
 
-// The member walk of a class (THE SCOPE).  A class of the tree needs the walk
+// The member walk of a class (the scope).  A class of the tree needs the walk
 // of its member templates while the rule specialization-home reads the
-// templates with no row (THE TEMPLATES WITH NO ROW).
+// templates with no row (the templates with no row).
 MemberWalk member_walk_of(tree type, const HomeRow* row) {
     if (row != nullptr) {
         return MemberWalk::full;
@@ -1640,7 +1640,7 @@ MemberWalk member_walk_of(tree type, const HomeRow* row) {
 }
 
 // One declaration of a scope whose row is SCOPE_ROW, named at SCOPE_NAMED.  A
-// declaration with a row of its own follows its own row (THE ROWS).
+// declaration with a row of its own follows its own row (the rows).
 void read_declaration(tree decl, const HomeRow* scope_row, tree scope_named) {
     tree named = decl;
     const HomeRow* row = own_row(decl);
@@ -1854,7 +1854,7 @@ void on_collection(void*, void*) {
 // The directory of the check files.
 constexpr char kCheckTree[] = "test/layer/checks/";
 
-// The place of a site (THE PLACE), or a place with no file for a site outside
+// The place of a site (the place), or a place with no file for a site outside
 // the source root.
 Place site_place(location_t location) {
     Place place;
@@ -1918,7 +1918,7 @@ location_t defining_location(tree template_decl) {
     return DECL_SOURCE_LOCATION(result);
 }
 
-// The walk of the family at the end of the parse (THE SITES).
+// The walk of the family at the end of the parse (the sites).
 void walk_home() {
     build_index();
     walked.clear();

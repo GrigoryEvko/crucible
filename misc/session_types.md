@@ -382,7 +382,7 @@ Subtyping captures "safe substitution": if `T ⩽ T'`, replacing a T'-typed part
 
 ⩽ is decidable. An efficient type-checker walks the types in lockstep, emitting a coinductive proof tree that closes at guarded-recursion fixed points. Crucible's synchronous rings (TraceRing SPSC) rely on ⩽ for subsumption checks.
 
-**Precise async subtyping ⩽_a** (GPPSY23). Under asynchrony, sends can be reordered past unrelated receives — a send to participant q can be anticipated past a receive from participant r ≠ q without breaking the protocol, because the send enters q's queue and the receive completes independently. Sync ⩽ is too strict for async because it forbids these reorderings. Precise async ⩽_a admits them, and is the SOUND AND COMPLETE refinement relation for async: any broader relation is unsafe (admits non-live or unsafe substitutions); any narrower relation over-rejects.
+**Precise async subtyping ⩽_a** (GPPSY23). Under asynchrony, sends can be reordered past unrelated receives — a send to participant q can be anticipated past a receive from participant r ≠ q without breaking the protocol, because the send enters q's queue and the receive completes independently. Sync ⩽ is too strict for async because it forbids these reorderings. Precise async ⩽_a admits them, and is the sound and complete refinement relation for async: any broader relation is unsafe (admits non-live or unsafe substitutions); any narrower relation over-rejects.
 
 GPPSY23 formulates ⩽_a via SISO (Single-Input Single-Output) tree decomposition:
 
@@ -930,7 +930,7 @@ Each layer is ONE header in `include/crucible/safety/`. Headers are self-contain
 
 **Include graph constraints.** No cycles. Every layer depends only on strictly-lower layers (and the non-session safety primitives). L12 is the highest; it may include anything. L0 is the lowest; it includes only `<type_traits>`, `<concepts>`, `<utility>`, and `Platform.h`.
 
-**Test layout.** `test/session/test_session_<layer>.cpp`, one file per layer. Negative-compile tests (ill-typed programs that MUST NOT compile) go in `test/safety_neg/session_<layer>_neg.cpp` (per task #146). Property-based tests for subtyping and projection go in `test/session/test_session_properties.cpp`. μ-calculus verification harness (mCRL2 driver) is out-of-tree: `tools/mcrl2_export/` emits mCRL2 `.mcrl2` files from C++ Γ's, then `tools/verify.sh` runs `lps2pbes` and `pbes2bool` from mCRL2.
+**Test layout.** `test/session/test_session_<layer>.cpp`, one file per layer. Negative-compile tests (ill-typed programs that must not compile) go in `test/safety_neg/session_<layer>_neg.cpp` (per task #146). Property-based tests for subtyping and projection go in `test/session/test_session_properties.cpp`. μ-calculus verification harness (mCRL2 driver) is out-of-tree: `tools/mcrl2_export/` emits mCRL2 `.mcrl2` files from C++ Γ's, then `tools/verify.sh` runs `lps2pbes` and `pbes2bool` from mCRL2.
 
 ## III.2 Compile-time vs runtime split
 
@@ -3304,7 +3304,7 @@ This is checked at compile time, once, per `PermissionedMpmcChannel<…>` instan
 
 ## V.10 Cost budget — compile-time and runtime
 
-> **⚠️ STATUS — PROJECTED, NOT MEASURED.**  All cost numbers in this section are PROJECTIONS extrapolated from underlying-primitive costs (SpscRing, atomic CAS, MPMC SCQ algorithm).  Real-workload measurements depend on Tasks #346 (L7 SessionSafety), #348 (async ⩽_a), #383 (AsyncContext), #381 (full merging) all landing — none are shipped as of 2026-04-24.  bench/bench_session_compile_time.cpp (Task #392) does not exist; the compile-time cost table below is theoretically derived from per-layer template-instantiation complexity, not from `-ftime-report` measurements on the actual MPMC instantiation (which currently doesn't compile because PermissionedMpmcChannel doesn't exist).
+> **⚠️ Status — projected, not measured.**  All cost numbers in this section are PROJECTIONS extrapolated from underlying-primitive costs (SpscRing, atomic CAS, MPMC SCQ algorithm).  Real-workload measurements depend on Tasks #346 (L7 SessionSafety), #348 (async ⩽_a), #383 (AsyncContext), #381 (full merging) all landing — none are shipped as of 2026-04-24.  bench/bench_session_compile_time.cpp (Task #392) does not exist; the compile-time cost table below is theoretically derived from per-layer template-instantiation complexity, not from `-ftime-report` measurements on the actual MPMC instantiation (which currently doesn't compile because PermissionedMpmcChannel doesn't exist).
 >
 > The SessionHandle release-mode zero-overhead claim WAS empirically validated for sizeof (#366 commit body, /tmp/check_sizeof.cpp).  The PermissionedSpscChannel zero-overhead claim has compile-time `static_assert(sizeof(handle) == sizeof(channel-pointer))` validation (test_permissioned_spsc_channel.cpp).  No equivalent for the full MPMC stack yet.
 
@@ -3441,7 +3441,7 @@ Most channels use `df ∧ live+ ∧ crash-safe`. The deeper cases (Raft, collect
 > Legend:
 > - **✅ SHIPPED** — header + tests in tree, runtime semantics implemented
 > - **⚠️ PARTIAL** — header in tree, but a critical sub-property is deferred (see notes)
-> - **❌ NOT SHIPPED** — task pending, header does not exist
+> - **❌ Not shipped** — task pending, header does not exist
 > - **🔌 NO CALLERS** — header exists but no production code uses it
 
 Dependency-ordered delivery of the twelve-layer stack.
@@ -3456,9 +3456,9 @@ Dependency-ordered delivery of the twelve-layer stack.
 
 **M5 — L5 Association.**  ⚠️ PARTIAL.  SessionAssoc.h ships is_associated_v + projected_context_t + assert_associated.  **DEFERRED**: association preservation theorem (HYK24 Thm 5.8) — currently checks association at one point in time; preservation across runtime reductions requires L7's reduction semantics.  Task #345 (pending — partial).  Current line count: **549**.
 
-**M6 — L6 Subtyping.**  ⚠️ PARTIAL — sync only.  SessionSubtype.h ships Gay-Hole 2005 sync subtype rules (Send/Recv/Select/Offer/Loop, payload subsort).  **NOT SHIPPED**: precise async subtyping ⩽_a via SISO decomposition (GPPSY23, Task #348).  Without ⩽_a, every async channel can only have sync subtyping — every Send must rendezvous with a Recv before another Send.  Task #338 (completed — sync subtyping shipped).  Current line count: **854**.
+**M6 — L6 Subtyping.**  ⚠️ PARTIAL — sync only.  SessionSubtype.h ships Gay-Hole 2005 sync subtype rules (Send/Recv/Select/Offer/Loop, payload subsort).  **Not shipped**: precise async subtyping ⩽_a via SISO decomposition (GPPSY23, Task #348).  Without ⩽_a, every async channel can only have sync subtyping — every Send must rendezvous with a Recv before another Send.  Task #338 (completed — sync subtyping shipped).  Current line count: **854**.
 
-**M7 — L7 Safety φ family.**  ❌ NOT SHIPPED.  No SessionSafety.h header exists.  All seven SY19 φ predicates (safe, df, term, nterm, live, live+, live++) are documented but not implemented.  **Consequence**: every channel's φ choice in Part VI is currently aspirational.  Blocked on Tasks #382 (reachable_contexts BFS) + #383 (AsyncContext queue reduction).  Task #346 (pending).
+**M7 — L7 Safety φ family.**  ❌ Not shipped.  No SessionSafety.h header exists.  All seven SY19 φ predicates (safe, df, term, nterm, live, live+, live++) are documented but not implemented.  **Consequence**: every channel's φ choice in Part VI is currently aspirational.  Blocked on Tasks #382 (reachable_contexts BFS) + #383 (AsyncContext queue reduction).  Task #346 (pending).
 
 **M8 — L8 Crash-stop.**  ⚠️ PARTIAL.  SessionCrash.h ships Stop, Crash<p>, UnavailableQueue, ReliableSet, has_crash_branch_for_peer_v + assert_has_crash_branch_for.  **DEFERRED**: Γ-level aggregate check that walks every Offer in every entry's local type (Task SEPLOG-BUG-4 / #368) and the prerequisite Sender-role-on-Offer (Task SEPLOG-STRUCT-1 / #367).  Per-Offer trait shipped is essentially useless for nested Offers (which is most real protocols).  Task #347 (pending — partial).  Current line count: **627**.
 
@@ -3468,7 +3468,7 @@ Dependency-ordered delivery of the twelve-layer stack.
 
 **M11 — L10 Pattern library + L11 Diagnostics.**  ✅ SHIPPED.  SessionPatterns.h ships RequestResponse, FanOut/FanIn, Broadcast, ScatterGather, MpmcProducer/Consumer (proto-only, no runtime), TwoPhaseCommit_Coord/Follower, SwimProbe, Handshake, Transaction_Client/Server, PipelineSource/Sink/Stage.  SessionDiagnostic.h ships 18 manifest-bug tags + CRUCIBLE_SESSION_ASSERT_CLASSIFIED macro + 26 retrofit sites across 10 headers (#388).  Tasks #341, #342, #337 (all completed).  Current line counts: SessionPatterns.h **793**, SessionDiagnostic.h **633**.
 
-**M12 — Crucible channel adoption.**  🔌 NO CALLERS.  Zero production Crucible channels currently use SessionHandle.  The framework sits on a shelf.  Tasks #355-#358 (K-series) are pending; Task SEPLOG-INT-1..4 (sub-tasks #384-#387) added during this status pass.  PermissionedSpscChannel.h ships as the missing primitive — TraceRing, MetaLog, ChainEdge, runtime observation all need to be wired to use it (or analog wrappers).  This is **WHERE THE VALUE LANDS** and where the framework is currently weakest.
+**M12 — Crucible channel adoption.**  🔌 No callers.  Zero production Crucible channels currently use SessionHandle.  The framework sits on a shelf.  Tasks #355-#358 (K-series) are pending; Task SEPLOG-INT-1..4 (sub-tasks #384-#387) added during this status pass.  PermissionedSpscChannel.h ships as the missing primitive — TraceRing, MetaLog, ChainEdge, runtime observation all need to be wired to use it (or analog wrappers).  This is **where the value lands** and where the framework is currently weakest.
 
 **Appendix-D combinators shipped (orthogonal to L-numbering)**:
 - ✅ SessionDelegate.h — Honda 1998 throw/catch (#337) — **835 lines**
@@ -3482,7 +3482,7 @@ Dependency-ordered delivery of the twelve-layer stack.
 - Content-addressed quotient sessions (F.5) generalized beyond Cipher (M16+)
 - Dynamic participants (F.1) formally integrated with precise async + crash-stop (M17+)
 
-**Headline shipping ratio**: 8/12 milestones at SHIPPED or PARTIAL; 4/12 at NOT SHIPPED.  Lines of code in tree: **8,397 across 12 headers** (about 70% of the projected 12K).  Production callers using the framework: **0**.
+**Headline shipping ratio**: 8/12 milestones at SHIPPED or PARTIAL; 4/12 at not shipped.  Lines of code in tree: **8,397 across 12 headers** (about 70% of the projected 12K).  Production callers using the framework: **0**.
 
 The 8,397/12,000 lines completion ratio is misleading without context.  The shipped portion is the STRUCTURAL skeleton (combinators, contexts, queues, global types, association check, sync subtyping, patterns, diagnostics).  The NOT-SHIPPED portion is the SEMANTIC core: φ predicates that actually verify safety/liveness, CSL × session integration, async subtyping, full merging.  Lines-per-feature is heavily back-loaded — see Part IX for the per-conjunct breakdown.
 
@@ -3548,7 +3548,7 @@ After FOUND-C v1 (2026-04-27): the framework gained its first compile-time integ
 
 After SpscSession.h ships (commit c2ceb86, 2026-04-27): the framework now has its first **production-shape** wired exercise. `sessions/SpscSession.h` composes PermissionedSessionHandle over the production `PermissionedSpscChannel` primitive that TraceRing / MetaLog / CNTP wire bytes / bg-pipeline drain channels all share. Two artifacts:
 - `test/test_spsc_session.cpp` — round-trip 1024 ints between two jthreads via the typed-session API on a real `PermissionedSpscChannel<int, 1024, Tag>`. Validates the wiring composes; sizeof equality re-asserted under the test TU's build flags. (DOES NOT exercise PermSet evolution — plain payloads only by design; that path is exercised by `test_permissioned_session_handle.cpp`.)
-- `bench/bench_spsc_session.cpp` — 2×2 matrix bare/typed × producer/consumer round-trip with pair-compare deltas isolating per-side overhead. Two-tier evidence: TIER A asm-identical compile-time witness (verifiable via `cmake --preset default -DCRUCIBLE_DUMP_ASM=ON` + grep through `build/asm-dump/bench_spsc_session.s`); TIER B timed measurement (informational at sub-ns scale).
+- `bench/bench_spsc_session.cpp` — 2×2 matrix bare/typed × producer/consumer round-trip with pair-compare deltas isolating per-side overhead. Two-tier evidence: Tier A asm-identical compile-time witness (verifiable via `cmake --preset default -DCRUCIBLE_DUMP_ASM=ON` + grep through `build/asm-dump/bench_spsc_session.s`); TIER B timed measurement (informational at sub-ns scale).
 
 What's still pending: no Crucible production CALLER (Vigil's recording path, BackgroundThread's drain, MerkleDag's TraceRing consumer, vessel_api's dispatch hot path) has switched to consume the typed view. The wiring exists; the production-side switchover is the SAFEINT-R31 / SEPLOG-INT-1 (#384 / #413) follow-up. K-series tasks #355-#358 (Vessel dispatch, KernelCache, InferenceSession, CNTP Raft) remain pending.
 
@@ -3568,7 +3568,7 @@ Until L7 SessionSafety.h lands, the φ-table in Part VI documents intent, not pr
 ## IX.4 The "claimed costs vs measured costs" gap
 
 **Part V §V.10** cost budget:
-- Compile-time cost claims (~70-120ms per MpmcRing instantiation, full breakdown table) — **PROJECTED, NOT MEASURED**.  bench/bench_session_compile_time.cpp doesn't exist (Task #392).
+- Compile-time cost claims (~70-120ms per MpmcRing instantiation, full breakdown table) — **projected, not measured**.  bench/bench_session_compile_time.cpp doesn't exist (Task #392).
 - Runtime cost claims (zero-overhead release-mode handles via EBO) — **PARTIALLY VERIFIED**.  SessionHandle's zero-overhead claim was empirically validated for sizeof (#366 commit body).  PermissionedSpscChannel's zero-overhead has compile-time static_asserts on sizeof but no runtime micro-bench yet.
 
 The MPMC flagship's cost-budget table is reading as if measured; it is in fact projected from underlying-primitive costs.  Real-workload bench landing depends on at least M9 (CSL × session) being shipped, which depends on M7 prerequisites.

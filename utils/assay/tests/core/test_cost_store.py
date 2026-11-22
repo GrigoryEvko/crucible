@@ -33,7 +33,7 @@ def command(root: str, build: str, *extra: str) -> list[str]:
 
 
 def relocation_cases(expect: testing.Expect) -> None:
-    """Check that relocated() gives the mark of a root only at the boundaries of a path (THE KEY)."""
+    """Check that relocated() gives the mark of a root only at the boundaries of a path (the key)."""
     roots = [("/work/tree/build", cost_store.BUILD_MARK), ("/work/tree", cost_store.ROOT_MARK)]
     shapes = {
         "-I/work/tree/include": "-I<root>/include",
@@ -56,7 +56,7 @@ def relocation_cases(expect: testing.Expect) -> None:
 
 
 def key_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check that the key holds the bytes of the object and the command with its roots as marks (THE KEY)."""
+    """Check that the key holds the bytes of the object and the command with its roots as marks (the key)."""
     places = [scratch / "first", scratch / "second" / "deeper"]
     objects = []
     for place in places:
@@ -96,7 +96,7 @@ def key_cases(expect: testing.Expect, scratch: Path) -> None:
 
 
 def order_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check the inputs of the key that the compiler meter gets (THE ORDER)."""
+    """Check the inputs of the key that the compiler meter gets (the order)."""
     root = scratch / "order"
     build = root / "build"
     (build / "test").mkdir(parents=True)
@@ -128,7 +128,7 @@ def order_cases(expect: testing.Expect, scratch: Path) -> None:
 
 
 def entry_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check the write and the read of an entry, its touch, a damaged entry and the caches off (THE STORE)."""
+    """Check the write and the read of an entry, its touch, a damaged entry and the caches off (the store)."""
     key = "ab" + "0" * 62
     block = '{"cpu_s": 1.000, "end": 2.000}'
     with testing.environment_variable(cache_root.ROOT_VARIABLE, str(scratch / "caches")):
@@ -163,7 +163,7 @@ def entry_cases(expect: testing.Expect, scratch: Path) -> None:
 
 
 def bound_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check that hold_bound() takes a due turn, keeps an entry of each age, and holds the byte limit (THE STORE)."""
+    """Check that hold_bound() takes a due turn, keeps an entry of each age, and holds the byte limit (the store)."""
     with testing.environment_variable(cache_root.ROOT_VARIABLE, str(scratch / "bounded")):
         expect("with no store directory, hold_bound() takes no turn", not cost_store.hold_bound())
         aged_key, used_key = "ef" + "1" * 62, "ef" + "2" * 62

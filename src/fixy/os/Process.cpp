@@ -179,8 +179,8 @@ struct OutputRing {
     return os::raw_syscall(os::Syscall::ptrace, request, child, address, data);
 }
 
-// True when the signal stops a process: the tracer drops it (THE TRACED
-// CHILD of fixy/os/Process.h).
+// True when the signal stops a process: the tracer drops it (the traced
+// child of fixy/os/Process.h).
 [[nodiscard]] bool is_stop_signal(std::uint8_t signal) noexcept {
     return signal == kStopSignal || signal == kTerminalStopSignal || signal == kTerminalInputSignal
         || signal == kTerminalOutputSignal;

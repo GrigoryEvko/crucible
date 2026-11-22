@@ -1,9 +1,9 @@
 """setup check — make sure that each installed tool and the cmake and the ctest of a build agree with their pins.
 
-THE ROWS OF THE TABLE (the rule tool-pins of utils/registry.txt)
+Rows of the table (the rule tool-pins of utils/registry.txt)
     check_table() holds each row of utils/pins.txt to its holder, and
     holder() gives the holder of each pin name:
-      build             cmake: THE CHECK OF A BUILD, and the installed tool
+      build             cmake: the check of a build, and the installed tool
                         cmake as a tool row
       tool              a pin of a tool of assay.setup.install, or a pin of a
                         part of it (the lineage of the kit, the packages of
@@ -23,24 +23,24 @@ THE ROWS OF THE TABLE (the rule tool-pins of utils/registry.txt)
                         archive with a source and a sha256 field
     A row with no holder is an error, and a new pin then gets a check before
     it lands.  Only the row of this host gets the check of its holder.  The
-    rows of cmake give one version for each platform.  THE CHECK OF A BUILD
+    rows of cmake give one version for each platform.  The check of a build
     reads them all.  It runs one time when the call gives a build directory,
     also when no row of cmake is for this host.  `setup check` with no TOOL
     and the rule call check_table().
 
-THE PIN OF CMAKE
+Pin of cmake
     The rows of the pin cmake of utils/pins.txt give one version of CMake and
     ctest, with the SHA-256 of the manylinux wheel of CMake on PyPI for each
     platform.  The rows must give one version.  read_pin() reads them.  The
     configure step rejects a CMake of another version (cmake/CMakePin.cmake),
     and this module is the check that rejects a ctest of another version.
 
-THE INSTALLED TOOLS
+Installed tools
     `setup check TOOL...` makes sure that each named tool of the tools
     directory (assay.setup.install) is installed and meets its pin: the
     stamp, then the checks of the tool.  No network.
 
-THE PROGRAMS OF A BUILD DIRECTORY
+Programs of a build directory
     The CMake cache of a configured build directory holds CMAKE_COMMAND and
     CMAKE_CTEST_COMMAND: the cmake that configured the directory, and the
     ctest of the same install.  The reply cache-v2 of the file API gives them
@@ -54,7 +54,7 @@ THE PROGRAMS OF A BUILD DIRECTORY
     self-test outside ctest, takes the program of PATH only when that program
     gives the pinned version (pinned_program).
 
-THE CHECK OF A BUILD (`setup check --build-dir BUILD_DIR`, the rule tool-pins)
+Check of a build (`setup check --build-dir BUILD_DIR`, the rule tool-pins)
     Each of these programs must give the pinned version:
     * The ctest that runs the check: the nearest ancestor process whose name
       in /proc/PID/comm is ctest.  The check runs /proc/PID/exe --version, so
@@ -361,7 +361,7 @@ def build_findings(pin: CmakePin, build_dir: Path, proc_root: Path, pid: int | N
 
 
 class Holder(enum.StrEnum):
-    """The check that holds the rows of one pin name (THE ROWS OF THE TABLE)."""
+    """The check that holds the rows of one pin name (the rows of the table)."""
 
     BUILD = "build"
     TOOL = "tool"
@@ -387,7 +387,7 @@ def tool_of(name: str) -> str | None:
 
 
 def holder(name: str) -> Holder | None:
-    """Return the holder of the rows of a pin name, or None for a pin that no check holds (THE ROWS OF THE TABLE)."""
+    """Return the holder of the rows of a pin name, or None for a pin that no check holds (the rows of the table)."""
     from assay.oracle import sources
     from assay.setup import gcc, oracle
 
@@ -415,7 +415,7 @@ class TableCheck:
     `root` is the tree with the file utils/pins.txt that the check reads.  `build_dir`
     is None when the check reads no build.  `tools_root` and `oracle_root`
     are None for the directories of assay.core.cache and assay.setup.oracle.
-    `proc_root` and `pid` give the process chain of THE CHECK OF A BUILD.
+    `proc_root` and `pid` give the process chain of the check of a build.
     """
 
     root: Path
@@ -518,7 +518,7 @@ def cross_package_findings(pin: pin_table.Pin) -> list[check_report.Finding]:
 
 
 def check_table(request: TableCheck) -> list[check_report.Finding]:
-    """Hold each row of the pin table to its holder (THE ROWS OF THE TABLE), and give each error.
+    """Hold each row of the pin table to its holder (the rows of the table), and give each error.
 
     Complexity: linear in the rows, and one check of each holder for this host.
 
@@ -595,7 +595,7 @@ def check(build_dir: Path | None, warnings_dir: Path | None, proc_root: Path = P
 
 
 def check_tools(names: list[str], root: Path | None = None) -> int:
-    """Make sure that each named tool of the tools directory meets its pin (THE INSTALLED TOOLS).
+    """Make sure that each named tool of the tools directory meets its pin (the installed tools).
 
     Args:
         names: The tools, each a tool of assay.setup.install

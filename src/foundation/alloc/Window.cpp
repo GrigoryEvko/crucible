@@ -30,7 +30,7 @@ namespace detail {
 struct WindowRecordDoor {
     // The biased map of a window whose map starts MAP_OFFSET bytes after the
     // first byte of the region.  The sum wraps for a window above the map,
-    // and the read of an entry of the window wraps back (THE MAP READ).
+    // and the read of an entry of the window wraps back (the map read).
     [[nodiscard]] static BiasedChunkMap map_of(RegionBase region, core::ByteCount map_offset,
                                                WindowBase window) noexcept {
         std::uint64_t const map = static_cast<std::uint64_t>(region.value()) + map_offset.raw();
@@ -53,7 +53,7 @@ struct WindowRecordDoor {
     }
 
     // The text of the diagnostic, which a call empties first and a refusal
-    // writes (THE FULL WINDOW).
+    // writes (the full window).
     [[nodiscard]] static core::FixedText<kWindowDiagnosticBytes>& text_of(WindowDiagnostic& diagnostic) noexcept {
         return diagnostic.text_;
     }
@@ -63,7 +63,7 @@ struct WindowRecordDoor {
 
 namespace {
 
-// THE LADDER: rung R reserves 1 TiB >> (2 * R), from 1 TiB to 1 GiB.  A build
+// Ladder: rung R reserves 1 TiB >> (2 * R), from 1 TiB to 1 GiB.  A build
 // with ThreadSanitizer starts at 64 GiB.
 constexpr std::size_t kRungCount = 6;
 #if defined(__SANITIZE_THREAD__)
@@ -72,7 +72,7 @@ constexpr std::size_t kFirstRung = 2;
 constexpr std::size_t kFirstRung = 0;
 #endif
 
-// A rung of THE LADDER.
+// A rung of the ladder.
 using Rung = core::Index<kRungCount>;
 
 [[nodiscard]] constexpr core::ByteCount rung_bytes(Rung rung) noexcept {
@@ -111,8 +111,8 @@ using Rung = core::Index<kRungCount>;
     return detail::WindowRecordDoor::window_of(std::move(window), std::move(region), layout, record);
 }
 
-// Writes the remedy of a refusal of each rung into the diagnostic (THE FULL
-// WINDOW).  A text past the capacity keeps its first characters.
+// Writes the remedy of a refusal of each rung into the diagnostic (the full
+// window).  A text past the capacity keeps its first characters.
 CRUCIBLE_COLD void write_full_window(WindowDiagnostic& diagnostic, os::Errno refusal) noexcept {
     Rung const first = Rung::check(kFirstRung).expect("the first rung is below kRungCount");
     static_cast<void>(core::format(detail::WindowRecordDoor::text_of(diagnostic),

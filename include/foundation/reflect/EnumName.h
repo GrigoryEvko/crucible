@@ -11,7 +11,7 @@
 // dependency, so Effect.h and Modality.h read their enumerator names
 // through it.
 //
-// THE NAMES
+// Names
 //   This header is on a lower layer than foundation/core/Text.h, so it
 //   cannot name a TextView.  So it gives no name in a public form.  Its
 //   detail functions give the characters of each name as a NameChars, and

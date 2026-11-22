@@ -37,7 +37,7 @@
 // The fixy::atom::ctrl::throws atom is above this layer.
 // fixy/concurrent/Spawn.h refuses a callable whose type carries it.
 //
-// THE VALUE OF A BODY
+// Value of a body
 //   A body gives a value, or gives nothing.  The borrow gives the value back
 //   beside the token, in a Record of the value and the token.  A fork gives
 //   the parent alone when no body gives a value.  Else it gives a Record of
@@ -217,18 +217,18 @@ consteval void permission_fork_check_() noexcept {
                                                  "two bodies with Permission<A> each would alias region A."));
 }
 
-// The type that a body of a borrow gives, void included (THE VALUE OF A
-// BODY).
+// The type that a body of a borrow gives, void included (the value of a
+// body).
 template <typename Body, typename Tag, typename Brand, typename Ctx>
 using lent_result_t = std::invoke_result_t<std::decay_t<Body>&, WriteView<Tag, Brand> const&, Ctx const&>;
 
 // The value of a body in the result of a fork: what the body gives, or Unit
-// for a body that gives nothing (THE VALUE OF A BODY).
+// for a body that gives nothing (the value of a body).
 template <typename Body, typename Tag, typename Brand, typename Ctx>
 using fork_value_t = std::conditional_t<std::is_void_v<lent_result_t<Body, Tag, Brand, Ctx>>, ::foundation::core::Unit,
                                         lent_result_t<Body, Tag, Brand, Ctx>>;
 
-// A type that a body of a borrow can give (THE VALUE OF A BODY): void, or a
+// A type that a body of a borrow can give (the value of a body): void, or a
 // part of a Record that holds no borrow and that an Option takes by
 // assignment.
 template <typename Given>
@@ -239,8 +239,8 @@ concept LentValue = std::is_void_v<Given>
 struct write_view_door {
     // Complexity: the cost of the body.  The frame holds the token and one
     // empty view, so the door adds no instruction when it is inlined.  A
-    // body that gives a value gives it back beside the token (THE VALUE OF A
-    // BODY).
+    // body that gives a value gives it back beside the token (the value of a
+    // body).
     template <typename Ctx, typename Tag, typename Brand, typename Body>
     [[nodiscard]] static constexpr auto lend(Ctx const& ctx, Permission<Tag, Brand>&& token, Body& body) noexcept {
         Permission<Tag, Brand> held{std::move(token)};
@@ -263,7 +263,7 @@ struct fork_pack_ {};
 template <typename Ctx, typename Parent, typename Brand, typename ChildPack, typename BodyPack>
 struct fork_result_;
 
-// The result of a fork (THE VALUE OF A BODY): the parent alone when no body
+// The result of a fork (the value of a body): the parent alone when no body
 // gives a value, else a Record of the value of each body, in child order,
 // and the parent last.
 template <typename Ctx, typename Parent, typename Brand, typename... Children, typename... Bodies>
@@ -275,7 +275,7 @@ struct fork_result_<Ctx, Parent, Brand, fork_pack_<Children...>, fork_pack_<Bodi
 };
 
 // One lend of a fork whose bodies give values: the value goes into the slot
-// of the body, and the token comes back (THE VALUE OF A BODY).
+// of the body, and the token comes back (the value of a body).
 template <typename Ctx, typename Tag, typename Brand, typename Body>
 [[nodiscard]] constexpr Permission<Tag, Brand>
 lend_into_(Ctx const& ctx, Permission<Tag, Brand>&& token, Body& body,
@@ -304,7 +304,7 @@ template <typename Result, typename Values, typename Rebuilt, std::size_t... Is>
 }  // namespace detail
 
 // The result of a fork with the context Ctx, of the parent of Parent and
-// Brand, with one body for each child (THE VALUE OF A BODY).
+// Brand, with one body for each child (the value of a body).
 template <typename Ctx, typename Parent, typename Brand, typename ChildPack, typename BodyPack>
 using fork_result_t = typename detail::fork_result_<Ctx, Parent, Brand, ChildPack, BodyPack>::type;
 
@@ -316,7 +316,7 @@ using fork_result_t = typename detail::fork_result_<Ctx, Parent, Brand, ChildPac
 // tag, as each mint of the tag asks.
 //
 // A body that gives nothing gets the token back alone.  A body that gives a
-// value gets a Record of the value and the token (THE VALUE OF A BODY).
+// value gets a Record of the value and the token (the value of a body).
 template <typename Ctx, typename Tag, typename Brand, typename Body>
     requires ::foundation::effects::IsExecCtx<Ctx> && CtxAdmitsPermission<Tag, Ctx>
           && detail::PermissionForkBody<Body, Tag, Brand, Ctx>
@@ -358,7 +358,7 @@ void with_write_view(Ctx const&, Token&&, Body&&) =
 // that does not partition, and named a tuple wrapper instead.  Both
 // halves stay spelled here.
 //
-// A body can give a value (THE VALUE OF A BODY).  When a body gives one, the
+// A body can give a value (the value of a body).  When a body gives one, the
 // fork gives a Record of the value of each body, in child order, and the
 // parent last.
 template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>

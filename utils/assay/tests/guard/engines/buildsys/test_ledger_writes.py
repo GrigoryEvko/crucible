@@ -66,7 +66,7 @@ fixture neg_fast test/neg/fast.cpp user=1 system=0 instructions=1
 PLANTS = REPO_ROOT / "utils" / "plants" / header_constexpr.OPS_RULE
 LIST_HEAD = "# The planted list of the headers with a higher limit.\n"
 # A build with one compile job, and the sources of the tree: the source of an object of a different build is there,
-# and the source of a deleted unit is not (THE PRUNE of cost_budgets).
+# and the source of a deleted unit is not (the prune of cost_budgets).
 OBJECT_PRUNE_ROWS = f"""\
 format 1
 kind {KIND}
@@ -86,7 +86,7 @@ UNGENERATED_OBJECT = "CMakeFiles/perf.dir/sense_hub_bpf_bytecode.c.o"
 ODD_OBJECT = "odd.o"
 # A build with the sentinels of four headers of fixy: one over the limit 6.5 MB, one under it, and two under it by less
 # than the margin of the unit MB.  Mint.h includes 6.361 MB, the measure at which the prune of 2026-11-21 removed the
-# row of EndpointMint.h with a margin of 2 %.  Two more headers of the tree have no sentinel (THE PRUNE of cost_budgets).
+# row of EndpointMint.h with a margin of 2 %.  Two more headers of the tree have no sentinel (the prune of cost_budgets).
 HEADER_PRUNE_ROWS = f"""\
 format 1
 kind {KIND}
@@ -233,7 +233,7 @@ def raised(action: object) -> str:
 
 
 def record_cases(expect: testing.Expect) -> None:
-    """Write the rows of the kind test of the rules of a step from the records of a planted build (THE LEDGERS)."""
+    """Write the rows of the kind test of the rules of a step from the records of a planted build (the ledgers)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), RECORD_ROWS)
         ledgers = rule_ledger.ledger_path("step-memory", context.root).parent
@@ -350,7 +350,7 @@ def output_key(item: str, kind: str) -> rule_ledger.Key:
 
 
 def object_prune_cases(expect: testing.Expect) -> None:
-    """Prune the object rows that keep nothing in each build, and keep each other row (THE PRUNE of cost_budgets)."""
+    """Prune the object rows that keep nothing in each build, and keep each other row (the prune of cost_budgets)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), OBJECT_PRUNE_ROWS)
         made = context.require_build() / "gen" / "made.cpp"
@@ -406,7 +406,7 @@ def object_prune_cases(expect: testing.Expect) -> None:
 
 
 def header_prune_cases(expect: testing.Expect) -> None:
-    """Prune the rows of header-alone with the measure of one build (THE PRUNE of cost_budgets)."""
+    """Prune the rows of header-alone with the measure of one build (the prune of cost_budgets)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), HEADER_PRUNE_ROWS)
         headers = ("Huge.h", "Light.h", "Near.h", "Mint.h", "Gone.h", "Unbuilt.h")
@@ -447,7 +447,7 @@ def header_prune_cases(expect: testing.Expect) -> None:
         )
 
 
-# Two builds of one tree for a lower (THE LOWER of cost_budgets): the compile of scan.cpp ran 111 G in the first build
+# Two builds of one tree for a lower (the lower of cost_budgets): the compile of scan.cpp ran 111 G in the first build
 # and is a ccache hit of a compile of 112 G in the second, light.cpp stays under the limit 110 G with the margin, and the
 # second build gives the object blind.cpp.o as a hit with no cost in the cost store.
 LOWER_FIRST = f"""\
@@ -467,7 +467,7 @@ compile CMakeFiles/lib.dir/blind.cpp.o src/blind.cpp result=hit
 
 
 def lower_cases(expect: testing.Expect) -> None:
-    """Lower named rows to the largest measure over the builds, and refuse each lower that THE LOWER refuses."""
+    """Lower named rows to the largest measure over the builds, and refuse each lower that the lower refuses."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-lower-") as scratch:
         first = context_of(Path(scratch) / "first", LOWER_FIRST)
         second = context_of(Path(scratch) / "second", LOWER_SECOND)
@@ -619,7 +619,7 @@ def row_reason_cases(expect: testing.Expect) -> None:
 
 
 def list_cases(expect: testing.Expect) -> None:
-    """Remove the rows that no header makes necessary from a list with no compile, through `guard write` (THE WRITE)."""
+    """Remove the rows that no header makes necessary from a list with no compile, through `guard write` (the write)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), f"format 1\nkind {KIND}\n")
         header = context.root / header_constexpr.INCLUDE / "crucible" / "Light.h"

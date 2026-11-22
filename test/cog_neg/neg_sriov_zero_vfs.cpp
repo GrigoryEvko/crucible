@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A plan asks for at least one virtual function. Zero is the disabled
 // state that disable() reaches, so the checked mint of a count stops the

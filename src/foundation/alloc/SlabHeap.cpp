@@ -1,5 +1,5 @@
 // The bodies of the slab heap of the allocator of the base
-// (foundation/alloc/SlabHeap.h, THE SLAB HEAP).  This file holds no variable:
+// (foundation/alloc/SlabHeap.h, the slab heap).  This file holds no variable:
 // each link is a field of a record of the metadata region.
 
 #include <foundation/alloc/SlabHeap.h>

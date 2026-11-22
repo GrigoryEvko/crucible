@@ -14,7 +14,7 @@ namespace fixy::concurrent {
 
 namespace detail {
 
-// THE TABLE OF THE PROCESS of fixy/concurrent/StageCpus.h.
+// Table of the process of fixy/concurrent/StageCpus.h.
 CRUCIBLE_PROCESS_WIDE inline constinit ProcessStageCpuClaims process_stage_cpu_claims_{};
 
 }  // namespace detail

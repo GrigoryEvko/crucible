@@ -1,5 +1,5 @@
 // The door of fixy/os/SpinBudget.h: the start-up hook that computes the rate
-// of the counter of the process (THE RATE of the header).
+// of the counter of the process (the rate of the header).
 //
 // On aarch64 the hook reads CNTFRQ_EL0.  On x86_64 it reads CPUID through
 // foundation/os/Cpuid.h, and it takes the rate of leaf 0x15 only on an Intel
@@ -38,7 +38,7 @@ constexpr std::uint32_t kBracketsPerSample = 8;
 // deadlines of that library read it.  Each read comes after the write,
 // because the thread of the read starts after main starts, or it reaches the
 // library through the dlopen that ran the write.  Before the hook, the rate
-// is zero (THE RATE of the header).
+// is zero (the rate of the header).
 constinit TickRate tick_rate_at_load{};
 
 // One read of CLOCK_MONOTONIC in nanoseconds, or zero for a read that
@@ -116,7 +116,7 @@ struct ClockSample {
 
 #endif
 
-// The rate of the counter of the core (THE RATE of the header).
+// The rate of the counter of the core (the rate of the header).
 [[nodiscard]] TickRate read_rate_of_counter() noexcept {
 #if defined(__aarch64__)
     std::uint64_t hertz = 0;
@@ -129,7 +129,7 @@ struct ClockSample {
     return calibrate_against_the_clock();
 }
 
-// The hook of THE RATE.  The priority 104 comes after the start-up check of
+// The hook of the rate.  The priority 104 comes after the start-up check of
 // the kernel floor (101), and before each constructor with no priority.
 [[gnu::constructor(104)]] void compute_tick_rate_at_start() noexcept { tick_rate_at_load = read_rate_of_counter(); }
 

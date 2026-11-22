@@ -517,7 +517,7 @@
   // This runs at compile time. If ANY field lacks NSDMI,
   // or sizeof is wrong, or there's an unintended padding hole,
   // or a field that looks like an ID uses a raw integer —
-  // THE BUILD FAILS with the exact field name and reason.
+  // The build fails with the exact field name and reason.
   static_assert(crucible::verify_struct<RegionNode>(
       .expected_size = 184,
       .allow_padding = false
@@ -1889,7 +1889,7 @@
           }
       }
 
-      // ── THE PROOF ──
+      // ── The proof ──
       // Ask: "given OUR allocator's output offsets, are all constraints satisfied?"
       // If UNSAT after adding our offsets → impossible to violate → PROVED
       // If SAT → found a violation → BUILD FAILS with counterexample

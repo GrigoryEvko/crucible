@@ -1,7 +1,7 @@
 // The quarantine plugin of GCC: its arguments, the hooks of the unit and the
 // report.
 //
-// The rule table (utils/rule-table.txt, THE RULE TABLE in plugin.h) gives the
+// The rule table (utils/rule-table.txt, the rule table in plugin.h) gives the
 // class of each file of the source root.  In a quarantined file, each object
 // must have a type that fixy or foundation gives, and the code must not name a
 // library entity that the table does not admit.  The plugin reads the C++
@@ -25,16 +25,16 @@
 //
 // The rule of the library names also reads each other base file in its
 // sentinel unit, with the same admit rows.  Its findings there have the base
-// kinds, and they are no errors in the mode report (THE BASE KINDS in
+// kinds, and they are no errors in the mode report (the base kinds in
 // plugin.h).  The ledger of the rule quarantine counts them.
 //
 // The plugin also applies the contract rule of the tree (contract.cpp), the
 // rule binding-hook (binding.cpp), the rule borrow-match (borrow.cpp) and the
-// refusal of a bit copy into the tag of a sum (THE CLOSED TAGS of
+// refusal of a bit copy into the tag of a sum (the closed tags of
 // library.cpp), in each mode.  Each build of the tree loads this plugin
 // (utils/tools/quarantine/Quarantine.cmake).
 //
-// THE HOOKS OF THE UNIT
+// Hooks of the unit
 //     parse_file             the plugin wraps lang_hooks.parse_file.  After the
 //                            parse, and before the middle end, it walks every
 //                            namespace that a system header does not own
@@ -47,14 +47,14 @@
 //     PLUGIN_FINISH          the report, if the unit did not reach
 //                            PLUGIN_FINISH_UNIT.
 //     PLUGIN_GGC_START       each garbage collection clears the caches that a
-//                            tree keys (THE COLLECTIONS of plugin.h).
+//                            tree keys (the collections of plugin.h).
 //     The other sources register the hooks of their rules.
 //
-// THE ARGUMENTS (-fplugin-arg-crucible_quarantine-NAME=VALUE)
+// Arguments (-fplugin-arg-crucible_quarantine-NAME=VALUE)
 //     root=PATH      the source root (necessary)
 //     build=PATH     the build directory, whose files are generated.  The rule
 //                    table and the report name such a file by the prefix
-//                    @build/ and its path in the build directory (THE FILES
+//                    @build/ and its path in the build directory (the files
 //                    in plugin.h)
 //     rules=PATH     the rule table (necessary)
 //     mode=report    each finding is a line of the section of the object, a
@@ -68,9 +68,9 @@
 //                    each mode, a unit with no section and no report file
 //                    gives a note for each opted-out finding, and for each
 //                    region at the use of its begin macro
-//                    (assay.readers.sarif, THE DIAGNOSTICS OF THE PLUGIN)
+//                    (assay.readers.sarif, the diagnostics of the plugin)
 //     out=DIR        also write the report of the unit to a file in DIR
-//     stamps=DIR     the directory of the mode stamps (THE DEPENDENCIES)
+//     stamps=DIR     the directory of the mode stamps (the dependencies)
 //     stamp=TEXT     the head line of the section holds it; a new value makes
 //                    the build system compile again
 //     kinds=PATH     write the kinds of each rule (kRuleKinds in plugin.h) to
@@ -80,9 +80,9 @@
 //     sentinel=PATH  the header of include/, relative to the source root, whose
 //                    sentinel unit this unit is.  The families declaration
 //                    property and expression shape read the declarations and
-//                    bodies of a base header in this unit (THE SENTINEL in
+//                    bodies of a base header in this unit (the sentinel in
 //                    plugin.h), and the family home reads the gates of a
-//                    header in this unit (home.cpp, THE GATES).  test/layer
+//                    header in this unit (home.cpp, the gates).  test/layer
 //                    gives the sentinel unit of each header this argument
 //     not-standalone=PATH   the list of the headers of include/ that cannot
 //                    compile alone, test/layer/crucible-not-standalone.txt.
@@ -92,7 +92,7 @@
 //     padded-list-limit=N
 //                    the threshold of the rule padded-list, a whole number of
 //                    1 or more (necessary).  A list of more elements than N
-//                    gives a line (declaration.cpp, THE RULE padded-list).
+//                    gives a line (declaration.cpp, the rule padded-list).
 //                    Quarantine.cmake gives the error threshold of the row
 //                    padded-list of utils/registry.txt
 //     library-records=on
@@ -109,7 +109,7 @@
 //                    the rule
 //     linear-shapes=on
 //                    run the other rules of the family linear (linear.cpp,
-//                    THE SHAPES): linear-containment, linear-capture,
+//                    the shapes): linear-containment, linear-capture,
 //                    drop-door, linear-forge, brand-escape and brand-reentry.
 //                    Quarantine.cmake gives it to each compile of the tree
 //     specialization-home=on
@@ -138,7 +138,7 @@
 //                    compile of the tree, and a compile of a plant of a
 //                    different rule has no such argument
 //
-// THE DEPENDENCIES
+// Dependencies
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
 //     a row of the table, with the two enforce modes of that file.  At
 //     PLUGIN_FINISH_UNIT, the plugin adds the mode stamp of each file with a
@@ -147,9 +147,9 @@
 //     mode of a file then compiles again only the units with such a finding in
 //     that file.  An opted-out finding, a finding of the contract rule and a
 //     finding of a family rule add nothing, because no mode changes them.  A
-//     counted line adds its stamp, also in a region (THE COUNTED LINES).
+//     counted line adds its stamp, also in a region (the counted lines).
 //
-// THE COUNTED LINES
+// Counted lines
 //     A line of a rule of kCountedLineRules of plugin.h, the rules of the
 //     family linear, is a counted line.  The count ledger of its rule counts
 //     the lines of each directory and kind, and a line is no error in the mode
@@ -168,7 +168,7 @@
 //     ledgers, so a cached object can miss such an error, and the module of
 //     the rule still refuses its line.
 //
-// THE SECTION
+// Section
 //     A unit that writes an object puts the report into the section
 //     .crucible.quarantine of the object, in each mode, with the head line
 //     "# crucible-guard 2 stamp=TEXT" and then one line "RULE KIND
@@ -259,7 +259,7 @@ void write_report_file(const std::vector<std::string>& lines) {
 // of a unit that is not -fsyntax-only.  At PLUGIN_FINISH the output is closed.
 bool writes_section() { return asm_out_file != nullptr && !flag_syntax_only; }
 
-// Writes the report into the section of the object (THE SECTION above).  An
+// Writes the report into the section of the object (the section above).  An
 // .ascii string escapes '"', '\' and each byte that is not printable ASCII.
 void write_section(const std::vector<std::string>& lines) {
     std::string text = "\t.pushsection\t.crucible.quarantine,\"e\",%progbits\n";
@@ -288,7 +288,7 @@ void write_section(const std::vector<std::string>& lines) {
 }
 
 // True when FINDING is a counted line: a line of a rule of kCountedLineRules
-// that is no record (THE COUNTED LINES).
+// that is no record (the counted lines).
 bool is_counted_line(const Finding& finding) {
     return is_family_kind(finding.kind) && !is_record_kind(finding.kind) && is_counted_line_rule(rule_of(finding.kind));
 }
@@ -303,7 +303,7 @@ std::string directory_of(const std::string& relative) {
 
 // True when the counted line FINDING is an error: its file has the enforce
 // mode error, and the ledger of its rule has no count row of its directory
-// and kind (THE COUNTED LINES).
+// and kind (the counted lines).
 bool is_refused_counted_line(const Finding& finding) {
     if (!is_counted_line(finding) || finding.file == nullptr || !finding.file->is_error_mode) {
         return false;
@@ -314,7 +314,7 @@ bool is_refused_counted_line(const Finding& finding) {
 }
 
 // The mode stamp of each file with a finding that a mode can make an error,
-// in the dependency file of the unit (THE DEPENDENCIES).  Complexity: O(findings).
+// in the dependency file of the unit (the dependencies).  Complexity: O(findings).
 void add_mode_dependencies() {
     class mkdeps* dependencies = cpp_get_deps(parse_in);
     if (dependencies == nullptr || state.stamps_dir.empty()) {
@@ -498,7 +498,7 @@ void walk_unit() {
 // error gives its findings.  The walks skip a declaration that the error left
 // with no type (is_erroneous_decl of plugin.h).
 // The walks are the last readers of the trees that the records of the
-// families hold (THE COLLECTIONS of plugin.h).  After the parse, GCC no longer
+// families hold (the collections of plugin.h).  After the parse, GCC no longer
 // keeps each identifier as a root (toplev.cc, ggc_protect_identifiers), and
 // the middle end frees the bodies that it emits.  So the judge of the folded
 // names (owner.cpp) runs here, and the report reads only findings.

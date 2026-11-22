@@ -2,7 +2,7 @@
 
 usage: check_ceilings.py BUILD_DIR SOURCE_ROOT [--measure]
 
-THE PROBES
+Probes
     Each file probe_*.cpp of this directory runs one heavy gate of the base on
     a fixed input, such as the checkpoint verdict of fixy/session/Checkpoint.h.
     Its line "// measured: N G instructions" gives the user instructions of
@@ -12,7 +12,7 @@ THE PROBES
     costs many times its count, and the check fails.  The ceiling is in the
     probe, so the check has no ledger.
 
-THE COMPILE
+Compile
     The compile of a probe is the compile of REFERENCE_UNIT in the compile
     database of the build, with the probe as its source and -fsyntax-only.  The
     probe then gets the flags of a test of the session layer, with the
@@ -22,15 +22,15 @@ THE COMPILE
     (utils/tools/quarantine/plugin.cpp).  The count then holds the gate, the
     headers and the census of the plugin, as the compile of a test does.
 
-THE COUNT
+Count
     The count is the user instructions of the compiler and of each process
-    that it starts, from a hardware counter (THE INSTRUCTION COUNT of
+    that it starts, from a hardware counter (the instruction count of
     utils/assay/core/meter.py).  The count changes by less than 0.1 % between
     two compiles at each load of the host, and the wall time does not stay
     so.  A host with no exact counter, and a build with no REFERENCE_UNIT,
     give the exit SKIPPED.
 
-THE OPERATIONS
+Operations
     A probe with the line "// operations: N" also states that its heaviest
     constant evaluation counts the same operations under the flags of each
     build.  The verdict of a gate at the operation limit of a constant
@@ -65,9 +65,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The unit of the compile database whose flags each probe gets (THE COMPILE).
+# The unit of the compile database whose flags each probe gets (the compile).
 REFERENCE_UNIT = "test/fixy/test_session_checkpoint_work_bound.cpp"
-# The ceiling of a probe as a multiple of its measured count (THE PROBES).
+# The ceiling of a probe as a multiple of its measured count (the probes).
 CEILING_FACTOR = 2.0
 # The line of a probe that gives its measured count, in G (10^9) instructions.
 MEASURED_LINE = re.compile(r"^// measured: ([0-9]+(?:\.[0-9]+)?) G instructions$", re.MULTILINE)
@@ -76,15 +76,15 @@ GIGA = 1e9
 COMPILE_S = 900
 # The exits of the check.
 OK, FAILED, USAGE, SKIPPED = 0, 1, 2, 77
-# The words that the compile of a probe drops, and the words whose next word it drops too (THE COMPILE).
+# The words that the compile of a probe drops, and the words whose next word it drops too (the compile).
 DROPPED_WORDS = frozenset({"-c", "-MD", "-MMD"})
 DROPPED_PAIRS = frozenset({"-o", "-MF", "-MT", "-MQ"})
-# The line of a probe that gives the operations of its heaviest constant evaluation (THE OPERATIONS).
+# The line of a probe that gives the operations of its heaviest constant evaluation (the operations).
 OPERATIONS_LINE = re.compile(r"^// operations: ([0-9]+)$", re.MULTILINE)
 # The prefix of the operation limit of a compile, and a word of the refusal of a compile that meets it.
 LIMIT_PREFIX = "-fconstexpr-ops-limit="
 LIMIT_WORD = "constexpr-ops-limit"
-# The prefixes of the words that the plain flags drop, and the word that they add (THE OPERATIONS).
+# The prefixes of the words that the plain flags drop, and the word that they add (the operations).
 PLAIN_DROPPED = ("-fsanitize=", "-fno-sanitize-recover", "-D_GLIBCXX_ASSERTIONS", "-D_GLIBCXX_SANITIZE_VECTOR",
                  "-DNDEBUG", "-UNDEBUG", "-fcontract-evaluation-semantic=", "-DCRUCIBLE_CONTRACT_SEMANTIC_IGNORE",
                  LIMIT_PREFIX)
@@ -185,7 +185,7 @@ def operation_count(command: list[str], directory: str, hint: int) -> int:
 
 
 def plain_command(command: list[str]) -> list[str]:
-    """Return the compile under the plain flags (THE OPERATIONS)."""
+    """Return the compile under the plain flags (the operations)."""
     return [word for word in command if not word.startswith(PLAIN_DROPPED)] + [PLAIN_ADDED]
 
 
@@ -210,7 +210,7 @@ def judge_operations(command: list[str], directory: str, probe: Path, hint: int)
 
 
 def main(argv: list[str]) -> int:
-    """Compile each probe, and judge its count against its ceiling (THE PROBES) and its operations."""
+    """Compile each probe, and judge its count against its ceiling (the probes) and its operations."""
     if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] != "--measure"):
         print(__doc__.splitlines()[2], file=sys.stderr)
         return USAGE

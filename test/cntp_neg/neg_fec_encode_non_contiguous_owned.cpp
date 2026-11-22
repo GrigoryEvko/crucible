@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // encode_owned consumes a Linear-owned byte buffer.  A non-contiguous
 // application struct must be serialized before FEC.  The codec and the

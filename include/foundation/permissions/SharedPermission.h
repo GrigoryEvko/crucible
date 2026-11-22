@@ -241,7 +241,7 @@ public:
     }
 };
 
-// THE LEASE.  The exclusive of a pool while it is out of the pool.
+// Lease.  The exclusive of a pool while it is out of the pool.
 // try_upgrade gives it, and deposit_exclusive takes only it, so a token that
 // did not come out of the pool, such as the root of a second run of the call
 // site of the first root, has no door into the pool.  The lease keeps the
@@ -329,7 +329,7 @@ concept PoolCtx = CtxAdmitsPermission<Tag, Ctx>
 
 namespace detail {
 
-// THE INTERNAL DOOR OF THE CHANNELS.  A lend and an upgrade with no
+// Internal door of the channels.  A lend and an upgrade with no
 // context, for the members of the channels of fixy/concurrent and
 // fixy/channels that take no context yet: producer,
 // try_withdraw_producer_root and drain of the merge form of
@@ -401,14 +401,14 @@ public:
     // and the claim a single compare-exchange: a lend that was about to
     // succeed retries and then fails on the flag, and a lend that
     // already incremented makes this compare-exchange fail.  The exclusive
-    // comes out as the lease of this pool (THE LEASE).
+    // comes out as the lease of this pool (the lease).
     template <typename Ctx>
         requires PoolCtx<Tag, Ctx>
     [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>> try_upgrade(Ctx const&) noexcept {
         return try_upgrade_raw_();
     }
 
-    // The holder of the lease gives the exclusive back (THE LEASE).  While
+    // The holder of the lease gives the exclusive back (the lease).  While
     // the exclusive is out, the state is the exclusive-out bit alone: a lend
     // fails on the bit, and no guard lives, because the upgrade found a count
     // of zero.  So no other thread writes the state or the parked permission

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // Enabling virtual functions takes a declared plan. A raw plan never
 // passed the mint or its validation, and it does not convert to one.

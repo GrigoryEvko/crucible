@@ -1,21 +1,21 @@
 """dwarf — the one reader of DWARF 5 in the package.
 
-THE SECTIONS
+Sections
     The module reads the debug sections of one ELF file of assay.readers.elf:
     .debug_info, .debug_abbrev, .debug_str, .debug_line_str, .debug_line and
     .debug_rnglists.  A file has one section of each name at the maximum.  An
     object of the type ET_REL holds a relocation for each offset and each
-    address in these sections (THE RELOCATIONS).  A linked file holds each
+    address in these sections (the relocations).  A linked file holds each
     value with no relocation.
 
-THE UNITS
+Units
     units() gives each unit of .debug_info.  The reader reads DWARF 5 only,
     and a unit of a different version is a DwarfError.  The unit header gives
     the 32-bit or the 64-bit format, the unit type, the bytes of an address
     and the offset of the abbreviations.  dies() of a unit gives each entry of
     the unit in its sequence, with its depth and the index of its parent.
 
-THE ENCODINGS
+Encodings
     The reader decodes each encoding DW_FORM of DWARF 5 and four GNU
     encodings (FORM_NAMES).  A reference becomes an offset in .debug_info.  A
     string of the encoding string, strp or line_strp becomes its text.  An
@@ -25,14 +25,14 @@ THE ENCODINGS
     range list of such an encoding is a DwarfError, because the reader does
     not read .debug_addr or the bases of a unit.
 
-THE FILES
+Files
     files() of a unit reads the header of the line program that the
     attribute DW_AT_stmt_list of its first entry names.  It gives the path of
     each file name entry, in the sequence of the header.  DW_AT_decl_file
     names an entry by that index.  A relative name gets its directory, and a
     relative directory gets the directory 0, the directory of the compile.
 
-THE RANGES
+Ranges
     code_range() gives the bytes of the code of an entry and the section of
     the code.  DW_AT_high_pc is a length, or an address after DW_AT_low_pc.
     A range list of .debug_rnglists gives the sum of its ranges.  Its section
@@ -40,7 +40,7 @@ THE RANGES
     of the base address of the unit.  A linked file has no relocation, and
     the section of each code range is NO_SECTION.
 
-THE RELOCATIONS
+Relocations
     The value at an offset with a relocation is S + A: the value of the
     symbol and the addend.  An entry of a table SHT_REL has no addend, and it
     adds the stored value.  The reader applies only an absolute relocation
@@ -49,7 +49,7 @@ THE RELOCATIONS
     DwarfError.  A relocation in a location expression, such as the offset
     of a thread-local variable, stays unread.
 
-THE CODE BODIES
+Code bodies
     code_bodies() gives a Body for each concrete function and each inlined
     body with code.  A concrete function is an entry DW_TAG_subprogram with a
     range.  An inlined body is an entry DW_TAG_inlined_subroutine with a
@@ -106,7 +106,7 @@ AT_LINKAGE_NAME = 0x6E
 AT_MIPS_LINKAGE_NAME = 0x2007
 ORIGIN_ATTRIBUTES = (AT_ABSTRACT_ORIGIN, AT_SPECIFICATION)
 NAME_ATTRIBUTES = (AT_LINKAGE_NAME, AT_MIPS_LINKAGE_NAME, AT_NAME)
-# The steps of a chain of source entries that THE CODE BODIES follows.
+# The steps of a chain of source entries that the code bodies follows.
 ORIGIN_STEPS = 8
 FORM_ADDR = 0x01
 FORM_BLOCK2 = 0x03
@@ -155,7 +155,7 @@ FORM_GNU_ADDR_INDEX = 0x1F01
 FORM_GNU_STR_INDEX = 0x1F02
 FORM_GNU_REF_ALT = 0x1F20
 FORM_GNU_STRP_ALT = 0x1F21
-# The name of each encoding that the reader decodes (THE ENCODINGS).
+# The name of each encoding that the reader decodes (the encodings).
 FORM_NAMES = {
     FORM_ADDR: "addr",
     FORM_BLOCK2: "block2",
@@ -234,7 +234,7 @@ ULEB_FORMS = frozenset({FORM_UDATA, FORM_LOCLISTX, FORM_RNGLISTX, FORM_ADDRX, FO
 STRING_INDEXES = frozenset({FORM_STRX, FORM_STRX1, FORM_STRX2, FORM_STRX3, FORM_STRX4, FORM_GNU_STR_INDEX})
 # The bytes of the length of each block encoding, with 0 for a ULEB128 length.
 BLOCK_LENGTHS = {FORM_BLOCK1: 1, FORM_BLOCK2: 2, FORM_BLOCK4: 4, FORM_BLOCK: 0, FORM_EXPRLOC: 0}
-# The kinds of an absolute relocation of each machine, with the bytes of its value (THE RELOCATIONS).
+# The kinds of an absolute relocation of each machine, with the bytes of its value (the relocations).
 ABSOLUTE_KINDS = {(elf.EM_X86_64, 1): 8, (elf.EM_X86_64, 10): 4, (elf.EM_AARCH64, 257): 8, (elf.EM_AARCH64, 258): 4}
 # The content types of an entry of the header of a line program.
 LNCT_PATH = 1
@@ -246,7 +246,7 @@ RLE_OFFSET_PAIR = 4
 RLE_BASE_ADDRESS = 5
 RLE_START_END = 6
 RLE_START_LENGTH = 7
-# The section of a code range with no relocation (THE RANGES).
+# The section of a code range with no relocation (the ranges).
 NO_SECTION = -1
 
 
@@ -266,7 +266,7 @@ class Address(elf.Record):
 
 
 class IndexedString(elf.Record):
-    """A string of an index encoding, with its index (THE ENCODINGS)."""
+    """A string of an index encoding, with its index (the encodings)."""
 
     __slots__ = ("index",)
 
@@ -318,7 +318,7 @@ class Die(elf.Record):
 
 
 class Body(elf.Record):
-    """One concrete function or inlined body with code (THE CODE BODIES).
+    """One concrete function or inlined body with code (the code bodies).
 
     `name` and `file` come from the source entries, with an empty text when they have none.  `section` is the index of
     the section of the code in the ELF file, or NO_SECTION.
@@ -407,7 +407,7 @@ def fixed(data: bytes, position: int, size: int) -> int:
 
 
 class Relocated:
-    """The bytes of one debug section, with the relocation at each offset that has one (THE RELOCATIONS)."""
+    """The bytes of one debug section, with the relocation at each offset that has one (the relocations)."""
 
     __slots__ = ("data", "entries", "is_rel", "machine", "name", "symbols", "where")
 
@@ -456,7 +456,7 @@ class Relocated:
 
 
 class Unit:
-    """One unit of .debug_info: its header, its entries and its file names (THE UNITS)."""
+    """One unit of .debug_info: its header, its entries and its file names (the units)."""
 
     __slots__ = (
         "_dies",
@@ -513,7 +513,7 @@ class Unit:
         self._files: tuple[str, ...] | None = None
 
     def dies(self) -> tuple[Die, ...]:
-        """Return each entry of the unit, in its sequence (THE UNITS).  Complexity: linear in the bytes of the unit.
+        """Return each entry of the unit, in its sequence (the units).  Complexity: linear in the bytes of the unit.
 
         Raises:
             DwarfError: If an entry is cut, names an abbreviation that the table does not hold, or has an unknown
@@ -635,7 +635,7 @@ class Unit:
         )
 
     def files(self) -> tuple[str, ...]:
-        """Return the path of each file name entry of the line program of the unit (THE FILES).
+        """Return the path of each file name entry of the line program of the unit (the files).
 
         A unit with no DW_AT_stmt_list has no file.  Complexity: linear in the bytes of the header.
 
@@ -649,7 +649,7 @@ class Unit:
         return self._files
 
     def file_of(self, die: Die) -> str:
-        """Return the declaring file of an entry, or an empty text (THE FILES).
+        """Return the declaring file of an entry, or an empty text (the files).
 
         Raises:
             DwarfError: If the header of the line program cannot be read
@@ -661,7 +661,7 @@ class Unit:
         return files[index] if 0 <= index < len(files) else ""
 
     def code_range(self, die: Die) -> tuple[int, int]:
-        """Return the bytes of the code of an entry and the section of the code (THE RANGES).
+        """Return the bytes of the code of an entry and the section of the code (the ranges).
 
         An entry with no range gives 0 bytes.
 
@@ -687,7 +687,7 @@ class Unit:
 
 
 class LineHeader:
-    """The read of the header of one line program, up to its file name entries (THE FILES)."""
+    """The read of the header of one line program, up to its file name entries (the files)."""
 
     __slots__ = ("dwarf", "line", "offset_size", "position")
 
@@ -769,7 +769,7 @@ class LineHeader:
         raise DwarfError(f"{self.dwarf.where}: an entry of the header of a line program has the encoding {form}")
 
     def files(self) -> tuple[str, ...]:
-        """Return the path of each file name entry, with its directory (THE FILES).
+        """Return the path of each file name entry, with its directory (the files).
 
         Raises:
             DwarfError: If an entry has an encoding that a header cannot have
@@ -789,7 +789,7 @@ class LineHeader:
 
 
 class Dwarf:
-    """The debug sections of one ELF file, read on their first use (THE SECTIONS)."""
+    """The debug sections of one ELF file, read on their first use (the sections)."""
 
     __slots__ = ("_abbreviations", "_relocated", "_strings", "_units", "member", "where")
 
@@ -810,7 +810,7 @@ class Dwarf:
         self._units: tuple[Unit, ...] | None = None
 
     def relocated(self) -> dict[str, Relocated]:
-        """Return each debug section of SECTIONS that the file has, with its relocations (THE RELOCATIONS).
+        """Return each debug section of SECTIONS that the file has, with its relocations (the relocations).
 
         Raises:
             DwarfError: If a section or a relocation table is not fully in the file
@@ -853,7 +853,7 @@ class Dwarf:
         return found
 
     def units(self) -> tuple[Unit, ...]:
-        """Return each unit of .debug_info, or no unit for a file with no such section (THE UNITS).
+        """Return each unit of .debug_info, or no unit for a file with no such section (the units).
 
         Raises:
             DwarfError: If a unit header is cut, or a unit is not DWARF 5
@@ -927,7 +927,7 @@ class Dwarf:
         return self._strings[key]
 
     def line_files(self, offset: int) -> tuple[str, ...]:
-        """Return the path of each file name entry of the header of the line program at an offset (THE FILES).
+        """Return the path of each file name entry of the header of the line program at an offset (the files).
 
         Raises:
             DwarfError: If the header is cut, is not DWARF 5, or has an encoding that a header cannot have
@@ -952,7 +952,7 @@ class Dwarf:
         return total, section
 
     def read_range_list(self, offset: int, address_size: int) -> tuple[int, int]:
-        """Read the range list at an offset of .debug_rnglists (THE RANGES).
+        """Read the range list at an offset of .debug_rnglists (the ranges).
 
         Raises:
             DwarfError: If the list has an index encoding or an unknown kind of entry
@@ -990,7 +990,7 @@ class Dwarf:
 
 
 def source_of(unit: Unit, die: Die, lookup: Callable[[int], tuple[Unit, Die] | None]) -> tuple[str, str, bool]:
-    """Return the name, the declaring file and the artificial flag of the source entries of an entry (THE CODE BODIES).
+    """Return the name, the declaring file and the artificial flag of the source entries of an entry (the code bodies).
 
     Raises:
         DwarfError: If the header of a line program cannot be read
@@ -1016,7 +1016,7 @@ def source_of(unit: Unit, die: Die, lookup: Callable[[int], tuple[Unit, Die] | N
 
 
 def unit_bodies(unit: Unit, lookup: Callable[[int], tuple[Unit, Die] | None]) -> list[Body]:
-    """Return the bodies of one unit, in the sequence of its entries (THE CODE BODIES).
+    """Return the bodies of one unit, in the sequence of its entries (the code bodies).
 
     Raises:
         DwarfError: If an entry, a range list or the header of a line program cannot be read
@@ -1049,7 +1049,7 @@ def unit_bodies(unit: Unit, lookup: Callable[[int], tuple[Unit, Die] | None]) ->
 
 
 def code_bodies(member: elf.Member) -> tuple[Body, ...]:
-    """Return each concrete function and each inlined body with code of an ELF file (THE CODE BODIES).
+    """Return each concrete function and each inlined body with code of an ELF file (the code bodies).
 
     A file with no .debug_info gives no body.  Complexity: linear in the entries of the units, times ORIGIN_STEPS.
 

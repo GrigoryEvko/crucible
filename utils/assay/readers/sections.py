@@ -1,27 +1,27 @@
 """sections — read the findings of the quarantine plugin from the section of an object.
 
-THE SECTION
+Section
     The quarantine plugin of utils/tools/quarantine/ writes the findings of a
     unit into the section .crucible.quarantine of its object (the head comment
-    of plugin.cpp, THE SECTION).  The section is text in UTF-8.  Its first line
+    of plugin.cpp, the section).  The section is text in UTF-8.  Its first line
     is "# crucible-guard 2 stamp=TEXT", and each other line is one finding:
 
         RULE KIND FILE:LINE:COLUMN ENTITY
 
     RULE is a rule of the engine plugin of utils/registry.txt, and KIND is a
     kind of that rule.  A record of the library code has the tag
-    LIBRARY_RECORDS in the place of RULE, and no rule of the registry (THE
-    SYMBOLS OF THE LIBRARY CODE).  FILE is relative to the source root.  A
+    LIBRARY_RECORDS in the place of RULE, and no rule of the registry (the
+    symbols of the library code).  FILE is relative to the source root.  A
     report file of the plugin argument out= holds the same finding lines,
     after a comment line.
 
-THE OBJECT
+Object
     read() maps an object with assay.readers.elf, and it reads the bytes of
     each section with the name.  Two sections with the name, as a relocatable
     link can make, give their bytes one after the other.  No other module of
     the package names the section.
 
-THE ENTITIES OF THE RECORDS
+Entities of the records
     The plugin writes the entity of some kinds in a grammar of its own, and
     the writer of each kind gives the grammar.  A function of this module
     reads such an entity into a typed record, and a rule reads the fields of
@@ -29,8 +29,8 @@ THE ENTITIES OF THE RECORDS
     record of the library code, quarantine and the family home, a field that
     holds words has one space between each two words.  The plugin can write
     more spaces:
-      library code   The writer is utils/tools/quarantine/body.cpp (THE
-                     RECORDS).  inlined: NAME.  call and reference: SYMBOL
+      library code   The writer is utils/tools/quarantine/body.cpp (the
+                     records).  inlined: NAME.  call and reference: SYMBOL
                      NAME.  symbol: SYMBOL.  SYMBOL is an assembler name with
                      no space, and NAME can hold a space, as in operator new.
                      library_record() gives a LibraryRecord
@@ -62,7 +62,7 @@ THE ENTITIES OF THE RECORDS
     rule.  When such a record does not have its grammar, its function raises
     EntityError.
 
-THE SYMBOLS OF THE LIBRARY CODE
+Symbols of the library code
     The records of the library code have four kinds.  The entity of a record
     call, reference or symbol starts with the assembler name of a symbol that
     an instruction of the unit names.  Section.symbols() gives these names
@@ -70,7 +70,7 @@ THE SYMBOLS OF THE LIBRARY CODE
     imports of a member of an archive with them, and `guard bom` gives each
     import a line of the source.
 
-THE REPORT OF A PARSE BUILD
+Report of a parse build
     A build of a configuration that only parses has no object (`loop syntax`,
     CRUCIBLE_SYNTAX_ONLY).  Its driver gives each unit the report directory
     report_directory(): SYNTAX_DIRECTORY, and then the path of the object
@@ -102,18 +102,18 @@ NOT_FINDINGS = frozenset((OPTED_OUT, REGION))
 # The spelling of a rule and of a kind of a finding line (parse_line).
 RULE = re.compile(r"[a-z][a-z0-9-]*")
 KIND = re.compile(r"[a-z][a-z0-9-]*(:\S+)?")
-# The directory of a parse build that holds the report directory of each unit (THE REPORT OF A PARSE BUILD).
+# The directory of a parse build that holds the report directory of each unit (the report of a parse build).
 SYNTAX_DIRECTORY = Path("quarantine") / "syntax"
 # The file of a report directory that holds the stamp of the compile command of its unit.
 STAMP_FILE = "stamp"
 # The suffix of a report file of the plugin argument out=.
 REPORT_SUFFIX = ".quarantine"
-# The tag of the records of the library code, and the kinds of its records that name a symbol first (THE SYMBOLS OF
-# THE LIBRARY CODE).
+# The tag of the records of the library code, and the kinds of its records that name a symbol first (the symbols of
+# the library code).
 LIBRARY_RECORDS = "library-records"
 SYMBOL_RECORDS = frozenset({"call", "reference", "symbol"})
-# The two kinds of the rule quarantine with an include grammar, and the texts that divide their parts (THE ENTITIES OF
-# THE RECORDS).
+# The two kinds of the rule quarantine with an include grammar, and the texts that divide their parts (the entities of
+# the records).
 LAYER_HEADER = "layer-header"
 UPWARD_INCLUDE = "upward-include"
 HEADER_END = "> in "
@@ -150,7 +150,7 @@ class SectionError(ValueError):
 
 
 class EntityError(SectionError):
-    """The entity of a record does not have the grammar of its kind (THE ENTITIES OF THE RECORDS)."""
+    """The entity of a record does not have the grammar of its kind (the entities of the records)."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True, order=True)
@@ -179,7 +179,7 @@ class Section:
     def symbols(self) -> dict[str, Finding]:
         """Return the first record call, reference or symbol of the library code of each symbol that one names.
 
-        THE SYMBOLS OF THE LIBRARY CODE gives the records.  Complexity: linear in the findings.
+        The symbols of the library code give the records.  Complexity: linear in the findings.
         """
         found: dict[str, Finding] = {}
         for item in self.findings:
@@ -252,7 +252,7 @@ def read(path: str | os.PathLike[str]) -> Section | None:
 def of_member(member: elf.Member) -> Section | None:
     """Return the findings and the stamp of the section of one ELF file or member, or None when it has no section.
 
-    A member of an archive holds the section of its object (THE OBJECT).  Complexity: linear in the number of
+    A member of an archive holds the section of its object (the object).  Complexity: linear in the number of
     sections and in the length of the section.
 
     Raises:
@@ -266,7 +266,7 @@ def of_member(member: elf.Member) -> Section | None:
 
 
 def report_directory(build_dir: Path, object_path: str | os.PathLike[str]) -> Path:
-    """Return the report directory of one object of a parse build (THE REPORT OF A PARSE BUILD)."""
+    """Return the report directory of one object of a parse build (the report of a parse build)."""
     return build_dir / SYNTAX_DIRECTORY / os.path.relpath(object_path, build_dir)
 
 
@@ -312,7 +312,7 @@ def read_report_file(path: Path) -> tuple[Finding, ...]:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class LibraryRecord:
-    """The entity of a record of the library code (THE ENTITIES OF THE RECORDS).
+    """The entity of a record of the library code (the entities of the records).
 
     `symbol` is the assembler name of a record call, reference or symbol, and empty for a record inlined.  `name` is
     the name of the library function or variable, and empty for a record symbol.
@@ -444,12 +444,12 @@ class QualifiedName:
 
 
 def words_of(text: str) -> str:
-    """Return the words of a text with one space between each two (THE ENTITIES OF THE RECORDS)."""
+    """Return the words of a text with one space between each two (the entities of the records)."""
     return " ".join(text.split())
 
 
 def library_record(kind: str, text: str) -> LibraryRecord:
-    """Return the record of the entity of a line of the library code (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a line of the library code (the entities of the records).
 
     A record of a kind of SYMBOL_RECORDS gives its first word as the symbol and its other words as the name.  Each
     other kind gives its words as the name.
@@ -461,7 +461,7 @@ def library_record(kind: str, text: str) -> LibraryRecord:
 
 
 def quarantine_entity(kind: str, text: str) -> FindingEntity:
-    """Return the record of the entity of a finding of the rule quarantine (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a finding of the rule quarantine (the entities of the records).
 
     A finding `layer-header` gives a LayerHeader and a finding `upward-include` an UpwardInclude, when the text has
     the grammar of the kind.  Each other entity gives its Words.  The function takes the kind and the text, because the
@@ -481,7 +481,7 @@ def quarantine_entity(kind: str, text: str) -> FindingEntity:
 
 
 def opted_out(text: str) -> OptedOut:
-    """Return the record of the entity of a finding opted-out of the rule quarantine (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a finding opted-out of the rule quarantine (the entities of the records).
 
     The first word is the kind of the finding in the region, and the other words are its entity.
     """
@@ -511,7 +511,7 @@ def is_number(text: str) -> bool:
 
 
 def padded_list(text: str, where: str) -> PaddedList:
-    """Return the record of the entity of a line of the rule padded-list (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a line of the rule padded-list (the entities of the records).
 
     `where` names the line in a message.
 
@@ -530,7 +530,7 @@ def padded_list(text: str, where: str) -> PaddedList:
 
 
 def mint_record(text: str, where: str) -> MintRecord:
-    """Return the record of the entity of a record mint of the rule mint (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a record mint of the rule mint (the entities of the records).
 
     `where` names the line in a message.
 
@@ -564,7 +564,7 @@ def mint_record(text: str, where: str) -> MintRecord:
 
 
 def mint_alias(text: str, where: str) -> MintAlias:
-    """Return the record of the entity of a record mint-alias of the rule mint (THE ENTITIES OF THE RECORDS).
+    """Return the record of the entity of a record mint-alias of the rule mint (the entities of the records).
 
     `where` names the line in a message.
 
@@ -580,7 +580,7 @@ def mint_alias(text: str, where: str) -> MintAlias:
 
 
 def qualified_name(text: str) -> QualifiedName:
-    """Return the record of the entity of a line of a rule of the family home (THE ENTITIES OF THE RECORDS)."""
+    """Return the record of the entity of a line of a rule of the family home (the entities of the records)."""
     words = words_of(text)
     return QualifiedName(words, words.rpartition(SCOPE_SEPARATOR)[2])
 

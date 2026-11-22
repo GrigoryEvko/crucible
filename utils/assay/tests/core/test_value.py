@@ -42,7 +42,7 @@ def raises(action: object, error: type[Exception]) -> bool:
 
 
 def value_cases(expect: testing.Expect) -> None:
-    """Check the fields, the equality, the hash, the text and the refusal of a change (THE VALUE)."""
+    """Check the fields, the equality, the hash, the text and the refusal of a change (the value)."""
     first = Pair("a", 1)
     expect(
         "a value gives its fields by their names and in the sequence of the __match_args__ of its class",

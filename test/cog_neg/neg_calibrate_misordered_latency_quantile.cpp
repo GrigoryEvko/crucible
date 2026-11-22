@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A positive median does not rescue a triple whose quantiles are out of
 // order. The ordering conjunct of the calibration predicate refuses it at

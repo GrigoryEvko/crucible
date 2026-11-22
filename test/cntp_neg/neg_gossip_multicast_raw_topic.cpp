@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A neighbor joins a topic that admit_gossip_topic declared.  A raw topic
 // key does not convert to the declared topic, so the registration is

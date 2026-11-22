@@ -31,7 +31,7 @@ struct HeapStateDoor {
 
     // Builds the state of a heap at the first byte of its committed slot,
     // with the facts of its window and the three pointers of each bin into
-    // the bin stacks of the slot (THE BINS of foundation/alloc/HeapState.h).
+    // the bin stacks of the slot (the bins of foundation/alloc/HeapState.h).
     // It writes the HeapState, and no word of the stacks.
     [[nodiscard]] static HeapState& start(AddressWord slot, HeapId id, Window const& window) noexcept {
         void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(slot));
@@ -56,7 +56,7 @@ struct HeapStateDoor {
 namespace {
 
 // The bytes from the first slot up to the end of the step that holds the end
-// of BYTES (THE HEAP TABLE).
+// of BYTES (the heap table).
 [[nodiscard]] constexpr std::size_t whole_steps(core::ByteCount bytes) noexcept {
     return (bytes.raw() + (kHeapTableStepBytes - 1)) & ~(kHeapTableStepBytes - 1);
 }
@@ -68,7 +68,7 @@ namespace {
 }  // namespace
 
 struct RootDoor {
-    // The init of THE ROOT, on the thread that moved the state word to
+    // The init of the root, on the thread that moved the state word to
     // starting.
     static void start(AllocRoot& root) noexcept {
         WindowDiagnostic diagnostic{};
@@ -95,7 +95,7 @@ struct RootDoor {
     }
 
     // Commits the slots from the front of the committed bytes up to the end
-    // of the step of END, and raises the front (THE HEAP TABLE).
+    // of the step of END, and raises the front (the heap table).
     static void commit_slots(AllocRoot& root, core::ByteCount end) noexcept {
         std::size_t const front = root.committed_heap_bytes_.load_acquire();
         if (end.raw() <= front) return;
@@ -119,7 +119,7 @@ struct RootDoor {
         return AddressWord{first + kHeapTableGuardBytes + std::uint64_t{slot.raw()} * kHeapSlotBytes};
     }
 
-    // The claim of THE HEAP TABLE for a thread on the sentinel.
+    // The claim of the heap table for a thread on the sentinel.
     [[nodiscard]] static HeapState& claim(AllocRoot& root) noexcept {
         std::uint32_t const taken = root.claimed_heaps_.fetch_add_acq_rel(1);
         core::Option<HeapSlot> const slot = HeapSlot::check(taken);

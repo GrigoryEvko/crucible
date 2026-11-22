@@ -45,7 +45,7 @@ def level_of(found: check_report.Finding | None) -> str:
 
 
 def verdict_cases(expect: testing.Expect) -> None:
-    """Give the verdict of one value against the limit and a row (THE VERDICT)."""
+    """Give the verdict of one value against the limit and a row (the verdict)."""
     cases: dict[tuple[float, float | None], str] = {
         (2.0, None): cost_budget.NO_FINDING,
         (4.0, None): cost_budget.NO_FINDING,
@@ -153,7 +153,7 @@ CROSSINGS_2026_11_21: tuple[tuple[str, str, str, float, float, bool], ...] = (
 
 
 def crossing_cases(expect: testing.Expect) -> None:
-    """Replay the crossed rows of 2026-11-21 against the margins of NOISE (THE NOISE)."""
+    """Replay the crossed rows of 2026-11-21 against the margins of NOISE (the noise)."""
     for rule_id, unit, item, kept, measured, is_kept in CROSSINGS_2026_11_21:
         found = cost_budget.verdict(measured, 0.0, kept, cost_budget.noise_of(unit))
         wanted = cost_budget.ADMITTED if is_kept else cost_budget.RISEN
@@ -185,7 +185,7 @@ def crossing_cases(expect: testing.Expect) -> None:
 
 
 def row_cases(expect: testing.Expect) -> None:
-    """Give the row of one kind and item, the shown ledger and the first problem of the ledger (THE ROWS)."""
+    """Give the row of one kind and item, the shown ledger and the first problem of the ledger (the rows)."""
     with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
         ledger = str(Path(scratch) / f"{SCALAR_RULE}.txt")
         found, _, problem = cost_budget.row_of(SCALAR_RULE, "", cost_meter.ITEM_OUTPUT, ledger, "unit.o")
@@ -237,7 +237,7 @@ def row_cases(expect: testing.Expect) -> None:
 
 
 def judge_cases(expect: testing.Expect) -> None:
-    """Judge one value against the limit of its kind and the rows (THE JUDGE)."""
+    """Judge one value against the limit of its kind and the rows (the judge)."""
     empty = rows_of({})
     measure = cost_budget.Measure("unit.o", "@build/unit.o", 5.0, "the compile took 5.00 GB", "compile")
     with check_report.github_actions(False):
@@ -300,7 +300,7 @@ def judge_cases(expect: testing.Expect) -> None:
 
 
 def rows_cases(expect: testing.Expect) -> None:
-    """Read the rows of a ledger, and refuse a row of a kind that the rule does not have (THE ROWS)."""
+    """Read the rows of a ledger, and refuse a row of a kind that the rule does not have (the rows)."""
     with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
         ledger = Path(scratch) / f"{SCALAR_RULE}.txt"
         rows = cost_budget.read_rows(SCALAR_RULE, cost_meter.ITEM_OUTPUT, ledger)
@@ -352,7 +352,7 @@ def rows_cases(expect: testing.Expect) -> None:
 
 
 def write_cases(expect: testing.Expect) -> None:
-    """Write a row only for an item above the limit that no row keeps, and remove and lower no row (THE WRITE)."""
+    """Write a row only for an item above the limit that no row keeps, and remove and lower no row (the write)."""
     scalar = check_report.Budget(SCALAR_RULE, 4.0, "GB", "a planted quantity")
     kept_key = rule_ledger.Key("@build/kept.o", "", "")
     gone_key = rule_ledger.Key("@build/gone.o", "", "")
@@ -411,7 +411,7 @@ def write_cases(expect: testing.Expect) -> None:
 
 
 def memo_cases(expect: testing.Expect) -> None:
-    """Hold the cache of the rows of a ledger (THE MEMO OF THE ROWS of assay.core.meter)."""
+    """Hold the cache of the rows of a ledger (the memo of the rows of assay.core.meter)."""
     rule, forms = SCALAR_RULE, SCALAR_FORMS
     with tempfile.TemporaryDirectory(prefix="test-budget-") as scratch:
         ledger = str(Path(scratch) / f"{SCALAR_RULE}.txt")
@@ -462,7 +462,7 @@ def memo_cases(expect: testing.Expect) -> None:
 
 
 def scope_cases(expect: testing.Expect) -> None:
-    """Tell which outputs of a build the measured rules judge (THE SCOPE)."""
+    """Tell which outputs of a build the measured rules judge (the scope)."""
     cases = {
         "bench/CMakeFiles/bench_x.dir/bench_x.cpp.o": False,
         "bench/bench_x": False,

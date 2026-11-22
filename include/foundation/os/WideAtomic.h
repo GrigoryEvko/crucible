@@ -3,23 +3,23 @@
 // The cell of 128 bits: one value of 16 bytes that two threads touch, with
 // the memory order in the name of each operation.
 //
-// THE VALUE
+// Value
 //   A value of 16 bytes with an alignment of at most 16, trivially copyable,
 //   with one bit pattern for each value, such as a pointer with a count of
 //   its generation.  The cell holds the bits of the value as one unsigned
 //   integer of 128 bits, so a compare-and-swap compares the bits of the value.
 //
-// THE OPERATIONS
+// Operations
 //   load_acquire()             the value, with acquire order
 //   store_release(v)           stores v, with release order
 //   cas_acq_rel(e, d)          stores d if the cell holds e, strong, and gives
 //                              a Result with the value it read
 //   The names and the Result are those of the cell of foundation/core/Atomic.h.
 //
-// THE TWO FORMS
+// Two forms
 //   WideAtomicByInstruction<T> uses the instructions of the core, and it has
 //   16 bytes.  Its compare-and-swap is a full barrier:
-//     x86-64 v2 and above      lock cmpxchg16b, in line (THE SWAP ON X86-64)
+//     x86-64 v2 and above      lock cmpxchg16b, in line (the swap on X86-64)
 //     aarch64 with LSE         caspal, in line, through the builtin
 //                              __sync_val_compare_and_swap
 //     aarch64 with no LSE      the helper __aarch64_cas16_sync of libgcc,
@@ -40,7 +40,7 @@
 //   each level, and a cell is Pinned and never goes into a file, so no cell
 //   crosses two levels.
 //
-// THE LOAD AND THE STORE ON X86-64
+// Load and store on X86-64
 //   GCC calls libatomic for each __atomic operation of 16 bytes, so the cell
 //   does not use them.  Intel and AMD state that an aligned load or store of
 //   16 bytes through MOVDQA or VMOVDQA is one access on a core with AVX.
@@ -61,7 +61,7 @@
 //   LSE2 makes an aligned LDP one access, but no aarch64 host here can measure
 //   that form, so the cell does not use it.
 //
-// THE SWAP ON X86-64
+// Swap on X86-64
 //   The builtin __sync_val_compare_and_swap gives the old word, and a
 //   compare of that word with the expected word then tells the result.  On
 //   the dev host (AMD EPYC 9754, a guest of KVM), that compare made a swap
@@ -71,14 +71,14 @@
 //   that form stores in 729 and refuses in 700 thousandths of the time of
 //   libatomic.
 //
-// THE SANITIZER
+// Sanitizer
 //   ThreadSanitizer sees no order through inline assembly.  Under
 //   -fsanitize=thread the load, the store and the compare-and-swap take the
 //   builtin forms, which ThreadSanitizer reads as operations of
 //   __tsan_atomic128.
 //
 // The cell has no wait.  A thread waits for a change of a cell through the
-// event count of fixy/concurrent/EventCount.h (THE WAIT of
+// event count of fixy/concurrent/EventCount.h (the wait of
 // foundation/core/Atomic.h).
 
 #include <foundation/Pinned.h>
@@ -99,7 +99,7 @@ __extension__ using WideWord = unsigned __int128;
 
 #if defined(__x86_64__)
 // True when an aligned MOVDQA of 16 bytes is one access on the cores of this
-// host (THE LOAD AND THE STORE ON X86-64).  The start-up hook of
+// host (the load and the store on X86-64).  The start-up hook of
 // src/foundation/os/WideAtomic.cpp writes it one time, at the load of its
 // library.  Before the hook it is false, which takes the compare-and-swap
 // forms.
@@ -115,7 +115,7 @@ extern bool has_atomic_vector_moves_;
 [[nodiscard]] inline bool has_atomic_vector_moves() noexcept { return detail::has_atomic_vector_moves_; }
 #endif
 
-// The value of a cell of 128 bits (THE VALUE).
+// The value of a cell of 128 bits (the value).
 template <class T>
 concept WideAtomicValue =
     std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T> && sizeof(T) == 16
@@ -123,7 +123,7 @@ concept WideAtomicValue =
 
 #if defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16)
 
-// The cell of 128 bits through the instructions of the core (THE TWO FORMS).
+// The cell of 128 bits through the instructions of the core (the two forms).
 // Each step of a cell is atomic, so two threads read and write one cell at the
 // same time.  A value that one thread stores, another loads, so the cell is a
 // cell of its payload (foundation/Transfer.h).
@@ -146,7 +146,7 @@ class[[= ::foundation::transfer::payload_cell{}]] WideAtomicByInstruction
     // __atomic_compare_exchange_n.  It stores DESIRED when the cell holds
     // HELD, and it returns true.  Else it puts the word of the cell into HELD
     // and returns false.  On x86-64 outside ThreadSanitizer the swap is the
-    // instruction, and the result comes from its zero flag (THE SWAP ON
+    // instruction, and the result comes from its zero flag (the swap on
     // X86-64).
     [[nodiscard]] bool swap_word_(detail::WideWord& held, detail::WideWord desired) const noexcept {
 #if defined(__x86_64__) && !defined(__SANITIZE_THREAD__)
@@ -176,7 +176,7 @@ public:
     explicit constexpr WideAtomicByInstruction(T initial) noexcept : word_{to_word_(initial)} {}
 
     // The vector move is only for a unit that is not under ThreadSanitizer
-    // (THE SANITIZER).
+    // (the sanitizer).
     [[nodiscard]] T load_acquire() const noexcept {
 #if defined(__x86_64__) && !defined(__SANITIZE_THREAD__)
         if (detail::has_atomic_vector_moves_) [[likely]] {
@@ -222,7 +222,7 @@ public:
 
 #endif
 
-// The cell of 128 bits through a lock (THE TWO FORMS).  Each step takes the
+// The cell of 128 bits through a lock (the two forms).  Each step takes the
 // lock, so two threads read and write one cell at the same time.  It is a
 // cell of its payload (foundation/Transfer.h).
 template <WideAtomicValue T>
@@ -289,7 +289,7 @@ public:
     }
 };
 
-// The cell of 128 bits of the target (THE TWO FORMS).
+// The cell of 128 bits of the target (the two forms).
 #if defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16)
 template <WideAtomicValue T>
 using WideAtomic = WideAtomicByInstruction<T>;

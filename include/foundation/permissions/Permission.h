@@ -714,7 +714,7 @@ mint_permission_root(Args const&...) noexcept;
 
 // ── The scope mint ───────────────────────────────────────────────────
 //
-// THE SCOPE MINT
+// Scope mint
 //   A scope door gives its body the token of a tag on a scope brand: the
 //   brand CRUCIBLE_SCOPE_BRAND of foundation/Brand.h in the last template
 //   parameter of the door, fresh for each call site.  The rule brand-escape
@@ -747,8 +747,8 @@ concept ScopeMintableTag =
 template <typename Tag, typename Brand>
 concept ScopePermissionArgs = ScopeMintableTag<Tag> && ::foundation::brand::IsFreshBrand<Brand>;
 
-// The token of the tag on the scope brand of the call of its door (THE SCOPE
-// MINT).  Complexity: O(1), and no code: a token is an empty class.
+// The token of the tag on the scope brand of the call of its door (the scope
+// mint).  Complexity: O(1), and no code: a token is an empty class.
 template <typename Tag, typename Brand>
     requires ScopePermissionArgs<Tag, Brand>
 [[nodiscard]] constexpr Permission<Tag, Brand> mint_scope_permission(scope_mint_key<Tag> const& key) noexcept;
@@ -1004,7 +1004,7 @@ mint_permission_root(Args const&...) noexcept {
     return Permission<Tag, Brand>{perm_mint_key{}};
 }
 
-// The key of the scope mint of a tag (THE SCOPE MINT).  Its one friend is the
+// The key of the scope mint of a tag (the scope mint).  Its one friend is the
 // scope door that the tag names.  The two constructors are user-provided, for
 // the reason that perm_mint_key gives.
 template <typename Tag>
@@ -1044,7 +1044,7 @@ template <typename Tag, typename Brand>
 // the count of the parent says nothing about them.  A singleton root of a
 // child tag would then be a second erased token of that tag.
 //
-// THE REGISTRY.  The live count of a tag must be one cell for the process,
+// Registry.  The live count of a tag must be one cell for the process,
 // also when two shared libraries hold the door.  A variable of a template has
 // a copy in each library, because the hidden visibility of the tree hides
 // each instance, so no template holds a count.  One registry with
@@ -1052,7 +1052,7 @@ template <typename Tag, typename Brand>
 // The first mint of a tag claims a slot, the same slot in each library, and
 // the tag keeps it for the life of the process.
 //
-// THE KEY.  The key of a slot has 128 bits, as the key of ThreadLocalRef
+// Key.  The key of a slot has 128 bits, as the key of ThreadLocalRef
 // (foundation/ThreadLocalRef.h) has: the stable type id of the tag
 // (foundation/reflect/Hash.h), and a second hash of its stable name.  A key
 // that meets the type id of a different second word ends the process.  A tag

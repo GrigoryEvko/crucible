@@ -72,7 +72,7 @@ constexpr std::uint64_t kMinimumFloorBytes = 2048;
 // the product overflow.
 constexpr std::uint64_t kMinimumCeilingBytes = std::uint64_t{1} << 30;
 
-// The bytes of an alternate stack (THE ALTERNATE STACK of fixy/os/Signal.h).
+// The bytes of an alternate stack (the alternate stack of fixy/os/Signal.h).
 [[nodiscard]] std::size_t alternate_stack_bytes() noexcept {
     std::size_t const known = g_alternate_stack_bytes.load_acquire();
     if (known != 0) return known;
@@ -86,7 +86,7 @@ constexpr std::uint64_t kMinimumCeilingBytes = std::uint64_t{1} << 30;
     return bytes;
 }
 
-// The handler of each fatal signal (THE HANDLERS of fixy/os/Signal.h).
+// The handler of each fatal signal (the handlers of fixy/os/Signal.h).
 void on_fatal_signal(int signal_number, ::siginfo_t* info, void* /*context*/) noexcept {
     FatalReport const report = g_fatal_report.load_acquire();
     if (report != nullptr) report(signal_number);

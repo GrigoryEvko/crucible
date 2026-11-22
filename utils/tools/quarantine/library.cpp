@@ -6,7 +6,7 @@
 // In this file, a file of the language is each file of language_of of
 // plugin.h: a file of a language row, and a base file in its sentinel unit,
 // which the rule of the library names reads with the admit rows of the
-// language (THE BASE KINDS of plugin.h).
+// language (the base kinds of plugin.h).
 
 #include "plugin.h"
 
@@ -50,7 +50,7 @@ int parameter_count(tree decl) {
     return DECL_IOBJ_MEMBER_FUNCTION_P(decl) ? count - 1 : count;
 }
 
-// THE CLOSED TAGS
+// Closed tags
 //     A class that carries the annotation foundation::core::closed_tag of
 //     include/foundation/core/Choice.h holds the tag of a sum: a word that
 //     names one alternative of a closed set.  Each class that holds the tag
@@ -88,8 +88,8 @@ inline constexpr std::uint8_t kBoolOrEnumeration = 1;
 inline constexpr std::uint8_t kClosedTag = 2;
 inline constexpr std::uint8_t kEachPart = kBoolOrEnumeration | kClosedTag;
 
-// True when the class TYPE carries the annotation closed_tag (THE CLOSED
-// TAGS).  Linear in the attributes of the class.
+// True when the class TYPE carries the annotation closed_tag (the closed
+// tags).  Linear in the attributes of the class.
 bool carries_closed_tag(tree type) {
     static tree const closed_tag = get_identifier("closed_tag");
     static tree const core = get_identifier("core");
@@ -98,7 +98,7 @@ bool carries_closed_tag(tree type) {
 
 // The parts of TYPE whose bits can name no value: kBoolOrEnumeration for a
 // bool or an enumeration, and kClosedTag for a class that carries the
-// annotation closed_tag (THE CLOSED TAGS).  The walk reads the type itself,
+// annotation closed_tag (the closed tags).  The walk reads the type itself,
 // an element of an array, a vector or a complex type, and each data member
 // and base of a class or a union.  A pointer holds an address, so the walk
 // does not follow it, also when its target is dependent.  Each other
@@ -197,7 +197,7 @@ bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use, tree res
     return !row.is_concepts_only || concept_definition_p(decl);
 }
 
-// THE FRIENDS OF A CLASS
+// Friends of a class
 //     A friend function that a class defines, such as operator< of
 //     std::strong_ordering, is a function of the namespace of the class, so
 //     its qualified name is std::operator<.  A row of that name admits the
@@ -209,7 +209,7 @@ bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use, tree res
 
 // The name of DECL as a friend of the class that defines it, such as
 // std::strong_ordering::operator<, or an empty text when DECL is no friend
-// function that a class defines (THE FRIENDS OF A CLASS).
+// function that a class defines (the friends of a class).
 std::string friend_name(tree decl) {
     tree function = TREE_CODE(decl) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(decl) : decl;
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_LANG_SPECIFIC(function) == nullptr
@@ -395,7 +395,7 @@ std::string qualified_name(tree decl) {
 
 // ── The printed text of a type or a declaration ─────────────────────────
 //
-// THE TEXT OF A KEY
+// Text of a key
 //     A key of a ledger holds the text that the plugin prints from a type or
 //     a declaration, such as the parameter types of a function.  Each unit
 //     must print the same text for one type, so the printer has two rules:
@@ -416,15 +416,15 @@ std::string qualified_name(tree decl) {
 //     list of that template, from 0.  GCC compares two template parameters by
 //     these two numbers, so the name of a parameter does not change with the
 //     sequence of the specializations of a unit.  The entity of an object
-//     finding holds no printed type at all (declaration.cpp, THE ENTITY OF AN
-//     OBJECT).
+//     finding holds no printed type at all (declaration.cpp, the entity of an
+//     object).
 
 namespace {
 
 constexpr int kPrintFlags = TFF_NO_OMIT_DEFAULT_TEMPLATE_ARGUMENTS;
 
 // The template parameters that the print of ROOT can name, with the name
-// T<DEPTH>_<POSITION> while the object lives (THE TEXT OF A KEY).  The walk
+// T<DEPTH>_<POSITION> while the object lives (the text of a key).  The walk
 // reads the nodes that the printer of GCC reads: the template arguments of
 // each class and alias, the parameter list of a class template whose pattern
 // the text names, the enclosing class of each type, the types of a function
@@ -669,7 +669,7 @@ const AdmitRow* admitting_row_of_name(const std::string& name, const FileEntry* 
 // whose name starts with the same text: std::tuple_size_v and
 // std::tuple_element_t need their own entries.  A name entry admits a friend
 // function that a class defines only when it names the class and the friend
-// exactly, such as std::strong_ordering::operator< (THE FRIENDS OF A CLASS).
+// exactly, such as std::strong_ordering::operator< (the friends of a class).
 // A header entry admits each entity that the header itself declares: the
 // file that an #include of that exact name enters, and not a header of the
 // same last name in a different directory, such as experimental/type_traits.
@@ -917,7 +917,7 @@ void record_named_entities(tree type, location_t location, const FileEntry* lang
 
 namespace {
 
-// True when FUNCTION is a bit copy of THE CLOSED TAGS: a function whose admit
+// True when FUNCTION is a bit copy of the closed tags: a function whose admit
 // row has plain-result, such as std::bit_cast.
 bool is_bit_copy_function(tree function) {
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
@@ -929,7 +929,7 @@ bool is_bit_copy_function(tree function) {
 }
 
 // The texts that start the entity of a copy of bytes and of a union member
-// (THE CLOSED TAGS).  report_forged_tag reads them.
+// (the closed tags).  report_forged_tag reads them.
 constexpr const char* kByteCopyRoute = "copy of bytes into ";
 constexpr const char* kUnionMemberRoute = "union member ";
 
@@ -952,7 +952,7 @@ tree pointee_of(tree node) {
     return TREE_TYPE(type);
 }
 
-// The destination of the copy of bytes CALL (THE CLOSED TAGS): the type that
+// The destination of the copy of bytes CALL (the closed tags): the type that
 // the first argument of a call of memcpy, memmove, mempcpy or memset points
 // at, or null.  A copy from an object of the same type gives null, because
 // it copies a value that a constructor made.
@@ -978,7 +978,7 @@ tree byte_copy_destination(tree call) {
 
 // The type of the member that the COMPONENT_REF NODE names, when its object
 // is a union with no annotation closed_tag and with a second member of bytes,
-// or null (THE CLOSED TAGS).  A member of an empty class holds no byte, so
+// or null (the closed tags).  A member of an empty class holds no byte, so
 // no write of it reaches the tag.  Complexity: linear in the members of the
 // union.
 tree union_member_type(tree node) {
@@ -999,7 +999,7 @@ tree union_member_type(tree node) {
 }
 
 // The callback of cp_walk_tree: each copy of bytes whose result holds a closed
-// tag is the finding forged-tag (THE CLOSED TAGS).  DATA is the location of a
+// tag is the finding forged-tag (the closed tags).  DATA is the location of a
 // node with no location of its own.
 tree walk_bit_copies(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;

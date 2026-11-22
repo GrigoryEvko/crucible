@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A CogMimic borrows its identity.  An identity that is a temporary dies
 // at the end of the full expression, and the CogMimic would keep a pointer

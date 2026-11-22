@@ -201,7 +201,7 @@ def test_and_fixture_cases(expect: testing.Expect) -> None:
 
 
 def other_key_cases(expect: testing.Expect, build: Path) -> None:
-    """Read a test record that holds keys that the writer does not write (THE FORMAT)."""
+    """Read a test record that holds keys that the writer does not write (the format)."""
     path = Path(cost_record.test_record_file(build, "run.sh"))
     head = '{"format": 1, "step": "test", "result": "passed", "test": "run.sh", "command": "sh", "exit": 0, '
     block = '"cost": {"cpu_s": 1, "wall_s": 2.5, "peak_rss_kb": 3}'

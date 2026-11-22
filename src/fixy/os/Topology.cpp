@@ -23,7 +23,7 @@
 // is the one place that compiles it, and an includer of Topology.h compiles
 // none of the reads.
 //
-// THE READS
+// Reads
 //   The probe reads each file of sysfs and of /proc through the file door
 //   foundation::os::read_file, and it lists each directory through the
 //   directory door foundation::os::for_each_entry.  It reads the affinity of
@@ -32,7 +32,7 @@
 //   throws, so the probe has no handler of an exception.  A failed allocation
 //   of a vector ends the process, as each failed allocation of the tree does.
 //
-// THE CPUS OF THE PROCESS
+// CPUs of the process
 //   Linux keeps an affinity mask for each thread, and no mask for the
 //   process.  The count of the CPUs of the process is the count of the mask
 //   of the thread group leader when the library loads, before main.  No
@@ -48,12 +48,12 @@
 //   floor at 101.  A child of fork keeps the count of its parent, as it keeps
 //   each other fact of a topology that the parent probed.
 //
-// THE PARSE
+// Parse
 //   The parsers below read a number as std::from_chars reads it: an optional
 //   minus sign for a signed number and one or more decimal digits, with no
 //   other sign.  A number that leaves the range of its type is no number.
 //
-// THE PACKAGES
+// Packages
 //   A package is a socket.  sysfs gives each CPU the id of its package in
 //   topology/physical_package_id.  A CPU with no such file, or with a
 //   negative id, is in the package 0, as on a kernel with no package
@@ -82,7 +82,7 @@ namespace os_door = ::foundation::os;
 // does not exhaust the memory of the process.
 constexpr std::int64_t kLargestCpuListCount = std::int64_t{1} << 20;
 
-// A number at the start of a text (THE PARSE).  used is the count of the
+// A number at the start of a text (the parse).  used is the count of the
 // characters that the number takes.
 struct ParsedInt {
     bool is_number = false;
@@ -392,7 +392,7 @@ private:
 }
 
 // The count of the CPUs in the affinity mask of the thread group leader, as
-// CPU_COUNT gives it after sched_getaffinity(2) (THE CPUS OF THE PROCESS).
+// CPU_COUNT gives it after sched_getaffinity(2) (the CPUs of the process).
 // The id of the process is the thread id of its leader.  Zero when the call
 // fails, which the caller reads as "use the count of the online CPUs".  The
 // raw getpid takes no tag of Nondet: the id only names the process to
@@ -419,14 +419,14 @@ private:
             [](os_door::Errno) { return std::size_t{0}; });
 }
 
-// The count of the CPUs of the process (THE CPUS OF THE PROCESS).  The
+// The count of the CPUs of the process (the CPUs of the process).  The
 // constructor below writes it one time, before main, and no code writes it
 // after that.  Each read comes after the write: the thread of the read starts
 // after main starts, or it reaches the library through the dlopen that ran
 // the write.  So the read needs no atomic.  Zero when the read failed.
 constinit std::size_t process_cpu_count_at_load = 0;
 
-// The read of THE CPUS OF THE PROCESS.  The priority 102 comes after the
+// The read of the CPUs of the process.  The priority 102 comes after the
 // start-up check of the kernel floor (101), so the raw calls run on a kernel
 // that the check admitted, and before each constructor with no priority.
 [[gnu::constructor(102)]] void record_process_cpu_count() noexcept {
@@ -558,7 +558,7 @@ struct CacheGeometry {
     }));
 }
 
-// The packages that the probe fills, in ascending order of id (THE PACKAGES).
+// The packages that the probe fills, in ascending order of id (the packages).
 // The first count slots hold the packages.  The root is the root of the
 // sysfs tree of the probe.
 struct PackageTable {
@@ -568,7 +568,7 @@ struct PackageTable {
     bool is_refused = false;
 };
 
-// The id of the package of a CPU (THE PACKAGES).
+// The id of the package of a CPU (the packages).
 [[nodiscard]] std::size_t package_of_cpu_(PackageTable const& table, int cpu) noexcept {
     Value const package_text = read_value(
         PathBuilder{table.root}.add("/devices/system/cpu/cpu").add_number(cpu).add("/topology/physical_package_id"));
@@ -588,7 +588,7 @@ struct PackageTable {
 }
 
 // Hardware threads on one core report the same core id, so the number of
-// distinct ids is the number of physical cores, WITHIN ONE PACKAGE.
+// distinct ids is the number of physical cores, within one package.
 // `core_id` is unique per package, not per machine: every socket numbers its
 // cores from 0, so socket 1's core 0 and socket 0's core 0 collide.  Counting
 // bare core_ids therefore reports the cores of a single socket and divides
@@ -603,7 +603,7 @@ struct PackageTable {
 // The pairs go into one sorted vector of keys, one key for each CPU, and the
 // count of distinct keys is the count of the cores.  The keys of one package
 // are adjacent, so the same walk gives each package its threads and its
-// cores (THE PACKAGES).  Zero when no CPU gives a core id.  Complexity: n
+// cores (the packages).  Zero when no CPU gives a core id.  Complexity: n
 // log n in the CPUs.
 [[nodiscard, gnu::noinline]] std::size_t
 count_cores_and_packages_(std::string_view sysfs_root, std::vector<int> const& cpus, PackageTable& table) noexcept {
@@ -646,7 +646,7 @@ count_cores_and_packages_(std::string_view sysfs_root, std::vector<int> const& c
     return cores;
 }
 
-// Counts the L3 group of one CPU for the package of the group (THE PACKAGES).
+// Counts the L3 group of one CPU for the package of the group (the packages).
 // The first CPU of the group gives the package, and the CPU must name the
 // same package.  A new group counts one time.
 void place_l3_group_(int cpu, int first_cpu, bool is_new, PackageTable& table) noexcept {
@@ -665,7 +665,7 @@ void place_l3_group_(int cpu, int first_cpu, bool is_new, PackageTable& table) n
 // each L3.  The groups keep the order in which a CPU first reports them.
 //
 // No group when no CPU gives an L3.  Each CPU also places its group in a
-// package (THE PACKAGES).  Complexity: linear in the CPUs times the groups.
+// package (the packages).  Complexity: linear in the CPUs times the groups.
 [[nodiscard, gnu::noinline]] std::vector<std::vector<int>>
 probe_l3_groups_(std::string_view sysfs_root, std::vector<int> const& cpus, PackageTable& table) noexcept {
     std::vector<std::vector<int>> all_groups;
@@ -705,7 +705,7 @@ struct NumaTables {
 
 // The node ids in ascending order.  They are ids, not positions: a host with
 // node0 and node2 gives {0, 2}.  No node when sysfs names none.  Each node
-// also counts for its packages (THE PACKAGES).
+// also counts for its packages (the packages).
 [[nodiscard, gnu::noinline]] NumaTables probe_numa_tables_(std::string_view sysfs_root, PackageTable& table) noexcept {
     NumaTables tables{};
     std::vector<int> nodes = numbered_entries(PathBuilder{sysfs_root}.add("/devices/system/node"), "node");
@@ -721,7 +721,7 @@ struct NumaTables {
         std::vector<int> cpus_on_node = parse_cpu_list_(cpulist_text.text());
         std::sort(cpus_on_node.begin(), cpus_on_node.end());
         // The node counts one time for each package that one of its CPUs
-        // names (THE PACKAGES).  A CPU of no package of the table refuses the
+        // names (the packages).  A CPU of no package of the table refuses the
         // table.  Complexity: linear in the CPUs of the node times the
         // packages.
         bool is_counted[Topology::package_capacity]{};

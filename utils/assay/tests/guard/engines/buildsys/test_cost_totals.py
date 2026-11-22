@@ -7,7 +7,7 @@ the refusals of a ledger, and a build of a different kind.  This test holds
 what a plant cannot hold:
   * a build of the kind of the base with a different name of its
     configuration, which the rule and the write do not judge
-  * the two rows and the head comment of a write (THE LEDGER)
+  * the two rows and the head comment of a write (the ledger)
   * a fall, which a write with no reason lowers
   * a growth, which a write refuses with no reason and raises with a reason
   * the configuration of a build that is not planted.
@@ -205,7 +205,7 @@ def write_cases(expect: testing.Expect) -> None:
 
 
 def fall_cases(expect: testing.Expect) -> None:
-    """A total less than its rows gives no finding, and a write with no reason lowers the rows (THE FINDINGS)."""
+    """A total less than its rows gives no finding, and a write with no reason lowers the rows (the findings)."""
     with tempfile.TemporaryDirectory(prefix="test-cost-totals-") as scratch:
         root = Path(scratch)
         found, text = judged_of(root, FALLEN_ROWS, configuration_of(KIND))

@@ -4,7 +4,7 @@
 // Reservation owns, and the calls that commit, release, place and advise its
 // pages.  An allocator of the base takes each of its pages from this door.
 //
-// THE RESERVATION
+// Reservation
 //   reserve(bytes, alignment) maps bytes of address space with no access and
 //   with no reserve of swap (PROT_NONE, MAP_NORESERVE), at the alignment of a
 //   page or of a huge page.  No page of the range has a frame, and the range
@@ -15,7 +15,7 @@
 //   the cap and issues no call, so a caller can run the path of a refused
 //   reserve in each build.
 //
-// THE RANGES
+// Ranges
 //   A ReservedRange is a part of one reservation: an offset from its first
 //   byte and a count of bytes, each a whole count of pages.  Only range() and
 //   whole() of a Reservation make one.  commit() of a ReservedRange gives a
@@ -27,7 +27,7 @@
 //   memory outside a live reservation.  grow() can move the first byte, and
 //   each range of the old place then ends the process at its next use.
 //
-// THE CALLS
+// Calls
 //   commit(range)          mprotect to read and write.  The pages fault in
 //                          at their first touch, and each reads zero
 //   decommit(range, kind)  MADV_DONTNEED or MADV_FREE.  The range keeps its
@@ -43,7 +43,7 @@
 //   grow(bytes)            mremap of the whole reservation to more bytes
 //   current_node()         getcpu: the node of the CPU of the calling thread
 //
-// THE FALLBACKS
+// Fallbacks
 //   A request that cannot fail stays a request that cannot fail.  Each call
 //   that can be refused has a result that names what the range got, and the
 //   caller takes that result in place of an error:
@@ -63,7 +63,7 @@
 //   their caller can run out of address space or of memory, as with an
 //   allocator of the C library.
 //
-// THE SANITIZERS
+// Sanitizers
 //   The door issues each call through raw_syscall of foundation/os/Syscall.h.
 //   In a build with ThreadSanitizer or AddressSanitizer, the primitive gives
 //   the map and the unmap to the C library, so the sanitizer resets its
@@ -101,8 +101,8 @@ class Reservation;
 
 namespace foundation::core {
 
-// The door of a Reservation to the raw constructors of a View (THE DOORS OF
-// THE OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant: a
+// The door of a Reservation to the raw constructors of a View (the doors of
+// the owners above this header of foundation/core/Region.h).  The invariant: a
 // CommittedRange comes only from commit() of its Reservation, which maps its
 // whole pages for reads and writes, and the range stays committed until the
 // reservation decommits it or ends.  So its bytes are live while a reference
@@ -139,7 +139,7 @@ enum class ReserveAlignment : std::uint8_t {
 struct ReserveCapTag final {};
 using ReserveCap = core::Id<ReserveCapTag, std::size_t>;
 
-// The release of the pages of a committed range (THE CALLS).
+// The release of the pages of a committed range (the calls).
 enum class PurgeKind : std::uint8_t {
     // MADV_DONTNEED: the kernel takes each frame back at once, and each page
     // reads zero at its next touch.
@@ -149,19 +149,19 @@ enum class PurgeKind : std::uint8_t {
     lazy_free,
 };
 
-// The result of advise_huge (THE FALLBACKS).
+// The result of advise_huge (the fallbacks).
 enum class HugePageAdvice : std::uint8_t {
     refused,
     advised,
 };
 
-// The pages of a range after a collapse (THE FALLBACKS).
+// The pages of a range after a collapse (the fallbacks).
 enum class PageKind : std::uint8_t {
     base,
     huge,
 };
 
-// The result of populate (THE FALLBACKS).
+// The result of populate (the fallbacks).
 enum class PopulateKind : std::uint8_t {
     // The kernel faulted in each page with MADV_POPULATE_WRITE.
     kernel,
@@ -288,7 +288,7 @@ struct PageSourceDoor;
 
 }  // namespace detail
 
-// A part of one reservation (THE RANGES).  Only the door makes a range, so
+// A part of one reservation (the ranges).  Only the door makes a range, so
 // each copy is user-provided: a range is then neither trivially copyable
 // nor an implicit-lifetime type, and std::bit_cast and
 // std::start_lifetime_as build none from bytes.
@@ -352,7 +352,7 @@ private:
     std::size_t bytes_ = 0;
 };
 
-// The owner of one range of address space (THE RESERVATION).
+// The owner of one range of address space (the reservation).
 class [[nodiscard]] Reservation final {
 public:
     Reservation(Reservation&& other) noexcept
@@ -367,7 +367,7 @@ public:
     operator=(Reservation&&) = delete("a reservation owns one range for its life and takes no other range");
 
     // Unmaps the whole range, which resets its shadow in a build with a
-    // sanitizer (THE SANITIZERS).  A reservation
+    // sanitizer (the sanitizers).  A reservation
     // that moved holds no range and unmaps nothing.
     ~Reservation();
 
@@ -401,15 +401,15 @@ public:
     [[nodiscard]] core::View<std::uint8_t> bytes_of(CommittedRange const& range) & noexcept;
     void bytes_of(CommittedRange const&) && = delete("a View of a temporary reservation points into an unmapped range");
 
-    // Gives the range read and write access (THE CALLS).
+    // Gives the range read and write access (the calls).
     [[nodiscard]] core::Result<CommittedRange, Errno> commit(ReservedRange const& range) noexcept;
 
     // Gives the frames of the range back to the kernel, and gives the kind
-    // that ran (THE FALLBACKS).
+    // that ran (the fallbacks).
     [[nodiscard]] PurgeKind decommit(CommittedRange const& range, PurgeKind kind) noexcept;
 
     // Places the pages of the range, and gives the placement that the range
-    // got (THE FALLBACKS).  The unknown placement issues no call.
+    // got (the fallbacks).  The unknown placement issues no call.
     [[nodiscard]] Placement bind(ReservedRange const& range, Placement placement) noexcept;
 
     // Asks for transparent huge pages in the range.
@@ -456,7 +456,7 @@ private:
     ReserveAlignment alignment_ = ReserveAlignment::page;
 };
 
-// Reserves bytes of address space at the alignment (THE RESERVATION).
+// Reserves bytes of address space at the alignment (the reservation).
 [[nodiscard]] core::Result<Reservation, Errno> reserve(ByteCount bytes, ReserveAlignment alignment) noexcept;
 
 // The same reserve, refused with enomem and with no call for a count of

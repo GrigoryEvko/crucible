@@ -347,8 +347,8 @@ public:
     std::span<T>         span() noexcept;
     std::span<T const>   cspan() const noexcept;
 
-    // Partition the INDEX SPACE (not the allocation).
-    // Each result region points into THE SAME arena buffer at distinct offsets.
+    // Partition the index space (not the allocation).
+    // Each result region points into the same arena buffer at distinct offsets.
     template <std::size_t N>
     std::array<OwnedRegion<T, Slice<Tag, /*I=*/0..N-1>>, N>
     split_into() &&;
@@ -360,7 +360,7 @@ public:
 };
 ```
 
-`split_into` is the magic.  It takes an exclusive `OwnedRegion<T, Tag>` and produces N sub-regions, each tagged `Slice<Tag, I>` for distinct compile-time `I`.  The data pointers of the sub-regions point INTO THE SAME ARENA BUFFER at chunk offsets — there is no copy, no allocation, no indirection.  The Permission tags prove disjointness; the buffer is contiguous.
+`split_into` is the magic.  It takes an exclusive `OwnedRegion<T, Tag>` and produces N sub-regions, each tagged `Slice<Tag, I>` for distinct compile-time `I`.  The data pointers of the sub-regions point into the same arena buffer at chunk offsets — there is no copy, no allocation, no indirection.  The Permission tags prove disjointness; the buffer is contiguous.
 
 This is the structural inversion of Rust's `Vec<Box<T>>` pattern.  In Crucible:
 
@@ -1086,7 +1086,7 @@ auto recombined = parallel_pipeline<DrainStage, BuildStage, HashStage, MemoryPla
 );
 ```
 
-Five stages.  Four typed channels between them.  Each stage runs in its own jthread.  Permissions partition the work:  each stage receives ONLY the input it needs and ONLY the output destination it can write to.  Type safety is enforced at compile time — passing the wrong handle to the wrong stage is a compile error.
+Five stages.  Four typed channels between them.  Each stage runs in its own jthread.  Permissions partition the work:  each stage receives only the input it needs and only the output destination it can write to.  Type safety is enforced at compile time — passing the wrong handle to the wrong stage is a compile error.
 
 This is the structural model of Crucible's BackgroundThread (Tier 5 integration target — SEPLOG-D1).
 
@@ -1440,7 +1440,7 @@ Every concurrent-programming model has failure modes.  This section enumerates t
 |---|---|
 | Permission constructed for memory the caller doesn't actually own | Discipline rule: only construct from arena-adopted slot, immediately |
 | Two values with the same Permission tag created at different sites | grep audit + `mint_permission_root<Tag>` is unique-call-site by convention |
-| Worker captures shared mutable state via lambda capture | Discipline + review; lambdas should ONLY capture the OwnedRegion sub-view |
+| Worker captures shared mutable state via lambda capture | Discipline + review; lambdas should only capture the OwnedRegion sub-view |
 | Cost-model picks a regressing N for an unusual workload | SEPLOG-E1 bench harness asserts ≤5% regression; AdaptiveTuner adjusts table |
 | Async-cancelled jthread leaves Permission orphaned | `mint_permission_fork` does not currently propagate stop_token mid-body; future work |
 
@@ -1809,7 +1809,7 @@ std::optional<T> try_pop() noexcept {
         for (;;) {
             const uint64_t ent_cycle = cycle_of(ent);
 
-            // [Step 3] CASE A — cell is in our cycle: there's data for us.
+            // [Step 3] Case A — cell is in our cycle: there's data for us.
             if (ent_cycle == cycle_H) {
                 // Paper Fig 8 Lines 30-32: consume the data and
                 // transition state to "past-cycle, empty" via atomic
@@ -1896,7 +1896,7 @@ The paper's headline innovation: allocate **2n cells for an n-capacity queue**. 
 >   - H = T: finds the data we just committed (Case A).  Success.
 >   - H > T: finds a cell at cycle=Cycle(H) ≥ Cycle(T); if still at Cycle(T), dequeuer advances via Case B.
 >
-> A dequeuer at position H fails ONLY if the cell is empty (occupied=0) AND cycle ≤ cycle_H.  Paper proves: after a successful enqueue at T, any dequeuer at position ≥ T will find non-empty within at most 2n attempts (because the enqueued cell is at position T mod 2n, and at most 2n positions later the same physical cell wraps back).
+> A dequeuer at position H fails only if the cell is empty (occupied=0) AND cycle ≤ cycle_H.  Paper proves: after a successful enqueue at T, any dequeuer at position ≥ T will find non-empty within at most 2n attempts (because the enqueued cell is at position T mod 2n, and at most 2n positions later the same physical cell wraps back).
 
 **The 2n buffer therefore bounds livelock risk to 2n "empty" cells between a committed enqueue and the first successful dequeue**.  Combined with the Threshold counter (3n-1), any "empty queue" claim is provable within bounded steps.
 
@@ -1938,7 +1938,7 @@ But dequeuers are racing among themselves.  If N dequeuers arrive simultaneously
 
 ABA bugs: thread A reads pointer P, suspends; other threads free P, reallocate to value at same address; A resumes and CAS succeeds despite P having been freed.  Classic MPMC hazard.
 
-SCQ sidesteps ABA by NEVER REUSING a cell state value:
+SCQ sidesteps ABA by never reusing a cell state value:
 
 - Cycle monotonically increases every pass over a cell (producer+consumer together = 2 cycle bumps per round).
 - 62-bit cycle supports 2^62 ≈ 4.6 × 10^18 cycles.
@@ -2307,7 +2307,7 @@ void worker_loop(Worker& w) {
 }
 ```
 
-**Per-worker wake atomic** (not global): if one worker is dormant and another is executing, submit wakes ONLY the dormant one.  Avoids waking workers currently executing.
+**Per-worker wake atomic** (not global): if one worker is dormant and another is executing, submit wakes only the dormant one.  Avoids waking workers currently executing.
 
 **Futex cost**: wake + wait round-trip is ~1-3 µs on Linux.  For a 16-worker pool processing bursts of 16 jobs, that's 16 × 1-3 µs = 16-48 µs worst case.  For steady-state busy pools, workers don't hit the futex path.
 
@@ -2336,7 +2336,7 @@ Unlike `AtomicSnapshot`'s documented UB-adjacency (seqlock's byte-level memcpy r
 - `head_`, `tail_`: atomic, acquire/acq_rel.
 - `threshold_`: atomic, acquire/acq_rel.
 - `cell[j].state`: atomic, acquire/CAS/fetch_and.
-- `cell[j].data`: NON-atomic, but ONLY read by consumer AFTER the consumer's acquire-load on state observes producer's release-store via CAS.
+- `cell[j].data`: non-atomic, but only read by consumer AFTER the consumer's acquire-load on state observes producer's release-store via CAS.
 
 The last point is the load-bearing one.  Producer writes `cell.data` UNATOMICALLY, then CAS's state with release.  Consumer CAS-or-fetch_and's state (establishes happens-before via acquire), THEN reads `cell.data`.  The data read happens-after the state publish; no race.
 

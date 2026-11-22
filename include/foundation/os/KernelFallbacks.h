@@ -2,7 +2,7 @@
 
 // The text of the fallback rows of the kernel floor that a release lacks.
 //
-// A row of the need fallback (THE FLAGS of foundation/os/KernelFloor.h) names
+// A row of the need fallback (the flags of foundation/os/KernelFloor.h) names
 // a word that the caller of a door chooses.  A kernel that lacks the word
 // refuses the call, often with einval, and the row states what the caller
 // does then.  So a process on such a kernel states each such row one time,

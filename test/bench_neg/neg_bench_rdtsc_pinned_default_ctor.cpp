@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
-// RdtscPinned witness — mismatch class #1 of 2: NO PUBLIC
-// DEFAULT CTOR.
+// RdtscPinned witness — mismatch class #1 of 2: no public
+// default ctor.
 //
 // RdtscPinned declares `constexpr RdtscPinned(CpuId, mint_tag) noexcept`
 // (private), which suppresses the implicit default constructor — and

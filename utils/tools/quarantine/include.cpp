@@ -12,7 +12,7 @@
 // its language row, whichever is lower.  It reads no allow row with `until`, so
 // an include of a header that a family replaces stays an error there.
 //
-// THE DOOR UNITS (the rule door-unit)
+// Door units (the rule door-unit)
 //     A door is one source file, and its unit holds the system declarations of
 //     one family.  A source file has the extension .c, .cc, .cpp or .cxx.  An
 //     include of a door header by its OWNER gets header-door when the OWNER is
@@ -34,7 +34,7 @@
 //     the closure does not go through a header outside the root.  The plugin
 //     reads only the arms that a build compiles, as for the seals.
 //
-// THE SEALS (the rule detsafe-ledger)
+// Seals (the rule detsafe-ledger)
 //     The include closure of a seal ROOT is ROOT and each file that a file of
 //     the closure includes, through each #include directive whose target the
 //     plugin knows.  The closure holds no file under a PREFIX of the row
@@ -48,7 +48,7 @@
 //     name in another arm, and a name in a macro body that no unit expands, is
 //     no finding (decision 5 of misc/01_10_2026_quarantine.md).
 //
-// THE HEAVY HEADERS (the rule heavy-include)
+// Heavy headers (the rule heavy-include)
 //     A heavy row gives a header outside the root whose compile alone costs
 //     more than the limit of the rule heavy-include of utils/registry.txt, and
 //     a light row gives such a header that costs no more.  `loop derive
@@ -61,7 +61,7 @@
 //     as the table of a plant of a different rule, gives no such finding, and
 //     the rule heavy-include refuses such a table of the tree.
 //
-// THE NAMES OF A HIGHER ROOT (the rule layer-boundary)
+// Names of a higher root (the rule layer-boundary)
 //     The project roots are the directories under include/ of the layer rows
 //     and of the quarantine rows.  The rank of a root is the lowest rank of a
 //     layer row of the root, and a root of a quarantine row is above each
@@ -72,7 +72,7 @@
 //     base header and the unit of each base source file open no namespace of a
 //     higher root before a base file does, when the base file opens one.
 //
-// THE HOOKS
+// Hooks
 //     PLUGIN_INCLUDE_FILE    each file that the preprocessor enters.  The file
 //                            that an #include directive enters is the target
 //                            of that directive.
@@ -85,7 +85,7 @@
 //     the macro callback of libcpp
 //                            each expansion of a macro: the expansions of assert.
 //     the file change callback of libcpp
-//                            THE PROVENANCE below.
+//                            the provenance below.
 
 #include "plugin.h"
 
@@ -135,7 +135,7 @@ const FileEntry* resolve_skipped_include(const PendingInclude& pending) {
 constexpr const char* kHeavyScope = "include/";
 
 // The heavy headers: a file under include/ that includes a header outside the
-// root (THE HEAVY HEADERS).  A target that the plugin cannot find is a header
+// root (the heavy headers).  A target that the plugin cannot find is a header
 // outside the root too.
 void check_header_cost(const PendingInclude& pending, const FileEntry* target) {
     const FileEntry& includer = *pending.place.file;
@@ -152,14 +152,14 @@ void check_header_cost(const PendingInclude& pending, const FileEntry* target) {
     }
 }
 
-// ── The door units (THE DOOR UNITS) ─────────────────────────────────────
+// ── The door units (the door units) ─────────────────────────────────────
 
 // The top directories of the Linux UAPI headers that `make headers_install`
 // writes.  glibc writes scsi/ too, so scsi/ is no UAPI directory here.
 constexpr std::string_view kUapiDirectories[] = {"asm", "asm-generic", "drm", "linux", "misc",
                                                  "mtd", "rdma",        "sound", "video", "xen"};
 
-// The family of a system header (THE DOOR UNITS).
+// The family of a system header (the door units).
 enum class HeaderFamily : std::uint8_t {
     other,
     uapi,
@@ -232,7 +232,7 @@ HeaderFamily header_family(const PendingInclude& pending, const FileEntry* targe
 }
 
 // Keeps a directive of a file of the root that includes a system header of a
-// family, for the report (THE DOOR UNITS).  The report reads the include
+// family, for the report (the door units).  The report reads the include
 // closure of each door file when the unit knows each directive.
 void note_family_include(const PendingInclude& pending, const FileEntry* target) {
     if (state.table.doors.empty()) {
@@ -269,7 +269,7 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
                 add_finding(Kind::header_door, nullptr, pending.place, "<" + pending.spelled + ">");
             } else if (target != nullptr) {
                 // A source file that owns the door admits the declarations
-                // that the include brings in (THE DOOR ADMISSION of plugin.h).
+                // that the include brings in (the door admission of plugin.h).
                 state.door_entries[&includer].push_back(target);
             }
             return;
@@ -311,8 +311,8 @@ void check_include(const PendingInclude& pending, const FileEntry* target) {
     add_finding(Kind::layer_header, nullptr, pending.place, "<" + pending.spelled + "> in " + allowance);
 }
 
-// True when a door row names the main file of the unit as its owner (THE DOOR
-// ADMISSION of plugin.h).  Complexity: O(door rows), one time.
+// True when a door row names the main file of the unit as its owner (the door
+// admission of plugin.h).  Complexity: O(door rows), one time.
 bool is_door_unit() {
     if (!state.is_door_unit_known && main_input_filename != nullptr) {
         state.is_door_unit_known = true;
@@ -388,7 +388,7 @@ void on_macro_used(cpp_reader* reader, location_t location, cpp_hashnode* node) 
     }
 }
 
-// THE PROVENANCE.  libcpp calls the file change callback for each file that
+// The provenance.  libcpp calls the file change callback for each file that
 // the preprocessor enters or leaves, and for each rename of a line map that a
 // directive makes: #line, a line marker and #pragma GCC system_header.
 // libcpp makes the other renames of a map itself, with no callback.  Before
@@ -522,7 +522,7 @@ namespace {
 
 // True when FILE is the header of a door row whose owner is not DOOR_FILE: a
 // header of the C library that a different door owns, such as <unistd.h>,
-// which <signal.h> includes for SIGSTKSZ (THE DOOR ADMISSION of plugin.h).
+// which <signal.h> includes for SIGSTKSZ (the door admission of plugin.h).
 // Complexity: O(door rows).
 bool is_header_of_other_door(const FileEntry& file, const FileEntry& door_file) {
     const std::string& library = c_library_directory();
@@ -538,8 +538,8 @@ bool is_header_of_other_door(const FileEntry& file, const FileEntry& door_file) 
     return false;
 }
 
-// The include closure of the door headers ENTRIES of DOOR_FILE (THE DOOR
-// ADMISSION of plugin.h): each header, and each file that a directive of a
+// The include closure of the door headers ENTRIES of DOOR_FILE (the door
+// admission of plugin.h): each header, and each file that a directive of a
 // file of the closure names.  The walk resolves a directive as libcpp does,
 // also a directive that an include guard stopped, and it does not go into a
 // header of a different door.  libstdc++ wraps some headers of the C
@@ -624,7 +624,7 @@ bool is_door_admitted(location_t location, tree decl) {
 
 namespace {
 
-// ── The project roots (THE NAMES OF A HIGHER ROOT) ──────────────────────
+// ── The project roots (the names of a higher root) ──────────────────────
 
 // The rank of a root of a quarantine row, above each layer.
 constexpr int kTopRank = INT_MAX;
@@ -842,7 +842,7 @@ tree find_namespace(const std::vector<std::string>& names) {
 // The directives of each file of the unit, for the include closures.
 using EdgesOf = std::unordered_map<const FileEntry*, std::vector<const IncludeEdge*>>;
 
-// The include closure of the file ROOT in the unit (THE SEALS), and a
+// The include closure of the file ROOT in the unit (the seals), and a
 // sealed-include finding for each directive of the closure whose target is
 // under a PREFIX of SEAL.  The walk does not enter a sealed file.
 // Complexity: O(edges of the unit).
@@ -899,7 +899,7 @@ void check_sealed_names(const SealRow& seal, const std::unordered_set<const File
 }
 
 // The first opening of the namespace of each root above the lowest root, when
-// a base file of a lower root opens it (THE NAMES OF A HIGHER ROOT).  The roots
+// a base file of a lower root opens it (the names of a higher root).  The roots
 // are read in the order of their names, so the report has one order.
 void check_upward_namespaces() {
     std::vector<std::pair<std::string, int>> roots(root_ranks().begin(), root_ranks().end());
@@ -925,7 +925,7 @@ void check_upward_namespaces() {
 // family, for the door units.
 using FamiliesOf = std::unordered_map<const FileEntry*, std::vector<const FamilyInclude*>>;
 
-// The families of the include closure of the door file DOOR (THE DOOR UNITS).
+// The families of the include closure of the door file DOOR (the door units).
 // The walk reads the directives of DOOR first, and then each file of the
 // closure in the sequence that it finds the file.  The first directive that
 // adds the second family gets mixed-headers.  Its place is that directive when
@@ -970,7 +970,7 @@ void check_door_closure(const FileEntry* door, const EdgesOf& edges_of, const Fa
 
 // The findings of the door units that the report judges when the unit knows
 // each directive: mixed-headers in the include closure of each door file of
-// the unit (THE DOOR UNITS).  Complexity: O(door files * (edges + family
+// the unit (the door units).  Complexity: O(door files * (edges + family
 // includes)) and O(files * door rows) for the door files.
 void report_door_units() {
     if (state.table.doors.empty() || family_includes.size() < 2) {
@@ -1003,9 +1003,9 @@ void report_door_units() {
 // counts only when the source spells a name of it at LOCATION (is_named_at).
 // The walk reads no body of a template instantiation, so a name that only an
 // instantiation resolves is no reference of the source.  A reference to a
-// declaration of a sealed namespace waits for the report (THE SEALS).  A
+// declaration of a sealed namespace waits for the report (the seals).  A
 // reference that a base file spells to a declaration of a higher root is an
-// upward-name (THE NAMES OF A HIGHER ROOT).  The plugin reads the place and
+// upward-name (the names of a higher root).  The plugin reads the place and
 // the source text of a reference only when one of the two rules can judge it.
 // Complexity: O(depth of the scopes) for a declaration of a project root, and
 // O(1) for each other.

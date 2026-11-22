@@ -14,7 +14,7 @@
 // A sleep goes through clock_nanosleep raw (the owner decision of
 // 2026-11-14), because the call has no path of the vDSO.  In a build with
 // ThreadSanitizer, the primitive marks the sleep as a blocking call
-// (THE SANITIZERS of foundation/os/Syscall.h).
+// (the sanitizers of foundation/os/Syscall.h).
 
 #include <fixy/os/MonotonicClock.h>
 

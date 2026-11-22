@@ -12,7 +12,7 @@
 // owners unmap one map.  keep_until_exit() gives up the map for a region that
 // the process uses until it ends.
 //
-// THE FIXED MAP
+// Fixed map
 //   address() gives the address of the first usable byte of a region as a
 //   RegionAddress.  map_guarded_region_at maps a region whose first usable
 //   byte is at that address, with MAP_FIXED_NOREPLACE.  The kernel replaces
@@ -31,7 +31,7 @@
 //
 // The door issues the raw primitive of foundation/os/Syscall.h.  In a build
 // with ThreadSanitizer the primitive gives the map and the unmap to the C
-// library, so that sanitizer resets its shadow of the range (THE SANITIZERS
+// library, so that sanitizer resets its shadow of the range (the sanitizers
 // of foundation/os/Syscall.h).  AddressSanitizer does not see the map, so its
 // shadow memory can hold the state of an earlier map at the same addresses.
 // Use the door only for memory that instrumented code does not read or write
@@ -54,7 +54,7 @@ namespace foundation::os {
 // The bytes of the guard below the usable pages of each region.
 inline constexpr std::size_t kGuardBytes = std::size_t{64} * 1024;
 
-// The address of the first usable byte of a region, as a number (THE FIXED
+// The address of the first usable byte of a region, as a number (the fixed
 // MAP).  It names no object: a region that ended leaves its address, and a
 // later map can take the address again.
 enum class RegionAddress : std::uint64_t {
@@ -86,7 +86,7 @@ public:
     // gives no byte.
     [[nodiscard]] char* data_mut() noexcept { return first_ == nullptr ? nullptr : first_ + kGuardBytes; }
 
-    // The address of the first usable byte (THE FIXED MAP).  A region that
+    // The address of the first usable byte (the fixed map).  A region that
     // gave up its map gives the zero address.
     [[nodiscard]] RegionAddress address() const noexcept {
         return first_ == nullptr ? RegionAddress{}
@@ -121,7 +121,7 @@ private:
 [[nodiscard]] core::Result<GuardedRegion, Errno> map_guarded_region(core::ByteCount usable_bytes) noexcept;
 
 // Maps a region of USABLE_BYTES, rounded as map_guarded_region rounds them,
-// whose first usable byte is at FIRST_USABLE (THE FIXED MAP).  A map that
+// whose first usable byte is at FIRST_USABLE (the fixed map).  A map that
 // holds a part of the range gives eexist, and the kernel maps nothing.  An
 // address that is not the first byte of a page gives the einval of the
 // kernel.  An address below kGuardBytes, which leaves no room for the guard,

@@ -12,7 +12,7 @@
 // seven family rosters, which each family separately proves covers its
 // own namespace:
 //
-//   1. Every atom, alone, passes the STRUCTURAL tiers.  It is an atom
+//   1. Every atom, alone, passes the structural tiers.  It is an atom
 //      (tier 2) and it names its axis once (tier 4).  Whether tier 5
 //      then refuses it is the rules' and the corpus's business and is
 //      reported below as data, not asserted: many atoms alone ARE
@@ -23,8 +23,8 @@
 //      write alike: Security's strict pole is classified, so the corpus
 //      reads a classified value on an observable channel.
 //
-//   2. Any two atoms on ONE axis that is not a Row axis are refused, and
-//      refused BY TIER 4.  Asserting the tier rather than the bare
+//   2. Any two atoms on one axis that is not a Row axis are refused, and
+//      refused by tier 4.  Asserting the tier rather than the bare
 //      rejection is what makes the claim non-vacuous: a pair that happened
 //      to trip a collision rule would satisfy `!IsAccepted` while saying
 //      nothing about the one-grade-per-axis rule this walk exists to

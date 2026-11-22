@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::record_event refuses a context whose row holds Alloc alone.  An
 // allocating caller holds neither IO nor Block, and allocation is on an

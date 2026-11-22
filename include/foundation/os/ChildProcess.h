@@ -68,7 +68,7 @@ struct ChildStart {
 // the child and the read end.  On an error of the pipe or of the fork, the
 // parent gets the error and keeps no descriptor.
 //
-// THE CORE DUMP
+// Core dump
 //   A child of the door dies by design, as a death test or an attack, so the
 //   child makes itself not dumpable (PR_SET_DUMPABLE 0), and the kernel
 //   writes no core dump of it on any host.  A core limit does not do that.
@@ -84,7 +84,7 @@ struct ChildStart {
 [[nodiscard]] core::Result<ChildStart, Errno> start_child_() noexcept;
 
 // Makes the calling child dumpable again (PR_SET_DUMPABLE 1), after the
-// start made it not dumpable (THE CORE DUMP).  The kernel lets a tracer with
+// start made it not dumpable (the core dump).  The kernel lets a tracer with
 // no CAP_SYS_PTRACE read the memory and the links of /proc/PID/fd only of a
 // dumpable tracee.  A signal that ends a dumpable child can write a core
 // dump.  A failure ends the child with kChildSetupFailed.

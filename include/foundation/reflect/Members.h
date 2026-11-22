@@ -1,6 +1,6 @@
 #pragma once
 
-// THE WALK OF A SCOPE: one walk of the members of a class or a namespace
+// Walk of a scope: one walk of the members of a class or a namespace
 // through std::meta::members_of, so each reader of a scope uses one loop.
 //
 //   find_member(scope, access, matches)    the first member that the access

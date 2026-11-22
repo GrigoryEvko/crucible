@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // The hot foreground context owns no effect, so it holds neither Init nor
 // Bg, and mint_cog_mimic refuses it.  Calibration work never runs on the

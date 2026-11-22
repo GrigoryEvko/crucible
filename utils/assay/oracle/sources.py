@@ -1,6 +1,6 @@
 """The pinned sources of the oracles: the rows of utils/pins.txt that give them, and their one download.
 
-THE SOURCES
+Sources
     Each oracle reads a published development or a published artifact.  A
     row of utils/pins.txt gives each one: a git repository on GitHub at a
     commit (via=git), or an archive with its SHA-256 (via=archive).  The
@@ -11,7 +11,7 @@ THE SOURCES
     of utils/registry.txt gives each row of the table a reader, and SOURCES
     holds the readers of these rows.
 
-THE DOWNLOAD
+Download
     fetch() downloads the archive of a git source at its commit into the
     cache of the oracle (assay.oracle.rocq.cache_root()).  It unpacks the
     directory NAME-COMMIT of the archive there, where NAME is the name of the
@@ -33,7 +33,7 @@ from assay.core import pins as pin_table
 from assay.core import rows as rows_grammar
 from assay.oracle.rocq import OracleError, cache_root
 
-# The pin of each source (THE SOURCES).
+# The pin of each source (the sources).
 PROJECTION = "rocq-projection"
 SUBJECT_REDUCTION = "rocq-subject-reduction"
 EKICI = "rocq-smpst-sr-smer"
@@ -74,7 +74,7 @@ class Source:
 
     @property
     def directory(self) -> str:
-        """Return NAME-COMMIT, the directory of the archive of a git source (THE DOWNLOAD)."""
+        """Return NAME-COMMIT, the directory of the archive of a git source (the download)."""
         return f"{self.repository.rsplit('/', 1)[-1]}-{self.commit}"
 
 
@@ -108,7 +108,7 @@ def of_pin(pin: pin_table.Pin) -> Source:
 
 
 def source(name: str, table: tuple[pin_table.Pin, ...] | None = None) -> Source:
-    """Return the source of a pin of SOURCES (THE SOURCES).
+    """Return the source of a pin of SOURCES (the sources).
 
     Args:
         name: The name of the pin
@@ -144,7 +144,7 @@ def download(url: str) -> bytes:
 
 
 def fetch(item: Source, marker: str) -> Path:
-    """Download and unpack the archive of a git source at its commit, and return its root (THE DOWNLOAD).
+    """Download and unpack the archive of a git source at its commit, and return its root (the download).
 
     Complexity: linear in the bytes of the archive, and one stat when the unpacked tree is there.
 

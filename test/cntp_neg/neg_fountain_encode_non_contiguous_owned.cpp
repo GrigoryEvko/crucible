@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // encode_owned consumes a Linear byte buffer.  An application struct that
 // is not contiguous bytes must be serialized before it enters the

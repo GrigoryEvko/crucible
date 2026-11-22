@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Only a NIC port and a switch carry a TCAM, so the mint gate names the
 // two caps types.  The context fits, but GPU caps name no TCAM, and the

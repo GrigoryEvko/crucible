@@ -1,4 +1,4 @@
-// The probe of the scan of the timed windows (check_windows.py, THE PROBE).
+// The probe of the scan of the timed windows (check_windows.py, the probe).
 //
 // Two rows read one cell that no body writes.  run_kept_row gives the cell to
 // the input sink of the harness first, so each call of its body reads the
@@ -14,11 +14,11 @@
 //
 // Two more rows call a print before the row on each path.  run_after_print_row
 // prints through bench::print, a door of the harness that GCC cannot see into
-// (THE PRINT DOORS of bench/bench_harness.h), so its row stays in hot code.
+// (the print doors of bench/bench_harness.h), so its row stays in hot code.
 // run_after_cold_door_row prints through print_cold_form, a function of only a
 // call of report().  GCC takes that function for unlikely executed, so the row
 // after it is cold code.  The check must find each window of the first row in
-// hot code and a window of the second row in cold code (THE PLACEMENT).  The
+// hot code and a window of the second row in cold code (the placement).  The
 // test compiles the probe and reads its object, and it runs no row.
 
 #include "bench_harness.h"
@@ -90,7 +90,7 @@ struct ProbeState {
 // noipa, the control of the check.
 [[gnu::noinline]] void print_cold_form(::fixy::Fmt<> const& text) noexcept { ::fixy::report(::fixy::Sink::Out, text); }
 
-// A row after the door of the cold form: the control of THE PLACEMENT.
+// A row after the door of the cold form: the control of the placement.
 [[gnu::used, gnu::noinline]] bench::Report run_after_cold_door_row() {
     print_cold_form("the row after a door of the cold form\n");
     return bench::run("after cold door", [] {

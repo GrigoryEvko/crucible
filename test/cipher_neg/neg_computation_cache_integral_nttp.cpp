@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Pins IsCacheableFunction concept
 // rejection on integral-constant NTTPs.  Without the concept fence,

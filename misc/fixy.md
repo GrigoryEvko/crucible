@@ -1,6 +1,6 @@
 # Fixy — Typed Compute on Crucible's Distributed Substrate
 
-> **STATUS: DEFERRED. NOT IMPLEMENTED. DESIGN ARTIFACT ONLY.**
+> **Status: deferred. Not implemented. Design artifact only.**
 >
 > Fixy is the design-language document that motivated the shape of Crucible's C++26 substrate. There is no `fixyc` compiler and none is currently planned. The team evaluated the implementation cost (12-24 months for a working frontend + lex + parse + 20-dimension elaborator + collision-rule discharge + IR codegen + LSP) against the value delivered (ergonomic sugar over the same dimensional discipline the substrate already enforces structurally) and concluded the cost was not justified.
 >
@@ -1388,7 +1388,7 @@ Every Fixy binding carries a 20-element grade vector. Each dimension is a graded
 Wall-clock dimensions (Latency, Energy, Power, WallClock, BitsTransferred) are deliberately NOT in the catalog — the compiler cannot prove physical bounds, and annotation-only dimensions at this layer create false guarantees.
 
 ```
-PROVABLE BY THE COMPILER (Tier S/L/T)
+Provable by the compiler (Tier S/L/T)
 
  #  Dimension        Tier  Tracks                         Default        Grant
  1  Type             F     what kind of data              required       (always)
@@ -2407,7 +2407,7 @@ Dim                 Annotation slot                          NOT shipped (enforc
                                                               bounded.
 ```
 
-**EpochVersioned ≠ FX dim 21 Version.** `safety/EpochVersioned.h` is a Crucible-native primitive carrying `(Canopy fleet epoch, per-Relay generation)` as a binary product lattice grade — used by every Canopy collective, every reshard event, every Cipher hot-tier replication, every Keeper recovery path. Its scope is **fleet-membership tracking + reincarnation discipline**, NOT FX-style binding-versioning with `@[version(N)]` + `refines` + migration adapter resolution.  The two coexist: the `uint32_t Version` slot in `Fn<...>` is for binding-level annotation (e.g. Cipher cold-tier serialization version) without any compiler-side semver / refines / migration computation; EpochVersioned handles the orthogonal Canopy concern.
+**EpochVersioned ≠ FX dim 21 Version.** `safety/EpochVersioned.h` is a Crucible-native primitive carrying `(Canopy fleet epoch, per-Relay generation)` as a binary product lattice grade — used by every Canopy collective, every reshard event, every Cipher hot-tier replication, every Keeper recovery path. Its scope is **fleet-membership tracking + reincarnation discipline**, not FX-style binding-versioning with `@[version(N)]` + `refines` + migration adapter resolution.  The two coexist: the `uint32_t Version` slot in `Fn<...>` is for binding-level annotation (e.g. Cipher cold-tier serialization version) without any compiler-side semver / refines / migration computation; EpochVersioned handles the orthogonal Canopy concern.
 
 **Dropped specifically per the wall-clock-not-real correction** — `Std.Budget.Energy`, `Std.Budget.Latency`, `Std.Budget.Power`, `Std.Budget.WallClock`, `Std.Budget.BitsTransferred` user-defined Tier-S dimensions. The compiler cannot prove physical bounds; annotation-only dimensions at this layer create false guarantees. Dim 13 Complexity stays because it propagates DECLARED costs through the call graph (signature-level discipline, not body-level inference) — the same shape as effect rows. SCHED_DEADLINE / realtime priority remain as OS-level scheduling-class hints (operational mechanism, not type-system claim).
 
@@ -2657,7 +2657,7 @@ tensor(f32, [batch, seq, dim])
 
 Shape parameters are natural numbers, shape arithmetic is computed at compile time, broadcasting is checked at compile time. Crucible-specific extension: tensors carry an implicit `NumericalTier<Tol, T>` annotation slot at the binding level — `let x : tensor(f32, [N]) @ tier(BITEXACT) = ...` — for recipe-tier pinning per §24.10.
 
-**Codata** as ANNOTATION ONLY (per §24.14 simplification): the `codata` keyword and `unfold<s>` form are accepted by the parser, but `with Productive` / `sized s` machinery is not enforced at compile time. Crucible has no codata in production paths; the surface keyword is retained for forward compatibility only. Fixy programs that rely on codata productivity for correctness are misusing the language; `Session<>` covers protocol progression instead.
+**Codata** as annotation only (per §24.14 simplification): the `codata` keyword and `unfold<s>` form are accepted by the parser, but `with Productive` / `sized s` machinery is not enforced at compile time. Crucible has no codata in production paths; the surface keyword is retained for forward compatibility only. Fixy programs that rely on codata productivity for correctness are misusing the language; `Session<>` covers protocol progression instead.
 
 **Quotient types** are accepted by the parser but compile to `Quot.lift` over a content-addressed Merkle DAG hash relation (per §24.14 drop note). Authors who need a true HIT discipline should use FX directly; Fixy's quotient form is a content-hash equivalence facade, not a kernel HIT.
 

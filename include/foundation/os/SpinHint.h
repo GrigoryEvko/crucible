@@ -4,7 +4,7 @@
 // waits, with one arm for each architecture and feature, and the read of the
 // counter that times a spin.
 //
-// THE ARMS
+// Arms
 //   An arm is one way to spend the time of a spin.  A plain arm spends one
 //   turn and reads no word.  Each arm can also wait on a word: the wait ends
 //   when the word holds a value other than the expected value, or when the
@@ -31,7 +31,7 @@
 //   A word arm reads less of the line than a plain arm.  So a writer of the
 //   line loses less time while a reader waits, and the core uses less power.
 //
-// THE COUNTER
+// Counter
 //   read_spin_counter() reads the counter of the core with no serialization:
 //   RDTSC on x86_64 and CNTVCT_EL0 on aarch64.  A deadline is a value of
 //   this counter.  The spin budget of fixy/os/SpinBudget.h converts a time to
@@ -39,7 +39,7 @@
 //   value.  This door is the raw layer below it, as raw_syscall is for the
 //   system calls.
 //
-// THE CHOICE
+// Choice
 //   The start-up hook of src/foundation/os/SpinHint.cpp reads the features of
 //   the core one time: CPUID on x86_64, and AT_HWCAP2 of the auxiliary vector
 //   on aarch64.  It keeps the arms of the core and the choice of the process:
@@ -49,7 +49,7 @@
 //   arm that each core of the architecture has: pause on x86_64, and yield on
 //   aarch64.
 //
-// THE HOT PATH
+// Hot path
 //   The record path keeps CRUCIBLE_SPIN_PAUSE of foundation/Platform.h, a
 //   plain arm that the compiler inlines and that reads no record.
 //
@@ -63,7 +63,7 @@
 
 namespace foundation::os {
 
-// The arms of the door (THE ARMS).
+// The arms of the door (the arms).
 enum class SpinArm : std::uint8_t {
     pause,
     tpause,
@@ -138,7 +138,7 @@ inline constexpr std::uint64_t kHwcap2Wfxt = std::uint64_t{1} << 31;
     return arms;
 }
 
-// The choice of the process (THE CHOICE).  plain is a plain arm.
+// The choice of the process (the choice).  plain is a plain arm.
 struct SpinChoice {
     SpinArm plain = SpinArm::pause;
     SpinArm word = SpinArm::pause;
@@ -150,7 +150,7 @@ struct SpinChoice {
 // The choice of the process, as the start-up hook made it.
 [[nodiscard]] SpinChoice spin_choice_of_process() noexcept;
 
-// The counter of the core (THE COUNTER).  The read is not serialized, so the
+// The counter of the core (the counter).  The read is not serialized, so the
 // core can run it before or after the work around it.  A spin reads it only
 // to end a wait.
 //

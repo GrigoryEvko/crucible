@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_restore refuses a payload that does not specialize
 // content_hash_projection.  The payload below can move, so it passes the

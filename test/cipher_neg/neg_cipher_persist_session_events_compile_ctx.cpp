@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::persist_session_events refuses the background compile context.
 // Its row holds IO but not Block, and the call flushes a batch file and an

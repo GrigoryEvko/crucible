@@ -67,7 +67,7 @@ core::Result<ChildStart, Errno> start_child_() noexcept {
         long const moved = raw_syscall(Syscall::dup3, ends.write_end, kStandardError, 0);
         close_descriptor(ends.read_end);
         close_descriptor(ends.write_end);
-        // THE CORE DUMP of foundation/os/ChildProcess.h.
+        // Core dump of foundation/os/ChildProcess.h.
         long const undumped = raw_syscall(Syscall::prctl, kSetDumpable, kNotDumpable);
         if (moved < 0 || undumped < 0) {
             exit_process(kChildSetupFailed);

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // The in-process rule table holds at least one slot, so the table shape
 // refuses a table of zero rules.

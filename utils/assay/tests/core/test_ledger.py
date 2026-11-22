@@ -320,7 +320,7 @@ def write_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
 
 
 def reason_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the reason of a raised row, and the write of the reason of named rows (THE REASON OF A ROW)."""
+    """Check the reason of a raised row, and the write of the reason of named rows (the reason of a row)."""
     count = table["count-rule"]
     two = [finding("a.py"), finding("a.py"), finding("b.py"), finding("b.py")]
     ledger = rule_ledger.write(count, rule_ledger.empty(count), two, mode=rule_ledger.WriteMode.ADMIT, reason="first")
@@ -418,7 +418,7 @@ def reason_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
 
 
 def partial_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the write of the counts of one build: it lowers no row and removes no row (THE WRITE)."""
+    """Check the write of the counts of one build: it lowers no row and removes no row (the write)."""
     count, admit = table["count-rule"], table["admit-rule"]
     text = "format 1\nrule count-rule\na.py | kind | 2 | - | -\nb.py | kind | 1 | - | the arm of a different build\n"
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
@@ -465,7 +465,7 @@ def partial_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
 
 
 def reduce_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check THE REDUCE: the largest count of each key over the builds, and the complete write of it."""
+    """Check the reduce: the largest count of each key over the builds, and the complete write of it."""
     count = table["count-rule"]
     key = rule_ledger.Key
     first = {key("a.py", "kind", ""): 1, key("arm.h", "kind", ""): 0, key("b.py", "kind", ""): 2}
@@ -495,7 +495,7 @@ def reduce_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
 
 
 def admit_row_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check the rows with the value admit of a count ledger (AN ADMIT ROW OF A COUNT LEDGER)."""
+    """Check the rows with the value admit of a count ledger (an admit row of a count ledger)."""
     count = table["count-rule"]
     text = "format 1\nrule count-rule\na.py | kind | 1 | - | -\nb.py | kind | admit | name | a planted reason\n"
     ledger = rule_ledger.parse(text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
@@ -546,7 +546,7 @@ def admit_row_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> Non
 
 
 def merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check THE MERGE: the side that changed each row, the sum of two count changes of one key, and the conflicts."""
+    """Check the merge: the side that changed each row, the sum of two count changes of one key, and the conflicts."""
     count = table["count-rule"]
     key = rule_ledger.Key
     head = "format 1\nrule count-rule\n"
@@ -662,7 +662,7 @@ def max_text(rows: dict[str, tuple[str, str]]) -> str:
 
 
 def max_merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
-    """Check THE MERGE of a max ledger: the larger of two raised rows, and a conflict for a row that one side lowers."""
+    """Check the merge of a max ledger: the larger of two raised rows, and a conflict for a row that one side lowers."""
     rule = table["max-rule"]
     kept = {"b.o": ("20", "base b"), "c.o": ("30", "base c")}
     base = max_text({"a.o": ("10", "base a"), **kept})
@@ -744,7 +744,7 @@ def rebased(work: Path, ledgers: tuple[str, str, str], driver: str) -> tuple[int
 
 
 def driver_cases(expect: Expect) -> None:
-    """Check the merge driver of git in a planted rebase (THE DRIVER of assay.guard.merge_ledger)."""
+    """Check the merge driver of git in a planted rebase (the driver of assay.guard.merge_ledger)."""
     guard = Path(__file__).resolve().parents[3] / "bin" / "guard"
     driver = f"{sys.executable} {guard} merge-ledger %O %A %B %P %S %X %Y"
     base = count_text({"a.py": 4, "b.py": 2, "c.py": 1})

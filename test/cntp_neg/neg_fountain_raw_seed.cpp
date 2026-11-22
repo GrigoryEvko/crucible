@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A repair packet choice derives from the DetSafe Philox key chain.  A raw
 // integer seed cannot cross the replay boundary, so start_encoding refuses

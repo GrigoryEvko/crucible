@@ -293,7 +293,7 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         return "rejected", ("error", MEMORY_RULE, f"{message}.  The launcher removed the output.  Make the step "
                                                   f"smaller, or add a row with a reason")
     if run.cpu_limit_s is None and run.cpu_s > limit:
-        # On a GitHub runner, limit_cpu() of meter.py sets no limit, and the step runs to its end (A CI RUNNER).
+        # On a GitHub runner, limit_cpu() of meter.py sets no limit, and the step runs to its end (a CI runner).
         message = (f"{shown} used {run.cpu_s:.1f} s CPU, more than the hard limit of {limit} s, "
                    f"{limit_words}, and no CPU limit stopped it")
         if cost_meter.is_github_actions():

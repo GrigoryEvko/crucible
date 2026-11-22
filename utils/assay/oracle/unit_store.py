@@ -1,6 +1,6 @@
 """The result store of the units of the test of the emitted tests of the session oracle.
 
-THE UNITS
+Units
     The test builds two kinds of unit.  A static unit is one source file.
     Its result is the exit code and the output of a compile with
     -fsyntax-only.  A program is the source files of one runtime test.  Its
@@ -9,7 +9,7 @@ THE UNITS
     standard output and the standard error.  The caller judges the result,
     and the store keeps no verdict.
 
-THE STORE
+Store
     The store is the "session_oracle" cache of utils/assay/core/cache.py.
     It is a result store of utils/assay/loop/fixture/store.py.  It has the
     key, the entry format, the check of the inputs, the settle period and the
@@ -21,7 +21,7 @@ THE STORE
     its stat fields, holds for the lookups of one caller (DIGEST_MEMO_NAME).
     When the caches are off, each unit builds again.
 
-THE SOURCES
+Sources
     The command of a unit names its sources, and the key holds the command.
     Each unit then writes its sources to sources/DIGEST/ in the store.
     DIGEST is the SHA-256 of the names and the texts of the sources.  Before
@@ -38,7 +38,7 @@ THE SOURCES
     each directory with a use in the last SOURCES_IN_USE_S, because a unit
     of a run can read it.
 
-THE LOCK OF A SOURCE DIRECTORY
+Lock of a source directory
     A store holds a lock of flock(2) in the shared mode on each source
     directory that it uses, from its first use until UnitStore.close().  The
     lock file is .DIGEST.lock beside the directory, in its fan-out directory.
@@ -62,7 +62,7 @@ THE LOCK OF A SOURCE DIRECTORY
     directory, stays.  The sweep makes no lock file for a directory that is
     gone (_removed_idle()).
 
-THE KEY OF A STATIC UNIT
+Key of a static unit
     compile_key of the store hashes the identity of the compiler, the
     command, the working directory, the environment of the compiler and the
     bytes of the store module.  The key of the unit hashes that hash with
@@ -71,20 +71,20 @@ THE KEY OF A STATIC UNIT
     read, the names in each search root, and the state of each probed path.
     The sources are not inputs, because the key names their bytes.
 
-THE KEY OF A PROGRAM
+Key of a program
     The key hashes the compile key of each source, the link and the run:
       - The link command, with a placeholder for each object file, for the
         dependency file of the link and for the program.  The path and the
         bytes of collect2, of the linker, of the LTO plugin and of
         lto-wrapper.  The shared objects that the loader maps into collect2,
-        into the linker and into the plugin (THE LINKER).
+        into the linker and into the plugin (the linker).
       - The bytes of the configuration of the loader, of its cache and of
         its preload list.  The linker reads the configuration for the shared
         objects that a shared object uses.  These files are in /etc, which is
         not a search root.
       - The arguments of the run, and each environment variable of the C
         library in the run environment (RUN_ENVIRONMENT,
-        RUN_ENVIRONMENT_PREFIXES, THE RUN ENVIRONMENT).
+        RUN_ENVIRONMENT_PREFIXES, the run environment).
       - The path and the bytes of each file that the link command names by
         its absolute path (named_link_files()).  An archive of a build is
         such a file.
@@ -107,7 +107,7 @@ THE KEY OF A PROGRAM
     outputs, and they are not inputs.  The program runs in an empty
     directory.
 
-THE LINKER
+Linker
     The last -fuse-ld=NAME word of the link flags names the linker ld.NAME.
     With no such word, the linker is ld.  collect2 runs that program, and the
     driver finds it with the -B words of the link flags, as collect2 does.
@@ -121,7 +121,7 @@ THE LINKER
     in it.  The directories that the driver gives the linker are not search
     roots, because /usr/lib holds too many names.
 
-THE RUN ENVIRONMENT
+Run environment
     The run of a program and the list of its loader get the environment of
     the caller, with no empty element in LD_LIBRARY_PATH.  _run_environment()
     gives that environment.  The loader reads an empty element as the working
@@ -132,7 +132,7 @@ THE RUN ENVIRONMENT
     build of a new program writes its sources in the settle period of that
     probe.  The store then keeps no result of the build.
 
-THE PATHS OF A RECORD
+Paths of a record
     The store makes a probed path from each dependency with ".." in its part
     after a search root.  GCC writes its own search directories with "..",
     for example LIB/gcc/TARGET/VERSION/../../../../include.  The directory of
@@ -147,7 +147,7 @@ THE PATHS OF A RECORD
     A dependency keeps its part after its search root.  An include with ".."
     then keeps its probes.
 
-WHAT THE STORE DOES NOT STORE
+What the store does not store
     - A result with an input that changed in the settle period, or with a
       compiler or linker identity that changed during the unit.
     - A compile or a link with an exit code that is not 0 or 1, because a
@@ -155,12 +155,12 @@ WHAT THE STORE DOES NOT STORE
       run.  Also a compile or a link whose output tells that a signal
       stopped the compiler or the linker, such as the kill of the CPU limit
       of a test: the driver then exits 1 (is_storable_compile()).
-    - A link that writes no dependency file that reads (THE LINKER).
+    - A link that writes no dependency file that reads (the linker).
     - A run that ended by a signal or by its time limit, and a run with a
       result that the caller calls unstable.  The run of a program can
       change with the time, and the caller knows which outcome does.
 
-THE COMPILE SLOTS
+Compile slots
     The units of a run use one store from many threads.  The test runs its
     units in a pool, and a program compiles its sources in a pool of its own.
     Each compile of a unit, with its dependency runs, holds one slot of the
@@ -207,12 +207,12 @@ STORE_NAME = "session_oracle"
 FORMAT = "crucible-session-oracle-units 1"
 # The size limit of the entries of the store.
 LIMIT_BYTES = 256 << 20
-# The byte limit of the source directories (THE SOURCES).  The sources of each unit of one tree were 33 MB on
+# The byte limit of the source directories (the sources).  The sources of each unit of one tree were 33 MB on
 # 2026-10-09.  The limit then holds approximately eight versions of them.
 SOURCES_LIMIT_BYTES = 256 << 20
 # A source directory with a use in this period can be in use by a unit of a run.  The byte limit keeps it.
 SOURCES_IN_USE_S = 2 * cache_root.TOUCH_INTERVAL
-# The end of the name of the lock file of a source directory (THE LOCK OF A SOURCE DIRECTORY).
+# The end of the name of the lock file of a source directory (the lock of a source directory).
 SOURCE_LOCK_SUFFIX = ".lock"
 # The file name of the digest memo of one caller, in the memo directory of the store.
 DIGEST_MEMO_NAME = "units-{}.digests"
@@ -220,22 +220,22 @@ DIGEST_MEMO_NAME = "units-{}.digests"
 # "g++: fatal error: Killed signal terminated program cc1plus" and "collect2: fatal error: ld terminated with signal 9".
 KILLED_WORDS = (compile_store.KILLED_COMPILER, "terminated with signal")
 # The time limit of each compile, link and run of a unit, in seconds.  It judges no unit, and it only bounds a hang,
-# above the wall guard of a test of the gate (THE HANG GUARD of assay.loop.gate).  In a test, the CPU limit of each
-# process judges a compile or a run that runs away (THE CPU LIMIT OF A TEST of assay.loop.teststep).  A loaded host then
+# above the wall guard of a test of the gate (the hang guard of assay.loop.gate).  In a test, the CPU limit of each
+# process judges a compile or a run that runs away (the CPU limit of a test of assay.loop.teststep).  A loaded host then
 # makes a unit slower, but it does not make the unit fail.
 RUN_TIMEOUT_S = proc.BUILD_S
 # The environment variables that the C library reads in the run of a program.
 RUN_ENVIRONMENT = frozenset({"LANG", "TZ"})
 RUN_ENVIRONMENT_PREFIXES = ("LD_", "LC_", "GLIBC_", "MALLOC_")
-# The search path of the loader, which the run environment keeps with no empty element (THE RUN ENVIRONMENT).
+# The search path of the loader, which the run environment keeps with no empty element (the run environment).
 LIBRARY_PATH = "LD_LIBRARY_PATH"
-# The programs of a link that the compiler driver finds, other than the linker (THE LINKER).  The loader of the
+# The programs of a link that the compiler driver finds, other than the linker (the linker).  The loader of the
 # linker also maps the shared objects of the LTO plugin.
 LINK_PROGRAMS = ("collect2", "liblto_plugin.so", "lto-wrapper")
-# The word of the link flags that names the linker, and the linker with no such word (THE LINKER).
+# The word of the link flags that names the linker, and the linker with no such word (the linker).
 USE_LINKER = "-fuse-ld="
 DEFAULT_LINKER = "ld"
-# The file name of the dependency file of a link, in the scratch directory of its unit (THE LINKER).
+# The file name of the dependency file of a link, in the scratch directory of its unit (the linker).
 LINK_DEPENDENCIES = "link.d"
 # The configuration of the loader, its cache, and the preload list that it reads in each process.
 LOADER_CONFIG = Path("/etc/ld.so.conf")
@@ -319,8 +319,8 @@ def _digest(data: bytes) -> str:
 def _source_directories(sources_root: Path) -> list[cache_dir.Entry]:
     """Return each source directory below the fan-out directories of the sources, with its bytes and its last use.
 
-    The bytes of a directory are the bytes of its files and of the directory, and its last use is its mtime (THE
-    SOURCES).  Complexity: one stat of each directory and of each file in it.
+    The bytes of a directory are the bytes of its files and of the directory, and its last use is its mtime (the
+    sources).  Complexity: one stat of each directory and of each file in it.
     """
     found: list[cache_dir.Entry] = []
     for directory in cache_dir.entries(sources_root):
@@ -333,12 +333,12 @@ def _source_directories(sources_root: Path) -> list[cache_dir.Entry]:
 
 
 def source_lock(directory: Path) -> Path:
-    """Return the lock file of a source directory: .DIGEST.lock in its fan-out directory (THE LOCK OF A SOURCE DIRECTORY)."""
+    """Return the lock file of a source directory: .DIGEST.lock in its fan-out directory (the lock of a source directory)."""
     return directory.parent / f".{directory.name}{SOURCE_LOCK_SUFFIX}"
 
 
 def _held_lock(directory: Path) -> int:
-    """Take the lock of a source directory in the shared mode, and return its descriptor (THE LOCK OF A SOURCE DIRECTORY).
+    """Take the lock of a source directory in the shared mode, and return its descriptor (the lock of a source directory).
 
     The call waits while a sweep removes the directory.  When the sweep removed the lock file before the lock, the call
     takes the lock of the file at the path again.  The fan-out directory exists after the call.
@@ -375,7 +375,7 @@ def _removed_idle(directory: Path) -> bool:
 
     The sweep takes the lock in the exclusive mode with no wait, so a directory that a store holds stays.  A use after
     the read of the sweep and before the lock also keeps the directory.  When the directory is gone at the lock, the
-    sweep removes the lock file that it opened (THE LOCK OF A SOURCE DIRECTORY).  Complexity: one removal of the files
+    sweep removes the lock file that it opened (the lock of a source directory).  Complexity: one removal of the files
     of the directory.
     """
     lock = source_lock(directory)
@@ -404,7 +404,7 @@ def _removed_idle(directory: Path) -> bool:
 def _orphan_locks(sources_root: Path) -> list[Path]:
     """Return each lock file in the fan-out directories of the sources with no source directory beside it.
 
-    THE LOCK OF A SOURCE DIRECTORY gives the name .DIGEST.lock of the lock file of the directory DIGEST.  Complexity: one
+    The lock of a source directory gives the name .DIGEST.lock of the lock file of the directory DIGEST.  Complexity: one
     listing of each fan-out directory and one stat of each lock file.
     """
     found: list[Path] = []
@@ -424,8 +424,8 @@ def _orphan_locks(sources_root: Path) -> list[Path]:
 
 
 def _removed_orphan(lock: Path) -> bool:
-    """Remove a lock file with no source directory that no store holds, and tell if it went (THE LOCK OF A SOURCE
-    DIRECTORY).
+    """Remove a lock file with no source directory that no store holds, and tell if it went (the lock of a source
+    directory).
 
     The sweep takes the lock in the exclusive mode with no wait, so a lock file that a store holds stays.  It removes the
     file only when the directory is still gone and the path still names the locked file.
@@ -454,7 +454,7 @@ def _kept(data: bytes) -> str:
 
 
 def is_storable_compile(completed: proc.Completed) -> bool:
-    """Tell if the store can keep the result of a compile or a link (WHAT THE STORE DOES NOT STORE).
+    """Tell if the store can keep the result of a compile or a link (what the store does not store).
 
     The exit is 0 or 1, and no line tells that a signal stopped the compiler or the linker.  When the CPU limit of a
     test kills cc1plus or ld, the driver or collect2 exits 1 and writes such a line (KILLED_WORDS).
@@ -486,7 +486,7 @@ def _is_under(path: str, directory: Path) -> bool:
 
 
 def linker_of(link_flags: Sequence[str]) -> str:
-    """Return the program name of the linker of the link flags (THE LINKER).
+    """Return the program name of the linker of the link flags (the linker).
 
     The last -fuse-ld=NAME word names ld.NAME.  With no such word, the linker
     is ld.  O(n) for n flags.
@@ -510,7 +510,7 @@ def program_flags(link_flags: Sequence[str]) -> list[str]:
 
 
 def library_directories(link_flags: Sequence[str], directory: Path) -> list[str]:
-    """Return the path with no link of each directory that a -L word of the link flags names (THE LINKER).
+    """Return the path with no link of each directory that a -L word of the link flags names (the linker).
 
     A -L word holds its directory, or the next word holds it.  A relative
     directory is relative to ``directory``.  O(n) for n flags.
@@ -529,7 +529,7 @@ def named_link_files(link: Sequence[str], work: Path) -> list[str]:
 
     Such a word is no flag, and it names a regular file that is not in the
     scratch directory ``work`` of the unit, such as an archive of a build.  The key
-    holds the bytes of each such file (THE KEY OF A PROGRAM).  O(n) for n
+    holds the bytes of each such file (the key of a program).  O(n) for n
     words, with one stat of each absolute word.
     """
     named = (
@@ -546,12 +546,12 @@ def parse_link_dependencies(
     """Return the inputs of a link from the text of its dependency file, or None when the text does not read.
 
     Each prerequisite of the rule of the link is a dependency, and each
-    directory of ``searched`` is a search root (THE LINKER).  A path in
+    directory of ``searched`` is a search root (the linker).  A path in
     ``outputs`` is an output of the unit and not an input.  A path of
     ``named`` is a file that the link command names: the key holds its bytes,
-    and it is not a dependency (THE KEY OF A PROGRAM).  A relative path is
-    relative to ``directory``.  Each path has no link in it (THE PATHS OF A
-    RECORD).  A link that wrote no file gives None for ``text``.  O(length of
+    and it is not a dependency (the key of a program).  A relative path is
+    relative to ``directory``.  Each path has no link in it (the paths of a
+    record).  A link that wrote no file gives None for ``text``.  O(length of
     the text).
     """
     parsed = compile_store.parse_dependency_file(text) if text is not None else None
@@ -568,7 +568,7 @@ def parse_link_dependencies(
 
 
 def respelled_roots(inputs: _Inputs) -> _Inputs:
-    """Return the inputs of a compile with no link in each search root (THE PATHS OF A RECORD).
+    """Return the inputs of a compile with no link in each search root (the paths of a record).
 
     A dependency in a search root gets the path with no link of the longest
     such root, and it keeps its part after that root.  An include with ".."
@@ -592,12 +592,12 @@ def respelled_roots(inputs: _Inputs) -> _Inputs:
 
 
 def _dependency_word(work: Path) -> str:
-    """Return the link flag that makes the linker write its dependency file in ``work`` (THE LINKER)."""
+    """Return the link flag that makes the linker write its dependency file in ``work`` (the linker)."""
     return f"-Wl,--dependency-file={work / LINK_DEPENDENCIES}"
 
 
 def _run_environment(base: Mapping[str, str]) -> dict[str, str]:
-    """Return the environment of the run of a program and of the list of its loader (THE RUN ENVIRONMENT).
+    """Return the environment of the run of a program and of the list of its loader (the run environment).
 
     The environment is ``base`` with no empty element in LD_LIBRARY_PATH, and
     with no LD_LIBRARY_PATH when each element is empty.  Complexity: O(n) for
@@ -655,8 +655,8 @@ class UnitStore:
         save_memo writes it.  Without it, the lookups use no memo.
         ``latest_start_ns`` is the latest start time of a build, in
         nanoseconds since the epoch.  A build takes the earlier of that time
-        and the clock (THE STORE).  ``compile_slots`` is the count of compiles
-        and links at one time (THE COMPILE SLOTS).
+        and the clock (the store).  ``compile_slots`` is the count of compiles
+        and links at one time (the compile slots).
 
         Raises:
             ValueError: If ``compile_slots`` is less than 1, because no compile could then start
@@ -691,7 +691,7 @@ class UnitStore:
         self._lock = threading.Lock()
         self._slots = threading.BoundedSemaphore(compile_slots)
         self._program_paths: dict[str, str | None] = {}
-        # The descriptor of the lock of each source directory that the store holds (THE LOCK OF A SOURCE DIRECTORY).
+        # The descriptor of the lock of each source directory that the store holds (the lock of a source directory).
         # The finalizer frees the locks at close(), at the collection of the store, or at the exit of the interpreter.
         self._source_locks: dict[Path, int] = {}
         self._release_locks = weakref.finalize(self, _released_locks, self._source_locks)
@@ -713,7 +713,7 @@ class UnitStore:
         other bytes is written again.  A file of the directory that is not a
         source makes the unit miss (Unit.holds_only_sources).  The store holds
         the lock of the directory before it reads the directory, until
-        close() (THE LOCK OF A SOURCE DIRECTORY).
+        close() (the lock of a source directory).
         """
         digest = _digest(json.dumps([list(pair) for pair in files]).encode("utf-8"))
         directory = self.sources_root / digest[:2] / digest
@@ -737,15 +737,15 @@ class UnitStore:
         return paths
 
     def sweep_sources(self, max_bytes: int = SOURCES_LIMIT_BYTES) -> int:
-        """Hold the source directories in their limits, when the turn of the sources is due (THE SOURCES).
+        """Hold the source directories in their limits, when the turn of the sources is due (the sources).
 
         A directory with no use for cache_dir.MAX_AGE goes.  Over the byte
         limit, the directories with the oldest use go until the remaining
         directories hold less than cache_dir.EVICT_TO of the limit.  A
         directory with a use in the last SOURCES_IN_USE_S can be in use, and
         only its age removes it.  A directory that a store holds stays.  Each
-        lock file with no directory goes too (THE LOCK OF A SOURCE
-        DIRECTORY).  The turn is due one time each day, or when a sample of
+        lock file with no directory goes too (the lock of a source
+        directory).  The turn is due one time each day, or when a sample of
         the sources is over the limit.
 
         Return the count of removed directories.  Complexity: O(d log d) for d directories, one stat of each file of
@@ -784,7 +784,7 @@ class UnitStore:
         ``key_argv`` ends with -MF and the dependency file, and a placeholder
         stands for each other output of the compile.  The source and the
         dependency file are not files of the command for the key: the path
-        of the source names its bytes (THE SOURCES), and the dependency file
+        of the source names its bytes (the sources), and the dependency file
         is an output.
         """
         if self.store is None:
@@ -799,7 +799,7 @@ class UnitStore:
         """Return the path of the program or the file that the compiler driver finds as ``program``, or None.
 
         The query gives the driver the -B words of the link flags.  The driver
-        then finds the program that the link runs (THE LINKER).  The answer
+        then finds the program that the link runs (the linker).  The answer
         depends on the driver, on those words and on PATH.  These stay the
         same in one run, and one query of each program serves the run.
         """
@@ -864,7 +864,7 @@ class UnitStore:
     def _compile(
         self, argv: list[str], directory: Path, source: Path, work: Path
     ) -> tuple[proc.Completed, _Inputs | None]:
-        """Run one compile in one slot of the store (THE COMPILE SLOTS), and return what _compile_in_slot() returns."""
+        """Run one compile in one slot of the store (the compile slots), and return what _compile_in_slot() returns."""
         with self._slots:
             return self._compile_in_slot(argv, directory, source, work)
 
@@ -1018,10 +1018,10 @@ class UnitStore:
     def build(self, unit: Unit) -> UnitResult:
         """Build ``unit``, store its result when the store can keep it, and return the result.
 
-        The key names the bytes of each source (THE SOURCES), so the sources
+        The key names the bytes of each source (the sources), so the sources
         are not dependencies of the result, and a new source does not wait
         for the settle period.  The start time of the build is the earlier of
-        the clock and the latest start time of the store (THE STORE).
+        the clock and the latest start time of the store (the store).
         """
         started_ns = time.time_ns()
         if self.latest_start_ns is not None:
@@ -1133,7 +1133,7 @@ class UnitStore:
 
         A tried path that exists is a dependency, and one that does not is a
         probed path.  The loader lists the objects under LD_DEBUG=libs, in the
-        run environment of the program (THE RUN ENVIRONMENT).  The key holds
+        run environment of the program (the run environment).  The key holds
         the cache of the loader (_loader_identity), so a list that names a
         different cache gives None.
         """

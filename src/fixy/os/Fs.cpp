@@ -9,7 +9,7 @@
 // renameat2.  It includes no header of the C library, because some
 // declarations of the two kinds of header conflict.  In a build with
 // ThreadSanitizer, the primitive gives each read and each write to the
-// function of the C library (THE SANITIZERS of foundation/os/Syscall.h).
+// function of the C library (the sanitizers of foundation/os/Syscall.h).
 
 #include <fixy/os/Fs.h>
 
@@ -114,7 +114,7 @@ enum class RenameKind : std::uint8_t {
     return unit_of(word);
 }
 
-// The open flags of a directory part (THE FINAL NAME of fixy/os/Fs.h).  The
+// The open flags of a directory part (the final name of fixy/os/Fs.h).  The
 // descriptor of O_PATH is the directory of a call of the *at family, and the
 // open reads no data of the directory.
 constexpr int kDirectoryPartFlags = os::kOpenPath | os::kOpenDirectory | os::kOpenCloseOnExec;
@@ -135,8 +135,8 @@ template <class T, class Act>
             [](os::Errno error) noexcept -> core::Result<T, os::Errno> { return core::err(error); });
 }
 
-// Gives ACT(PARENT, NAME) for the split of PATH beneath DIRECTORY (THE FINAL
-// NAME of fixy/os/Fs.h): PARENT is the descriptor of the directory part, or
+// Gives ACT(PARENT, NAME) for the split of PATH beneath DIRECTORY (the final
+// name of fixy/os/Fs.h): PARENT is the descriptor of the directory part, or
 // DIRECTORY for a path with no directory part, and NAME is the final name.
 // The final name is the rest of PATH after its directory part, so it keeps
 // the zero of PATH.  Complexity: linear in the size of the path, and one
@@ -234,8 +234,8 @@ core::Result<bool, os::Errno> has_entry_beneath_(int directory, core::CText path
 
 namespace {
 
-// The open flags of a directory of the walk of a tree removal (THE TREE
-// REMOVAL of fixy/os/Fs.h): a read lists its entries, O_DIRECTORY refuses an
+// The open flags of a directory of the walk of a tree removal (the tree
+// removal of fixy/os/Fs.h): a read lists its entries, O_DIRECTORY refuses an
 // entry of another kind, and O_NOFOLLOW refuses a symbolic link.
 constexpr int kTreeLevelFlags = os::kOpenReadOnly | os::kOpenDirectory | os::kOpenNoFollow | os::kOpenCloseOnExec;
 
@@ -488,7 +488,7 @@ UnitResult write_full_(int descriptor, void const* first, std::size_t count) noe
     char const* const bytes = static_cast<char const*>(first);
     // A write to a pipe or a socket with no reader raises SIGPIPE, and
     // write(2) has no MSG_NOSIGNAL.  The block of the signal holds for the
-    // whole loop (THE PIPE SIGNAL of foundation/os/PipeSignal.h).
+    // whole loop (the pipe signal of foundation/os/PipeSignal.h).
     os::PipeSignalBlock block = os::PipeSignalBlock::block_calling_thread();
     UnitResult written = write_full_steps_(count, [descriptor, bytes](std::size_t offset, std::size_t remaining) {
         return os::result_of(os::raw_syscall(os::Syscall::write, descriptor, bytes + offset, remaining));

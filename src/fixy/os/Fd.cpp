@@ -18,7 +18,7 @@
 
 namespace fixy::fs::detail {
 
-// The generation of each number (THE GENERATION OF A DESCRIPTOR of
+// The generation of each number (the generation of a descriptor of
 // fixy/os/Fd.h).  The kernel gives one table of descriptors to the process,
 // so one table of generations serves the process too, and a Handle of one
 // shared library makes the refs of another library stale.  The table starts

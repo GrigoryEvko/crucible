@@ -174,7 +174,7 @@ public:
     // A poll found the channel of input empty.  The stage spins, and then it
     // parks on the event count of the channel.  It enters the count and tests
     // the channel again before it sleeps, so a push or a close after the test
-    // notifies it (THE PROTOCOL of fixy/concurrent/EventCount.h).  A timed
+    // notifies it (the protocol of fixy/concurrent/EventCount.h).  A timed
     // park ends at the bound.
     template <class Input>
     void pause_or_park(::fixy::BgLoadCtx const& ctx, ::fixy::concurrent::EventCount& events, Input const& input,
@@ -224,13 +224,13 @@ template <class T>
     return !slot.has_value() || ::fixy::same_object(::fixy::to(*slot), ::fixy::to(object));
 }
 
-// THE LOOP OF THE VIGIL.  The foreground records each op into the trace ring,
+// Loop of the Vigil.  The foreground records each op into the trace ring,
 // the four stages make the regions of the ops, and the publish stage counts
 // the ops that it processed.  A flush of the foreground waits on that count.
 // A job of the foreground waits for a free owner mailbox, and then for its
 // done mark.  run_pipeline_ states this loop over the graph of the pipeline
 // that it mints, and the door ensure_loop_live of fixy/concurrent/StageNet.h
-// checks the loop at compile time (THE LOOP).  The loop takes the ends of the
+// checks the loop at compile time (the loop).  The loop takes the ends of the
 // four stages from that graph (pipeline_graph_t and StageEdges), so the
 // channels between the stages are the channels that the gate of the pipeline
 // reads.
@@ -246,7 +246,7 @@ template <class T>
 // stage take one arm together in each period.  The door checks that the
 // three arms agree on each channel and on the lock: a process holds the same
 // sides in each arm, and the ends of each channel state one capacity.  So a
-// run that takes the arms in any sequence is live (THE ARMS).
+// run that takes the arms in any sequence is live (the arms).
 //
 // Each channel of the loop states its capacity.  The ring holds
 // TraceRing::CAPACITY ops, and a full ring refuses an op with no wait, so the
@@ -261,7 +261,7 @@ template <class T>
 // wait while a bracket is open.  The loop states the two ends of the lock.
 // The door checks that one process writes the lock and one other process
 // reads it, that no process waits inside a bracket, and that no write stands
-// inside a read (THE LOCKS).
+// inside a read (the locks).
 //
 // A proof of the base holds some ends at each call: RecordProof the publish
 // of the head of the ring, and PublishStage the bump of the count, the serve
@@ -338,7 +338,7 @@ struct BackgroundThread::Pipeline {
 
     using StartChannel = ::fixy::concurrent::channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
     // A Box owns each message of the three channels after the start, and the
-    // channel moves the Box from one stage to the next (THE OWNERS of
+    // channel moves the Box from one stage to the next (the owners of
     // fixy/concurrent/PermissionedBoxChannel.h).
     using TraceBatchChannel =
         ::fixy::concurrent::box_channel_t<BgTraceBatch, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
@@ -434,8 +434,8 @@ struct BackgroundThread::Pipeline {
     // The sink takes the end mark of the pipeline by value, and it takes
     // each mark at its first push.  The sink holds no message, because the
     // push itself takes the mark.  So it states no channel_capacity, and the
-    // marked system of a stage graph reads its channel as a rendezvous (THE
-    // MARKED SYSTEM of fixy/concurrent/StageNet.h).
+    // marked system of a stage graph reads its channel as a rendezvous (the
+    // marked system of fixy/concurrent/StageNet.h).
     struct BgSinkProducerHandle {
         ::fixy::Option<::fixy::Ref<BackgroundThread>> owner{};
 
@@ -455,8 +455,8 @@ struct BackgroundThread::Pipeline {
         waits.items.notify_one(ctx);
     }
 
-    // Ends the producer handle of a stage, which closes its channel (THE END
-    // OF THE STREAM of fixy/concurrent/ChannelEnd.h), and then notifies the
+    // Ends the producer handle of a stage, which closes its channel (the end
+    // of the stream of fixy/concurrent/ChannelEnd.h), and then notifies the
     // items count of the channel.  The notify comes after the close, so a
     // consumer that parks after its last receive reads the end.
     template <class Producer>
@@ -1114,7 +1114,7 @@ void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
 
 // No destructor body runs before the members end, so thread_, the last
 // member, stops and joins the pipeline thread while each other member is
-// alive (THE THREAD OF AN OWNER of fixy/os/OwnedThread.h).  The definition
+// alive (the thread of an owner of fixy/os/OwnedThread.h).  The definition
 // comes before start(), so the door of the thread reads it as defaulted.
 BackgroundThread::~BackgroundThread() = default;
 
@@ -1238,7 +1238,7 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
                                                       std::move(build_stage), std::move(publish_stage));
 
     // The loop of the Vigil over the graph of the pipeline, in its three arms
-    // (THE LOOP OF THE VIGIL).  The doors run at compile time.
+    // (the loop of the Vigil).  The doors run at compile time.
     namespace cc = ::fixy::concurrent;
     namespace loop = detail::bg_pipeline;
     using graph = cc::pipeline_graph_t<decltype(pipeline)>;

@@ -1,5 +1,5 @@
-// The cold bodies of the refill of a heap of the allocator of the base (THE
-// FAST PATHS of foundation/alloc/HeapState.h): the refill of an empty bin,
+// The cold bodies of the refill of a heap of the allocator of the base (the
+// fast paths of foundation/alloc/HeapState.h): the refill of an empty bin,
 // the start of a slab, and the census of the testing door.  The take of a
 // chunk is a door of the window in src/foundation/alloc/Root.cpp.  This file
 // holds no variable: each word is a field of a HeapState or of a record of
@@ -60,7 +60,7 @@ void start_bitmap(SlabMeta& meta, SizeClass size_class) noexcept {
 }
 
 // True when the bitmap of a slab agrees with its free count and its summary
-// word, and holds no set bit past the slots of its class (THE CENSUS).
+// word, and holds no set bit past the slots of its class (the census).
 // Complexity: kSlabBitmapWords words.
 [[nodiscard]] bool is_bitmap_sound(SlabMeta const& meta) noexcept {
     std::uint32_t const slots = detail::kSlotFacts.rows[static_cast<std::uint8_t>(meta.size_class())].slab_slots;

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A table plan is start-up work, so its mint takes a context that admits
 // the initialization row.  A background drain context does not, and the

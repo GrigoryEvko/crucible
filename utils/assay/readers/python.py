@@ -4,11 +4,11 @@ The table of the readers of the utils system names this module as the one
 reader of Python source.  A module of the package reads a Python file through
 this module, and reads no Python file as text.
 
-THE SOURCE
+Source
     read() reads one file and parses it one time.  parse() parses a text.  A
     text that does not parse gives PythonError with the path and the line.
 
-THE SCOPES
+Scopes
     The full name of a function or a class holds the names of the classes and
     the functions that hold it, such as Registry.measured.  holders() gives a
     table with the full name of the innermost function or class that holds
@@ -16,7 +16,7 @@ THE SCOPES
     rule gives that name as the entity of a finding, because the name holds
     no line number.
 
-THE IMPORTS
+Imports
     imports() gives the dotted name of each module that a source imports, also
     in a function.  A relative import keeps its points.  bindings() gives the
     import table of a source: the dotted target of each name that an import
@@ -24,13 +24,13 @@ THE IMPORTS
     attributes through that table, such as subprocess.run for `sp.run` after
     `import subprocess as sp`.
 
-THE REFERENCES
+References
     references() gives the dotted name of each chain of names of a source
     that starts with a name of an import.  shape() gives each top-level
     function and class of a source with the references and the other names
     that its code reads.  It gives the same facts for the code that runs at
     the import of the module.  `loop test` follows these names from function
-    to function (assay.loop.inputs, THE CALLS).
+    to function (assay.loop.inputs, the calls).
 
 `guard selftest tests.readers.test_python` does a test of the module.
 """
@@ -141,7 +141,7 @@ def holder(table: tuple[str, ...], line: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Bindings:
-    """The import table of a source: the dotted target of each name that an import makes (THE IMPORTS)."""
+    """The import table of a source: the dotted target of each name that an import makes (the imports)."""
 
     targets: Mapping[str, str]
 
@@ -201,7 +201,7 @@ class Definition:
     """A top-level function or class of a source, or the import code of its module, with the names that its code reads.
 
     `references` holds the dotted name of each chain of names that starts with
-    a name of an import (THE REFERENCES).  `names` holds each other name that
+    a name of an import (the references).  `names` holds each other name that
     the code reads, such as a function of the same module.  It also holds the
     first name of a chain of attributes on such a name.
     """

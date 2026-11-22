@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::open refuses a path tagged Sanitized.  open runs the sanitizer
 // itself, so the sanitized root it anchors to is always the result of its

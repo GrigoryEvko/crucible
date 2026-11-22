@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Integrity fixture #4: wrap() is constrained to byte-contiguous payloads.
 // Arbitrary structs must define an explicit wire encoding first.

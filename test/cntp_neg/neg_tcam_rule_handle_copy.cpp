@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // An installed rule has one owner.  The handle that add_rule returns is
 // Linear, so a copy of it is refused.

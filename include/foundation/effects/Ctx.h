@@ -667,8 +667,8 @@ private:
     friend Brand;
 
     // The proof that the caller is the one writer of the counters of the
-    // single-producer state of the brand in the role Role (THE PROOF OF THE
-    // ONE WRITER of foundation/SoleWriterProof.h).  The context is the
+    // single-producer state of the brand in the role Role (the proof of the
+    // one writer of foundation/SoleWriterProof.h).  The context is the
     // evidence: only mint_producer_context makes it, after the check of the
     // calling thread.  The door is private, so only the brand calls it, with
     // the context that it minted in the same call.  So the proof needs no

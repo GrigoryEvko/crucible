@@ -10,7 +10,7 @@
 # bench/recipe-tuned CMake target silently re-enables three failure
 # modes at once:
 #
-#   1. FP REASSOCIATION (a + b + c reorders to a + (b + c) under
+#   1. FP reassociation (a + b + c reorders to a + (b + c) under
 #      -fassociative-math) — cross-replay drift.  Same recipe, same
 #      seed, different bits.  Collision rule F101 refuses FP
 #      reassociation for a replay-deterministic payload.

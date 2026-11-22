@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Sister to the member-function-pointer
 // rejection.  Without this fence, `&Receiver::data_field` (a

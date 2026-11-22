@@ -1,6 +1,6 @@
 """elf — the one reader of ELF files and of the ar archives that hold them.
 
-THE READERS
+Readers
     Each read of an ELF file or of an archive in the package goes through
     this module.  These modules use it:
       * The rule artifact-symbols reads the symbols and the relocations of
@@ -21,7 +21,7 @@ THE READERS
       * loop fixture (assay.loop.fixture.store) reads the interpreter of each
         program of the compiler.
 
-THE FORMAT
+Format
     The module reads ELF64 with the low byte first, as each target of the
     tree is (CLAUDE.md section XIV).  A file of a different class or byte
     sequence is an ElfError.  The module reads the extended numbering of a
@@ -33,7 +33,7 @@ THE FORMAT
     The module reads a table on its first use.  A table or a section that is
     not fully in the file is an ElfError.
 
-THE ARCHIVE
+Archive
     members() reads an archive in the GNU format of ar.  The file starts with
     the magic "!<arch>\\n".  A header of 60 bytes comes before each member,
     at an offset that 2 divides.  The member "/" or "/SYM64/" is the index of
@@ -43,7 +43,7 @@ THE ARCHIVE
     ElfError.  A member that is not ELF is an ElfError too, because the
     archives of the tree hold only objects.
 
-THE SYMBOLS
+Symbols
     symbols() gives each entry of .symtab, and dynamic_symbols() gives each
     entry of .dynsym.  Each table is in its sequence, with the null entry at
     the index 0.  A dynamic symbol has its version from the sections of the
@@ -57,19 +57,19 @@ THE SYMBOLS
     is True for a thread-local variable, the type STT_TLS, and the property
     `is_tls` of a section reads the flag SHF_TLS.
 
-THE RELOCATIONS
+Relocations
     relocations() gives each entry of each section of the type SHT_RELA or
     SHT_REL.  The entries come in the sequence of the sections that they
     apply to, and in the sequence of each table.  The symbol of an entry is
     the name of its symbol.  For the symbol of a section, it is the name of
     that section, as objdump -r prints it.  For no symbol, it is empty.
 
-THE SEGMENTS
+Segments
     segments() gives each entry of the program header table, and
     interpreter() reads the path of the segment PT_INTERP.  An object of the
     type ET_REL has no such table, and it gives no segment.
 
-THE PROPERTIES
+Properties
     properties() gives each program property of the segment
     PT_GNU_PROPERTY.  The loader reads the properties of a linked file from
     that segment.  The segment holds notes.  A note has the words namesz,
@@ -81,7 +81,7 @@ THE PROPERTIES
     with no such segment gives no property.  A segment, a note or a
     property that is not fully in the file is an ElfError.
 
-THE DYNAMIC SECTION
+Dynamic section
     dynamic() gives each entry of the section SHT_DYNAMIC in its sequence,
     before the first DT_NULL.  The text of an entry with a string tag
     (STRING_TAGS), such as DT_NEEDED or DT_RUNPATH, comes from the strings
@@ -96,21 +96,21 @@ THE DYNAMIC SECTION
     underscore.  A part with a different $, such as $LIB, $PLATFORM or
     $ORIGINAL, gives None.
 
-THE GROUPS
+Groups
     groups() gives each section of the type SHT_GROUP.  Its first word holds
     the flags, and GRP_COMDAT marks a COMDAT group.  Each other word is the
     index of a member section.  The signature is the name of the symbol that
     sh_info names in the symbol table of sh_link.  A link keeps one COMDAT
     group of each signature.
 
-THE FILE TYPE
+File type
     file_type() gives e_type of the ELF header.  ET_REL marks an object, and
     ET_EXEC marks a program at one specified address.  ET_DYN marks a shared
     library, or a program that the loader can put at each address (a PIE).
     A PIE has the bit DF_1_PIE in its entry DT_FLAGS_1.  machine() gives
     e_machine.
 
-THE INIT ARRAYS
+Init arrays
     init_functions() gives the function of each entry of .preinit_array and
     .init_array of a linked file.  A relocation with a symbol at the entry,
     such as the relocation of __asan_init from a shared library, gives that
@@ -121,19 +121,19 @@ THE INIT ARRAYS
     The name is the name of the function symbol at that address, in .symtab,
     else in .dynsym.  A global symbol comes before a local symbol.
 
-THE NEEDED VERSIONS
+Needed versions
     version_needs() gives each auxiliary entry of the table SHT_GNU_verneed:
     the file of the shared library, the version index, the weak flag
     VER_FLG_WEAK and the version name.  A dynamic symbol with that version
     index gets its definition from that file.
 
-THE DEMANGLER
+Demangler
     demangle() starts c++filt one time for all its names, with --no-verbose.
     Each name then has the text that nm --demangle and objdump -C give.  No
     other module of the package starts nm, readelf or c++filt, and
     assay.readers.objdump is the one module that starts objdump.
 
-THE MANGLED SCOPE
+Mangled scope
     outer_scope() reads the first scope of a name that the Itanium C++ ABI
     mangles, with no demangler.  After _Z, the name can have one of these
     special prefixes (SPECIAL_PREFIXES):
@@ -149,7 +149,7 @@ THE MANGLED SCOPE
     global_operator() gives the operator of a name of the global operator
     new or delete (GLOBAL_OPERATORS), else an empty text.
 
-THE RECORDS
+Records
     The records are classes with __slots__, as the records of
     assay.readers.compdb are, and they are no dataclasses.  loop fixture
     imports the module on each run, and the import of dataclasses costs
@@ -158,7 +158,7 @@ THE RECORDS
     No function of the package changes a record after its construction.
     assay.readers.objdump uses Record too.
 
-THE WRITER
+Writer
     make_file() and make_archive() write small files for the tests of the
     readers.  property_note() writes the note of the program properties of
     a planted segment.
@@ -218,7 +218,7 @@ PT_LOAD = 1
 PT_DYNAMIC = 2
 PT_INTERP = 3
 PT_TLS = 7
-# The segments of the GNU extensions (THE PROPERTIES).  PT_GNU_STACK gives the permissions of the stack.  The loader
+# The segments of the GNU extensions (the properties).  PT_GNU_STACK gives the permissions of the stack.  The loader
 # makes the part of PT_GNU_RELRO read-only after the relocations.  PT_GNU_PROPERTY holds the program properties.
 # PF_X is the bit of p_flags that makes a segment executable.
 PT_GNU_STACK = 0x6474E551
@@ -226,17 +226,17 @@ PT_GNU_RELRO = 0x6474E552
 PT_GNU_PROPERTY = 0x6474E553
 PF_X = 0x1
 # The note of the program properties, its name, and the multiple of 8 at which each of its parts starts in ELF64
-# (THE PROPERTIES).
+# (the properties).
 NT_GNU_PROPERTY_TYPE_0 = 5
 GNU_NOTE_NAME = b"GNU\0"
 NOTE_ALIGN = 8
 NOTE_LAYOUT = struct.Struct("<III")
 PROPERTY_LAYOUT = struct.Struct("<II")
-# The flag word of a group section that makes the group a COMDAT group (THE GROUPS).
+# The flag word of a group section that makes the group a COMDAT group (the groups).
 GRP_COMDAT = 0x1
 # The section of the texts of the tools that made a file, each with a NUL after it (Member.comments()).
 COMMENT = ".comment"
-# The tags of the dynamic section (THE DYNAMIC SECTION).  The value of a string tag is an offset in the strings of the
+# The tags of the dynamic section (the dynamic section).  The value of a string tag is an offset in the strings of the
 # dynamic section.
 DT_NULL = 0
 DT_NEEDED = 1
@@ -251,19 +251,19 @@ STRING_TAGS = frozenset({DT_NEEDED, DT_SONAME, DT_RPATH, DT_RUNPATH})
 # program starts.
 DF_BIND_NOW = 0x8
 DF_1_NOW = 0x1
-# The separator of the parts of a run path (THE DYNAMIC SECTION).  The mark of a substitution sequence, and the two
+# The separator of the parts of a run path (the dynamic section).  The mark of a substitution sequence, and the two
 # forms of the sequence of the directory of the object.
 RUN_PATH_SEPARATOR = ":"
 SEQUENCE_MARK = "$"
 ORIGIN_BRACED = "${ORIGIN}"
 ORIGIN_NAMED = "$ORIGIN"
-# The bit of DT_FLAGS_1 that marks a PIE (THE FILE TYPE).
+# The bit of DT_FLAGS_1 that marks a PIE (the file type).
 DF_1_PIE = 0x08000000
-# e_type of the ELF header (THE FILE TYPE).
+# e_type of the ELF header (the file type).
 ET_REL = 1
 ET_EXEC = 2
 ET_DYN = 3
-# e_machine of the ELF header, and the type of a relative relocation of each machine (THE INIT ARRAYS).
+# e_machine of the ELF header, and the type of a relative relocation of each machine (the init arrays).
 EM_X86_64 = 62
 EM_AARCH64 = 183
 RELATIVE_TYPES = {EM_X86_64: 8, EM_AARCH64: 1027}
@@ -285,9 +285,9 @@ MEMBER_HEADER_SIZE = 60
 MEMBER_END = b"`\n"
 SYMBOL_INDEXES = (b"/", b"/SYM64/")
 LONG_NAMES = b"//"
-# The option of c++filt that gives the text of nm --demangle and objdump -C (THE DEMANGLER).
+# The option of c++filt that gives the text of nm --demangle and objdump -C (the demangler).
 DEMANGLER = ("c++filt", "--no-verbose")
-# The parts of a mangled name that THE MANGLED SCOPE reads.  GTt comes before the prefixes of two letters.
+# The parts of a mangled name that the mangled scope reads.  GTt comes before the prefixes of two letters.
 MANGLED_MARK = "_Z"
 NESTED_MARK = "N"
 # The mark of a local name: an entity in the body of a function, which has the scope of that function.
@@ -324,11 +324,11 @@ VERNAUX_LAYOUT = struct.Struct("<IHHII")
 
 
 class ElfError(ValueError):
-    """A file does not have a format that the module reads (THE FORMAT, THE ARCHIVE), or a part is not in the file."""
+    """A file does not have a format that the module reads (the format, the archive), or a part is not in the file."""
 
 
 class Record:
-    """The base of the records of the readers of objects: the equality, the hash and the text (THE RECORDS)."""
+    """The base of the records of the readers of objects: the equality, the hash and the text (the records)."""
 
     __slots__: tuple[str, ...] = ()
 
@@ -399,7 +399,7 @@ class Section(Record):
 
 
 class Symbol(Record):
-    """One entry of a symbol table, with its name, its section index and its version (THE SYMBOLS).
+    """One entry of a symbol table, with its name, its section index and its version (the symbols).
 
     `section` is the index of the section of the symbol, also when the table
     SHT_SYMTAB_SHNDX holds it.  `version` is the name of the version of a
@@ -480,7 +480,7 @@ class Relocation(Record):
     """One relocation entry: the section that it applies to, its offset, its type, its symbol and its addend.
 
     `symbol` is the name of the symbol, the name of the section of a section
-    symbol, or empty for no symbol (THE RELOCATIONS).  The addend of an entry
+    symbol, or empty for no symbol (the relocations).  The addend of an entry
     of a SHT_REL table is 0.
     """
 
@@ -500,7 +500,7 @@ class Relocation(Record):
 
 
 class Segment(Record):
-    """One entry of the program header table (THE SEGMENTS)."""
+    """One entry of the program header table (the segments)."""
 
     __slots__ = ("address", "align", "file_size", "flags", "index", "kind", "memory_size", "offset")
 
@@ -527,7 +527,7 @@ class Segment(Record):
 
 
 class DynamicEntry(Record):
-    """One entry of the dynamic section: its tag, its value, and the text of a string tag (THE DYNAMIC SECTION)."""
+    """One entry of the dynamic section: its tag, its value, and the text of a string tag (the dynamic section)."""
 
     __slots__ = ("tag", "text", "value")
 
@@ -547,7 +547,7 @@ class DynamicEntry(Record):
 
 
 class Group(Record):
-    """One group section: its index, its signature, its COMDAT flag and the index of each member (THE GROUPS)."""
+    """One group section: its index, its signature, its COMDAT flag and the index of each member (the groups)."""
 
     __slots__ = ("index", "is_comdat", "sections", "signature")
 
@@ -562,7 +562,7 @@ class Group(Record):
 class NeededVersion(Record):
     """One version that a file gets from a shared library: the file, the index, the weak flag and the name.
 
-    THE NEEDED VERSIONS gives the parts.
+    The needed versions give the parts.
     """
 
     __slots__ = ("file", "index", "is_weak", "name")
@@ -576,7 +576,7 @@ class NeededVersion(Record):
 
 
 class Property(Record):
-    """One program property of the segment PT_GNU_PROPERTY: its type pr_type and its data (THE PROPERTIES)."""
+    """One program property of the segment PT_GNU_PROPERTY: its type pr_type and its data (the properties)."""
 
     __slots__ = ("data", "kind")
 
@@ -595,12 +595,12 @@ class Property(Record):
 
 
 def aligned(offset: int) -> int:
-    """Return the first multiple of NOTE_ALIGN that is not less than the offset (THE PROPERTIES)."""
+    """Return the first multiple of NOTE_ALIGN that is not less than the offset (the properties)."""
     return (offset + NOTE_ALIGN - 1) & ~(NOTE_ALIGN - 1)
 
 
 def note_properties(data: bytes, where: str) -> tuple[Property, ...]:
-    """Return the program properties of the notes of a segment PT_GNU_PROPERTY (THE PROPERTIES).
+    """Return the program properties of the notes of a segment PT_GNU_PROPERTY (the properties).
 
     A note of a different type or name gives no property.  Complexity: linear in the bytes of the segment.
 
@@ -652,7 +652,7 @@ def is_name_character(text: str) -> bool:
 
 
 def expanded_origin(part: str, object_path: Path) -> str | None:
-    """Replace each $ORIGIN of a part of a run path with the directory of the object (THE DYNAMIC SECTION).
+    """Replace each $ORIGIN of a part of a run path with the directory of the object (the dynamic section).
 
     The directory is the parent of the resolved `object_path`, and the function resolves it only for a part with a
     sequence.  The result is None for a part with a $ other than $ORIGIN and ${ORIGIN}.  Complexity: linear in the
@@ -829,7 +829,7 @@ class Member:
         return tuple(found)
 
     def symbols(self) -> tuple[Symbol, ...]:
-        """Return each entry of .symtab, the null entry first (THE SYMBOLS).  Complexity: linear in the symbols."""
+        """Return each entry of .symtab, the null entry first (the symbols).  Complexity: linear in the symbols."""
         if SHT_SYMTAB not in self._symbols:
             self._symbols[SHT_SYMTAB] = self.read_symbols(SHT_SYMTAB)
         return self._symbols[SHT_SYMTAB]
@@ -896,7 +896,7 @@ class Member:
         return found
 
     def version_needs(self) -> tuple[NeededVersion, ...]:
-        """Return each version that the table SHT_GNU_verneed holds, with its file (THE NEEDED VERSIONS).
+        """Return each version that the table SHT_GNU_verneed holds, with its file (the needed versions).
 
         The versions come in the sequence of the table.  Complexity: linear in
         the entries of the table.
@@ -930,7 +930,7 @@ class Member:
         return tuple(found)
 
     def relocations(self, ignored_prefixes: Sequence[str] = ()) -> tuple[Relocation, ...]:
-        """Return each relocation entry, with the name of its symbol (THE RELOCATIONS).
+        """Return each relocation entry, with the name of its symbol (the relocations).
 
         Args:
             ignored_prefixes: The prefixes of section names, such as ".debug".  The function does not read the
@@ -985,7 +985,7 @@ class Member:
         return ()
 
     def symbol_name(self, symbol: Symbol | None) -> str:
-        """Return the name of the symbol of a relocation: the name of its section for a section symbol (THE RELOCATIONS)."""
+        """Return the name of the symbol of a relocation: the name of its section for a section symbol (the relocations)."""
         if symbol is None or symbol.index == 0:
             return ""
         if symbol.kind == STT_SECTION and not symbol.name:
@@ -994,7 +994,7 @@ class Member:
         return symbol.name
 
     def segments(self) -> tuple[Segment, ...]:
-        """Return each entry of the program header table, or no entry for a file with no table (THE SEGMENTS).
+        """Return each entry of the program header table, or no entry for a file with no table (the segments).
 
         Complexity: linear in the number of program headers.
 
@@ -1052,7 +1052,7 @@ class Member:
     def properties(self) -> tuple[Property, ...]:
         """Return each program property of the segment PT_GNU_PROPERTY, or none for a file with no such segment.
 
-        THE PROPERTIES tells the read.  Complexity: linear in the program headers and the bytes of the segment.
+        The properties tell the read.  Complexity: linear in the program headers and the bytes of the segment.
 
         Raises:
             ElfError: If the program header table, the segment, a note or a property is not fully in the file
@@ -1066,7 +1066,7 @@ class Member:
         return note_properties(bytes(self.buffer[begin : begin + segment.file_size]), self.where)
 
     def file_type(self) -> int:
-        """Return e_type of the ELF header, such as ET_EXEC or ET_DYN (THE FILE TYPE)."""
+        """Return e_type of the ELF header, such as ET_EXEC or ET_DYN (the file type)."""
         (kind,) = struct.unpack_from("<H", self.buffer, self.start + TYPE_AT)
         return int(kind)
 
@@ -1076,7 +1076,7 @@ class Member:
         return int(machine)
 
     def init_functions(self) -> tuple[str, ...]:
-        """Return the name of the function of each entry of .preinit_array and .init_array (THE INIT ARRAYS).
+        """Return the name of the function of each entry of .preinit_array and .init_array (the init arrays).
 
         The entries of .preinit_array come first.  When the address of an
         entry names no function, the entry gives an empty name.  Complexity:
@@ -1111,7 +1111,7 @@ class Member:
     def dynamic(self) -> tuple[DynamicEntry, ...]:
         """Return each entry of the section SHT_DYNAMIC before DT_NULL, with the text of a string tag.
 
-        THE DYNAMIC SECTION tells the read.  A file with no such section gives
+        The dynamic section tells the read.  A file with no such section gives
         no entry.  Complexity: linear in the entries.
 
         Raises:
@@ -1130,7 +1130,7 @@ class Member:
         return tuple(found)
 
     def groups(self) -> tuple[Group, ...]:
-        """Return each group section, in the sequence of the section header table (THE GROUPS).
+        """Return each group section, in the sequence of the section header table (the groups).
 
         Complexity: linear in the sections and the words of the groups.
 
@@ -1164,7 +1164,7 @@ class Member:
 
 
 def archive_spans(data: bytes, where: str) -> Iterator[tuple[str, int, int]]:
-    """Give the name, the start and the length of each member of a GNU archive (THE ARCHIVE), other than its indexes.
+    """Give the name, the start and the length of each member of a GNU archive (the archive), other than its indexes.
 
     Complexity: linear in the number of members.
 
@@ -1258,7 +1258,7 @@ def interpreter(path: str | os.PathLike[str]) -> str | None:
 
 
 def demangle(names: Sequence[str]) -> tuple[str, ...]:
-    """Return the text of each name, as nm --demangle and objdump -C give it (THE DEMANGLER).
+    """Return the text of each name, as nm --demangle and objdump -C give it (the demangler).
 
     One run of c++filt reads all the names.  A name that is not mangled
     gives its own text.
@@ -1283,12 +1283,12 @@ def demangle(names: Sequence[str]) -> tuple[str, ...]:
 
 
 def global_operator(symbol: str) -> str:
-    """Return the operator of a name of the global operator new or delete, else an empty text (THE MANGLED SCOPE)."""
+    """Return the operator of a name of the global operator new or delete, else an empty text (the mangled scope)."""
     return symbol[2:4] if symbol.startswith(MANGLED_MARK) and symbol[2:4] in GLOBAL_OPERATORS else ""
 
 
 def outer_scope(symbol: str) -> str:
-    """Return the first scope of a name that the Itanium C++ ABI mangles, or an empty text (THE MANGLED SCOPE).
+    """Return the first scope of a name that the Itanium C++ ABI mangles, or an empty text (the mangled scope).
 
     Complexity: linear in the length of the first scope.
     """
@@ -1380,7 +1380,7 @@ class PlantedSegment(Record):
 
 
 def property_note(properties: Iterable[tuple[int, bytes]]) -> bytes:
-    """Return the bytes of a note NT_GNU_PROPERTY_TYPE_0 with each (pr_type, data) property (THE PROPERTIES)."""
+    """Return the bytes of a note NT_GNU_PROPERTY_TYPE_0 with each (pr_type, data) property (the properties)."""
     descriptor = b""
     for kind, data in properties:
         descriptor += PROPERTY_LAYOUT.pack(kind, len(data)) + data

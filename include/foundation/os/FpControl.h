@@ -4,7 +4,7 @@
 // reads or writes the floating-point control register of a thread: MXCSR on
 // x86_64, FPCR on aarch64.
 //
-// THE REGISTER
+// Register
 //   x86_64, MXCSR (32 bits):
 //     bits 0-5    the sticky exception flags (IE DE ZE OE UE PE)
 //     bit 6       DAZ, a subnormal input reads as zero
@@ -18,7 +18,7 @@
 //                 double precision, while FPCR.AH is zero
 //   The exception flags of aarch64 are in FPSR, not in FPCR.
 //
-// THE ENCODING
+// Encoding
 //   FpControlWord::with_mode puts a mode into a word and keeps each other
 //   bit, apart from two.  On x86_64 it clears the sticky flags.  On aarch64
 //   it clears FZ16, because a half result is never flushed on x86_64 either
@@ -28,7 +28,7 @@
 //   false for it.  FpControlWord::mode reads the three settings back, so a
 //   compare of two modes ignores the sticky flags and each other bit.
 //
-// THE SCOPE
+// Scope
 //   FpScope<Mode> sets the register of the calling thread to Mode for its
 //   life, and it writes back the word of before at its end.  Each scope takes
 //   a new epoch, which is unique in the process, and the thread keeps the
@@ -38,7 +38,7 @@
 //   mode is open.  A kernel context keeps the epoch of the scope that it came
 //   from (foundation/effects/Ctx.h).
 //
-// THE COST
+// Cost
 //   A write of MXCSR can serialize the FP pipeline, so a scope writes the
 //   register only when the mode of the register differs from its mode.
 //   bench/bench_fp_control.cpp measures one read and one write.
@@ -235,7 +235,7 @@ CRUCIBLE_PROCESS_WIDE inline constinit core::Atomic<std::uint64_t> fp_scope_epoc
 }  // namespace detail
 
 // True when the scope of EPOCH is the innermost FP scope of the calling
-// thread (THE SCOPE).
+// thread (the scope).
 [[nodiscard]] CRUCIBLE_INLINE bool is_innermost_fp_scope(std::uint64_t epoch) noexcept {
     return epoch != 0 && detail::fp_scope_epoch_of_thread == epoch;
 }

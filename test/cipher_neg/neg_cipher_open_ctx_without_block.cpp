@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::open refuses the cold startup context.  Opening creates the
 // object directory and reads HEAD and the log from storage, which blocks.

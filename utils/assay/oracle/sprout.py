@@ -14,7 +14,7 @@ MuVal.  Three of their networks match our substrates:
 The artifact (doi 10.5281/zenodo.19600644, CC BY 4.0) gives the front end of
 Sprout(A) as source.zip, and MuVal only as a build tree inside an arm64
 container image.  This module builds the two natively in the cache of
-rocq.py, with the opam switch SWITCH (THE TOOLCHAINS of utils/assay/oracle/runner.py
+rocq.py, with the opam switch SWITCH (the toolchains of utils/assay/oracle/runner.py
 says how to make it):
 
   front end  source.zip of the artifact, checked against the SHA-256 of the

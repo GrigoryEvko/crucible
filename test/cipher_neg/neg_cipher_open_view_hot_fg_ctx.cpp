@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::mint_open_view refuses the hot foreground context.  Every write
 // through an open view writes object files and flushes them, so the view

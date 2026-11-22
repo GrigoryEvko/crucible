@@ -4,7 +4,7 @@
 // includer of <linux/tcp.h>, for the names of the TCP options.  It includes
 // no header of the C library, because some declarations of the two kinds of
 // header conflict.  The words and the records of the timestamp calls come
-// from fixy/os/SocketCalls.h (THE KERNEL WORDS).  A call that a signal
+// from fixy/os/SocketCalls.h (the kernel words).  A call that a signal
 // interrupts runs again.
 
 #include <fixy/os/SocketCalls.h>

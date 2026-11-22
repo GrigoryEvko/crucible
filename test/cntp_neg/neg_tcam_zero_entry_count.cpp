@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A table capacity is at least one entry.  The checked mint refuses a zero
 // count while it builds the constant.

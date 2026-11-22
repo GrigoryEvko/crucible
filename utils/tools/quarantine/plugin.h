@@ -2,7 +2,7 @@
 // root, the places, the findings, the rule table and the state of one unit.
 // Each source of the plugin includes this header first.
 //
-// THE SOURCES
+// Sources
 //     Quarantine.cmake builds crucible_quarantine.so from these sources.  Each
 //     rule family of the plugin has one source:
 //         plugin.cpp       the arguments, the hooks of the unit and the report
@@ -11,8 +11,8 @@
 //         regions.cpp      the opt-out regions and their two pragmas
 //         library.cpp      the library entities and the admitted list
 //         owner.cpp        the family owner: each named reference of the code,
-//                          the names that the front end folds (THE FOLDED
-//                          NAMES), the rule owners and the claims of the
+//                          the names that the front end folds (the folded
+//                          names), the rule owners and the claims of the
 //                          rule syscalls
 //         declaration.cpp  the family declaration property: the walk of the
 //                          namespaces, the classes and the templates
@@ -35,7 +35,7 @@
 //         linear.cpp       the family linear: the paths of a body and the
 //                          linear values on them, for the rule must-consume,
 //                          and the shapes of the linear and the branded
-//                          types, for the six rules of THE SHAPES
+//                          types, for the six rules of the shapes
 //         contract.cpp     the contract rule
 //         fresh_brand.cpp  the family fresh brand: the template parameters of a
 //                          mint whose default is a closure, for the rule
@@ -47,7 +47,7 @@
 //                          a borrow match to the sum that the match reads,
 //                          for the rule borrow-match
 //
-// THE RULE TABLE
+// Rule table
 //     utils/rule-table.txt gives the layers of the base, the headers that
 //     each layer can include, the door of each system header, the admitted
 //     entities of the standard library, the quarantined directories, the
@@ -55,7 +55,7 @@
 //     comment gives the rows, and utils/assay/core/ruletable.py reads the
 //     same rows in Python.  The plugin takes the table as rules=PATH.
 //
-// THE FILES
+// Files
 //     Each file has one class, from its real path:
 //         base          a file that a layer row of the table holds
 //         quarantined   a file that a quarantine row of the table holds
@@ -75,7 +75,7 @@
 //     source root and in the build directory.  The quarantine rule applies to
 //     a quarantined file only.  Its rule of the library names also applies to
 //     a base file of the language, and to each other base file in its
-//     sentinel unit (THE BASE KINDS).
+//     sentinel unit (the base kinds).
 //     The plugin takes the build directory as build=PATH.  A file that the
 //     build writes there, such as a generated header or a unit that xxd
 //     writes, has the path kBuildPrefix and its path inside the build
@@ -87,9 +87,9 @@
 //     system_header marks is not a library file (in_library_file_at).  A file
 //     under the root holds no #line directive, no line marker and no #pragma
 //     GCC system_header, because each one changes the file, the line or the
-//     system flag of the code after it (include.cpp, THE PROVENANCE).
+//     system flag of the code after it (include.cpp, the provenance).
 //
-// THE RULES AND THE KINDS
+// Rules and kinds
 //     Each finding has a rule and a kind.  The registry utils/registry.txt
 //     gives each rule of the engine plugin with its kinds, and the part kinds
 //     of the rule registry compares those kinds with the table kRuleKinds
@@ -150,7 +150,7 @@
 //     upward-include        an include of a header of a higher layer, or of a
 //                           file outside the base, by a base file
 //     base-std-entity       a std-entity in a base file that is no file of the
-//                           language, in its sentinel unit (THE BASE KINDS)
+//                           language, in its sentinel unit (the base kinds)
 //     base-std-object       the same, for a std-object
 //     base-c-library-object the same, for a c-library-object
 //     base-c-library-call   the same, for a c-library-call
@@ -162,7 +162,7 @@
 //                           memset onto such a type from a different type, and
 //                           a member of such a type of a union with a second
 //                           member of bytes.  It is an error in each file under
-//                           the root and in each mode (THE CLOSED TAGS of
+//                           the root and in each mode (the closed tags of
 //                           library.cpp)
 //     opted-out           a finding of each kind of each rule, inside a region
 //                           that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
@@ -196,7 +196,7 @@
 //     upward-name           a declaration of the namespace of a higher project
 //                           root in a base file, or a reference to such a
 //                           declaration that a base file spells
-//     The rule door-unit (include.cpp, THE DOOR UNITS):
+//     The rule door-unit (include.cpp, the door units):
 //     header-door           an include of a door header by its owner, when the
 //                           owner is no source file
 //     mixed-headers         the include that adds the second family of system
@@ -211,9 +211,9 @@
 //                           attribute or GCC optimize pragma turns on a
 //                           fast-math option that the command line does not
 //                           turn on
-//     The rules of the families declaration property (declaration.cpp, THE
-//     FAMILY) and expression shape (expression.cpp) read each quarantined
-//     file, and a base file in its sentinel unit (THE SENTINEL).  A finding of
+//     The rules of the families declaration property (declaration.cpp, the
+//     family) and expression shape (expression.cpp) read each quarantined
+//     file, and a base file in its sentinel unit (the sentinel).  A finding of
 //     such a rule is an error only in the mode error, no opt-out region covers
 //     it, and the module of its rule judges it against the ledger of the rule
 //     (is_family_kind).  A record is no finding (is_record_kind).
@@ -256,22 +256,22 @@
 //     marker-without-object a marked declaration that holds no such object
 //     thread-bound-static   an object with static storage duration whose type
 //                           holds a class that states thread_bound{}
-//                           (declaration.cpp, THE THREAD-BOUND STATICS)
+//                           (declaration.cpp, the thread-bound statics)
 //     loan-key-static       an object with static or thread storage duration
 //                           whose type reaches a loan key or a keyed owner
 //                           through a path that is not const (declaration.cpp,
-//                           THE LOAN-KEY STATICS)
+//                           the loan-key statics)
 //     The rule lifetime-twin:
 //     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
 //                           no deleted overload that refuses a temporary there
 //     missing-mark          a parameter by a const reference that a return
 //                           borrows, with no mark and no overload that takes a
-//                           temporary there (declaration.cpp, THE BORROWED
-//                           PARAMETERS)
-//     The rule view-escape (escape.cpp, THE FINDING, in each mode):
+//                           temporary there (declaration.cpp, the borrowed
+//                           parameters)
+//     The rule view-escape (escape.cpp, the finding, in each mode):
 //     escaped-borrow        a return of a borrow of a local, of a parameter by
 //                           value or of a temporary
-//     The rule proof-routes (expression.cpp, THE PROOF ROUTES):
+//     The rule proof-routes (expression.cpp, the proof routes):
 //     union                 a union definition
 //     pointer-cast          a cast to a pointer or a reference to a proof type
 //     allocator             an allocator of the library of a proof type
@@ -306,10 +306,10 @@
 //     padded-return         the same, for the return type of a function
 //     padded-parameter      the same, for a parameter that a function takes by
 //                           value
-//     The rule refined-pre-subsumption (expression.cpp, THE REFINED PARAMETERS):
+//     The rule refined-pre-subsumption (expression.cpp, the refined parameters):
 //     retest                a precondition that tests again the predicate of a
 //                           refined parameter
-//     The rule syscalls (expression.cpp, THE GRANTS):
+//     The rule syscalls (expression.cpp, the grants):
 //     not-granted           a system call that the grant file issues and that
 //                           its grant alias does not name
 //     not-issued            a system call that the grant alias names and that
@@ -319,12 +319,12 @@
 //     unread-grant          a grant file whose alias, enumeration, grants or
 //                           calls the plugin cannot read
 //     compared              no finding: the unit compared the two sets
-//     The rule home of the family home (home.cpp, THE SITES) reads where a
+//     The rule home of the family home (home.cpp, the sites) reads where a
 //     definition or a specialization stands.  A finding of the rule is an
 //     error only in the mode error, no opt-out region covers it, and the
 //     module of the rule judges it against the ledger of the rule
 //     (is_family_kind).  The class of a home row selects the sites and the
-//     kinds of its entity (home.cpp, THE CLASSES):
+//     kinds of its entity (home.cpp, the classes):
 //     outside-home          a specialization of a template of a trait row, or
 //                           a declaration of a namespace of a trait row,
 //                           outside its home
@@ -349,8 +349,8 @@
 //     at-home               no finding: one site that a path of a home row
 //                           admits, so that the module of the rule finds a
 //                           home row with no site
-//     The rules of the family owner (owner.cpp, THE OWNER ROWS, THE CLAIMS and
-//     THE NAMES OF THE SOURCE) read where the code uses an entity.  A finding
+//     The rules of the family owner (owner.cpp, the owner rows, the claims and
+//     the names of the source) read where the code uses an entity.  A finding
 //     of such a rule is an error only in the mode error, no opt-out region
 //     covers it, and the module of its rule judges it against the ledger of
 //     the rule (is_family_kind).  The rule owners:
@@ -373,14 +373,14 @@
 //                           member of a class of include/
 //     walked-return         a function that uses unchecked and returns a member
 //                           of a class that a walk found
-//     The rule syscalls also has (owner.cpp, THE CLAIMS and THE DENIED CALLS):
+//     The rule syscalls also has (owner.cpp, the claims and the denied calls):
 //     raw-syscall           a call of a system call of a syscall row, or a call
 //                           of syscall() with the number of a macro SYS_NAME,
 //                           in a file of the claim trees
 //     outside-door          a use of an entity of an owner row of the kind
 //                           outside the sites of the row
 //     denied-syscall        a raw call of a system call that a deny row names
-//     The rule must-consume of the family linear (linear.cpp, THE KINDS):
+//     The rule must-consume of the family linear (linear.cpp, the kinds):
 //     unconsumed            a linear object that leaves its scope at an exit,
 //                           and no path to that exit consumes it
 //     unconsumed-on-path    a linear object that leaves its scope at an exit,
@@ -399,18 +399,18 @@
 //     option-unconsumed, option-discarded
 //                           a linear sum, such as an Option of a linear
 //                           payload, that can end with its payload, and a
-//                           temporary of one that the code discards (THE SUMS
+//                           temporary of one that the code discards (the sums
 //                           of linear.cpp)
 //     option-known-full, option-known-empty
 //                           a door that needs an empty sum on a sum that each
 //                           path shows full, and a door that needs a full sum
-//                           on a sum that each path shows empty (THE SUMS of
+//                           on a sum that each path shows empty (the sums of
 //                           linear.cpp).  Each finding of the four option
 //                           kinds is an error in each mode (is_each_mode_kind)
 //     borrow-move-out       a function that moves a linear value out of a
 //                           parameter that its caller lends, a reference that
-//                           is not const, and leaves it spent at an exit (THE
-//                           LENT PARAMETERS of linear.cpp)
+//                           is not const, and leaves it spent at an exit (the
+//                           lent parameters of linear.cpp)
 //     closure-move-out      a call of a closure whose call operator moves a
 //                           linear capture out, outside a once door, so a
 //                           second call gives a second value (THE CLOSURES THAT
@@ -444,13 +444,13 @@
 //                           brand-escape: a fresh brand that leaves its scope
 //     scope-static, scope-return
 //                           brand-escape: a value of a scope brand that
-//                           outlives the call of its mint (THE SCOPE BRANDS of
+//                           outlives the call of its mint (the scope brands of
 //                           linear.cpp).  Each finding of the two kinds is an
 //                           error in each mode (is_each_mode_kind)
 //     reentry               brand-reentry: a branded value in a call that can
 //                           reach the function that minted the brand again
 //     The rule specialization-home of the family specialization home
-//     (specialization.cpp, THE KINDS).  Each finding of the rule is an error
+//     (specialization.cpp, the kinds).  Each finding of the rule is an error
 //     in each mode, and an opt-out region covers it (is_each_mode_kind):
 //     specialization        a specialization of a template of the tree outside
 //                           the home of the template, when the template has no
@@ -463,16 +463,16 @@
 //     open-extension        no finding: one record of each template with the
 //                           open mark, at its home, for the module of the rule,
 //                           which refuses a record that no ledger row admits
-//     The rule fresh-brand of the family fresh brand (fresh_brand.cpp, THE
-//     KINDS).  Each finding of the rule is an error in each mode, and an
+//     The rule fresh-brand of the family fresh brand (fresh_brand.cpp, the
+//     kinds).  Each finding of the rule is an error in each mode, and an
 //     opt-out region covers it (is_each_mode_kind):
 //     deduced-brand         a template parameter whose default is a closure, a
 //                           fresh brand, in a deduced context of the function
 //                           type of its template
 //     named-brand           such a parameter with no parameter pack before it,
 //                           so an explicit template argument reaches it
-//     The rule base-namespace of the family base namespace (namespace.cpp, THE
-//     KINDS).  Each finding of the rule is an error in each mode, and an
+//     The rule base-namespace of the family base namespace (namespace.cpp, the
+//     kinds).  Each finding of the rule is an error in each mode, and an
 //     opt-out region covers it (is_each_mode_kind):
 //     declaration           a declaration of the namespace foundation or fixy,
 //                           or of a namespace inside them, that a file outside
@@ -482,7 +482,7 @@
 //                           using-directive of the global namespace before a
 //                           file of the base in the unit
 //     The rule definition-home of the family definition home (definition.cpp,
-//     THE KINDS) reads the header of the argument sentinel only.  A finding of
+//     the kinds) reads the header of the argument sentinel only.  A finding of
 //     the rule is an error only in the mode error, and the module of the rule
 //     judges it against the ledger of the rule (is_family_kind):
 //     friend                a friend declaration of a class of the header that
@@ -502,8 +502,8 @@
 //                           that a home row names, and of an out-of-line
 //                           entity that a base source file defines.  The
 //                           module of the rule joins them over the build
-//                           (definition.cpp, THE CLASSES)
-//     The records of the library code (body.cpp, THE RECORDS) come from the
+//                           (definition.cpp, the classes)
+//     The records of the library code (body.cpp, the records) come from the
 //     instructions of each function that the unit compiles.  They have no
 //     rule of the registry.  The tag library-records stands in the place of
 //     the rule of each line.  Each line is a record and no finding
@@ -518,7 +518,7 @@
 //                           import: inside an inlined library body, or one
 //                           that the compiler adds
 //
-// THE SENTINEL
+// Sentinel
 //     The argument sentinel=PATH names a header of include/, relative to the
 //     source root.  Only test/layer/CMakeLists.txt gives it, to the one unit
 //     of the target all that is the sentinel of that header.  The walks of
@@ -527,18 +527,18 @@
 //     (is_walked_file).  They read it as they read a quarantined file, and
 //     each family that they drive reads it there: the declaration property,
 //     the expression shape and the owner.  The family home reads the gates of
-//     a header of include/ only in that unit too (home.cpp, THE GATES).  Of
+//     a header of include/ only in that unit too (home.cpp, the gates).  Of
 //     the rules of the quarantine, only the rule of the library names records
-//     a finding of a declaration or an expression of a base file (THE BASE
-//     KINDS).  A finding of a family rule in a base file counts only in that
+//     a finding of a declaration or an expression of a base file (the base
+//     kinds).  A finding of a family rule in a base file counts only in that
 //     unit.  So each base file costs one walk in each build.
 //     The argument not-standalone=PATH names the list of the headers that
 //     cannot compile alone, test/layer/crucible-not-standalone.txt.  Each row
 //     is `HEADER | REASON`, with HEADER relative to include/.  No unit is the
 //     sentinel of such a header, so the family home reads it in each unit
-//     that includes it (home.cpp, THE SCOPE).
+//     that includes it (home.cpp, the scope).
 //
-// THE BASE KINDS
+// Base kinds
 //     The rule of the library names reads each base file in its sentinel unit
 //     as it reads a file of the language: with the admit rows of the
 //     language (language_of).  A row with `in` admits only in a file under
@@ -553,7 +553,7 @@
 //     families.  A base file outside its sentinel unit gets no finding of
 //     this rule, so each finding counts in one unit only.
 //
-// THE DOOR ADMISSION
+// Door admission
 //     A door row names the one file of the root that can include a system
 //     header (rule R4), and decision D12 of misc/01_10_2026_quarantine.md
 //     keeps some calls in the C library, each in its door.  So in a source
@@ -562,7 +562,7 @@
 //     finding of the kinds c-library-call and c-library-object, or of their
 //     base kinds.  A call of such a function is a record symbol of the
 //     library code and not a record call, and its inlined body gives no
-//     record (body.cpp, THE SYMBOLS).  The rule artifact-symbols still reads
+//     record (body.cpp, the symbols).  The rule artifact-symbols still reads
 //     the symbol.  The include closure of the door header counts, because
 //     the C library declares a type of a header in a header of bits/, such as
 //     struct sigaction of <signal.h>, and POSIX lets <pthread.h> give the
@@ -590,16 +590,16 @@
 //     A header that a door row names as its owner admits nothing, because a
 //     door is a source file (the rule door-unit).
 //
-// THE SECTION
+// Section
 //     A unit that writes an object puts its report into the section
 //     .crucible.quarantine of the object, in each mode (plugin.cpp).  The
 //     first line is "# crucible-guard 2 stamp=TEXT", and each other line is
 //     "RULE KIND PATH:LINE:COLUMN ENTITY".  utils/assay/readers/sections.py
 //     reads the section.  The entity of an object finding holds no printed
 //     type, and one declaration then gives one line in each unit
-//     (declaration.cpp, THE ENTITY OF AN OBJECT).
+//     (declaration.cpp, the entity of an object).
 //
-// THE COLLECTIONS
+// Collections
 //     GCC collects garbage only in ggc_collect: at the end of each function and
 //     each function template at the top level, in c_parse_final_cleanups, and
 //     in the middle end.  A nested function, a constant evaluation and a nested
@@ -614,11 +614,11 @@
 //         costs only a second computation, and a finding counts one time for
 //         each place
 //       * a record that PLUGIN_GGC_MARKING drops when its tree has no mark
-//         (definition.cpp, THE READS)
+//         (definition.cpp, the reads)
 //       * a key that no collection reuses: a DECL_UID, a TYPE_UID, a location,
 //         a text, a FileEntry, or the file name of a line map, which libcpp
-//         keeps to the end of the compile.  The facts of THE ACCESSORS and THE
-//         SUMMARIES of linear.cpp and the findings that wait for the end of
+//         keeps to the end of the compile.  The facts of the accessors and the
+//         summaries of linear.cpp and the findings that wait for the end of
 //         the unit hold only such keys
 //       * an identifier, which is a root to the end of the parse
 //         (ggc_protect_identifiers of toplev.cc), with each reader in the parse
@@ -689,7 +689,7 @@ namespace crucible_plugin {
 inline constexpr int kMacroDepth = 1 << 16;
 inline constexpr int kTypeDepth = 4096;
 
-// The class of a file, as THE FILES above gives it.
+// The class of a file, as the files above gives it.
 enum class FileClass : std::uint8_t {
     outside,
     base,
@@ -717,13 +717,13 @@ struct FileEntry {
     // language, whose allowance caps the outside includes, or -1.
     int language_layer = -1;
     // A base file that the argument sentinel names, or the base main file of
-    // the unit (THE SENTINEL).
+    // the unit (the sentinel).
     bool is_sentinel = false;
     // A header of include/ that the list of the argument not-standalone names.
-    // It cannot compile alone, so no unit is its sentinel (THE SENTINEL).
+    // It cannot compile alone, so no unit is its sentinel (the sentinel).
     bool cannot_compile_alone = false;
     // The grant row whose grant file this file is, or null, and the grant row
-    // whose door file this file is, or null (expression.cpp, THE GRANTS).
+    // whose door file this file is, or null (expression.cpp, the grants).
     const GrantRow* grant = nullptr;
     const GrantRow* grant_door = nullptr;
 };
@@ -776,7 +776,7 @@ struct LanguageRow {
     std::vector<std::string> paths;
 };
 
-// One host row or kernel row: the paths of an exempt class (THE FILES).
+// One host row or kernel row: the paths of an exempt class (the files).
 struct ExemptRow {
     std::string kind;  // host or kernel
     std::vector<std::string> paths;
@@ -832,8 +832,8 @@ enum class HeaderCost : std::uint8_t {
 };
 
 // One cite row: the predicate class of a refinement, and the decide
-// procedures that test that predicate (expression.cpp, THE REFINED
-// PARAMETERS).
+// procedures that test that predicate (expression.cpp, the refined
+// parameters).
 struct CiteRow {
     std::string predicate;  // the qualified name of the class, with no template arguments
     std::vector<std::string> procedures;
@@ -842,7 +842,7 @@ struct CiteRow {
 // One grant row: the grant file, the qualified name of its grant alias, the
 // qualified name of the enumeration of the system calls, and the door files
 // whose functions stand for the system calls of their bodies
-// (expression.cpp, THE GRANTS).
+// (expression.cpp, the grants).
 struct GrantRow {
     std::string file;
     std::string alias;
@@ -851,9 +851,9 @@ struct GrantRow {
 };
 
 // One witness row: a class that attests to a fact that it cannot see.  The
-// rule witness-roster reads the name of the class (declaration.cpp, THE RULE
+// rule witness-roster reads the name of the class (declaration.cpp, the rule
 // witness-roster), and the rule proof-routes reads it as a proof type
-// (expression.cpp, THE PROOF ROUTES).  The writer of the negative fixtures
+// (expression.cpp, the proof routes).  The writer of the negative fixtures
 // reads the header, the refusal and the expression of a forger
 // (utils/assay/loop/derive/witness_fixtures.py).
 struct WitnessRow {
@@ -902,12 +902,12 @@ enum class Rule : std::uint8_t {
     fresh_brand,
     definition_home,
     // No rule of the registry: the tag of the records of the library code
-    // (THE RULES AND THE KINDS).
+    // (the rules and the kinds).
     library_records,
 };
 
 // The class of a home row, which selects the sites and the kinds of its entity
-// in the rule home (home.cpp, THE CLASSES).
+// in the rule home (home.cpp, the classes).
 enum class HomeClass : std::uint8_t {
     federation,
     owner,
@@ -936,7 +936,7 @@ inline const char* home_class_name(HomeClass home_class) {
     return "unknown";
 }
 
-// One home row or home-args row of the family home (home.cpp, THE ROWS).  The
+// One home row or home-args row of the family home (home.cpp, the rows).  The
 // entity is a qualified name, or one name for each namespace of that name.
 struct HomeRow {
     HomeClass home_class = HomeClass::trait;
@@ -950,12 +950,12 @@ struct HomeRow {
 // The kinds of a finding, which the table below gives.
 enum class Kind : std::uint8_t;
 
-// One owner row of the family owner (owner.cpp, THE OWNER ROWS): a use of
+// One owner row of the family owner (owner.cpp, the owner rows): a use of
 // ENTITY stands only at a site of the row, and each other use is the kind KIND
 // of the rule RULE.  The entity is a qualified name, or the name of a function
 // of the global namespace.  The entity of a row of the kind detail-use is a
 // top namespace, and each namespace named detail inside it is the entity
-// (owner.cpp, THE NAMES OF THE SOURCE).  The kind of the row selects what the
+// (owner.cpp, the names of the source).  The kind of the row selects what the
 // family reads, and the rule RULE gives no more selection.
 struct OwnerRow {
     Rule rule = Rule::syscalls;
@@ -992,13 +992,13 @@ struct RuleTable {
     std::vector<HomeRow> homes;
     std::vector<WitnessRow> witnesses;
     std::vector<OwnerRow> owners;
-    std::vector<std::string> syscalls;  // each name of a syscall row (owner.cpp, THE CLAIMS)
-    std::vector<std::string> primitives;  // the function of each primitive row (owner.cpp, THE CLAIMS)
-    std::vector<std::string> denied_syscalls;  // each name of a deny row (owner.cpp, THE DENIED CALLS)
+    std::vector<std::string> syscalls;  // each name of a syscall row (owner.cpp, the claims)
+    std::vector<std::string> primitives;  // the function of each primitive row (owner.cpp, the claims)
+    std::vector<std::string> denied_syscalls;  // each name of a deny row (owner.cpp, the denied calls)
     std::vector<LinearDoorRow> linear_doors;  // each linear-door row, in the order of the file
 };
 
-// The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and
+// The kinds of a finding (the rules and the kinds above).  opted-out and
 // region are kinds of the report of a unit, and plugin.cpp writes them.
 enum class Kind : std::uint8_t {
     std_entity,
@@ -1244,7 +1244,7 @@ inline const char* rule_name(Rule rule) {
 // The rules of the family owner, in the order of the enumeration.
 inline constexpr Rule kOwnerRules[] = {Rule::syscalls, Rule::owners};
 
-// The rules whose lines are counted lines (THE COUNTED LINES of plugin.cpp):
+// The rules whose lines are counted lines (the counted lines of plugin.cpp):
 // the rules of the family linear.  A line of such a rule in a file of the
 // enforce mode error is an error when the count ledger of the rule has no row
 // of its directory and kind.  A rule with a count ledger joins with one row.
@@ -1265,9 +1265,9 @@ inline bool is_counted_line_rule(Rule rule) {
 }
 
 // True when an owner row of the kind KIND reads the names that the source
-// spells, from the events of the parser (owner.cpp, THE NAMES OF THE SOURCE).
-// A row of each other kind reads the calls of the walk of a body (THE OWNER
-// ROWS).
+// spells, from the events of the parser (owner.cpp, the names of the source).
+// A row of each other kind reads the calls of the walk of a body (the owner
+// rows).
 inline bool reads_spelled_names(Kind kind) {
     return kind == Kind::door_use || kind == Kind::testing_use || kind == Kind::detail_use
         || kind == Kind::unchecked_use;
@@ -1581,7 +1581,7 @@ inline const char* kind_name(Kind kind) {
     return "unknown";
 }
 
-// The rule of each kind: the kinds of THE RULES AND THE KINDS above that a
+// The rule of each kind: the kinds of the rules and the kinds above that a
 // rule other than the quarantine rule lists, and the quarantine rule for each
 // other kind.
 inline Rule rule_of(Kind kind) {
@@ -1759,9 +1759,9 @@ inline Rule rule_of(Kind kind) {
 // True for a kind whose finding is an error in each mode: the contract rule,
 // the rules binding-hook and borrow-match, the unit facts, the findings of the
 // rules specialization-home, base-namespace and fresh-brand, the escapes of a
-// scope brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp), the
-// end of a linear sum with a payload of the rule must-consume (THE SUMS of
-// linear.cpp), a bit copy into the tag of a sum (THE CLOSED TAGS of
+// scope brand of the rule brand-escape (the scope brands of linear.cpp), the
+// end of a linear sum with a payload of the rule must-consume (the sums of
+// linear.cpp), a bit copy into the tag of a sum (the closed tags of
 // library.cpp), and a return of a borrow of an object that ends with the frame
 // of the rule view-escape (escape.cpp).  No enforce mode changes such a
 // finding, and an opt-out region covers it.
@@ -1885,7 +1885,7 @@ struct RuleKind {
 // Each kind that the plugin can give, with its rule.  A finding of the kind
 // replace-pending has the entry of its admit row after the kind and a colon.
 // The records of the library code have no rule, and the table does not hold
-// their kinds (THE RULES AND THE KINDS).
+// their kinds (the rules and the kinds).
 inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "std-entity"},
     {"quarantine", "std-object"},
@@ -2127,7 +2127,7 @@ struct PendingInclude {
 };
 
 // An #include directive of a header of the C library in a door unit, and its
-// target when the door admission resolved it (THE DOOR ADMISSION).
+// target when the door admission resolved it (the door admission).
 struct LibraryInclude {
     PendingInclude directive;  // place.file is the includer
     const FileEntry* target = nullptr;
@@ -2177,7 +2177,7 @@ struct IncludeEdge {
 
 // A reference of the code to a declaration of a namespace of a seal row, at
 // a place in a base or a quarantined file.  The report judges it when it
-// knows the include closure of each seal root (include.cpp, THE SEALS).
+// knows the include closure of each seal root (include.cpp, the seals).
 struct SealedReference {
     Place place;
     std::string scope;  // the namespace of the declaration, such as crucible::ledger
@@ -2219,16 +2219,16 @@ struct State {
     std::string root;  // the real path of the source root, without a final '/'
     std::string build;  // the real path of the build directory, or empty
     // The header of include/ of the argument sentinel, relative to the root,
-    // or empty, and the real path of the main file of the unit (THE SENTINEL).
+    // or empty, and the real path of the main file of the unit (the sentinel).
     std::string sentinel;
     std::string main_real;
     // Each header of include/ that the list of the argument not-standalone
     // names, relative to the root, such as include/crucible/ledger/ProbeSupport.h
-    // (THE SENTINEL).
+    // (the sentinel).
     std::unordered_set<std::string> not_standalone_headers;
     // Each count row above zero of the ledger of each rule of
-    // kCountedLineRules under the root, as "RULE KIND DIRECTORY" (THE COUNTED
-    // LINES of plugin.cpp).
+    // kCountedLineRules under the root, as "RULE KIND DIRECTORY" (the counted
+    // lines of plugin.cpp).
     std::unordered_set<std::string> counted_rows;
     bool was_reported = false;
     RuleTable table;
@@ -2239,7 +2239,7 @@ struct State {
     bool is_error_mode = false;
     // The threshold of the rule padded-list (the argument padded-list-limit of
     // plugin.cpp): a list of more elements than it gives a line, and a list of
-    // fewer or the same number gives none (declaration.cpp, THE RULE
+    // fewer or the same number gives none (declaration.cpp, the rule
     // padded-list).
     std::uint64_t padded_list_limit = 0;
 
@@ -2265,12 +2265,12 @@ struct State {
     // The include rules.
     IncludeCallback previous_include = nullptr;
     PendingInclude pending;
-    // The include closure (include.cpp, THE SEALS): each directive whose
+    // The include closure (include.cpp, the seals): each directive whose
     // target the plugin knows, and each reference to a declaration of a
     // sealed namespace.
     std::vector<IncludeEdge> include_edges;
     std::vector<SealedReference> sealed_references;
-    // The door admission (THE DOOR ADMISSION): for each source file of the
+    // The door admission (the door admission): for each source file of the
     // unit that a door row names as its owner, the target of each include of
     // its own door header.  In a unit whose main file is such a door, each
     // directive of a header of the C library by its includer, and the
@@ -2308,7 +2308,7 @@ struct State {
     // The expansions of assert.
     MacroCallback previous_used = nullptr;
 
-    // The family declaration property (declaration.cpp, THE FAMILY).
+    // The family declaration property (declaration.cpp, the family).
     // DECL_UID keys the facts of a body that PLUGIN_PRE_GENERICIZE reads,
     // because a garbage collection can free a tree before the walk.
     std::unordered_set<unsigned> defined_functions;  // each mint that the unit defines
@@ -2332,7 +2332,7 @@ struct State {
     std::unordered_map<tree, bool> default_argument_of;
     // The declarations that a walk read.  After a clear, a later walk reads a
     // declaration again and gives the same findings.  Only the event of a body
-    // keeps the facts of a door (expression.cpp, THE GRANTS), and each body
+    // keeps the facts of a door (expression.cpp, the grants), and each body
     // has one such event, so a second walk adds no fact.
     std::unordered_set<tree> walked;
     // The trees that the walk of the contract rule visited.
@@ -2460,7 +2460,7 @@ inline bool is_build_file(const std::string& resolved) {
 
 // The entry of one real path, made and kept on the first request.  The first
 // request also resolves the main file of the unit, so classify_by_table knows
-// the base main file (THE SENTINEL).
+// the base main file (the sentinel).
 inline const FileEntry& entry_of_real_path(const std::string& resolved) {
     auto found = state.entries.find(resolved);
     if (found != state.entries.end()) {
@@ -2565,13 +2565,13 @@ inline Place place_of(location_t location, Scope scope) {
     return place;
 }
 
-// True when the use at LOCATION is a use of DECL that its door admits (THE
-// DOOR ADMISSION): the use is in a door file, and the file of DECL is in the
+// True when the use at LOCATION is a use of DECL that its door admits (the
+// door admission): the use is in a door file, and the file of DECL is in the
 // include closure of a door header that the file owns (include.cpp).
 bool is_door_admitted(location_t location, tree decl);
 
 // True when the front end gave DECL no type after an error.  The walks of the
-// end of a unit also run after a compile error (THE HOOKS OF THE UNIT of
+// end of a unit also run after a compile error (the hooks of the unit of
 // plugin.cpp), and they skip such a declaration.
 inline bool is_erroneous_decl(tree decl) {
     return decl == error_mark_node || (DECL_P(decl) && TREE_TYPE(decl) == error_mark_node);
@@ -2583,7 +2583,7 @@ inline bool is_quarantined(location_t location) {
 
 // True when the rule of the library names reads ENTRY with the admit rows of
 // the language: a file of the language, and a base file in its sentinel unit
-// (THE BASE KINDS).  is_sentinel holds only for a base file.
+// (the base kinds).  is_sentinel holds only for a base file.
 inline bool is_read_as_language(const FileEntry& entry) { return entry.language_layer >= 0 || entry.is_sentinel; }
 
 // The file that holds PLACE when the rule of the library names reads it with
@@ -2599,7 +2599,7 @@ inline const FileEntry* language_file_of(location_t location) {
 
 // The kind of a finding of the rule of the library names at PLACE: KIND in a
 // file of the language and in a quarantined file, and its base kind in each
-// other base file (THE BASE KINDS).
+// other base file (the base kinds).
 inline Kind language_kind(Kind kind, const Place& place) {
     if (place.file == nullptr || place.file->file_class != FileClass::base || place.file->language_layer >= 0) {
         return kind;
@@ -2620,7 +2620,7 @@ inline Kind language_kind(Kind kind, const Place& place) {
 
 // True when the walks of the declarations and of the bodies read the file of
 // PLACE in this unit: a quarantined file, a file of the language, and a base
-// file in its sentinel unit (THE SENTINEL).
+// file in its sentinel unit (the sentinel).
 inline bool is_walked_file(const Place& place) {
     return place.file_class == FileClass::quarantined || language_of(place) != nullptr;
 }
@@ -2640,7 +2640,7 @@ inline bool is_worth_a_walk(location_t location) {
 
 // True when a finding of a rule with a base scope counts at PLACE in this
 // unit: in a quarantined file, and in a base file only in its sentinel unit
-// (THE SENTINEL).
+// (the sentinel).
 inline bool counts_in_unit(const Place& place) {
     return place.file_class == FileClass::quarantined
         || (place.file_class == FileClass::base && place.file != nullptr && place.file->is_sentinel);
@@ -2741,7 +2741,7 @@ inline void record(Kind kind, location_t location, const std::string& entity) {
 // A finding of the rule of the library names: a use of a library entity that
 // no admit row admits, or that a row with `until` admits.  It counts in a
 // quarantined file and in each file of language_of, with the base kind in a
-// base file that is no file of the language (THE BASE KINDS).  Each other kind
+// base file that is no file of the language (the base kinds).  Each other kind
 // is no finding in a base file, because the base holds the raw pointers, the
 // arrays and the builtins of its families.  The caller decides the admission
 // with the admit rows of the file that holds LOCATION, and a finding of a
@@ -2832,12 +2832,12 @@ inline bool macro_number(const std::string& name, int depth, long long& number) 
 // false after an error.
 bool load_rule_table(const std::string& path);
 // rule_table.cpp: reads the list of the headers that cannot compile alone at
-// PATH into state.not_standalone_headers (THE SENTINEL).  Returns false after
+// PATH into state.not_standalone_headers (the sentinel).  Returns false after
 // an error.
 bool load_not_standalone(const std::string& path);
 // rule_table.cpp: reads the count rows of the ledger of each rule of
-// kCountedLineRules under the source root into state.counted_rows (THE
-// COUNTED LINES of plugin.cpp).  A tree with no such ledger has no row.
+// kCountedLineRules under the source root into state.counted_rows (the
+// counted lines of plugin.cpp).  A tree with no such ledger has no row.
 // Returns false after an error.
 bool load_counted_rows();
 
@@ -2876,7 +2876,7 @@ std::string simple_name(tree decl);
 std::string qualified_name(tree decl);
 // The text of a type or of a declaration, with each template argument and
 // with the name T<DEPTH>_<POSITION> for each template parameter (library.cpp,
-// THE TEXT OF A KEY).  Each unit prints one text for one type.  The plugin
+// the text of a key).  Each unit prints one text for one type.  The plugin
 // prints each type and each declaration of an entity with these two
 // functions only.
 std::string type_text(tree type);
@@ -2897,7 +2897,7 @@ bool is_standard_class(tree type);
 void record_pending_class(const LibraryClasses& classes, location_t location, const std::string& suffix = {});
 LibraryClasses library_classes_at(tree type, location_t location, Use use, const FileEntry*& language);
 void record_named_entities(tree type, location_t location, const FileEntry* language = nullptr);
-// THE CLOSED TAGS (library.cpp): register_closed_tags() reads each body for a
+// Closed tags (library.cpp): register_closed_tags() reads each body for a
 // bit copy into a type that holds the tag of a sum, and report_forged_tag()
 // gives the error of one such finding that no region opts out.
 void register_closed_tags(const char* plugin_name);
@@ -2914,12 +2914,12 @@ void record_namespace_name(tree ns, const std::string& member, location_t locati
 void check_scope_use(tree scope_ref, location_t location);
 void check_type_use(tree type, location_t location);
 void check_using(tree decl);
-// The owner rules (owner.cpp, THE OWNER ROWS and THE CLAIMS): each use of an
+// The owner rules (owner.cpp, the owner rows and the claims): each use of an
 // entity of an owner row at NODE, and each call of a system call, in the walk
 // of a body of FUNCTION, or of an initializer when FUNCTION is null.
 void check_owned_node(tree node, location_t location, tree function);
-// The declarations of THE NAMES OF THE SOURCE (owner.cpp), from the walk of
-// the family declaration property (declaration.cpp, THE WALK): a class, a
+// The declarations of the names of the source (owner.cpp), from the walk of
+// the family declaration property (declaration.cpp, the walk): a class, a
 // variable or a static data member, a function, and an alias or a typedef.
 void check_named_class(tree type);
 void check_named_variable(tree decl);
@@ -2927,10 +2927,10 @@ void check_named_function(tree function);
 void check_named_alias(tree decl);
 void register_owner(const char* plugin_name);
 void walk_owner();
-// THE FOLDED NAMES (owner.cpp): a library name that a walk reads at LOCATION,
+// The folded names (owner.cpp): a library name that a walk reads at LOCATION,
 // the library names that TYPE spells, and the judgment of each name of the
 // parser that no walked name claims, at the end of the walks of the parse
-// (THE COLLECTIONS).  IS_DECLARATION is
+// (the collections).  IS_DECLARATION is
 // true for the declared type of a declaration.
 void note_walked_decl(tree named, location_t location);
 void note_walked_type(tree type, location_t location, bool is_declaration);
@@ -2958,8 +2958,8 @@ void walk_declarations();
 void register_declarations(const char* plugin_name);
 std::string function_signature(tree function);
 // The error of one finding of the kind thread-bound-static or loan-key-static
-// that no region opts out (declaration.cpp, THE THREAD-BOUND STATICS and THE
-// LOAN-KEY STATICS).
+// that no region opts out (declaration.cpp, the thread-bound statics and the
+// loan-key statics).
 void report_static_reach(const Finding& finding);
 
 // True when a rule of each body reads the code of FUNCTION in this unit: an
@@ -3007,20 +3007,20 @@ void report_contract(const Finding& finding);
 
 // binding.cpp: the family binding hook, the rule binding-hook.
 // report_binding_hook() gives the error of one finding of the rule that no
-// region opts out (THE ERRORS of binding.cpp).
+// region opts out (the errors of binding.cpp).
 void register_binding_hook(const char* plugin_name);
 void report_binding_hook(const Finding& finding);
 
 // borrow.cpp: the family borrow match, the rule borrow-match.
 // finish_borrow_matches() joins the writes of the arms and the calls after
-// the parse (THE JOIN of borrow.cpp), and report_borrow_match() gives the
+// the parse (the join of borrow.cpp), and report_borrow_match() gives the
 // error of one finding that no region opts out.
 void register_borrow_match(const char* plugin_name);
 void finish_borrow_matches();
 void report_borrow_match(const Finding& finding);
 
 // escape.cpp: the family view escape, the rule view-escape.  It records a
-// return of a borrow of an object that ends with the frame (THE FINDING of
+// return of a borrow of an object that ends with the frame (the finding of
 // escape.cpp), and report_view_escape() gives the error of one finding that no
 // region opts out.
 void register_view_escape(const char* plugin_name);
@@ -3028,11 +3028,11 @@ void report_view_escape(const Finding& finding);
 
 // declaration.cpp: the walk of the returns of escape.cpp gives each parameter
 // by a const reference that a return borrows, and the end of the parse judges
-// it (THE BORROWED PARAMETERS of declaration.cpp).
+// it (the borrowed parameters of declaration.cpp).
 void note_borrowed_parameter(tree function, tree parameter, int index);
 
 // home.cpp: the family home, where a definition or a specialization stands.
-// The place helpers of THE PLACE and THE SITES of home.cpp, which the family
+// The place helpers of the place and the sites of home.cpp, which the family
 // specialization home reads too.
 void register_home(const char* plugin_name);
 void walk_home();
@@ -3043,12 +3043,12 @@ location_t defining_location(tree template_decl);
 
 // specialization.cpp: the family specialization home, the rule
 // specialization-home.  The family home gives it each template that no home
-// row governs (home.cpp, THE SITES).  read_template_home() is true when the
+// row governs (home.cpp, the sites).  read_template_home() is true when the
 // rule seals the template, reads_template_sites() is true when the rule
 // reads its sites, also of a template with the open mark, and
 // note_template_site() judges one site with its template arguments.
 // report_specialization() gives the error of one finding of the rule that no
-// region opts out (THE ERRORS).
+// region opts out (the errors).
 void register_specialization_home(const char* plugin_name);
 bool is_specialization_home_active();
 bool read_template_home(tree template_decl);
@@ -3059,23 +3059,23 @@ void report_specialization(const Finding& finding);
 // fresh_brand.cpp: the family fresh brand, the rule fresh-brand.
 // walk_fresh_brands() reads each template of the unit at its end, and
 // report_fresh_brand() gives the error of one finding of the rule that no
-// region opts out (THE ERRORS).
+// region opts out (the errors).
 void register_fresh_brand(const char* plugin_name);
 void walk_fresh_brands();
 void report_fresh_brand(const Finding& finding);
 
 // namespace.cpp: the family base namespace, the rule base-namespace.
 // finish_base_namespace() walks the namespaces of the base after the parse,
-// and judges each using-directive of the global namespace (THE READS).
+// and judges each using-directive of the global namespace (the reads).
 // report_base_namespace() gives the error of one finding that no region opts
-// out (THE ERRORS).  is_base_namespace_active() is true when the compile runs
+// out (the errors).  is_base_namespace_active() is true when the compile runs
 // the rule.
 void register_base_namespace(const char* plugin_name);
 bool is_base_namespace_active();
 void finish_base_namespace();
 void report_base_namespace(const Finding& finding);
 // namespace.cpp: in_base_namespace() is true for the namespace foundation or
-// fixy of the global namespace and each namespace inside it (THE NAMESPACES of
+// fixy of the global namespace and each namespace inside it (the namespaces of
 // namespace.cpp).  enclosing_namespace_of() gives the namespace that holds
 // DECL through each class, or NULL_TREE for a declaration of a function scope,
 // and CLASS_SCOPE gets the outermost class that holds DECL, or NULL_TREE.
@@ -3084,7 +3084,7 @@ tree enclosing_namespace_of(tree decl, tree& class_scope);
 
 // definition.cpp: the family definition home, the rule definition-home.
 // finish_definition_home() walks the header of the argument sentinel after
-// the parse, or the classes of a base source file (THE READS, THE CLASSES of
+// the parse, or the classes of a base source file (the reads, the classes of
 // definition.cpp).
 void register_definition_home(const char* plugin_name);
 void finish_definition_home();
@@ -3103,15 +3103,15 @@ void check_linear_alias(tree decl);
 // plugin.cpp after the parse.
 void finish_linear_rules();
 // linear.cpp: the error of one finding of the kind self-move of the rule
-// must-consume, in each mode (THE SELF-MOVES).  Its text names the move, so a
+// must-consume, in each mode (the self-moves).  Its text names the move, so a
 // fixture reads it as an error of the compile and not as a finding.
 void report_self_move(const Finding& finding);
 // linear.cpp: the error of one finding of the kinds scope-static and
-// scope-return of the rule brand-escape that no region opts out (THE SCOPE
-// BRANDS of linear.cpp).
+// scope-return of the rule brand-escape that no region opts out (the scope
+// brands of linear.cpp).
 void report_scope_escape(const Finding& finding);
 // linear.cpp: the error of one finding of the kinds option-unconsumed and
-// option-discarded of the rule must-consume that no region opts out (THE SUMS
+// option-discarded of the rule must-consume that no region opts out (the sums
 // of linear.cpp).
 void report_option_end(const Finding& finding);
 

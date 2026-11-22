@@ -4,7 +4,7 @@
 // the host runs, the level that the flags of a unit give, and the pick of a
 // level for the engine.
 //
-// THE X86 LEVELS
+// X86 levels
 //   The psABI of x86-64 names four levels of the instruction set.  Each level
 //   holds each feature of the level below it:
 //     v1  SSE and SSE2: -march=x86-64, the floor of each x86_64 core
@@ -15,7 +15,7 @@
 //
 //   CRUCIBLE_X86_LEVEL_OF_TARGET is the number of the highest level whose
 //   features the flags of the unit give, 1 to 4.  The step of each level on
-//   the ladder of THE TARGET NAMESPACE of foundation/Platform.h is
+//   the ladder of the target namespace of foundation/Platform.h is
 //   target_sse2, target_sse42, target_avx2 and target_avx512bw.  A target can
 //   give more features than its level, as -march=native does, and the number
 //   then names only the level.  The macro is in this header and not in
@@ -34,8 +34,8 @@
 // GCC reads the same facts for __builtin_cpu_supports("x86-64-v3").  Each
 // core of x86_64 has the features of v1, so v1 needs no check.
 //
-// THE PARTS
-//   X86Level                   v1, v2, v3 or v4
+// Parts
+//   X86Level                  v1, v2, v3 or v4
 //   X86Feature                 a feature of a level, which a refusal names
 //   X86FeatureWords            the words of CPUID and of XCR0 that the check
 //                              reads
@@ -252,7 +252,7 @@ inline constexpr X86FeatureBit kX86FeatureBits[] = {
     return X86Level::v1;
 }
 
-// The level that the flags of the unit give (THE X86 LEVELS).  A target can
+// The level that the flags of the unit give (the X86 levels).  A target can
 // give more features than its level, as -march=native does, and the level
 // then names only the level.
 [[nodiscard]] consteval X86Level x86_level_of_target() noexcept {

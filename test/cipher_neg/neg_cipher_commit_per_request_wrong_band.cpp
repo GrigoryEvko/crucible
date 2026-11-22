@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::commit_per_request refuses a region in a band of another
 // lattice.  A cipher tier band says where persisted bytes live, not how

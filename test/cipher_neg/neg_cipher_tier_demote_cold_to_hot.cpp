@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_demote refuses Cold to Hot.  That move goes up the tier chain, and
 // a move up needs a restore or a promotion, not an eviction path.

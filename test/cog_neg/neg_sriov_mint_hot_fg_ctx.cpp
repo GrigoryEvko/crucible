@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // An SR-IOV plan is startup work. The foreground row is empty, so the
 // mint refuses the dispatch thread. A foreground context comes only from

@@ -4,14 +4,14 @@ Every AST gate imports this module.  It replaces the text scanning that the
 older guards do in bash, where a signature is found with a line regex and a
 brace is counted by hand.
 
-WHY THE PINNED CLI IS THE ONLY ENGINE
+Why the pinned CLI is the only engine
     The kit's C++ grammar declares ABI 1019, and no upstream tree-sitter
     runtime loads that.  The `tree_sitter` package on PyPI carries an upstream
     runtime, so it cannot load the grammar either.  The kit's own CLI is the one
     consumer that can.  `setup install tree-sitter` (assay.setup.install)
     installs it, and this module asks that module where it landed.
 
-WHY `parse` AND NOT `query`
+Why `parse` and not `query`
     Measured on 2026-09-21 over this tree.  `tree-sitter parse` reads 3,871
     files in 5.98 s, about 2.3 ms for each one.  `tree-sitter query` costs a
     fixed 195 ms for each file, because it compiles the query against the C++
@@ -19,7 +19,7 @@ WHY `parse` AND NOT `query`
     takes 6 s through `parse` and 12 minutes through `query`.  The matching
     happens here instead.
 
-THE OUTPUT FORMAT
+Output format
     `parse` writes one indented S-expression for each file, and it writes no
     file name between them.  Two rules make the stream unambiguous:
       * A line at indentation 0 opens the next file, in the order of the input
@@ -29,12 +29,12 @@ THE OUTPUT FORMAT
     A file whose parse carries an error also gets one diagnostic line, which
     names the file and the first bad node.  This module collects those.
 
-POSITIONS ARE BYTE COLUMNS
+Positions are byte columns
     tree-sitter counts a column in bytes, not in characters.  Text comes from
     the file bytes at `line_start[row] + column`, so a non-ASCII byte earlier on
     the line cannot shift a slice.
 
-WHAT THE KIT CANNOT READ
+What the kit cannot read
     Each limit below has a self-test case, so a kit change that moves a limit
     fails the self-test until this text is corrected.
       * A macro body is one `preproc_arg` node that holds raw text.  The kit
@@ -59,7 +59,7 @@ WHAT THE KIT CANNOT READ
         They are out of scope for every C++ scan: cpp_files() and
         is_in_cpp_scope() leave them out, so a guard needs no text fallback.
 
-WHY THE ANONYMOUS TOKENS COME FROM THE GAPS
+Why the anonymous tokens come from the gaps
     The S-expression names only the named nodes.  A keyword such as `inline`
     or `namespace`, and an operator such as `&&` or `<<=`, is an anonymous
     token, so it has no line of its own.  Every anonymous token of a node lies
@@ -74,7 +74,7 @@ WHY THE ANONYMOUS TOKENS COME FROM THE GAPS
     The gap lexer costs nothing at parse time, and it runs only for the nodes
     a guard asks about.
 
-THE TREE CACHE
+Tree cache
     parse() and parse_texts() keep each tree in the "tsast" cache of
     utils/assay/core/cache.py.  The name of an entry is the SHA-256 of the
     bytes of the text, of the CLI and grammar binaries of the kit, and of
@@ -91,7 +91,7 @@ THE TREE CACHE
     nodes, under a load average of about 200: the CLI and the reader of its
     output take 13.1 s, and a load of the same trees takes 0.9 s.
 
-THE PARTS OF THE FILL
+Parts of the fill
     `guard check --rule parse-clean --part K/N` gives fill_trees() the C++
     files of part K, and fill_trees() parses each one that the cache does not
     hold, with its macro bodies.  ctest runs the N parts as setup tests of the
@@ -99,7 +99,7 @@ THE PARTS OF THE FILL
     starts after it finds the trees in the cache.  Without the fill, each
     guard that starts cold parses each file again.
 
-NAMES, SCOPES AND DECLARATIONS
+Names, scopes and declarations
     The helpers after cpp_files() read the tree for the questions that the
     guards ask: the parts of a qualified name, the namespaces that enclose a
     node, namespace aliases and using-declarations, attributes, pragmas,
@@ -766,7 +766,7 @@ class Tree:
 def parse(paths: Sequence[Path], *, strict: bool = True) -> Iterator[Tree]:
     """Parse files with the pinned kit and yield one Tree for each of them.
 
-    The tree cache (THE TREE CACHE above) gives each tree that it holds, and
+    The tree cache (the tree cache above) gives each tree that it holds, and
     the CLI parses the rest.  Trees arrive in the order of `paths`, and each
     one is freed when the caller moves on, which keeps a whole-tree scan
     inside a few MB of trees.
@@ -961,7 +961,7 @@ _BATCH = 64
 # A text of this size or more parses in a task of its own, so two slow
 # texts never wait for each other in one worker.
 _BATCH_BYTES = 64 << 10
-# The host is shared, so a call starts at most the job count of the package (THE JOB COUNT of assay.core.proc).
+# The host is shared, so a call starts at most the job count of the package (the job count of assay.core.proc).
 _MAX_WORKERS = proc.DEFAULT_JOBS
 _TREE_IDENTITY: bytes | None = None
 
@@ -1169,7 +1169,7 @@ def _store_misses(directory: Path, misses: Sequence[tuple[Path, str, int]], work
 def fill_trees(root: Path, paths: Sequence[str], workers: int = _MAX_WORKERS) -> int:
     """Parse and store each file of a root that the tree cache does not hold, with the trees of its macro bodies.
 
-    The rule parse-clean gives the files of its part (THE PARTS OF THE FILL).
+    The rule parse-clean gives the files of its part (the parts of the fill).
     Each file that misses also gets the trees of its macro bodies.
 
     Complexity: one hash of each file, plus one parse of each file and of
@@ -1280,7 +1280,7 @@ def _reparse(directory: Path, key: str, path: Path, data: bytes) -> Tree:
 
 
 def _evict_trees(directory: Path) -> None:
-    """Hold the tree cache under its size and age limits when its turn is due (utils/assay/core/cache.py, THE TURN)."""
+    """Hold the tree cache under its size and age limits when its turn is due (utils/assay/core/cache.py, the turn)."""
     cache_dir.hold_bound(directory, cache_dir.LIMITS[TREE_CACHE])
 
 

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_demote refuses a payload that cannot move.  A demotion consumes the
 // source band and moves its value into the band of the colder tier, so the

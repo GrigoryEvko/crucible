@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Integrity fixture #1: raw CNT-P payload bytes cannot enter an API that
 // requires successful end-to-end integrity verification.

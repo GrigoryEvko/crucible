@@ -38,7 +38,7 @@ static_assert(sizeof(core::Atomic<std::uint32_t>) == sizeof(std::uint32_t),
 #endif
 }
 
-// The choice of each core of the architecture (THE CHOICE of the header).
+// The choice of each core of the architecture (the choice of the header).
 [[nodiscard]] constexpr SpinChoice base_choice() noexcept {
 #if defined(__x86_64__)
     return SpinChoice{.plain = SpinArm::pause, .word = SpinArm::pause};

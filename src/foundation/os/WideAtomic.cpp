@@ -1,6 +1,6 @@
 // The door of foundation/os/WideAtomic.h: the start-up hook that reads if an
 // aligned vector move of 16 bytes is one access on the cores of the host
-// (THE LOAD AND THE STORE ON X86-64 of the header).
+// (the load and the store on x86-64 of the header).
 //
 // The hook reads CPUID through foundation/os/Cpuid.h, with the facts of
 // libatomic/config/x86/init.c of GCC 16: the bits AVX and CMPXCHG16B of leaf

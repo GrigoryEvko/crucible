@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // CogMimic binds a Cog that Mimic can compile for: a compute, network or
 // memory substrate.  A power rail, a sensor or a container has no

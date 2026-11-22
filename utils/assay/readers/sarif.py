@@ -1,6 +1,6 @@
 """sarif — read the SARIF log of a GCC compile into records, and give the text lines of the records.
 
-THE FILE
+File
     GCC writes one SARIF 2.1.0 log for each compile with the option
     SARIF_FLAG and a path (`-fdiagnostics-add-output=sarif:file=PATH`).  The
     log holds one run, and the run holds one result for each diagnostic at the
@@ -19,7 +19,7 @@ THE FILE
     starts with `gcc/`.  In the log of a compiler without that patch, a nested
     diagnostic has no `gcc/kind`, and parse() refuses the log.
 
-THE INTERNAL COMPILER ERROR
+Internal compiler error
     GCC writes an internal compiler error as a notification of the
     invocation (`toolExecutionNotifications`), and not as a result.  The
     notification has the level `error`, a message such as "Segmentation
@@ -33,17 +33,17 @@ THE INTERNAL COMPILER ERROR
     After an earlier error, GCC writes no notification.  It prints
     "confused by earlier errors, bailing out", and the log then holds only
     the earlier error.  The exit status of the compiler is then the only
-    sign of the internal compiler error (assay.loop.fixture.store, The
+    sign of the internal compiler error (assay.loop.fixture.store, the
     internal compiler error).
 
-THE MESSAGE
+Message
     A SARIF message writes each literal "{" and "}" two times, and it writes a
     hyperlink as "[TEXT](URL)" (SARIF 2.1.0, sections 3.11.5 and 3.11.6).  The
     reader gives the plain text: one "{" or "}", and the text of a hyperlink
     with no URL.  GCC writes no placeholder, and it puts no backslash before a
     bracket.
 
-THE TEXT LINES
+Text lines
     render() gives the lines that the text output of GCC prints for the
     records.  The lines hold the nested diagnostics with their bullets, their
     locations and the context lines.  After a diagnostic of the kind
@@ -52,7 +52,7 @@ THE TEXT LINES
     regular expressions to these lines.  The expressions then read only the
     text of the compiler, and not the text of the fixture.
 
-THE DIAGNOSTICS OF THE PLUGIN
+Diagnostics of the plugin
     The quarantine plugin of utils/tools/quarantine/ gives each finding as a
     result with the message "quarantine: KIND ENTITY", when the compile
     writes no object and no report.  A note of the mode report has no more
@@ -63,8 +63,8 @@ THE DIAGNOSTICS OF THE PLUGIN
     is_plugin_result() finds such a result, and plugin_finding() gives its
     kind and its entity.
 
-    The plugin names the file of a finding by the path of `realpath()` (THE
-    FILES of utils/tools/quarantine/plugin.h).  GCC names the file of the
+    The plugin names the file of a finding by the path of `realpath()` (the
+    files of utils/tools/quarantine/plugin.h).  GCC names the file of the
     result by the path that the compile opened.  A compile with an include
     directory of links, such as layer-roots/ of a build, then gives the path
     through the link.  A compile can open a file by a relative path.  The text
@@ -105,10 +105,10 @@ _INDENT = "  "
 # The line that GCC prints after a diagnostic of the kind `fatal error`, before it stops.
 TERMINATED = "compilation terminated."
 # The head of the message of each diagnostic of the quarantine plugin, and the separator of the advice of an error
-# (THE DIAGNOSTICS OF THE PLUGIN).
+# (the diagnostics of the plugin).
 PLUGIN_PREFIX = "quarantine: "
 ADVICE_SEPARATOR = "; "
-# The paths that plugin_path() keeps with their path of `realpath()` (THE DIAGNOSTICS OF THE PLUGIN).
+# The paths that plugin_path() keeps with their path of `realpath()` (the diagnostics of the plugin).
 _REAL_PATHS = 4096
 
 
@@ -544,7 +544,7 @@ def _tool(run: Mapping[str, object], where: str) -> str:
 def _notifications(run: Mapping[str, object], bases: Mapping[str, str], where: str) -> list[Diagnostic]:
     """Return a record of the kind `internal compiler error` for each notification of each invocation of a run.
 
-    THE INTERNAL COMPILER ERROR gives the rules.
+    The internal compiler error gives the rules.
 
     Raises:
         SarifError: If a notification does not have the level `error`, or it has no message
@@ -728,7 +728,7 @@ def plugin_path(record: Diagnostic, directory: Path | str) -> str:
     """Return the path of `realpath()` for the file of a result of the plugin, or an empty text with no file.
 
     GCC names the file of a result by the path that the compile opened, also a path through a link.  A relative path
-    is relative to `directory`, the working directory of the compile (THE DIAGNOSTICS OF THE PLUGIN).
+    is relative to `directory`, the working directory of the compile (the diagnostics of the plugin).
     Complexity: one call of `realpath()` for each different path, with a bounded cache.
     """
     return _resolved(os.path.join(directory, record.path)) if record.path else ""
@@ -848,7 +848,7 @@ def render(log: Log, hidden: Callable[[Diagnostic], bool] | None = None) -> Rend
     (Diagnostic.is_error_head).  Each other unit is a part of the group before
     it, and the units before the first head are a part of the first error.
     A result that `hidden` accepts gives only the context lines before it
-    (THE DIAGNOSTICS OF THE PLUGIN).  Complexity: linear in the number of
+    (the diagnostics of the plugin).  Complexity: linear in the number of
     records.
 
     Raises:

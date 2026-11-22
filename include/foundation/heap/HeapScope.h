@@ -22,13 +22,13 @@
 //   LocalBlock<Class, Brand>         one block of the class from the heap of
 //                                    the scope: linear and not sendable
 //
-// THE SCOPE
+// Scope
 //   mint_heap_scope is a scope mint: its last template parameter is the scope
 //   brand CRUCIBLE_SCOPE_BRAND of foundation/Brand.h, fresh for each call site.
 //   The scope, the permission of the owner that it holds, and each block that
 //   it gives carry that brand.  The door of the tag heap_tag::Owner mints the
 //   permission on the brand with mint_scope_permission of
-//   foundation/permissions/Permission.h (THE SCOPE MINT there).  So:
+//   foundation/permissions/Permission.h (the scope mint there).  So:
 //     - The release of a scope of another brand does not take a block
 //       (neg_heap_scope_release_into_other_brand).
 //     - The concept of the mint refuses a result of the body that names the
@@ -99,7 +99,7 @@ struct Owner final {
 
 }  // namespace heap_tag
 
-// A class with a slab, 1 to 52 (THE SCOPE).
+// A class with a slab, 1 to 52 (the scope).
 template <::foundation::alloc::SizeClass Class>
 concept SlabSizeClass = ::foundation::alloc::is_slab_class(Class);
 
@@ -134,7 +134,7 @@ private:
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
 
-// The scope of the heap of the calling thread (THE SCOPE).  The scope cannot
+// The scope of the heap of the calling thread (the scope).  The scope cannot
 // move, and its destructor is the door that ends the permission it holds.
 template <::foundation::brand::IsBrand Brand>
 class[[= ::foundation::transfer::not_sendable{}]][[= ::foundation::transfer::not_shareable{}]]
@@ -172,7 +172,7 @@ public:
     void release(LocalBlock<Class, Brand>&) = delete("the release takes the block that the caller gives up: pass it "
                                                      "with std::move");
 
-    // The counts of the heap of the scope (THE CENSUS of
+    // The counts of the heap of the scope (the census of
     // foundation/alloc/HeapState.h).
     [[nodiscard]] ::foundation::alloc::HeapCensus census() const noexcept { return heap_->census(); }
 
@@ -207,7 +207,7 @@ template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRU
 
 namespace detail {
 
-// The scope door of heap_tag::Owner (THE SCOPE MINT of
+// The scope door of heap_tag::Owner (the scope mint of
 // foundation/permissions/Permission.h): it builds the key of the scope mint,
 // and the one caller gives it the scope brand of its own call.  The door is
 // private, and mint_heap_scope is its one friend, so no other code opens a

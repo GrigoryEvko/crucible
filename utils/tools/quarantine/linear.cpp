@@ -1,13 +1,13 @@
-// The family linear: the rule must-consume and the six rules of THE SHAPES.
+// The family linear: the rule must-consume and the six rules of the shapes.
 // Each path of a body uses a linear value exactly one time
 // (misc/12_10_2026_linear.md, P1).  The rule must-consume reads the C++
 // statement tree of each body at PLUGIN_PRE_GENERICIZE, before cp_genericize
 // lowers it.  It walks the paths of the body forward, with the states dead,
 // live, consumed and maybe for each object, and with a fixed point for each
 // loop.  It runs only with the argument must-consume=on of plugin.cpp, and the
-// rules of THE SHAPES run only with the argument linear-shapes=on.
+// rules of the shapes run only with the argument linear-shapes=on.
 //
-// THE LINEAR TYPES
+// Linear types
 //     The marker of include/foundation/Linear.h decides, as the trait
 //     is_linear_type does.  A class or a union is linear when it carries the
 //     P3394 annotation foundation::linear::linear.  GCC keeps an annotation as
@@ -23,11 +23,11 @@
 //     a class can move from the constructors that the class declares, and it
 //     declares no implicit member and instantiates nothing.
 //
-// THE OBJECTS
+// Objects
 //     The rule tracks a linear local, a structured binding of a linear type, a
 //     parameter of a linear class by value and a parameter of an rvalue
 //     reference to a linear class.  It tracks a parameter of a reference that
-//     is not const to a linear class as a lent object (THE LENT PARAMETERS).
+//     is not const to a linear class as a lent object (the lent parameters).
 //     A local reference that extends the life of
 //     a linear temporary, such as T&& name = T{}, auto&& name = make() or
 //     T const& name = make(), and the hidden range reference of a range-based
@@ -39,15 +39,15 @@
 //     tracks no object of a move constructor, of a move assignment, or of a
 //     constructor or an assignment of a class that carries the annotation,
 //     because these functions define the transfer.  Only the walk of the
-//     summary of a call operator tracks a capture (THE SUMMARIES).
+//     summary of a call operator tracks a capture (the summaries).
 //
-// THE CONSUMES
+// Consumes
 //     An object is consumed when it reaches one of these places, through
 //     casts, std::move and std::forward only:
 //       * an argument of a parameter of an rvalue reference or of a class by
 //         value, of a call that is not std::move or std::forward
 //       * the object argument of a member function with the qualifier &&,
-//         also of a member of a base class of the object (THE BASE DOORS)
+//         also of a member of a base class of the object (the base doors)
 //       * the value of a return
 //       * the source of an initialization or an assignment of a linear
 //         object, also of a member, and an element of a braced list, such as
@@ -56,7 +56,7 @@
 //     throw.  The rule reads no exception path, because the tree does not
 //     throw (CLAUDE.md section XII).
 //
-// THE FOLDS
+// Folds
 //     The front end replaces an initializer whose value is a constant with
 //     that value.  A move of an empty token gives a constant, so the fold
 //     removes the consume from the tree.  The fifth patch of GCC
@@ -73,7 +73,7 @@
 //     collects no garbage between such an event and the PLUGIN_PRE_GENERICIZE
 //     of its function, and each collection clears the records of the events.
 //
-// THE DROPPED ELEMENTS
+// Dropped elements
 //     The front end folds an element of a braced list that moves an empty
 //     token to an empty constant.  It then drops the initialization of an
 //     empty field from the CONSTRUCTOR, so the tree keeps no sign of the move,
@@ -84,23 +84,23 @@
 //     of the body: the declaration, the expression statement or the return
 //     with the last start at or before the location of the move.
 //
-// THE DOORS
+// Doors
 //     A door ends each linear value of its frame (P10 of the plan).  A
 //     function that carries the annotation drop_door, detach_door or once_door
 //     is a door, and so is each function that a linear-door row of the rule
 //     table names.  The once door call_once of include/foundation/Linear.h
 //     owns a closure and calls it one time, so a call of the door runs the
-//     summary of the call operator of the closure (THE SUMMARIES).
+//     summary of the call operator of the closure (the summaries).
 //     The rule gives no finding unconsumed, unconsumed-on-path,
 //     discarded-temporary or borrow-move-out in the body of a door.  It still gives
 //     double-consume and assign-over-live there.  It gives the record door for
 //     each linear-door row whose function it reads, and the module of the rule
 //     refuses a row with no record (the rule table is the roster of the doors).
 //
-// THE BODIES
+// Bodies
 //     The rule reads each body of a quarantined file in each unit.  It reads a
 //     body of a base file that is no instance of a template only in the
-//     sentinel unit of that file (THE SENTINEL of plugin.h), and an instance
+//     sentinel unit of that file (the sentinel of plugin.h), and an instance
 //     of a template in each unit that makes it.  It skips a clone of a
 //     constructor or a destructor, because GCC gives a clone a second event on
 //     a body that cp_genericize lowered.  It skips each body of a unit with an
@@ -108,32 +108,32 @@
 //     is_body_read_here of plugin.h gives these bodies, as it gives them to
 //     the rules binding-hook and borrow-match and to the closed tags.
 //
-// THE KINDS
-//     unconsumed           the object leaves its scope at an exit, and no
+// Kinds
+//     unconsumed          the object leaves its scope at an exit, and no
 //                          path to that exit consumes it
 //     unconsumed-on-path   the object leaves its scope at an exit, and only
 //                          some paths to that exit consume it
 //     double-consume       a consume of an object that a path consumed
 //     assign-over-live     an assignment to an object that holds a value that
 //                          a path did not consume: the old value drops
-//     self-move            a move assignment of an object from itself (THE
-//                          SELF-MOVES)
+//     self-move            a move assignment of an object from itself (the
+//                          self-moves)
 //     discarded-temporary  a linear temporary that the code discards, or binds
 //                          to an lvalue reference and then destroys
 //     unanalyzed           a function with a goto or a label, which the rule
 //                          does not read
 //     door                 no finding: a linear-door row that the unit read
 //     option-unconsumed    a linear sum that can end with its alternative, on
-//                          each path or on some paths (THE SUMS)
+//                          each path or on some paths (the sums)
 //     option-discarded     a temporary of a linear sum that the code discards
-//                          (THE SUMS)
+//                          (the sums)
 //     option-known-full    a door that needs an empty sum, such as fill or
 //                          expect_none, on a sum that each path shows full
-//                          (THE SUMS)
+//                          (the sums)
 //     option-known-empty   a door that needs a full sum, such as expect, on a
-//                          sum that each path shows empty (THE SUMS)
+//                          sum that each path shows empty (the sums)
 //     borrow-move-out      a consume of a lent object that a path keeps to
-//                          an exit (THE LENT PARAMETERS)
+//                          an exit (the lent parameters)
 //     closure-move-out     a call of a closure that moves a linear capture
 //                          out, outside a once door (THE CLOSURES THAT MOVE A
 //                          CAPTURE)
@@ -154,7 +154,7 @@
 //     holds the lambda and the type of the closure (THE CLOSURES THAT A CALL
 //     OWNS).
 //
-// THE FIELDS
+// Fields
 //     An object of a class that is linear by its parts gets one slot for each
 //     linear field.  The fields of a base that is linear by its parts count as
 //     fields of the object, as the parts of a Record in the cells of its bases
@@ -166,7 +166,7 @@
 //     field, or of a field after a move of the whole, is a second consume.  A
 //     reference to a field borrows it.
 //
-// THE SUMS
+// Sums
 //     A linear sum is a linear class that carries the annotation sum of
 //     include/foundation/Linear.h: an Option, a Result or a OneOf of a linear
 //     alternative.  It gives the alternative out only through a consumer.  A
@@ -182,7 +182,7 @@
 //     empty, so each new value, each parameter and each value of a call can
 //     be full.  These facts show it empty:
 //       * a constructor with the annotation empties built it, such as the
-//         default constructor of an Option, through the original of THE FOLDS
+//         default constructor of an Option, through the original of the folds
 //       * a member with the annotation empties ran on it, such as take
 //       * a consumer took it, because a consume moves the alternative out
 //       * a test with the annotation tests_empty or tests_full in the
@@ -193,7 +193,7 @@
 //     value to consume, and shows it full.  A builder with fills, such as
 //     some, builds a full sum, and a test that says full shows it full too.
 //     A sum is full at a point only when each path shows it full.
-//     THE KNOWN CONTENT: a member with the annotation needs_empty, such as
+//     The known content: a member with the annotation needs_empty, such as
 //     fill and expect_none, on a sum that the rule shows full gives the kind
 //     option-known-full, and a member with needs_full, such as expect, on a
 //     sum that the rule shows empty gives option-known-empty.  The run-time
@@ -209,8 +209,8 @@
 //     the sum can fill it at each later point: a capture by reference, an
 //     address that is not const in a pointer, and a reference member that is
 //     not const.  So after an alias, no fact shows the sum empty or full.
-//     A consume ends it only up to the next call that can fill it (THE
-//     SUMMARIES, THE ALIASES).  A capture hides each later consume, so a
+//     A consume ends it only up to the next call that can fill it (the
+//     summaries, the aliases).  A capture hides each later consume, so a
 //     captured sum that can be full at its end gives the kind
 //     option-unconsumed.  An empty sum at an exit drops nothing.  A Result
 //     and a OneOf have no member with these annotations, so only a consume
@@ -218,7 +218,7 @@
 //     The rule does not see a sum that a data member, a static object or a
 //     capture holds, or the end of a sum in the body of a door.
 //
-// THE LENT PARAMETERS
+// Lent parameters
 //     A parameter of a reference that is not const to a linear class is a
 //     lent object: the caller keeps the value, and the function borrows it.
 //     So a move out of it leaves the caller a spent value, which looks the
@@ -238,12 +238,12 @@
 //     no consume at its end.  An assignment over a live lent object drops the
 //     value of the caller, so it gives the kind assign-over-live, and an
 //     assignment after a consume gives no line.  The rule drop-door reads no
-//     assignment over a lent parameter when this rule runs (THE SHAPES).  A
-//     capture by reference of a lent object hides each later consume (THE
-//     CAPTURES).  The body of a door, which ends a value in its place, gives no
-//     line borrow-move-out (THE DOORS).
+//     assignment over a lent parameter when this rule runs (the shapes).  A
+//     capture by reference of a lent object hides each later consume (the
+//     captures).  The body of a door, which ends a value in its place, gives no
+//     line borrow-move-out (the doors).
 //
-// THE BASE DOORS
+// Base doors
 //     A member function of a base class gets the base subobject as its object.
 //     The qualifier && of such a member tells that the call takes the object,
 //     as the detach of the base of a session handle does.  So the walk from
@@ -254,7 +254,7 @@
 //     of a base subobject into a parameter consumes nothing, and the object
 //     stays live.
 //
-// THE ACCESSORS
+// Accessors
 //     After a move cast, the walk to the tracked object goes through a member
 //     function with no qualifier && that gives an lvalue reference to a linear
 //     value, such as operator* or value() of std::optional.  The rule reads
@@ -265,7 +265,7 @@
 //     caller, such as a member template with a declared return type, has no
 //     such fact, and its move consumes the object.
 //
-// THE CAPTURES
+// Captures
 //     A lambda initializes a capture by reference with the address of the
 //     object.  The closure hides each later consume, so the object gives no
 //     finding, and the rule linear-capture reports the capture.  A loan key,
@@ -281,7 +281,7 @@
 //     holds by value (consumes_through_const).  Each other linear class stays
 //     a finding, also a class with a door at the end of its scope.
 //
-// THE SUMMARIES
+// Summaries
 //     Three facts of a body serve each later caller in the unit, at the
 //     PLUGIN_PRE_GENERICIZE of the body:
 //       * the capture fields of a closure whose sum the body of its call
@@ -306,7 +306,7 @@
 //     captures by reference and that its summary names holds a payload
 //     again, also after a consume.  A closure with no summary can fill each
 //     such sum, and a closure that a callee takes can fill it at each later
-//     call too (THE ALIASES).  A call that takes a sum by a reference or a
+//     call too (the aliases).  A call that takes a sum by a reference or a
 //     pointer that writes, and whose callee can keep the reference, makes an
 //     alias of the sum.
 //     A callee whose body the unit genericizes after the caller, such as a
@@ -320,9 +320,9 @@
 //     give (judge_deferred_findings).  The fact of a body that gives a sum
 //     to such a callee waits in the same way, and the end of the unit gives
 //     each waiting fact by a least fixed point, so a recursion keeps the
-//     reference.  The facts are keyed by a UID (THE COLLECTIONS of plugin.h).
+//     reference.  The facts are keyed by a UID (the collections of plugin.h).
 //
-// THE ALIASES
+// Aliases
 //     A stored address that is not const, a reference member that is not
 //     const, a callee that can keep a reference, and a closure that a callee
 //     takes can name a tracked sum beside the name of its object.  A write
@@ -340,7 +340,7 @@
 //     capture by reference is no such alias, because the summary of the
 //     closure tells what each call of it does.
 //
-// THE CLOSURES THAT MOVE A CAPTURE
+// Closures that move a capture
 //     A call operator of a lambda has no qualifier &&, so each call of a
 //     closure reads its captures as members of a borrowed object.  A body
 //     that consumes a linear capture, or a linear field of one, leaves a
@@ -367,7 +367,7 @@
 //     each call of that closure meets the test (check_closure_calls).
 //     The entity is FUNCTION: OBJECT (TYPE), with the name of the object of
 //     the closure or the word closure, and the type of the closure.
-//     The kind is a counted line of the ledger (THE COUNTED LINES of
+//     The kind is a counted line of the ledger (the counted lines of
 //     plugin.cpp): a directory of the enforce mode error with no count row of
 //     the kind refuses it at compile time.
 //
@@ -418,17 +418,17 @@
 //     one value, is no finding: the rule reads one function at a time, and the
 //     move assignment of the class is the run-time backstop.
 //
-// THE LIMITS
+// Limits
 //     The rule reads one function at a time.  A consume through a reference or
 //     a member call of a door is not visible to it, and a consume that depends
 //     on a correlated branch, such as a test of has_value(), needs a switch or
 //     a door.  The tests of the empty state of a linear sum are the one such
-//     correlation that the rule reads (THE SUMS).  A template that no unit
+//     correlation that the rule reads (the sums).  A template that no unit
 //     instantiates with a linear type gives no finding.
 //
-// THE SHAPES
+// Shapes
 //     The rules of the shapes read each class, each signature and each body
-//     of the bodies that must-consume reads (THE BODIES), with the same places.
+//     of the bodies that must-consume reads (the bodies), with the same places.
 //     A class is read at PLUGIN_FINISH_TYPE, and an instance of a template
 //     where a declaration or a body names it.  The rules:
 //       linear-containment  a class that holds a linear part, cannot move and
@@ -455,8 +455,8 @@
 //                           static object, an alias outside a body, and the type
 //                           of a local container of the library or function
 //                           pointer.  A brand that a template argument of the
-//                           function or of its class gave is bound (THE BRANDS).
-//                           A scope brand gives the kinds of THE SCOPE BRANDS
+//                           function or of its class gave is bound (the brands).
+//                           A scope brand gives the kinds of the scope brands
 //       brand-reentry       a call with an argument of a brand that the caller
 //                           made, whose callee can reach the caller again in the
 //                           call graph of the bodies of the unit
@@ -465,7 +465,7 @@
 //     (check_linear_alias).  The rule brand-reentry reports at the end of the
 //     walks of the unit (finish_linear_rules).
 //
-// THE BRANDS
+// Brands
 //     GCC gives the closure of a lambda in a default template argument the
 //     translation unit as its context, so no closure tells which function made
 //     it.  A brand is bound at a declaration when a template argument of the
@@ -474,7 +474,7 @@
 //     the function of a stage.  Each other brand came from a mint call or a
 //     decltype in the scope itself.
 //
-// THE SCOPE BRANDS
+// Scope brands
 //     A scope brand names one call of a scope mint, such as mint_branded_scope
 //     of include/foundation/core/Branded.h.  CRUCIBLE_SCOPE_BRAND of
 //     include/foundation/Brand.h writes it: a lambda whose call operator
@@ -513,7 +513,7 @@ enum class Linearity : std::uint8_t {
 };
 
 // The facts of one type: its linearity, and whether the end of the scope of a
-// value of the type is a door (THE LINEAR TYPES).
+// value of the type is a door (the linear types).
 struct TypeFacts {
     Linearity linearity = Linearity::none;
     bool ends_at_scope = false;
@@ -531,7 +531,7 @@ struct LinearNames {
     tree detach_door = NULL_TREE;
     tree scope_end_door = NULL_TREE;
     tree forward = NULL_TREE;
-    // THE SUMS: the annotation of a sum class, and the annotations of its
+    // The sums: the annotation of a sum class, and the annotations of its
     // empty state.
     tree sum = NULL_TREE;
     tree empties = NULL_TREE;
@@ -540,8 +540,8 @@ struct LinearNames {
     tree tests_empty = NULL_TREE;
     tree needs_full = NULL_TREE;
     tree needs_empty = NULL_TREE;
-    // The annotation of the once door (THE DOORS, THE CLOSURES THAT MOVE A
-    // CAPTURE).
+    // The annotation of the once door (the doors, the closures that move a
+    // capture).
     tree once_door = NULL_TREE;
 };
 
@@ -565,7 +565,7 @@ struct LinearMode {
 
 LinearMode linear_mode;
 
-// THE FOLDS: each folded tree with the object and the initializer before the
+// The folds: each folded tree with the object and the initializer before the
 // fold, and the target of each trivial assignment of an empty class by its
 // source.
 struct FoldEntry {
@@ -584,9 +584,9 @@ struct EmptyAssignment {
 std::vector<EmptyAssignment> empty_assignments;
 std::unordered_map<tree, std::size_t> empty_assignment_of_source;
 
-// THE FOLDS: a fold of an element of a braced list that moves a linear local
+// The folds: a fold of an element of a braced list that moves a linear local
 // or parameter.  The front end drops the folded element of an empty field from
-// its CONSTRUCTOR, so the tree can lose the move (THE DROPPED ELEMENTS).
+// its CONSTRUCTOR, so the tree can lose the move (the dropped elements).
 struct ElementFold {
     tree original = NULL_TREE;
     tree folded = NULL_TREE;
@@ -596,7 +596,7 @@ struct ElementFold {
 
 std::vector<ElementFold> element_folds;
 
-// THE ACCESSORS: the DECL_UID of the field of *this that the return statements
+// The accessors: the DECL_UID of the field of *this that the return statements
 // of each accessor give, by the DECL_UID of the accessor, or kWholeObject.  No
 // collection reuses a DECL_UID, so the facts stay for the unit.
 constexpr int kWholeObject = -1;
@@ -688,7 +688,7 @@ bool can_move(tree type, int depth) {
     return result;
 }
 
-// The facts of a type (THE LINEAR TYPES).  An array has the facts of its
+// The facts of a type (the linear types).  An array has the facts of its
 // element.  Complexity: the walk visits each class one time.
 TypeFacts facts_of(tree type, int depth = 0) {
     if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth || !TYPE_P(type)) {
@@ -746,7 +746,7 @@ Linearity linearity_of(tree type) { return facts_of(type).linearity; }
 bool is_linear_type(tree type) { return linearity_of(type) != Linearity::none; }
 
 // Adds each linear field of the class TYPE to FIELDS: its own fields, and the
-// fields of each base that is linear by its parts (THE FIELDS).  Returns false,
+// fields of each base that is linear by its parts (the fields).  Returns false,
 // which fails closed, when a base carries the annotation linear, when two
 // paths of bases reach one field, or when the walk reaches its bound.
 // Complexity: linear in the bases and the fields, and quadratic in the linear
@@ -795,7 +795,7 @@ bool is_linear_or_reference(tree type) {
     return is_linear_type(type);
 }
 
-// True when TYPE is a linear sum (THE SUMS): a linear class that carries the
+// True when TYPE is a linear sum (the sums): a linear class that carries the
 // annotation sum, such as an Option of a linear payload.  An array of sums is
 // no sum.
 bool is_linear_sum(tree type) {
@@ -806,7 +806,7 @@ bool is_linear_sum(tree type) {
     return CLASS_TYPE_P(type) && carries_annotation(TYPE_ATTRIBUTES(type), linear_names.sum) && is_linear_type(type);
 }
 
-// THE SUMMARIES: the capture fields of each closure whose reference names a
+// The summaries: the capture fields of each closure whose reference names a
 // linear sum that the body of the call operator can fill, by the TYPE_UID of
 // the closure, and the capture fields that each path of a call operator
 // leaves empty, by the DECL_UID of the call operator.  Each function whose
@@ -814,7 +814,7 @@ bool is_linear_sum(tree type) {
 // and each function whose PLUGIN_PRE_GENERICIZE gave its fact.  A fact that
 // waits for the facts of callees with a later body holds the DECL_UID of each
 // such callee.  No collection reuses a UID, so the facts stay for the unit
-// (THE COLLECTIONS of plugin.h).
+// (the collections of plugin.h).
 std::unordered_map<unsigned, std::vector<unsigned>> closure_fills;
 std::unordered_map<unsigned, std::vector<unsigned>> closure_empties;
 std::unordered_set<unsigned> keeps_no_sum_reference;
@@ -822,7 +822,7 @@ std::unordered_set<unsigned> returns_sum_reference;
 std::unordered_set<unsigned> summarized_functions;
 std::unordered_map<unsigned, std::vector<unsigned>> waiting_kept_facts;
 
-// THE CLOSURES THAT MOVE A CAPTURE: each call operator whose body moves a
+// The closures that move a capture: each call operator whose body moves a
 // linear capture out, by its DECL_UID.
 std::unordered_set<unsigned> closure_moves_out;
 
@@ -833,8 +833,8 @@ std::unordered_set<unsigned> closure_leaves_capture;
 std::unordered_set<unsigned> closure_summarized;
 
 // True when CALL calls the call operator of a closure that moves a linear
-// capture out, with an implicit object parameter (THE CLOSURES THAT MOVE A
-// CAPTURE).
+// capture out, with an implicit object parameter (the closures that move a
+// capture).
 bool calls_moving_closure(tree call) {
     if (call == NULL_TREE || TREE_CODE(call) != CALL_EXPR) {
         return false;
@@ -845,8 +845,8 @@ bool calls_moving_closure(tree call) {
 }
 
 // True when TYPE, or the type that the reference TYPE names, is a closure
-// whose call operator moves a linear capture out (THE CLOSURES THAT MOVE A
-// CAPTURE).
+// whose call operator moves a linear capture out (the closures that move a
+// capture).
 bool is_moving_closure_type(tree type) {
     if (type != NULL_TREE && TYPE_REF_P(type)) {
         type = TREE_TYPE(type);
@@ -860,7 +860,7 @@ bool is_moving_closure_type(tree type) {
 
 // True when CALL calls a closure that moves a linear capture out, or calls a
 // function with the annotation once_door with such a closure, so the walk
-// must read the object of the closure (THE CLOSURES THAT MOVE A CAPTURE).
+// must read the object of the closure (the closures that move a capture).
 // Complexity: linear in the arguments of the call.
 bool calls_with_moving_closure(tree call) {
     if (calls_moving_closure(call)) {
@@ -902,8 +902,8 @@ bool is_frame_owned_name(tree name) {
 // a temporary, so no second call reaches it, and the rule use-after-move
 // refuses each later use of a name that such a cast spends.  A cast of a
 // borrowed object, such as a parameter by an lvalue reference, a capture or
-// the object behind a pointer, gives nothing up (THE CLOSURES THAT MOVE A
-// CAPTURE).
+// the object behind a pointer, gives nothing up (the closures that move a
+// capture).
 bool is_object_given_up(tree object) {
     bool saw_rvalue = false;
     for (int depth = 0; object != NULL_TREE && depth < kTypeDepth; ++depth) {
@@ -946,7 +946,7 @@ bool is_object_given_up(tree object) {
     return false;
 }
 
-// THE SUMMARIES: what a callee does with a reference parameter that names a
+// The summaries: what a callee does with a reference parameter that names a
 // linear sum, at one point of the unit.
 enum class KeptFact : std::uint8_t {
     keeps_nothing,  // the body keeps no such reference
@@ -1005,7 +1005,7 @@ bool is_sum_capture(tree field) {
 
 // True when FIELD is a capture of a linear value that the body of the call
 // operator can move out: a capture by copy, or a capture by a reference that
-// is not const (THE CLOSURES THAT MOVE A CAPTURE).
+// is not const (the closures that move a capture).
 bool is_linear_capture(tree field) {
     tree type = field != NULL_TREE && TREE_CODE(field) == FIELD_DECL ? TREE_TYPE(field) : NULL_TREE;
     if (type != NULL_TREE && TYPE_REF_P(type)) {
@@ -1040,8 +1040,8 @@ bool carries_linear_annotation(tree function, tree name) {
 }
 
 // True when CALL calls a move assignment of a class: an operator= whose
-// parameter after the object is an rvalue reference to a class (THE
-// SELF-MOVES).  A session handle over a Resource that is no linear class is
+// parameter after the object is an rvalue reference to a class (the
+// self-moves).  A session handle over a Resource that is no linear class is
 // no linear class either, and its move assignment counts too.  A body with
 // such a call is read, also when each object of the body is behind a
 // reference or a pointer.
@@ -1062,7 +1062,7 @@ bool is_move_assignment_call(tree call) {
 
 // True for an accessor: a member function with an implicit object parameter
 // and no qualifier &&, that gives an lvalue reference to a linear value, such
-// as operator* or value() of std::optional (THE ACCESSORS).  A member function
+// as operator* or value() of std::optional (the accessors).  A member function
 // with the qualifier && consumes its object by itself.
 bool is_accessor(tree function) {
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_LANG_SPECIFIC(function) == nullptr
@@ -1113,7 +1113,7 @@ enum class Status : std::uint8_t {
     maybe,  // some paths consumed it
 };
 
-// The content of one tracked sum on the paths that reach a point (THE SUMS).
+// The content of one tracked sum on the paths that reach a point (the sums).
 // A sum is empty only when each path shows it empty, and full only when each
 // path shows it full.  Each other sum can hold a payload, so the default is
 // can_be_full.
@@ -1206,36 +1206,36 @@ bool is_same_state(const FlowState& left, const FlowState& right) {
     return true;
 }
 
-// The bound of the slots of one object: the object and its fields (THE
-// FIELDS).
+// The bound of the slots of one object: the object and its fields (the
+// fields).
 constexpr std::size_t kNoParent = SIZE_MAX;
 
 struct Slot {
     tree decl = NULL_TREE;
     // The field of a slot of one field of the object DECL, or null for the
-    // slot of the whole object (THE FIELDS).
+    // slot of the whole object (the fields).
     tree field = NULL_TREE;
     std::size_t parent = kNoParent;
     std::vector<std::size_t> fields;
-    // The end of the scope of the object is a door (THE LINEAR TYPES).
+    // The end of the scope of the object is a door (the linear types).
     bool ends_at_scope = false;
-    // The object is a linear sum, whose end reads its content (THE SUMS).
+    // The object is a linear sum, whose end reads its content (the sums).
     bool is_sum = false;
     // A capture by reference, a stored address or a reference member names
-    // the sum, so a later write through it can fill the sum (THE SUMS).
+    // the sum, so a later write through it can fill the sum (the sums).
     bool is_aliased = false;
     // A call took the sum by a reference or a pointer that is not const, and
     // the callee can keep it and fill the sum at a later point, so no fact
-    // of the content holds for THE KNOWN CONTENT after it (THE SUMS).
+    // of the content holds for the known content after it (the sums).
     bool is_borrowed = false;
     // A stored address, a reference member, a callee that can keep a
     // reference or a closure that a callee can keep names the sum, so each
-    // call that starts after its consume can fill it again (THE ALIASES).
+    // call that starts after its consume can fill it again (the aliases).
     bool can_refill_at_calls = false;
     // A closure captured the object by reference, so the rule cannot see its
-    // consume, and the rule linear-capture reports the capture (THE CAPTURES).
+    // consume, and the rule linear-capture reports the capture (the captures).
     bool is_escaped = false;
-    // THE SUMMARIES: the object is a capture of a linear value in the body of
+    // The summaries: the object is a capture of a linear value in the body of
     // a call operator, which the call borrows from the closure.  Its end
     // gives no finding.  LEAVES_PAYLOAD tells that a path to an exit can
     // leave a payload in a sum, and LEAVES_MOVED_OUT that a path to an exit
@@ -1247,7 +1247,7 @@ struct Slot {
     bool leaves_moved_out = false;
     bool leaves_live = false;
     unsigned capture_field_uid = 0;
-    // THE LENT PARAMETERS: the object is a parameter that the caller lends,
+    // The lent parameters: the object is a parameter that the caller lends,
     // the location of its first consume, and whether a path reaches an exit
     // with the object or one of its fields consumed.
     bool is_lent = false;
@@ -1279,7 +1279,7 @@ struct PendingFinding {
 };
 
 // One finding of a walk of a body, with its place, before the rule adds it.
-// It holds no tree, so it can wait for the end of the unit (THE SUMMARIES).
+// It holds no tree, so it can wait for the end of the unit (the summaries).
 struct WalkFinding {
     Kind kind = Kind::linear_unconsumed;
     Place place;
@@ -1294,7 +1294,7 @@ struct WalkFinding {
 // The findings of a body that depend on callees with no fact at its walk:
 // the findings of the walk where such a callee can keep a reference, the
 // findings of the walk where it keeps none, and the callees.  The end of the
-// unit adds one of the two lists (THE SUMMARIES).
+// unit adds one of the two lists (the summaries).
 struct DeferredFindings {
     std::vector<WalkFinding> if_kept;
     std::vector<WalkFinding> if_not_kept;
@@ -1303,14 +1303,14 @@ struct DeferredFindings {
 
 std::vector<DeferredFindings> deferred_findings;
 
-// How a walk of a body reads a callee with no fact (THE SUMMARIES).
+// How a walk of a body reads a callee with no fact (the summaries).
 enum class UnknownCallee : std::uint8_t {
     can_keep,
     keeps_nothing,
 };
 
 // What a walk of a body gives: the findings of the rule, or only the
-// summary of a call operator (THE SUMMARIES).
+// summary of a call operator (the summaries).
 enum class WalkPurpose : std::uint8_t {
     findings,
     summary,
@@ -1322,7 +1322,7 @@ enum class WalkPurpose : std::uint8_t {
 // the state of its last pass.
 constexpr int kLoopPasses = 6;
 
-// The state of the walk of a body for THE DROPPED ELEMENTS: each node of the
+// The state of the walk of a body for the dropped elements: each node of the
 // body and of the originals of its folds, and each statement that can own the
 // move of a dropped element.
 struct PresenceWalk {
@@ -1352,13 +1352,13 @@ tree walk_presence(tree* node_pointer, int* walk_subtrees, void* data) {
 }
 
 // How the walk to a tracked object reads a base of the object with no field
-// after it (THE FIELDS, THE BASE DOORS).
+// after it (the fields, the base doors).
 enum class BaseStep : std::uint8_t {
     no_slot,  // a base is no slot, so the walk names no object
     whole_object,  // the walk names the whole object, for the object of a member with the qualifier &&
 };
 
-// The branch of a condition that a path takes (THE SUMS, the tests).
+// The branch of a condition that a path takes (the sums, the tests).
 enum class TestBranch : std::uint8_t {
     condition_true,
     condition_false,
@@ -1366,7 +1366,7 @@ enum class TestBranch : std::uint8_t {
 
 // True when the special member FUNCTION moves or transfers a linear value by
 // its contract: a move constructor or a move assignment, or a constructor or
-// an assignment of a class that carries the annotation linear (THE OBJECTS).
+// an assignment of a class that carries the annotation linear (the objects).
 bool is_transfer_function(tree function) {
     if (DECL_LANG_SPECIFIC(function) != nullptr && move_fn_p(function)) {
         return true;
@@ -1379,7 +1379,7 @@ bool is_transfer_function(tree function) {
 tree capture_field_of(tree node, tree closure);
 void collect_brands(tree type, std::vector<tree>& out, int depth);
 
-// THE KINDS: the text of the linear type of an object or a temporary in the
+// The kinds: the text of the linear type of an object or a temporary in the
 // entity of a line.  type_text of library.cpp gives one text for one type in
 // each unit, with each template argument.  A fresh brand names one call site,
 // so each brand of collect_brands becomes the word "brand".  Two instances of
@@ -1417,7 +1417,7 @@ public:
 
     // The walk of the body.  A second walk of one body takes the dropped
     // elements of the first walk, because the first walk takes the folds of
-    // the body from the list of the unit (THE DROPPED ELEMENTS).
+    // the body from the list of the unit (the dropped elements).
     void run(const Analysis* first_walk = nullptr) {
         if (first_walk != nullptr) {
             orphans_ = first_walk->orphans_;
@@ -1445,10 +1445,10 @@ public:
 
     [[nodiscard]] const std::vector<WalkFinding>& findings() const { return findings_; }
 
-    // The callees with no fact that the walk read (THE SUMMARIES).
+    // The callees with no fact that the walk read (the summaries).
     [[nodiscard]] const std::vector<unsigned>& unknown_callees() const { return unknown_callees_; }
 
-    // THE SUMMARIES: the capture fields of a call operator that each path to
+    // The summaries: the capture fields of a call operator that each path to
     // an exit leaves empty.  A walk with a goto gives none.
     [[nodiscard]] std::vector<unsigned> emptied_capture_fields() const {
         std::vector<unsigned> fields;
@@ -1463,7 +1463,7 @@ public:
         return fields;
     }
 
-    // THE CLOSURES THAT MOVE A CAPTURE: true when a path to an exit of the
+    // The closures that move a capture: true when a path to an exit of the
     // call operator leaves a linear capture consumed, or when the body gives
     // a capture that is such a closure to the once door.  A walk with a goto
     // fails closed for each linear capture (is_unanalyzed).
@@ -1507,33 +1507,33 @@ private:
     // Each lvalue reference local that borrows a tracked object, and that
     // object.  A move through the reference consumes the object.
     std::unordered_map<tree, tree> referent_of_;
-    // THE SUMMARIES: each capture field of a closure of this body that names a
+    // The summaries: each capture field of a closure of this body that names a
     // tracked sum by reference, with that sum, by the TYPE_UID of the closure.
     std::unordered_map<unsigned, std::vector<std::pair<unsigned, tree>>> capture_targets_;
     // Each lvalue reference local, and the object that its initializer names
-    // (self_move_place), also when the rule tracks no object of it (THE
-    // SELF-MOVES).
+    // (self_move_place), also when the rule tracks no object of it (the
+    // self-moves).
     std::unordered_map<tree, tree> alias_place_of_;
     std::vector<std::vector<std::size_t>> scopes_;
     std::vector<Target*> targets_;
     std::vector<SwitchContext*> switches_;
     std::vector<PendingFinding> pending_;
-    // The originals of THE FOLDS that the walk reads at this time.  A folded
+    // The originals of the folds that the walk reads at this time.  A folded
     // tree can be a subtree of its original, so the walk does not read an
     // original inside itself.
     std::vector<tree> open_originals_;
     // The sources of the empty-class assignments that the walk reads at this
-    // time (THE FOLDS), so that the walk of a source does not read its
+    // time (the folds), so that the walk of a source does not read its
     // assignment again.
     std::vector<tree> open_assignments_;
     // The location of the statement after the one that the walk reads, or
     // UNKNOWN_LOCATION at the end of the body.
     location_t next_statement_ = UNKNOWN_LOCATION;
     bool is_unanalyzed_ = false;
-    // THE CLOSURES THAT MOVE A CAPTURE: the body gives a capture of its
+    // The closures that move a capture: the body gives a capture of its
     // closure that moves a linear capture out to the once door.
     bool gives_capture_to_once_door_ = false;
-    // THE DROPPED ELEMENTS: the original of each dropped element of this
+    // The dropped elements: the original of each dropped element of this
     // body, and the statement that owns its move.
     struct Orphan {
         tree original = NULL_TREE;
@@ -1544,7 +1544,7 @@ private:
 
     bool is_exempt_function() const { return is_transfer_function(function_); }
 
-    // THE DROPPED ELEMENTS: each fold of an element that moves a local or a
+    // The dropped elements: each fold of an element that moves a local or a
     // parameter of this function, whose folded tree the body and the originals
     // of its folds do not hold, with the statement that owns the move.  The
     // walk takes the folds of this function from the list.  Complexity: linear
@@ -1605,7 +1605,7 @@ private:
         }
     }
 
-    // Gives DECL a slot when it is a tracked object (THE OBJECTS).
+    // Gives DECL a slot when it is a tracked object (the objects).
     bool track(tree decl, std::size_t& slot) {
         auto found = slot_of_.find(decl);
         if (found != slot_of_.end()) {
@@ -1622,7 +1622,7 @@ private:
             if (purpose_ == WalkPurpose::summary && DECL_HAS_VALUE_EXPR_P(decl) && !is_binding) {
                 return track_capture_borrow(decl, slot);
             }
-            // THE OBJECTS: a reference that extends the life of a temporary,
+            // The objects: a reference that extends the life of a temporary,
             // also the hidden range of a range-based loop, names the object.
             bool is_extending = binds_extended_temporary(decl, DECL_INITIAL(decl));
             if (TREE_STATIC(decl) || DECL_EXTERNAL(decl) || DECL_THREAD_LOCAL_P(decl)
@@ -1641,7 +1641,7 @@ private:
                 return false;
             }
             if (TYPE_REF_P(type)) {
-                // THE LENT PARAMETERS: a reference that is not const lends
+                // The lent parameters: a reference that is not const lends
                 // the object, and a const reference only reads it.
                 is_lent = !TYPE_REF_IS_RVALUE(type);
                 if (is_lent && TYPE_READONLY(TREE_TYPE(type))) {
@@ -1668,7 +1668,7 @@ private:
         return true;
     }
 
-    // THE OBJECTS: true when the local reference DECL extends the life of a
+    // The objects: true when the local reference DECL extends the life of a
     // temporary: its initializer INITIAL gives the address of a temporary, or
     // of the hidden variable that the front end makes for such a temporary.
     // A reference whose initializer calls a function gets INITIAL in an
@@ -1709,7 +1709,7 @@ private:
         return false;
     }
 
-    // THE OBJECTS: a slot for the reference DECL that an initialization after
+    // The objects: a slot for the reference DECL that an initialization after
     // its declaration binds to a linear temporary, in the innermost scope,
     // which holds the declaration.
     void track_extending(tree decl) {
@@ -1729,7 +1729,7 @@ private:
         scopes_.back().push_back(slot);
     }
 
-    // THE SUMMARIES: the proxy DECL of a capture by reference of a linear sum
+    // The summaries: the proxy DECL of a capture by reference of a linear sum
     // in the body of a call operator gets a slot that the closure borrows.
     bool track_capture_borrow(tree decl, std::size_t& slot) {
         tree closure = DECL_CONTEXT(function_);
@@ -1754,7 +1754,7 @@ private:
         return true;
     }
 
-    // THE FIELDS: an object of a class that is linear by its parts gets one
+    // The fields: an object of a class that is linear by its parts gets one
     // slot for each linear field, also of each base that is linear by its
     // parts.  A move of a field consumes its slot, and the move of the last
     // linear field consumes the object.  A class that carries the annotation
@@ -1798,7 +1798,7 @@ private:
 
     // Sets the object of SLOT and each of its fields to STATUS.  A new value
     // can hold a payload, so a live sum can be full until a fact shows it
-    // empty (THE SUMS).
+    // empty (the sums).
     void set_object(FlowState& state, std::size_t slot, Status status) {
         state.set(slot, status);
         if (status == Status::live) {
@@ -1810,7 +1810,7 @@ private:
     }
 
     // The slot of the tracked sum that DECL and FIELD name, or kNoParent for
-    // a field or an object that is no sum (THE SUMS).
+    // a field or an object that is no sum (the sums).
     std::size_t sum_slot(tree decl, tree field) const {
         if (decl == NULL_TREE || field != NULL_TREE) {
             return kNoParent;
@@ -1820,7 +1820,7 @@ private:
     }
 
     // A use of a tracked sum that can fill it, such as a reference that is not
-    // const or an address (THE SUMS).
+    // const or an address (the sums).
     void note_can_be_full(tree decl, tree field, FlowState& state) {
         std::size_t slot = sum_slot(decl, field);
         if (slot != kNoParent && state.is_reachable) {
@@ -1829,7 +1829,7 @@ private:
     }
 
     // A capture by reference, a stored address that is not const or a
-    // reference member that is not const names a tracked sum (THE SUMS).  A
+    // reference member that is not const names a tracked sum (the sums).  A
     // write through it can fill the sum at each later point, so the sum stays
     // one that can be full until a consume, and no test and no take shows it
     // empty after it.
@@ -1842,7 +1842,7 @@ private:
         note_can_be_full(decl, field, state);
     }
 
-    // THE ALIASES: an alias that is no capture of a closure of this body, such
+    // The aliases: an alias that is no capture of a closure of this body, such
     // as a stored address, a reference member or a reference that a callee
     // can keep, can fill the tracked sum at each call after its consume.
     void note_kept_alias(tree decl, tree field, FlowState& state) {
@@ -1855,12 +1855,12 @@ private:
     }
 
     // True when a fact of a test, of take, of fill or of a builder can show
-    // the content of the tracked sum of SLOT: the sum has no alias (THE SUMS).
+    // the content of the tracked sum of SLOT: the sum has no alias (the sums).
     bool can_show_content(std::size_t slot) const { return slot != kNoParent && !slots_[slot].is_aliased; }
 
     // The content of the sum that VALUE, the initializer of a tracked sum,
-    // builds, through the temporaries and the casts of the initializer (THE
-    // SUMS): empty for a constructor that carries the annotation empties, and
+    // builds, through the temporaries and the casts of the initializer (the
+    // sums): empty for a constructor that carries the annotation empties, and
     // full for a constructor or a static member that carries fills, such as
     // some.  The caller gives the initializer before its fold.  Each other
     // value can be full.
@@ -1900,7 +1900,7 @@ private:
     }
 
     // The content of the tracked object DECL, which VALUE initializes, when
-    // DECL is a sum and VALUE builds an empty or a full sum (THE SUMS).
+    // DECL is a sum and VALUE builds an empty or a full sum (the sums).
     void note_initial_content(tree decl, tree value, FlowState& state) {
         std::size_t slot = sum_slot(decl, NULL_TREE);
         if (can_show_content(slot) && state.is_reachable) {
@@ -1908,7 +1908,7 @@ private:
         }
     }
 
-    // THE KNOWN CONTENT: a member of a tracked sum that carries needs_empty,
+    // The known content: a member of a tracked sum that carries needs_empty,
     // such as fill or expect_none, on a sum that each path shows full, and a
     // member that carries needs_full, such as expect, on a sum that each path
     // shows empty.  The run-time check of such a member ends the process on
@@ -1930,7 +1930,7 @@ private:
         }
     }
 
-    // THE TESTS: the branch BRANCH of the condition CONDITION finds a tracked
+    // The tests: the branch BRANCH of the condition CONDITION finds a tracked
     // sum empty or full when the condition is a test of its state, such as
     // is_none() of an Option.  The walk goes through the casts and through !.
     void refine_by_test(tree condition, TestBranch branch, FlowState& state) const {
@@ -1978,7 +1978,7 @@ private:
         }
     }
 
-    // A call of a member function of a tracked sum (THE SUMS): a member that
+    // A call of a member function of a tracked sum (the sums): a member that
     // carries the annotation empties, such as take, leaves the sum empty, and
     // a member that carries fills, such as fill, gives it a new payload to
     // consume.  Each other member that can change the sum, with an object
@@ -2026,7 +2026,7 @@ private:
         return DECL_IOBJ_MEMBER_FUNCTION_P(function_) || DECL_XOBJ_MEMBER_FUNCTION_P(function_);
     }
 
-    // The initializer before the fold of NODE, or NODE (THE FOLDS).  OBJECT is
+    // The initializer before the fold of NODE, or NODE (the folds).  OBJECT is
     // the object that NODE initializes, or null.  An entry of that object comes
     // first.
     tree unfolded(tree node, tree object) const {
@@ -2051,7 +2051,7 @@ private:
     }
 
     // The slot field of the tracked object DECL whose DECL_UID is FIELD_UID, or
-    // null when the object has no slot for it (THE ACCESSORS).
+    // null when the object has no slot for it (the accessors).
     tree field_by_uid(tree decl, int field_uid) const {
         if (field_uid == kWholeObject) {
             return NULL_TREE;
@@ -2064,16 +2064,16 @@ private:
         return NULL_TREE;
     }
 
-    // The tracked object that NODE names through the casts of THE CONSUMES, or
+    // The tracked object that NODE names through the casts of the consumes, or
     // null.  SAW_RVALUE is true when a cast to an rvalue reference or std::move
     // is on the way.  With FIELD, the walk also goes through a member access
-    // to a linear field of the object (THE FIELDS), and FIELD gets that field,
+    // to a linear field of the object (the fields), and FIELD gets that field,
     // or null for the whole object.  After a move cast, it goes through an
     // accessor: a member function that gives a reference to a linear value of
     // its object, such as operator* or value() of std::optional.  The move of
     // that reference consumes the field that the accessor gives, or the object
-    // (THE ACCESSORS).  BASE_STEP tells what a base of the object with no field
-    // after it names (THE BASE DOORS).
+    // (the accessors).  BASE_STEP tells what a base of the object with no field
+    // after it names (the base doors).
     tree strip_to_tracked(tree node, bool& saw_rvalue, tree* field = nullptr,
                           BaseStep base_step = BaseStep::no_slot) const {
         if (field != nullptr) {
@@ -2163,7 +2163,7 @@ private:
                     // A base of the object with no field after it is no
                     // field slot, and neither is a field with no slot.  The
                     // object of a member with the qualifier && names the
-                    // whole object through its base (THE BASE DOORS).
+                    // whole object through its base (the base doors).
                     if (is_base_only) {
                         return base_step == BaseStep::whole_object ? found : NULL_TREE;
                     }
@@ -2202,7 +2202,7 @@ private:
         return NULL_TREE;
     }
 
-    // The object that NODE names, for the test of a self-move (THE SELF-MOVES):
+    // The object that NODE names, for the test of a self-move (the self-moves):
     // NODE through the casts, the addresses, the dereferences, std::move and
     // std::forward, and a local lvalue reference to the object of its
     // initializer.
@@ -2244,7 +2244,7 @@ private:
         return node;
     }
 
-    // True when TARGET and SOURCE name one object (THE SELF-MOVES).  A side
+    // True when TARGET and SOURCE name one object (the self-moves).  A side
     // with a side effect names no object, so two calls or two increments that
     // look alike are no self-move.
     bool is_self_move(tree target, tree source) const {
@@ -2275,7 +2275,7 @@ private:
         return function_text(function_) + ": " + name + " (" + linear_type_text(object_type) + ")";
     }
 
-    // FUNCTION: OBJECT (TYPE) of the tracked object DECL (THE KINDS).
+    // FUNCTION: OBJECT (TYPE) of the tracked object DECL (the kinds).
     std::string entity_of(tree decl) const {
         return function_text(function_) + ": " + simple_name(decl) + " (" + linear_type_text(TREE_TYPE(decl)) + ")";
     }
@@ -2286,7 +2286,7 @@ private:
 
     static bool is_used(Status status) { return status == Status::consumed || status == Status::maybe; }
 
-    // A consume of the object DECL, or of its field FIELD (THE FIELDS).  A
+    // A consume of the object DECL, or of its field FIELD (the fields).  A
     // consume of the whole after a consume of a field, or of a field after a
     // consume of the whole, is a second consume.
     void consume(tree decl, tree field, FlowState& state, location_t location) {
@@ -2319,7 +2319,7 @@ private:
         }
         if (field == NULL_TREE) {
             // A consumer takes the payload out of a sum, so the sum is empty
-            // after it (THE SUMS).
+            // after it (the sums).
             set_object(state, whole, Status::consumed);
             state.set_content(whole, Content::empty);
             return;
@@ -2334,7 +2334,7 @@ private:
         }
     }
 
-    // THE LENT PARAMETERS: an assignment to the field FIELD of the lent
+    // The lent parameters: an assignment to the field FIELD of the lent
     // object DECL gives the field a value again.  The object is live again
     // when each path consumed it, and each other consumed field stays
     // consumed.  An object that the rule does not lend keeps its states,
@@ -2366,7 +2366,7 @@ private:
     }
 
     // True when a live object drops a value at an exit on each path: it has no
-    // field slot, or a field that each path holds (THE FIELDS).  An object
+    // field slot, or a field that each path holds (the fields).  An object
     // whose fields are consumed on some paths only drops a value on a path.
     bool is_live_at_exit(const FlowState& state, std::size_t slot) const {
         if (slots_[slot].fields.empty()) {
@@ -2381,7 +2381,7 @@ private:
     }
 
     // True when a path can reach this point with the object of SLOT or one of
-    // its fields consumed (THE LENT PARAMETERS).
+    // its fields consumed (the lent parameters).
     bool is_spent(const FlowState& state, std::size_t slot) const {
         if (is_used(state.get(slot))) {
             return true;
@@ -2401,12 +2401,12 @@ private:
                 Status status = state.get(slot);
                 const Slot& entry = slots_[slot];
                 if (entry.is_lent) {
-                    // THE LENT PARAMETERS: the caller keeps the object, so its
+                    // The lent parameters: the caller keeps the object, so its
                     // end owes no consume, and a consumed object or field is a
                     // spent value of the caller.
                     slots_[slot].has_spent_exit = entry.has_spent_exit || (!entry.is_escaped && is_spent(state, slot));
                 } else if (entry.is_capture_borrow) {
-                    // THE SUMMARIES: the call borrows the capture, so its end
+                    // The summaries: the call borrows the capture, so its end
                     // gives no finding.  A slot that the walk never made live
                     // fails closed for the two facts.
                     bool is_empty_here = status == Status::consumed || state.get_content(slot) == Content::empty;
@@ -2419,10 +2419,10 @@ private:
                     slots_[slot].leaves_live = slots_[slot].leaves_live || !is_empty_here;
                 } else if (entry.ends_at_scope || (entry.is_escaped && !entry.is_sum)) {
                     // The end of the scope is the door of the object, or a
-                    // capture by reference hides the consume (THE CAPTURES).
+                    // capture by reference hides the consume (the captures).
                 } else if (entry.is_sum && state.get_content(slot) == Content::empty) {
                     // An empty sum holds no payload, so its end drops none
-                    // (THE SUMS).
+                    // (the sums).
                 } else if (status == Status::live && is_live_at_exit(state, slot)) {
                     slots_[slot].has_live_exit = true;
                 } else if (status == Status::live || status == Status::maybe) {
@@ -2633,18 +2633,18 @@ private:
             bool is_borrow = decl_type != NULL_TREE && TYPE_REF_P(decl_type) && !TYPE_REF_IS_RVALUE(decl_type)
                           && !(DECL_DECOMPOSITION_P(decl) && DECL_DECOMP_IS_BASE(decl));
             // A reference to a field, also the base of a structured binding,
-            // borrows the field and consumes nothing (THE FIELDS).
+            // borrows the field and consumes nothing (the fields).
             bool is_field_borrow =
                 field != NULL_TREE && decl_type != NULL_TREE && TYPE_REF_P(decl_type) && !TYPE_REF_IS_RVALUE(decl_type);
             // An address of a tracked sum in a pointer that is not const can
-            // fill the sum (THE SUMS).
+            // fill the sum (the sums).
             bool is_mutable_address =
                 decl_type != NULL_TREE && TYPE_PTR_P(decl_type) && !TYPE_READONLY(TREE_TYPE(decl_type));
             // A reference to a plain local or parameter names that object for
             // the life of the reference.  A reference through a dereference or
             // an index names the object of the pointer or the index of that
             // time, and a later write of either can change the object that the
-            // same expression names, so it names no alias (THE SELF-MOVES).
+            // same expression names, so it names no alias (the self-moves).
             if (is_borrow) {
                 tree place = self_move_place(initial);
                 bool is_plain_object = place != NULL_TREE && place != decl
@@ -2655,7 +2655,7 @@ private:
                 }
             }
             note_given_back_alias(decl, initial, state);
-            // THE LENT PARAMETERS: the base of a structured binding by
+            // The lent parameters: the base of a structured binding by
             // reference of a lent object borrows it, so each binding is a lent
             // part of the object of the caller.
             lends_bindings = source != NULL_TREE && DECL_DECOMPOSITION_P(decl) && DECL_DECOMP_IS_BASE(decl)
@@ -2680,7 +2680,7 @@ private:
         }
         if (is_tracked && state.is_reachable) {
             set_object(state, slot_of_.at(decl), Status::live);
-            // INITIAL is the initializer before its fold (THE FOLDS).
+            // INITIAL is the initializer before its fold (the folds).
             if (initial != NULL_TREE && initial != error_mark_node) {
                 note_initial_content(decl, initial, state);
             }
@@ -2875,8 +2875,8 @@ private:
     }
 
     // A trivial assignment of an empty class whose source has a side effect,
-    // and stays in the tree as the first operand of a comma expression (THE
-    // FOLDS).  The event gave its target.  Returns false for each other node.
+    // and stays in the tree as the first operand of a comma expression (the
+    // folds).  The event gave its target.  Returns false for each other node.
     bool walk_kept_assignment(tree node, FlowState& state) {
         auto found = empty_assignment_of_source.find(node);
         if (found == empty_assignment_of_source.end()
@@ -2892,7 +2892,7 @@ private:
 
     // A statement whose expression the front end replaced with a void
     // constant: each trivial assignment of an empty class whose source had no
-    // side effect, at a location in the statement (THE FOLDS).
+    // side effect, at a location in the statement (the folds).
     void walk_removed_assignments(tree statement, FlowState& state) {
         if (!EXPR_HAS_LOCATION(statement)) {
             return;
@@ -2945,7 +2945,7 @@ private:
         bool is_constructor = callee != NULL_TREE && DECL_CONSTRUCTOR_P(callee);
         bool is_assignment = callee != NULL_TREE && DECL_ASSIGNMENT_OPERATOR_P(callee);
         // A move assignment of a linear object from itself moves no value, so
-        // the states stay (THE SELF-MOVES).
+        // the states stay (the self-moves).
         if (is_method && count == 2 && is_move_assignment_call(call)
             && is_self_move(argument_at(call, 0), argument_at(call, 1))) {
             if (state.is_reachable) {
@@ -2976,7 +2976,7 @@ private:
                 if (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) {
                     record_discarded(location, linear_temporary_type(argument));
                 }
-                // THE ALIASES: the result of a callee that gives a sum back,
+                // The aliases: the result of a callee that gives a sum back,
                 // which a callee that can keep it takes by a reference that
                 // writes.
                 if (is_writing_parameter(parameter_type)) {
@@ -2989,14 +2989,14 @@ private:
                 continue;
             }
             // A reference that is not const, or an address, lets the callee
-            // fill a tracked sum (THE SUMS).
+            // fill a tracked sum (the sums).
             bool is_mutable_borrow =
                 (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) || TYPE_PTR_P(parameter_type);
             if (is_mutable_borrow && !TYPE_READONLY(TREE_TYPE(parameter_type))) {
                 note_can_be_full(decl, field, state);
                 if (std::size_t slot = sum_slot(decl, field); slot != kNoParent) {
                     slots_[slot].is_borrowed = true;
-                    // THE SUMMARIES: a callee that can keep the reference can
+                    // The summaries: a callee that can keep the reference can
                     // fill the sum at each later point.
                     if (can_keep_reference(callee)) {
                         note_kept_alias(decl, field, state);
@@ -3012,13 +3012,13 @@ private:
             check_closure_calls(call, callee, location);
         }
         bool is_once_door = callee != NULL_TREE && carries_linear_annotation(callee, linear_names.once_door);
-        // THE SUMMARIES: the call of a closure runs its body, and a call that
+        // The summaries: the call of a closure runs its body, and a call that
         // takes a closure can run it, also at a later call.
         if (callee != NULL_TREE && LAMBDA_FUNCTION_P(callee)) {
             apply_closure_call(callee, location, state);
         }
         // The once door calls the closure that it takes one time, and each
-        // other callee can call it at each later point (THE DOORS).
+        // other callee can call it at each later point (the doors).
         for (int index = 0; index < count; ++index) {
             tree argument_type = TREE_TYPE(argument_at(call, index));
             argument_type =
@@ -3038,7 +3038,7 @@ private:
         }
     }
 
-    // THE CLOSURES THAT MOVE A CAPTURE: a call of such a closure, and a call
+    // The closures that move a capture: a call of such a closure, and a call
     // of the once door that takes such a closure, needs an object that the
     // frame gives up (is_object_given_up).  A call operator that gives a
     // capture of its own closure to the once door moves a capture out too,
@@ -3096,8 +3096,8 @@ private:
     }
 
     // True when OBJECT names a capture of the closure of the call operator
-    // that the walk reads, through std::move, std::forward and the casts (THE
-    // CLOSURES THAT MOVE A CAPTURE).
+    // that the walk reads, through std::move, std::forward and the casts (the
+    // closures that move a capture).
     bool names_own_capture(tree object) const {
         tree closure = DECL_CONTEXT(function_);
         if (closure == NULL_TREE || !LAMBDA_TYPE_P(closure)) {
@@ -3121,7 +3121,7 @@ private:
 
     // FUNCTION: OBJECT (TYPE) for a call that takes the closure OBJECT of the
     // type CLOSURE_TYPE, with the name of the object of the closure or the
-    // word closure (THE CLOSURES THAT MOVE A CAPTURE).
+    // word closure (the closures that move a capture).
     std::string closure_entity(tree object, tree closure_type) const {
         bool saw_rvalue = false;
         tree named = strip_to_tracked(object, saw_rvalue);
@@ -3136,7 +3136,7 @@ private:
              + linear_type_text(closure_type) + ")";
     }
 
-    // THE SUMMARIES: true when the callee CALLEE can keep a reference
+    // The summaries: true when the callee CALLEE can keep a reference
     // parameter that names a linear sum.  A callee with no fact at this point
     // keeps it in the walk that reads such a callee as one that can keep, and
     // the walk notes the callee for the end of the unit.
@@ -3152,7 +3152,7 @@ private:
         return unknown_callee_ == UnknownCallee::can_keep;
     }
 
-    // THE ALIASES: the tracked sums that NODE names through the result of a
+    // The aliases: the tracked sums that NODE names through the result of a
     // callee that gives a reference parameter back: each sum that the call
     // takes by a reference that writes.
     std::vector<tree> sums_given_back(tree node) const {
@@ -3200,7 +3200,7 @@ private:
         return sums;
     }
 
-    // THE ALIASES: a reference or a pointer that the result of a callee that
+    // The aliases: a reference or a pointer that the result of a callee that
     // gives a reference parameter back initializes names each such sum.
     void note_given_back_alias(tree decl, tree value, FlowState& state) {
         tree type = decl != NULL_TREE ? TREE_TYPE(decl) : NULL_TREE;
@@ -3212,7 +3212,7 @@ private:
         }
     }
 
-    // THE ALIASES: a call that starts after the consume of a sum that an
+    // The aliases: a call that starts after the consume of a sum that an
     // alias names can fill the sum again through the alias, so the sum holds
     // a payload again.  The call of a member of a linear sum on a tracked
     // object changes only that object, and std::move changes nothing.
@@ -3268,7 +3268,7 @@ private:
         later_too,
     };
 
-    // THE SUMMARIES: the call of the call operator OPERATOR leaves each sum
+    // The summaries: the call of the call operator OPERATOR leaves each sum
     // that each path of its body leaves empty consumed, and each other sum
     // that the body can fill holds a payload again.
     void apply_closure_call(tree call_operator, location_t location, FlowState& state) {
@@ -3288,7 +3288,7 @@ private:
         apply_closure_fills(closure, ClosureCall::here, emptied, state);
     }
 
-    // THE SUMMARIES: the body of the closure CLOSURE_TYPE can fill each sum
+    // The summaries: the body of the closure CLOSURE_TYPE can fill each sum
     // that it captures by reference and that its summary names, so the sum
     // holds a payload again after the call.  A closure with no summary can
     // fill each such sum.  A capture that EMPTIED names ends empty.  A
@@ -3345,7 +3345,7 @@ private:
         }
         check_known_content(decl, field, callee, location, state);
         if (is_assignment) {
-            // The rule drop-door reads an assignment to a field (THE SHAPES).
+            // The rule drop-door reads an assignment to a field (the shapes).
             if (field == NULL_TREE) {
                 assign_over(decl, state, location);
             } else {
@@ -3364,7 +3364,7 @@ private:
         while (stripped_target != NULL_TREE && TREE_CODE(stripped_target) == INDIRECT_REF) {
             stripped_target = TREE_OPERAND(stripped_target, 0);
         }
-        // THE OBJECTS: the initialization of a reference that extends a
+        // The objects: the initialization of a reference that extends a
         // linear temporary starts the object of the reference.
         if (is_init && stripped_target != NULL_TREE && slot_of_.count(stripped_target) == 0
             && binds_extended_temporary(stripped_target, value)) {
@@ -3388,7 +3388,7 @@ private:
         bool is_linear_target =
             target != NULL_TREE && TREE_TYPE(target) != NULL_TREE && is_linear_or_reference(TREE_TYPE(target));
         // A move assignment of a linear object from itself moves no value, so
-        // the states stay (THE SELF-MOVES).
+        // the states stay (the self-moves).
         bool is_linear_class_target =
             target != NULL_TREE && TREE_TYPE(target) != NULL_TREE && is_linear_type(TREE_TYPE(target));
         if (!is_init && is_linear_class_target && is_self_move(target, value)) {
@@ -3397,21 +3397,21 @@ private:
             }
             return;
         }
-        // THE CAPTURES: a lambda initializes a capture by reference with the
+        // The captures: a lambda initializes a capture by reference with the
         // address of the object, and the closure hides each later consume.
         bool is_reference_capture = target != NULL_TREE && TREE_CODE(target) == COMPONENT_REF
                                  && LAMBDA_TYPE_P(TREE_TYPE(TREE_OPERAND(target, 0))) && TREE_TYPE(target) != NULL_TREE
                                  && TYPE_REF_P(TREE_TYPE(target));
         // An address of a tracked sum in a pointer that is not const, and a
-        // reference member that is not const, can fill the sum (THE SUMS).
+        // reference member that is not const, can fill the sum (the sums).
         tree target_type = target != NULL_TREE ? TREE_TYPE(target) : NULL_TREE;
         bool is_mutable_address =
             target_type != NULL_TREE
             && (TYPE_PTR_P(target_type) || (TYPE_REF_P(target_type) && TREE_CODE(target) == COMPONENT_REF))
             && !TYPE_READONLY(TREE_TYPE(target_type));
         if (source != NULL_TREE && is_reference_capture) {
-            // The closure can fill a captured sum (THE SUMS), and a call of
-            // the closure applies its summary to the sum (THE SUMMARIES).
+            // The closure can fill a captured sum (the sums), and a call of
+            // the closure applies its summary to the sum (the summaries).
             mark_escaped(source);
             note_alias(source, field, state);
             tree closure = TYPE_MAIN_VARIANT(TREE_TYPE(TREE_OPERAND(target, 0)));
@@ -3422,7 +3422,7 @@ private:
             note_kept_alias(source, field, state);
         } else if (source == NULL_TREE && is_mutable_address) {
             // The result of a callee that gives a sum back in a stored address
-            // or a reference member (THE ALIASES).
+            // or a reference member (the aliases).
             for (tree sum : sums_given_back(value)) {
                 note_kept_alias(sum, NULL_TREE, state);
             }
@@ -3447,7 +3447,7 @@ private:
         }
     }
 
-    // THE LENT PARAMETERS: an lvalue reference, such as the result of a
+    // The lent parameters: an lvalue reference, such as the result of a
     // function that gives the lent object back by reference, borrows the lent
     // object SOURCE when no move cast is on the way, so it consumes nothing.
     bool is_lent_borrow(tree source, bool saw_rvalue, tree target_type) const {
@@ -3468,23 +3468,23 @@ private:
             }
             if (field != NULL_TREE && TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE
                 && TYPE_REF_P(TREE_TYPE(field)) && !TYPE_REF_IS_RVALUE(TREE_TYPE(field))) {
-                // THE CAPTURES: a closure that captures a tracked object by
+                // The captures: a closure that captures a tracked object by
                 // reference hides each later consume of it.  A reference
-                // member that is not const can fill a tracked sum (THE SUMS).
+                // member that is not const can fill a tracked sum (the sums).
                 bool saw_reference = false;
                 tree referred = strip_to_tracked(value, saw_reference);
                 if (referred != NULL_TREE && LAMBDA_TYPE_P(TREE_TYPE(node))) {
                     mark_escaped(referred);
-                    // THE SUMMARIES: a call of the closure applies its summary
+                    // The summaries: a call of the closure applies its summary
                     // to this sum.
                     if (sum_slot(referred, NULL_TREE) != kNoParent) {
                         capture_targets_[TYPE_UID(TYPE_MAIN_VARIANT(TREE_TYPE(node)))].emplace_back(DECL_UID(field),
                                                                                                     referred);
                     }
                 }
-                // A closure fills the sum at its calls (THE SUMMARIES), and a
+                // A closure fills the sum at its calls (the summaries), and a
                 // reference member of each other class at each later call
-                // (THE ALIASES).
+                // (the aliases).
                 if (referred != NULL_TREE && !TYPE_READONLY(TREE_TYPE(TREE_TYPE(field)))) {
                     if (LAMBDA_TYPE_P(TREE_TYPE(node))) {
                         note_alias(referred, NULL_TREE, state);
@@ -3493,7 +3493,7 @@ private:
                     }
                 }
                 // The result of a callee that gives a sum back in a reference
-                // member names the sum at each later call (THE ALIASES).
+                // member names the sum at each later call (the aliases).
                 if (referred == NULL_TREE && !TYPE_READONLY(TREE_TYPE(TREE_TYPE(field)))) {
                     for (tree sum : sums_given_back(value)) {
                         note_kept_alias(sum, NULL_TREE, state);
@@ -3503,7 +3503,7 @@ private:
             }
             // An address or a pointer in an element is no transfer.  An
             // address that is not const can fill a tracked sum at each later
-            // call (THE ALIASES).
+            // call (the aliases).
             tree value_type = TREE_TYPE(value);
             if (value_type == NULL_TREE || TREE_CODE(value_type) == POINTER_TYPE) {
                 bool saw_address = false;
@@ -3525,7 +3525,7 @@ private:
     // ── Discarded temporaries ──
 
     // A discarded temporary of the linear type TYPE.  A temporary of a linear
-    // sum gives the kind option-discarded (THE SUMS).  A null TYPE is no
+    // sum gives the kind option-discarded (the sums).  A null TYPE is no
     // linear temporary, and gives nothing.
     void record_discarded(location_t location, tree type) {
         if (type == NULL_TREE) {
@@ -3562,7 +3562,7 @@ private:
 
     // ── The report ──
 
-    // The kinds that the body of a door does not give (THE DOORS).
+    // The kinds that the body of a door does not give (the doors).
     bool is_ended_by_door(Kind kind) const {
         return is_door_
             && (kind == Kind::linear_unconsumed || kind == Kind::linear_unconsumed_on_path
@@ -3589,7 +3589,7 @@ private:
             if (!entry.has_live_exit && !entry.has_maybe_exit) {
                 continue;
             }
-            // A linear sum gives one kind for each path (THE SUMS).
+            // A linear sum gives one kind for each path (the sums).
             Kind kind = entry.has_live_exit ? Kind::linear_unconsumed : Kind::linear_unconsumed_on_path;
             if (entry.is_sum) {
                 kind = Kind::linear_option_unconsumed;
@@ -3619,7 +3619,7 @@ void add_walk_findings(const std::vector<WalkFinding>& findings) {
     }
 }
 
-// THE SUMMARIES: the walk of the body of FUNCTION.  When the walk read a
+// The summaries: the walk of the body of FUNCTION.  When the walk read a
 // callee with no fact, and a second walk where such a callee keeps no
 // reference gives other findings, the end of the unit picks the findings by
 // the facts of the callees (judge_deferred_findings).  Complexity: one walk of
@@ -3640,7 +3640,7 @@ void analyze_body(tree function, bool is_door) {
     deferred_findings.push_back(DeferredFindings{first.findings(), second.findings(), first.unknown_callees()});
 }
 
-// THE SUMMARIES and THE CLOSURES THAT MOVE A CAPTURE: the capture fields of
+// The summaries and the closures that move a capture: the capture fields of
 // the closure of the call operator FUNCTION whose sum each path of its body
 // leaves empty, and whether a path leaves a linear capture consumed or gives
 // a capture that moves a linear capture out to the once door.  Only a closure
@@ -3685,7 +3685,7 @@ void note_closure_summary(tree function) {
     }
 }
 
-// THE SUMMARIES: the findings that waited for the facts of their callees.
+// The summaries: the findings that waited for the facts of their callees.
 // Each callee with no fact at the walk has its fact now, or has no body in
 // the unit and keeps a reference.
 void judge_deferred_findings() {
@@ -3696,7 +3696,7 @@ void judge_deferred_findings() {
     deferred_findings.clear();
 }
 
-// ── The shapes (THE SHAPES) ─────────────────────────────────────────────
+// ── The shapes (refer to the section Shapes) ────────────────────────────
 
 // The facts of the rules of the shapes, keyed by the main variant of a type.
 // Each collection clears them, as it clears linear_caches.
@@ -3739,7 +3739,7 @@ void record_shape(Kind kind, location_t location, const std::string& entity) {
 
 // True when a finding about ENTITY, a declaration or a class, counts in this
 // unit: in a quarantined file, in a base file only in its sentinel unit, and in
-// each unit that makes an instance of a base template (THE BODIES).
+// each unit that makes an instance of a base template (the bodies).
 bool is_reported_for(tree entity) {
     tree decl = TYPE_P(entity) ? TYPE_MAIN_DECL(entity) : entity;
     if (decl == NULL_TREE) {
@@ -3892,7 +3892,7 @@ bool is_written_by_fresh_brand(tree type) {
 
 // True when TYPE is a scope brand: a closure with the shape of a brand whose
 // call operator carries the annotation foundation::brand::scope_brand
-// (THE SCOPE BRANDS).
+// (the scope brands).
 bool is_scope_brand(tree type) {
     if (!has_brand_shape(type)) {
         return false;
@@ -4015,7 +4015,7 @@ void collect_brands(tree type, std::vector<tree>& out, int depth = 0) {
 
 // True when BRAND is held by a template argument of SCOPE or of a class or a
 // function that holds SCOPE: the brand came in from outside, so SCOPE did not
-// make it (THE BRANDS).
+// make it (the brands).
 bool is_bound_brand(tree brand, tree scope) {
     for (int depth = 0; scope != NULL_TREE && depth < kTypeDepth; ++depth) {
         tree info = NULL_TREE;
@@ -4129,7 +4129,7 @@ void check_class(tree type, int depth = 0);
 // The checks of an object with static or thread storage duration: a brand in
 // it escapes each run of its mint site, and a class of the library with a
 // linear argument drops its values.  A scope brand gives the kind
-// scope-static, which is an error in each mode (THE SCOPE BRANDS).
+// scope-static, which is an error in each mode (the scope brands).
 void check_static_object(tree decl, const std::string& owner) {
     tree type = TREE_TYPE(decl);
     if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
@@ -4164,7 +4164,7 @@ void check_alias(tree decl, tree scope, const std::string& owner) {
 }
 
 // The class rules: linear-containment, linear-forge and the members of
-// brand-escape, for one complete class that is no pattern (THE SHAPES).  The
+// brand-escape, for one complete class that is no pattern (the shapes).  The
 // walk goes on into the class of each base and each field.  Complexity: each
 // class one time in each unit.
 void check_class(tree type, int depth) {
@@ -4265,7 +4265,7 @@ std::vector<tree> fresh_arguments_of(tree function) {
 // The checks of the signature of a function whose body the unit reads: a
 // return value and a parameter of a class of the library with a linear
 // argument, a fresh brand that the function made and returns, and a scope
-// brand that the function mints and returns (THE SCOPE BRANDS).
+// brand that the function mints and returns (the scope brands).
 void check_signature(tree function) {
     std::string name = function_text(function);
     location_t location = DECL_SOURCE_LOCATION(function);
@@ -4489,7 +4489,7 @@ void check_captures(tree constructor, const ShapeWalk& walk) {
 
 // True when TARGET names a parameter of FUNCTION that must-consume tracks as
 // a lent object: a reference that is not const to a linear class, and no
-// explicit object parameter (THE LENT PARAMETERS).
+// explicit object parameter (the lent parameters).
 bool is_lent_parameter_target(tree target, tree function) {
     for (int depth = 0; target != NULL_TREE && depth < kTypeDepth; ++depth) {
         target = tree_strip_any_location_wrapper(target);
@@ -4615,8 +4615,8 @@ void check_local(tree decl, const ShapeWalk& walk) {
 
 // A variable outside each function that a body names, such as a static data
 // member or an instance of a variable template: each one has static or thread
-// storage duration.  A scope brand in its type is the kind scope-static (THE
-// SCOPE BRANDS).  The walk of a body reads each local of static storage
+// storage duration.  A scope brand in its type is the kind scope-static (the
+// scope brands).  The walk of a body reads each local of static storage
 // duration in its BIND_EXPR.
 void check_named_static(tree decl, const ShapeWalk& walk) {
     if (!VAR_P(decl) || decl_function_context(decl) != NULL_TREE) {
@@ -4811,7 +4811,7 @@ tree find_linear(tree* node_pointer, int* walk_subtrees, void*) {
 
 // True when FUNCTION has a parameter that the rule tracks: a linear class by
 // value, an rvalue reference to one, or a reference that is not const to one,
-// which the caller lends (THE LENT PARAMETERS).  A move of a lent parameter
+// which the caller lends (the lent parameters).  A move of a lent parameter
 // names the reference itself, so the body can hold no expression of a linear
 // class.
 bool has_linear_parameter(tree function) {
@@ -4828,7 +4828,7 @@ bool has_linear_parameter(tree function) {
 }
 
 // True when FUNCTION carries the annotation drop_door, detach_door or
-// once_door.  The once door ends the closure that it calls (THE DOORS).
+// once_door.  The once door ends the closure that it calls (the doors).
 bool carries_door_annotation(tree function) {
     tree attributes = DECL_ATTRIBUTES(function);
     return carries_annotation(attributes, linear_names.drop_door)
@@ -4850,7 +4850,7 @@ const LinearDoorRow* door_row_of(tree function) {
     return nullptr;
 }
 
-// True when FUNCTION is a door (THE DOORS).  A linear-door row that names
+// True when FUNCTION is a door (the doors).  A linear-door row that names
 // FUNCTION gives its record at the place of FUNCTION.
 bool is_door(tree function, const Place& place) {
     if (carries_door_annotation(function)) {
@@ -4874,8 +4874,8 @@ bool has_scope_door(tree type) {
 
 // The DECL_UID of the field of *this that the expression NODE names through
 // casts and member accesses, the innermost field that is no base, or
-// kWholeObject when NODE names *this itself or no member of *this (THE
-// ACCESSORS).  OBJECT is the object parameter of the function.
+// kWholeObject when NODE names *this itself or no member of *this (the
+// accessors).  OBJECT is the object parameter of the function.
 int member_field_of(tree node, tree object) {
     tree leaf = NULL_TREE;
     for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
@@ -4933,7 +4933,7 @@ tree walk_returns(tree* node_pointer, int* walk_subtrees, void* data) {
     return NULL_TREE;
 }
 
-// Keeps the field of *this that the accessor FUNCTION gives (THE ACCESSORS):
+// Keeps the field of *this that the accessor FUNCTION gives (the accessors):
 // the field of each of its return statements when they agree, else the
 // object.  Complexity: linear in the body.
 void note_accessor_field(tree function) {
@@ -5027,7 +5027,7 @@ tree walk_closure_fills(tree* node_pointer, int* walk_subtrees, void* data) {
 }
 
 // Keeps the capture fields of the closure of the call operator FUNCTION whose
-// sum its body can fill (THE SUMMARIES).  Complexity: linear in the body.
+// sum its body can fill (the summaries).  Complexity: linear in the body.
 void note_closure_fills(tree function) {
     tree closure = DECL_CONTEXT(function);
     if (closure == NULL_TREE || !LAMBDA_TYPE_P(closure)) {
@@ -5149,8 +5149,8 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
 }
 
 // Keeps the function FUNCTION when its body keeps no reference parameter that
-// names a linear sum: each use of each such parameter is a read (THE
-// SUMMARIES).  A body that passes such a parameter to a callee with no fact at
+// names a linear sum: each use of each such parameter is a read (the
+// summaries).  A body that passes such a parameter to a callee with no fact at
 // this point gets a fact that waits for the fact of that callee.  Complexity:
 // linear in the nodes of the body, for each such parameter.
 void note_kept_references(tree function) {
@@ -5173,7 +5173,7 @@ void note_kept_references(tree function) {
         walk.parameter = parameter;
         cp_walk_tree(&body, walk_kept_reference, &walk, nullptr);
         // A body that gives the reference back as its result keeps it only in
-        // the result, and the caller reads the result (THE ALIASES).
+        // the result, and the caller reads the result (the aliases).
         if (walk.uses > walk.read_uses + walk.return_uses) {
             return;
         }
@@ -5209,12 +5209,12 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
         return;
     }
     // The fact of an accessor serves each caller in this unit, also when the
-    // rule does not read the body of the accessor here (THE ACCESSORS).
+    // rule does not read the body of the accessor here (the accessors).
     if (linear_mode.checks_must_consume && is_accessor(function)) {
         note_accessor_field(function);
     }
     // The summaries of a closure and of a callee serve each caller in this
-    // unit (THE SUMMARIES).
+    // unit (the summaries).
     if (linear_mode.checks_must_consume) {
         if (LAMBDA_FUNCTION_P(function)) {
             note_closure_fills(function);
@@ -5222,8 +5222,8 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
         }
         note_kept_references(function);
     }
-    // The rule reads the bodies that is_body_read_here of plugin.h gives (THE
-    // BODIES), and the place of the function is the place of its findings.
+    // The rule reads the bodies that is_body_read_here of plugin.h gives (the
+    // bodies), and the place of the function is the place of its findings.
     if (!is_body_read_here(function, UNKNOWN_LOCATION)) {
         return;
     }
@@ -5252,7 +5252,7 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
 }
 
 // PLUGIN_FINISH_TYPE: the class rules for each class that the unit defines
-// and that is no pattern (THE SHAPES).
+// and that is no pattern (the shapes).
 void on_finish_type_linear(void* gcc_data, void*) {
     tree type = static_cast<tree>(gcc_data);
     if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type) || seen_error()) {
@@ -5262,7 +5262,7 @@ void on_finish_type_linear(void* gcc_data, void*) {
 }
 
 // PLUGIN_FINISH_DECL: a variable with static storage duration at namespace
-// scope (THE SHAPES).  The walk of a body reads each local, and the walk of
+// scope (the shapes).  The walk of a body reads each local, and the walk of
 // the declarations reads each alias (check_linear_alias).
 void on_finish_decl_linear(void* gcc_data, void*) {
     tree decl = static_cast<tree>(gcc_data);
@@ -5277,7 +5277,7 @@ void on_finish_decl_linear(void* gcc_data, void*) {
 }
 
 // The linear local or parameter that NODE moves through casts and std::move,
-// or null (THE DROPPED ELEMENTS).
+// or null (the dropped elements).
 tree moved_linear_decl(tree node) {
     bool saw_rvalue = false;
     for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
@@ -5333,8 +5333,8 @@ tree find_located(tree* node_pointer, int* walk_subtrees, void*) {
     return EXPR_P(node) && EXPR_HAS_LOCATION(node) ? node : NULL_TREE;
 }
 
-// PLUGIN_FOLDED_INITIALIZER (THE FOLDS).  The fold of an element that moves a
-// linear local or parameter is kept for THE DROPPED ELEMENTS, at the location
+// PLUGIN_FOLDED_INITIALIZER (the folds).  The fold of an element that moves a
+// linear local or parameter is kept for the dropped elements, at the location
 // of the first node of the original with one.
 void on_folded_initializer(void* gcc_data, void*) {
     const auto* data = static_cast<const plugin_folded_initializer_data*>(gcc_data);
@@ -5356,7 +5356,7 @@ void on_folded_initializer(void* gcc_data, void*) {
     element_folds.push_back(ElementFold{data->original, data->folded, moved, location});
 }
 
-// PLUGIN_EMPTY_CLASS_ASSIGNMENT (THE FOLDS).
+// PLUGIN_EMPTY_CLASS_ASSIGNMENT (the folds).
 void on_empty_class_assignment(void* gcc_data, void*) {
     const auto* data = static_cast<const plugin_empty_class_assignment_data*>(gcc_data);
     if (data == nullptr || data->source == NULL_TREE || data->target == NULL_TREE || data->source == error_mark_node) {
@@ -5382,7 +5382,7 @@ void on_linear_collection(void*, void*) {
 
 // An alias at namespace scope, from the walk of the declarations
 // (declaration.cpp), because the front end gives no event PLUGIN_FINISH_DECL
-// for an alias (THE SHAPES).
+// for an alias (the shapes).
 void check_linear_alias(tree decl) {
     if (!linear_mode.checks_shapes || decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL
         || TREE_CODE(CP_DECL_CONTEXT(decl)) != NAMESPACE_DECL || !is_reported_for(decl)) {
@@ -5391,7 +5391,7 @@ void check_linear_alias(tree decl) {
     check_alias(decl, CP_DECL_CONTEXT(decl), qualified_name(CP_DECL_CONTEXT(decl)));
 }
 
-// The error of one finding of the kinds of THE SCOPE BRANDS that no region
+// The error of one finding of the kinds of the scope brands that no region
 // opts out.
 void report_scope_escape(const Finding& finding) {
     if (finding.kind == Kind::brand_scope_static) {
@@ -5419,8 +5419,8 @@ void report_scope_escape(const Finding& finding) {
 }
 
 // The error of one finding of the kinds option-unconsumed, option-discarded,
-// option-known-full and option-known-empty (THE SUMS), and borrow-move-out
-// (THE LENT PARAMETERS), of the rule must-consume that no region opts out.
+// option-known-full and option-known-empty (the sums), and borrow-move-out
+// (the lent parameters), of the rule must-consume that no region opts out.
 // The message does not start with "quarantine: ", so a regex of a negative
 // fixture reads it.
 void report_option_end(const Finding& finding) {
@@ -5469,8 +5469,8 @@ void report_option_end(const Finding& finding) {
            "%<foundation/Quarantine.h%>");
 }
 
-// The error of one finding of the kind self-move that no region opts out (THE
-// SELF-MOVES).
+// The error of one finding of the kind self-move that no region opts out (the
+// self-moves).
 void report_self_move(const Finding& finding) {
     if (finding.kind != Kind::linear_self_move) {
         return;

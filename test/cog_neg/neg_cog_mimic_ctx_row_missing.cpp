@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A CogMimic is minted at calibration time (Init) or during background
 // recalibration (Bg), and mint_cog_mimic admits a context only when it

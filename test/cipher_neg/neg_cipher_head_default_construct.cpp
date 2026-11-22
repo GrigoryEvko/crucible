@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // ValidCipherHead refuses a default-constructed hash.  The default of a
 // strong hash is zero, and zero is the sentinel for "no commit yet".  A

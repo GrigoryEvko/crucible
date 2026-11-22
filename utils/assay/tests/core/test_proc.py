@@ -5,7 +5,7 @@ line.  Exit 0 when each case holds, else 1.  The commands are sh, sleep,
 cat, true and the Python of this process, so the test needs no tool of the
 tree.
 
-THE START OF A CHILD
+Start of a child
     On a host under load, a child can start seconds late, and the host can
     stop this process for a time at each point.  No case lets a limit or a
     time of the test count against such a delay:
@@ -157,7 +157,7 @@ def start_failure_cases(expect: Callable[[str, bool], None]) -> None:
 def limit_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     """Check the limit: SIGTERM to the group, SIGKILL after the grace, and no process of the group after it."""
     # The shell writes the pid of its child and then its ready file.  The wait starts after the ready file, so the
-    # limit counts after the output (THE START OF A CHILD).
+    # limit counts after the output (the start of a child).
     ready = scratch / "limit-ready"
     running = proc.start(
         proc.Command(["sh", "-c", 'sleep 60 & echo $!; : > "$0"; wait', str(ready)], timeout_s=0.2, grace_s=0.2)
@@ -248,7 +248,7 @@ def poll_cases(expect: Callable[[str, bool], None]) -> None:
 def raised_in_loop(running: proc.Running, error: type[BaseException], count: int = 1) -> Iterator[None]:
     """Make the first `count` waits of the loop of a run raise `error` in the block, as a signal in a wait does.
 
-    A wait of the loop is one select of the run (assay.core.proc, AN INTERRUPT).  The error then comes in the loop
+    A wait of the loop is one select of the run (assay.core.proc, an interrupt).  The error then comes in the loop
     at each speed of the host.  After the block, the selector has its own select again.
     """
     selector = running._selector
@@ -284,7 +284,7 @@ def interrupted(running: proc.Running, action: Callable[[], object], count: int 
 def ignored(*numbers: int) -> Iterator[None]:
     """Ignore the signals in this process for the block, and give each one its earlier handler after it.
 
-    A child that the block starts keeps each ignored signal across its exec (THE START OF A CHILD).
+    A child that the block starts keeps each ignored signal across its exec (the start of a child).
     """
     previous = [(number, signal.signal(number, signal.SIG_IGN)) for number in numbers]
     try:
@@ -305,7 +305,7 @@ def wait_for_file(path: Path, wait_s: float = SAFE_S) -> bool:
 
 
 def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
-    """Check AN INTERRUPT: SIGINT to the group, the end of the command, and SIGKILL at a second interrupt."""
+    """Check an interrupt: SIGINT to the group, the end of the command, and SIGKILL at a second interrupt."""
     summary = scratch / "summary.txt"
     ready = scratch / "ready"
     # The child blocks SIGINT before its ready file, and then waits for it for 60 s.  A SIGINT that comes before the
@@ -363,7 +363,7 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
         "a second interrupt sends SIGKILL to a group that ignores SIGINT, and then goes on",
         reached and deaf.stop().exit == -signal.SIGKILL and testing.is_gone(deaf.pid),
     )
-    # sleep ignores the two signals from its exec, so only the SIGKILL of the limit ends it (THE START OF A CHILD).
+    # sleep ignores the two signals from its exec, so only the SIGKILL of the limit ends it (the start of a child).
     with ignored(signal.SIGINT, signal.SIGTERM):
         late = proc.start(proc.Command(["sleep", "60"], timeout_s=0.5, grace_s=0.1))
     reached = interrupted(late, late.wait)
@@ -461,7 +461,7 @@ def stream_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     unread = proc.start(proc.Command(["sh", "-c", "printf 'a\\nb\\n'"], timeout_s=SAFE_S, stdout=proc.Output.STREAM))
     expect("the result of a stream holds the lines that the loop did not give", unread.wait().stdout == b"a\nb\n")
     # The shell writes its line and then its ready file.  The loop starts after the ready file, so the line is in
-    # the pipe when the limit counts (THE START OF A CHILD).
+    # the pipe when the limit counts (the start of a child).
     ready = scratch / "stream-ready"
     slow = proc.start(
         proc.Command(
@@ -589,7 +589,7 @@ def forked_child() -> int:
 
 
 def paired_action(scratch: Path, action_count: int) -> Callable[[], int]:
-    """Return a forked action that waits for a second action that runs at the same time (THE START OF A CHILD).
+    """Return a forked action that waits for a second action that runs at the same time (the start of a child).
 
     The action puts a mark of its pid into the directory running, and one into the directory started.  It looks at
     the count of the marks of running until it sees a second mark, and then for PAIR_LOOK_S more, so a third action
@@ -684,7 +684,7 @@ def forked_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
 
 
 def import_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check that the import of the module costs little: it imports no heavy module (WHY THE MODULE IMPORTS LITTLE)."""
+    """Check that the import of the module costs little: it imports no heavy module (why the module imports little)."""
     heavy = ("subprocess", "selectors", "signal", "dataclasses", "enum", "typing", "pathlib", "collections")
     listed = proc.run(
         proc.Command(
@@ -705,7 +705,7 @@ def import_cases(expect: Callable[[str, bool], None]) -> None:
 
 
 def job_count_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check that `loop jobs` prints DEFAULT_JOBS and refuses an argument (main(), THE JOB COUNT)."""
+    """Check that `loop jobs` prints DEFAULT_JOBS and refuses an argument (main(), the job count)."""
     status, said = testing.captured(lambda: proc.main([]))
     expect("main() prints DEFAULT_JOBS", status == 0 and said == f"{proc.DEFAULT_JOBS}\n")
     status, said = testing.captured(lambda: proc.main(["extra"]))

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::record_event refuses a context whose row holds Block and not
 // IO.  With the IO-only fixture, this one makes each of the two atoms of

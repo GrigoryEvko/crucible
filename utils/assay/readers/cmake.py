@@ -1,6 +1,6 @@
 """cmake — the replies of the CMake file API in a build directory, and the presets of a source tree.
 
-THE INPUTS
+Inputs
     CMake writes CMakeCache.txt into each build directory that it configures.
     A directory with that file is a build directory that CMake configured.
     No module reads that file, because the reply cache-v2 gives each entry of it.
@@ -16,7 +16,7 @@ THE INPUTS
     configure presets, and the job count of each build preset and each test
     preset.  The reader reads them with json.
 
-WHAT THE READER GIVES
+What the reader gives
     is_configured(build_dir) and cache_file(build_dir): the cache file of a
     build directory, for a check that CMake configured the directory.
     cache(build_dir): each entry of the cache, as a CacheEntry.
@@ -31,17 +31,17 @@ WHAT THE READER GIVES
     and each test preset.  A build preset gives its field jobs, and a test
     preset the field jobs of execution.  effective() and build_directory(): a
     configure preset with the fields of its parents, and its build directory
-    (THE INHERITANCE).  request(build_dir) and plant(build_dir, ...): the
+    (the inheritance).  request(build_dir) and plant(build_dir, ...): the
     query of a scratch project, and a planted reply for a test.
 
-THE VENDOR ENTRIES
+Vendor entries
     CMake reads the field vendor of a preset only to make sure that it is an
     object.  Each key of that object names the data of one vendor.  The
     reader gives each entry as the values of its fields, as a text or None,
     as it gives the cache variables.  An entry that is no object gives None.
     assay.loop.tiers reads the entry of the tree.
 
-THE INHERITANCE
+Inheritance
     A configure preset gets each field that it does not give from the presets
     of its field inherits.  The first parent of the list wins over each
     parent after it, and the preset wins over each parent.  The cache
@@ -57,7 +57,7 @@ ERRORS
     A build directory of the tree has each reply after a configure with this
     version of the root CMakeLists.txt.
 
-THE COST
+Cost
     A read of a reply reads the names of the reply directory, about 2,500
     files in a build of the tree.  Then it parses the index and one object:
     about 1 ms in all.  codemodel() also parses one file for each target,
@@ -80,7 +80,7 @@ QUERIES = ("codemodel-v2", "cache-v2", "cmakeFiles-v1", "toolchains-v1")
 # The client of request(): a scratch project gets its replies through this query directory.
 CLIENT = "client-assay"
 PRESET_FILES = ("CMakePresets.json", "CMakeUserPresets.json")
-# The macros of a field binaryDir that build_directory() expands (THE INHERITANCE).
+# The macros of a field binaryDir that build_directory() expands (the inheritance).
 PRESET_NAME_MACRO = "${presetName}"
 BINARY_MACROS = ("${sourceDir}", "${sourceParentDir}", "${sourceDirName}", PRESET_NAME_MACRO)
 AGAIN = "Configure the build directory again, for example with `cmake --preset default` or `cmake BUILD_DIR`."
@@ -283,7 +283,7 @@ class Preset:
     binaryDir as the file gives it, with its macros, or None when the preset
     gives no text there.  `inherits` holds the names of the field inherits, in
     their sequence.  `vendor` gives the fields of each entry of the field
-    vendor (THE VENDOR ENTRIES).
+    vendor (the vendor entries).
     """
 
     __slots__ = ("binary_dir", "cache_variables", "environment", "inherits", "name", "vendor")
@@ -319,7 +319,7 @@ class TestPreset:
     the build of its configure preset one time.  `is_repeated` tells that the
     field `execution` gives the field `repeat`.  The preset then runs each
     test again.  `vendor` gives the fields of each entry of the field vendor
-    (THE VENDOR ENTRIES).
+    (the vendor entries).
     """
 
     __slots__ = ("configure_preset", "inherits", "is_plain", "is_repeated", "name", "vendor")
@@ -762,7 +762,7 @@ def _preset_values(value: object) -> dict[str, str | None]:
 
 
 def _preset_vendor(value: object) -> dict[str, dict[str, str | None] | None]:
-    """Return the fields of each entry of a field vendor (THE VENDOR ENTRIES), or no entry when the field is no object."""
+    """Return the fields of each entry of a field vendor (the vendor entries), or no entry when the field is no object."""
     if not isinstance(value, dict):
         return {}
     return {str(key): _preset_values(fields) if isinstance(fields, dict) else None for key, fields in value.items()}
@@ -883,7 +883,7 @@ def presets(root: Path) -> tuple[PresetFile, ...]:
 
 
 def effective(configure: Iterable[Preset], name: str) -> Preset:
-    """Return one configure preset with the fields that it inherits from its parents (THE INHERITANCE).
+    """Return one configure preset with the fields that it inherits from its parents (the inheritance).
 
     `configure` holds the configure presets of each presets file of a tree.  The result keeps the parents and the
     vendor entries of the preset itself.  Complexity: linear in the presets and in the edges of the field inherits.
@@ -919,7 +919,7 @@ def effective(configure: Iterable[Preset], name: str) -> Preset:
 
 
 def build_directory(root: Path, name: str, configure: Sequence[Preset] | None = None) -> Path:
-    """Return the build directory of a configure preset of the presets files of a tree (THE INHERITANCE).
+    """Return the build directory of a configure preset of the presets files of a tree (the inheritance).
 
     The function expands the macros of BINARY_MACROS in the field binaryDir.  A relative directory is relative to the
     root.  `configure` holds the configure presets of each presets file of the tree, which a caller that read them

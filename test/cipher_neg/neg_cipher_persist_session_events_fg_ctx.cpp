@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::persist_session_events refuses the hot foreground context.  The
 // call writes a batch file and appends an index line, which needs IO and

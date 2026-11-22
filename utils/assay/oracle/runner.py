@@ -34,7 +34,7 @@ Modes (`loop derive session-oracle MODE`):
   regenerate  Generate the corpora, run the oracles, measure our
               relations, shrink every divergence to a minimal case, and
               write test/session_oracle/golden.csv and the emitted
-              tests.  Needs the toolchains of THE TOOLCHAINS and the
+              tests.  Needs the toolchains of the section Toolchains and the
               project compiler.  The mode puts the environment of the opam
               switch sessoracle into the process when opam and that switch
               exist.  The subtyping oracle runs its own switch.  A run takes
@@ -52,7 +52,7 @@ Modes (`loop derive session-oracle MODE`):
   emit        Write the emitted tests from the golden file only.  Use it
               after a note in the golden file changes.
 
-  Each mode ends with THE CHECK of this tree.  regenerate takes --at REV:
+  Each mode ends with the check of this tree.  regenerate takes --at REV:
   the tool then measures the include tree of that commit, which it takes
   with git archive into a temporary directory, and golden.csv names the
   full commit.  Without it, the tool measures the working tree and names
@@ -61,7 +61,7 @@ Modes (`loop derive session-oracle MODE`):
   compiler that is not an executable and a REV that names no commit, with
   the exit status 2.
 
-THE CHECK
+Check
   problems() emits the tests of the golden file of a tree into memory, and
   compares them with the committed tests.  It needs no oracle and no
   compiler.  The rule session-oracle of utils/registry.txt gives each
@@ -81,7 +81,7 @@ THE CHECK
   To regenerate after a relation changes:
       python3 utils/bin/loop derive session-oracle regenerate --cxx "$HOME/.local/gcc16-patched-p8/usr/bin/g++-16p" --at HEAD --build-dir build
 
-THE LINK OF A PROGRAM
+Link of a program
   A program of a runtime test, and of the wire family of regenerate,
   includes fixy/session/Handle.h.  The cold code of fixy/session/Watch.h is
   in libfixy.a, and that code calls the doors of libfoundation.a.  A program
@@ -94,10 +94,10 @@ THE LINK OF A PROGRAM
   test/CMakeLists.txt sets.  A run with --at REV also links the archives of
   the build, and not archives of REV.  The link flags also name the linker
   of the build and its directory (-fuse-ld and -B).  The result store of a
-  unit reads each file of the dependency file of the link (THE LINKER of
+  unit reads each file of the dependency file of the link (the linker of
   assay.oracle.unit_store).  A new archive then builds the unit again.
 
-THE TOOLCHAINS
+Toolchains
   Install them one time, in your home directory.  Nothing goes into the
   repository.
 
@@ -728,7 +728,7 @@ class Env:
     working tree by default.  A snapshot of HEAD measures the committed
     relations when the working tree holds edits that are not committed.
     ``build_dir`` is the build that gives the archives of a program of the
-    wire family (THE LINK OF A PROGRAM).  It is None for a run that links no
+    wire family (the link of a program).  It is None for a run that links no
     program.
     """
 
@@ -1411,7 +1411,7 @@ def evaluate_sprout(rows: list[Row]) -> list[Row]:
 
 
 # The target of a build that gives the link line of a program of a runtime
-# test (THE LINK OF A PROGRAM).
+# test (the link of a program).
 LINK_TARGET = "test_session_oracle_fixy_wire"
 
 
@@ -1419,7 +1419,7 @@ def build_link_flags(build_dir: Path) -> list[str]:
     """Return the link flags and the archives of a program of a runtime test from the build ``build_dir``.
 
     The CMake file API gives the link line of LINK_TARGET, which links the
-    archives that a program links (THE LINK OF A PROGRAM).  A fragment is
+    archives that a program links (the link of a program).  A fragment is
     shell text, and shlex reads it.  A library that is no flag and no
     absolute path gets the build root.
 
@@ -1470,7 +1470,7 @@ def cxx_flags(include: Path) -> list[str]:
     CMakeLists.txt sets (assay.oracle.probe.constexpr_ops_limit()).  An
     emitted test then compiles where the build compiles it.  The code is
     position-independent.  The link line of a program can make a
-    position-independent executable (THE LINK OF A PROGRAM).  A
+    position-independent executable (the link of a program).  A
     position-independent object links into each kind of executable.
     """
     from assay.oracle.probe import constexpr_ops_limit
@@ -1545,7 +1545,7 @@ def wire_pairs(c: Case, sync_rows: dict[tuple[str, str], Row]) -> list[str]:
 
 
 def _link_build_dir(env: Env) -> Path:
-    """Return the build that gives the archives of a program, or stop with the reason (THE LINK OF A PROGRAM)."""
+    """Return the build that gives the archives of a program, or stop with the reason (the link of a program)."""
     if env.build_dir is None:
         check_report.write_line("session_oracle: a program of the wire family links the archives of a build (THE "
                                 "LINK OF A PROGRAM): give the build directory with --build-dir", is_error=True)
@@ -2426,7 +2426,7 @@ def measured_tree(at: str | None) -> Iterator[tuple[Path, str]]:
 def regenerate(cxx: str, workers: int, build_dir: Path, do_shrink: bool = True, at: str | None = None) -> None:
     """Run the full pipeline against the tree of ``at`` and write the golden file and the tests.
 
-    A program of the wire family links the archives of ``build_dir`` (THE LINK OF A PROGRAM).
+    A program of the wire family links the archives of ``build_dir`` (the link of a program).
     """
     with measured_tree(at) as (include, measured):
         _regenerate(cxx, workers, do_shrink, include, measured, build_dir)
@@ -2571,7 +2571,7 @@ def derive(cxx: str | None, workers: int) -> int:
 
 @dataclass(frozen=True, slots=True)
 class Problem:
-    """One problem of the golden file or of the emitted tests of a tree (THE CHECK).
+    """One problem of the golden file or of the emitted tests of a tree (the check).
 
     ``kind`` is golden, drift, ledger or bound.  ``path`` is the file,
     relative to the root of the tree.  ``entity`` names the file or the
@@ -2604,7 +2604,7 @@ def drifted(files: dict[str, str], directory: Path) -> list[str]:
 
 
 def problems(root: Path) -> list[Problem]:
-    """Compare the emitted tests of the tree at ``root`` with a new emission of its golden file (THE CHECK).
+    """Compare the emitted tests of the tree at ``root`` with a new emission of its golden file (the check).
 
     Complexity: one read of the golden file, one emission, and one read of
     each emitted test.

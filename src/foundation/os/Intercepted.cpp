@@ -4,13 +4,13 @@
 // This file is the one door of <errno.h>, <unistd.h>, <sys/mman.h> and
 // <sys/wait.h>.
 //
-// THE PROCESS CALLS.  fork, waitpid and _exit stay in the C library (decision
+// Process calls.  fork, waitpid and _exit stay in the C library (decision
 // D12 of misc/01_10_2026_quarantine.md).  The C library runs the fork hooks
 // and keeps the state of its threads in the child, and the sanitizers
 // intercept the three calls.  The deny rows of utils/rule-table.txt refuse a
 // raw clone, fork, exit and exit_group.
 //
-// THE ROUTES.  ThreadSanitizer delivers a signal only inside a call that it
+// Routes.  ThreadSanitizer delivers a signal only inside a call that it
 // intercepts, or inside a call that it knows to block.  A read or a write that
 // blocks on a pipe goes through read(2) or write(2) of the C library, which
 // the sanitizer intercepts.  The C library has no function for futex, so a

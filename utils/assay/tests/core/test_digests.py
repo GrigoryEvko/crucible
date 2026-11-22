@@ -23,7 +23,7 @@ def sha256(data: bytes) -> str:
 
 
 def kept_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check that a kept hash comes back while the stat fields are the same, and goes when they change (THE MEMO)."""
+    """Check that a kept hash comes back while the stat fields are the same, and goes when they change (the memo)."""
     path = scratch / "kept.txt"
     path.write_bytes(b"first")
     first = digests.DigestMemo(settle_ns=KEEP_NOW_NS)
@@ -52,7 +52,7 @@ def kept_cases(expect: testing.Expect, scratch: Path) -> None:
 
 
 def settle_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check that the memo keeps no hash of a file that changed in the settle period (THE MEMO)."""
+    """Check that the memo keeps no hash of a file that changed in the settle period (the memo)."""
     path = scratch / "fresh.txt"
     path.write_bytes(b"fresh")
     memo = digests.DigestMemo()
@@ -61,7 +61,7 @@ def settle_cases(expect: testing.Expect, scratch: Path) -> None:
 
 
 def call_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check the answers of one call, forget(), and the entries of a call (THE CALL AND THE KEPT HASHES)."""
+    """Check the answers of one call, forget(), and the entries of a call (the call and the kept hashes)."""
     path = scratch / "call.txt"
     other = scratch / "other.txt"
     path.write_bytes(b"one")

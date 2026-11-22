@@ -117,7 +117,7 @@ bool Vigil::rollback() {
                                      region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, *region));
                                      // The foreground gets the region outside the publication slot,
                                      // so the store keeps it until the foreground writes its holders
-                                     // again (THE LIFE OF A REGION of BackgroundThread.h).
+                                     // again (the life of a region of BackgroundThread.h).
                                      bg.keep_region(stage, ::fixy::some(region));
                                  }
                                  return region_of_rollback.is_some();

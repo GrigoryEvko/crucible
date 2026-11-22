@@ -59,7 +59,7 @@ def answer_cases(expect: Callable[[str, bool], None]) -> None:
 
 
 def object_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check the typed answers and the objects of a commit that a scratch repository writes (THE OBJECTS)."""
+    """Check the typed answers and the objects of a commit that a scratch repository writes (the objects)."""
     with git.scratch_repository({"a.txt": b"one\n", "sub/b.txt": b"two\n"}) as root:
         first = git.commit_all(root, "The first commit", date="2025-01-02T12:00:00")
         (root / "a.txt").write_text("one and more\n")
@@ -162,7 +162,7 @@ def numbered_lines(count: int, changed: frozenset[int]) -> bytes:
 
 
 def change_base_cases(expect: Callable[[str, bool], None]) -> None:
-    """Check THE CHANGE: the base of a change in each case that change_base() reads."""
+    """Check the change: the base of a change in each case that change_base() reads."""
     with git.scratch_repository({"a.cpp": numbered_lines(4, frozenset())}) as root:
         first = git.commit_all(root, "The first commit")
         git.run(root, "branch", "-M", git.MAIN_BRANCH)

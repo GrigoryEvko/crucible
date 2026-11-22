@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::commit_per_program refuses a region whose lifetime band is
 // PER_REQUEST.  The warm tier survives a program restart, so a

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A policy names its required offloads as a fixy::Bits<NicFeature>. A
 // raw integer mask does not convert, so a mask from a different feature

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // mint_restore refuses a payload that cannot move.  A restore checks the
 // content hash and then moves the cold value into the warm tier, so the

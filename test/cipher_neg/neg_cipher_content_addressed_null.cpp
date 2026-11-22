@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::content_addressed takes a Ref of the region, and a Ref is never
 // null.  A null pointer does not convert to a Ref, so no store gets the

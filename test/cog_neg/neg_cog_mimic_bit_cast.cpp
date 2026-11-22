@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // CogMimic is not trivially copyable, so std::bit_cast cannot build one
 // from bytes that hold the address of an identity.  The private constructor

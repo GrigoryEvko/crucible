@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A rule handle proves that one table installed one rule, so only the
 // rule table builds one.  A handle built by hand from a fresh identity, a

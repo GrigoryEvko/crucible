@@ -9,7 +9,7 @@ miss, ccache then runs
 and it runs no prefix in front of the preprocessor run.  The subcommand runs
 the command, adds the user instructions of the command to the file that the
 variable CRUCIBLE_COMPILER_COUNT names, and exits as the command exited.
-utils/assay/core/meter.py (A COMPILE THROUGH CCACHE) gives the rules and
+utils/assay/core/meter.py (a compile through ccache) gives the rules and
 holds the code.
 """
 

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // Cipher::open refuses a bare string for the root.  The root comes from
 // an operator, so it crosses a trust boundary, and the caller must state

@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST. This file MUST FAIL TO COMPILE.
+// Negative compile test. This file must fail to compile.
 //
 // A NIC configuration is startup work. The mint admits a context whose
 // row holds Init, and the background drain row does not.

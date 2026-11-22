@@ -1,4 +1,4 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative compile test.  This file must fail to compile.
 //
 // A computation cache key refuses a function reached through the static
 // invoker of a closure, because the invoker prints the name of its
