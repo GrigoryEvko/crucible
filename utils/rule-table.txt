@@ -692,6 +692,9 @@ witness <foundation/permissions/PermissionFork.h> private | foundation::permissi
 witness <foundation/permissions/FederationDoor.h> private | foundation::permissions::federation_admission_key | foundation::permissions::federation_admission_key{}
 witness <fixy/concurrent/PermissionFork.h> deleted | fixy::concurrent::PermissionForkThreads | fixy::concurrent::PermissionForkThreads{}
 witness <fixy/concurrent/Spawn.h> deleted | fixy::spawn::ParallelForRunner | fixy::spawn::ParallelForRunner{}
+# Only the runner of mint_parallel_for builds the place of a shard, from the
+# split that cut the shard.
+witness <fixy/concurrent/Spawn.h> private | fixy::spawn::ShardPlace<4> | fixy::spawn::ShardPlace<4>{foundation::core::index<0>(), 0uz}
 witness <foundation/permissions/SharedPermission.h> private | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermission<foundation::permissions::tag::HugePageTag>{}
 witness <foundation/permissions/SharedPermission.h> private | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>{forge::lvalue<foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>>()}
 witness <foundation/permissions/ReadView.h> private | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag> | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>{}

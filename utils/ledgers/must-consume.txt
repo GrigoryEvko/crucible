@@ -21,7 +21,7 @@ test/ | unconsumed | 33 | - | -
 test/fixy/ | assign-over-live | 2 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
 test/fixy/ | discarded-temporary | 3 | - | -
 test/fixy/ | double-consume | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
-test/fixy/ | unconsumed | 184 | - | -
+test/fixy/ | unconsumed | 183 | - | -
 test/foundation/ | unconsumed | 8 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
