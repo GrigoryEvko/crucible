@@ -451,7 +451,19 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
 
     static Owner make(unsigned count) { return ::foundation::core::mint_masked_array<Elem<Tag>>(kAlloc, count); }
 
-    static Inner<Tag>& give_first_an_inner(Owner& owner) { return give_an_inner(owner.at_masked(0)); }
+    // The element door with_masked lends the first element, and a Ref of the
+    // new Inner leaves the door through a capture.  The Inner lives in its Box
+    // and not in the storage of the array, so no move of the array ends the
+    // Ref.
+    using InnerRef = Ref<Inner<Tag>, InnerBrand<Tag>>;
+
+    static Inner<Tag>& give_first_an_inner(Owner& owner) {
+        Option<InnerRef> given{::foundation::core::none};
+        owner.with_masked(0, [&given](Elem<Tag>& first) noexcept {
+            given = Option<InnerRef>::some(::foundation::core::to(give_an_inner(first)));
+        });
+        return *static_cast<Option<InnerRef>&&>(given).expect("the door of the first element gave its Inner");
+    }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<MaskedArray<LinearElement>>()); }
 

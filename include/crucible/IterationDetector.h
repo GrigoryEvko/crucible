@@ -326,10 +326,13 @@ private:
         auto prefix_sums = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
         auto earlier_links = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
         for (uint64_t position = held_from_(); position < pos_; ++position) {
-            keys.at_masked(position) = keys_.at_masked(position);
-            prefix_polys.at_masked(position) = prefix_polys_.at_masked(position);
-            prefix_sums.at_masked(position) = prefix_sums_.at_masked(position);
-            earlier_links.at_masked(position) = earlier_links_.at_masked(position);
+            keys.with_masked(position, [held = keys_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
+            prefix_polys.with_masked(
+                position, [held = prefix_polys_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
+            prefix_sums.with_masked(
+                position, [held = prefix_sums_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
+            earlier_links.with_masked(
+                position, [held = earlier_links_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
         }
         keys_ = std::move(keys);
         prefix_polys_ = std::move(prefix_polys);
@@ -345,10 +348,12 @@ private:
         make_room_(alloc);
         const uint64_t poly_before = prefix_poly_before_(pos_);
         const uint64_t sum_before = prefix_sum_before_(pos_);
-        keys_.at_masked(pos_) = key;
-        prefix_polys_.at_masked(pos_) = poly_before * POLY_BASE + key;
-        prefix_sums_.at_masked(pos_) = sum_before + ::foundation::reflect::fmix64(key ^ SUM_SALT);
-        earlier_links_.at_masked(pos_) = 0;
+        keys_.with_masked(pos_, [key](uint64_t& slot) noexcept { slot = key; });
+        prefix_polys_.with_masked(pos_,
+                                  [poly = poly_before * POLY_BASE + key](uint64_t& slot) noexcept { slot = poly; });
+        prefix_sums_.with_masked(pos_, [sum = sum_before + ::foundation::reflect::fmix64(key ^ SUM_SALT)](
+                                           uint64_t& slot) noexcept { slot = sum; });
+        earlier_links_.with_masked(pos_, [](uint64_t& slot) noexcept { slot = 0; });
     }
 
     // The fingerprint of the keys before index, for an index from base_ up
@@ -375,7 +380,7 @@ private:
     // none.
     [[nodiscard]] uint64_t link_window_(uint64_t start) {
         const uint64_t earlier_link = table_exchange_(window_fingerprint_(start), start);
-        earlier_links_.at_masked(start) = earlier_link;
+        earlier_links_.with_masked(start, [earlier_link](uint64_t& slot) noexcept { slot = earlier_link; });
         return earlier_link;
     }
 
@@ -394,19 +399,26 @@ private:
     // slot value that it replaces: the earlier start plus one, or zero.
     [[nodiscard]] uint64_t table_exchange_(uint64_t fingerprint, uint64_t start) {
         // The load stays at most one half, so the probe meets an empty slot.
+        // The element door of each probe claims an empty slot or takes the
+        // slot of the fingerprint, and the walk stops there.
+        uint64_t earlier = 0;
+        bool is_claimed = false;
         for (uint64_t index = home_slot_(fingerprint);; ++index) {
-            TableSlot& slot = table_.at_masked(index);
-            if (slot.start_plus_one == 0) {
-                slot = TableSlot{.start_plus_one = start + 1, .fingerprint = fingerprint};
-                ++table_used_;
-                return 0;
-            }
-            if (slot.fingerprint == fingerprint) {
-                const uint64_t earlier = slot.start_plus_one;
+            const bool is_found = table_.with_masked(index, [&](TableSlot& slot) noexcept {
+                if (slot.start_plus_one == 0) {
+                    slot = TableSlot{.start_plus_one = start + 1, .fingerprint = fingerprint};
+                    is_claimed = true;
+                    return true;
+                }
+                if (slot.fingerprint != fingerprint) return false;
+                earlier = slot.start_plus_one;
                 slot.start_plus_one = start + 1;
-                return earlier;
-            }
+                return true;
+            });
+            if (is_found) break;
         }
+        if (is_claimed) ++table_used_;
+        return earlier;
     }
 
     // Removes the slot of the fingerprint when start is its newest window.
@@ -428,10 +440,10 @@ private:
             const uint64_t home = home_slot_(table_.at_masked(next).fingerprint);
             const bool home_after_hole = ((home - hole - 1) & mask) < ((next - hole) & mask);
             if (home_after_hole) continue;
-            table_.at_masked(hole) = table_.at_masked(next);
+            table_.with_masked(hole, [moved = table_.at_masked(next)](TableSlot& slot) noexcept { slot = moved; });
             hole = next;
         }
-        table_.at_masked(hole) = TableSlot{};
+        table_.with_masked(hole, [](TableSlot& slot) noexcept { slot = TableSlot{}; });
         --table_used_;
     }
 
@@ -442,8 +454,10 @@ private:
     CRUCIBLE_COLD void rebuild_table_(::foundation::effects::Alloc alloc, uint64_t size, uint64_t end_start) {
         table_ = ::fixy::mint_masked_array<TableSlot, sizeof(TableSlot)>(alloc, size);
         table_used_ = 0;
-        for (uint64_t start = base_; start < end_start; ++start)
-            earlier_links_.at_masked(start) = table_exchange_(window_fingerprint_(start), start);
+        for (uint64_t start = base_; start < end_start; ++start) {
+            const uint64_t earlier_link = table_exchange_(window_fingerprint_(start), start);
+            earlier_links_.with_masked(start, [earlier_link](uint64_t& slot) noexcept { slot = earlier_link; });
+        }
     }
 
     void restart_() {
@@ -465,8 +479,10 @@ private:
         base_ = 0;
         // The ring keeps its slots, and the empty history makes each one
         // dead.  The table keeps its slots, and each slot becomes empty.
-        for (TableSlot& slot : table_.view())
-            slot = TableSlot{};
+        table_ = ::fixy::with_mut(std::move(table_), [](auto slots) noexcept {
+            for (TableSlot& slot : slots.view())
+                slot = TableSlot{};
+        });
         table_used_ = 0;
         CRUCIBLE_POST(0, signature_len.get() == 0u);
         CRUCIBLE_POST(0, ops_since_boundary.get() == 0u);

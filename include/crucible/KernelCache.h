@@ -330,28 +330,35 @@ public:
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
+        // The element door of each probe lends the slot in place.  The slots
+        // are atomic cells, and the door writes no state of the table, so two
+        // inserts can probe one table at the same time.
+        enum class ProbeStep : uint8_t {
+            Placed,
+            Next,
+        };
         const std::size_t slots = table_.size();
         for (std::size_t probe = 0; probe < slots; probe++) {
-            KernelCacheSlot& entry = table_.at_masked(lookup_hash + probe);
-            uint64_t expected = 0;
-            // A successful CAS claims the slot for this thread.  The writer
-            // token keeps the brand of its root.  Two inserts can run at one
-            // time, so each takes a root of its own, and the claim gives each
-            // token its one slot.
-            if (entry.try_claim_content_hash(expected, lookup_hash)) {
-                auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
-                writer.publish(KernelCacheSlotSnapshot{
-                    .content_hash = lookup_hash,
-                    .row_hash = lookup_row,
-                    .kernel = ::fixy::some(kernel),
-                });
-                ::foundation::linear::drop(std::move(writer).release());
-                // Nothing branches on the exact count.  The content hash CAS
-                // carries the real synchronization.
-                (void)size_.fetch_add_acq_rel(1);
-                return ::fixy::Unit{};
-            }
-            if (expected == lookup_hash) {
+            const ProbeStep step = table_.with_masked(lookup_hash + probe, [&](KernelCacheSlot& entry) noexcept {
+                uint64_t expected = 0;
+                // A successful CAS claims the slot for this thread.  The
+                // writer token keeps the brand of its root.  Two inserts can
+                // run at one time, so each takes a root of its own, and the
+                // claim gives each token its one slot.
+                if (entry.try_claim_content_hash(expected, lookup_hash)) {
+                    auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
+                    writer.publish(KernelCacheSlotSnapshot{
+                        .content_hash = lookup_hash,
+                        .row_hash = lookup_row,
+                        .kernel = ::fixy::some(kernel),
+                    });
+                    ::foundation::linear::drop(std::move(writer).release());
+                    // Nothing branches on the exact count.  The content hash
+                    // CAS carries the real synchronization.
+                    (void)size_.fetch_add_acq_rel(1);
+                    return ProbeStep::Placed;
+                }
+                if (expected != lookup_hash) return ProbeStep::Next;
                 // The content matches, so the row decides.  Spin on the
                 // kernel, never on the row: a CLAIMED slot reads row 0, which
                 // is indistinguishable from a published row of 0.
@@ -359,20 +366,17 @@ public:
                 if (!is_published) [[unlikely]] {
                     is_published = await_claimed_(nondet, entry).is_some();
                 }
-                if (is_published) {
-                    // A published kernel makes the row visible too.
-                    uint64_t existing_row = entry.row_hash();
-                    if (existing_row == lookup_row) {
-                        // Variant update: the row stays pinned and only the
-                        // kernel changes, so a concurrent reader observes one
-                        // kernel or the other and both are valid.
-                        auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
-                        writer.publish_kernel_variant(kernel);
-                        ::foundation::linear::drop(std::move(writer).release());
-                        return ::fixy::Unit{};
-                    }
-                }
-            }
+                // A published kernel makes the row visible too.
+                if (!is_published || entry.row_hash() != lookup_row) return ProbeStep::Next;
+                // Variant update: the row stays pinned and only the kernel
+                // changes, so a concurrent reader observes one kernel or the
+                // other and both are valid.
+                auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
+                writer.publish_kernel_variant(kernel);
+                ::foundation::linear::drop(std::move(writer).release());
+                return ProbeStep::Placed;
+            });
+            if (step == ProbeStep::Placed) return ::fixy::Unit{};
         }
         return ::fixy::err(InsertError::TableFull);
     }

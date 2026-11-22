@@ -140,8 +140,11 @@ private:
         const auto recipe = arena_->make<NumericalRecipe>(a, fields);
         recipe->hash = h;
 
-        slots_.at_masked(key) = Slot{
-            .hash = h.raw(), .recipe = ::fixy::some(::fixy::Ref<const NumericalRecipe>{::fixy::erase_brand(recipe)})};
+        slots_.with_masked(
+            key,
+            [installed = Slot{.hash = h.raw(),
+                              .recipe = ::fixy::some(::fixy::Ref<const NumericalRecipe>{::fixy::erase_brand(recipe)})}](
+                Slot& slot) noexcept { slot = installed; });
         size_.bump();
         return ::fixy::erase_brand(recipe);
     }
@@ -155,13 +158,18 @@ private:
         slots_ = ::fixy::mint_masked_array<Slot>(a, new_cap);
         capacity_ = ::fixy::mint_refined<::fixy::power_of_two>(new_cap);
 
+        // The element door of each probe puts the slot into the first empty
+        // slot of the new table.
         uint32_t reinserted = 0;
         for (const Slot& s : old_slots.view()) {
             if (s.recipe.is_none()) continue;
             for (uint32_t probe = 0; probe < new_cap; ++probe) {
-                Slot& target = slots_.at_masked(s.hash + probe);
-                if (target.recipe.is_none()) {
+                const bool is_placed = slots_.with_masked(s.hash + probe, [&s](Slot& target) noexcept {
+                    if (target.recipe.is_some()) return false;
                     target = s;
+                    return true;
+                });
+                if (is_placed) {
                     ++reinserted;
                     break;
                 }

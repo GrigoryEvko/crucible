@@ -105,7 +105,7 @@ void test_counts_and_wrapping_keys() {
             CRUCIBLE_FATAL_INVARIANT(element == 0);
         }
         for (std::uint64_t position = 0; position < count; ++position) {
-            array.at_masked(position) = position + 1;
+            array.with_masked(position, [position](std::uint64_t& element) noexcept { element = position + 1; });
         }
         for (std::uint64_t position = 0; position < count; ++position) {
             CRUCIBLE_FATAL_INVARIANT(array.at_masked(position + count) == position + 1);
@@ -116,7 +116,31 @@ void test_counts_and_wrapping_keys() {
         CRUCIBLE_FATAL_INVARIANT(array.at_masked(~std::uint64_t{0}) == count);
         MaskedArray<std::uint64_t> const& fixed = array;
         CRUCIBLE_FATAL_INVARIANT(fixed.at_masked(count + count - 1) == count);
+        // The element door of a const array reads the element of the masked
+        // key, and the door gives the result of the body.
+        std::uint64_t const last =
+            fixed.with_masked(~std::uint64_t{0}, [](std::uint64_t const& element) noexcept { return element; });
+        CRUCIBLE_FATAL_INVARIANT(last == count);
     }
+}
+
+// The element door writes one element in place at a masked key, and a key
+// with the same low bits names the same element.  The door gives the result of
+// the body, and its body holds no reference to the element after the call.
+void test_element_door_writes_in_place() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    MaskedArray<std::uint64_t> words = mint_masked_array<std::uint64_t>(alloc, 8);
+    int const steps = words.with_masked(2 + 8 * 7, [](std::uint64_t& word) noexcept {
+        word |= 16;
+        return 1;
+    });
+    CRUCIBLE_FATAL_INVARIANT(steps == 1);
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(2) == 16 && words.at_masked(10) == 16);
+    std::uint64_t total = 0;
+    for (std::uint64_t const word : words.view()) {
+        total += word;
+    }
+    CRUCIBLE_FATAL_INVARIANT(total == 16);
 }
 
 template <std::size_t Alignment>
@@ -146,8 +170,8 @@ void test_pinned_slots() {
         CRUCIBLE_FATAL_INVARIANT(slot.key.load_acquire() == 0);
         CRUCIBLE_FATAL_INVARIANT(slot.value.load_acquire() == 0);
     }
-    table.at_masked(5).key.store_release(0xABCD);
-    table.at_masked(5 + 16 * 3).value.store_release(7);
+    table.with_masked(5, [](PinnedSlot& slot) noexcept { slot.key.store_release(0xABCD); });
+    table.with_masked(5 + 16 * 3, [](PinnedSlot& slot) noexcept { slot.value.store_release(7); });
     CRUCIBLE_FATAL_INVARIANT(table.at_masked(21).key.load_acquire() == 0xABCD);
     CRUCIBLE_FATAL_INVARIANT(table.at_masked(5).value.load_acquire() == 7);
     CRUCIBLE_FATAL_INVARIANT(table.at_masked(6).key.load_acquire() == 0);
@@ -165,7 +189,7 @@ void test_move_and_destruction_counts() {
     {
         MaskedArray<Counted> first = mint_masked_array<Counted>(alloc, 8);
         CRUCIBLE_FATAL_INVARIANT(live_elements == 8);
-        first.at_masked(3).label = 30;
+        first.with_masked(3, [](Counted& element) noexcept { element.label = 30; });
 
         // A move gives the storage to the target and leaves the source empty.
         MaskedArray<Counted> second{std::move(first)};
@@ -221,7 +245,7 @@ void test_agrees_with_plain_model() {
             for (int step = 0; step < 64; ++step) {
                 std::uint64_t const key = stream.next_wide();
                 std::uint64_t const value = stream.next_wide();
-                array.at_masked(key) = value;
+                array.with_masked(key, [value](std::uint64_t& element) noexcept { element = value; });
                 *cells.get(key % count).expect("a key modulo the count is below the count") = value;
             }
         });
@@ -240,6 +264,7 @@ int main() {
     test_empty_array();
     test_element_of_an_empty_array_aborts(test);
     test_counts_and_wrapping_keys();
+    test_element_door_writes_in_place();
     test_each_alignment();
     test_pinned_slots();
     test_move_and_destruction_counts();

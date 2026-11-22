@@ -1489,14 +1489,15 @@ public:
 
     static_assert(sizeof(SlotInfo) == 24, "SlotInfo: matches TensorSlot bulk region");
 
-    // An entry of the map, or no entry.  The map lives as long as the build
-    // scratch, so a link holds its entry on the erased brand.
-    using PtrSlotLink = ::fixy::Option<::fixy::Ref<PtrSlot>>;
+    // The probe key of an entry of the map, or no entry.  The mask of the
+    // map wraps the key, so at_masked reads the entry and with_masked writes
+    // it in place.
+    using PtrSlotPosition = ::fixy::Option<uint64_t>;
 
     // old_op, old_port and old_slot carry the displaced entry and are
     // meaningful only when was_alias is true.
     struct InsertResult {
-        PtrSlotLink slot{};
+        PtrSlotPosition slot{};
         bool was_alias = false;
         OpIndex old_op;
         uint8_t old_port = 0;
@@ -1538,54 +1539,58 @@ public:
         return static_cast<uint32_t>(::foundation::reflect::combine_ids(key.address.hash(), key.generation.raw()));
     }
 
-    // The entry of key in the map, or no entry when the map does not hold
-    // the key.  The probes stop at the first empty slot.
-    [[nodiscard]] static PtrSlotLink ptr_map_find(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen,
-                                                  PtrMapKey key) noexcept {
+    // The probe key of the entry of key in the map, or no entry when the map
+    // does not hold the key.  The probes stop at the first empty slot.
+    [[nodiscard]] static PtrSlotPosition ptr_map_find(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen,
+                                                      PtrMapKey key) noexcept {
         const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
-            PtrSlot& slot = map.at_masked(bucket_idx + probe);
+            const PtrSlot& slot = map.at_masked(bucket_idx + probe);
             if (slot.gen != gen) return ::fixy::none;
-            if (slot.key == key) return ::fixy::some(::fixy::erase_brand(::fixy::to(slot)));
+            if (slot.key == key) return ::fixy::some(bucket_idx + probe);
         }
         return ::fixy::none;
     }
 
     // The probes of the map start at the hash of the key, and the mask of
     // the map wraps each probe.  A full round of probes visits each slot.
+    // The element door of each probe claims an empty slot or updates the slot
+    // of the key in place.
     [[nodiscard]] static InsertResult ptr_map_insert(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen, PtrMapKey key,
                                                      OpIndex op_index, uint8_t port, SlotId slot_id) {
+        // The probe that places the key writes the result, and the walk
+        // stops there.  A full table gives the result of no slot.
+        InsertResult result{.slot = {}, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};
         const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
-            auto& slot = map.at_masked(bucket_idx + probe);
-            if (slot.gen != gen) {
-                // A stale generation means the slot is empty.  Claim it.
-                slot.key = key;
-                slot.op_index = op_index;
-                slot.port = port;
-                slot.slot_id = slot_id;
-                slot.reader = OpIndex{};
-                slot.gen = gen;
-                return {.slot = ::fixy::some(::fixy::erase_brand(::fixy::to(slot))),
-                        .was_alias = false,
-                        .old_op = {},
-                        .old_port = 0,
-                        .old_slot = {}};
-            }
-            if (slot.key == key) {
-                InsertResult result{.slot = ::fixy::some(::fixy::erase_brand(::fixy::to(slot))),
-                                    .was_alias = (slot.op_index != op_index),
-                                    .old_op = slot.op_index,
-                                    .old_port = slot.port,
-                                    .old_slot = slot.slot_id};
+            const uint64_t position = bucket_idx + probe;
+            const bool is_placed = map.with_masked(position, [&](PtrSlot& slot) noexcept {
+                if (slot.gen != gen) {
+                    // A stale generation means the slot is empty.  Claim it.
+                    slot.key = key;
+                    slot.op_index = op_index;
+                    slot.port = port;
+                    slot.slot_id = slot_id;
+                    slot.reader = OpIndex{};
+                    slot.gen = gen;
+                    result.slot = ::fixy::some(position);
+                    return true;
+                }
+                if (slot.key != key) return false;
+                result = InsertResult{.slot = ::fixy::some(position),
+                                      .was_alias = (slot.op_index != op_index),
+                                      .old_op = slot.op_index,
+                                      .old_port = slot.port,
+                                      .old_slot = slot.slot_id};
                 slot.op_index = op_index;
                 slot.port = port;
                 // slot_id is deliberately left alone: an alias shares the
                 // storage, so it shares the slot.
-                return result;
-            }
+                return true;
+            });
+            if (is_placed) break;
         }
-        return {.slot = {}, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};  // table full
+        return result;
     }
 
     struct PtrLookup {

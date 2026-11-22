@@ -547,6 +547,12 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
+        "masked_array_with_masked",
+        "with_masked of a MaskedArray adds the test of the storage and one branch to the fatal exit to the or of the "
+        "raw masked subscript, with no call of the body",
+        checks=("fatal",),
+    ),
+    Probe(
         "fixed_array_frame_pop",
         "a copy into two FixedArrays through their member frame doors is the two copies of the raw form, with no copy "
         "of an element into a frame: the doors lend the runs in place.  At -O2 and -O3 the family side moves its "

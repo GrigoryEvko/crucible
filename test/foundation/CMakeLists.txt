@@ -4456,6 +4456,16 @@ foundation_neg_compile_test(neg_core_masked_array_copied
 foundation_neg_compile_test(neg_core_masked_array_element_not_default_constructible
   "no matching function for call to .mint_masked_array<NoDefault>\\(foundation::core::Alloc, int\\)."
   "the expression .is_nothrow_default_constructible_v<T> \\[with T = NoDefault\\]. evaluated to .false.")
+# view() of a MaskedArray gives a View of the const elements, so two Views of
+# one array write no element.
+foundation_neg_compile_test(neg_core_masked_array_two_mutable_views
+  "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
+  "neg_core_masked_array_two_mutable_views\\.cpp:12:")
+# The element door of a MaskedArray carries the annotation borrow_match, so
+# the rule borrow-match refuses a second door of the same array in its body.
+foundation_neg_compile_test(neg_core_masked_array_nested_element_door
+  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
+  "the payload that the arm borrows can end while the arm holds its reference")
 # View names view_over_ and first_of_ as no friend template: a forged
 # specialization of view_over_ reaches no private constructor of a View, and
 # first_of_ is a friend that is no template, so it has no specialization.

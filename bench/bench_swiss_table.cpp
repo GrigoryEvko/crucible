@@ -59,9 +59,9 @@ struct MiniSwissTable {
     size_t count = 0;
 
     MiniSwissTable(::foundation::effects::Alloc alloc, size_t cap) : capacity{cap} {
-        ctrl = ::fixy::mint_masked_array<int8_t>(alloc, cap);
+        ctrl = ::fixy::with_mut(::fixy::mint_masked_array<int8_t>(alloc, cap),
+                                [](auto run) noexcept { ::fixy::fill(run.view(), kEmpty); });
         hashes = ::fixy::mint_masked_array<uint64_t>(alloc, cap);
-        ::fixy::fill(ctrl.view(), kEmpty);
     }
     MiniSwissTable(const MiniSwissTable&) = delete;
     MiniSwissTable& operator=(const MiniSwissTable&) = delete;
@@ -79,8 +79,8 @@ struct MiniSwissTable {
             auto group = load_group(ctrl.view(), base);
             if (auto empties = group.match_empty(); empties) {
                 const size_t idx = base + empties.lowest();
-                ctrl.at_masked(idx) = tag;
-                hashes.at_masked(idx) = h;
+                ctrl.with_masked(idx, [tag](int8_t& slot) noexcept { slot = tag; });
+                hashes.with_masked(idx, [h](uint64_t& slot) noexcept { slot = h; });
                 ++count;
                 return idx;
             }

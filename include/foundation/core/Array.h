@@ -88,11 +88,15 @@
 //                       elements from their default constructor, so an
 //                       element that does not copy passes.  The count is a
 //                       power of two from 1 to 2^31
-//   size(), view()      as a HeapArray gives them
-//   at_masked(key)      the element at key & (count - 1), with no check
+//   size(), view()      as a HeapArray gives them: const elements
+//   at_masked(key)      the const element at key & (count - 1), with no check
+//   with_masked(key, body)
+//                       the element door: body gets the element at
+//                       key & (count - 1) in place (THE ELEMENT DOOR)
 //
 // A MaskedArray owns its storage as a HeapArray does.  It has no operator[]
-// and no pointer to its elements.
+// and no pointer to its elements.  A write of one element takes
+// with_masked, and a write of the run takes the frame door with_mut.
 //
 // THE FRAME DOOR
 //   array.with_mut(body)   of a FixedArray: body gets the ViewMut of the
@@ -114,6 +118,9 @@
 //                       position that no type proves: on_some gets the
 //                       element in place below size(), and on_none runs at or
 //                       past it.  The two arms give one type.  One compare
+//   with_masked(key, body)   of a MaskedArray: body gets the element at
+//                       key & (count - 1) in place.  The mask keeps each key
+//                       below the count, so the door has no none arm
 // The result holds no borrow (HoldsNoBorrow of foundation/core/Choice.h), so
 // no reference to the element leaves the door, and the door gives no View.  A
 // const array gives T const&.  The door carries the annotation borrow_match,
@@ -1066,12 +1073,10 @@ public:
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
 
-    // The View of the elements.  It borrows this array.  The mint bounds the
-    // count and gives storage for each count, so the View comes through the
-    // door of the base layer, with no check.
-    [[nodiscard]] constexpr View<T> view() & noexcept {
-        return View<T>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
-    }
+    // The View of the const elements.  It borrows this array.  The mint bounds
+    // the count and gives storage for each count, so the View comes through
+    // the door of the base layer, with no check.  A write takes with_masked
+    // for one element, or the frame door with_mut for the run.
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
         return View<T const>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
     }
@@ -1085,11 +1090,10 @@ public:
         return View<T>{detail::ViewDoor::key(), array.state_.first, array.state_.count};
     }
 
-    // The element at key & (count - 1), with no check of the key.  The count
-    // is a power of two, so each masked key is below it.  An empty array
-    // holds no storage, and each build tests that case here: one test and one
-    // branch to a cold call.  Complexity: O(1).
-    [[nodiscard]] constexpr T& at_masked(std::uint64_t key) & noexcept { return held_()[key & this->state_.mask]; }
+    // The const element at key & (count - 1), with no check of the key.  The
+    // count is a power of two, so each masked key is below it.  An empty
+    // array holds no storage, and each build tests that case here: one test
+    // and one branch to a cold call.  Complexity: O(1).
     [[nodiscard]] constexpr T const& at_masked(std::uint64_t key) const& noexcept {
         return held_()[key & this->state_.mask];
     }
@@ -1097,6 +1101,35 @@ public:
                                               "expression");
     void at_masked(std::uint64_t) const&& = delete("an element of a temporary MaskedArray dangles at the end of the "
                                                    "full expression");
+
+    // The element door of a masked key (THE ELEMENT DOOR): body gets the
+    // element at key & (count - 1) in place, as T&, for the time of the call,
+    // and the door gives the result of body.  The mask keeps each key below
+    // the count, so the door has no none arm.  The result holds no borrow, so
+    // no reference to the element leaves the door.  A const array gives a
+    // const element.  The door writes no state of the array, so two threads
+    // can call it on one shared array, and only an element that is safe for
+    // concurrent writes, such as a class of Atomic cells, makes such calls
+    // correct.  An empty array ends the process, as at_masked does.
+    // Complexity: O(1), and the cost of body.
+    template <class Body>
+        requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<std::invoke_result_t<Body, T&>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T&>
+        with_masked(std::uint64_t key, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        return static_cast<Body&&>(body)(held_()[key & this->state_.mask]);
+    }
+    template <class Body>
+        requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<std::invoke_result_t<Body, T const&>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T const&>
+        with_masked(std::uint64_t key, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
+        return static_cast<Body&&>(body)(static_cast<T const*>(held_())[key & this->state_.mask]);
+    }
+    template <class Body>
+    void with_masked(std::uint64_t key, Body&& body) && =
+        delete("a frame door of a temporary MaskedArray lends an element of storage that the full expression frees");
+    template <class Body>
+    void with_masked(std::uint64_t key, Body&& body) const&& =
+        delete("a frame door of a temporary MaskedArray lends an element of storage that the full expression frees");
 };
 
 // The one door of a MaskedArray: count elements from their default

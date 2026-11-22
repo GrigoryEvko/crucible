@@ -361,6 +361,14 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
         [] noexcept { ::foundation::core::fatal("the probe gets a position below the count"); });
 }
 
+// The or of a bit into the element of a masked key of a MaskedArray through
+// the element door.  An array that holds no storage takes the fatal exit, as
+// a read through at_masked does.
+[[gnu::used]] void masked_array_with_masked(::foundation::core::MaskedArray<std::uint32_t>& array, std::uint64_t key,
+                                            std::uint32_t bit) noexcept {
+    array.with_masked(key, [bit](std::uint32_t& element) noexcept { element |= bit; });
+}
+
 // Two arrays of a batch, as the batch of the drain stage holds them.
 struct ShapeBatch final {
     ::foundation::core::FixedArray<std::uint64_t, 64> words{};
@@ -1637,6 +1645,12 @@ struct RawHeap final {
     std::size_t count;
 };
 
+struct RawMasked final {
+    std::uint32_t* first;
+    std::size_t count;
+    std::size_t mask;
+};
+
 // The two words of a BrandedView: the base pointer and the count of 4 bytes.
 struct RawColumn final {
     std::uint32_t const* first;
@@ -1812,6 +1826,10 @@ struct RawCycle {
 
 [[gnu::used]] void heap_array_with_element_raw(RawHeap& array, std::size_t position, std::uint32_t bit) noexcept {
     array.first[position] |= bit;
+}
+
+[[gnu::used]] void masked_array_with_masked_raw(RawMasked& array, std::uint64_t key, std::uint32_t bit) noexcept {
+    array.first[key & array.mask] |= bit;
 }
 
 struct RawShapeBatch final {

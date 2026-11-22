@@ -441,12 +441,14 @@ static_assert(!CanMintMaskedArray<std::uint64_t, 4, Alloc>);
 static_assert(!HasSubscript<MaskedArray<int>&> && !HasData<MaskedArray<int>&>);
 static_assert(!::foundation::linear::is_linear_v<MaskedArray<int>>);
 
-// at_masked of an lvalue gives a reference to the element, and a const array
-// gives a const one.  A view and an element of a temporary are refused.
+// at_masked and view() give const elements, also of an array that is not
+// const, and with_masked lends the element in place.  A view and an element of
+// a temporary are refused.
 template <class Array>
 concept ReadsMaskedTemporary = requires { std::declval<Array>().at_masked(std::uint64_t{0}); };
-static_assert(std::is_same_v<decltype(std::declval<MaskedArray<int>&>().at_masked(0)), int&>);
+static_assert(std::is_same_v<decltype(std::declval<MaskedArray<int>&>().at_masked(0)), int const&>);
 static_assert(std::is_same_v<decltype(std::declval<MaskedArray<int> const&>().at_masked(0)), int const&>);
+static_assert(std::is_same_v<decltype(std::declval<MaskedArray<int>&>().view()), View<int const>>);
 static_assert(ViewsTemporary<MaskedArray<int>&> && !ViewsTemporary<MaskedArray<int>>);
 static_assert(!ViewsTemporary<MaskedArray<int> const>);
 static_assert(ReadsMaskedTemporary<MaskedArray<int>&> && !ReadsMaskedTemporary<MaskedArray<int>>);

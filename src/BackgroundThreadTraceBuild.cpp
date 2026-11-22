@@ -179,9 +179,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
         // Generation wrapped, so stale slots would read as current.
-        for (PtrSlot& slot : scratch_map_.view()) {
-            slot = PtrSlot{};
-        }
+        scratch_map_ = ::fixy::with_mut(std::move(scratch_map_), [](auto map) noexcept {
+            for (PtrSlot& slot : map.view()) {
+                slot = PtrSlot{};
+            }
+        });
         map_gen_ = 1;
     }
 
@@ -342,16 +344,19 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             if (input_meta.data_ptr.value() == nullptr) continue;
             const PtrMapKey input_key = storage_key(input_meta);
             const uint64_t input_span = span_bytes_of_(input_meta);
-            const PtrSlotLink found = ptr_map_find(scratch_map_, local_gen, input_key);
+            const PtrSlotPosition found = ptr_map_find(scratch_map_, local_gen, input_key);
             if (found.is_some()) {
                 // A storage that an op of the region wrote, or an external
                 // storage that an op read before.  The op is a reader of the
                 // storage, so an output of the op on it is the same storage.
-                const ::fixy::Ref<PtrSlot> entry = PtrSlotLink{found}.expect("the test above found the entry");
-                entry->reader = OpIndex{i};
-                producer = entry->op_index;
-                input_slot = entry->slot_id;
-                if (entry->op_index.is_valid()) {
+                // The build reads a copy of the entry, and the element door
+                // writes the reader in place.
+                const uint64_t position = PtrSlotPosition{found}.expect("the test above found the entry");
+                const PtrSlot entry = scratch_map_.at_masked(position);
+                scratch_map_.with_masked(position, [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
+                producer = entry.op_index;
+                input_slot = entry.slot_id;
+                if (entry.op_index.is_valid()) {
                     // The edge scratch holds an edge for each input and each
                     // output, and the check of the element ends the process
                     // in each build when the count reaches its end.  The
@@ -359,16 +364,16 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                     // semantic, which is a per-target build option.
                     *local_edges.get(num_edges).expect(
                         "the edge scratch holds an edge for each input and each output") =
-                        Edge{.src = OpIndex{entry->op_index.raw()},
+                        Edge{.src = OpIndex{entry.op_index.raw()},
                              .dst = OpIndex{i},
-                             .src_port = entry->port,
+                             .src_port = entry.port,
                              .dst_port = static_cast<uint8_t>(j),
                              .kind = EdgeKind::DATA_FLOW,
                              .pad = 0};
                     ++num_edges;
                 }
                 // A slot id at or past slot_cap names no slot of this call.
-                for (auto slot_info : local_slots.get(entry->slot_id.raw())) {
+                for (auto slot_info : local_slots.get(entry.slot_id.raw())) {
                     if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
                     slot_info->nbytes = ::fixy::max(slot_info->nbytes, input_span);
                 }
@@ -391,8 +396,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 slot_info.layout = input_meta.layout;
                 const InsertResult inserted =
                     ptr_map_insert(scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
-                for (const ::fixy::Ref<PtrSlot>& claimed : inserted.slot)
-                    claimed->reader = OpIndex{i};
+                inserted.slot.match(
+                    [this, i](uint64_t claimed) noexcept {
+                        scratch_map_.with_masked(claimed, [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
+                    },
+                    [] noexcept {});
             }
         }
 
@@ -403,7 +411,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             if (output_meta.data_ptr.value() == nullptr) continue;
             const PtrMapKey output_key = storage_key(output_meta);
             const uint64_t output_span = span_bytes_of_(output_meta);
-            const PtrSlotLink found = ptr_map_find(scratch_map_, local_gen, output_key);
+            const PtrSlotPosition found = ptr_map_find(scratch_map_, local_gen, output_key);
 
             // A key with a known generation names one storage of the process,
             // so a key of the map with a known generation is the same storage.
@@ -429,20 +437,24 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             // does so only in the period of the dead storage, and in one
             // period the front end records no new storage with no generation
             // at the address of a dead one.
-            const bool is_written_in_the_nest =
-                found.is_some_and([nest_start](::fixy::Ref<PtrSlot> const& entry) noexcept {
-                    return entry->op_index.is_valid() && entry->op_index.raw() >= nest_start;
-                });
-            const bool is_same_storage = found.is_some_and([&](::fixy::Ref<PtrSlot> const& entry) noexcept {
-                return entry->slot_id.is_valid()
-                    && (output_key.generation.is_known() || entry->reader == OpIndex{i}
+            const bool is_written_in_the_nest = found.is_some_and([this, nest_start](uint64_t position) noexcept {
+                const PtrSlot& entry = scratch_map_.at_masked(position);
+                return entry.op_index.is_valid() && entry.op_index.raw() >= nest_start;
+            });
+            const bool is_same_storage = found.is_some_and([&](uint64_t position) noexcept {
+                const PtrSlot& entry = scratch_map_.at_masked(position);
+                return entry.slot_id.is_valid()
+                    && (output_key.generation.is_known() || entry.reader == OpIndex{i}
                         || (output_meta.flags & meta_flags::IS_VIEW) != 0 || is_written_in_the_nest);
             });
             if (is_same_storage) {
-                const ::fixy::Ref<PtrSlot> entry = PtrSlotLink{found}.expect("the test above found the entry");
-                output_slot = entry->slot_id;
+                // The build reads a copy of the entry, and the element door
+                // writes the op and the port in place.
+                const uint64_t position = PtrSlotPosition{found}.expect("the test above found the entry");
+                const PtrSlot entry = scratch_map_.at_masked(position);
+                output_slot = entry.slot_id;
                 // A slot id at or past slot_cap names no slot of this call.
-                for (auto slot_info : local_slots.get(entry->slot_id.raw())) {
+                for (auto slot_info : local_slots.get(entry.slot_id.raw())) {
                     if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
                     slot_info->nbytes = ::fixy::max(slot_info->nbytes, output_span);
                     // An op of the nest met the storage first, as an input,
@@ -452,25 +464,27 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                     // storage, as addmm makes the result that its nested
                     // copy_ writes in place.  The storage is internal, and it
                     // is born at its first sight.
-                    const bool is_made_in_the_nest = slot_info->is_external && entry->reader != OpIndex{i}
-                                                  && slot_info->birth_op.raw() >= nest_start;
+                    const bool is_made_in_the_nest =
+                        slot_info->is_external && entry.reader != OpIndex{i} && slot_info->birth_op.raw() >= nest_start;
                     if (is_made_in_the_nest) slot_info->is_external = false;
                 }
-                if (entry->op_index.is_valid() && entry->op_index != OpIndex{i}) {
+                if (entry.op_index.is_valid() && entry.op_index != OpIndex{i}) {
                     // The same bound as the data-flow edge above, with the
                     // same check of the element.
                     *local_edges.get(num_edges).expect(
                         "the edge scratch holds an edge for each input and each output") =
-                        Edge{.src = OpIndex{entry->op_index.raw()},
+                        Edge{.src = OpIndex{entry.op_index.raw()},
                              .dst = OpIndex{i},
-                             .src_port = entry->port,
+                             .src_port = entry.port,
                              .dst_port = static_cast<uint8_t>(j),
                              .kind = EdgeKind::ALIAS,
                              .pad = 0};
                     ++num_edges;
                 }
-                entry->op_index = OpIndex{i};
-                entry->port = static_cast<uint8_t>(j);
+                scratch_map_.with_masked(position, [i, j](PtrSlot& slot) noexcept {
+                    slot.op_index = OpIndex{i};
+                    slot.port = static_cast<uint8_t>(j);
+                });
                 continue;
             }
 
@@ -488,11 +502,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 output_slot = new_slot;
             }
             if (found.is_some()) {
-                const ::fixy::Ref<PtrSlot> entry = PtrSlotLink{found}.expect("the test above found the entry");
-                entry->op_index = OpIndex{i};
-                entry->port = static_cast<uint8_t>(j);
-                entry->slot_id = output_slot;
-                entry->reader = OpIndex{};
+                scratch_map_.with_masked(PtrSlotPosition{found}.expect("the test above found the entry"),
+                                         [i, j, new_output = output_slot](PtrSlot& slot) noexcept {
+                                             slot.op_index = OpIndex{i};
+                                             slot.port = static_cast<uint8_t>(j);
+                                             slot.slot_id = new_output;
+                                             slot.reader = OpIndex{};
+                                         });
             } else {
                 (void)ptr_map_insert(scratch_map_, local_gen, output_key, OpIndex{i}, static_cast<uint8_t>(j),
                                      output_slot);

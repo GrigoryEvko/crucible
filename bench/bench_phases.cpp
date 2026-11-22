@@ -50,6 +50,15 @@ struct BuildScratchOfBench {
     [[nodiscard]] static ::fixy::MaskedArray<BackgroundThread::PtrSlot>& map(BackgroundThread& bg) noexcept {
         return bg.scratch_map_;
     }
+    // Empties each slot of the map through the frame door of the map, as the
+    // build does when its generation wraps.
+    static void clear_map(BackgroundThread& bg) noexcept {
+        bg.scratch_map_ = ::fixy::with_mut(std::move(bg.scratch_map_), [](auto slots) noexcept {
+            for (BackgroundThread::PtrSlot& slot : slots.view()) {
+                slot = BackgroundThread::PtrSlot{};
+            }
+        });
+    }
     [[nodiscard]] static uint8_t& map_generation(BackgroundThread& bg) noexcept { return bg.map_gen_; }
     [[nodiscard]] static uint32_t slot_capacity(BackgroundThread const& bg) noexcept { return bg.slot_cap_max_.get(); }
     // The growth of the scratch buffers that the build makes after its scan.
@@ -596,9 +605,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         for (uint32_t iter = 0; iter < iters; iter++) {
             BuildScratchOfBench::map_generation(bg)++;
             if (BuildScratchOfBench::map_generation(bg) == 0) {
-                for (BackgroundThread::PtrSlot& slot : BuildScratchOfBench::map(bg).view()) {
-                    slot = BackgroundThread::PtrSlot{};
-                }
+                BuildScratchOfBench::clear_map(bg);
                 BuildScratchOfBench::map_generation(bg) = 1;
             }
             const uint8_t local_gen = BuildScratchOfBench::map_generation(bg);
@@ -647,9 +654,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         for (uint32_t iter = 0; iter < iters; iter++) {
             BuildScratchOfBench::map_generation(bg)++;
             if (BuildScratchOfBench::map_generation(bg) == 0) {
-                for (BackgroundThread::PtrSlot& slot : BuildScratchOfBench::map(bg).view()) {
-                    slot = BackgroundThread::PtrSlot{};
-                }
+                BuildScratchOfBench::clear_map(bg);
                 BuildScratchOfBench::map_generation(bg) = 1;
             }
             const uint8_t local_gen = BuildScratchOfBench::map_generation(bg);
