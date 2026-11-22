@@ -252,8 +252,9 @@ The hot path is the record of one operation and the replay of one operation.
 - A comment tells what the code does. It does not tell what changed.
 - Put no task number, stage label or agent name in code, comments, tests or commit messages.
 - Write comments, commit messages and documents in short plain sentences: active voice, one idea in each sentence, no semicolon.
+- Write comments, titles and labels in sentence case. No uppercase titles, labels or shouted words: not "THE FRAME OF A BOX", not "NOTE:". A title takes no article: write "Frame of a Box", or name the function or the type. Only acronyms and code names keep their uppercase letters.
 - Do not add an `.md` file, unless the owner asks.
-- Change files with the edit tools. Do not use `sed` or `awk`.
+- Change files with the edit tools. Do not edit a file with `sed` or `awk`. A read or a filter with them is fine.
 - Do not use `git checkout`, `git reset`, `git stash`, `git clean` or `--no-verify`.
 
 ### If rules conflict
