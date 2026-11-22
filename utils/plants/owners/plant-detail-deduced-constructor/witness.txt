@@ -1,9 +1,10 @@
 # A function outside the layer makes a stage of the layer with no name of
-# the detail namespace: through the type that decltype deduces, and through a
+# the detail namespace: through the type that decltype deduces, through a
 # template parameter, where the instantiation also calls a member of the
-# stage.  Each call of the constructor and of the member is a deduced use.  A
-# spelled constructor gives one finding on its line, and a member of that
-# stage on a later line is a deduced use.
+# stage, and in a lambda and a generic lambda, which read a data member of
+# the stage too.  Each call of the constructor and each member is a deduced
+# use.  A spelled constructor gives one finding on its line, and a member of
+# that stage on a later line is a deduced use.
 
 compile use src/use.cpp stage=c
 exit use pass
@@ -13,3 +14,7 @@ finding use owners detail-use src/use.cpp:21:18 | planted::forge_by_parameter(co
 finding use owners detail-use src/use.cpp:22:18 | planted::forge_by_parameter(const T0_0&, int): deduced foundation::effects::detail
 finding use owners detail-use src/use.cpp:28:28 | planted::forge_by_name(int): foundation::effects::detail
 finding use owners detail-use src/use.cpp:29:46 | planted::forge_by_name(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:34:58 | planted::forge_in_lambdas(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:34:60 | planted::forge_in_lambdas(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:35:58 | planted::forge_in_lambdas(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:35:72 | planted::forge_in_lambdas(int): deduced foundation::effects::detail

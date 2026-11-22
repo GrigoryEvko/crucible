@@ -2923,20 +2923,25 @@ enum class DeducedForm : std::uint8_t {
 };
 
 // One deduced use: the row and the head of the class that it reaches, that
-// class, the member, and the form.  A use with no row is no deduced use.  The
-// record lives in one call, so it can hold trees.
+// class, the member, the form, and the two facts of the public uses: a
+// special member (an operator, a conversion function, a destructor, or a copy
+// or a move constructor), and a class that a public alias names.  A use with
+// no row is no deduced use.  The record lives in one call, so it can hold
+// trees.
 struct DeducedUse {
     Held held;
     tree reached = NULL_TREE;
     tree member = NULL_TREE;
     DeducedForm form = DeducedForm::member_function;
+    bool is_special = false;
+    bool is_published = false;
 };
 
 // The deduced use of MEMBER through the class REACHED (THE DEDUCED USES): a
-// member of a class of a detail row, which is no operator, no conversion
-// function, no destructor and no copy or move constructor, through a class of
-// a detail row that no public alias names.  Each other pair gives a use with
-// no row.
+// member function or a data member of a class of a detail row, through a
+// class of a detail row.  Each other pair gives a use with no row.  The query
+// states the facts of a use and judges none, so a second kind, such as the
+// uses of a key door, reads each deduced use here with its own policy.
 DeducedUse deduced_use_of(tree member, tree reached) {
     if (member != NULL_TREE && TREE_CODE(member) == TEMPLATE_DECL) {
         member = DECL_TEMPLATE_RESULT(member);
@@ -2951,10 +2956,8 @@ DeducedUse deduced_use_of(tree member, tree reached) {
         }
         bool is_copy_or_move =
             DECL_CONSTRUCTOR_P(member) && (DECL_COPY_CONSTRUCTOR_P(member) || DECL_MOVE_CONSTRUCTOR_P(member));
-        if (DECL_OVERLOADED_OPERATOR_P(member) || DECL_CONV_FN_P(member) || DECL_DESTRUCTOR_P(member)
-            || is_copy_or_move) {
-            return DeducedUse{};
-        }
+        use.is_special = DECL_OVERLOADED_OPERATOR_P(member) || DECL_CONV_FN_P(member) || DECL_DESTRUCTOR_P(member)
+                      || is_copy_or_move;
         use.form = DECL_CONSTRUCTOR_P(member) ? DeducedForm::constructor : DeducedForm::member_function;
     } else if (TREE_CODE(member) == FIELD_DECL || VAR_P(member)) {
         use.form = DeducedForm::data_member;
@@ -2963,22 +2966,23 @@ DeducedUse deduced_use_of(tree member, tree reached) {
     }
     tree scope = CP_DECL_CONTEXT(member);
     Held held = detail_class_head(reached);
-    if (held.row == nullptr || !TYPE_P(scope) || detail_class_head(scope).row == nullptr || is_published(reached)) {
+    if (held.row == nullptr || !TYPE_P(scope) || detail_class_head(scope).row == nullptr) {
         return DeducedUse{};
     }
     use.held = held;
     use.reached = TYPE_MAIN_VARIANT(reached);
     use.member = member;
+    use.is_published = is_published(reached);
     return use;
 }
 
 // The one record of the deduced use USE at LOCATION in the body of FUNCTION:
-// the kind detail-use with the shape "deduced HEAD", unless the holder spells
-// a name of the same head on the line (THE DEDUCED USES).  Each reader of a
-// deduced use gives it here, so a kind of a second row that reads such a use
-// reads it here too.
+// the kind detail-use with the shape "deduced HEAD" for a use that is no
+// public use, unless the holder spells a name of the same head on the line
+// (THE DEDUCED USES).  Each reader of a deduced use gives it here, so a kind
+// of a second row that reads such a use can read it here too.
 void record_deduced_use(const DeducedUse& use, location_t location, tree function, bool is_late) {
-    if (use.held.row == nullptr) {
+    if (use.held.row == nullptr || use.is_special || use.is_published) {
         return;
     }
     Place place = owned_place(location);

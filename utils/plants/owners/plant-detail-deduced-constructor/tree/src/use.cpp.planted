@@ -1,7 +1,7 @@
 // A quarantined unit that makes a stage of the layer with no name of the
 // detail namespace: through the type that decltype deduces from a public
-// walk, and through a template parameter.  A spelled constructor gives one
-// finding on its line.
+// walk, through a template parameter, and in a lambda and a generic lambda.
+// A spelled constructor gives one finding on its line.
 #include <foundation/effects/Detail.h>
 
 namespace planted {
@@ -27,6 +27,13 @@ int forge_through_template(int count) { return forge_by_parameter(::foundation::
 int forge_by_name(int count) {
     ::foundation::effects::detail::Stage const stage{count};
     return ::foundation::effects::walk(stage.mark).size();
+}
+
+int forge_in_lambdas(int count) {
+    using Forged = decltype(stage_of(::foundation::effects::walk(3)));
+    auto plain = [count]() noexcept { return Forged{count}.mark; };
+    auto generic = [count](auto scale) noexcept { return Forged{count}.mark * scale; };
+    return plain() + generic(2);
 }
 
 }  // namespace planted
