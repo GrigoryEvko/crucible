@@ -1,0 +1,30 @@
+// The temporary linear closures that drop a capture at the end of their full
+// expression (THE CLOSURES THAT A CALL OWNS of linear.cpp).
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+[[nodiscard]] int look(Token const& token) noexcept;
+
+// A temporary closure that the code discards with no call.
+void temporary_discarded() {
+    static_cast<void>([token = Token{1}]() noexcept { return look(token); });
+}
+
+// A call of a temporary closure that only reads its token.
+int temporary_reads_its_token() {
+    return [token = Token{2}]() noexcept { return look(token); }();
+}
+
+}  // namespace planted

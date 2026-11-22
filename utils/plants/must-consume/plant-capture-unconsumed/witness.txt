@@ -1,0 +1,22 @@
+# The closures that the once door owns and whose call operator leaves a
+# linear capture by value live on a path (THE CLOSURES THAT A CALL OWNS of
+# linear.cpp): a closure that only reads its token (line 34), a closure that
+# names no capture (40), a closure that consumes its token on one path (46), a
+# closure that consumes one field of a captured pair (56), and a closure that
+# a door of the caller gives to the once door (68).  Each line is at the
+# lambda.  The directory src/ has the enforce mode error, and the tree holds
+# no ledger of must-consume, so each counted line is a compile error (THE
+# COUNTED LINES of utils/tools/quarantine/plugin.cpp).
+compile owned src/owned.cpp must-consume=on
+flag owned -freflection
+exit owned fail
+finding owned must-consume capture-unconsumed src/owned.cpp:34:17 | planted::read_only_capture: closure (planted::read_only_capture()::<lambda()>)
+finding owned must-consume capture-unconsumed src/owned.cpp:40:17 | planted::unnamed_capture: closure (planted::unnamed_capture()::<lambda()>)
+finding owned must-consume capture-unconsumed src/owned.cpp:46:17 | planted::consumed_on_one_path: closure (planted::consumed_on_one_path()::<lambda()>)
+finding owned must-consume capture-unconsumed src/owned.cpp:56:17 | planted::one_field_consumed: closure (planted::one_field_consumed()::<lambda()>)
+finding owned must-consume capture-unconsumed src/owned.cpp:68:14 | planted::closure_given_to_a_door: closure (planted::closure_given_to_a_door()::<lambda()>)
+error owned src/owned.cpp:34 | quarantine: capture-unconsumed planted::read_only_capture: closure (planted::read_only_capture()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error owned src/owned.cpp:40 | quarantine: capture-unconsumed planted::unnamed_capture: closure (planted::unnamed_capture()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error owned src/owned.cpp:46 | quarantine: capture-unconsumed planted::consumed_on_one_path: closure (planted::consumed_on_one_path()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error owned src/owned.cpp:56 | quarantine: capture-unconsumed planted::one_field_consumed: closure (planted::one_field_consumed()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error owned src/owned.cpp:68 | quarantine: capture-unconsumed planted::closure_given_to_a_door: closure (planted::closure_given_to_a_door()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

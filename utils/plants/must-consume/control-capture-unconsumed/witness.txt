@@ -1,0 +1,10 @@
+# The rule of the closures that a call owns (THE CLOSURES THAT A CALL OWNS of
+# linear.cpp) admits each form of this unit: a closure that consumes its token
+# on each path, a closure that gives its token out as its value, a closure
+# that consumes each field of a captured pair, a capture by reference that the
+# caller consumes, and a closure that reads its token and then consumes it.
+# The directory src/ has the enforce mode error, and the unit compiles with no
+# line of the rule.
+compile owned src/owned.cpp must-consume=on
+flag owned -freflection
+exit owned pass

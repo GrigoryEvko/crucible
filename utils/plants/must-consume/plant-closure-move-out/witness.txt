@@ -7,9 +7,12 @@
 # that calls a body that it captures by reference (80), the once door with a
 # closure that a parameter lends (92), and two calls of a closure that gives
 # a captured body to the once door (107 and 108).  Each call gives
-# closure-move-out.  The directory src/ has the enforce mode error, and the
-# tree holds no ledger of must-consume, so each counted line is a compile
-# error (THE COUNTED LINES of utils/tools/quarantine/plugin.cpp).
+# closure-move-out.  The closures of lines 60 and 67 leave a capture live,
+# one field and one path, and the once door ends them, so each also gives
+# capture-unconsumed at its lambda (THE CLOSURES THAT A CALL OWNS).  The
+# directory src/ has the enforce mode error, and the tree holds no ledger of
+# must-consume, so each counted line is a compile error (THE COUNTED LINES of
+# utils/tools/quarantine/plugin.cpp).
 compile closures src/closures.cpp must-consume=on
 flag closures -freflection
 exit closures fail
@@ -17,7 +20,9 @@ finding closures must-consume closure-move-out src/closures.cpp:33:14 | planted:
 finding closures must-consume closure-move-out src/closures.cpp:34:14 | planted::two_calls_give_two_tokens: give (planted::two_calls_give_two_tokens()::<lambda()>)
 finding closures must-consume closure-move-out src/closures.cpp:43:9 | planted::reference_capture_moved_out: give (planted::reference_capture_moved_out()::<lambda()>)
 finding closures must-consume closure-move-out src/closures.cpp:49:9 | planted::run_body: body (planted::borrowed_closure_in_a_door()::<lambda()>)
+finding closures must-consume capture-unconsumed src/closures.cpp:60:17 | planted::field_of_a_capture_moved_out: closure (planted::field_of_a_capture_moved_out()::<lambda()>)
 finding closures must-consume closure-move-out src/closures.cpp:61:9 | planted::field_of_a_capture_moved_out: give (planted::field_of_a_capture_moved_out()::<lambda()>)
+finding closures must-consume capture-unconsumed src/closures.cpp:67:17 | planted::moved_out_on_one_path: closure (planted::moved_out_on_one_path()::<lambda()>)
 finding closures must-consume closure-move-out src/closures.cpp:72:9 | planted::moved_out_on_one_path: give (planted::moved_out_on_one_path()::<lambda()>)
 finding closures must-consume closure-move-out src/closures.cpp:80:43 | planted::run_in_a_child::(lambda)::operator(): body (planted::body_called_through_a_capture()::<lambda()>)
 finding closures must-consume closure-move-out src/closures.cpp:92:36 | planted::give_borrowed_to_the_once_door: body (planted::borrowed_closure_to_the_once_door_twice()::<lambda()>)
@@ -27,6 +32,8 @@ error closures src/closures.cpp:33 | quarantine: closure-move-out planted::two_c
 error closures src/closures.cpp:34 | quarantine: closure-move-out planted::two_calls_give_two_tokens: give (planted::two_calls_give_two_tokens()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
 error closures src/closures.cpp:43 | quarantine: closure-move-out planted::reference_capture_moved_out: give (planted::reference_capture_moved_out()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
 error closures src/closures.cpp:49 | quarantine: closure-move-out planted::run_body: body (planted::borrowed_closure_in_a_door()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error closures src/closures.cpp:60 | quarantine: capture-unconsumed planted::field_of_a_capture_moved_out: closure (planted::field_of_a_capture_moved_out()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error closures src/closures.cpp:67 | quarantine: capture-unconsumed planted::moved_out_on_one_path: closure (planted::moved_out_on_one_path()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
 error closures src/closures.cpp:61 | quarantine: closure-move-out planted::field_of_a_capture_moved_out: give (planted::field_of_a_capture_moved_out()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
 error closures src/closures.cpp:72 | quarantine: closure-move-out planted::moved_out_on_one_path: give (planted::moved_out_on_one_path()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
 error closures src/closures.cpp:80 | quarantine: closure-move-out planted::run_in_a_child::(lambda)::operator(): body (planted::body_called_through_a_capture()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

@@ -32,12 +32,13 @@ void call_once_gives_the_token() {
     sink(::foundation::linear::call_once(std::move(give)));
 }
 
-// A closure that only reads its linear capture, called two times.
+// A closure that only reads a linear value of its caller, called two times.
 void reading_closure_called_twice() {
-    auto read = [token = Token{2}]() noexcept { return look(token); };
+    Token held{2};
+    auto read = [&held]() noexcept { return look(held); };
     (void)read();
     (void)read();
-    (void)::foundation::linear::call_once(std::move(read));
+    sink(std::move(held));
 }
 
 // A closure that moves a capture of no linear type out, called two times.

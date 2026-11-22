@@ -1,0 +1,71 @@
+// The closures that a call owns and whose call operator leaves a linear
+// capture by value live on a path (THE CLOSURES THAT A CALL OWNS of
+// linear.cpp).  The end of the closure drops the capture, and no caller wrote
+// that drop.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that is linear by its two token fields.
+struct Pair {
+    Token first;
+    Token second;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] int look(Token const& token) noexcept;
+[[nodiscard]] bool should_give() noexcept;
+
+// The once door owns a closure that only reads its token.
+void read_only_capture() {
+    auto read = [token = Token{1}]() noexcept { return look(token); };
+    (void)::foundation::linear::call_once(std::move(read));
+}
+
+// The once door owns a closure that names no capture in its body.
+void unnamed_capture() {
+    auto idle = [token = Token{2}]() noexcept {};
+    ::foundation::linear::call_once(std::move(idle));
+}
+
+// The once door owns a closure that consumes its token on one path only.
+void consumed_on_one_path() {
+    auto give = [token = Token{3}]() mutable noexcept {
+        if (should_give()) {
+            sink(std::move(token));
+        }
+    };
+    ::foundation::linear::call_once(std::move(give));
+}
+
+// The once door owns a closure that consumes one field of a captured pair.
+void one_field_consumed() {
+    auto give = [pair = Pair{Token{4}, Token{5}}]() mutable noexcept { sink(std::move(pair.first)); };
+    ::foundation::linear::call_once(std::move(give));
+}
+
+// A door of the base calls the once door with the closure of its caller: the
+// line is at the lambda of the caller.
+template <class Body>
+void run_body(Body&& body) noexcept {
+    ::foundation::linear::call_once(std::forward<Body>(body));
+}
+
+void closure_given_to_a_door() {
+    run_body([token = Token{7}]() noexcept { (void)look(token); });
+}
+
+}  // namespace planted

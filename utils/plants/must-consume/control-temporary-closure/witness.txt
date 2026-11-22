@@ -1,0 +1,9 @@
+# A temporary linear closure that ends each capture on each path drops
+# nothing at the end of its full expression (THE CLOSURES THAT A CALL OWNS of
+# linear.cpp): the once door that takes a temporary closure that consumes its
+# token, a call of a temporary closure that consumes its token, and a call of
+# a temporary closure that gives its token out.  The directory src/ has the
+# enforce mode error, and the unit compiles with no line of the rule.
+compile temporaries src/temporaries.cpp must-consume=on
+flag temporaries -freflection
+exit temporaries pass

@@ -1,0 +1,37 @@
+// The temporary linear closures that end each capture (THE CLOSURES THAT A
+// CALL OWNS of linear.cpp): the end of the full expression drops nothing.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+
+// The once door takes a temporary closure that consumes its token.
+void temporary_given_to_the_once_door() {
+    ::foundation::linear::call_once([token = Token{1}]() mutable noexcept { sink(std::move(token)); });
+}
+
+// A call of a temporary closure that consumes its token.
+void temporary_called_in_place() {
+    [token = Token{2}]() mutable noexcept { sink(std::move(token)); }();
+}
+
+// A call of a temporary closure that gives its token out as its value.
+void temporary_gives_its_token() {
+    sink([token = Token{3}]() mutable noexcept { return std::move(token); }());
+}
+
+}  // namespace planted

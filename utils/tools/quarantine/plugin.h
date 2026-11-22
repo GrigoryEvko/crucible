@@ -415,6 +415,11 @@
 //                           linear capture out, outside a once door, so a
 //                           second call gives a second value (THE CLOSURES THAT
 //                           MOVE A CAPTURE of linear.cpp)
+//     capture-unconsumed    a closure that a call owns, as the once door owns
+//                           it, and whose call operator leaves a linear
+//                           capture by value live on a path, so the end of
+//                           the closure drops it (THE CLOSURES THAT A CALL
+//                           OWNS of linear.cpp)
 //     The other rules of the family linear (linear.cpp, THE SHAPES):
 //     pinned-holder         linear-containment: a class that cannot move,
 //                           holds a linear part and has no door at the end of
@@ -1111,6 +1116,7 @@ enum class Kind : std::uint8_t {
     linear_option_known_empty,
     linear_borrow_move_out,
     linear_closure_move_out,
+    linear_capture_unconsumed,
     linear_pinned_holder,
     linear_copyable_holder,
     linear_library_holder,
@@ -1493,6 +1499,8 @@ inline const char* kind_name(Kind kind) {
             return "borrow-move-out";
         case Kind::linear_closure_move_out:
             return "closure-move-out";
+        case Kind::linear_capture_unconsumed:
+            return "capture-unconsumed";
         case Kind::linear_pinned_holder:
             return "pinned-holder";
         case Kind::linear_copyable_holder:
@@ -1691,6 +1699,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_option_known_empty:
         case Kind::linear_borrow_move_out:
         case Kind::linear_closure_move_out:
+        case Kind::linear_capture_unconsumed:
             return Rule::must_consume;
         case Kind::linear_pinned_holder:
         case Kind::linear_copyable_holder:
@@ -1991,6 +2000,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "option-known-empty"},
     {"must-consume", "borrow-move-out"},
     {"must-consume", "closure-move-out"},
+    {"must-consume", "capture-unconsumed"},
     {"linear-containment", "pinned-holder"},
     {"linear-containment", "copyable-holder"},
     {"linear-containment", "library-holder"},

@@ -1062,8 +1062,8 @@ void test_sole_writer_agrees_with_plain_model() {
 // One thread writes the cell, and the other three read it.  Each read of
 // the writer gives the value that the writer stored last, and each reader
 // sees values that never decrease.  The thread of the writer owns the
-// writer, because two threads do not share one writer, and the door ends it
-// after the join.  The three readers run beside it.
+// writer, because two threads do not share one writer, and the body ends it
+// after its last store.  The three readers run beside it.
 void test_sole_writer_under_contention() {
     auto writer = mint_sole_writer<HeadRole>();
     CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{writer, std::uint64_t{0}};
@@ -1075,6 +1075,7 @@ void test_sole_writer_under_contention() {
             if (own != step) wrong_owned_reads->add(1);
             head->store_release(owned, own + 1);
         }
+        ::foundation::linear::drop(std::move(owned));
     };
     auto read = [&head, &backward_reads]() noexcept {
         std::uint64_t last = 0;
@@ -1126,8 +1127,8 @@ void test_sole_writer_release_publishes_to_acquire() {
 // The writer changes thread through the start of a thread, and its stores
 // reach the caller through the join.  The caller writes the cell, and then a
 // body that owns the writer reads the value of the caller with load_owned and
-// writes the steps.  The caller reads the last step after the join.  The door
-// ends the writer after the join.
+// writes the steps.  The caller reads the last step after the join.  The body
+// ends the writer after its last store.
 void test_sole_writer_moves_through_a_join() {
     auto writer = mint_sole_writer<HeadRole>();
     CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{writer, std::uint64_t{0}};
@@ -1139,6 +1140,7 @@ void test_sole_writer_moves_through_a_join() {
         for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
             head->store_release(owned, head->load_owned(owned) + 1);
         }
+        ::foundation::linear::drop(std::move(owned));
     };
     ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(write_steps), []() noexcept {
     }).expect("the door starts the writer with the default options");

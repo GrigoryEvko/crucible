@@ -1,7 +1,7 @@
 # The rule of the closures that move a capture (THE CLOSURES THAT MOVE A
 # CAPTURE of linear.cpp) admits each form of this unit: the once door that
-# calls a closure that gives its token out, a closure that only reads its
-# linear capture and runs two times, a closure that moves a capture of no
+# calls a closure that gives its token out, a closure that only reads a
+# linear value of its caller and runs two times, a closure that moves a capture of no
 # linear type out and runs two times, a closure that moves its capture out
 # and gives it a new value before each exit, a temporary closure that runs one
 # time, a door that forwards a closure that the caller gave up, a call of an

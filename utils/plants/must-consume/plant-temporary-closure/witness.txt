@@ -1,0 +1,13 @@
+# A temporary linear closure that drops a capture at the end of its full
+# expression gives the kind discarded-temporary (THE CLOSURES THAT A CALL OWNS
+# of linear.cpp): a temporary closure that the code discards with no call
+# (line 22), and a call of a temporary closure that only reads its token (27).
+# The directory src/ has the enforce mode error, and the tree holds no ledger
+# of must-consume, so each counted line is a compile error.
+compile temporaries src/temporaries.cpp must-consume=on
+flag temporaries -freflection
+exit temporaries fail
+finding temporaries must-consume discarded-temporary src/temporaries.cpp:22:23 | planted::temporary_discarded: temporary (planted::temporary_discarded()::<lambda()>)
+finding temporaries must-consume discarded-temporary src/temporaries.cpp:27:65 | planted::temporary_reads_its_token: temporary (planted::temporary_reads_its_token()::<lambda()>)
+error temporaries src/temporaries.cpp:22 | quarantine: discarded-temporary planted::temporary_discarded: temporary (planted::temporary_discarded()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error temporaries src/temporaries.cpp:27 | quarantine: discarded-temporary planted::temporary_reads_its_token: temporary (planted::temporary_reads_its_token()::<lambda()>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

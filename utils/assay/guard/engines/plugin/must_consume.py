@@ -32,6 +32,11 @@ THE RULE
                             call_once of include/foundation/Linear.h, so a
                             second call gives a second value (linear.cpp, THE
                             CLOSURES THAT MOVE A CAPTURE)
+      capture-unconsumed    a closure that the once door owns, whose call
+                            operator leaves a linear capture by value live on
+                            a path, so the end of the closure drops it.  The
+                            line is at the lambda (linear.cpp, THE CLOSURES
+                            THAT A CALL OWNS)
     A linear sum gives the kinds of THE SUMS in place of unconsumed,
     unconsumed-on-path and discarded-temporary.
     The plugin reads a body of a base file in the sentinel unit of the file,
@@ -140,6 +145,9 @@ ACTIONS = {
     "it by value",
     "closure-move-out": "a call of a closure that moves a linear capture out can run again and give a second value.  "
     "Give the closure to foundation::linear::call_once, which owns it and calls it one time",
+    "capture-unconsumed": "the once door owns the closure, and its call operator leaves a linear capture by value live "
+    "on a path, so the end of the closure drops it.  Consume each such capture on each path of the body, or capture "
+    "the value by reference and consume it in the caller",
 }
 # The kinds of THE SUMS.  Each line is a compile error, and no ledger row admits one.
 SUM_KINDS = ("option-unconsumed", "option-discarded", "option-known-full", "option-known-empty")
