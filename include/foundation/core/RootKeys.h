@@ -20,10 +20,15 @@
 //                       foundation/Linear.h with the leading arguments and one
 //                       fresh key of each brand.  The keys are lvalues of one
 //                       local cell, which lives for the call
+//   detail::run_dispatch_body_<Leading>(body, leading...)
+//                       the entry of the dispatch door: the same call, for
+//                       keys of dispatch brands only, with no walk
 //
 // THE CHECKS
 //   The brands are distinct key brands (IsKeyBrand), so no body gets two keys
-//   of one brand, and no body gets a key of Unkeyed.  For each brand, the body,
+//   of one brand, and no body gets a key of Unkeyed.  run_root_body_ mints no
+//   key of a dispatch brand, and run_dispatch_body_ mints only such keys (THE
+//   DISPATCH BRAND of foundation/core/Frame.h).  For each brand, the body,
 //   each leading argument and the result of the body hold BorrowsNoKeyOwner of
 //   foundation/core/Frame.h.  The checks are in the entry that mints, so no
 //   door can mint with no check.  A door that starts more than one thread for
@@ -153,6 +158,17 @@ consteval bool are_distinct_key_brands_of_(KeyBrands<Brands...> /*brands*/) {
     return are_distinct_key_brands_<Brands...>();
 }
 
+// True when each brand is a dispatch brand, and true when none is (THE
+// DISPATCH BRAND of foundation/core/Frame.h).
+template <class... Brands>
+consteval bool are_dispatch_brands_(KeyBrands<Brands...> /*brands*/) {
+    return (is_dispatch_brand_(^^Brands) && ...);
+}
+template <class... Brands>
+consteval bool names_no_dispatch_brand_(KeyBrands<Brands...> /*brands*/) {
+    return (!is_dispatch_brand_(^^Brands) && ...);
+}
+
 // True when each part holds BorrowsNoKeyOwner for the brand, and for each
 // brand (THE CHECKS).
 template <class Brand, class... Parts>
@@ -215,6 +231,9 @@ constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
     static_assert(are_distinct_key_brands_of_(Brands{}),
                   "a body of a root door names two keys of one brand, or a key of a brand that is no key brand: name "
                   "each key brand one time");
+    static_assert(names_no_dispatch_brand_(Brands{}),
+                  "a body of a door that starts a thread names a key of a dispatch brand: only the dispatch door of "
+                  "fixy/concurrent/Dispatch.h mints such a key, one window at a time on each thread");
     static_assert(borrow_no_key_owner_<State, std::remove_cvref_t<Args>...>(Brands{}),
                   "a body of a root door reaches a key of a brand of its keys, or an owner of such a brand through a "
                   "borrow: move each owner into the body by value, and keep each key with its holder");
@@ -223,6 +242,31 @@ constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
                       "the result of a body of a root door reaches a key of a brand of its keys, or an owner of such a "
                       "brand through a borrow");
     }
+    return call_with_root_keys_(Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
+}
+
+// The entry of the dispatch door of fixy/concurrent/Dispatch.h (THE DISPATCH
+// BRAND of foundation/core/Frame.h): it checks that the brands are distinct
+// dispatch brands and that the body gives no reference, and it calls the body
+// with the leading arguments and one fresh key of each brand.  It has no borrow
+// walk and no export walk.  The body reaches its owners through outside data,
+// and the window of the door holds one key of a brand on a thread.  A key of a
+// dispatch brand does not move, and no Ref, Box or View holds one, so the body
+// keeps no key past its call.  The key cell builds each key in place, so such
+// a key needs no move there either.
+template <std::size_t Leading, class Body, class... Args>
+    requires(sizeof...(Args) == Leading)
+constexpr decltype(auto) run_dispatch_body_(Body body, Args&&... leading) noexcept {
+    using Brands = root_key_brands_t<Body, Leading>;
+    using Result = typename root_body_result_<Body, Brands, Args&&...>::type;
+    static_assert(are_distinct_key_brands_of_(Brands{}),
+                  "a body of the dispatch door names two keys of one brand, or a key of a brand that is no key brand: "
+                  "name each key brand one time");
+    static_assert(are_dispatch_brands_(Brands{}),
+                  "a body of the dispatch door names a key of a brand that states no dispatch_brand{}: a door that "
+                  "starts a thread can mint such a key, so the window of the dispatch would not hold it alone");
+    static_assert(!std::is_reference_v<Result>,
+                  "a body of the dispatch door gives a reference, which outlives its keys");
     return call_with_root_keys_(Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
 }
 

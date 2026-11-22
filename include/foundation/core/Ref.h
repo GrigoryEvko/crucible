@@ -101,6 +101,7 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/LoanKeyTrait.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Report.h>
 
@@ -168,6 +169,10 @@ void to(T&& object) = delete("a Ref of a temporary dangles at the end of the ful
 // reference to T does (foundation/Transfer.h).
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 class[[= ::foundation::transfer::refers{}]] Ref {
+    static_assert(!detail::is_loan_key_type_(^^T),
+                  "a Ref of a LoanKey would keep a borrow of the key past the frame that lent it: borrow the key "
+                  "with LoanKey<B>& for the call (THE DISPATCH BRAND of foundation/core/Frame.h)");
+
     T* object_ = nullptr;
     // The seal makes the assignment user-provided, so std::bit_cast cannot
     // build a Ref from the bytes of an address.
@@ -839,6 +844,10 @@ public:
 template <BoxPayload T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box<T>>]][[= ::foundation::transfer::by_arguments{}]]
     Box final : public OwnerCore<detail::owner::BoxState<T>> {
+    static_assert(!detail::is_loan_key_type_(^^T),
+                  "a Box of a LoanKey would carry the key past the frame that lent it (THE DISPATCH BRAND of "
+                  "foundation/core/Frame.h)");
+
     using State = detail::owner::BoxState<T>;
     using Core = OwnerCore<State>;
 

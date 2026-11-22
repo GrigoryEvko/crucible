@@ -1,8 +1,8 @@
 // A body of the keyed frame door of a FixedHeapArray captures an object that
-// holds a Ref of the key.  A function that the body calls could then open a
-// second frame of the array.  The gate of the door refuses the body.
+// holds a reference to the key.  A function that the body calls could then
+// open a second frame of the array.  The gate of the door refuses the body.  A
+// Ref of the key does not compile at all (neg_core_ref_of_a_loan_key).
 #include <foundation/core/FixedHeapArray.h>
-#include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 namespace {
 template <class KeyRef>
@@ -15,7 +15,7 @@ int main() {
     using Brand = typename decltype(key)::brand_type;
     auto words = ::foundation::core::mint_fixed_heap_array<int, 4, alignof(int), Brand>(
         ::foundation::effects::testing::test().alloc, 0);
-    Holder<decltype(::foundation::core::to(key))> const holder{::foundation::core::to(key)};
+    Holder<decltype(key)&> const holder{key};
     key = words.with_mut(std::move(key), [&holder](auto run) noexcept {
         static_cast<void>(holder);
         static_cast<void>(run.size());

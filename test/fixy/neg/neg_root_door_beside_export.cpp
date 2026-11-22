@@ -2,17 +2,15 @@
 // run_beside is a root door too, and it refuses the body.
 #include <fixy/Ctx.h>
 #include <fixy/os/ThreadTasks.h>
-#include <foundation/core/List.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/RootKeys.h>
 #include <foundation/effects/Effect.h>
 #include <utility>
 namespace {
 struct HolderBrand final {};
 struct Thief {
-    ::foundation::core::FixedList<::foundation::core::LoanKey<HolderBrand>, 1> stolen{};
-    void operator()(::foundation::core::LoanKey<HolderBrand>& key) noexcept {
-        static_cast<void>(stolen.append(std::move(key)));
-    }
+    ::foundation::core::Option<::foundation::core::LoanKey<HolderBrand>> stolen{};
+    void operator()(::foundation::core::LoanKey<HolderBrand>& key) noexcept { stolen.fill(std::move(key)); }
 };
 }  // namespace
 int main() {

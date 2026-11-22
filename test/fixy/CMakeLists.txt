@@ -6745,6 +6745,9 @@ fixy_test(test_os_thread_tasks)
 # test_root_door runs the bodies with keys of run_joined and run_beside, and
 # holds the walk of the borrow check of a root door on its shapes.
 fixy_test(test_root_door)
+# test_dispatch_door runs the window of the dispatch door and its keys of
+# dispatch brands, with the shape of the record kernel of the vessel.
+fixy_test(test_dispatch_door)
 fixy_test(test_os_owned_thread)
 fixy_test(test_concurrent_permission_fork)
 fixy_test(test_core_atomic)
@@ -6834,6 +6837,26 @@ fixy_neg_compile_test(neg_root_door_two_of_one
 fixy_neg_compile_test(neg_root_door_same_body_twice
   "neg_root_door_same_body_twice\\.cpp:[0-9]+:[0-9]+: error: use of deleted function .void fixy::thread::run_joined"
   "run_joined takes each body by move, so that two bodies are two objects")
+# The dispatch door mints only keys of dispatch brands, and the doors that
+# start a thread mint none, so a frame of a holder and a dispatch inside it
+# never hold two keys of one brand (THE DISPATCH BRAND of
+# foundation/core/Frame.h).  A key of a dispatch brand does not move.  Only a
+# context of a claim opens a dispatch, and the door takes its body by move.
+fixy_neg_compile_test(neg_dispatch_nest_thread_side
+  "static assertion failed: a body of a door that starts a thread names a key of a dispatch brand"
+  "neg_dispatch_nest_thread_side\\.cpp")
+fixy_neg_compile_test(neg_dispatch_nest_dispatch_side
+  "static assertion failed: a body of the dispatch door names a key of a brand that states no dispatch_brand"
+  "neg_dispatch_nest_dispatch_side\\.cpp")
+fixy_neg_compile_test(neg_dispatch_key_moves
+  "use of deleted function .foundation::core::LoanKey<Brand>::LoanKey\\(foundation::core::LoanKey<Brand>&&\\)"
+  "a key of a dispatch brand stays in the window of its dispatch")
+fixy_neg_compile_test(neg_dispatch_from_a_bg_context
+  "no matching function for call to .run_dispatch"
+  "CtxOpensDispatch<Ctx>")
+fixy_neg_compile_test(neg_dispatch_body_as_an_lvalue
+  "use of deleted function .void fixy::dispatch::run_dispatch"
+  "run_dispatch takes its body by move")
 fixy_neg_compile_test(neg_thread_run_joined_one_body_two_times
   "neg_thread_run_joined_one_body_two_times\\.cpp:[0-9]+:[0-9]+: error: use of deleted function .void fixy::thread::run_joined"
   "run_joined takes each body by move, so that two bodies are two objects")

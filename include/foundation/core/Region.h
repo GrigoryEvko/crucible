@@ -137,6 +137,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/LoanKeyTrait.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
@@ -375,6 +376,10 @@ namespace foundation::core {
 template <class T, std::size_t Extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
 class[[= ::foundation::transfer::refers{}]] View {
+    static_assert(!detail::is_loan_key_type_(^^T),
+                  "a View of LoanKeys would keep a borrow of the keys past the frame that lent them (THE DISPATCH "
+                  "BRAND of foundation/core/Frame.h)");
+
     T* first_ = nullptr;
     [[no_unique_address]] detail::ViewCount<Extent> count_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
@@ -968,6 +973,10 @@ public:
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent = dynamic_extent>
     requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
 class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] ViewMut final {
+    static_assert(!detail::is_loan_key_type_(^^T),
+                  "a ViewMut of LoanKeys would keep a borrow of the keys past the frame that lent them (THE "
+                  "DISPATCH BRAND of foundation/core/Frame.h)");
+
     T* first_ = nullptr;
     [[no_unique_address]] detail::ViewCount<Extent> count_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};

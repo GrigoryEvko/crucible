@@ -1,0 +1,127 @@
+#pragma once
+
+// The dispatch door: the root door at the boundary of an outside dispatcher,
+// such as the dispatcher of PyTorch, that mints the keys of one dispatch.
+//
+//   run_dispatch(ctx, body)   opens a dispatch window on the calling thread,
+//                             calls body(ctx, keys...) one time with one fresh
+//                             key of each brand that it names, closes the
+//                             window, and gives the value of the body
+//
+// THE WINDOW
+//     The body of a dispatch reaches its owners through outside data, such as
+//     the Vigil that the thread-local pointer of PyTorch names, so no walk of
+//     its type sees them.  A flag of the calling thread carries the proof
+//     instead: the door sets it when it opens the window and clears it when the
+//     window closes.  A call of the door that finds the flag set is a nested
+//     dispatch.  It ends the process, because two windows on one thread would
+//     hold two keys of one brand at the same time.  The flag is the one
+//     run-time check of the owner key, and it sits at an outside entry.
+//
+// THE KEYS
+//     The body takes the context first, and then one key LoanKey<B>& of each
+//     brand that it names.  Each brand states dispatch_brand{} (THE DISPATCH
+//     BRAND of foundation/core/Frame.h).  The doors that start a thread mint
+//     no key of such a brand, so a key of it lives on a thread only inside the
+//     window, and the window holds one key of each brand.  Such a key does not
+//     move, and no Ref, Box or View holds one, so the body keeps no key past
+//     the window.  So the door needs no walk of the type of the body.  The
+//     door takes the body by move into its own frame, and the body runs one
+//     time as an rvalue.
+//
+// THE GATE
+//     The context of the call has a branded foreground source, which only a
+//     producer claim and the test witness build.  Such a source moves to no
+//     other thread, so no body of a door that starts a thread holds one, and a
+//     dispatch opens only on the thread of a claim.
+//
+// THE REDISPATCH
+//     The record kernel of the vessel runs the operation through a redispatch
+//     to PyTorch first, and each operation of that redispatch enters the
+//     record kernel again on the same thread (call_recording of
+//     vessel/torch/record_kernel.h, the nest depth of VigilOpNest).  The
+//     dispatch to the Vigil runs after the redispatch returns.  So the window
+//     holds only the dispatch to the Vigil, and never the redispatch: a nested
+//     record during the redispatch opens and closes its own window before the
+//     outer window opens.
+//
+// THE FLAG
+//     The flag is one bool of the static TLS of each thread, with the
+//     initial-exec model, so an open and a close cost one load and two stores
+//     relative to the thread pointer and no call.  CRUCIBLE_PROCESS_WIDE makes
+//     one flag of each thread for the process, also when two shared libraries
+//     open windows.  The refusal of a nested dispatch is a cold function of
+//     src/fixy/concurrent/Dispatch.cpp.
+
+#include <foundation/Platform.h>
+#include <foundation/core/RootKeys.h>
+#include <foundation/effects/Ctx.h>
+
+#include <type_traits>
+
+namespace fixy::dispatch {
+
+namespace detail {
+
+// True while the calling thread is inside a dispatch window (THE FLAG).  Only
+// DispatchWindow_ changes it.
+CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread_local bool is_in_dispatch_window_ =
+    false;
+
+// Ends the process for a dispatch that opens inside a dispatch window of the
+// same thread (THE WINDOW).
+[[noreturn]] CRUCIBLE_COLD void refuse_nested_dispatch_() noexcept;
+
+// The window of one dispatch on the calling thread: the constructor opens it,
+// and the destructor closes it.  It has no copy and no move, so it stays in
+// the frame of the door.
+class [[nodiscard]] DispatchWindow_ final {
+public:
+    DispatchWindow_() noexcept {
+        if (is_in_dispatch_window_) [[unlikely]] {
+            refuse_nested_dispatch_();
+        }
+        is_in_dispatch_window_ = true;
+    }
+
+    DispatchWindow_(DispatchWindow_ const&) = delete("a dispatch window belongs to the frame of its door");
+    DispatchWindow_& operator=(DispatchWindow_ const&) = delete("a dispatch window belongs to the frame of its door");
+    ~DispatchWindow_() noexcept { is_in_dispatch_window_ = false; }
+};
+
+}  // namespace detail
+
+// A context that opens a dispatch: an execution context whose source is a
+// branded foreground source (THE GATE).
+template <typename Ctx>
+concept CtxOpensDispatch =
+    ::foundation::effects::IsExecCtx<Ctx> && ::foundation::effects::IsBrandedForeground<typename Ctx::cap_type>;
+
+// A body of the dispatch door for the context Ctx: an object that is not a
+// reference and not const, that runs as an rvalue with the context and then
+// one key LoanKey<B>& of each brand that it names (THE KEYS).
+template <typename Body, typename Ctx>
+concept DispatchBody = !std::is_reference_v<Body> && !std::is_const_v<Body> && requires {
+    typename ::foundation::core::detail::root_body_result_<Body, ::foundation::core::root_key_brands_t<Body, 1>,
+                                                           Ctx const&>::type;
+};
+
+// Opens a dispatch window on the calling thread, calls the body one time with
+// the context and one fresh key of each brand that it names, closes the
+// window, and gives the value of the body (THE WINDOW).  A call inside a
+// window of the same thread ends the process.
+template <typename Ctx, typename Body>
+    requires(!std::is_lvalue_reference_v<Body>) && CtxOpensDispatch<Ctx> && DispatchBody<Body, Ctx>
+auto run_dispatch(Ctx const& ctx, Body&& body) noexcept {
+    detail::DispatchWindow_ const window{};
+    return ::foundation::core::detail::run_dispatch_body_<1>(static_cast<Body&&>(body), ctx);
+}
+
+// A body that the caller names as an lvalue stays an object of the caller,
+// which could call it again past the window.
+template <typename Ctx, typename Body>
+    requires std::is_lvalue_reference_v<Body>
+void run_dispatch(Ctx const& /*ctx*/, Body&& /*body*/) =
+    delete("run_dispatch takes its body by move: write the lambda in the call, or pass std::move(body)");
+
+}  // namespace fixy::dispatch

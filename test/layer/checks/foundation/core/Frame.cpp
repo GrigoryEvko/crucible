@@ -132,14 +132,17 @@ static_assert(!std::is_trivially_copyable_v<LoanKey<CheckBrand>>);
 static_assert(!std::is_default_constructible_v<LoanKey<CheckBrand>>);
 static_assert(std::is_same_v<LoanKey<CheckBrand>::brand_type, CheckBrand>);
 
-// The gate: a key, a reference to it, a Ref of it and a sum that holds it
-// reach a key of the brand.  A key of a second brand, a plain value and a
-// keyed array do not.  DefaultBrand and Unkeyed name no owner, so they have
-// no gate.
+// The gate: a key, a reference to it, a class that holds a reference to it
+// and a sum that holds it reach a key of the brand.  A key of a second brand,
+// a plain value and a keyed array do not.  DefaultBrand and Unkeyed name no
+// owner, so they have no gate.  A Ref of a key does not compile at all.
 struct OtherBrand final {};
+struct KeyReference {
+    LoanKey<CheckBrand>& key;
+};
 static_assert(!ReachesNoLoanKey<LoanKey<CheckBrand>, CheckBrand>);
 static_assert(!ReachesNoLoanKey<LoanKey<CheckBrand>&, CheckBrand>);
-static_assert(!ReachesNoLoanKey<Ref<LoanKey<CheckBrand>, CheckBrand>, CheckBrand>);
+static_assert(!ReachesNoLoanKey<KeyReference, CheckBrand>);
 static_assert(!ReachesNoLoanKey<Option<LoanKey<CheckBrand>>, CheckBrand>);
 static_assert(ReachesNoLoanKey<LoanKey<OtherBrand>, CheckBrand> && ReachesNoLoanKey<int, CheckBrand>);
 static_assert(ReachesNoLoanKey<FixedArray<int, 4, CheckBrand>, CheckBrand>);

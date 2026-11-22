@@ -194,11 +194,24 @@
 //   that reaches a key of the brand in either region, because a body could
 //   move its key into a field that the caller reads after the call.  An owner
 //   that moves into the body by value stays admitted (BorrowsNoKeyOwner).
+//
+// THE DISPATCH BRAND
+//   The body of a dispatch reaches its owners through outside data, such as the
+//   Vigil of the PyTorch boundary, so the borrow walk does not apply to it.  A
+//   brand of such an owner states dispatch_brand{}.  Only the dispatch door of
+//   fixy/concurrent/Dispatch.h mints a key of it, one window at a time on each
+//   thread, and each door that starts a thread refuses it
+//   (foundation/core/RootKeys.h).  A key of a dispatch brand does not move, so
+//   no body moves it into a field that outlives the window.  Ref, Box, View,
+//   ViewMut and RefMut refuse a key of each brand as their element, so no body
+//   keeps a borrow of it either.  The quarantine refuses a raw pointer outside
+//   the base.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/LoanKeyTrait.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
@@ -251,6 +264,10 @@ concept UniqueTarget = std::is_object_v<T> && !std::is_array_v<T> && !std::is_co
 template <class T, ::foundation::brand::IsBrand Brand>
     requires UniqueTarget<T>
 class [[nodiscard]] RefMut final {
+    static_assert(!detail::is_loan_key_type_(^^T),
+                  "a RefMut of a LoanKey would keep a borrow of the key past the frame that lent it: borrow the key "
+                  "with LoanKey<B>& for the call");
+
     T* object_ = nullptr;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
@@ -302,6 +319,21 @@ struct Unkeyed final {};
 template <class Brand>
 concept IsKeyBrand = ::foundation::brand::IsFreshBrand<Brand> && !std::is_same_v<Brand, Unkeyed>;
 
+// The annotation of a dispatch brand (THE DISPATCH BRAND): a named brand whose
+// keys only the dispatch door of fixy/concurrent/Dispatch.h mints.
+struct dispatch_brand final {};
+
+// True when the brand states dispatch_brand.  A brand that is not complete
+// states nothing.
+[[nodiscard]] consteval bool is_dispatch_brand_(std::meta::info brand) {
+    std::meta::info const bare = std::meta::dealias(brand);
+    return std::meta::is_class_type(bare) && std::meta::is_complete_type(bare)
+        && ::foundation::linear::carries_annotation(bare, ^^dispatch_brand);
+}
+
+template <class Brand>
+concept IsDispatchBrand = IsKeyBrand<Brand> && is_dispatch_brand_(^^Brand);
+
 // The key of the frames of the keyed owners of one brand (THE LOAN KEY).  The
 // class is empty, so it costs no byte and no instruction.  It is linear: each
 // path gives it back to its holder or ends it through a door.  It does not
@@ -314,9 +346,18 @@ concept IsKeyBrand = ::foundation::brand::IsFreshBrand<Brand> && !std::is_same_v
 // key of them.  The signature of a keyed door of an owner of Unkeyed names
 // the type, and the keyed doors of such an owner take no key, so the class
 // takes each brand.
+//
+// A key of a dispatch brand does not move (THE DISPATCH BRAND): the key cell
+// of the dispatch door builds it in place, and a body borrows it.  So no body
+// moves it into a field that outlives the window of its dispatch.  It is no
+// linear class then, because the linear shape asks a move.  Its move
+// assignment stays, and the seal makes it user-provided, so std::bit_cast
+// builds no such key.  Only a second key of the brand could be its source, and
+// a window holds one.
 template <class Brand>
-class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::scope_end_door{}]]
-                   [[= ::foundation::transfer::not_shareable{}]][[= loan_key_mark{}]] LoanKey final {
+class [[nodiscard]][[= ::foundation::linear::linear_when<!is_dispatch_brand_(^^Brand)>]]
+                   [[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::not_shareable{}]]
+                   [[= loan_key_mark{}]][[= detail::loan_key_class_{}]] LoanKey final {
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
 public:
@@ -331,7 +372,12 @@ public:
         delete("a loan key opens one frame at a time: a copy would open a second frame of an owner");
     LoanKey& operator=(LoanKey const&) =
         delete("a loan key opens one frame at a time: a copy would open a second frame of an owner");
-    constexpr LoanKey(LoanKey&&) noexcept = default;
+    constexpr LoanKey(LoanKey&&) noexcept
+        requires(!is_dispatch_brand_(^^Brand))
+    = default;
+    LoanKey(LoanKey&&)
+        requires(is_dispatch_brand_(^^Brand))
+    = delete("a key of a dispatch brand stays in the window of its dispatch: a move would carry it past the window");
     constexpr LoanKey& operator=(LoanKey&&) noexcept = default;
     ~LoanKey() = default;
 };

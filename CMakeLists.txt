@@ -490,6 +490,7 @@ target_link_libraries(crucible PUBLIC foundation)
 add_library(fixy STATIC
   src/fixy/check/Check.cpp
   src/fixy/check/Property.cpp
+  src/fixy/concurrent/Dispatch.cpp
   src/fixy/concurrent/StageCpus.cpp
   src/fixy/os/CpuPinned.cpp
   src/fixy/os/ExitHooks.cpp

@@ -4679,6 +4679,13 @@ foundation_neg_compile_test(neg_core_keyed_heap_array_without_key
 foundation_neg_compile_test(neg_core_keyed_heap_array_reaches_key
   "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_mut\\(foundation::core::LoanKey<(KeyBrand|Fresh)>&&, Body&&\\) &"
   "a body of a keyed frame reaches a LoanKey of the brand of its owner")
+# Ref, Box, View, ViewMut and RefMut refuse a LoanKey of each brand as their
+# element, so no body keeps a borrow of a key past the frame that lent it.
+foreach(loan_key_borrow ref box view view_mut ref_mut)
+  foundation_neg_compile_test(neg_core_${loan_key_borrow}_of_a_loan_key
+    "static assertion failed: a [A-Za-z]+ of (a )?LoanKeys? would (keep a borrow of the keys?|carry the key) past the frame that lent"
+    "neg_core_${loan_key_borrow}_of_a_loan_key\\.cpp")
+endforeach()
 foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
   "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
   "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")

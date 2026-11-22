@@ -52,10 +52,10 @@ using KeyedWords = FixedHeapArray<int, 8, alignof(int), KeyedCheckBrand>;
 inline constexpr auto touch_run = [](auto run) noexcept { static_cast<void>(run.size()); };
 using TouchRun = decltype(touch_run);
 
-// A body that reaches the key of the brand through a Ref.  The checks read
-// its type only, and no code builds one.
+// A body that reaches the key of the brand through a reference.  The checks
+// read its type only, and no code builds one.
 struct KeyReachingRun {
-    Ref<LoanKey<KeyedCheckBrand>, KeyedCheckBrand> key;
+    LoanKey<KeyedCheckBrand>& key;
     void operator()(auto run) const noexcept { static_cast<void>(run.size()); }
 };
 
