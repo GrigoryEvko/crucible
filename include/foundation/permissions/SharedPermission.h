@@ -158,7 +158,7 @@ public:
 // (foundation/Transfer.h, rule 6).  The guard conveys the authority of its
 // share, and it does not copy.  Many holders hold a share at one time, so the
 // guard states shares{}: it proves no door that writes the plain parts of a
-// class, and only the result of a claim door keeps it (THE SHARE of
+// class, and only the result of a claim door keeps it (Share of
 // foundation/Transfer.h).
 template <typename Tag, typename Brand>
 class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::by_arguments{}]]

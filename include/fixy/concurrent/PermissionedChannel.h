@@ -224,7 +224,7 @@ struct channel_form_parts<ChannelForm::lanes, T, Capacity, Lanes, ProducerTag, B
     // The producer handle holds one share of the pool, which parks the
     // producer token, and the proof of its lane.  The channel mints the proof
     // under the claim of the lane, so one live producer handle holds the
-    // proof of each lane (THE WRITERS of fixy/concurrent/LaneRing.h).
+    // proof of each lane (Writers of fixy/concurrent/LaneRing.h).
     using producer_share = ::foundation::permissions::SharedPermissionGuard<ProducerTag, Brand>;
     using producer_pool = ::foundation::permissions::SharedPermissionPool<ProducerTag, Brand>;
     using lane = typename ring_type::LaneProof;
@@ -834,7 +834,7 @@ public:
     // the push of each form.  Each push makes the proof of its writer here:
     // the proof of the producer of a wire, and the proof of a lane of a lanes
     // channel under the claim of the lane.  A push of a merge claims its ticket
-    // itself.  The ring is a proof of the channel (THE PROOF OF A DOOR of
+    // itself.  The ring is a proof of the channel (Proof of a door of
     // foundation/Transfer.h): only the access builds it, it belongs to the
     // thread of the access, and it does not copy or move, so it lives only in
     // the frame of the access.
@@ -1110,7 +1110,7 @@ private:
 
     // The proofs of the two sides of the ring of a wire (THE PROVEN FORM of
     // fixy/concurrent/SpscRing.h), and the proof of the consumer of the ring
-    // of a merge or of the lanes (THE WRITERS of fixy/concurrent/MpscRing.h
+    // of a merge or of the lanes (Writers of fixy/concurrent/MpscRing.h
     // and of fixy/concurrent/LaneRing.h).  The ring names this channel as its
     // owner, so only this channel makes them.  Only the handle of each role, a
     // drain, a recombined access and the receive after an empty pop call them.
@@ -1128,7 +1128,7 @@ private:
 
     [[nodiscard]] static constexpr auto prove_consumer_() noexcept { return typename ring_type::consumer_proof{}; }
 
-    // The proof of a lane of the lanes form (THE WRITERS of
+    // The proof of a lane of the lanes form (Writers of
     // fixy/concurrent/LaneRing.h).  The ring names this channel as its owner,
     // so only this channel mints it.  Each caller holds the claim of the lane:
     // the producer door, which gives the proof to the handle for its life, and
@@ -1194,7 +1194,7 @@ private:
 };
 
 // Pushes item through the producer handle.  While the channel is full, the
-// call waits by Policy (THE POLICY of fixy/concurrent/EventCount.h): Spin
+// call waits by Policy (Policy of fixy/concurrent/EventCount.h): Spin
 // spins, and SpinThenPark spins for its budget and then parks on room.  The
 // condition of the wait is a push, so the push after the entry of a park in
 // the count takes each cell that a pop freed before the entry.  A consumer

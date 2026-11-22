@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Only the queue that the cells name as their Owner mints a write ticket,
-// after its claim of the ticket (THE PROOF OF A TICKET of
+// after its claim of the ticket (Proof of a ticket of
 // fixy/concurrent/SequenceCells.h).  A stranger that builds a ticket would
 // write a cell that another producer claimed.
 //

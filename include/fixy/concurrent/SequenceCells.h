@@ -14,7 +14,7 @@
 //   claim is the one writer of its ticket, and the holder of the next ticket
 //   of the reader side is the one reader of it.
 //
-// THE PROOF OF A TICKET
+// Proof of a ticket
 //   The value of a cell is plain, and two threads write it in turn.  So each
 //   write of a value takes a WriteTicket, and each read takes a ReadTicket.
 //   Only the queue that names itself as Owner mints a ticket: a write ticket
@@ -124,8 +124,8 @@ class[[= ::foundation::transfer::synchronized{}]] SequenceCells
     [[nodiscard]] Cell const& cell_(CellTicket ticket) const noexcept { return cells_[ticket.raw() & MASK]; }
 
 public:
-    // The proof of the one writer of the value of a ticket (THE PROOF OF A
-    // TICKET).  Only Owner mints one, after its claim of the ticket.
+    // The proof of the one writer of the value of a ticket (Proof of a
+    // ticket).  Only Owner mints one, after its claim of the ticket.
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriteTicket final {
         CellTicket ticket_{std::uint64_t{0}};
 
@@ -145,8 +145,8 @@ public:
         ~WriteTicket() = default;
     };
 
-    // The proof of the one reader of the value of a ticket (THE PROOF OF A
-    // TICKET).  Only Owner mints one, under the proof of its one reader.
+    // The proof of the one reader of the value of a ticket (Proof of a
+    // ticket).  Only Owner mints one, under the proof of its one reader.
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] ReadTicket final {
         CellTicket ticket_{std::uint64_t{0}};
 

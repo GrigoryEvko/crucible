@@ -165,7 +165,7 @@ void pop_waiting(::fixy::BgLoadCtx const& ctx, Waits& waits, Pop&& pop) noexcept
 // ── Shape ────────────────────────────────────────────────────────────
 
 // The owner of each MPSC ring of the test.  It makes the proof of the one
-// consumer of a ring (THE WRITERS of fixy/concurrent/MpscRing.h), and each
+// consumer of a ring (Writers of fixy/concurrent/MpscRing.h), and each
 // case pops a ring on one thread.
 struct MpscOwner final {
     [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MpscOwner, c::MpscConsumerRole> consumer() noexcept {

@@ -1,6 +1,6 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
-// A write ticket writes its cell one time (THE PROOF OF A TICKET of
+// A write ticket writes its cell one time (Proof of a ticket of
 // fixy/concurrent/SequenceCells.h).  A second write with one ticket needs the
 // ticket in a name, so that two calls can give it.  The ticket does not copy
 // and does not move, so a door takes it only as the value that the mint

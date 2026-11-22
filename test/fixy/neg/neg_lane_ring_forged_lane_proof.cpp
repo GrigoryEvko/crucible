@@ -1,7 +1,7 @@
-// NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
+// Negative-compile test.  This file must fail to compile.
 //
 // Only the owner of a ring of lanes mints the proof of a lane, one time for
-// each holder of the lane (THE WRITERS of fixy/concurrent/LaneRing.h).  A
+// each holder of the lane (Writers of fixy/concurrent/LaneRing.h).  A
 // stranger that builds a proof would push into a lane that another producer
 // holds, and two producers would write one SPSC ring.
 //

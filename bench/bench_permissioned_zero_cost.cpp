@@ -77,8 +77,9 @@ auto bench_halves() noexcept {
 // The allocation capability of the rings and the channels of the rows.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
-// The owner of the bare ring.  It makes the proof of the one consumer (THE
-// WRITERS of fixy/concurrent/MpscRing.h), which pops on the thread of the row.
+// The owner of the bare ring.  It makes the proof of the one consumer
+// (Writers of fixy/concurrent/MpscRing.h), which pops on the thread of the
+// row.
 struct BareRingOwner final {
     [[nodiscard]] static constexpr ::fixy::SoleWriterProof<BareRingOwner, ::fixy::concurrent::MpscConsumerRole>
     consumer() noexcept {

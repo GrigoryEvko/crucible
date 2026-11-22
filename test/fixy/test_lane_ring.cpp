@@ -49,7 +49,7 @@ using WaitPolicy = cc::SpinThenPark<2000>;
 constexpr eff::cap::Nondet kNondet = eff::testing::test().nondet;
 
 // The owner of each ring of lanes of the test.  It mints the proof of a lane
-// and the proof of the consumer (THE WRITERS of fixy/concurrent/LaneRing.h).
+// and the proof of the consumer (Writers of fixy/concurrent/LaneRing.h).
 // A walk holds the producer of each lane and the consumer on one thread, and
 // a threaded run gives each lane to the thread of its producer.
 struct LanesOwner final {
@@ -348,7 +348,7 @@ struct Run {
 };
 
 // The owner of the MPSC ring of the control.  It makes the proof of the one
-// consumer (THE WRITERS of fixy/concurrent/MpscRing.h), which pops on one
+// consumer (Writers of fixy/concurrent/MpscRing.h), which pops on one
 // thread.
 struct MergeOwner final {
     [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MergeOwner, cc::MpscConsumerRole> consumer() noexcept {
