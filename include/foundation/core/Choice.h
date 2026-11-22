@@ -1909,6 +1909,13 @@ struct MoveActive final {
     explicit constexpr MoveActive() noexcept = default;
 };
 
+// The dispatch tag of the constructor that builds no alternative.  The slot
+// that holds the storage builds one alternative in place in the body of its
+// own constructor.
+struct NoAlternativeYet final {
+    explicit constexpr NoAlternativeYet() noexcept = default;
+};
+
 // The storage of a sum: one alternative alive at a time.  The union nests
 // the alternatives after the first one, so each alternative is a direct
 // member of the union at its depth, and a constant evaluation can follow the
@@ -1942,6 +1949,8 @@ public:
     // No member is active until the body builds the alternative of the
     // index, so the active member of the source tells which member to build.
     constexpr Alternatives(MoveActive, std::size_t index, Alternatives& source) noexcept { move_in_(index, source); }
+
+    constexpr explicit Alternatives(NoAlternativeYet) noexcept {}
 
     constexpr ~Alternatives()
         requires std::is_trivially_destructible_v<Last>
@@ -1979,6 +1988,8 @@ public:
         : tail_(AlternativeAt<Index - 1>{}, static_cast<U&&>(value)) {}
 
     constexpr Alternatives(MoveActive, std::size_t index, Alternatives& source) noexcept { move_in_(index, source); }
+
+    constexpr explicit Alternatives(NoAlternativeYet) noexcept {}
 
     constexpr ~Alternatives()
         requires(std::is_trivially_destructible_v<Head>
@@ -2522,9 +2533,16 @@ public:
     constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : storage_(AlternativeAt<1>{}, static_cast<U&&>(value)), is_engaged_{true} {}
 
-    constexpr OptionSlot(OptionSlot&& other) noexcept
-        : storage_(MoveActive{}, other.is_engaged_ ? std::size_t{1} : std::size_t{0}, other.storage_),
-          is_engaged_{other.is_engaged_} {
+    // The move builds one alternative in place: the payload of a full source,
+    // or a new empty marker.  An empty source holds the empty marker, the zero
+    // words or an ended payload, and only its flag tells that it is empty.  So
+    // the move reads no alternative of an empty source.
+    constexpr OptionSlot(OptionSlot&& other) noexcept : storage_(NoAlternativeYet{}), is_engaged_{other.is_engaged_} {
+        if (is_engaged_) {
+            ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<1>{}, static_cast<T&&>(other.payload_()));
+        } else {
+            ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<0>{}, NoPayload{});
+        }
         other.clear_();
     }
 

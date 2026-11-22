@@ -1137,6 +1137,57 @@ consteval int sum_of_doors_in_constant_evaluation() {
 
 static_assert(sum_of_doors_in_constant_evaluation() == 123);
 
+// A droppable payload whose end is not trivial, so an Option of it takes the
+// owning form, and a constant evaluation can move it and assign it.
+class ConstantOwner {
+public:
+    constexpr explicit ConstantOwner(int handle) noexcept : handle_{handle} {}
+    constexpr ConstantOwner(ConstantOwner&& other) noexcept : handle_{other.handle_} { other.handle_ = 0; }
+    ConstantOwner(ConstantOwner const&) = delete;
+    ConstantOwner& operator=(ConstantOwner const&) = delete;
+    ConstantOwner& operator=(ConstantOwner&&) = delete;
+    constexpr ~ConstantOwner() {}
+
+    [[nodiscard]] constexpr int handle() const noexcept { return handle_; }
+
+private:
+    int handle_ = 0;
+};
+
+// A consumer ends the payload of an owning Option, and the storage then holds
+// no alternative that a constructor built.  So a move of that Option reads no
+// alternative of its storage, and a constant evaluation accepts the move.  A
+// move and a move assignment of a full Option give its payload, and the
+// source is empty after each one.
+consteval int moves_in_constant_evaluation() {
+    Option<ConstantOwner> emptied = Option<ConstantOwner>::some(ConstantOwner{1});
+    ConstantOwner const first =
+        static_cast<Option<ConstantOwner>&&>(emptied).expect("the Option holds the first owner");
+    Option<ConstantOwner> moved_empty{static_cast<Option<ConstantOwner>&&>(emptied)};
+
+    Option<ConstantOwner> taken = Option<ConstantOwner>::some(ConstantOwner{2});
+    Option<ConstantOwner> second = taken.take();
+    Option<ConstantOwner> const moved_taken{static_cast<Option<ConstantOwner>&&>(taken)};
+
+    Option<ConstantOwner> full = Option<ConstantOwner>::some(ConstantOwner{3});
+    Option<ConstantOwner> moved_full{static_cast<Option<ConstantOwner>&&>(full)};
+    Option<ConstantOwner> target = Option<ConstantOwner>::some(ConstantOwner{4});
+    target = static_cast<Option<ConstantOwner>&&>(moved_full);
+
+    Option<ConstantOwner> cleared = Option<ConstantOwner>::some(ConstantOwner{5});
+    cleared = static_cast<Option<ConstantOwner>&&>(moved_empty);
+
+    bool const are_sources_empty = emptied.is_none() && moved_empty.is_none() && moved_taken.is_none() && full.is_none()
+                                && moved_full.is_none() && cleared.is_none();
+    int const held =
+        target.match([](ConstantOwner const& owner) noexcept { return owner.handle(); }, []() noexcept { return 0; });
+    int const second_handle =
+        static_cast<Option<ConstantOwner>&&>(second).expect("take gave the second owner").handle();
+    return are_sources_empty ? first.handle() * 100 + second_handle * 10 + held : -1;
+}
+
+static_assert(moves_in_constant_evaluation() == 123);
+
 void replace_handle(Option<Handle>& target) noexcept { static_cast<void>(target.replace(Handle{79})); }
 
 // fill of a full Option ends the process in each form, because the fill
