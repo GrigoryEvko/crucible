@@ -31,6 +31,10 @@
 //   remove(key)         moves the value of key out as an Option<T> and frees
 //                       its slot, or gives no value as get does
 //   size(), is_empty()  the count of the values
+//   std::move(map).expect_empty(why)
+//                       ends an empty map, and ends the process with why when
+//                       the map still holds a value.  A map of a linear value
+//                       ends here
 //   capacity()          the count of the slots of the mint
 //   for (x : map)       each value, in the order of the indexes of the slots
 //   keys()              each key of a value, in the same order
@@ -401,6 +405,16 @@ public:
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.live; }
     [[nodiscard]] constexpr bool is_empty() const noexcept { return this->state_.live == 0; }
+
+    // The end of an empty map that the caller gives up: the process ends
+    // with the reason when the map still holds a value.  A map of a linear
+    // value ends here after the caller gives each value to its consumer, as
+    // an empty Option ends at expect_none.  One compare.
+    constexpr void expect_empty(Fmt<> why) && noexcept {
+        if (this->state_.live != 0) [[unlikely]] {
+            fatal(why);
+        }
+    }
 
     [[nodiscard]] constexpr Quantity<unit::Element, std::uint32_t> capacity() const noexcept {
         return Quantity<unit::Element, std::uint32_t>{this->state_.capacity};

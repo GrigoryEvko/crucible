@@ -293,16 +293,23 @@ void test_linear_alternative() {
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
 
+// A class that states its own end, with a OneOf of a linear alternative as a
+// data member.  The drop door ends such a class, and the OneOf ends with it.
+struct[[= ::foundation::linear::linear{}]] OneOfHolder {
+    OneOf<CountedToken, Refusal> held;
+};
+
 // The end of a OneOf whose active alternative is linear and that no consumer
 // took ends the process in a test build, where the rule must-consume does not
-// see the end: in the body of the drop door.  expect and the move of the OneOf
-// for its source leave nothing owed, and a droppable active alternative owes
-// nothing.  A Release build keeps no mark, so the cell that ends the process
-// runs only in a test build.
+// see the end: in a data member of a class that states its own end, which the
+// drop door ends.  expect and the move of the OneOf for its source leave
+// nothing owed, and a droppable active alternative owes nothing.  A Release
+// build keeps no mark, so the cell that ends the process runs only in a test
+// build.
 void test_owed_linear_alternative_end_aborts([[maybe_unused]] TestRunnerCtx const& test) {
 #ifdef CRUCIBLE_QTT_TRACK_CONSUME
     expect_dies(
-        test, [] noexcept { ::foundation::linear::drop(OneOf<CountedToken, Refusal>{CountedToken{52}}); },
+        test, [] noexcept { ::foundation::linear::drop(OneOfHolder{OneOf<CountedToken, Refusal>{CountedToken{52}}}); },
         ::foundation::core::TextView{
             "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"});
 #endif
@@ -314,7 +321,7 @@ void test_owed_linear_alternative_end_aborts([[maybe_unused]] TestRunnerCtx cons
         CRUCIBLE_FATAL_INVARIANT(taken.handle() == 53);
         ::foundation::linear::drop(static_cast<CountedToken&&>(taken));
     }
-    ::foundation::linear::drop(OneOf<CountedToken, Refusal>{Refusal::closed});
+    ::foundation::linear::drop(OneOfHolder{OneOf<CountedToken, Refusal>{Refusal::closed}});
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
 

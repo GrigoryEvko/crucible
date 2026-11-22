@@ -226,17 +226,32 @@ concept LinearValue = !std::is_reference_v<T> && !std::is_const_v<T> && is_linea
     return true;
 }
 
+// A linear value whose class states its own end, so the drop door can end
+// it.  Each other linear value goes to the consumer of each value that it
+// holds.
+template <class T>
+concept DroppableLinear = LinearValue<T> && states_own_end(^^T);
+
 // The drop door that reports nothing.  It moves the value into its own
 // frame, so the destructor of the value runs before the door returns.  A
 // search for this annotation lists each deliberate discard.  A class whose
 // destructor checks that its value was consumed, such as a tracked
 // fixy::Linear<T>, ends through its own drop door, because this door
 // destroys a live value.
-template <LinearValue T>
+template <DroppableLinear T>
 [[= drop_door{}]] constexpr void drop(T&& value) noexcept {
     T dropped(static_cast<T&&>(value));
     static_cast<void>(dropped);
 }
+
+// A class that holds a linear value and states no end of its own would end
+// that value in the frame of the door, where no rule reads the end.  The
+// deleted twin gives the reason.
+template <LinearValue T>
+    requires(!states_own_end(^^T))
+constexpr void drop(T&&) = delete("the drop door ends only a class that states its own end.  This class is linear "
+                                  "by the values that it holds: give each value to its consumer, or end each one at "
+                                  "its own door");
 
 // A named value stays with the caller, so a drop of it would leave a
 // second name for the value.  The deleted twin gives the reason.

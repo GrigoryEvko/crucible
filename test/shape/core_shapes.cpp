@@ -1068,10 +1068,10 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
     held.fill(fixy::mint_linear<std::uint64_t>(value));
 }
 
-// The drop door ends an Option of a linear word.  The move leaves the source
-// empty, and then the moved Option ends.
+// expect_none ends an empty Option of a linear word.  It tests the flag, and
+// a full Option ends the process, so no word drops.
 [[gnu::used]] void option_end_linear(fixy::Option<fixy::Linear<std::uint64_t>>&& held) noexcept {
-    ::foundation::linear::drop(std::move(held));
+    std::move(held).expect_none("the caller gives an empty Option");
 }
 
 // The twin of option_end_linear with a droppable payload: a word that only
@@ -2539,13 +2539,9 @@ struct RawHeapState final {
     held.emplace(value);
 }
 
-// The raw end moves the optional out and empties the source, as the move of
-// an owning Option does, and drops the payload with no test.
-[[gnu::used]] void option_end_linear_raw(std::optional<std::uint64_t>&& held) noexcept {
-    std::optional<std::uint64_t> const ended{std::move(held)};
-    held.reset();
-    static_cast<void>(ended);
-}
+// The raw end empties the optional with no test, and a full optional drops
+// its payload.
+[[gnu::used]] void option_end_linear_raw(std::optional<std::uint64_t>&& held) noexcept { held.reset(); }
 
 [[gnu::used]] void option_end_owned_raw(std::optional<std::uint64_t>&& held) noexcept {
     std::optional<std::uint64_t> const ended{std::move(held)};

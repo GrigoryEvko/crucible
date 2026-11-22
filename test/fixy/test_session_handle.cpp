@@ -840,13 +840,8 @@ struct TokenWire {
     auto [back, token] = std::move(receiver_done).close();
     static_assert(std::is_same_v<decltype(token), RootToken>,
                   "the token leaves the session with the brand of its root");
-    const bool is_wire_empty = back.slot.size() == 0;
     ::foundation::linear::drop(std::move(token));
-    ::foundation::linear::drop(std::move(back));
-    if (!is_wire_empty) {
-        std::fprintf(stderr, "the receive left the token on the wire\n");
-        return 1;
-    }
+    std::move(back.slot).expect_empty("the receive takes the token off the wire");
     return 0;
 }
 

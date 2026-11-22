@@ -1229,27 +1229,31 @@ void test_expect_none() {
         ::foundation::core::TextView{"the linear Option is full on purpose"});
 }
 
-// A class that holds an Option of a linear payload as a data member.
-struct TokenHolder {
+// Three classes that state their own end, each with a linear sum as a data
+// member.  The drop door ends such a class, and the sum ends with it.
+struct[[= ::foundation::linear::linear{}]] TokenHolder {
     Option<CountedToken> held;
+};
+struct[[= ::foundation::linear::linear{}]] TokenResultHolder {
+    Result<CountedToken, Refusal> held;
+};
+struct[[= ::foundation::linear::linear{}]] RefusalResultHolder {
+    Result<int, CountedToken> held;
 };
 
 // The end of a full Option of a linear payload ends the process, where the
-// rule must-consume does not see the end: in the body of the drop door, of an
-// Option and of a data member of a class.  The end of an empty one ends no
-// payload, and a droppable payload still ends with its Option.
+// rule must-consume does not see the end: in a data member of a class that
+// states its own end, which the drop door ends.  The end of an empty one ends
+// no payload, and a droppable payload still ends with its Option.
 void test_full_linear_end_aborts() {
     constexpr ::foundation::core::TextView kFullEnd{
         "foundation: fatal: an Option of a linear payload ended with its payload: consume it with take, or end it with "
         "a named door"};
     expect_dies(
-        test_context(), [] noexcept { ::foundation::linear::drop(Option<CountedToken>::some(CountedToken{81})); },
-        kFullEnd);
-    expect_dies(
         test_context(),
         [] noexcept { ::foundation::linear::drop(TokenHolder{Option<CountedToken>::some(CountedToken{82})}); },
         kFullEnd);
-    ::foundation::linear::drop(Option<CountedToken>{});
+    Option<CountedToken>{}.expect_none("an empty Option holds no token");
     ::foundation::linear::drop(TokenHolder{Option<CountedToken>{}});
     {
         Option<CountedOwner> const owner = Option<CountedOwner>::some(CountedOwner{83});
@@ -1260,18 +1264,21 @@ void test_full_linear_end_aborts() {
 
 // The end of a Result whose active alternative is linear and that no consumer
 // took ends the process in a test build, where the rule must-consume does not
-// see the end: in the body of the drop door.  A consumer, and the move of the
-// Result for its source, leave nothing owed, and a Result whose active
-// alternative is droppable owes nothing.  A Release build keeps no mark, so
-// the cells that end the process run only in a test build.
+// see the end: in a data member of a class that states its own end, which the
+// drop door ends.  A consumer, and the move of the Result for its source,
+// leave nothing owed, and a Result whose active alternative is droppable owes
+// nothing.  A Release build keeps no mark, so the cells that end the process
+// run only in a test build.
 void test_owed_alternative_end_aborts() {
     [[maybe_unused]] constexpr ::foundation::core::TextView kOwedEnd{
         "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"};
 #ifdef CRUCIBLE_QTT_TRACK_CONSUME
     expect_dies(
-        test_context(), [] noexcept { ::foundation::linear::drop(Result<CountedToken, Refusal>{CountedToken{91}}); },
+        test_context(),
+        [] noexcept { ::foundation::linear::drop(TokenResultHolder{Result<CountedToken, Refusal>{CountedToken{91}}}); },
         kOwedEnd);
-    expect_dies(test_context(), [] noexcept { ::foundation::linear::drop(refuse_with(92)); }, kOwedEnd);
+    expect_dies(
+        test_context(), [] noexcept { ::foundation::linear::drop(RefusalResultHolder{refuse_with(92)}); }, kOwedEnd);
 #endif
     {
         Result<CountedToken, Refusal> first{CountedToken{93}};
@@ -1280,7 +1287,7 @@ void test_owed_alternative_end_aborts() {
         CRUCIBLE_FATAL_INVARIANT(taken.handle() == 93);
         ::foundation::linear::drop(static_cast<CountedToken&&>(taken));
     }
-    ::foundation::linear::drop(Result<int, CountedToken>{94});
+    ::foundation::linear::drop(RefusalResultHolder{Result<int, CountedToken>{94}});
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
 }  // namespace

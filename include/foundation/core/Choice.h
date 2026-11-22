@@ -3027,7 +3027,7 @@ template <class T, class E>
 
 // The return of a failed operand: none for an Option, and the Err of the
 // error for a Result.  The return statement of the macro converts it.  A
-// failed Option holds no value, and a linear Option ends at the drop door,
+// failed Option holds no value, and a linear Option ends at expect_none,
 // because the rule must-consume does not read the test of try_failed_.
 template <class Hold>
 [[nodiscard]] constexpr auto try_propagate_(Hold&& hold) noexcept {
@@ -3036,7 +3036,7 @@ template <class Hold>
         return TryRefused{};
     } else if constexpr (IsOption<Choice>) {
         if constexpr (::foundation::linear::is_linear_type(^^Choice)) {
-            ::foundation::linear::drop(static_cast<Choice&&>(hold));
+            static_cast<Choice&&>(hold).expect_none("CRUCIBLE_TRY tested that the Option holds no value");
         } else {
             static_cast<void>(hold);
         }

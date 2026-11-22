@@ -22,8 +22,9 @@ struct [[= ::foundation::linear::linear{}]] Token {
     Token(const Token&) = delete;
 };
 
-// A class that holds an Option of a token as a data member.
-struct Holder {
+// A class that states its own end and holds an Option of a token as a data
+// member.
+struct [[= ::foundation::linear::linear{}]] Holder {
     Option<Token> held;
 };
 

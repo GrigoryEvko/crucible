@@ -98,7 +98,7 @@ static_assert(!CanMintSlotMap<int, HandleTag, std::uint64_t, Alloc>
 
 // The surface of the map and its walk is closed over the shared verbs and
 // the names of the family.
-inline constexpr TextView slot_map_names{"element_type key_type insert remove is_empty capacity keys"};
+inline constexpr TextView slot_map_names{"element_type key_type insert remove is_empty expect_empty capacity keys"};
 CRUCIBLE_CLOSED_SURFACE(slot_map_names, SlotMap<int, HandleTag>);
 CRUCIBLE_CLOSED_SURFACE(slot_map_names, SlotMap<LinearToken, HandleTag, std::uint8_t>);
 CRUCIBLE_CLOSED_SURFACE(slot_map_names, SlotWalk<int const, std::uint32_t, SlotKey<HandleTag>>);

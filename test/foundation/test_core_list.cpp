@@ -99,6 +99,21 @@ void test_take_last_and_clear() {
     CRUCIBLE_TEST_ASSERT(kTest, *list.get(0).expect("0 is below the count") == 7);
 }
 
+// expect_empty ends an empty list, and a list that still holds an element
+// ends the process with the reason.
+void test_expect_empty() {
+    FixedList<int, 2> empty;
+    std::move(empty).expect_empty("the list holds no element");
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            FixedList<int, 2> held;
+            static_cast<void>(held.append(5).expect("the list has room"));
+            std::move(held).expect_empty("the list still holds one element");
+        },
+        ::foundation::core::TextView{"foundation: fatal: the list still holds one element"});
+}
+
 // Each element ends exactly one time: at a take, at a clear, or at the end of
 // the list.  A copy of the list copies each element.
 void test_each_element_ends_once() {
@@ -141,7 +156,7 @@ void test_full_gives_a_linear_value_back() {
     CRUCIBLE_TEST_ASSERT(kTest, first.id == 1);
     ::foundation::linear::drop(std::move(first));
     CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0);
-    ::foundation::linear::drop(std::move(list));
+    std::move(list).expect_empty("the test took each token out of the list");
 }
 
 // The property: for random appends and takes, the list holds the elements of
@@ -233,6 +248,7 @@ void test_view_of_a_static_list_is_constant() {
 int main() {
     test_append_until_full();
     test_take_last_and_clear();
+    test_expect_empty();
     test_each_element_ends_once();
     test_full_gives_a_linear_value_back();
     test_list_agrees_with_the_model();

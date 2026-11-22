@@ -19,6 +19,10 @@
 //                       lives and holds it
 //   take_last()         moves the last element out as an Option<T>, or gives
 //                       no value for an empty list: one compare
+//   std::move(list).expect_empty(why)
+//                       ends an empty list, and ends the process with why
+//                       when the list still holds an element.  A list of a
+//                       linear element ends here
 //   clear()             ends each element.  Only an element that a holder can
 //                       drop has it, because the end of a linear element
 //                       would lose what it proves
@@ -283,6 +287,16 @@ public:
         Option<T> result = Option<T>::some(static_cast<T&&>(*slots_.slot(count_)));
         end_slot_(*slots_.slot(count_));
         return result;
+    }
+
+    // The end of an empty list that the caller gives up: the process ends
+    // with the reason when the list still holds an element.  A list of a
+    // linear element ends here after the caller gives each element to its
+    // consumer, as an empty Option ends at expect_none.  One compare.
+    constexpr void expect_empty(Fmt<> why) && noexcept {
+        if (count_ != 0) [[unlikely]] {
+            fatal(why);
+        }
     }
 
     // Ends each element.  Only an element that a holder can drop has clear():

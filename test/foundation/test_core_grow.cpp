@@ -155,8 +155,39 @@ void test_refusal_at_the_maximum() {
     CRUCIBLE_TEST_ASSERT(kTest, none_fit.append(alloc, 1).is_err() && none_fit.size() == 0);
 }
 
-// The Full of a linear element gives the value back, and a growth moves each
-// token into the new storage.
+// take_last moves the last element out and keeps the storage, so an append
+// after a take writes the freed slot again.  expect_empty ends an empty list,
+// and a list that still holds an element ends the process with the reason.
+void test_take_last_and_expect_empty() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    GrowList<int> list = mint_grow_list<int>(8);
+    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().is_none());
+    for (int value = 1; value <= 5; ++value) {
+        list.append(alloc, value).expect("the list is below its maximum");
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds five elements") == 5);
+    list.append(alloc, 6).expect("the list is below its maximum");
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 5 && element_at(list, 4).expect("4 is below the count") == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds five elements") == 6);
+    for (int expected = 4; expected >= 1; --expected) {
+        CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds each element up to expected") == expected);
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0 && list.take_last().is_none());
+    std::move(list).expect_empty("the test took each element out of the list");
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            ::foundation::effects::Alloc const child_alloc = ::foundation::effects::testing::test().alloc;
+            GrowList<int> held = mint_grow_list<int>(2);
+            held.append(child_alloc, 7).expect("the list is below its maximum");
+            std::move(held).expect_empty("the list still holds one element");
+        },
+        ::fixy::TextView{"foundation: fatal: the list still holds one element"});
+}
+
+// The Full of a linear element gives the value back, a growth moves each
+// token into the new storage, and take_last gives each token back from the
+// last one.
 void test_full_gives_a_linear_value_back() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowList<Token> list = mint_grow_list<Token>(40);
@@ -177,7 +208,13 @@ void test_full_gives_a_linear_value_back() {
         return expected;
     });
     CRUCIBLE_TEST_ASSERT(kTest, in_order == 40);
-    ::foundation::linear::drop(std::move(list));
+    for (int id = 39; id >= 0; --id) {
+        Token last = list.take_last().expect("the list holds each token up to id");
+        CRUCIBLE_TEST_ASSERT(kTest, last.id == id);
+        ::foundation::linear::drop(std::move(last));
+    }
+    list.take_last().expect_none("an empty list gives no token");
+    std::move(list).expect_empty("the test took each token out of the list");
 }
 
 // Each element that is not bytewise moves at each growth and ends exactly one
@@ -495,6 +532,7 @@ int main() {
     test_append_across_growths();
     test_refusal_at_the_maximum();
     test_full_gives_a_linear_value_back();
+    test_take_last_and_expect_empty();
     test_each_element_ends_once();
     test_nested_lists();
     test_text_appends();

@@ -457,11 +457,10 @@ int check_fresh_brand_recording() {
     auto [value, at_end] = std::move(receiver).recv(take_message<Message>);
     // The End handle gives the token back with the mailbox.
     auto [box, token] = std::move(at_end).close();
-    const bool is_box_empty = box.held.size() == 0;
     ::foundation::linear::drop(std::move(token));
-    ::foundation::linear::drop(std::move(box));
+    std::move(box.held).expect_empty("the receive takes the marker out of the mailbox");
 
-    if (value != 4 || !is_box_empty) return fail("the recorded marker of a fresh brand did not carry its value");
+    if (value != 4) return fail("the recorded marker of a fresh brand did not carry its value");
     if (sender_log.size() != 2 || sender_log[0].op() != s::SessionOp::Send
         || sender_log[0].payload_schema() != erased_hash)
         return fail("the send of a marker of a fresh brand did not record the erased schema");

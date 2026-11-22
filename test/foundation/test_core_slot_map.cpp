@@ -106,7 +106,7 @@ void test_linear_values() {
     Token first = map.remove(key).expect("the key is live");
     CRUCIBLE_FATAL_INVARIANT(first.id == 1 && map.is_empty());
     ::foundation::linear::drop(std::move(first));
-    ::foundation::linear::drop(std::move(map));
+    std::move(map).expect_empty("the test took each token out of the map");
 }
 
 // A key that a caller builds from a word is a claim: an index past the used
@@ -287,6 +287,14 @@ void test_refusals(::fixy::TestRunnerCtx const& test) {
         },
         ::foundation::core::TextView{
             "foundation: fatal: a read or a step through the end cursor of a walk of a SlotMap"});
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            SlotMap<int, HandleTag> map = map_of<int>(2);
+            static_cast<void>(map.insert(1).expect("the map has a free slot"));
+            std::move(map).expect_empty("the map still holds one value");
+        },
+        ::foundation::core::TextView{"foundation: fatal: the map still holds one value"});
 }
 
 // ── The property test ──────────────────────────────────────────────────────

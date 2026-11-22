@@ -35,6 +35,9 @@
 //                       growth copies them before it gives the old storage
 //                       back
 //   size() and clear()  as FixedList gives them
+//   take_last() and std::move(list).expect_empty(why)
+//                       of a GrowList: as FixedList gives them.  A take frees
+//                       the slot and keeps the storage
 //   freeze(std::move(text))
 //                       of a GrowText: gives the characters to a HeapText with
 //                       no copy, and leaves the text empty with its maximum
@@ -402,6 +405,31 @@ public:
     operator=(GrowList const&) = delete("a copy of a GrowList allocates, and no allocation capability shows at a copy");
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
+
+    // Moves the last element out, or gives no value for an empty list.  A
+    // lent list ends the process (the lend count).  One compare, and the
+    // poison of the freed slot under ASan.
+    [[nodiscard]] Option<T> take_last() & noexcept {
+        detail::refuse_lent_owner_change_(this->state_.lend_count);
+        if (this->state_.count == 0) {
+            return Option<T>{none};
+        }
+        --this->state_.count;
+        Option<T> result = Option<T>::some(static_cast<T&&>(first_()[this->state_.count]));
+        State::end_slot_(first_()[this->state_.count]);
+        detail::poison_slots_(first_() + this->state_.count, 1);
+        return result;
+    }
+
+    // The end of an empty list that the caller gives up: the process ends
+    // with the reason when the list still holds an element.  A list of a
+    // linear element ends here after the caller gives each element to its
+    // consumer, as an empty Option ends at expect_none.  One compare.
+    constexpr void expect_empty(Fmt<> why) && noexcept {
+        if (this->state_.count != 0) [[unlikely]] {
+            fatal(why);
+        }
+    }
 
     // Puts value after the last element, or gives Full<T> when the list
     // holds maximum elements.  Three compares, and a growth when the storage

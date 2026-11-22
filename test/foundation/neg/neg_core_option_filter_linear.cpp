@@ -19,5 +19,6 @@ int main() {
     using Held = ::foundation::core::Option<Descriptor>;
     Held kept =
         Held::some(Descriptor{3}).filter([](Descriptor const& descriptor) noexcept { return descriptor.raw > 2; });
-    return ::foundation::linear::drop(static_cast<Held&&>(kept)), 0;
+    static_cast<Held&&>(kept).expect_none("the fixture ends the Option empty");
+    return 0;
 }

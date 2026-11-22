@@ -47,6 +47,6 @@ int main() {
     auto receiver_done = std::move(receiver).recv([](Mailbox<Token>& box) noexcept { return box.held.take_last(); });
     auto [wire, token] = std::move(receiver_done).close();
     fp::release_singleton_root(std::move(token));
-    ::foundation::linear::drop(std::move(wire));
+    std::move(wire.held).expect_empty("the receive takes the token out of the mailbox");
     return 0;
 }

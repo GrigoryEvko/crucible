@@ -92,7 +92,7 @@ void ended_through_doors() {
     poll().expect_none("the source gives no token here");
     Option<Token> held{};
     std::move(held).expect_none("the Option was built empty");
-    ::foundation::linear::drop(Option<Token>{});
+    Option<Token>{}.expect_none("a temporary built empty holds no token");
 }
 
 Option<Token> tried() {

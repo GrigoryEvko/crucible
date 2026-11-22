@@ -113,11 +113,9 @@ template <template <class, class, class> class Marker>
     auto [back, token] = std::move(receiver_done).close();
     static_assert(std::is_same_v<decltype(token), fp::Permission<Region, Brand>>,
                   "the token leaves the session with the brand of its root");
-    const bool is_mailbox_empty = back.held.size() == 0;
     ::foundation::linear::drop(std::move(token));
-    ::foundation::linear::drop(std::move(back));
+    std::move(back.held).expect_empty("the receive takes the marker out of the mailbox");
     if (received != value) return fail("the marker did not carry its value");
-    if (!is_mailbox_empty) return fail("the receive left the marker in the mailbox");
     return 0;
 }
 
@@ -169,10 +167,13 @@ struct LoanWire {
         std::move(lender_waits).recv([](Wire& wire) noexcept { return take_message(wire.released); });
     static_assert(std::is_same_v<typename decltype(lender_done)::perm_set, HoldsRegion<Brand>>,
                   "the release unparks the token of the lender");
-    ::foundation::linear::drop(std::move(borrower_done).close());
+    Wire borrower_wire = std::move(borrower_done).close();
+    std::move(borrower_wire.lent.held).expect_empty("the borrower takes the loan out of its mailbox");
+    std::move(borrower_wire.released.held).expect_empty("the carry moves the release to the lender");
     auto [wire, token] = std::move(lender_done).close();
     ::foundation::linear::drop(std::move(token));
-    ::foundation::linear::drop(std::move(wire));
+    std::move(wire.lent.held).expect_empty("the carry moves the loan to the borrower");
+    std::move(wire.released.held).expect_empty("the lender takes the release out of its mailbox");
     if (answer != 41) return fail("the release did not carry the value that the borrower read");
     return 0;
 }
