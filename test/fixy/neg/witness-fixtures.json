@@ -447,11 +447,6 @@
       "constructor": "\\bViewCursorKey\\("
     },
     {
-      "name": "neg_witness_core_detail_viewkey_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bViewKey\\("
-    },
-    {
       "name": "neg_witness_core_detail_windowcursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bWindowCursor\\("
@@ -1951,10 +1946,6 @@
     },
     {
       "type": "foundation::core::View<int>",
-      "header": "foundation/core/Region.h"
-    },
-    {
-      "type": "foundation::core::detail::ViewKey",
       "header": "foundation/core/Region.h"
     },
     {

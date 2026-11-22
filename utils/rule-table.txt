@@ -863,11 +863,10 @@ witness <foundation/AlignedBytes.h> no-match | foundation::KeyedBytes<forge::bra
 # handles that it makes (foundation/ChannelBinding.h).
 witness <foundation/ChannelBinding.h> private | foundation::BindingKey<int> | foundation::BindingKey<int>{}
 witness <foundation/core/Identity.h> private | foundation::core::Identity | foundation::core::Identity{forge::rvalue<unsigned long>()}
-# A View comes only from an owner of the base layer, so no pointer and no
-# count that a caller holds become a View.  The door from a reference to an
-# array takes the key that only ViewDoor builds.
+# A View comes only from a door that names the proof of its run, so no
+# pointer and no count that a caller holds become a View, as the comment on
+# the doors of a View in foundation/core/Region.h tells.
 witness <foundation/core/Region.h> private | foundation::core::View<int> | foundation::core::View<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
-witness <foundation/core/Region.h> private | foundation::core::detail::ViewKey | foundation::core::detail::ViewKey{}
 # An owner on the core reaches the raw constructors of a View through the key
 # that only OwnerCore builds, and only for the run that its state holds.
 witness <foundation/core/Owner.h> private | foundation::core::detail::OwnerRunKey | foundation::core::detail::OwnerRunKey{}

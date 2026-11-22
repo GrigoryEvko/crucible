@@ -128,8 +128,7 @@ static_assert(!detail::ByteFillElement<std::uint16_t> && !detail::ByteFillElemen
 static_assert(!detail::ByteFillElement<Halves> && !detail::ByteFillElement<Empty>);
 
 // The windows in a constant evaluation, over one constant object, which is
-// a run of one element.  The object has internal linkage, so a constant
-// evaluation can compare its address with null.
+// a run of one element.
 constexpr int single_value = 7;
 
 [[nodiscard]] consteval int sum_of(View<int const> view) noexcept {
@@ -140,7 +139,9 @@ constexpr int single_value = 7;
     return total;
 }
 
-[[nodiscard]] consteval View<int const> single_view() noexcept { return detail::view_over_(&single_value, 1); }
+[[nodiscard]] consteval View<int const> single_view() noexcept {
+    return View<int const>{detail::view_of_object_(single_value)};
+}
 
 static_assert(single_view().size() == 1);
 static_assert(sum_of(single_view()) == 7);
@@ -160,14 +161,14 @@ static_assert(sum_of(View<int const>{}) == 0);
 template <class T>
 [[nodiscard]] consteval T filled(T initial, T value) noexcept {
     T element = initial;
-    fill(detail::view_over_(&element, 1), value);
+    fill(View<T>{detail::view_of_object_(element)}, value);
     return element;
 }
 
 template <class T>
 [[nodiscard]] consteval T filled_fixed(T initial, T value) noexcept {
     T element = initial;
-    fill(detail::view_over_<1>(&element), value);
+    fill(detail::view_of_object_(element), value);
     return element;
 }
 

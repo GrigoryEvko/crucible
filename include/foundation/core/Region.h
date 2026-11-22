@@ -5,11 +5,13 @@
 // View<T> borrows a run of elements: a pointer and a count.  View<T, N>
 // borrows a run of exactly N elements: a pointer alone, because the type
 // holds the count.  A View owns nothing, and an owner gives it out.  The
-// constructors from raw parts take the key of detail::ViewDoor, and only the
-// base layer reaches them, so no pointer that a caller holds becomes a View.
-// An owner that proves its run, such as a FixedArray, a FixedList or a
-// HeapArray, uses them with no check and no test of a null pointer.
-// detail::view_over_ checks raw parts and then uses them.  The seal refuses
+// constructors from raw parts are private, so no pointer that a caller holds
+// becomes a View.  Each door to them carries the proof of its run, as the
+// comment on the doors of a View below tells: an owner on the core of
+// foundation/core/Owner.h, a door of an owner above this header, a typed door
+// of this header, or the mint of a foreign run.  Each door uses them with no
+// check and no test of a null pointer, apart from the mint of a foreign run,
+// which checks the parts that a foreign ABI gives.  The seal refuses
 // std::bit_cast, so no bytes become a View either.
 //
 // The operations:
@@ -183,6 +185,20 @@ template <class T, std::size_t Extent = dynamic_extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
 class View;
 
+// The element of a run that a foreign ABI writes, such as the bytes of the
+// fuzz entry, the data of a PyTorch tensor or a record of a BPF ring buffer.
+// The foreign side can write each bit pattern, so each bit pattern of the
+// element is a value: no bool, no enumeration with an enumerator and no
+// pointer (BitValid).
+template <class T>
+concept ForeignElement = ViewElement<T> && !std::is_const_v<T> && BitValid<T>;
+
+// The View of a run that a foreign ABI gives, with the doors of a foreign run
+// below.  View names it as a friend, and this header defines it.
+template <class T>
+    requires ForeignElement<T>
+[[nodiscard]] View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept;
+
 namespace detail {
 
 template <std::size_t Extent>
@@ -196,29 +212,22 @@ struct ViewCount<dynamic_extent> {
     [[nodiscard]] constexpr std::size_t value() const noexcept { return count; }
 };
 
-// The key of the constructors of a View from raw parts, which check nothing.
-// An owner that proves its run, such as a FixedArray, a FixedList or a
-// HeapArray, makes its View through the key, so its View has no compare, also
-// with -fno-delete-null-pointer-checks.  view_over_ checks raw parts of a run
-// and then uses the same key.  ViewDoor is the one friend of the key, and only
-// ViewDoor builds it.  The key and the door are no templates, so no explicit
-// specialization of a template reaches the constructors.  The rule owners
-// keeps each caller outside the base out of detail.
-struct ViewDoor;
-
-class [[nodiscard]] ViewKey final {
-    friend struct ViewDoor;
-
-    constexpr ViewKey() noexcept {}
-    constexpr ViewKey(ViewKey const&) noexcept {}
-
-public:
-    ViewKey& operator=(ViewKey const&) = delete("a key of a View lives for one construction");
-};
-
-struct ViewDoor {
-    [[nodiscard]] static constexpr ViewKey key() noexcept { return ViewKey{}; }
-};
+// The doors of a View.  The constructors of a View from raw parts check
+// nothing, so an owner that proves its run gets a View with no compare, also
+// with -fno-delete-null-pointer-checks.  Each door names the proof of its run:
+//   - An owner on the core of foundation/core/Owner.h, such as a HeapArray,
+//     passes the key of the core (detail::OwnerRunKey) for its own state.
+//   - An owner above this header with an invariant that no type proves, such
+//     as a FixedList or the stable sort, has a plain door class that View
+//     names as a friend, as the comment on the doors of the owners above this
+//     header tells.
+//   - A typed door of this header, such as view_of_array_ or view_of_object_,
+//     takes a reference whose type proves the elements.
+//   - mint_foreign_view checks the parts that a foreign ABI gives.
+// No door is a template that a unit can specialize to reach the
+// constructors: the rule specialization-home refuses each specialization of
+// a template of the tree outside its home, and the rule owners keeps each
+// caller outside the base out of detail.
 
 // The tag of first_of_, the read of the pointer of the first element of a
 // View or a ViewMut by the base layer.  The raw loops, the kernels and the
@@ -316,6 +325,15 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 class ViewMut;
 template <class T, ::foundation::brand::IsBrand Brand>
 class ViewMutChunks;
+
+namespace detail {
+
+// The run of a ViewMut as a plain View of its extent, for the doors of this
+// header that hold the ViewMut by move.  This header defines it.
+template <class T, class Brand, std::size_t Extent>
+[[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept;
+
+}  // namespace detail
 
 // THE DOORS OF THE OWNERS ABOVE THIS HEADER
 // An owner in a header above this one can hold an invariant that no type
@@ -448,6 +466,11 @@ class[[= ::foundation::transfer::refers{}]] View {
              && detail::ChunkPairBody<Body, First, Second, Width>
     friend Record<View<First>, View<Second>> detail::for_each_chunk_pair_(View<First> first, View<Second> second,
                                                                           Body& body) noexcept;
+    template <class U, class Brand, std::size_t OtherExtent>
+    friend constexpr View<U, OtherExtent> detail::run_of_(ViewMut<U, Brand, OtherExtent> const& view) noexcept;
+    template <class U>
+        requires ForeignElement<U>
+    friend View<U const> mint_foreign_view(U const* first, std::size_t count) noexcept;
     template <class U, std::size_t OtherExtent>
         requires std::same_as<std::remove_const_t<U>, unsigned char>
     friend View<std::conditional_t<std::is_const_v<U>, std::byte const, std::byte>, OtherExtent>
@@ -477,23 +500,6 @@ public:
     constexpr View() noexcept
         requires(Extent == dynamic_extent)
     = default;
-
-    // The door of the base layer: the count elements from first, with no
-    // check.  The caller proves the elements live, the count at most
-    // max_view_count, and first not null when the count is above zero.  An
-    // owner whose invariant gives these facts, such as a FixedList or a
-    // HeapArray, makes its View through it.
-    constexpr View(detail::ViewKey const& /*key*/, T* first, std::size_t count) noexcept
-        requires(Extent == dynamic_extent)
-        : View{first, count} {}
-
-    // The door of the base layer for a fixed extent: the Extent elements
-    // from first, with no check.  The caller proves the elements live and
-    // first not null.  An owner of Extent elements, such as a FixedArray,
-    // makes its View through it.
-    constexpr View(detail::ViewKey const& /*key*/, T* first) noexcept
-        requires(Extent != dynamic_extent)
-        : View{first} {}
 
     // The door of an owner on the core (foundation/core/Owner.h): the count
     // elements of the run that the owner holds, with no check.  The state of
@@ -800,31 +806,6 @@ CRUCIBLE_INLINE Record<View<First>, View<Second>> for_each_chunk_pair_(View<Firs
     std::size_t const whole = runs * Width;
     std::size_t const rest = first.size() % Width;
     return {View<First>{first_at + whole, rest}, View<Second>{second_at + whole, rest}};
-}
-
-// The checked door from raw parts to a View, for the owners of the base
-// layer that cannot prove their parts.  It ends the process for a count past
-// max_view_count and for a null pointer with a count, and then it makes the
-// View through the key.  View names it as no friend, so an explicit
-// specialization of it reaches no private member of a View.  The rule owners
-// keeps each caller outside the base out.
-template <class T>
-[[nodiscard]] constexpr View<T> view_over_(T* first, std::size_t count) noexcept {
-    if (count > max_view_count(sizeof(T))) [[unlikely]] {
-        fatal("view_over_ got a count past the largest count of a View");
-    }
-    if (first == nullptr && count != 0) [[unlikely]] {
-        fatal("view_over_ got a null pointer with a count");
-    }
-    return View<T>{ViewDoor::key(), first, count};
-}
-
-template <std::size_t Extent, class T>
-[[nodiscard]] constexpr View<T, Extent> view_over_(T* first) noexcept {
-    if (first == nullptr) [[unlikely]] {
-        fatal("view_over_ got a null pointer for a View of a fixed extent");
-    }
-    return View<T, Extent>{ViewDoor::key(), first};
 }
 
 // The root stage of the walk of a View (THE STAGES of foundation/core/Walk.h):
@@ -1261,14 +1242,15 @@ concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand,
 namespace detail {
 
 // The run of view as a plain View of its extent.  Only the doors of this
-// header use it, and each of them holds the ViewMut by move.
+// header use it, and each of them holds the ViewMut by move.  The ViewMut
+// proves its run, so the View takes its parts with no check.
 template <class T, class Brand, std::size_t Extent>
-[[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept {
+constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept {
     T* const first = first_of_(BaseLayerRead{}, view);
     if constexpr (Extent == dynamic_extent) {
-        return View<T>{ViewDoor::key(), first, view.size()};
+        return View<T>{first, view.size()};
     } else {
-        return View<T, Extent>{ViewDoor::key(), first};
+        return View<T, Extent>{first};
     }
 }
 
@@ -1426,14 +1408,6 @@ template <class Left, std::size_t LeftExtent, class Right, std::size_t RightExte
 
 // ── The doors of a foreign run ─────────────────────────────────────────
 
-// The element of a run that a foreign ABI writes, such as the bytes of the
-// fuzz entry, the data of a PyTorch tensor or a record of a BPF ring buffer.
-// The foreign side can write each bit pattern, so each bit pattern of the
-// element is a value: no bool, no enumeration with an enumerator and no
-// pointer (BitValid).
-template <class T>
-concept ForeignElement = ViewElement<T> && !std::is_const_v<T> && BitValid<T>;
-
 // The View of the count elements at first, which a foreign ABI gives.  The
 // View only reads.  The mint ends the process for a count past
 // max_view_count, for a null pointer with a count, and for a pointer that is
@@ -1441,14 +1415,21 @@ concept ForeignElement = ViewElement<T> && !std::is_const_v<T> && BitValid<T>;
 // the foreign run alive while it uses the View.  So a call stands at the
 // edge of a foreign ABI only, in an opt-out region of the class ABI.  The
 // address of a run is no constant of the compile, so the mint runs only at
-// run time.
+// run time.  The mint is the one door of View for a foreign run, and View
+// names it as a friend.
 template <class T>
     requires ForeignElement<T>
-[[nodiscard]] View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept {
+View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept {
     if (count != 0 && (__builtin_bit_cast(std::uintptr_t, first) & (alignof(T) - 1)) != 0) [[unlikely]] {
         fatal("mint_foreign_view got a pointer that is not aligned for its element of {} bytes", alignof(T));
     }
-    return detail::view_over_(first, count);
+    if (count > max_view_count(sizeof(T))) [[unlikely]] {
+        fatal("mint_foreign_view got a count past the largest count of a View");
+    }
+    if (first == nullptr && count != 0) [[unlikely]] {
+        fatal("mint_foreign_view got a null pointer with a count");
+    }
+    return View<T const>{first, count};
 }
 
 // The TextView of the count characters at first, which a foreign ABI gives.

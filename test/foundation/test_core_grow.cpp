@@ -436,7 +436,7 @@ void test_foreign_doors() {
         [] noexcept {
             static_cast<void>(::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 1));
         },
-        ::fixy::TextView{"foundation: fatal: view_over_ got a null pointer with a count"});
+        ::fixy::TextView{"foundation: fatal: mint_foreign_view got a null pointer with a count"});
     ::fixy::check::expect_dies(
         test,
         [] noexcept { static_cast<void>(::foundation::core::mint_foreign_text(static_cast<char const*>(nullptr), 1)); },

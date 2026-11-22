@@ -609,7 +609,7 @@ run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is
     using Values = joined_values_t<Ctx, Bodies...>;
     using Joined = ::foundation::core::Result<Values, start_error_t<Bodies...>>;
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
-        run_thread_tasks(::foundation::core::detail::view_over_(tasks, sizeof...(Bodies)), options);
+        run_thread_tasks(::foundation::core::detail::view_of_array_(tasks), options);
     // Each path checks that each Option is empty after its last use of the
     // frame.
     if (started.is_err()) {
@@ -884,8 +884,10 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
         frame_run.at(slot) = detail::beside_each_frame_<Body>{&body, index};
         task_run.at(slot) = detail::thread_task{&frame_run.at(slot), &detail::run_beside_each_body_<Body>};
     }
-    ::foundation::core::View<detail::thread_task> const started_tasks = ::foundation::core::detail::view_over_(
-        &task_run.at(Slot::check(0).expect("a bound holds the index 0")), count.raw());
+    // The first count tasks.  An index of the bound is below the bound, so the
+    // window always fits.
+    ::foundation::core::View<detail::thread_task> const started_tasks =
+        task_run.window(0, count.raw()).expect("an index of the bound is below the count of the frame");
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
         detail::start_thread_tasks(started_tasks, options);
     if (started.is_err()) {

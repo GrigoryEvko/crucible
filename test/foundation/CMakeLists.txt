@@ -890,8 +890,8 @@ foundation_neg_compile_test(neg_specialization_home_friend_address_of
 foundation_neg_compile_test(neg_specialization_home_friend_heap_array
   "neg_specialization_home_friend_heap_array\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::mint_heap_array. outside its home .include/foundation/core/Array\\.h."
   "an explicit specialization gives the function a different body")
-foundation_neg_compile_test(neg_specialization_home_detail_view_over
-  "neg_specialization_home_detail_view_over\\.cpp:13:[0-9]+: error: this file specializes the template .foundation::core::detail::view_over_. outside its home .include/foundation/core/Region\\.h."
+foundation_neg_compile_test(neg_specialization_home_detail_view_of_object
+  "neg_specialization_home_detail_view_of_object\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::view_of_object_. outside its home .include/foundation/core/Region\\.h."
   "an explicit specialization gives the function a different body")
 foundation_neg_compile_test(neg_specialization_home_detail_text_bytes
   "neg_specialization_home_detail_text_bytes\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::text_bytes_. outside its home .include/foundation/core/Text\\.h."
@@ -4738,12 +4738,6 @@ foundation_neg_compile_test(neg_core_masked_array_two_mutable_views
 foundation_neg_compile_test(neg_core_masked_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
-# View names view_over_ and first_of_ as no friend template: a forged
-# specialization of view_over_ reaches no private constructor of a View, and
-# first_of_ is a friend that is no template, so it has no specialization.
-foundation_neg_compile_test(neg_core_view_over_forged_body
-  "constexpr foundation::core::View<T, Extent>::View\\(T\\*, std::size_t\\) requires  Extent == foundation::core::dynamic_extent \\[with T = int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\]. is private within this context"
-  "declared private here")
 # The header instantiates the View of bytes of HexBytes, and with it the
 # friend first_of_ of that View, which is no template.  GCC then names the
 # refusal as a template-id that matches no template, in place of a function
@@ -4792,6 +4786,21 @@ foundation_neg_compile_test(neg_core_sort_run_door_not_friend
 foundation_neg_compile_test(neg_core_branded_scope_door_removed
   ".BrandedScopeDoor. in namespace .foundation::core::detail. does not name a type"
   "neg_core_branded_scope_door_removed\\.cpp:9:[0-9]+: error:")
+# The former roads to the raw constructors of a View: the generic key, the
+# checked door from raw parts, the free run of the sort, and the start of
+# objects over an address as a View.  Each one fails on its own name.
+foundation_neg_compile_test(neg_core_view_door_removed
+  ".foundation::core::detail::ViewDoor. has not been declared"
+  "neg_core_view_door_removed\\.cpp:9:[0-9]+: error:")
+foundation_neg_compile_test(neg_core_view_over_removed
+  ".view_over_. is not a member of .foundation::core::detail."
+  "neg_core_view_over_removed\\.cpp:10:[0-9]+: error:")
+foundation_neg_compile_test(neg_core_sort_run_of_removed
+  "no matching function for call to .run_of_\\(int\\*, foundation::core::detail::SortCount\\)."
+  "neg_core_sort_run_of_removed\\.cpp:10:[0-9]+: error:")
+foundation_neg_compile_test(neg_core_start_as_array_gives_address
+  "conversion from .foundation::lifetime::element_for_storage_t<const unsigned char, int>\\*. .aka .const int\\*.. to non-scalar type .const foundation::core::View<int>. requested"
+  "neg_core_start_as_array_gives_address\\.cpp:12:[0-9]+: error:")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result
