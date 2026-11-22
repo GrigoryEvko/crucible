@@ -384,7 +384,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const ::fixy::View<int64_t> scalar_run = region_arena->array(A, total_scalars, int64_t{0});
         const ::fixy::View<OpIndex> producer_run = region_arena->array(A, total_inputs, OpIndex{});
         const ::fixy::View<SlotId> slot_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
-        BuildScratchOfBench::ensure_buffers(bg, A, total_outputs);
+        BuildScratchOfBench::ensure_buffers(bg, A, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
         const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(bg),
                                               ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
         build_scratch.with_epoch([&build_scratch, slot_cap]() noexcept {

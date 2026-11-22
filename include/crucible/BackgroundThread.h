@@ -1547,10 +1547,12 @@ private:
     ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
 
     // build_trace_ calls this after its scan of the trace, which supplies
-    // exact counts.  The map and the cap of the slots grow and never shrink,
-    // so the cost amortizes across iterations.  It writes the scratch of the
+    // exact counts: total_outputs is the count of the outputs of the ops of
+    // the trace.  The map and the cap of the slots grow and never shrink, so
+    // the cost amortizes across iterations.  It writes the scratch of the
     // build stage, as build_trace_ does.
-    void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_outputs);
+    void ensure_scratch_buffers(::foundation::effects::Alloc a,
+                                ::fixy::Quantity<::fixy::unit::Element, uint32_t> total_outputs);
 
 public:
     // The bytes of the storage of a slot that the tensor reaches: from the

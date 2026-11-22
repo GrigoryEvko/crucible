@@ -22,18 +22,20 @@
 
 namespace crucible {
 
-void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_outputs) {
+void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a,
+                                              ::fixy::Quantity<::fixy::unit::Element, uint32_t> total_outputs) {
+    const uint32_t outputs = total_outputs.raw();
     // Power-of-two capacity at a load factor below one half.  The unique
     // pointer count is the output count plus a small external fraction.
     uint32_t raw_map_size = ::fixy::max(
-        MIN_PTR_MAP_CAP, ::fixy::saturating_mul(::fixy::saturating_add(total_outputs, uint32_t{256}), uint32_t{2}));
+        MIN_PTR_MAP_CAP, ::fixy::saturating_mul(::fixy::saturating_add(outputs, uint32_t{256}), uint32_t{2}));
     uint32_t needed_map =
         (raw_map_size >= MAX_PTR_MAP_CAP)
             ? MAX_PTR_MAP_CAP
             : ::fixy::bit_ceil(raw_map_size).expect("a size below MAX_PTR_MAP_CAP has a power of two in 32 bits");
 
     // Unique storages are bounded by the outputs plus external headroom.
-    uint32_t needed_slots = ::fixy::max(MIN_SCRATCH_SLOT_CAP, ::fixy::saturating_add(total_outputs, uint32_t{1024}));
+    uint32_t needed_slots = ::fixy::max(MIN_SCRATCH_SLOT_CAP, ::fixy::saturating_add(outputs, uint32_t{1024}));
 
     if (needed_map > map_cap_.get()) {
         map_cap_.advance(needed_map);
@@ -116,7 +118,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         return ::fixy::err(BuildRefusal::UnrecordedNest);
     }
 
-    ensure_scratch_buffers(a, total_outputs);
+    ensure_scratch_buffers(a, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
 
     // The ops keep their tensor metadata in a run of the region, beside
     // their other runs.  A published region lives as long as its memory.
