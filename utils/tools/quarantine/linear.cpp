@@ -279,8 +279,13 @@
 //     through such an alias needs a call, so each call that starts after the
 //     consume of the sum can fill it again, and the sum then holds a payload
 //     that the end of its scope drops.  The call of a member of a linear sum
-//     on a tracked object changes only that object, and std::move changes
-//     nothing.  The callee of the call that takes the consumed payload starts
+//     on a tracked object changes only that object, a consumer, a member
+//     that empties and a const member fill no sum, and std::move changes
+//     nothing.  A callee whose body gives a reference parameter back as its
+//     result, and keeps it in no other way, keeps no reference: only a
+//     reference or a pointer local that its result initializes is an alias,
+//     and a member that can fill a sum fills it through that result.  The
+//     callee of the call that takes the consumed payload starts
 //     before the consume ends, so the rule reads it as no such call.  A
 //     capture by reference is no such alias, because the summary of the
 //     closure tells what each call of it does.
@@ -699,6 +704,7 @@ bool is_linear_sum(tree type) {
 std::unordered_map<unsigned, std::vector<unsigned>> closure_fills;
 std::unordered_map<unsigned, std::vector<unsigned>> closure_empties;
 std::unordered_set<unsigned> keeps_no_sum_reference;
+std::unordered_set<unsigned> returns_sum_reference;
 std::unordered_set<unsigned> summarized_functions;
 std::unordered_map<unsigned, std::vector<unsigned>> waiting_kept_facts;
 
@@ -2255,6 +2261,7 @@ private:
                     alias_place_of_[decl] = place;
                 }
             }
+            note_given_back_alias(decl, initial, state);
             if (source != NULL_TREE && source != decl && is_borrow && field == NULL_TREE) {
                 referent_of_[decl] = source;
             } else if (source != NULL_TREE && source != decl && is_mutable_address) {
@@ -2633,6 +2640,66 @@ private:
         return unknown_callee_ == UnknownCallee::can_keep;
     }
 
+    // THE ALIASES: the tracked sums that NODE names through the result of a
+    // callee that gives a reference parameter back: each sum that the call
+    // takes by a reference that writes.
+    std::vector<tree> sums_given_back(tree node) const {
+        std::vector<tree> sums;
+        for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+            node = tree_strip_any_location_wrapper(node);
+            switch (TREE_CODE(node)) {
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case ADDR_EXPR:
+                case INDIRECT_REF:
+                case CLEANUP_POINT_EXPR:
+                    node = TREE_OPERAND(node, 0);
+                    continue;
+                case CALL_EXPR:
+                    break;
+                default:
+                    return sums;
+            }
+            tree callee = cp_get_callee_fndecl_nofold(node);
+            if (is_std_move_cast(callee) && call_expr_nargs(node) >= 1) {
+                node = CALL_EXPR_ARG(node, 0);
+                continue;
+            }
+            if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL
+                || returns_sum_reference.count(DECL_UID(callee)) == 0) {
+                return sums;
+            }
+            tree parameter = TYPE_ARG_TYPES(TREE_TYPE(callee));
+            for (int index = 0; index < argument_count(node); ++index) {
+                tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
+                if (parameter != NULL_TREE) {
+                    parameter = TREE_CHAIN(parameter);
+                }
+                bool saw_rvalue = false;
+                tree field = NULL_TREE;
+                tree decl = strip_to_tracked(argument_at(node, index), saw_rvalue, &field);
+                if (is_writing_parameter(parameter_type) && sum_slot(decl, field) != kNoParent) {
+                    sums.push_back(decl);
+                }
+            }
+            return sums;
+        }
+        return sums;
+    }
+
+    // THE ALIASES: a reference or a pointer that the result of a callee that
+    // gives a reference parameter back initializes names each such sum.
+    void note_given_back_alias(tree decl, tree value, FlowState& state) {
+        tree type = decl != NULL_TREE ? TREE_TYPE(decl) : NULL_TREE;
+        if (type == NULL_TREE || !(TYPE_REF_P(type) || TYPE_PTR_P(type)) || TYPE_READONLY(TREE_TYPE(type))) {
+            return;
+        }
+        for (tree sum : sums_given_back(value)) {
+            note_kept_alias(sum, NULL_TREE, state);
+        }
+    }
+
     // THE ALIASES: a call that starts after the consume of a sum that an
     // alias names can fill the sum again through the alias, so the sum holds
     // a payload again.  The call of a member of a linear sum on a tracked
@@ -2647,6 +2714,25 @@ private:
             tree field = NULL_TREE;
             if (strip_to_tracked(argument_at(call, 0), saw_rvalue, &field) != NULL_TREE) {
                 return;
+            }
+            // A member that cannot fill a sum fills none through an alias: a
+            // consumer, a member that empties, and a const member.
+            tree type = TREE_TYPE(callee);
+            tree object_type = TYPE_ARG_TYPES(type) != NULL_TREE ? TREE_VALUE(TYPE_ARG_TYPES(type)) : NULL_TREE;
+            bool is_const_object =
+                object_type != NULL_TREE && INDIRECT_TYPE_P(object_type) && TYPE_READONLY(TREE_TYPE(object_type));
+            if (FUNCTION_RVALUE_QUALIFIED(type) || is_const_object
+                || carries_linear_annotation(callee, linear_names.empties)) {
+                return;
+            }
+            // A member that can fill a sum, on the result of a callee that
+            // gives the sum back, fills that sum.
+            for (tree sum : sums_given_back(argument_at(call, 0))) {
+                std::size_t slot = sum_slot(sum, NULL_TREE);
+                if (state.get(slot) == Status::consumed || state.get(slot) == Status::maybe) {
+                    set_object(state, slot, Status::live);
+                }
+                state.set_content(slot, Content::can_be_full);
             }
         }
         for (std::size_t slot = 0; slot < slots_.size(); ++slot) {
@@ -2763,6 +2849,9 @@ private:
         if (is_init && stripped_target != NULL_TREE && slot_of_.count(stripped_target) == 0
             && binds_extended_temporary(stripped_target, value)) {
             track_extending(stripped_target);
+        }
+        if (is_init && stripped_target != NULL_TREE && VAR_P(stripped_target)) {
+            note_given_back_alias(stripped_target, value, state);
         }
         tree tracked_target =
             stripped_target != NULL_TREE && slot_of_.count(stripped_target) != 0 ? stripped_target : NULL_TREE;
@@ -4323,6 +4412,8 @@ struct KeptReferenceWalk {
     tree parameter = NULL_TREE;
     int uses = 0;
     int read_uses = 0;
+    // The return statements that give the parameter back as the result.
+    int return_uses = 0;
     // The callees with no fact at this point that take the parameter by a
     // reference that writes.  The fact of the body waits for theirs.
     std::vector<unsigned> waits_for;
@@ -4341,6 +4432,25 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
     }
     if (node == walk.parameter) {
         ++walk.uses;
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) == RETURN_EXPR) {
+        tree value = TREE_OPERAND(node, 0);
+        for (int depth = 0; value != NULL_TREE && depth < kTypeDepth; ++depth) {
+            value = tree_strip_any_location_wrapper(value);
+            if (TREE_CODE(value) == INIT_EXPR || TREE_CODE(value) == MODIFY_EXPR) {
+                value = TREE_OPERAND(value, 1);
+            } else if (TREE_CODE(value) == NOP_EXPR || TREE_CODE(value) == CONVERT_EXPR
+                       || TREE_CODE(value) == NON_LVALUE_EXPR || TREE_CODE(value) == ADDR_EXPR
+                       || TREE_CODE(value) == INDIRECT_REF) {
+                value = TREE_OPERAND(value, 0);
+            } else {
+                break;
+            }
+        }
+        if (value == walk.parameter) {
+            ++walk.return_uses;
+        }
         return NULL_TREE;
     }
     if (TREE_CODE(node) != CALL_EXPR) {
@@ -4405,8 +4515,13 @@ void note_kept_references(tree function) {
         KeptReferenceWalk walk;
         walk.parameter = parameter;
         cp_walk_tree(&body, walk_kept_reference, &walk, nullptr);
-        if (walk.uses > walk.read_uses) {
+        // A body that gives the reference back as its result keeps it only in
+        // the result, and the caller reads the result (THE ALIASES).
+        if (walk.uses > walk.read_uses + walk.return_uses) {
             return;
+        }
+        if (walk.return_uses > 0) {
+            returns_sum_reference.insert(uid);
         }
         for (unsigned callee : walk.waits_for) {
             if (std::find(waits_for.begin(), waits_for.end(), callee) == waits_for.end()) {
