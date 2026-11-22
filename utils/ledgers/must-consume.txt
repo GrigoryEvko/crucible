@@ -10,20 +10,26 @@ reason include/fixy/session/ | the session doors move each handle, value and tok
 reason src/ | each stage of the background pipeline drops its endpoint of a channel at the end of its function, and the start drops one producer
 reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
-bench/ | unconsumed | 6 | - | -
-include/crucible/cntp/ | unconsumed | 22 | - | -
-include/fixy/ | unconsumed | 1 | - | -
-include/fixy/concurrent/ | unconsumed | 1 | - | -
+bench/ | unconsumed | 2 | - | -
+include/crucible/cntp/ | unconsumed | 54 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
+include/fixy/ | unconsumed | 2 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
+include/fixy/concurrent/ | unconsumed | 9 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
+include/fixy/session/ | borrow-move-out | 2 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines
 include/fixy/session/ | double-consume | 2 | - | -
-include/fixy/session/ | unconsumed | 14 | - | -
+include/fixy/session/ | unconsumed | 81 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
 src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 31 | - | -
 test/fixy/ | assign-over-live | 2 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
+test/fixy/ | borrow-move-out | 7 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines.  Each message type of a test transport is its own line
 test/fixy/ | discarded-temporary | 3 | - | -
 test/fixy/ | double-consume | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
 test/fixy/ | unconsumed | 183 | - | -
+test/foundation/ | borrow-move-out | 2 | - | test_core_hole spends one lent Hole two times on purpose, to show that the second spend ends the process
+test/foundation/ | double-consume | 2 | - | test_core_hole spends one lent Hole two times on purpose, to show that the second spend ends the process
 test/foundation/ | unconsumed | 8 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
 test/layer/checks/foundation/core/ | unconsumed | 1 | - | -
 test/layer/checks/foundation/permissions/ | unconsumed | 4 | - | -
+test/shape/ | assign-over-live | 2 | - | the codegen probes linear_assign and token_assign assign over a live lent target, to show the code of a move assignment
+test/shape/ | borrow-move-out | 1 | - | the raw std::optional form of the seat codegen pair refills its moved payload with emplace, which the rule does not read as a new value
