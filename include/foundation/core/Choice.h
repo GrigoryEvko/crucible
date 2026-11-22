@@ -2463,28 +2463,39 @@ public:
 // destructor.  The slot counts its lends (the lend count), and a moved slot
 // starts with none.
 //
-// Zero words of an ended payload
-//   A clear ends the payload, and GCC then takes the bytes of the payload as
-//   dead.  Where GCC cannot prove that the destructor of the slot does not
-//   end the payload a second time, -Wmaybe-uninitialized reports a read in
-//   that second end.  GCC 16 gave that report at -O3 with ASan at the end of
-//   an Option of a lanes producer handle of 24 bytes, after expect.  Only a
-//   destructor that is not trivial reads the bytes of a payload.  So the
-//   clear of such a payload of at most one cache line builds a third
-//   alternative of zero words in the storage, as the empty alternative of a
-//   small plain sum does (SumSlotOf).  The slot tells its state by its flag,
-//   so the third alternative is one more empty state.  A payload with a
-//   trivial destructor, such as the reservation of the trace ring, and a
-//   larger payload keep a clear with no write, as the reset of
-//   std::optional.
+// Zero words of an empty slot
+//   The destructor of the slot reads the payload only when the flag is set.
+//   Where GCC does not fold the flag, the destructor keeps a branch that reads
+//   the payload.  -Wmaybe-uninitialized does no test of the flag for a read of
+//   memory, so it reports that read when no store wrote those bytes.  GCC 16
+//   gave that report at -O2 and -O3 in these cases:
+//     - The end of an Option of a lanes producer handle of 24 bytes, after
+//       expect
+//     - The end of an escaped Option of a region of 104 bytes, after expect
+//       and a fence
+//     - The move of a payload of 112 bytes that holds an empty owning Option.
+//   The late uninit pass walks past a fence or an atomic load, but value
+//   numbering does not fold the flag of an escaped Option across it.
+//
+//   Only a destructor that is not trivial reads the bytes of a payload.  So
+//   each empty state of a slot of such a payload holds a third alternative of
+//   zero words: the default slot, the move of an empty source, and the slot
+//   after a clear.  The empty state then has one fixed value, as the empty
+//   alternative of a small plain sum has (SumSlotOf).  The slot tells its
+//   state by its flag, so the third alternative is one more empty state.  A
+//   payload with a trivial destructor, such as the reservation of the trace
+//   ring, keeps the empty marker, which writes no byte.
 template <class T>
 class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionForm::owning> {
     static constexpr std::size_t word_width_ = alignof(T) < 8 ? alignof(T) : 8;
     using EndedWords = ZeroWords<typename WordOf<word_width_>::type, sizeof(T) / word_width_>;
     using Storage = Alternatives<NoPayload, T, EndedWords>;
-    static constexpr bool writes_zero_words_ = !std::is_trivially_destructible_v<T> && sizeof(T) <= 64;
+    // The alternative of an empty slot (the zero words of an empty slot).
+    static constexpr bool writes_zero_words_ = !std::is_trivially_destructible_v<T>;
+    static constexpr std::size_t empty_index_ = writes_zero_words_ ? 2 : 0;
+    using EmptyAlternative = std::conditional_t<writes_zero_words_, EndedWords, NoPayload>;
 
-    Storage storage_{AlternativeAt<0>{}, NoPayload{}};
+    Storage storage_{AlternativeAt<empty_index_>{}, EmptyAlternative{}};
     bool is_engaged_ = false;
     mutable unsigned char lend_count_ = 0;
 
@@ -2503,23 +2514,25 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
     }
     [[nodiscard]] constexpr T& payload_() noexcept { return detail::alternative_of_<1>(storage_); }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return detail::alternative_of_<1>(storage_); }
+    // Builds the alternative of an empty slot in place.  The storage holds no
+    // live payload, so no end is due.
+    constexpr void build_empty_() noexcept {
+        ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<empty_index_>{}, EmptyAlternative{});
+    }
+
     constexpr void clear_() noexcept {
         detail::refuse_lent_write_(lend_count_);
         if (is_engaged_) {
             storage_.destroy_(1);
-            if constexpr (writes_zero_words_) {
-                if !consteval {
-                    ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<2>{}, EndedWords{});
-                }
-            }
+            build_empty_();
             is_engaged_ = false;
         }
     }
 
     // Builds the payload of an empty slot in place.  The storage of an empty
-    // slot holds the empty marker, the zero words or an ended payload, and
-    // no one of them needs an end.  So a new storage of the payload starts
-    // over it, as the storage of the constructor of a full slot.
+    // slot holds the empty marker or the zero words, and no one of them needs
+    // an end.  So a new storage of the payload starts over it, as the storage
+    // of the constructor of a full slot.
     template <class U>
     constexpr void fill_(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
         ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<1>{}, static_cast<U&&>(value));
@@ -2534,14 +2547,13 @@ public:
         : storage_(AlternativeAt<1>{}, static_cast<U&&>(value)), is_engaged_{true} {}
 
     // The move builds one alternative in place: the payload of a full source,
-    // or a new empty marker.  An empty source holds the empty marker, the zero
-    // words or an ended payload, and only its flag tells that it is empty.  So
-    // the move reads no alternative of an empty source.
+    // or a new empty alternative.  Only the flag of a source tells that it is
+    // empty, so the move reads no alternative of an empty source.
     constexpr OptionSlot(OptionSlot&& other) noexcept : storage_(NoAlternativeYet{}), is_engaged_{other.is_engaged_} {
         if (is_engaged_) {
             ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<1>{}, static_cast<T&&>(other.payload_()));
         } else {
-            ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<0>{}, NoPayload{});
+            build_empty_();
         }
         other.clear_();
     }

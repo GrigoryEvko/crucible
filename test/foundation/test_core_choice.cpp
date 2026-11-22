@@ -9,6 +9,8 @@
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Ref.h>
 
 #include <fixy/Ctx.h>
@@ -22,6 +24,7 @@
 namespace {
 
 using ::fixy::check::expect_dies;
+using ::foundation::core::Box;
 using ::foundation::core::none;
 using ::foundation::core::Option;
 
@@ -1119,8 +1122,8 @@ private:
     int handle_ = 0;
 };
 
-// In a constant evaluation, the clear of take ends the payload and writes
-// no zero words, so fill starts the storage over an ended payload.
+// In a constant evaluation, the clear of take ends the payload and builds the
+// zero words, so fill starts the storage over the zero words.
 consteval int sum_of_doors_in_constant_evaluation() {
     Option<ConstantToken> held = Option<ConstantToken>::some(ConstantToken{1});
     ConstantToken first = held.take().expect("the Option holds the first token");
@@ -1187,6 +1190,83 @@ consteval int moves_in_constant_evaluation() {
 }
 
 static_assert(moves_in_constant_evaluation() == 123);
+
+// The arena of a large region.  A Box of it is a payload whose end is not
+// trivial.
+struct RegionArena {
+    std::uint64_t used = 0;
+};
+
+// The seed of a large region.  An odd seed builds a region.
+enum class RegionSeed : std::uint64_t {
+};
+
+// A payload of more than one cache line whose end is not trivial, as the
+// region of a build: an owning Option of the Box of its arena, and words.
+class LargeRegion {
+public:
+    explicit LargeRegion(RegionSeed seed) noexcept : seed_{seed} {}
+    LargeRegion(LargeRegion&& other) noexcept
+        : arena_{static_cast<Option<Box<RegionArena>>&&>(other.arena_)}, seed_{other.seed_}, words_{other.words_} {}
+    LargeRegion(LargeRegion const&) = delete;
+    LargeRegion& operator=(LargeRegion const&) = delete;
+    LargeRegion& operator=(LargeRegion&&) = delete;
+    ~LargeRegion() = default;
+
+    [[nodiscard]] std::uint64_t first() const noexcept { return static_cast<std::uint64_t>(seed_); }
+
+private:
+    Option<Box<RegionArena>> arena_{};
+    RegionSeed seed_{};
+    ::foundation::core::FixedArray<std::uint64_t, 11> words_{};
+};
+
+// Fills the Option with the candidate when its seed is odd.  The door does
+// not inline, so the Option of the caller escapes, as an Option that a
+// closure writes.
+CRUCIBLE_NOINLINE void fill_odd_region(Option<LargeRegion>& built, LargeRegion candidate) noexcept {
+    if ((candidate.first() & 1u) != 0) {
+        built = Option<LargeRegion>::some(static_cast<LargeRegion&&>(candidate));
+    }
+}
+
+// The end of an escaped Option of a large region after expect and a fence.
+// GCC does not fold the flag of the Option across the fence, so the end keeps
+// a branch that reads the payload.  The late uninit pass walks past the fence.
+// So the clear must write the zero words over the ended payload, or
+// -Wmaybe-uninitialized reports the read at -O2.
+std::uint64_t sum_regions_across_a_fence() noexcept {
+    std::uint64_t total = 0;
+    for (std::uint64_t index = 0; index < 7; ++index) {
+        Option<LargeRegion> built{none};
+        fill_odd_region(built, LargeRegion{RegionSeed{index}});
+        if (built.is_none()) {
+            continue;
+        }
+        LargeRegion const region = static_cast<Option<LargeRegion>&&>(built).expect("the seed is odd");
+        ::foundation::core::fence_seq_cst();
+        total += region.first();
+    }
+    return total;
+}
+
+// take builds a local Option, moves the region into it and gives the local
+// back.  The empty Option of the arena moves with the region.  So the move of
+// an empty source must write the zero words, or the move of the local reads
+// the storage of that Option with no store.
+CRUCIBLE_NOINLINE Option<LargeRegion> take_region(Option<LargeRegion>& held) noexcept { return held.take(); }
+
+// Each empty state of an owning slot whose payload has an end that is not
+// trivial holds written zero words: the default slot, the move of an empty
+// source, and the slot after a clear.  Each shape of this test compiles with
+// -Wmaybe-uninitialized at each level of the gate, and it keeps its values.
+void test_large_owning_payload_end() {
+    CRUCIBLE_FATAL_INVARIANT(sum_regions_across_a_fence() == 1 + 3 + 5);
+    Option<LargeRegion> held = Option<LargeRegion>::some(LargeRegion{RegionSeed{9}});
+    Option<LargeRegion> const taken = take_region(held);
+    CRUCIBLE_FATAL_INVARIANT(held.is_none());
+    CRUCIBLE_FATAL_INVARIANT(taken.is_some_and([](LargeRegion const& region) noexcept { return region.first() == 9; }));
+}
 
 void replace_handle(Option<Handle>& target) noexcept { static_cast<void>(target.replace(Handle{79})); }
 
@@ -1387,6 +1467,7 @@ int main() {
     test_replace_reads_the_old_payload_first();
     test_named_option_doors_linear();
     test_named_option_doors_abort();
+    test_large_owning_payload_end();
     test_expect_none();
     test_full_linear_end_aborts();
     test_owed_alternative_end_aborts();
