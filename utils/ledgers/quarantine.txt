@@ -382,7 +382,7 @@ test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a r
 test/dag_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/fixy/ | c-array-object | 75 | - | -
-test/fixy/ | c-library-call | 978 | - | -
+test/fixy/ | c-library-call | 976 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 8 | - | -
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -736,7 +736,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1382 | - | -
-test/shape/ | opted-out | 329 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array
+test/shape/ | opted-out | 328 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
