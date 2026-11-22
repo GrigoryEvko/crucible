@@ -286,8 +286,9 @@
 //                           aligned_alloc with the sizeof of a proof type in its
 //                           arguments
 //     synchronized-friend   a friend function or friend function template of a
-//                           class that states synchronized{}, which the door
-//                           check of foundation/Transfer.h cannot read
+//                           class that states synchronized{}, or a friend class
+//                           of it that can reach it, which the door check of
+//                           foundation/Transfer.h cannot read
 //     The rule witness-roster:
 //     unrostered-witness    a class of a base file with a door shape and no
 //                           witness row of the rule table

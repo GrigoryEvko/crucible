@@ -103,14 +103,19 @@
 //       synchronized-friend
 //                       a friend function or friend function template of a
 //                       class that states synchronized{} (foundation/Transfer.h,
-//                       PLUGIN_FINISH_TYPE).  The check of the statement reads
+//                       PLUGIN_FINISH_TYPE), and a friend class of it that can
+//                       reach it: through a field, a parameter of a member
+//                       function, or a template argument of the friend.  A
+//                       friend class that is a template parameter, a class
+//                       template or an incomplete class can reach it, so the
+//                       walk fails closed.  The check of the statement reads
 //                       each door of the class through reflection, and a door
 //                       that writes plain state takes a proof.  GCC 16 gives no
 //                       friend of a class to reflection, so the check cannot read
 //                       a friend, and a friend that writes plain state would take
 //                       no proof.  The route retires when GCC gives the friends
 //                       of a class to reflection and the check reads them, or
-//                       when the base admits no friend function on a class that
+//                       when the base admits no such friend on a class that
 //                       states synchronized{}.  KEY is the class and the friend
 //     GCC keeps no tree of the explicit instantiations and of the sizeof of a
 //     raw allocation that a plugin can read.  At the
@@ -760,14 +765,73 @@ void note_route_templates(tree type, location_t location) {
     }
 }
 
+// True when TYPE names the class TARGET: TARGET itself, through a reference, a
+// pointer, an array, a cv qualifier, or a template argument of a class, to
+// kGateDepth levels.  A template type parameter names each class.
+bool names_class(tree type, tree target, int depth) {
+    if (type == NULL_TREE || type == error_mark_node || depth > kGateDepth) {
+        return false;
+    }
+    while (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == ARRAY_TYPE) {
+        type = TREE_TYPE(type);
+    }
+    if (TREE_CODE(type) == TEMPLATE_TYPE_PARM) {
+        return true;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (type == target) {
+        return true;
+    }
+    tree info = CLASS_TYPE_P(type) ? CLASSTYPE_TEMPLATE_INFO(type) : NULL_TREE;
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        if (argument != NULL_TREE && TYPE_P(argument) && names_class(argument, target, depth + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when the friend class BEFRIENDED can reach the class TARGET: through a
+// field, a parameter of a member function, or a template argument of the
+// friend.  A friend class that is a template parameter, a class template or
+// an incomplete class can reach it, so the walk fails closed.
+bool can_reach_class(tree befriended, tree target) {
+    if (befriended == NULL_TREE || !TYPE_P(befriended) || TREE_CODE(befriended) == TEMPLATE_TYPE_PARM) {
+        return true;
+    }
+    tree friend_type = TYPE_MAIN_VARIANT(befriended);
+    if (!CLASS_TYPE_P(friend_type) || !COMPLETE_TYPE_P(friend_type) || names_class(friend_type, target, 1)) {
+        return true;
+    }
+    for (tree member = TYPE_FIELDS(friend_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if ((TREE_CODE(member) == FIELD_DECL || VAR_P(member)) && names_class(TREE_TYPE(member), target, 0)) {
+            return true;
+        }
+        tree function = TREE_CODE(member) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(member) : member;
+        if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+            continue;
+        }
+        for (tree parameter = TYPE_ARG_TYPES(TREE_TYPE(function));
+             parameter != NULL_TREE && parameter != void_list_node; parameter = TREE_CHAIN(parameter)) {
+            if (names_class(TREE_VALUE(parameter), target, 0)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Each friend function and each friend function template of a class that
-// states synchronized{}: the route synchronized-friend (THE PROOF ROUTES).  A
-// class with no friend function costs one test.
+// states synchronized{}, and each friend class that can reach the class: the
+// route synchronized-friend (THE PROOF ROUTES).  A class with no friend costs
+// one test.
 void check_synchronized_friends(tree type, location_t location) {
     static tree const synchronized = get_identifier("synchronized");
     static tree const transfer = get_identifier("transfer");
     tree decl = TYPE_MAIN_DECL(type);
-    if (decl == NULL_TREE || DECL_FRIENDLIST(decl) == NULL_TREE
+    if (decl == NULL_TREE || (DECL_FRIENDLIST(decl) == NULL_TREE && CLASSTYPE_FRIEND_CLASSES(type) == NULL_TREE)
         || !carries_base_annotation(TYPE_ATTRIBUTES(type), synchronized, transfer)) {
         return;
     }
@@ -780,6 +844,20 @@ void check_synchronized_friends(tree type, location_t location) {
                              owner + " befriends " + qualified_name(friend_decl));
             }
         }
+    }
+    tree target = TYPE_MAIN_VARIANT(type);
+    for (tree entry = CLASSTYPE_FRIEND_CLASSES(type); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree befriended = TREE_VALUE(entry);
+        if (befriended == NULL_TREE || !can_reach_class(befriended, target)) {
+            continue;
+        }
+        tree parameter_name = TREE_CODE(befriended) == TEMPLATE_TYPE_PARM && TYPE_NAME(befriended) != NULL_TREE
+                                ? DECL_NAME(TYPE_NAME(befriended))
+                                : NULL_TREE;
+        std::string const name = parameter_name != NULL_TREE ? IDENTIFIER_POINTER(parameter_name)
+                               : TYPE_P(befriended)          ? type_text(befriended)
+                                                             : qualified_name(befriended);
+        record_route(Kind::route_synchronized_friend, location, owner + " befriends class " + name);
     }
 }
 

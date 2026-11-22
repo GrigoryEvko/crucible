@@ -25,14 +25,17 @@ THE RULE
                                       of a proof type in its arguments
       synchronized-friend             a friend function or friend function
                                       template of a class that states
-                                      synchronized{}.  The door check of
-                                      foundation/Transfer.h reads each member
-                                      door of such a class, but GCC 16 gives no
-                                      friend to reflection, so a friend that
-                                      writes plain state takes no proof.  The
-                                      kind retires when GCC gives friends to
-                                      reflection, or when no class that states
-                                      synchronized{} has a friend function
+                                      synchronized{}, or a friend class of it
+                                      that can reach it through a field, a
+                                      parameter or a template argument.  The
+                                      door check of foundation/Transfer.h reads
+                                      each member door of such a class, but GCC
+                                      16 gives no friend to reflection, so a
+                                      friend that writes plain state takes no
+                                      proof.  The kind retires when GCC gives
+                                      friends to reflection, or when no class
+                                      that states synchronized{} has such a
+                                      friend
     A witness row of utils/rule-table.txt names a proof type.  A class of
     foundation or fixy with the shape of a proof is a proof type too.  The
     entity of a finding is `KIND: KEY`.  The plugin reads the last two shapes
@@ -80,11 +83,11 @@ def message_of(kind: str, entity: str) -> str:
     """Give the message of one finding of the kind KIND with the entity ENTITY."""
     if kind == SYNCHRONIZED_FRIEND:
         return (
-            f"a friend function of a class that states synchronized{{}} ({entity}): the door check of "
+            f"a friend of a class that states synchronized{{}} ({entity}): the door check of "
             "foundation/Transfer.h reads each member door of the class, and GCC 16 gives no friend to reflection, so "
-            "a friend that writes plain state takes no proof.  Make the friend a member door of the class, so the "
-            "check reads it.  The kind retires when GCC gives friends to reflection, or when no class that states "
-            "synchronized{} has a friend function"
+            "a friend function, or a friend class that can reach the class, that writes plain state takes no proof.  "
+            "Make the friend a member door of the class, so the check reads it.  The kind retires when GCC gives "
+            "friends to reflection, or when no class that states synchronized{} has such a friend"
         )
     return (
         f"a shape that can build a proof type with no call to its door ({entity}): "

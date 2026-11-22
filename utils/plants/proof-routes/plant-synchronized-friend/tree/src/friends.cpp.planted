@@ -1,8 +1,9 @@
-// A class that states synchronized{} and befriends a function and a function
-// template.  The door check of foundation/Transfer.h reads each member door of
-// the class, but GCC 16 gives no friend to reflection, so a friend that writes
-// the plain count takes no proof.  A class that befriends a function and
-// states nothing gives no finding.
+// Classes that state synchronized{} and befriend a function, a function
+// template, a class template parameter and a class that reaches them.  The
+// door check of foundation/Transfer.h reads each member door of the class,
+// but GCC 16 gives no friend to reflection, so a friend that writes the plain
+// part takes no proof.  A class that befriends a function and states nothing,
+// and a friend class that reaches no befriending class, give no finding.
 #include <foundation/Transfer.h>
 
 namespace planted {
@@ -23,5 +24,42 @@ class Plain {
 
     friend void reset(Plain& plain) noexcept { plain.count_ = 0; }
 };
+
+template <class Value>
+class [[= ::foundation::transfer::synchronized{}]] Holder {
+    Value value_{};
+
+    friend void clear(Holder& holder) noexcept { holder.value_ = Value{}; }
+};
+
+template <class Auth>
+class [[= ::foundation::transfer::synchronized{}]] Cell {
+    int count_ = 0;
+
+    friend Auth;
+};
+
+class Ledger;
+
+// A friend class whose static function takes the ledger: it reaches the
+// ledger and writes its plain total with no proof.
+struct Writer {
+    static void add(Ledger& ledger, int amount) noexcept;
+};
+
+// A friend class that reaches no ledger, through no field, parameter or
+// template argument: the control.
+struct Clock {
+    static int tick(int now) noexcept { return now + 1; }
+};
+
+class [[= ::foundation::transfer::synchronized{}]] Ledger {
+    int total_ = 0;
+
+    friend struct Writer;
+    friend struct Clock;
+};
+
+void Writer::add(Ledger& ledger, int amount) noexcept { ledger.total_ += amount; }
 
 }  // namespace planted

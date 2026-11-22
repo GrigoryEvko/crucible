@@ -1,12 +1,18 @@
 # Each friend function and each friend function template of a class that
 # states synchronized{} is the kind synchronized-friend (expression.cpp, THE
-# PROOF ROUTES), at the place of the class.  The door check of
-# foundation/Transfer.h cannot read a friend, so the kind refuses it.  The
-# friend of a class that states nothing gives no finding.
+# PROOF ROUTES), at the place of the class, also in a class template.  So is
+# a friend class that can reach the class: a class whose static function
+# takes the class, and a class template parameter, which the walk cannot
+# read.  The door check of foundation/Transfer.h cannot read a friend, so the
+# kind refuses it.  The friend of a class that states nothing, and a friend
+# class that reaches no befriending class, give no finding.
 
 compile friends src/friends.cpp stage=c
 flag friends -freflection
 exit friends pass
 judge friends
-finding friends proof-routes synchronized-friend src/friends.cpp:10:52 | synchronized-friend: planted::Counter befriends planted::bump
-finding friends proof-routes synchronized-friend src/friends.cpp:10:52 | synchronized-friend: planted::Counter befriends planted::bump_by
+finding friends proof-routes synchronized-friend src/friends.cpp:11:52 | synchronized-friend: planted::Counter befriends planted::bump
+finding friends proof-routes synchronized-friend src/friends.cpp:11:52 | synchronized-friend: planted::Counter befriends planted::bump_by
+finding friends proof-routes synchronized-friend src/friends.cpp:29:52 | synchronized-friend: planted::Holder befriends planted::clear
+finding friends proof-routes synchronized-friend src/friends.cpp:36:52 | synchronized-friend: planted::Cell befriends class Auth
+finding friends proof-routes synchronized-friend src/friends.cpp:56:52 | synchronized-friend: planted::Ledger befriends class planted::Writer
