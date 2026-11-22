@@ -100,6 +100,17 @@
 //     and the door refuses a body that takes it.  The caller waits until each
 //     thread has joined, so the context outlives each body.
 //
+// THE KEYS OF A BODY
+//     A body of run_joined or of run_beside can name keys of named brands as
+//     its trailing parameters, LoanKey<B>&, after no argument or after the
+//     context: body(keys...) or body(ctx, keys...).  The door is a root door
+//     (THE BORROW OF A ROOT DOOR of foundation/core/Frame.h): on the thread of
+//     the body, it mints one key of each brand for the call, and it refuses a
+//     body that reaches a key of such a brand, or an owner of such a brand
+//     through a borrow (foundation/core/RootKeys.h).  The bodies of
+//     run_beside_each take the index of the thread only, so a body that names a
+//     key does not compile there.
+//
 // THE RESULTS
 //     A body of run_joined gives a value, or gives nothing.  Each thread
 //     writes the value of its body into a slot of its own in the frame of
@@ -197,6 +208,7 @@
 #include <foundation/core/Index.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/RootKeys.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Errno.h>
@@ -358,12 +370,58 @@ template <typename Ctx, typename Body>
 inline constexpr bool takes_context_ =
     std::is_nothrow_invocable_v<Body&, Ctx const&> && ::foundation::transfer::Shareable<Ctx>;
 
-// The type that a call of a body gives, void included (THE RESULTS).  The
-// trait of the call that the body does not take is not read.
+// The forms of a body of run_joined and run_beside: no argument, the context,
+// the keys of a root door, or the context and the keys (THE KEYS OF A BODY).
+enum class JoinedForm : std::uint8_t {
+    none,
+    bare,
+    context,
+    keys,
+    context_and_keys,
+};
+
+// The form of a body with the context Ctx, or none when no form fits.  A body
+// with keys takes them as its trailing parameters.
 template <typename Ctx, typename Body>
-using raw_joined_result_t_ =
-    typename std::conditional_t<takes_context_<Ctx, Body>, std::invoke_result<Body&, Ctx const&>,
-                                std::invoke_result<Body&>>::type;
+consteval JoinedForm joined_form_() noexcept {
+    if constexpr (::foundation::core::NamesRootKeys<Body, 0>) {
+        return JoinedForm::keys;
+    } else if constexpr (::foundation::core::NamesRootKeys<Body, 1> && ::foundation::transfer::Shareable<Ctx>) {
+        if constexpr (requires {
+                          typename ::foundation::core::detail::root_body_result_<
+                              Body, ::foundation::core::root_key_brands_t<Body, 1>, Ctx const&>::type;
+                      }) {
+            return JoinedForm::context_and_keys;
+        } else {
+            return JoinedForm::none;
+        }
+    } else if constexpr (takes_context_<Ctx, Body>) {
+        return JoinedForm::context;
+    } else if constexpr (std::is_nothrow_invocable_v<Body&>) {
+        return JoinedForm::bare;
+    } else {
+        return JoinedForm::none;
+    }
+}
+
+// The type that a call of a body gives, void included (THE RESULTS).  Only the
+// trait of the form of the body is read.
+template <typename Ctx, typename Body, JoinedForm Form = joined_form_<Ctx, Body>()>
+struct joined_call_result_ {};
+template <typename Ctx, typename Body>
+struct joined_call_result_<Ctx, Body, JoinedForm::bare> : std::invoke_result<Body&> {};
+template <typename Ctx, typename Body>
+struct joined_call_result_<Ctx, Body, JoinedForm::context> : std::invoke_result<Body&, Ctx const&> {};
+template <typename Ctx, typename Body>
+struct joined_call_result_<Ctx, Body, JoinedForm::keys>
+    : ::foundation::core::detail::root_body_result_<Body, ::foundation::core::root_key_brands_t<Body, 0>> {};
+template <typename Ctx, typename Body>
+struct joined_call_result_<Ctx, Body, JoinedForm::context_and_keys>
+    : ::foundation::core::detail::root_body_result_<Body, ::foundation::core::root_key_brands_t<Body, 1>, Ctx const&> {
+};
+
+template <typename Ctx, typename Body>
+using raw_joined_result_t_ = typename joined_call_result_<Ctx, Body>::type;
 
 // The value of a body in the result of run_joined: what the body gives, or
 // Unit for a body that gives nothing (THE RESULTS).
@@ -389,7 +447,23 @@ struct joined_body_ {
 // Calls the body with the context that it takes, and gives its value.
 template <typename Ctx, typename Body>
 [[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body& body, Ctx const& ctx) noexcept {
-    if constexpr (takes_context_<Ctx, Body>) {
+    constexpr JoinedForm form = joined_form_<Ctx, Body>();
+    if constexpr (form == JoinedForm::keys) {
+        // The keys are minted here, on the thread of the body (THE KEYS OF A BODY).
+        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+            ::foundation::core::detail::run_root_body_<0>(body);
+            return ::foundation::core::Unit{};
+        } else {
+            return ::foundation::core::detail::run_root_body_<0>(body);
+        }
+    } else if constexpr (form == JoinedForm::context_and_keys) {
+        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+            ::foundation::core::detail::run_root_body_<1>(body, ctx);
+            return ::foundation::core::Unit{};
+        } else {
+            return ::foundation::core::detail::run_root_body_<1>(body, ctx);
+        }
+    } else if constexpr (form == JoinedForm::context) {
         if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
             body(ctx);
             return ::foundation::core::Unit{};
@@ -436,7 +510,7 @@ run_in_fork_child(Ctx const& /*init*/, void (*hook)() noexcept) noexcept {
 // const, that runs with no argument or with the context (THE CONTEXT OF A
 // BODY), and whose value can cross to the caller (THE RESULTS).
 template <typename Body, typename Ctx>
-concept JoinedBody = !std::is_const_v<Body> && (std::is_nothrow_invocable_v<Body&> || detail::takes_context_<Ctx, Body>)
+concept JoinedBody = !std::is_const_v<Body> && (detail::joined_form_<Ctx, Body>() != detail::JoinedForm::none)
                   && detail::JoinedValue<detail::joined_result_t_<Ctx, Body>>;
 
 // The value of a call of run_joined (THE RESULTS): Unit when no body gives a

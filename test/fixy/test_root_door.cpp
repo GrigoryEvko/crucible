@@ -1,0 +1,131 @@
+// Tests of the root doors (THE KEYS OF A BODY of fixy/os/ThreadTasks.h, THE
+// BORROW OF A ROOT DOOR of foundation/core/Frame.h): run_joined and run_beside
+// mint the keys that a body names, a body that owns its holder by value opens
+// its frames with them, and the walk refuses each shape that reaches an owner
+// of the brand through a borrow.
+
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <fixy/concurrent/PermissionedChannel.h>
+#include <fixy/concurrent/SpscEnds.h>
+#include <fixy/concurrent/SpscRing.h>
+#include <fixy/os/ThreadTasks.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/RootKeys.h>
+#include <foundation/effects/Effect.h>
+
+#include <cstdint>
+
+namespace {
+
+namespace fc = ::foundation::core;
+namespace ft = ::fixy::thread;
+
+struct HolderBrand final {};
+struct OtherBrand final {};
+
+struct Holder {
+    fc::FixedArray<int, 4, HolderBrand> array{};
+};
+
+struct Other {
+    fc::FixedArray<int, 4, OtherBrand> array{};
+};
+
+// A joined body that owns its holder by value gets a key of the brand from the
+// door, and opens a frame of the holder with it.
+void test_joined_body_owns_its_holder(::fixy::BgLoadCtx const& ctx) {
+    Holder const holder{};
+    auto body = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
+        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<1>()) = 7; });
+        return moved.array.at(fc::index<1>());
+    };
+    fc::Result<fc::Record<int>, ::foundation::os::Errno> const joined = ft::run_joined(ctx, ft::ThreadOptions{}, body);
+    CRUCIBLE_FATAL_INVARIANT(joined.is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        joined.match([](fc::Record<int> const& values) noexcept { return values.at(fc::index<0>()); },
+                     [](::foundation::os::Errno const&) noexcept { return 0; })
+        == 7);
+}
+
+// A body takes the context and keys of two brands, and two bodies run at the
+// same time, each with its own keys.
+void test_context_and_two_brands(::fixy::BgLoadCtx const& ctx) {
+    Holder const holder{};
+    Other const other{};
+    auto first = [moved = holder, kept = other](::fixy::BgLoadCtx const&, fc::LoanKey<HolderBrand>& key,
+                                                fc::LoanKey<OtherBrand>& other_key) mutable noexcept {
+        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 3; });
+        kept.array.with_mut(other_key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 4; });
+        return moved.array.at(fc::index<0>()) + kept.array.at(fc::index<0>());
+    };
+    auto second = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
+        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 5; });
+        return moved.array.at(fc::index<0>());
+    };
+    auto const joined = ft::run_joined(ctx, ft::ThreadOptions{}, first, second);
+    CRUCIBLE_FATAL_INVARIANT(joined.is_ok());
+}
+
+// run_beside mints the keys of its body.  The continuation gets no key.
+void test_beside_body_owns_its_holder(::fixy::BgLoadCtx const& ctx) {
+    Holder const holder{};
+    auto body = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
+        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<2>()) = 9; });
+    };
+    CRUCIBLE_FATAL_INVARIANT(ft::run_beside(ctx, ft::ThreadOptions{}, body, [] noexcept {}).is_ok());
+}
+
+// A body with no key reads a holder of the caller through a borrow: the door
+// mints no key, so the walk does not apply.
+void test_keyless_body_reads(::fixy::BgLoadCtx const& ctx) {
+    Holder const holder{};
+    auto read = [&holder]() noexcept { return holder.array.at(fc::index<0>()); };
+    CRUCIBLE_FATAL_INVARIANT(ft::run_joined(ctx, ft::ThreadOptions{}, read).is_ok());
+}
+
+// The brands of the trailing keys, after no parameter and after one.
+using KeyedBody = decltype([](fc::LoanKey<HolderBrand>&, fc::LoanKey<OtherBrand>&) noexcept {});
+using ContextBody = decltype([](::fixy::BgLoadCtx const&, fc::LoanKey<HolderBrand>&) noexcept {});
+using GenericBody = decltype([](auto&) noexcept {});
+static_assert(std::is_same_v<fc::root_key_brands_t<KeyedBody, 0>, fc::KeyBrands<HolderBrand, OtherBrand>>);
+static_assert(std::is_same_v<fc::root_key_brands_t<ContextBody, 1>, fc::KeyBrands<HolderBrand>>);
+static_assert(!fc::NamesRootKeys<ContextBody, 0>);
+static_assert(!fc::NamesRootKeys<GenericBody, 0>);
+
+// THE WALK, on a shape that the closure check of a door refuses first: a value
+// that holds a Ref of a holder.  The walk refuses it too.  An SPSC ring takes a
+// trivially copyable payload (RingValue), and no borrow of the base is one, so
+// no ring of base types carries a borrow of a holder.
+template <class HolderRefType>
+struct HolderRef {
+    HolderRefType holder;
+};
+using HeldRef = HolderRef<fc::Ref<Holder, HolderBrand>>;
+static_assert(!fc::BorrowsNoKeyOwner<HeldRef, HolderBrand>);
+static_assert(fc::BorrowsNoKeyOwner<HeldRef, OtherBrand>);
+
+static_assert(!::fixy::concurrent::RingValue<HeldRef>);
+
+// A holder by value is admitted, and so is a consumer handle of a channel of
+// holders: the channel states synchronized{}, so the walk reads its payload as
+// held (THE BORROW OF A ROOT DOOR).
+static_assert(fc::BorrowsNoKeyOwner<Holder, HolderBrand>);
+struct ChannelTag final {};
+struct ChannelBrand final {};
+using HolderWire =
+    ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, Holder, 8, ChannelTag, ChannelBrand>;
+static_assert(fc::BorrowsNoKeyOwner<HolderWire::ConsumerHandle, HolderBrand>);
+static_assert(fc::BorrowsNoKeyOwner<HolderRef<fc::Ref<HolderWire::ConsumerHandle, ChannelBrand>>, HolderBrand>);
+
+}  // namespace
+
+int main() {
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    test_joined_body_owns_its_holder(ctx);
+    test_context_and_two_brands(ctx);
+    test_beside_body_owns_its_holder(ctx);
+    test_keyless_body_reads(ctx);
+    return 0;
+}

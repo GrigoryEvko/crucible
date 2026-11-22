@@ -183,6 +183,17 @@
 //   object of static storage duration.  So a key of a fresh brand lives in the
 //   automatic storage of the scope of its mint.  A move or a copy of an owner
 //   keeps its brand, because the brand is in its type.
+//
+// THE BORROW OF A ROOT DOOR
+//   A key of a named brand comes only from a root door: a door that starts a
+//   thread, or the door of one dispatch, mints a key for each brand that its
+//   body names in a trailing parameter LoanKey<B>&.  Another thread, or the
+//   caller in a frame of its own, can hold a key of the same brand.  So the
+//   door refuses a body that reaches an owner of the brand through a borrow:
+//   the two keys would open two frames of one owner.  It also refuses a body
+//   that reaches a key of the brand in either region, because a body could
+//   move its key into a field that the caller reads after the call.  An owner
+//   that moves into the body by value stays admitted (BorrowsNoKeyOwner).
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
@@ -378,6 +389,123 @@ namespace detail {
     return false;
 }
 
+// True for a keyed owner of the brand or a key of the brand: a complete class
+// with loan_key_mark whose template arguments name the brand.
+[[nodiscard]] consteval bool is_owner_or_key_of_(std::meta::info type, std::meta::info brand) {
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) {
+        return false;
+    }
+    if (!::foundation::linear::carries_annotation(type, ^^loan_key_mark) || !std::meta::has_template_arguments(type)) {
+        return false;
+    }
+    ::foundation::reflect::TypeNode const node{type, false};
+    for (::foundation::reflect::TypeNode const& argument : ::foundation::reflect::argument_components_of(node)) {
+        if (!argument.is_value_argument && argument.type == brand) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The two regions of the walk of THE BORROW OF A ROOT DOOR: what a value of
+// the root holds, and what it reaches through a borrow.
+enum class BorrowRegion : unsigned char {
+    held,
+    borrowed,
+};
+
+// True when the walk of THE BORROW OF A ROOT DOOR reaches an owner of the
+// brand or a key of the brand through a borrow, or a class whose members it
+// cannot read.  Each node has a region, and the walk keeps one list for each
+// region, so a type read in one region is read again in the other:
+//   * the root is held.  A base and a member by value have the region of
+//     their class.  A member that is a reference, the target of a pointer,
+//     each part of a function type and of a member pointer, and the first
+//     argument of a class that states refers{}, refers_unique{} or
+//     refers_deep{} are borrowed.  The element of an array has the region of
+//     the array
+//   * each other template argument names a type and reaches no object, so it
+//     is held, apart from an argument that is a reference type.  The members
+//     give each borrow.  The handle of a PermissionedChannel names its payload
+//     in consumer_pops<Form, T, Handle> and holds none, and with the region of
+//     its class that handle would refuse a payload that it takes by value
+//   * a class that states by_arguments{}, such as a Box, owns the object of
+//     its first argument: that argument has the region of the class, and the
+//     walk reads no member
+//   * a class that states synchronized{} or payload_cell{}, reached through a
+//     borrow, hands its values in and out by value (foundation/Transfer.h):
+//     the walk reads its arguments as held and no member.  The walk thus
+//     trusts each statement of such a class for its private state
+// It is a function that is no template, so no unit can specialize what it
+// admits.  Complexity: linear in the distinct pairs of a type and a region,
+// times the scan of the visited list, at compile time only.
+[[nodiscard]] consteval bool reaches_borrowed_key_owner_(std::meta::info root, std::meta::info brand) {
+    namespace refl = ::foundation::reflect;
+    namespace tr = ::foundation::transfer;
+    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
+    constexpr BorrowRegion held = BorrowRegion::held;
+    constexpr BorrowRegion borrowed = BorrowRegion::borrowed;
+    refl::TypeNodeList held_nodes;
+    refl::TypeNodeList borrowed_nodes;
+    std::size_t next_held = 0;
+    std::size_t next_borrowed = 0;
+    auto nodes_of = [&](BorrowRegion region) -> refl::TypeNodeList& {
+        return region == borrowed ? borrowed_nodes : held_nodes;
+    };
+    held_nodes.push_back(refl::TypeNode{refl::bare_type(root), true});
+    while (next_held < held_nodes.size() || next_borrowed < borrowed_nodes.size()) {
+        BorrowRegion const region = next_held < held_nodes.size() ? held : borrowed;
+        std::size_t const at = region == borrowed ? next_borrowed++ : next_held++;
+        refl::TypeNode const node = nodes_of(region).begin()[at];
+        bool was_read = false;
+        for (std::size_t earlier = 0; earlier < at; ++earlier) {
+            refl::TypeNode const& seen = nodes_of(region).begin()[earlier];
+            if (seen.type == node.type && (seen.may_read_members || !node.may_read_members)) {
+                was_read = true;
+                break;
+            }
+        }
+        if (was_read) {
+            continue;
+        }
+        std::meta::info const type = node.type;
+        bool const is_class = std::meta::is_class_type(type) || std::meta::is_union_type(type);
+        if ((is_class && !node.may_read_members) || refl::holds_unreadable_state(node)) {
+            return true;
+        }
+        if (region == borrowed && is_owner_or_key_of_(type, brand)) {
+            return true;
+        }
+        bool const is_box = is_class && tr::detail::states(type, ^^tr::by_arguments);
+        bool const is_referring =
+            is_class
+            && (tr::detail::states(type, ^^tr::refers) || tr::detail::states(type, ^^tr::refers_unique)
+                || tr::detail::states(type, ^^tr::refers_deep));
+        bool const is_cell =
+            is_class && (tr::detail::states(type, ^^tr::synchronized) || tr::detail::states(type, ^^tr::payload_cell));
+        bool const is_indirect = std::meta::is_pointer_type(type) || std::meta::is_function_type(type)
+                              || std::meta::is_member_pointer_type(type);
+        bool is_first_argument = true;
+        for (refl::TypeNode const& component : refl::argument_components_of(node, read)) {
+            BorrowRegion target = held;
+            if (is_indirect || component.was_reference || (is_referring && is_first_argument)) {
+                target = borrowed;
+            } else if (std::meta::is_array_type(type) || (is_box && is_first_argument)) {
+                target = region;
+            }
+            is_first_argument = false;
+            nodes_of(target).push_back(component);
+        }
+        if (is_box || (is_cell && region == borrowed)) {
+            continue;
+        }
+        for (refl::TypeNode const& component : refl::member_components_of(node, read)) {
+            nodes_of(component.was_reference ? borrowed : region).push_back(component);
+        }
+    }
+    return false;
+}
+
 }  // namespace detail
 
 // True when no value of Root reaches a key of the brand (THE GATE): no part
@@ -388,5 +516,16 @@ namespace detail {
 template <class Root, class Brand>
 concept ReachesNoLoanKey =
     IsKeyBrand<Brand> && !detail::reaches_loan_key_(^^std::remove_cvref_t<Root>, std::meta::dealias(^^LoanKey<Brand>));
+
+// True when a part of a body of a root door is safe for a key of the brand
+// (THE BORROW OF A ROOT DOOR): it reaches no key of the brand in either region,
+// and it reaches no owner of the brand through a borrow.  A root door asks it
+// of its body, of the result of the body and of each parameter that is no key.
+// Complexity: two walks, linear in the distinct types that Root reaches, at
+// compile time only.
+template <class Root, class Brand>
+concept BorrowsNoKeyOwner =
+    ReachesNoLoanKey<Root, Brand>
+    && !detail::reaches_borrowed_key_owner_(^^std::remove_cvref_t<Root>, std::meta::dealias(^^Brand));
 
 }  // namespace foundation::core
