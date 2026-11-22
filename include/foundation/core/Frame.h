@@ -150,7 +150,9 @@
 //     array.with_mut(key, body);                     the door borrows the key
 //                       for the call
 //   A key is a linear class with no state.  Only a mint or a root door makes
-//   one (detail::LoanKeyDoor), so no body makes a key.
+//   one (detail::LoanKeyDoor), so no body makes a key.  A spelling with no
+//   key brand, such as FixedArray<T, N>, has the brand Unkeyed and the doors
+//   with no key.
 //
 // THE GATE
 //   A keyed door refuses a body that reaches a key of the brand of its owner
@@ -181,6 +183,7 @@
 #include <foundation/Transfer.h>
 #include <foundation/reflect/TypeComponents.h>
 
+#include <cstddef>
 #include <meta>
 #include <type_traits>
 
@@ -289,6 +292,19 @@ inline constexpr auto loan_key_mark_when = no_loan_key_mark{};
 template <>
 inline constexpr auto loan_key_mark_when<true> = loan_key_mark{};
 
+// The brand of an owner with no key.  FixedArray<T, N> takes it by default,
+// and its frame doors take no key.  No mint and no root door gives a
+// LoanKey<Unkeyed>.  The class is a named empty class, so the rule
+// brand-escape reads no fresh brand in it, and a spelling of FixedArray<T, N>
+// is no site of the rule erased-brand.
+struct Unkeyed final {};
+
+// A brand whose owners open their frames only with a LoanKey of it: the
+// fresh brand of a mint, or a named brand that a root door gives.  The erased
+// identity DefaultBrand and Unkeyed name no owner.
+template <class Brand>
+concept IsKeyBrand = ::foundation::brand::IsFreshBrand<Brand> && !std::is_same_v<Brand, Unkeyed>;
+
 // The key of the frames of the keyed owners of one brand (THE LOAN KEY).  The
 // class is empty, so it costs no byte and no instruction.  It is linear: each
 // path gives it back to its holder or ends it through a door.  It does not
@@ -297,10 +313,10 @@ inline constexpr auto loan_key_mark_when<true> = loan_key_mark{};
 // builds no key.  It moves to another thread, and two threads never read one
 // key (not_shareable of foundation/Transfer.h).  A key holds no resource, so
 // the end of its scope is its door (scope_end_door of foundation/Linear.h).
-// DefaultBrand names no owner, so no mint and no root door gives a key of it.
-// The signature of a keyed door of an owner of DefaultBrand names the type,
-// and the keyed doors of such an owner take no key, so the class takes each
-// brand.
+// DefaultBrand and Unkeyed name no owner, so no mint and no root door gives a
+// key of them.  The signature of a keyed door of an owner of Unkeyed names
+// the type, and the keyed doors of such an owner take no key, so the class
+// takes each brand.
 template <class Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::scope_end_door{}]]
                    [[= ::foundation::transfer::not_shareable{}]][[= loan_key_mark{}]] LoanKey final {
@@ -324,25 +340,56 @@ public:
 
 namespace detail {
 
-// The predicate of the walk of the gate (THE GATE): a node that is a key of
-// the brand, or a class whose members the walk cannot read.  A class that the
-// walk reached through a pointer and that is incomplete has no readable
-// members, and neither has a class whose state reflection does not show.  The
-// predicate refuses both, so the gate fails closed.  The predicate is a
-// template argument, so it is an object of static storage duration.  It holds
-// the key as a reflection, so its type names no brand, and the rule
-// brand-escape reads no brand in it.
-struct LoanKeyOf final {
-    std::meta::info key{};
+// True when the node is the key, or a class whose members the walk cannot
+// read.  A class that the walk reached through a pointer and that is
+// incomplete has no readable members, and neither has a class whose state
+// reflection does not show.  The gate refuses both, so it fails closed.
+[[nodiscard]] consteval bool is_key_or_unreadable_(::foundation::reflect::TypeNode node, std::meta::info key) {
+    if (node.type == key) {
+        return true;
+    }
+    bool const is_class = std::meta::is_class_type(node.type) || std::meta::is_union_type(node.type);
+    return (is_class && !node.may_read_members) || ::foundation::reflect::holds_unreadable_state(node);
+}
 
-    [[nodiscard]] consteval bool operator()(::foundation::reflect::TypeNode node) const {
-        if (node.type == key) {
+// True when the walk of the gate (THE GATE) reaches the key from the type
+// root, or a class whose members it cannot read.  The walk is the walk of
+// first_component_satisfying of foundation/reflect/TypeComponents.h with the
+// instantiating read.  It is a function that is no template, so no unit can
+// specialize what the gate admits.  It reads the nodes in the order that it
+// lists them, and it reads each node one time.  Complexity: linear in the
+// distinct types that root reaches, times the scan of the visited list, at
+// compile time only.
+[[nodiscard]] consteval bool reaches_loan_key_(std::meta::info root, std::meta::info key) {
+    namespace refl = ::foundation::reflect;
+    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
+    refl::TypeNodeList listed;
+    listed.push_back(refl::TypeNode{refl::bare_type(root), true});
+    for (std::size_t next = 0; next < listed.size(); ++next) {
+        refl::TypeNode const node = listed.begin()[next];
+        bool was_read = false;
+        for (std::size_t earlier = 0; earlier < next; ++earlier) {
+            refl::TypeNode const& seen = listed.begin()[earlier];
+            if (seen.type == node.type && (seen.may_read_members || !node.may_read_members)) {
+                was_read = true;
+                break;
+            }
+        }
+        if (was_read) {
+            continue;
+        }
+        if (is_key_or_unreadable_(node, key)) {
             return true;
         }
-        bool const is_class = std::meta::is_class_type(node.type) || std::meta::is_union_type(node.type);
-        return (is_class && !node.may_read_members) || ::foundation::reflect::holds_unreadable_state(node);
+        for (refl::TypeNode const& component : refl::argument_components_of(node, read)) {
+            listed.push_back(component);
+        }
+        for (refl::TypeNode const& component : refl::member_components_of(node, read)) {
+            listed.push_back(component);
+        }
     }
-};
+    return false;
+}
 
 }  // namespace detail
 
@@ -353,9 +400,6 @@ struct LoanKeyOf final {
 // linear in the distinct types that Root reaches, at compile time only.
 template <class Root, class Brand>
 concept ReachesNoLoanKey =
-    ::foundation::brand::IsFreshBrand<Brand>
-    && !::foundation::reflect::any_component_satisfies<detail::LoanKeyOf{std::meta::dealias(^^LoanKey<Brand>)},
-                                                       ::foundation::reflect::SpecializationRead::Instantiating>(
-        ^^std::remove_cvref_t<Root>);
+    IsKeyBrand<Brand> && !detail::reaches_loan_key_(^^std::remove_cvref_t<Root>, std::meta::dealias(^^LoanKey<Brand>));
 
 }  // namespace foundation::core

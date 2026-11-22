@@ -134,19 +134,25 @@ static_assert(std::is_same_v<LoanKey<CheckBrand>::brand_type, CheckBrand>);
 
 // The gate: a key, a reference to it, a Ref of it and a sum that holds it
 // reach a key of the brand.  A key of a second brand, a plain value and a
-// keyed array do not.  DefaultBrand names no owner, so it has no gate.
+// keyed array do not.  DefaultBrand and Unkeyed name no owner, so they have
+// no gate.
 struct OtherBrand final {};
 static_assert(!ReachesNoLoanKey<LoanKey<CheckBrand>, CheckBrand>);
 static_assert(!ReachesNoLoanKey<LoanKey<CheckBrand>&, CheckBrand>);
-static_assert(!ReachesNoLoanKey<Ref<LoanKey<CheckBrand>>, CheckBrand>);
+static_assert(!ReachesNoLoanKey<Ref<LoanKey<CheckBrand>, CheckBrand>, CheckBrand>);
 static_assert(!ReachesNoLoanKey<Option<LoanKey<CheckBrand>>, CheckBrand>);
 static_assert(ReachesNoLoanKey<LoanKey<OtherBrand>, CheckBrand> && ReachesNoLoanKey<int, CheckBrand>);
 static_assert(ReachesNoLoanKey<FixedArray<int, 4, CheckBrand>, CheckBrand>);
-static_assert(!ReachesNoLoanKey<int, ::foundation::brand::DefaultBrand>);
+static_assert(!ReachesNoLoanKey<int, ::foundation::brand::DefaultBrand> && !ReachesNoLoanKey<int, Unkeyed>);
+
+// A spelling with no key brand is the array of Unkeyed, with no key.  A
+// brand of a mint and a named brand are key brands.
+static_assert(std::is_same_v<FixedArray<int, 4>, FixedArray<int, 4, Unkeyed>>);
+static_assert(IsKeyBrand<CheckBrand> && !IsKeyBrand<Unkeyed> && !IsKeyBrand<::foundation::brand::DefaultBrand>);
 
 // The keyed doors of a FixedArray: the move form gives the key back alone or
 // after the result, and the borrow form gives the result.  A keyed array has
-// no door with no key, and an array of DefaultBrand has no keyed door.
+// no door with no key, and an array of Unkeyed has no keyed door.
 using KeyedArray = FixedArray<int, 4, CheckBrand>;
 static_assert(
     std::is_same_v<decltype(std::declval<KeyedArray&>().with_mut(std::declval<LoanKey<CheckBrand>>(), WritesNothing{})),

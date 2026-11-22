@@ -815,14 +815,13 @@ void with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> cons
 // gives no View that writes them, so a body of a frame of its windows writes
 // the bytes only through the ViewMuts of the frame.
 template <class Brand>
-    requires ::foundation::brand::IsFreshBrand<Brand>
+    requires core::IsKeyBrand<Brand>
 class [[nodiscard]][[= core::loan_key_mark{}]] KeyedBytes final {
     AlignedBytes bytes_{};
 
 public:
     // The block of the bytes, with the key that only AlignedBytesDoor builds.
-    KeyedBytes(detail::AlignedBytesKey const& /*key*/, AlignedBytes&& bytes) noexcept
-        : bytes_{static_cast<AlignedBytes&&>(bytes)} {}
+    KeyedBytes(detail::AlignedBytesKey const& /*key*/, AlignedBytes&& bytes) noexcept : bytes_{std::move(bytes)} {}
 
     KeyedBytes(KeyedBytes const&) = delete("a KeyedBytes owns its block alone: a copy would give it back two times");
     KeyedBytes&
@@ -913,7 +912,7 @@ with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key, core::Fix
                  Body&& body) noexcept {
     return {detail::lend_listed_windows_<T, Fresh>(keyed_block_of_(core::detail::FrameDoor::key(), block), windows,
                                                    static_cast<Body&&>(body)),
-            static_cast<core::LoanKey<Brand>&&>(key)};
+            std::move(key)};
 }
 
 // The same door with a borrow of the key for the call: the key stays with the
@@ -944,7 +943,7 @@ with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key, core::Fix
                  Body&& body) noexcept {
     return {detail::lend_tested_windows_<T, Fresh, 0>(keyed_block_of_(core::detail::FrameDoor::key(), block).view(),
                                                       windows, static_cast<Body&&>(body)),
-            static_cast<core::LoanKey<Brand>&&>(key)};
+            std::move(key)};
 }
 
 // The same door with a borrow of the key for the call.
