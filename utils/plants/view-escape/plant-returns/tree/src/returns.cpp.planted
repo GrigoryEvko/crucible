@@ -2,7 +2,10 @@
 // a Ref of a local, the erased Ref of a local, the View of a local list for
 // reading and for writing, the Ref of an element of a parameter by value, a
 // View that a local takes first, and a View of an owner on the heap that a
-// local holds.  The opt-out region turns one return into opted-out.
+// local holds.  The opt-out region turns one return into opted-out.  A
+// forwarding parameter that a temporary binds, and a closure that returns a
+// View of its local, of its parameter by value or of its capture by value,
+// are findings too.
 #include <foundation/Quarantine.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Ref.h>
@@ -49,6 +52,23 @@ fc::View<int const> view_in_a_region() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test returns the view of a local list")
     return std::as_const(list).view();
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+}
+
+template <class Whole>
+fc::View<int const> view_of_forwarded(Whole&& list) {
+    return std::as_const(list).view();
+}
+
+int read_closures() {
+    fc::FixedList<int, 4> captured{};
+    auto const of_local = [] {
+        fc::FixedList<int, 4> list{};
+        return std::as_const(list).view();
+    };
+    auto const of_parameter = [](fc::FixedList<int, 4> list) { return std::as_const(list).view(); };
+    auto const of_capture = [captured] { return captured.view(); };
+    return static_cast<int>(view_of_forwarded(fc::FixedList<int, 4>{}).size() + of_local().size()
+                            + of_parameter(fc::FixedList<int, 4>{}).size() + of_capture().size());
 }
 
 }  // namespace planted

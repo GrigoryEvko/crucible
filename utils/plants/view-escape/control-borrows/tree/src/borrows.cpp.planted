@@ -1,7 +1,10 @@
 // No return names an object that ends with the frame, and no line names the
 // rule view-escape: a borrow of a parameter by reference, a View that a
 // parameter by value holds, a window of a View, an erased Ref of a parameter
-// by reference, a value that a local list holds, and a local list by value.
+// by reference, a value that a local list holds, a local list by value, a
+// forwarding parameter that a named list binds, a result by an rvalue
+// reference that forwards its parameter, and a closure that returns a View of
+// its capture by reference.
 #include <foundation/Platform.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Ref.h>
@@ -34,6 +37,19 @@ fc::FixedList<int, 4> local_list_by_value() {
     fc::FixedList<int, 4> list{};
     static_cast<void>(list.append(7));
     return list;
+}
+
+template <class Whole>
+fc::View<int const> view_of_forwarded(Whole&& list) {
+    return std::as_const(list).view();
+}
+
+int&& forwarded_part(int&& value) { return std::move(value); }
+
+int read_lvalues() {
+    fc::FixedList<int, 4> named{};
+    auto const of_reference = [&named] { return std::as_const(named).view(); };
+    return static_cast<int>(view_of_forwarded(named).size() + of_reference().size()) + forwarded_part(8);
 }
 
 }  // namespace planted

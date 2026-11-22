@@ -1,27 +1,38 @@
 # Each return of a borrow of an object that ends with the frame is an error in
-# each mode: a Ref of a local (19), the erased Ref of a local (24), the View of
-# a local list for reading (30) and for writing (36), the Ref of an element of
-# a parameter by value (39), and a View that a local takes first (44).  The
-# opt-out region turns the return on line 50 into opted-out.
+# each mode: a Ref of a local (22), the erased Ref of a local (27), the View of
+# a local list for reading (33) and for writing (39), the Ref of an element of
+# a parameter by value (42), and a View that a local takes first (47).  The
+# opt-out region turns the return on line 53 into opted-out.  A forwarding
+# parameter that a temporary binds (59), and a closure that returns a View of
+# its local (66), of its parameter by value (68) or of its capture by value
+# (69), give the same error.
 # The second compile shows that a parse with no object gives the same errors.
 
 compile returns src/returns.cpp
 flag returns -freflection
 exit returns fail
-finding returns view-escape escaped-borrow src/returns.cpp:19:24 | borrow of the local value
-finding returns view-escape escaped-borrow src/returns.cpp:24:41 | borrow of the local value
-finding returns view-escape escaped-borrow src/returns.cpp:30:37 | borrow of the local list
-finding returns view-escape escaped-borrow src/returns.cpp:36:22 | borrow of the local list
-finding returns view-escape escaped-borrow src/returns.cpp:39:99 | borrow of the parameter list
-finding returns view-escape escaped-borrow src/returns.cpp:44:12 | borrow of the local list
-finding returns quarantine region src/returns.cpp:49:1 | PROBE: the test returns the view of a local list
-finding returns quarantine opted-out src/returns.cpp:50:37 | escaped-borrow borrow of the local list
-error returns src/returns.cpp:19 | this function gives back a borrow of the local value, and that object ends with the frame of the function
-error returns src/returns.cpp:24 | this function gives back a borrow of the local value, and that object ends with the frame of the function
-error returns src/returns.cpp:30 | this function gives back a borrow of the local list, and that object ends with the frame of the function
-error returns src/returns.cpp:36 | this function gives back a borrow of the local list, and that object ends with the frame of the function
-error returns src/returns.cpp:39 | this function gives back a borrow of the parameter list, and that object ends with the frame of the function
-error returns src/returns.cpp:44 | this function gives back a borrow of the local list, and that object ends with the frame of the function
+finding returns view-escape escaped-borrow src/returns.cpp:22:24 | borrow of the local value
+finding returns view-escape escaped-borrow src/returns.cpp:27:41 | borrow of the local value
+finding returns view-escape escaped-borrow src/returns.cpp:33:37 | borrow of the local list
+finding returns view-escape escaped-borrow src/returns.cpp:39:22 | borrow of the local list
+finding returns view-escape escaped-borrow src/returns.cpp:42:99 | borrow of the parameter list
+finding returns view-escape escaped-borrow src/returns.cpp:47:12 | borrow of the local list
+finding returns view-escape escaped-borrow src/returns.cpp:59:37 | borrow of the parameter list
+finding returns view-escape escaped-borrow src/returns.cpp:66:41 | borrow of the local list
+finding returns view-escape escaped-borrow src/returns.cpp:68:96 | borrow of the parameter list
+finding returns view-escape escaped-borrow src/returns.cpp:69:63 | borrow of the capture captured
+finding returns quarantine region src/returns.cpp:52:1 | PROBE: the test returns the view of a local list
+finding returns quarantine opted-out src/returns.cpp:53:37 | escaped-borrow borrow of the local list
+error returns src/returns.cpp:22 | this function gives back a borrow of the local value, and that object ends with the frame of the function
+error returns src/returns.cpp:27 | this function gives back a borrow of the local value, and that object ends with the frame of the function
+error returns src/returns.cpp:33 | this function gives back a borrow of the local list, and that object ends with the frame of the function
+error returns src/returns.cpp:39 | this function gives back a borrow of the local list, and that object ends with the frame of the function
+error returns src/returns.cpp:42 | this function gives back a borrow of the parameter list, and that object ends with the frame of the function
+error returns src/returns.cpp:47 | this function gives back a borrow of the local list, and that object ends with the frame of the function
+error returns src/returns.cpp:59 | this function gives back a borrow of the parameter list, and that object ends with the frame of the function
+error returns src/returns.cpp:66 | this function gives back a borrow of the local list, and that object ends with the frame of the function
+error returns src/returns.cpp:68 | this function gives back a borrow of the parameter list, and that object ends with the frame of the function
+error returns src/returns.cpp:69 | this function gives back a borrow of the capture captured, and that object ends with the frame of the function
 text returns | a read of the result reads the dead stack frame of the call
 text returns | PROBE: reason
 

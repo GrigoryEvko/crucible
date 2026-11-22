@@ -4376,6 +4376,11 @@ foundation_neg_compile_test(neg_core_return_view_of_local_list_mut
 foundation_neg_compile_test(neg_core_return_ref_of_parameter
   "neg_core_return_ref_of_parameter\\.cpp:14:[0-9]+: error: this function gives back a borrow of the parameter list"
   "and that object ends with the frame of the function")
+# A forwarding parameter that a temporary binds is an rvalue reference in its
+# instance, and the rule view-escape refuses a View of it.
+foundation_neg_compile_test(neg_core_return_view_of_forwarded_temporary
+  "neg_core_return_view_of_forwarded_temporary\\.cpp:17:[0-9]+: error: this function gives back a borrow of the parameter list"
+  "and that object ends with the frame of the function")
 # A parameter by a const reference that the result borrows carries the mark
 # CRUCIBLE_LIFETIMEBOUND, and its deleted twin refuses a temporary argument.
 foundation_neg_compile_test(neg_core_borrow_of_temporary

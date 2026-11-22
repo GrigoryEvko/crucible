@@ -779,13 +779,19 @@ static_assert(!expects_half<5>);
 
 // The rvalue match gives up its source, so an arm that takes its part by
 // reference is refused, and so is a result that holds a borrow.  The borrow
-// match keeps its source, so a reference into it is a borrow.
+// match keeps its source, so a reference into it is a borrow.  The first arm
+// gives a reference of the type of a borrow, and not a reference to its own
+// rvalue part, which the rule view-escape refuses.
 inline constexpr int fallback_number = 0;
 using NumberBorrow = int const&;
 template <class R>
 constexpr bool moved_match_gives_reference = requires(R result) {
-    static_cast<R&&>(result).match([](int&& value) noexcept -> NumberBorrow { return value; },
-                                   [](Code) noexcept -> NumberBorrow { return fallback_number; });
+    static_cast<R&&>(result).match(
+        [](int&& value) noexcept -> NumberBorrow {
+            static_cast<void>(value);
+            return fallback_number;
+        },
+        [](Code) noexcept -> NumberBorrow { return fallback_number; });
 };
 template <class R>
 constexpr bool moved_match_takes_reference = requires(R result) {

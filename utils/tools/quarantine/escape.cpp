@@ -37,8 +37,16 @@
 // THE FINDING
 //   escaped-borrow   a return whose value has an origin that ends with the
 //                    frame: a local of automatic storage, a parameter by
-//                    value, or a temporary of the full expression
-//   The entity is the object.  A function that returns a borrow of a
+//                    value, a temporary of the full expression, a parameter
+//                    by an rvalue reference to a value that holds no borrow,
+//                    or a capture by value of a closure
+//   The entity is the object.  A parameter by an rvalue reference is often a
+//   forwarding T&& that deduced a value: the caller gave a temporary, which
+//   ends with the full expression of the call.  A result by an rvalue
+//   reference forwards such a parameter on, as get of an rvalue Record does,
+//   so it is no finding.  The rule reads the call operator of a closure as a
+//   function, and a capture by value lives in the closure object, which a
+//   call of a temporary closure ends with the full expression.  A function that returns a borrow of a
 //   parameter by reference names an object of its caller, which is no
 //   finding.  The kind missing-mark of the rule lifetime-twin asks such a
 //   function to mark the parameter, so the caller cannot give a temporary.
@@ -349,13 +357,34 @@ class OriginWalk {
 public:
     explicit OriginWalk(tree function) : function_{function} {}
 
-    // True for an object that ends with the frame of the function.
+    // True for an object that ends with the frame of the function: a local, a
+    // parameter by value, a parameter by an rvalue reference to a value that
+    // holds no borrow, and a capture by value of a closure (THE FINDING).
     bool ends_with_frame(tree decl) const {
         if (TREE_CODE(decl) == PARM_DECL) {
-            return TREE_CODE(TREE_TYPE(decl)) != REFERENCE_TYPE && !is_this_parameter(decl);
+            tree type = TREE_TYPE(decl);
+            if (is_this_parameter(decl)) {
+                return false;
+            }
+            return TREE_CODE(type) != REFERENCE_TYPE || (TYPE_REF_IS_RVALUE(type) && !holds_borrow(TREE_TYPE(type), 0));
         }
-        return VAR_P(decl) && !TREE_STATIC(decl) && !DECL_EXTERNAL(decl) && !DECL_THREAD_LOCAL_P(decl)
-            && decl_function_context(decl) == function_ && TREE_CODE(TREE_TYPE(decl)) != REFERENCE_TYPE;
+        if (!VAR_P(decl) || TREE_STATIC(decl) || DECL_EXTERNAL(decl) || DECL_THREAD_LOCAL_P(decl)
+            || decl_function_context(decl) != function_ || TREE_CODE(TREE_TYPE(decl)) == REFERENCE_TYPE) {
+            return false;
+        }
+        return !is_capture_proxy(decl) || is_value_capture(decl);
+    }
+
+    // True for the proxy of a capture by value: its value is a field of the
+    // closure that is no reference.  A capture by reference names an object of
+    // the caller.
+    static bool is_value_capture(tree proxy) {
+        tree value = tree_strip_any_location_wrapper(DECL_VALUE_EXPR(proxy));
+        if (value == NULL_TREE || TREE_CODE(value) != COMPONENT_REF) {
+            return false;
+        }
+        tree field = TREE_OPERAND(value, 1);
+        return TREE_CODE(field) == FIELD_DECL && TREE_CODE(TREE_TYPE(field)) != REFERENCE_TYPE;
     }
 
     // Records the origins of each local that holds a borrow, and the object of
@@ -421,7 +450,10 @@ public:
                 return;
             }
             case PARM_DECL:
-                if (reads_reference_parameters_ && TREE_CODE(TREE_TYPE(expression)) == REFERENCE_TYPE) {
+                // A parameter by reference as a value names its object, as a
+                // reference result of it does.
+                if (TREE_CODE(TREE_TYPE(expression)) == REFERENCE_TYPE
+                    && (reads_reference_parameters_ || ends_with_frame(expression))) {
                     out.push_back(expression);
                 }
                 return;
@@ -493,8 +525,9 @@ public:
                 return;
             case INDIRECT_REF: {
                 tree operand = strip_conversions(TREE_OPERAND(object, 0));
-                if (reads_reference_parameters_ && operand != NULL_TREE && TREE_CODE(operand) == PARM_DECL
-                    && TREE_CODE(TREE_TYPE(operand)) == REFERENCE_TYPE) {
+                if (operand != NULL_TREE && TREE_CODE(operand) == PARM_DECL
+                    && TREE_CODE(TREE_TYPE(operand)) == REFERENCE_TYPE
+                    && (reads_reference_parameters_ || ends_with_frame(operand))) {
                     out.push_back(operand);
                     return;
                 }
@@ -732,10 +765,19 @@ struct ReturnWalk {
 
 // The text of an object of a finding.
 std::string object_text(tree decl) {
+    if (DECL_NAME(decl) != NULL_TREE && VAR_P(decl) && is_capture_proxy(decl)) {
+        return "the capture " + identifier_text(DECL_NAME(decl));
+    }
     if (DECL_ARTIFICIAL(decl) || DECL_NAME(decl) == NULL_TREE) {
         return "a temporary";
     }
     return (TREE_CODE(decl) == PARM_DECL ? "the parameter " : "the local ") + identifier_text(DECL_NAME(decl));
+}
+
+// True for a parameter by an rvalue reference.
+bool is_rvalue_parameter(tree decl) {
+    return TREE_CODE(decl) == PARM_DECL && TREE_CODE(TREE_TYPE(decl)) == REFERENCE_TYPE
+        && TYPE_REF_IS_RVALUE(TREE_TYPE(decl));
 }
 
 // The callback of cp_walk_tree over the returns of a function (THE FINDING).
@@ -747,8 +789,14 @@ tree check_return(tree* node, int*, void* data) {
     }
     std::vector<tree> found;
     walk.origins->add_origins(TREE_OPERAND(current, 0), found, 0);
+    // A result by an rvalue reference forwards a parameter by an rvalue
+    // reference on, as get of an rvalue Record does, and the caller reads it
+    // in the full expression of the call.
+    tree const result = TREE_TYPE(DECL_RESULT(walk.function));
+    bool const is_forwarding = TREE_CODE(result) == REFERENCE_TYPE && TYPE_REF_IS_RVALUE(result);
     for (tree origin : found) {
-        if (origin == NULL_TREE || !walk.origins->ends_with_frame(origin)) {
+        if (origin == NULL_TREE || !walk.origins->ends_with_frame(origin)
+            || (is_forwarding && is_rvalue_parameter(origin))) {
             continue;
         }
         location_t location = EXPR_HAS_LOCATION(current) ? EXPR_LOCATION(current) : DECL_SOURCE_LOCATION(walk.function);
