@@ -189,7 +189,7 @@ std::uintptr_t Reservation::address_of(ReservedRange const& range) const noexcep
 
 core::View<std::uint8_t> Reservation::bytes_of(CommittedRange const& range) & noexcept {
     std::uint8_t* const first = first_of_(range);
-    return core::View<std::uint8_t>{core::detail::ViewDoor::key(), first, range.bytes_};
+    return core::CommittedRangeDoor::committed_bytes_(first, range.bytes_);
 }
 
 core::Result<CommittedRange, Errno> Reservation::commit(ReservedRange const& range) noexcept {

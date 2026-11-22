@@ -81,8 +81,7 @@ concept CtxFitsThpCall =
 template <class T>
     requires(std::is_object_v<T> && !std::is_array_v<T>)
 [[nodiscard]] ::foundation::core::View<std::byte const, sizeof(T)> storage_of(T const& object) noexcept {
-    return ::foundation::core::detail::view_over_<sizeof(T)>(
-        static_cast<std::byte const*>(static_cast<void const*>(__builtin_addressof(object))));
+    return ::foundation::core::detail::storage_of_run_(::foundation::core::detail::view_of_object_(object));
 }
 
 template <class T>
@@ -95,10 +94,7 @@ void storage_of(T const&&) = delete("the storage of a temporary object ends at t
 // of an object.  Complexity: O(1).
 template <class T, std::size_t Extent>
 [[nodiscard]] ::foundation::core::View<std::byte const> storage_of(::foundation::core::View<T, Extent> run) noexcept {
-    std::byte const* const first = static_cast<std::byte const*>(
-        static_cast<void const*>(first_of_(::foundation::core::detail::BaseLayerRead{}, run)));
-    return ::foundation::core::View<std::byte const>{::foundation::core::detail::ViewDoor::key(), first,
-                                                     run.size() * sizeof(T)};
+    return ::foundation::core::detail::storage_of_run_(run);
 }
 
 namespace detail {

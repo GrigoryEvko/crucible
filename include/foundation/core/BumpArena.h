@@ -58,6 +58,7 @@
 // header declares the one call that the bump needs.
 
 #include <foundation/Brand.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Heap.h>
@@ -133,6 +134,26 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
 
 }  // namespace detail
 
+class BumpArena;
+
+// The door of a BumpArena to the raw constructors of a View (THE DOORS OF THE
+// OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant: the
+// bump of array() gave count * sizeof(T) bytes at the alignment of T, and its
+// loop built each element.  So the View of the count elements holds live
+// elements only.  The View holds no brand of the arena, so a View that
+// outlives the epoch of its bytes is a known gap, which a brand of the arena
+// closes.  BumpArena is the one friend, and a home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class ArenaArrayDoor final : ::foundation::NoObject<ArenaArrayDoor> {
+    friend class BumpArena;
+
+    // The count elements that array() built from first.
+    template <class T>
+    [[nodiscard]] static View<T> built_run_(T* first, std::size_t count) noexcept {
+        return View<T>{first, count};
+    }
+};
+
 // The arena owns its blocks, and no door stores a pointer or a borrow that a
 // caller gives, so a body that captures the arena stores no borrow in it
 // (owns_its_storage of foundation/core/Owner.h).
@@ -200,7 +221,7 @@ public:
         for (std::size_t position = 0; position != count; ++position) {
             ::new(static_cast<void*>(first + position)) T(fill);
         }
-        return View<T>{detail::ViewDoor::key(), first, count};
+        return ArenaArrayDoor::built_run_(first, count);
     }
 
     template <class T, class Marker>

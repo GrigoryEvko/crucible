@@ -84,13 +84,13 @@ namespace detail {
 // error_code, goal and suggestion when those are empty.  Each roster is a
 // View over the names, so a check gives record_fields_are the same form.
 inline constexpr core::TextView source_position_names[] = {"file", "line", "column", "function"};
-inline constexpr core::View<core::TextView const, 4> source_position_fields{core::detail::ViewDoor::key(),
-                                                                            source_position_names};
+inline constexpr core::View<core::TextView const, 4> source_position_fields =
+    core::detail::view_of_array_(source_position_names);
 
 inline constexpr core::TextView json_record_names[] = {"category", "source", "error_code", "goal",
                                                        "have",     "gap",    "suggestion", "related_snippet"};
-inline constexpr core::View<core::TextView const, 8> json_record_fields{core::detail::ViewDoor::key(),
-                                                                        json_record_names};
+inline constexpr core::View<core::TextView const, 8> json_record_fields =
+    core::detail::view_of_array_(json_record_names);
 
 // The members of Record, in declaration order, are exactly `expected`.  The
 // walk reads the roster through its cursor, one name for each member.

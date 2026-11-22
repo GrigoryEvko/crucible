@@ -577,14 +577,16 @@ public:
         return count;
     }
 
-    // The sizes and the strides, rank() elements each.  The View borrows this
-    // view, so a View of a temporary view is refused.
+    // The sizes and the strides, rank() elements each: the first rank() lanes
+    // of the C array of each.  The View borrows this view, so a View of a
+    // temporary view is refused.  rank() is at most the capacity of the lanes,
+    // which each door bounds, so the optimizer removes the test of the window.
     [[nodiscard]] constexpr View<std::size_t const> sizes() const& noexcept {
-        return View<std::size_t const>{detail::ViewDoor::key(), lanes_.sizes, rank()};
+        return detail::view_of_array_(lanes_.sizes).window(0, rank()).expect("the rank fits the lanes");
     }
     void sizes() const&& = delete("the sizes of a temporary view dangle at the end of the full expression");
     [[nodiscard]] constexpr View<std::size_t const> strides() const& noexcept {
-        return View<std::size_t const>{detail::ViewDoor::key(), lanes_.strides, rank()};
+        return detail::view_of_array_(lanes_.strides).window(0, rank()).expect("the rank fits the lanes");
     }
     void strides() const&& = delete("the strides of a temporary view dangle at the end of the full expression");
 
@@ -1326,9 +1328,13 @@ class StridedIndex final {
         : coordinates_{coordinates} {}
 
 public:
-    // The coordinates, one for each axis.  The View borrows this index.
+    // The coordinates, one for each axis: the first rank() values of the C
+    // array.  The View borrows this index.  The rank is at most the capacity,
+    // so the optimizer removes the test of the window.
     [[nodiscard]] constexpr View<std::size_t const> coordinates() const& noexcept {
-        return View<std::size_t const>{detail::ViewDoor::key(), coordinates_.values, coordinates_.rank()};
+        return detail::view_of_array_(coordinates_.values)
+            .window(0, coordinates_.rank())
+            .expect("the rank fits the coordinates");
     }
     void
     coordinates() const&& = delete("the coordinates of a temporary index dangle at the end of the full expression");

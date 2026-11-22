@@ -44,6 +44,7 @@
 // when two threads can read each element.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Index.h>
@@ -105,6 +106,32 @@ template <class... Runs>
 
 template <UnsignedInteger Count, class... Runs>
     requires(sizeof...(Runs) > 0 && (detail::is_run_of_<Runs> && ...))
+class RunSet;
+
+// The door of a RunSet to the raw constructors of a View (THE DOORS OF THE
+// OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The set keeps the
+// first element of each run beside one table of counts, so its layout holds
+// one pointer for each run, and a View for each run would move it.  The
+// invariant: set<I> takes the first element of a View whose count is the count
+// of the slot of the run, and set_count drops each run of the slot.  So a run
+// with a first element holds the count of its slot, and the View of the two
+// borrows the elements that the View of set<I> borrowed.  RunSet is the one
+// friend, and a home owner row of utils/rule-table.txt keeps this definition
+// in this header.
+class RunSetLayoutDoor final : ::foundation::NoObject<RunSetLayoutDoor> {
+    template <UnsignedInteger Count, class... Runs>
+        requires(sizeof...(Runs) > 0 && (detail::is_run_of_<Runs> && ...))
+    friend class RunSet;
+
+    // The count elements from first, which set<I> took from a View.
+    template <class Element>
+    [[nodiscard]] static constexpr View<Element> held_run_(Element* first, std::size_t count) noexcept {
+        return View<Element>{first, count};
+    }
+};
+
+template <UnsignedInteger Count, class... Runs>
+    requires(sizeof...(Runs) > 0 && (detail::is_run_of_<Runs> && ...))
 class RunSet final : private detail::RunFirsts_<std::index_sequence_for<Runs...>, Runs...> {
 public:
     // The count of slots in the table of counts.
@@ -145,7 +172,7 @@ private:
     template <std::size_t I, class Element>
     [[nodiscard]] constexpr View<Element> view_of_(Element* first) const noexcept {
         std::size_t const count = first == nullptr ? 0 : std::size_t{counts_.at(index<slot_of<I>>())};
-        return View<Element>{detail::ViewDoor::key(), first, count};
+        return RunSetLayoutDoor::held_run_(first, count);
     }
 
     FixedArray<Count, slot_count> counts_{};

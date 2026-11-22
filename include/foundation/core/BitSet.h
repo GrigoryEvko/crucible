@@ -726,7 +726,7 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] HeapBitSe
 
     // The words as a View.  The words live while the set holds them.
     [[nodiscard]] constexpr View<std::uint64_t const> words_() const noexcept {
-        return View<std::uint64_t const>{detail::ViewDoor::key(), state_.words, word_count_()};
+        return View<std::uint64_t const>{run_key_(), state_.words, word_count_()};
     }
 
     // The bit of an id, after the compare with the count.  An id at or past

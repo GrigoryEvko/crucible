@@ -158,7 +158,9 @@ public:
                 }
             }
             ::foundation::core::Result<std::size_t, ::foundation::os::Errno> read =
-                step(::foundation::core::detail::view_over_<char>(bytes_ + last_, buffer_bytes - last_));
+                step(::foundation::core::detail::view_of_array_(bytes_)
+                         .window(last_, buffer_bytes - last_)
+                         .expect("the read buffer holds its last position"));
             for (::foundation::os::Errno const error : read.err()) {
                 return LineResult{::foundation::core::err(LineError{error})};
             }

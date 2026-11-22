@@ -145,7 +145,7 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
     static void start_and_join_(Frames... frames) noexcept {
         ::fixy::thread::detail::thread_task tasks[sizeof...(Frames)]{
             ::fixy::thread::detail::thread_task{&frames, &Frames::run}...};
-        ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks, sizeof...(Frames)),
+        ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_of_array_(tasks),
                                                  ::fixy::thread::ThreadOptions{})
             .expect("mint_permission_fork: no thread of the fork started.  The bodies can wait on each other, so the "
                     "fork cannot run them on the calling thread");

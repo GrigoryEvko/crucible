@@ -669,25 +669,7 @@ template <typename V, typename First, typename Second, typename Body>
           && RegisterBytes<V, Second, sizeof(typename V::raw_type)> && RegisterRunBody<Body, V, First, Second>
 CRUCIBLE_INLINE core::Record<core::View<First>, core::View<Second>>
 for_each_register_run(core::View<First> first, core::View<Second> second, Body body) noexcept {
-    constexpr std::size_t width = sizeof(typename V::raw_type);
-    if (first.size() != second.size()) [[unlikely]] {
-        core::fatal("the register runs of two Views of {} and {} elements", first.size(), second.size());
-    }
-    First* const first_at = first_of_(core::detail::BaseLayerRead{}, first);
-    Second* const second_at = first_of_(core::detail::BaseLayerRead{}, second);
-    // The loop counts whole runs, so the optimizer and -Warray-bounds read
-    // each offset as below the count of the runs.
-    std::size_t const runs = first.size() / width;
-    for (std::size_t run = 0; run < runs; ++run) {
-        body(core::View<First, width>{core::detail::ViewDoor::key(), first_at + run * width},
-             core::View<Second, width>{core::detail::ViewDoor::key(), second_at + run * width});
-    }
-    // The rest is the count modulo the width, so the optimizer reads it as
-    // below one register.
-    std::size_t const whole = runs * width;
-    std::size_t const rest = first.size() % width;
-    return {core::View<First>{core::detail::ViewDoor::key(), first_at + whole, rest},
-            core::View<Second>{core::detail::ViewDoor::key(), second_at + whole, rest}};
+    return core::detail::for_each_chunk_pair_<sizeof(typename V::raw_type)>(first, second, body);
 }
 
 // The mask has the same lane byte width as the value, so its bits cast

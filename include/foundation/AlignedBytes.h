@@ -307,13 +307,13 @@ public:
 
     // The View of the bytes.  It borrows this block.  The first byte is not
     // null for each count above zero, and the allocation door gives no block
-    // of more than __PTRDIFF_MAX__ bytes, so the View comes through the door
-    // of the base layer, with no check.
+    // of more than __PTRDIFF_MAX__ bytes, so the View comes through the key of
+    // an owner on the core, with no check.
     [[nodiscard]] core::View<std::uint8_t> view() & noexcept {
-        return core::View<std::uint8_t>{core::detail::ViewDoor::key(), first_(), state_.bytes};
+        return core::View<std::uint8_t>{run_key_(), first_(), state_.bytes};
     }
     [[nodiscard]] core::View<std::uint8_t const> view() const& noexcept {
-        return core::View<std::uint8_t const>{core::detail::ViewDoor::key(), first_(), state_.bytes};
+        return core::View<std::uint8_t const>{run_key_(), first_(), state_.bytes};
     }
     void
     view() && = delete("a view of a temporary AlignedBytes points into a block that the full expression gives back");
@@ -335,7 +335,7 @@ class [[nodiscard]] UnwrittenBytes final : public core::OwnerCore<core::detail::
         std::uint8_t* const first = given.storage == nullptr
                                       ? nullptr
                                       : given.storage + detail::block_lead_bytes(given.storage, given.alignment);
-        return core::View<std::uint8_t>{core::detail::ViewDoor::key(), first, given.bytes};
+        return core::View<std::uint8_t>{run_key_(), first, given.bytes};
     }
 
 public:

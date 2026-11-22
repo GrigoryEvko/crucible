@@ -310,14 +310,14 @@ public:
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T>>
         with_view(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, View<T>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<Body&&>(body)(View<T>{detail::ViewDoor::key(), first_(), this->state_.count});
+        return static_cast<Body&&>(body)(View<T>{this->run_key_(), first_(), this->state_.count});
     }
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<Body&&>(body)(View<T const>{detail::ViewDoor::key(), first_(), this->state_.count});
+        return static_cast<Body&&>(body)(View<T const>{this->run_key_(), first_(), this->state_.count});
     }
 
     // A body whose result holds a borrow binds to these overloads, so the

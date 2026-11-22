@@ -51,7 +51,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <tuple>
@@ -810,9 +809,9 @@ private:
          ...);
         std::tuple<stage_frame_<Stages>...> frames{
             stage_frame_<Stages>{&std::get<Is>(stages_), affinity_cpus.at(::foundation::core::index<Is>())}...};
-        std::array<::fixy::thread::detail::thread_task, sizeof...(Is)> tasks{
+        ::fixy::thread::detail::thread_task tasks[sizeof...(Is)]{
             ::fixy::thread::detail::thread_task{&std::get<Is>(frames), &run_threaded_stage_<Stages>}...};
-        ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks.data(), tasks.size()),
+        ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_of_array_(tasks),
                                                  ::fixy::thread::ThreadOptions{})
             .expect("Pipeline: no stage thread started.  The stages wait on each other, so the pipeline cannot run "
                     "them on the calling thread");

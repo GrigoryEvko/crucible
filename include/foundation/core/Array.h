@@ -276,13 +276,11 @@ public:
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
 
     // The View of the const elements.  It borrows this array.  The array
-    // holds N elements, so the View comes through the door of the base layer,
-    // with no check and no test of a null pointer.  A write takes
-    // with_element for one element, or with_mut for the run, so no two Views
-    // of one array write the same elements.
-    [[nodiscard]] constexpr View<T const, N> view() const& noexcept {
-        return View<T const, N>{detail::ViewDoor::key(), elements_};
-    }
+    // holds its N elements in a C array, so the View comes through the typed
+    // door of a C array, with no check and no test of a null pointer.  A write
+    // takes with_element for one element, or with_mut for the run, so no two
+    // Views of one array write the same elements.
+    [[nodiscard]] constexpr View<T const, N> view() const& noexcept { return detail::view_of_array_(elements_); }
     void view() && = delete("a view of a temporary FixedArray points into an object that the full expression ends");
     void
     view() const&& = delete("a view of a temporary FixedArray points into an object that the full expression ends");
@@ -291,7 +289,7 @@ public:
     // them.  The key of a frame keeps each caller outside the base out, so
     // only a frame door gives a View that writes the elements of an array.
     [[nodiscard]] friend constexpr View<T, N> frame_run_(detail::FrameKey const& /*key*/, FixedArray& array) noexcept {
-        return View<T, N>{detail::ViewDoor::key(), array.elements_};
+        return detail::view_of_array_(array.elements_);
     }
 
     // The loop `for (T const& element : array)`.  A loop over a temporary
@@ -355,7 +353,7 @@ public:
         requires(sizeof...(Refused) == 0) && (!is_keyed_) && FrameBody<Body, T, Fresh, N>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), elements_}});
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_(elements_)});
     }
 
     // A body whose result holds a borrow or names the brand of the frame
@@ -388,7 +386,7 @@ public:
     [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
-        return detail::give_run_back_<Fresh>(std::move(key), View<T, N>{detail::ViewDoor::key(), elements_},
+        return detail::give_run_back_<Fresh>(std::move(key), detail::view_of_array_(elements_),
                                              static_cast<Body&&>(body));
     }
 
@@ -399,7 +397,7 @@ public:
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
     constexpr auto with_mut(LoanKey<KeyBrand>& /*key*/, Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), elements_}});
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_(elements_)});
     }
 
     // A body that reaches a key of the brand of the array binds to these
@@ -940,13 +938,13 @@ public:
 
     // The View of the const elements.  It borrows this array.  The mint
     // bounds the count and gives storage for each count above zero, so the
-    // View comes through the door of the base layer, with no check.  An
+    // View comes through the key of an owner on the core, with no check.  An
     // assume of these two facts on the members gave the loop of the probe
-    // heap_array_sum two checks of view_over_ and a spill to the stack.  A
-    // write takes with_element for one element, or the frame door with_mut
-    // for the run, so no two Views of one array write the same elements.
+    // heap_array_sum two checks and a spill to the stack.  A write takes
+    // with_element for one element, or the frame door with_mut for the run,
+    // so no two Views of one array write the same elements.
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        return View<T const>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
+        return View<T const>{this->run_key_(), this->state_.first, this->state_.count};
     }
     void view() && = delete("a view of a temporary HeapArray points into storage that the full expression frees");
     void view() const&& = delete("a view of a temporary HeapArray points into storage that the full expression frees");
@@ -978,7 +976,7 @@ public:
     // them.  The key of a frame keeps each caller outside the base out, so
     // only a frame door gives a View that writes the elements of an array.
     [[nodiscard]] friend constexpr View<T> frame_run_(detail::FrameKey const& /*key*/, HeapArray& array) noexcept {
-        return View<T>{detail::ViewDoor::key(), array.state_.first, array.state_.count};
+        return View<T>{HeapArray::run_key_(), array.state_.first, array.state_.count};
     }
 
     // The frame door of one element (THE ELEMENT DOOR): on_some gets the
@@ -1212,10 +1210,10 @@ public:
 
     // The View of the const elements.  It borrows this array.  The mint bounds
     // the count and gives storage for each count, so the View comes through
-    // the door of the base layer, with no check.  A write takes with_masked
-    // for one element, or the frame door with_mut for the run.
+    // the key of an owner on the core, with no check.  A write takes
+    // with_masked for one element, or the frame door with_mut for the run.
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        return View<T const>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
+        return View<T const>{this->run_key_(), this->state_.first, this->state_.count};
     }
     void view() && = delete("a view of a temporary MaskedArray points into storage that the full expression frees");
     void
@@ -1224,7 +1222,7 @@ public:
     // The run of the elements for the frame door with_mut, with the key of a
     // frame, as for a HeapArray.
     [[nodiscard]] friend constexpr View<T> frame_run_(detail::FrameKey const& /*key*/, MaskedArray& array) noexcept {
-        return View<T>{detail::ViewDoor::key(), array.state_.first, array.state_.count};
+        return View<T>{MaskedArray::run_key_(), array.state_.first, array.state_.count};
     }
 
     // The const element at key & (count - 1), with no check of the key.  The

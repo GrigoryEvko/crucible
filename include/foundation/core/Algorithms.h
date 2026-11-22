@@ -259,8 +259,8 @@ using WindowWholeText = Side<side::WindowWhole, TextView>;
 [[nodiscard]] constexpr bool is_window_of(WindowPartText const& part, WindowWholeText const& whole) noexcept {
     TextView const part_text = part.value();
     TextView const whole_text = whole.value();
-    View<char const> const part_view{detail::ViewDoor::key(), detail::text_first_(part_text), part_text.size()};
-    View<char const> const whole_view{detail::ViewDoor::key(), detail::text_first_(whole_text), whole_text.size()};
+    View<char const> const part_view = detail::view_of_text_(part_text);
+    View<char const> const whole_view = detail::view_of_text_(whole_text);
     return offset_of(whole_view, part_view).is_some();
 }
 
@@ -302,8 +302,7 @@ concept ByteImageable =
 // so the operation is not constexpr.
 template <ByteImageable T>
 [[nodiscard]] View<std::byte const, sizeof(T)> bytes(T const& object) noexcept {
-    return detail::view_over_<sizeof(T)>(
-        static_cast<std::byte const*>(static_cast<void const*>(__builtin_addressof(object))));
+    return detail::storage_of_run_(detail::view_of_object_(object));
 }
 
 template <ByteImageable T>

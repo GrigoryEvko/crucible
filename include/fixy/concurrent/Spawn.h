@@ -562,13 +562,16 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     run_shards_(Ctx const&, Shards& shards, Body const& body, std::size_t threads,
                 ::fixy::thread::ThreadOptions const& options, std::index_sequence<Is...>) noexcept {
         std::array<worker_frame_<Shards, Body>, sizeof...(Is)> frames{};
-        std::array<::fixy::thread::detail::thread_task, sizeof...(Is)> tasks{};
+        ::fixy::thread::detail::thread_task tasks[sizeof...(Is)]{};
+        // The caller gives at most one thread for each slot, so the window of
+        // the started tasks fits the array, and the loop writes inside it.
+        ::foundation::core::View<::fixy::thread::detail::thread_task> const started =
+            ::foundation::core::detail::view_of_array_(tasks).window(0, threads).expect("the threads fit the tasks");
         for (std::size_t worker = 0; worker < threads; ++worker) {
             frames[worker] = worker_frame_<Shards, Body>{&shards, &body, worker, threads};
             tasks[worker] = ::fixy::thread::detail::thread_task{&frames[worker], &run_worker_<Shards, Body, Is...>};
         }
-        return ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks.data(), threads),
-                                                        options);
+        return ::fixy::thread::detail::run_thread_tasks(started, options);
     }
 
     // Runs each shard on the calling thread, in shard order.

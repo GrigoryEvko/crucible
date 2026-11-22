@@ -35,7 +35,7 @@ namespace foundation::os {
 template <std::size_t Capacity>
 [[nodiscard]] core::Result<core::Unit, Errno> read_file(core::CText path, core::FixedText<Capacity>& text) noexcept {
     core::detail::text_resize_(text, 0);
-    core::View<char> const buffer = core::detail::view_over_(core::detail::text_bytes_(text), Capacity);
+    core::View<char> const buffer = core::detail::buffer_of_text_(text);
     // The arm of the count writes the size of the text of the caller, so the
     // read is a match and not a map.
     using Read = core::Result<core::Unit, Errno>;

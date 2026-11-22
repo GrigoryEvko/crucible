@@ -156,7 +156,7 @@ UnitResult set_hardware_timestamping_(int socket, core::TextView interface_name)
     InterfaceRequest request{};
     request.name.with_mut([interface_name](auto run) noexcept {
         core::copy(run.view().window(0, interface_name.size()).expect("the name is below the capacity"),
-                   core::detail::view_over_(core::detail::text_first_(interface_name), interface_name.size()))
+                   core::detail::view_of_text_(interface_name))
             .expect("the window has the count of the name");
     });
     request.data = os::Word{static_cast<void const*>(&config)}.bits();

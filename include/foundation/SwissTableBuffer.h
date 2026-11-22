@@ -133,13 +133,13 @@ public:
     // Each array is handed out as a View of `capacity` elements, so a reader
     // holds its bound with its address.  The View borrows this buffer.  The
     // buffer holds `capacity` control bytes and `capacity` slots, or no
-    // allocation and a capacity of zero, so each View comes through the door
-    // of the base layer, with no check.
+    // allocation and a capacity of zero, so each View comes through the key
+    // of an owner on the core, with no check.
     [[nodiscard]] core::View<ctrl_type> ctrl() & noexcept {
-        return core::View<ctrl_type>{core::detail::ViewDoor::key(), this->state_.ctrl, this->state_.capacity};
+        return core::View<ctrl_type>{this->run_key_(), this->state_.ctrl, this->state_.capacity};
     }
     [[nodiscard]] core::View<const ctrl_type> ctrl() const& noexcept {
-        return core::View<const ctrl_type>{core::detail::ViewDoor::key(), this->state_.ctrl, this->state_.capacity};
+        return core::View<const ctrl_type>{this->run_key_(), this->state_.ctrl, this->state_.capacity};
     }
     void
     ctrl() && = delete("a view of a temporary SwissTableBuffer points into storage that the full expression frees");
@@ -147,10 +147,10 @@ public:
         delete("a view of a temporary SwissTableBuffer points into storage that the full expression frees");
 
     [[nodiscard]] core::View<slot_type> slots() & noexcept {
-        return core::View<slot_type>{core::detail::ViewDoor::key(), this->state_.slots, this->state_.capacity};
+        return core::View<slot_type>{this->run_key_(), this->state_.slots, this->state_.capacity};
     }
     [[nodiscard]] core::View<const slot_type> slots() const& noexcept {
-        return core::View<const slot_type>{core::detail::ViewDoor::key(), this->state_.slots, this->state_.capacity};
+        return core::View<const slot_type>{this->run_key_(), this->state_.slots, this->state_.capacity};
     }
     void
     slots() && = delete("a view of a temporary SwissTableBuffer points into storage that the full expression frees");

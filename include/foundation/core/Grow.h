@@ -448,7 +448,7 @@ public:
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<Body&&>(body)(View<T const>{detail::ViewDoor::key(), first_(), this->state_.count});
+        return static_cast<Body&&>(body)(View<T const>{this->run_key_(), first_(), this->state_.count});
     }
 
     // The lend of the elements to the frame door with_mut (THE LEND COUNT):
@@ -460,7 +460,7 @@ public:
     friend constexpr decltype(auto) lend_elements_(detail::FrameKey const& /*key*/, GrowList& list,
                                                    Body&& body) noexcept {
         [[maybe_unused]] detail::OwnerLend const lend{list.state_.lend_count};
-        return static_cast<Body&&>(body)(View<T>{detail::ViewDoor::key(), list.first_(), list.state_.count});
+        return static_cast<Body&&>(body)(View<T>{GrowList::run_key_(), list.first_(), list.state_.count});
     }
 
     // A body whose result holds a borrow binds to this overload, so the

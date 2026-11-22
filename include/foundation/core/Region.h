@@ -136,6 +136,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
@@ -267,7 +268,72 @@ class EnumerateCursor;
 template <class T, std::size_t Extent>
 class ViewStage;
 
+// THE TYPED DOORS: each makes the View of a run that the type of its argument
+// proves, with no key and no check.  This header defines them.  The names of
+// the template parameters of a View of the doors are T and Extent: GCC names
+// a View of the parameters of any template with the names of the first
+// declaration that forms it, and the diagnostics of the family read T and
+// Extent.
+template <class T, std::size_t Extent>
+    requires ViewElement<T> && ViewExtent<T, Extent>
+[[nodiscard]] constexpr View<T, Extent> view_of_array_(T (&array)[Extent]) noexcept;
+template <class T>
+    requires ViewElement<T>
+[[nodiscard]] constexpr View<T, 1> view_of_object_(T& object) noexcept;
+[[nodiscard]] constexpr View<char const> view_of_text_(TextView text) noexcept;
+template <std::size_t Capacity>
+[[nodiscard]] constexpr View<char, Capacity> buffer_of_text_(FixedText<Capacity>& text) noexcept;
+
+// The extent of the storage of a run of Extent elements of type T.
+template <class T, std::size_t Extent>
+inline constexpr std::size_t storage_extent_v = Extent == dynamic_extent ? dynamic_extent : Extent * sizeof(T);
+
+template <class T, std::size_t Extent>
+    requires ViewElement<T>
+[[nodiscard]] View<std::byte const, storage_extent_v<T, Extent>> storage_of_run_(View<T, Extent> run) noexcept;
+
+// A body of for_each_chunk_pair_: it takes the Views of one run of Width
+// elements of each of two runs, and it does not throw.
+template <class Body, class First, class Second, std::size_t Width>
+concept ChunkPairBody = std::is_nothrow_invocable_v<Body&, View<First, Width>, View<Second, Width>>;
+
+template <std::size_t Width, class First, class Second, class Body>
+    requires(Width != dynamic_extent)
+         && ViewExtent<First, Width> && ViewExtent<Second, Width> && ChunkPairBody<Body, First, Second, Width>
+CRUCIBLE_INLINE Record<View<First>, View<Second>> for_each_chunk_pair_(View<First> first, View<Second> second,
+                                                                       Body& body) noexcept;
+
 }  // namespace detail
+
+// The unique view and the range of the chunks of its split (THE UNIQUE VIEW).
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
+class ViewMut;
+template <class T, ::foundation::brand::IsBrand Brand>
+class ViewMutChunks;
+
+// THE DOORS OF THE OWNERS ABOVE THIS HEADER
+// An owner in a header above this one can hold an invariant that no type
+// proves and that OwnerCore of foundation/core/Owner.h does not fit.  Such an
+// owner reaches the raw constructors of a View through one plain door class.
+// This header declares the class, and View names it as a friend.  The header
+// of the owner defines it, with the owner as its one friend, and the comment
+// of each door states the invariant that its owner holds.  A home owner row
+// of utils/rule-table.txt keeps the one definition of each door in that
+// header, so no other file defines a second door of the same name.
+class FixedListSlotsDoor;
+class FixedHeapArrayCountDoor;
+class RunSetLayoutDoor;
+class TestedWindowDoor;
+class ArenaArrayDoor;
+class CommittedRangeDoor;
+
+// The bytes of a run of unsigned chars, as a View of std::byte (byte_view
+// below).
+template <class T, std::size_t Extent>
+    requires std::same_as<std::remove_const_t<T>, unsigned char>
+[[nodiscard]] View<std::conditional_t<std::is_const_v<T>, std::byte const, std::byte>, Extent>
+byte_view(View<T, Extent> run) noexcept;
 
 template <class T, std::size_t Extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
@@ -281,6 +347,64 @@ class[[= ::foundation::transfer::refers{}]] View {
     friend class View;
 
     friend struct niche<View>;
+
+    // The doors of this header that make a View from the raw parts of a run
+    // that a View or a unique view proves: the root stages and the cursors of
+    // the walks, the unique view and the range of its chunks.  Each friend is
+    // in this header.  The rule specialization-home makes an explicit
+    // specialization of a friend in another file a compile error, so no other
+    // file reaches the raw constructors through a friend.
+    template <class U, ::foundation::brand::IsBrand Brand, std::size_t OtherExtent>
+        requires ViewElement<U> && (!std::is_const_v<U>) && ViewExtent<U, OtherExtent>
+    friend class ViewMut;
+    template <class U, ::foundation::brand::IsBrand Brand>
+    friend class ViewMutChunks;
+    template <class U, std::size_t OtherExtent>
+    friend class detail::ViewStage;
+    template <class Element>
+    friend class detail::ReverseStage;
+    template <class Element, std::size_t Width>
+    friend class detail::WindowStage;
+    template <class Element, std::size_t Width>
+    friend class detail::WindowCursor;
+    template <class Element, std::size_t Width>
+    friend class detail::ChunkStage;
+    template <class Element, std::size_t Width>
+    friend class detail::ChunkCursor;
+    template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, std::size_t OtherExtent>
+    friend class detail::EnumerateStage;
+
+    // THE DOORS OF THE OWNERS ABOVE THIS HEADER.
+    friend class FixedListSlotsDoor;
+    friend class FixedHeapArrayCountDoor;
+    friend class RunSetLayoutDoor;
+    friend class TestedWindowDoor;
+    friend class ArenaArrayDoor;
+    friend class CommittedRangeDoor;
+
+    // THE TYPED DOORS and the doors over a run that a View proves.
+    template <class U, std::size_t Count>
+        requires ViewElement<U> && ViewExtent<U, Count>
+    friend constexpr View<U, Count> detail::view_of_array_(U (&array)[Count]) noexcept;
+    template <class U>
+        requires ViewElement<U>
+    friend constexpr View<U, 1> detail::view_of_object_(U& object) noexcept;
+    friend constexpr View<char const> detail::view_of_text_(TextView text) noexcept;
+    template <std::size_t Capacity>
+    friend constexpr View<char, Capacity> detail::buffer_of_text_(FixedText<Capacity>& text) noexcept;
+    template <class U, std::size_t OtherExtent>
+        requires ViewElement<U>
+    friend View<std::byte const, detail::storage_extent_v<U, OtherExtent>>
+    detail::storage_of_run_(View<U, OtherExtent> run) noexcept;
+    template <std::size_t Width, class First, class Second, class Body>
+        requires(Width != dynamic_extent) && ViewExtent<First, Width> && ViewExtent<Second, Width>
+             && detail::ChunkPairBody<Body, First, Second, Width>
+    friend Record<View<First>, View<Second>> detail::for_each_chunk_pair_(View<First> first, View<Second> second,
+                                                                          Body& body) noexcept;
+    template <class U, std::size_t OtherExtent>
+        requires std::same_as<std::remove_const_t<U>, unsigned char>
+    friend View<std::conditional_t<std::is_const_v<U>, std::byte const, std::byte>, OtherExtent>
+    byte_view(View<U, OtherExtent> run) noexcept;
 
     constexpr View(T* first, std::size_t count) noexcept
         requires(Extent == dynamic_extent)
@@ -314,6 +438,21 @@ public:
     // first not null.  An owner of Extent elements, such as a FixedArray,
     // makes its View through it.
     constexpr View(detail::ViewKey const& /*key*/, T* first) noexcept
+        requires(Extent != dynamic_extent)
+        : View{first} {}
+
+    // The door of an owner on the core (foundation/core/Owner.h): the count
+    // elements of the run that the owner holds, with no check.  The state of
+    // the owner proves the elements live, the count at most max_view_count,
+    // and first not null when the count is above zero.  Only a class that
+    // derives from OwnerCore reaches the key, through run_key_().
+    constexpr View(detail::OwnerRunKey const& /*key*/, T* first, std::size_t count) noexcept
+        requires(Extent == dynamic_extent)
+        : View{first, count} {}
+
+    // The door of an owner on the core for a fixed extent: the Extent elements
+    // of its run from first, with no check.
+    constexpr View(detail::OwnerRunKey const& /*key*/, T* first) noexcept
         requires(Extent != dynamic_extent)
         : View{first} {}
 
@@ -468,6 +607,22 @@ public:
         [[assume(first != nullptr)]];
         return Result::some(View<T, Window>{first});
     }
+
+    // The first Count elements of a View of a fixed extent.  The type proves
+    // them inside the View, so the prefix has no check.
+    template <std::size_t Count>
+        requires(Extent != dynamic_extent && Count > 0 && Count <= Extent)
+    [[nodiscard]] constexpr View<T, Count> prefix() const noexcept {
+        return View<T, Count>{first_};
+    }
+
+    // The last Count elements of a View of a fixed extent, with no check, as
+    // for prefix().
+    template <std::size_t Count>
+        requires(Extent != dynamic_extent && Count > 0 && Count <= Extent)
+    [[nodiscard]] constexpr View<T, Count> suffix() const noexcept {
+        return View<T, Count>{first_ + (Extent - Count)};
+    }
 };
 
 // The empty value of an Option of a View.  A View of a fixed extent has a
@@ -494,6 +649,89 @@ struct niche<View<T, Extent>> {
 };
 
 namespace detail {
+
+// The View of the elements of a C array.  The type of the array proves Extent
+// live elements, as a reference to the array does.  The View borrows the
+// array, so it lives no longer than the array.
+template <class T, std::size_t Extent>
+    requires ViewElement<T> && ViewExtent<T, Extent>
+constexpr View<T, Extent> view_of_array_(T (&array)[Extent]) noexcept {
+    return View<T, Extent>{array};
+}
+
+// The View of one object.  The reference proves one live object.  The View
+// borrows the object, so a temporary object binds to the deleted form below.
+template <class T>
+    requires ViewElement<T>
+constexpr View<T, 1> view_of_object_(T& object) noexcept {
+    return View<T, 1>{__builtin_addressof(object)};
+}
+
+template <class T>
+void view_of_object_(T const&&) = delete("a View of a temporary object dangles at the end of the full expression");
+
+// The characters of a TextView as a View of the same run.  The TextView
+// proves its characters live.
+constexpr View<char const> view_of_text_(TextView text) noexcept {
+    return View<char const>{text_first_(text), text.size()};
+}
+
+// The Capacity characters of the storage of a FixedText, for a door that
+// writes the characters and then sets the count of the text.  Each character
+// of the storage is a live object, so the View holds each of them.
+template <std::size_t Capacity>
+constexpr View<char, Capacity> buffer_of_text_(FixedText<Capacity>& text) noexcept {
+    return View<char, Capacity>{text_bytes_(text)};
+}
+
+// The storage of the elements of a run: size() * sizeof(T) bytes, as a View
+// of std::byte const.  A std::byte may read each object, and the run proves
+// its elements live.  A View holds at most __PTRDIFF_MAX__ bytes, so the count
+// of bytes does not wrap.  A byte of the storage can be a byte of padding or
+// of an address.  The cast of the address is no constant expression, so the
+// door is not constexpr.
+template <class T, std::size_t Extent>
+    requires ViewElement<T>
+View<std::byte const, storage_extent_v<T, Extent>> storage_of_run_(View<T, Extent> run) noexcept {
+    std::byte const* const first =
+        static_cast<std::byte const*>(static_cast<void const*>(first_of_(BaseLayerRead{}, run)));
+    if constexpr (Extent == dynamic_extent) {
+        return View<std::byte const>{first, run.size() * sizeof(T)};
+    } else {
+        return View<std::byte const, storage_extent_v<T, Extent>>{first};
+    }
+}
+
+// The runs of Width elements of two runs of one count, in lockstep, from the
+// first element: body gets the View<First, Width> and the View<Second, Width>
+// of each whole run, and the door gives the two Views of the elements after
+// the last whole run.  Each run lies inside its View, because the loop counts
+// whole runs, so the door makes each View with no check.  Two counts that
+// differ end the process before the loop, and the optimizer removes that
+// compare for two Views of one count.  Complexity: one call of body for each
+// whole run.
+template <std::size_t Width, class First, class Second, class Body>
+    requires(Width != dynamic_extent)
+         && ViewExtent<First, Width> && ViewExtent<Second, Width> && ChunkPairBody<Body, First, Second, Width>
+CRUCIBLE_INLINE Record<View<First>, View<Second>> for_each_chunk_pair_(View<First> first, View<Second> second,
+                                                                       Body& body) noexcept {
+    if (first.size() != second.size()) [[unlikely]] {
+        fatal("the chunk pairs of two Views of {} and {} elements", first.size(), second.size());
+    }
+    First* const first_at = first_of_(BaseLayerRead{}, first);
+    Second* const second_at = first_of_(BaseLayerRead{}, second);
+    // The loop counts whole runs, so the optimizer and -Warray-bounds read
+    // each offset as below the count of the runs.
+    std::size_t const runs = first.size() / Width;
+    for (std::size_t run = 0; run < runs; ++run) {
+        body(View<First, Width>{first_at + run * Width}, View<Second, Width>{second_at + run * Width});
+    }
+    // The rest is the count modulo the width, so the optimizer reads it as
+    // below one run.
+    std::size_t const whole = runs * Width;
+    std::size_t const rest = first.size() % Width;
+    return {View<First>{first_at + whole, rest}, View<Second>{second_at + whole, rest}};
+}
 
 // The checked door from raw parts to a View, for the owners of the base
 // layer that cannot prove their parts.  It ends the process for a count past
@@ -569,15 +807,14 @@ public:
     [[nodiscard]] constexpr ViewStage<T, dynamic_extent> limited_(std::size_t count) && noexcept {
         std::size_t const size = elements_.size();
         return ViewStage<T, dynamic_extent>{
-            View<T>{ViewDoor::key(), first_of_(BaseLayerRead{}, elements_), count < size ? count : size}};
+            View<T>{first_of_(BaseLayerRead{}, elements_), count < size ? count : size}};
     }
 
     // The elements after the first count, or none when count is larger.
     [[nodiscard]] constexpr ViewStage<T, dynamic_extent> skipped_(std::size_t count) && noexcept {
         std::size_t const size = elements_.size();
         std::size_t const dropped = count < size ? count : size;
-        return ViewStage<T, dynamic_extent>{
-            View<T>{ViewDoor::key(), first_of_(BaseLayerRead{}, elements_) + dropped, size - dropped}};
+        return ViewStage<T, dynamic_extent>{View<T>{first_of_(BaseLayerRead{}, elements_) + dropped, size - dropped}};
     }
 
     // The cursor of `for (x : walk)`: the cursor of the View.
@@ -771,16 +1008,16 @@ public:
     // It has the extent of the ViewMut.
     [[nodiscard]] constexpr View<T, Extent> view() & noexcept {
         if constexpr (Extent == dynamic_extent) {
-            return View<T>{detail::ViewDoor::key(), first_, size()};
+            return View<T>{first_, size()};
         } else {
-            return View<T, Extent>{detail::ViewDoor::key(), first_};
+            return View<T, Extent>{first_};
         }
     }
     [[nodiscard]] constexpr View<T const, Extent> view() const& noexcept {
         if constexpr (Extent == dynamic_extent) {
-            return View<T const>{detail::ViewDoor::key(), first_, size()};
+            return View<T const>{first_, size()};
         } else {
-            return View<T const, Extent>{detail::ViewDoor::key(), first_};
+            return View<T const, Extent>{first_};
         }
     }
 };
@@ -820,8 +1057,7 @@ public:
         T* const first = next_;
         next_ += count;
         rest_ -= count;
-        return Option<ViewMut<T, Brand>>::some(
-            ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first, count}});
+        return Option<ViewMut<T, Brand>>::some(ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{first, count}});
     }
 };
 
@@ -832,14 +1068,17 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 [[nodiscard]] constexpr Option<Record<ViewMut<T, Brand>, ViewMut<T, Brand>>> split_at(ViewMut<T, Brand, Extent>&& whole,
                                                                                       std::size_t offset) noexcept {
     using Parts = Record<ViewMut<T, Brand>, ViewMut<T, Brand>>;
-    std::size_t const count = whole.size();
+    View<T> const run{whole.view()};
+    std::size_t const count = run.size();
     if (offset > count) [[unlikely]] {
         return Option<Parts>{none};
     }
-    T* const first = first_of_(detail::BaseLayerRead{}, whole);
-    return Option<Parts>::some(Parts{
-        ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first, offset}},
-        ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first + offset, count - offset}}});
+    // The test above puts each part inside the run, so the optimizer removes
+    // the test of each window.
+    return Option<Parts>::some(
+        Parts{ViewMut<T, Brand>{detail::FrameDoor::key(), run.window(0, offset).expect("the offset is in the run")},
+              ViewMut<T, Brand>{detail::FrameDoor::key(),
+                                run.window(offset, count - offset).expect("the offset is in the run")}});
 }
 
 // The parts [0, Offset) and [Offset, Extent) of the run of a fixed extent of
@@ -850,11 +1089,10 @@ template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::
     requires(Extent != dynamic_extent && Offset > 0 && Offset < Extent)
 [[nodiscard]] constexpr Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>
 split_at(ViewMut<T, Brand, Extent>&& whole) noexcept {
-    T* const first = first_of_(detail::BaseLayerRead{}, whole);
+    View<T, Extent> const run = whole.view();
     return Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>{
-        ViewMut<T, Brand, Offset>{detail::FrameDoor::key(), View<T, Offset>{detail::ViewDoor::key(), first}},
-        ViewMut<T, Brand, Extent - Offset>{detail::FrameDoor::key(),
-                                           View<T, Extent - Offset>{detail::ViewDoor::key(), first + Offset}}};
+        ViewMut<T, Brand, Offset>{detail::FrameDoor::key(), run.template prefix<Offset>()},
+        ViewMut<T, Brand, Extent - Offset>{detail::FrameDoor::key(), run.template suffix<Extent - Offset>()}};
 }
 
 // The range of the parts of width elements of the run of whole, from the
@@ -1048,7 +1286,7 @@ template <class Whole, std::size_t WholeExtent, class Part, std::size_t PartExte
 template <class Whole, std::size_t WholeExtent>
 [[nodiscard]] constexpr Option<std::size_t> offset_of(View<Whole, WholeExtent> whole,
                                                       std::type_identity_t<Whole> const& element) noexcept {
-    return offset_of(whole, View<Whole const, 1>{detail::ViewDoor::key(), __builtin_addressof(element)});
+    return offset_of(whole, detail::view_of_object_(element));
 }
 
 // A temporary, also the result of a conversion, is no element of a View.
@@ -1264,14 +1502,14 @@ public:
     [[nodiscard]] constexpr ReverseStage limited_(std::size_t count) && noexcept {
         std::size_t const size = elements_.size();
         std::size_t const kept = count < size ? count : size;
-        return ReverseStage{View<Element>{ViewDoor::key(), first_() + (size - kept), kept}};
+        return ReverseStage{View<Element>{first_() + (size - kept), kept}};
     }
 
     // The elements before the last count, or none when count is larger.
     [[nodiscard]] constexpr ReverseStage skipped_(std::size_t count) && noexcept {
         std::size_t const size = elements_.size();
         std::size_t const dropped = count < size ? count : size;
-        return ReverseStage{View<Element>{ViewDoor::key(), first_(), size - dropped}};
+        return ReverseStage{View<Element>{first_(), size - dropped}};
     }
 
     [[nodiscard]] constexpr ReverseCursor<Element> begin_() const noexcept {
@@ -1302,7 +1540,7 @@ public:
         if (at_ == end_) [[unlikely]] {
             fatal("a read through the end cursor of a loop over the windows of a View");
         }
-        return View<Element, Width>{ViewDoor::key(), at_};
+        return View<Element, Width>{at_};
     }
 
     constexpr WindowCursor& operator++() noexcept {
@@ -1353,7 +1591,7 @@ public:
     [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
         Element* const end = end_of_runs_();
         for (Element* at = first_(); at != end; ++at) {
-            sink(View<Element, Width>{ViewDoor::key(), at});
+            sink(View<Element, Width>{at});
         }
     }
 
@@ -1361,7 +1599,7 @@ public:
     [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
         Element* const end = end_of_runs_();
         for (Element* at = first_(); at != end; ++at) {
-            if (sink(View<Element, Width>{ViewDoor::key(), at}) == Flow::stop) return Flow::stop;
+            if (sink(View<Element, Width>{at}) == Flow::stop) return Flow::stop;
         }
         return Flow::go;
     }
@@ -1371,21 +1609,21 @@ public:
     // The run at position, which the caller proves below size_() (THE STAGES
     // of foundation/core/Walk.h).
     [[nodiscard]] constexpr View<Element, Width> at_(StageKey const& /*key*/, std::size_t position) const noexcept {
-        return View<Element, Width>{ViewDoor::key(), first_() + position};
+        return View<Element, Width>{first_() + position};
     }
 
     // The first count runs, or each run when count is larger.
     [[nodiscard]] constexpr WindowStage limited_(std::size_t count) && noexcept {
         std::size_t const runs = runs_();
         std::size_t const kept = count < runs ? count : runs;
-        return WindowStage{View<Element>{ViewDoor::key(), first_(), kept == 0 ? 0 : kept + Width - 1}};
+        return WindowStage{View<Element>{first_(), kept == 0 ? 0 : kept + Width - 1}};
     }
 
     // The runs after the first count, or none when count is larger.
     [[nodiscard]] constexpr WindowStage skipped_(std::size_t count) && noexcept {
         std::size_t const runs = runs_();
         std::size_t const dropped = count < runs ? count : runs;
-        return WindowStage{View<Element>{ViewDoor::key(), first_() + dropped, elements_.size() - dropped}};
+        return WindowStage{View<Element>{first_() + dropped, elements_.size() - dropped}};
     }
 
     [[nodiscard]] constexpr WindowCursor<Element, Width> begin_() const noexcept {
@@ -1415,7 +1653,7 @@ public:
         if (at_ == end_) [[unlikely]] {
             fatal("a read through the end cursor of a loop over the chunks of a View");
         }
-        return View<Element, Width>{ViewDoor::key(), at_};
+        return View<Element, Width>{at_};
     }
 
     constexpr ChunkCursor& operator++() noexcept {
@@ -1461,7 +1699,7 @@ public:
         Element* const first = first_();
         Element* const end = first + runs_ * Width;
         for (Element* at = first; at != end; at += Width) {
-            sink(View<Element, Width>{ViewDoor::key(), at});
+            sink(View<Element, Width>{at});
         }
     }
 
@@ -1470,7 +1708,7 @@ public:
         Element* const first = first_();
         Element* const end = first + runs_ * Width;
         for (Element* at = first; at != end; at += Width) {
-            if (sink(View<Element, Width>{ViewDoor::key(), at}) == Flow::stop) return Flow::stop;
+            if (sink(View<Element, Width>{at}) == Flow::stop) return Flow::stop;
         }
         return Flow::go;
     }
@@ -1480,7 +1718,7 @@ public:
     // The run at position, which the caller proves below size_() (THE STAGES
     // of foundation/core/Walk.h).
     [[nodiscard]] constexpr View<Element, Width> at_(StageKey const& /*key*/, std::size_t position) const noexcept {
-        return View<Element, Width>{ViewDoor::key(), first_() + position * Width};
+        return View<Element, Width>{first_() + position * Width};
     }
 
     // The first count runs, or each run when count is larger.
@@ -1492,14 +1730,13 @@ public:
     [[nodiscard]] constexpr ChunkStage skipped_(std::size_t count) && noexcept {
         std::size_t const dropped = count < runs_ ? count : runs_;
         std::size_t const offset = dropped * Width;
-        return ChunkStage{View<Element>{ViewDoor::key(), first_() + offset, elements_.size() - offset},
-                          runs_ - dropped};
+        return ChunkStage{View<Element>{first_() + offset, elements_.size() - offset}, runs_ - dropped};
     }
 
     // The View of the elements after the last run of the walk.
     [[nodiscard]] constexpr View<Element> rest_() const noexcept {
         std::size_t const offset = runs_ * Width;
-        return View<Element>{ViewDoor::key(), first_() + offset, elements_.size() - offset};
+        return View<Element>{first_() + offset, elements_.size() - offset};
     }
 
     [[nodiscard]] constexpr ChunkCursor<Element, Width> begin_() const noexcept {
@@ -1656,15 +1893,15 @@ public:
     [[nodiscard]] constexpr auto limited_(std::size_t count) && noexcept {
         std::size_t const size = run_.size();
         return EnumerateStage<Element, Count, Brand, dynamic_extent>{
-            View<Element>{ViewDoor::key(), first_(), count < size ? count : size}, start_};
+            View<Element>{first_(), count < size ? count : size}, start_};
     }
 
     // The elements after the first count, or none when count is larger.
     [[nodiscard]] constexpr auto skipped_(std::size_t count) && noexcept {
         std::size_t const size = run_.size();
         std::size_t const dropped = count < size ? count : size;
-        return EnumerateStage<Element, Count, Brand, dynamic_extent>{
-            View<Element>{ViewDoor::key(), first_() + dropped, size - dropped}, start_ + dropped};
+        return EnumerateStage<Element, Count, Brand, dynamic_extent>{View<Element>{first_() + dropped, size - dropped},
+                                                                     start_ + dropped};
     }
 
     // The cursor reads the View from its first element, at the positions of
@@ -1674,8 +1911,7 @@ public:
     }
     [[nodiscard]] constexpr EnumerateCursor<Element, Count, Brand> end_() const noexcept {
         std::size_t const size = run_.size();
-        return EnumerateCursor<Element, Count, Brand>{View<Element>{ViewDoor::key(), first_() + size, 0},
-                                                      start_ + size};
+        return EnumerateCursor<Element, Count, Brand>{View<Element>{first_() + size, 0}, start_ + size};
     }
 };
 
@@ -2023,9 +2259,9 @@ byte_view(View<T, Extent> run) noexcept {
     using Untyped = std::conditional_t<std::is_const_v<T>, void const*, void*>;
     Byte* const first = static_cast<Byte*>(static_cast<Untyped>(first_of_(detail::BaseLayerRead{}, run)));
     if constexpr (Extent == dynamic_extent) {
-        return View<Byte>{detail::ViewDoor::key(), first, run.size()};
+        return View<Byte>{first, run.size()};
     } else {
-        return View<Byte, Extent>{detail::ViewDoor::key(), first};
+        return View<Byte, Extent>{first};
     }
 }
 

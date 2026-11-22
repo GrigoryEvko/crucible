@@ -48,6 +48,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
@@ -66,6 +67,25 @@ namespace foundation::core {
 template <class T, std::size_t N>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_move_constructible_v<T>
 class FixedList;
+
+// The door of a FixedList to the raw constructors of a View (THE DOORS OF THE
+// OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant: a list
+// starts the element of a slot at an append and ends it at a take or at its
+// end, so its first count slots hold live elements and no other slot does.
+// So the View of the first count slots holds live elements only.  FixedList is
+// the one friend, and a home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class FixedListSlotsDoor final : ::foundation::NoObject<FixedListSlotsDoor> {
+    template <class T, std::size_t N>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_move_constructible_v<T>
+    friend class FixedList;
+
+    // The count live elements from the first slot.
+    template <class T>
+    [[nodiscard]] static constexpr View<T> live_slots_(T* first, std::size_t count) noexcept {
+        return View<T>{first, count};
+    }
+};
 
 namespace detail {
 
@@ -286,7 +306,7 @@ public:
                 return View<T>{};
             }
         }
-        return View<T>{detail::ViewDoor::key(), first_(), size()};
+        return FixedListSlotsDoor::live_slots_(first_(), size());
     }
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
         if consteval {
@@ -294,7 +314,7 @@ public:
                 return View<T const>{};
             }
         }
-        return View<T const>{detail::ViewDoor::key(), first_(), size()};
+        return FixedListSlotsDoor::live_slots_(first_(), size());
     }
     void view() && = delete("a view of a temporary FixedList points into an object that the full expression ends");
     void view() const&& = delete("a view of a temporary FixedList points into an object that the full expression ends");

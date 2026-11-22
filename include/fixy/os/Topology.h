@@ -255,7 +255,9 @@ public:
     // node with the CPUs of a package that the CPUs do not name, or more
     // than package_capacity packages.
     [[nodiscard]] View<Package const> packages() const noexcept {
-        return ::foundation::core::detail::view_over_(static_cast<Package const*>(packages_), package_count_);
+        return ::foundation::core::detail::view_of_array_(packages_)
+            .window(0, package_count_)
+            .expect("the probe keeps at most package_capacity packages");
     }
 
     // The capacity of the text of the summary.  The summary of each host

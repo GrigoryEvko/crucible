@@ -81,6 +81,7 @@
 // This header is in the layer F0_doors of utils/rule-table.txt.  The door file
 // is src/foundation/os/PageSource.cpp, which issues raw_syscall.
 
+#include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
@@ -91,6 +92,32 @@
 
 #include <cstddef>
 #include <cstdint>
+
+namespace foundation::os {
+
+class Reservation;
+
+}  // namespace foundation::os
+
+namespace foundation::core {
+
+// The door of a Reservation to the raw constructors of a View (THE DOORS OF
+// THE OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant: a
+// CommittedRange comes only from commit() of its Reservation, which maps its
+// whole pages for reads and writes, and the range stays committed until the
+// reservation decommits it or ends.  So its bytes are live while a reference
+// to the reservation lives.  Reservation is the one friend, and a home owner
+// row of utils/rule-table.txt keeps this definition in this header.
+class CommittedRangeDoor final : ::foundation::NoObject<CommittedRangeDoor> {
+    friend class ::foundation::os::Reservation;
+
+    // The count committed bytes from first.
+    [[nodiscard]] static View<std::uint8_t> committed_bytes_(std::uint8_t* first, std::size_t count) noexcept {
+        return View<std::uint8_t>{first, count};
+    }
+};
+
+}  // namespace foundation::core
 
 namespace foundation::os {
 
@@ -252,8 +279,6 @@ struct RangeStart final {};
 }  // namespace side
 
 using RangeStart = core::Side<side::RangeStart, ByteCount>;
-
-class Reservation;
 
 namespace detail {
 

@@ -63,6 +63,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
@@ -82,6 +83,31 @@ namespace foundation::core {
 template <class T, std::size_t N, std::size_t Align, class Marker>
 concept CanMintFixedHeapArray =
     CanMintHeapArray<T, Align, Marker> && IndexCount<N> && ViewExtent<T, N> && DroppablePayload<T>;
+
+template <class T, std::size_t N, std::size_t Align, ::foundation::brand::IsBrand KeyBrand>
+    requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
+          && DroppablePayload<T>
+class FixedHeapArray;
+
+// The door of a FixedHeapArray to the raw constructors of a View (THE DOORS OF
+// THE OWNERS ABOVE THIS HEADER of foundation/core/Region.h).  The invariant:
+// the array builds its HeapArray with N elements at its mint, it neither moves
+// nor resizes it, and it holds it to its end.  So the first element starts a
+// run of N live elements, and the View of a fixed extent N holds live
+// elements only.  FixedHeapArray is the one friend, and a home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class FixedHeapArrayCountDoor final : ::foundation::NoObject<FixedHeapArrayCountDoor> {
+    template <class T, std::size_t N, std::size_t Align, ::foundation::brand::IsBrand KeyBrand>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
+              && DroppablePayload<T>
+    friend class FixedHeapArray;
+
+    // The N live elements from first.
+    template <std::size_t N, class T>
+    [[nodiscard]] static constexpr View<T, N> held_run_(T* first) noexcept {
+        return View<T, N>{first};
+    }
+};
 
 template <class T, std::size_t N, std::size_t Align = alignof(T), ::foundation::brand::IsBrand KeyBrand = Unkeyed>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
@@ -128,7 +154,7 @@ public:
     // with_element for one element, or with_mut for the run, so no two Views
     // of one array write the same elements.
     [[nodiscard]] constexpr View<T const, N> view() const& noexcept {
-        return View<T const, N>{detail::ViewDoor::key(), first_()};
+        return FixedHeapArrayCountDoor::held_run_<N>(first_());
     }
     void view() && = delete("a view of a temporary FixedHeapArray points into storage that the full expression frees");
     void
@@ -138,7 +164,7 @@ public:
     // a FixedArray.
     [[nodiscard]] friend constexpr View<T, N> frame_run_(detail::FrameKey const& /*key*/,
                                                          FixedHeapArray& array) noexcept {
-        return View<T, N>{detail::ViewDoor::key(), array.first_()};
+        return FixedHeapArrayCountDoor::held_run_<N>(array.first_());
     }
 
     // The loop `for (T const& element : array)`.
@@ -198,7 +224,7 @@ public:
         requires(sizeof...(Refused) == 0) && (!is_keyed_) && FrameBody<Body, T, Fresh, N>
     [[= ::foundation::linear::borrow_match{}]] CRUCIBLE_INLINE constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), first_()}});
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), FixedHeapArrayCountDoor::held_run_<N>(first_())});
     }
 
     // A body whose result holds a borrow or names the brand of the frame
@@ -229,7 +255,7 @@ public:
     [[nodiscard]] CRUCIBLE_INLINE constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
-        return detail::give_run_back_<Fresh>(std::move(key), View<T, N>{detail::ViewDoor::key(), first_()},
+        return detail::give_run_back_<Fresh>(std::move(key), FixedHeapArrayCountDoor::held_run_<N>(first_()),
                                              static_cast<Body&&>(body));
     }
 
@@ -240,7 +266,7 @@ public:
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
     CRUCIBLE_INLINE constexpr auto with_mut(LoanKey<KeyBrand>& /*key*/, Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), first_()}});
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), FixedHeapArrayCountDoor::held_run_<N>(first_())});
     }
 
     // A body that reaches a key of the brand of the array binds to these

@@ -116,8 +116,39 @@ concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 struct owns_its_storage final {};
 
 template <OwnerState State>
+class OwnerCore;
+
+namespace detail {
+
+// The key of the constructors of a View from raw parts
+// (foundation/core/Region.h).  An owner on the core proves its run: its state
+// holds the first element and the count of the elements that it owns, and its
+// moves and its end keep the two.  OwnerCore is the one friend of the key,
+// and it gives the key to its owners through the protected run_key_().  So
+// only a class that derives from OwnerCore makes a View from raw parts, and
+// the roster of the owners names each such class.  The key is in namespace
+// detail, and the rule owners keeps each caller outside the base out, also a
+// caller that deduces the key from run_key_().
+class [[nodiscard]] OwnerRunKey final {
+    template <OwnerState State>
+    friend class ::foundation::core::OwnerCore;
+
+    constexpr OwnerRunKey() noexcept {}
+    constexpr OwnerRunKey(OwnerRunKey const&) noexcept {}
+
+public:
+    OwnerRunKey& operator=(OwnerRunKey const&) = delete("a key of the run of an owner lives for one construction");
+};
+
+}  // namespace detail
+
+template <OwnerState State>
 class OwnerCore {
 protected:
+    // The key of the constructors of a View from raw parts, for the run that
+    // this owner holds (detail::OwnerRunKey).
+    [[nodiscard]] static constexpr detail::OwnerRunKey run_key_() noexcept { return detail::OwnerRunKey{}; }
+
     // The fields of the owner.  The owner reads and writes them, and the core
     // moves and releases them.
     State state_{};

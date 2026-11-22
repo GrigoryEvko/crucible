@@ -608,7 +608,8 @@ struct PackageTable {
 [[nodiscard, gnu::noinline]] std::size_t
 count_cores_and_packages_(std::string_view sysfs_root, std::vector<int> const& cpus, PackageTable& table) noexcept {
     std::vector<std::uint64_t> keys;
-    for (int const cpu : base_core::detail::view_over_(cpus.data(), cpus.size())) {
+    for (std::size_t index = 0; index < cpus.size(); ++index) {
+        int const cpu = cpus[index];
         Value const core_text =
             read_value(PathBuilder{sysfs_root}.add("/devices/system/cpu/cpu").add_number(cpu).add("/topology/core_id"));
         ParsedInt const core = parse_leading_int(core_text.text());
@@ -625,7 +626,8 @@ count_cores_and_packages_(std::string_view sysfs_root, std::vector<int> const& c
     std::sort(keys.begin(), keys.end());
     std::size_t cores = 0;
     std::uint64_t previous = ~std::uint64_t{0};
-    for (std::uint64_t const key : base_core::detail::view_over_(keys.data(), keys.size())) {
+    for (std::size_t index = 0; index < keys.size(); ++index) {
+        std::uint64_t const key = keys[index];
         bool const is_new_core = key != previous;
         previous = key;
         if (is_new_core) ++cores;
@@ -656,23 +658,6 @@ void place_l3_group_(int cpu, int first_cpu, bool is_new, PackageTable& table) n
         return;
     }
     if (is_new) ++table.slots[position].l3_groups;
-}
-
-// Counts one NUMA node for each package that one of its CPUs names (THE
-// PACKAGES).  Complexity: linear in the CPUs of the node times the packages.
-void place_numa_node_(base_core::View<int const> cpus_on_node, PackageTable& table) noexcept {
-    if (table.is_refused) return;
-    bool is_counted[Topology::package_capacity]{};
-    for (int const cpu : cpus_on_node) {
-        std::size_t const position = package_position_(table, package_of_cpu_(table, cpu));
-        if (position == table.count) {
-            table.is_refused = true;
-            return;
-        }
-        if (is_counted[position]) continue;
-        is_counted[position] = true;
-        ++table.slots[position].numa_nodes;
-    }
 }
 
 // Every CPU that shares one L3 reports the same set in shared_cpu_list, so
@@ -735,7 +720,20 @@ struct NumaTables {
         Value const cpulist_text = read_value(PathBuilder{node_dir}.add("/cpulist"));
         std::vector<int> cpus_on_node = parse_cpu_list_(cpulist_text.text());
         std::sort(cpus_on_node.begin(), cpus_on_node.end());
-        place_numa_node_(base_core::detail::view_over_(cpus_on_node.data(), cpus_on_node.size()), table);
+        // The node counts one time for each package that one of its CPUs
+        // names (THE PACKAGES).  A CPU of no package of the table refuses the
+        // table.  Complexity: linear in the CPUs of the node times the
+        // packages.
+        bool is_counted[Topology::package_capacity]{};
+        for (std::size_t index = 0; index < cpus_on_node.size() && !table.is_refused; ++index) {
+            std::size_t const package = package_position_(table, package_of_cpu_(table, cpus_on_node[index]));
+            if (package == table.count) {
+                table.is_refused = true;
+            } else if (!is_counted[package]) {
+                is_counted[package] = true;
+                ++table.slots[package].numa_nodes;
+            }
+        }
         new_cores_on_node[position] = std::move(cpus_on_node);
 
         // A row with one entry per node indexes by position.  A missing row,
