@@ -3253,6 +3253,9 @@ foundation_neg_compile_test(neg_core_address_key_of_integer
 # device and the gate of a run of bytes are disjunctions, so their fixtures
 # take a concept depth of 3, and each regex names the part that fails.
 foundation_test(test_core_data_address)
+foundation_neg_compile_test(neg_core_data_address_null_through_key
+  "static constexpr foundation::core::detail::RunAddressKey foundation::core::detail::RunAddressDoor::key\\(\\). is private within this context"
+  "is_null_address")
 foundation_neg_compile_test(neg_core_data_address_integer_device
   "template constraint failure for .template<class Device>  requires  DeviceIdentity<Device> class foundation::core::DataAddress."
   "the expression .is_enum_v<Device> \\[with Device = int\\]. evaluated to .false.")

@@ -48,6 +48,7 @@
 // region of the class ABI, or in a test that writes the run.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
@@ -69,26 +70,38 @@ concept DeviceIdentity =
     && std::is_trivially_copyable_v<Device> && std::is_nothrow_default_constructible_v<Device>
     && std::equality_comparable<Device> && sizeof(Device) < sizeof(void*) && alignof(Device) <= alignof(void*);
 
+// The gate of the mint from a run of bytes: a byte element with no const, so
+// the address lends the right to write the run.
+template <class Byte>
+concept RunBytes = std::same_as<Byte, unsigned char> || std::same_as<Byte, std::byte>;
+
+// The gate of the foreign mint: a pointer to data that the holder can
+// write, with no const, no volatile and no function.  A void* is such a
+// pointer.
+template <class Pointer>
+concept ForeignRunPointer =
+    std::is_pointer_v<Pointer> && !std::is_function_v<std::remove_pointer_t<Pointer>>
+    && !std::is_const_v<std::remove_pointer_t<Pointer>> && !std::is_volatile_v<std::remove_pointer_t<Pointer>>;
+
 namespace detail {
 
 // The door of the two mints, and the key of the constructor of a
-// RunAddress.  RunAddressDoor is the one friend of the key, and only the
-// mints call the door.  The door and the key hold no template, so no
-// explicit specialization of a template reaches the key.
-struct RunAddressDoor;
+// RunAddress.  RunAddressDoor is the one friend of the key.  Its key() is
+// private, and the two mints of this header are its only friends, so each
+// RunAddress comes from a mint that refuses the null pointer.  An explicit
+// specialization of a mint is a declaration in this namespace, which the
+// rule home refuses outside the base.  The door stands after the niche of
+// a RunAddress, because its friends give an Option of a RunAddress.
+class RunAddressDoor;
 
 class [[nodiscard]] RunAddressKey final {
-    friend struct RunAddressDoor;
+    friend class RunAddressDoor;
 
     constexpr RunAddressKey() noexcept {}
     constexpr RunAddressKey(RunAddressKey const&) noexcept {}
 
 public:
     RunAddressKey& operator=(RunAddressKey const&) = delete("a key of a RunAddress lives for one construction");
-};
-
-struct RunAddressDoor {
-    [[nodiscard]] static constexpr RunAddressKey key() noexcept { return RunAddressKey{}; }
 };
 
 }  // namespace detail
@@ -220,10 +233,28 @@ struct niche<DataAddress<Device>> {
     }
 };
 
-// The gate of the mint from a run of bytes: a byte element with no const, so
-// the address lends the right to write the run.
-template <class Byte>
-concept RunBytes = std::same_as<Byte, unsigned char> || std::same_as<Byte, std::byte>;
+template <class Byte, std::size_t Extent>
+    requires RunBytes<Byte>
+[[nodiscard]] constexpr Option<RunAddress> mint_run_address(View<Byte, Extent> bytes, std::size_t offset) noexcept;
+
+template <class Pointer>
+    requires ForeignRunPointer<Pointer>
+[[nodiscard]] Option<RunAddress> mint_foreign_run_address(Pointer first) noexcept;
+
+namespace detail {
+
+class RunAddressDoor final : ::foundation::NoObject<RunAddressDoor> {
+    template <class Byte, std::size_t Extent>
+        requires RunBytes<Byte>
+    friend constexpr Option<RunAddress> core::mint_run_address(View<Byte, Extent> bytes, std::size_t offset) noexcept;
+    template <class Pointer>
+        requires ForeignRunPointer<Pointer>
+    friend Option<RunAddress> core::mint_foreign_run_address(Pointer first) noexcept;
+
+    [[nodiscard]] static constexpr RunAddressKey key() noexcept { return RunAddressKey{}; }
+};
+
+}  // namespace detail
 
 // The address of the byte at offset of bytes, or no value for an empty run
 // and for an offset past the count.  An offset equal to the count gives the
@@ -238,14 +269,6 @@ template <class Byte, std::size_t Extent>
     Byte* const first = first_of_(detail::ViewDoor::key(), bytes);
     return Option<RunAddress>::some(RunAddress{static_cast<void*>(first + offset), detail::RunAddressDoor::key()});
 }
-
-// The gate of the foreign mint: a pointer to data that the holder can
-// write, with no const, no volatile and no function.  A void* is such a
-// pointer.
-template <class Pointer>
-concept ForeignRunPointer =
-    std::is_pointer_v<Pointer> && !std::is_function_v<std::remove_pointer_t<Pointer>>
-    && !std::is_const_v<std::remove_pointer_t<Pointer>> && !std::is_volatile_v<std::remove_pointer_t<Pointer>>;
 
 // The address that a foreign ABI gives, or no value for the null pointer.
 // The mint cannot prove that the run lives, so a call stands only at the
