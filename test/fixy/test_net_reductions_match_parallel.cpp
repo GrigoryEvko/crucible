@@ -73,11 +73,8 @@ template <class Body>
 
 template <class T, std::size_t Count>
 [[nodiscard]] HeapArray<T> draw_run(PhiloxStream& stream) noexcept {
-    HeapArray<T> run = ::fixy::mint_heap_array(tree::test_alloc(), Count, T{});
-    for (T& drawn : run) {
-        drawn = draw_value<T>(stream);
-    }
-    return run;
+    return ::fixy::mint_heap_array_with<T>(tree::test_alloc(), Count,
+                                           [&stream](std::size_t) noexcept { return draw_value<T>(stream); });
 }
 
 // The compare of the bits is symmetric, so the two runs can swap.
@@ -191,12 +188,13 @@ struct PlanCombine {
     HeapArray<std::uint32_t> step_of_left =
         ::fixy::mint_heap_array(tree::test_alloc(), run.size() + steps.size(), std::uint32_t{0});
     std::uint32_t step = 0;
-    for (core::TreeStep const& one : steps) {
-        ++step;
-        *step_of_left.view()
-             .get(static_cast<std::size_t>(one.left))
-             .expect("a test reads an element at or past the count of its View") = step;
-    }
+    step_of_left = ::fixy::with_mut(std::move(step_of_left), [&steps, &step](auto lefts) noexcept {
+        for (core::TreeStep const& one : steps) {
+            ++step;
+            *lefts.get(static_cast<std::size_t>(one.left))
+                 .expect("a test reads an element at or past the count of its View") = step;
+        }
+    });
     auto const leaves = static_cast<std::uint32_t>(run.size());
     std::uint32_t const root = leaves + step - 1;
     auto const zero = [](std::size_t) noexcept { return Atomic<std::uint32_t>{0}; };
@@ -206,11 +204,19 @@ struct PlanCombine {
             ::foundation::core::mint_heap_array_with<Atomic<std::uint32_t>>(tree::test_alloc(), steps.size(), zero);
         HeapArray<Atomic<std::uint32_t>> strays =
             ::foundation::core::mint_heap_array_with<Atomic<std::uint32_t>>(tree::test_alloc(), 1, zero);
-        PlanCombine const combine{View<core::TreeStep const>{steps.view()},
-                                  View<std::uint32_t const>{step_of_left.view()}, fired.view(), strays.view(), leaves};
-        Symbol const result =
-            ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), run, combine)
-                .expect("the run has leaves");
+        // The combine keeps a View of each table of counts, so each call of
+        // the combine runs in the frames of the two tables.
+        Symbol result{};
+        fired = ::fixy::with_mut(std::move(fired), [&](auto fired_counts) noexcept {
+            strays = ::fixy::with_mut(std::move(strays), [&](auto stray_counts) noexcept {
+                PlanCombine const combine{View<core::TreeStep const>{steps.view()},
+                                          View<std::uint32_t const>{step_of_left.view()}, fired_counts.view(),
+                                          stray_counts.view(), leaves};
+                result = ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), run,
+                                                                                          combine)
+                             .expect("the run has leaves");
+            });
+        });
         bool is_each_fired =
             strays.view().get(0).expect("a test reads an element at or past the count of its View")->load_acquire()
             == 0;
@@ -222,12 +228,13 @@ struct PlanCombine {
 }
 
 [[nodiscard]] bool does_each_parallel_reduce_follow() noexcept {
-    HeapArray<Symbol> symbols = ::fixy::mint_heap_array(tree::test_alloc(), kLongest, Symbol{});
     std::uint32_t node = 0;
-    for (Symbol& symbol : symbols) {
-        symbol.node = node;
-        ++node;
-    }
+    HeapArray<Symbol> const symbols =
+        ::fixy::mint_heap_array_with<Symbol>(tree::test_alloc(), kLongest, [&node](std::size_t) noexcept {
+            Symbol const symbol{node};
+            ++node;
+            return symbol;
+        });
     bool is_each = true;
     for (std::size_t const count : kCounts) {
         is_each = is_each
@@ -288,13 +295,13 @@ inline constexpr std::size_t kSegmentElements = kSegments * 2 * kGrain;
 // empty, and some hold more than one grain.  The segments fit a run of
 // kSegmentElements elements.
 [[nodiscard]] HeapArray<std::size_t> draw_segment_offsets(PhiloxStream& stream) noexcept {
-    HeapArray<std::size_t> offsets = ::fixy::mint_heap_array(tree::test_alloc(), kSegments + 1, std::size_t{0});
     std::size_t end = 0;
-    for (std::size_t& offset : offsets) {
-        offset = end;
-        end += stream.below(4) == 0 ? 0 : stream.below(2 * kGrain);
-    }
-    return offsets;
+    return ::fixy::mint_heap_array_with<std::size_t>(tree::test_alloc(), kSegments + 1,
+                                                     [&stream, &end](std::size_t) noexcept {
+                                                         std::size_t const offset = end;
+                                                         end += stream.below(4) == 0 ? 0 : stream.below(2 * kGrain);
+                                                         return offset;
+                                                     });
 }
 
 // sum_segments_by_tree_in_parallel gives at each segment the bits of the tree
@@ -307,15 +314,14 @@ inline constexpr std::size_t kSegmentElements = kSegments * 2 * kGrain;
         View<float const>{draws.view()}
             .window(0, *checked.get(kSegments).expect("a test reads an element at or past the count of its View"))
             .expect("the segments fit the draws");
-    HeapArray<float> from_plan = ::fixy::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
-    for (std::size_t segment = 0; segment < kSegments; ++segment) {
-        std::size_t const first =
-            *checked.get(segment).expect("a test reads an element at or past the count of its View");
-        std::size_t const count =
-            *checked.get(segment + 1).expect("a test reads an element at or past the count of its View") - first;
-        *from_plan.view().get(segment).expect("a test reads an element at or past the count of its View") =
-            count == 0 ? 0.0f : sum_by_plan(elements.window(first, count).expect("a segment of the run"));
-    }
+    HeapArray<float> const from_plan = ::fixy::mint_heap_array_with<float>(
+        tree::test_alloc(), kSegments, [checked, elements](std::size_t segment) noexcept {
+            std::size_t const first =
+                *checked.get(segment).expect("a test reads an element at or past the count of its View");
+            std::size_t const count =
+                *checked.get(segment + 1).expect("a test reads an element at or past the count of its View") - first;
+            return count == 0 ? 0.0f : sum_by_plan(elements.window(first, count).expect("a segment of the run"));
+        });
     return is_each_coupling([&]<spawn::BodyCoupling Coupling, std::size_t Shards>() noexcept {
         tree::BgCtx const ctx{tree::eff::testing::bg()};
         HeapArray<float> sums = ::fixy::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
@@ -348,10 +354,8 @@ inline constexpr spawn::BodyCoupling kGoldenCoupling = spawn::BodyCoupling::Wait
     using ::crucible::test::golden::kFnvOffset;
     PhiloxStream stream{0x601D0101u};
     HeapArray<float> const floats = draw_run<float, kSegmentElements>(stream);
-    HeapArray<std::uint64_t> words = ::fixy::mint_heap_array(tree::test_alloc(), kLongest, std::uint64_t{0});
-    for (std::uint64_t& word : words) {
-        word = stream.next_wide();
-    }
+    HeapArray<std::uint64_t> const words = ::fixy::mint_heap_array_with<std::uint64_t>(
+        tree::test_alloc(), kLongest, [&stream](std::size_t) noexcept { return stream.next_wide(); });
     HeapArray<std::size_t> const offsets = draw_segment_offsets(stream);
     View<float const> const float_view{floats.view()};
     View<std::uint64_t const> const word_view{words.view()};

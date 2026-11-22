@@ -61,13 +61,7 @@ template <class T>
 template <class T>
 [[nodiscard]] Matrix<T> drawn_matrix(PhiloxStream& stream, Layout layout) noexcept {
     Matrix<T> matrix = make_matrix<T>(MatrixShape{kRows, kColumns}, layout, 1);
-    for (std::size_t row = 0; row < kRows; ++row) {
-        for (std::size_t column = 0; column < kColumns; ++column) {
-            *matrix.values.view()
-                 .get(matrix.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") = draw_hard_value<T>(stream);
-        }
-    }
+    edit_matrix(matrix, [&stream](std::size_t, std::size_t, T& value) noexcept { value = draw_hard_value<T>(stream); });
     return matrix;
 }
 
@@ -75,13 +69,8 @@ template <class T>
 template <class T>
 [[nodiscard]] Matrix<T> relaid(Matrix<T> const& source, Layout layout) noexcept {
     Matrix<T> matrix = make_matrix<T>(source.shape, layout, 2);
-    for (std::size_t row = 0; row < kRows; ++row) {
-        for (std::size_t column = 0; column < kColumns; ++column) {
-            *matrix.values.view()
-                 .get(matrix.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") = source.at(row, column);
-        }
-    }
+    edit_matrix(matrix,
+                [&source](std::size_t row, std::size_t column, T& value) noexcept { value = source.at(row, column); });
     return matrix;
 }
 
@@ -150,11 +139,10 @@ template <class T>
     place.row_stride = step == 0 ? 1 : kColumns * step;
     place.column_stride = step;
     place.extent = (kRows - 1) * place.row_stride + (kColumns - 1) * place.column_stride + 1;
-    Matrix<T> matrix{MatrixShape{kRows, kColumns}, place, ::fixy::mint_heap_array(rig_alloc(), place.extent, T{})};
-    for (T& value : matrix.values) {
-        value = draw_hard_value<T>(stream);
-    }
-    return matrix;
+    return Matrix<T>{MatrixShape{kRows, kColumns}, place,
+                     ::fixy::mint_heap_array_with<T>(rig_alloc(), place.extent, [&stream](std::size_t) noexcept {
+                         return draw_hard_value<T>(stream);
+                     })};
 }
 
 // The value of op on one element of each input under THE NAN RULE of
@@ -260,16 +248,12 @@ template <class T>
 template <class T>
 [[nodiscard]] Matrix<T> without_zeros(Matrix<T> const& source) noexcept {
     Matrix<T> matrix = relaid(source, Layout::RowMajor);
-    for (std::size_t row = 0; row < kRows; ++row) {
-        for (std::size_t column = 0; column < kColumns; ++column) {
-            T const value = source.at(row, column);
-            if (::fixy::fp::abs(value) < ::fixy::min_subnormal_of<T>) {
-                *matrix.values.view()
-                     .get(matrix.position(row, column))
-                     .expect("a test reads an element at or past the count of its View") = T{3};
-            }
+    edit_matrix(matrix, [&source](std::size_t row, std::size_t column, T& element) noexcept {
+        T const value = source.at(row, column);
+        if (::fixy::fp::abs(value) < ::fixy::min_subnormal_of<T>) {
+            element = T{3};
         }
-    }
+    });
     return matrix;
 }
 
@@ -329,15 +313,11 @@ void test_the_square_of_a_difference_is_inside_its_bound(::fixy::TestRunnerCtx c
     Matrix<T> const lefts = drawn_matrix<T>(stream, Layout::RowMajor);
     Matrix<T> rights = drawn_matrix<T>(stream, Layout::RowMajor);
     // Each fourth right is near its left, so the difference cancels.
-    for (std::size_t row = 0; row < kRows; row += 4) {
-        for (std::size_t column = 0; column < kColumns; ++column) {
-            T const left = lefts.at(row, column);
-            *rights.values.view()
-                 .get(rights.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") =
-                left * (T{1} + ::fixy::epsilon_of<T> * static_cast<T>(stream.below(5)));
-        }
-    }
+    edit_matrix(rights, [&lefts, &stream](std::size_t row, std::size_t column, T& right) noexcept {
+        if (row % 4 != 0) return;
+        T const left = lefts.at(row, column);
+        right = left * (T{1} + ::fixy::epsilon_of<T> * static_cast<T>(stream.below(5)));
+    });
     Matrix<T> const squares = run_on_two_layouts<T>(test, ::fixy::elementwise::SquareOfDifference{}, lefts, rights);
     ::crucible::test::BoundRecord record{};
     for (std::size_t row = 0; row < kRows; ++row) {

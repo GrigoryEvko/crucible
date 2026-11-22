@@ -34,14 +34,14 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards>
 void check_segments(View<float const> all, ::crucible::test::PhiloxStream& stream) noexcept {
     tree::BgCtx const ctx{tree::eff::testing::bg()};
     constexpr std::size_t kSegments = 300;
-    HeapArray<std::size_t> offsets =
-        ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments + 1, std::size_t{0});
-    View<std::size_t> const offset_view = offsets.view();
     std::size_t position = 0;
-    for (std::size_t segment = 0; segment <= kSegments; ++segment) {
-        *offset_view.get(segment).expect("a test reads an element at or past the count of its View") = position;
-        position += stream.below(4) == 0 ? 0 : stream.below(9000);
-    }
+    HeapArray<std::size_t> const offsets = ::foundation::core::mint_heap_array_with<std::size_t>(
+        tree::test_alloc(), kSegments + 1, [&stream, &position](std::size_t) noexcept {
+            std::size_t const offset = position;
+            position += stream.below(4) == 0 ? 0 : stream.below(9000);
+            return offset;
+        });
+    View<std::size_t const> const offset_view = offsets.view();
     View<float const> const part =
         all.window(0, *offset_view.get(kSegments).expect("a test reads an element at or past the count of its View"))
             .expect("fits");

@@ -30,13 +30,15 @@ static_assert(std::is_same_v<decltype(byte_view(std::declval<View<std::uint8_t, 
 void test_reads_and_writes_the_run() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::foundation::core::HeapArray<std::uint8_t> run = ::foundation::core::mint_heap_array(alloc, 5, std::uint8_t{0});
-    View<std::byte> const bytes = byte_view(run.view());
-    CRUCIBLE_FATAL_INVARIANT(bytes.size() == 5);
-    std::uint8_t value = 1;
-    for (std::byte& byte : bytes) {
-        byte = static_cast<std::byte>(value);
-        value = static_cast<std::uint8_t>(value * 3);
-    }
+    run = ::foundation::core::with_mut(std::move(run), [](auto cells) noexcept {
+        View<std::byte> const bytes = byte_view(cells.view());
+        CRUCIBLE_FATAL_INVARIANT(bytes.size() == 5);
+        std::uint8_t value = 1;
+        for (std::byte& byte : bytes) {
+            byte = static_cast<std::byte>(value);
+            value = static_cast<std::uint8_t>(value * 3);
+        }
+    });
 
     std::uint8_t expected = 1;
     for (std::uint8_t const element : run) {

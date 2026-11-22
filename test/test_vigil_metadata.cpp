@@ -137,9 +137,9 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
                     sizeof(crucible::TensorMeta));
     }
     CRUCIBLE_TEST_ASSERT(kTest, recorded[0][0].data_ptr.value() == parameter_ptr());
-    ::fixy::HeapArray<std::byte> serialized_before =
-        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0});
-    const size_t bytes_before = crucible::serialize_region(::fixy::to(*region), serialized_before.view());
+    auto [bytes_before, serialized_before] = ::fixy::with_mut(
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0}),
+        [&region](auto run) noexcept { return crucible::serialize_region(::fixy::to(*region), run.view()); });
     CRUCIBLE_TEST_ASSERT(kTest, bytes_before > 0);
 
     fill_released_slots(vigil.meta_log(fg));
@@ -161,9 +161,9 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
 
     // The store writes the same bytes as before the overwrite, and a load of
     // them folds to the content hash of the region.
-    ::fixy::HeapArray<std::byte> serialized_after =
-        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0});
-    const size_t bytes_after = crucible::serialize_region(::fixy::to(*region), serialized_after.view());
+    auto [bytes_after, serialized_after] = ::fixy::with_mut(
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0}),
+        [&region](auto run) noexcept { return crucible::serialize_region(::fixy::to(*region), run.view()); });
     CRUCIBLE_TEST_ASSERT(kTest, bytes_after == bytes_before);
     const ::fixy::View<const std::byte> image_after =
         serialized_after.view().window(0, bytes_after).expect("the writer writes inside its image");

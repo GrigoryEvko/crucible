@@ -37,12 +37,9 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc
 }
 
 [[nodiscard]] inline ::foundation::core::HeapArray<float> draw_floats(std::size_t count, std::uint64_t seed) noexcept {
-    ::foundation::core::HeapArray<float> run = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
     ::crucible::test::PhiloxStream stream{seed};
-    for (float& value : run) {
-        value = draw_float(stream);
-    }
-    return run;
+    return ::foundation::core::mint_heap_array_with<float>(
+        test_alloc(), count, [&stream](std::size_t) noexcept { return draw_float(stream); });
 }
 
 [[nodiscard]] inline bool same_bits(float left, float right) noexcept {

@@ -154,12 +154,9 @@ template <class T>
             digest = fold_value(digest, column_sums.at(0, column));
         }
     }
-    ::fixy::HeapArray<T> firsts = ::fixy::mint_heap_array(rig_alloc(), 1000, T{});
-    ::fixy::HeapArray<T> seconds = ::fixy::mint_heap_array(rig_alloc(), 1000, T{});
-    for (T& value : firsts)
-        value = draw_spread_value<T>(stream, 12);
-    for (T& value : seconds)
-        value = draw_spread_value<T>(stream, 12);
+    auto const draw = [&stream](std::size_t) noexcept { return draw_spread_value<T>(stream, 12); };
+    ::fixy::HeapArray<T> const firsts = ::fixy::mint_heap_array_with<T>(rig_alloc(), 1000, draw);
+    ::fixy::HeapArray<T> const seconds = ::fixy::mint_heap_array_with<T>(rig_alloc(), 1000, draw);
     for (std::size_t count = 990; count <= 1000; ++count) {
         ::fixy::View<T const> const left = ::fixy::View<T const>{firsts.view()}.window(0, count).expect("fits");
         ::fixy::View<T const> const right = ::fixy::View<T const>{seconds.view()}.window(0, count).expect("fits");

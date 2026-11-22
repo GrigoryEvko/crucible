@@ -87,16 +87,19 @@ constexpr Budget kWideBudget{std::size_t{1} << 20};
     return freeze(std::move(grown));
 }
 
-// The byte at an offset of an image, to write.
-[[nodiscard]] std::byte& byte_at(Bytes& image, std::size_t offset) noexcept {
-    return *image.view().get(offset).expect("the offset is inside the image");
+// Writes byte at an offset of an image.
+void put_byte(Bytes& image, std::size_t offset, std::byte byte) noexcept {
+    image.with_element(
+        offset, [byte](std::byte& held) noexcept { held = byte; },
+        [] noexcept { ::foundation::core::fatal("the offset is inside the image"); });
 }
 
 // The image of a value, by encode, in storage of exactly its size.
 template <HeapEncodable T>
 [[nodiscard]] Bytes image_of(T const& value) noexcept {
     Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
-    encode(value, image.view());
+    image =
+        ::foundation::core::with_mut(std::move(image), [&value](auto bytes) noexcept { encode(value, bytes.view()); });
     return image;
 }
 
@@ -272,22 +275,24 @@ void test_heap_decode_refuses_each_fault() {
         (fault_of(whole.window(0, 38).expect("a prefix")) == DecodeFault{DecodeRefusal::image_end, 38}));
 
     Bytes longer = mint_heap_array_zeroed<std::byte>(test_alloc(), whole.size() + 1);
-    encode(sample_message(), longer.view().window(0, whole.size()).expect("the image fits"));
+    longer = ::foundation::core::with_mut(std::move(longer), [&whole](auto bytes) noexcept {
+        encode(sample_message(), bytes.view().window(0, whole.size()).expect("the image fits"));
+    });
     Bytes const& longer_read = longer;
     CRUCIBLE_FATAL_INVARIANT((fault_of(longer_read.view()) == DecodeFault{DecodeRefusal::trailing_byte, 39}));
 
     Bytes huge_count = image_of(sample_message());
-    byte_at(huge_count, 9) = std::byte{0x01};
+    put_byte(huge_count, 9, std::byte{0x01});
     Bytes const& huge_read = huge_count;
     CRUCIBLE_FATAL_INVARIANT((fault_of(huge_read.view()) == DecodeFault{DecodeRefusal::image_end, 4}));
 
     Bytes bad_kind = image_of(sample_message());
-    byte_at(bad_kind, 38) = std::byte{3};
+    put_byte(bad_kind, 38, std::byte{3});
     Bytes const& kind_read = bad_kind;
     CRUCIBLE_FATAL_INVARIANT((fault_of(kind_read.view()) == DecodeFault{DecodeRefusal::enumerator, 38}));
 
     Bytes bad_flag = image_of(sample_message());
-    byte_at(bad_flag, 37) = std::byte{2};
+    put_byte(bad_flag, 37, std::byte{2});
     Bytes const& flag_read = bad_flag;
     CRUCIBLE_FATAL_INVARIANT((fault_of(flag_read.view()) == DecodeFault{DecodeRefusal::bool_byte, 37}));
 }
@@ -320,7 +325,8 @@ void test_heap_hash_of_an_array_of_lists() {
             return tag;
         });
         Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
-        encode(value, image.view());
+        image = ::foundation::core::with_mut(std::move(image),
+                                             [&value](auto bytes) noexcept { encode(value, bytes.view()); });
         Bytes const& read = image;
         CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_heap_hash(read.view()));
         bool const is_back = decode<Tagged>(test_alloc(), kWideBudget, read.view())
@@ -357,7 +363,8 @@ struct[[= derive_protocol{}]] OddWide {
 template <class T>
 [[nodiscard]] bool hashes_as_its_image(T const& value) noexcept {
     Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
-    encode(value, image.view());
+    image =
+        ::foundation::core::with_mut(std::move(image), [&value](auto bytes) noexcept { encode(value, bytes.view()); });
     Bytes const& read = image;
     return hash(value).raw() == hand_heap_hash(read.view());
 }
@@ -488,11 +495,14 @@ void test_heap_decode_agrees_with_an_oracle() {
                 if (at < seed_size) return *seed.view().get(at).expect("a byte of the seed");
                 return static_cast<std::byte>(static_cast<std::uint8_t>(filler >> (8 * (at % 8))));
             });
-        for (std::uint64_t write = 0; size != 0 && write < ((word >> 6) & 3U); ++write) {
-            std::uint64_t const change = stream.next_word();
-            std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
-            byte_at(bytes, (change >> 16) % size) = static_cast<std::byte>(raw);
-        }
+        bytes = ::foundation::core::with_mut(std::move(bytes), [&stream, word, size](auto cells) noexcept {
+            for (std::uint64_t write = 0; size != 0 && write < ((word >> 6) & 3U); ++write) {
+                std::uint64_t const change = stream.next_word();
+                std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
+                *cells.get((change >> 16) % size).expect("the offset is inside the image") =
+                    static_cast<std::byte>(raw);
+            }
+        });
         std::uint64_t const purse = stream.next_word();
         Budget const budget = purse % 4 == 0 ? Budget{(purse >> 8) % 16} : kWideBudget;
         Bytes const& read = bytes;
@@ -605,14 +615,14 @@ void test_heap_decode_charges_the_rounded_storage() {
 // one byte when the budget holds them.
 void test_heap_decode_refuses_a_hostile_count() {
     Bytes hostile = mint_heap_array_zeroed<std::byte>(test_alloc(), 8 + (std::size_t{1} << 23));
-    byte_at(hostile, 2) = std::byte{0x80};
+    put_byte(hostile, 2, std::byte{0x80});
     Bytes const& read = hostile;
     CRUCIBLE_FATAL_INVARIANT((fault_with<CachedList>(Budget{std::size_t{1} << 30}, read.view())
                               == DecodeFault{DecodeRefusal::allocation_budget, 0}));
 
     Bytes single = mint_heap_array_zeroed<std::byte>(test_alloc(), 9);
-    byte_at(single, 0) = std::byte{1};
-    byte_at(single, 8) = std::byte{0x5A};
+    put_byte(single, 0, std::byte{1});
+    put_byte(single, 8, std::byte{0x5A});
     Bytes const& single_read = single;
     Budget const storage{sizeof(Cached)};
     bool const is_taken =

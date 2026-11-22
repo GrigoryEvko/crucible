@@ -217,12 +217,14 @@ void test_agrees_with_plain_model() {
         MaskedArray<std::uint64_t> array = mint_masked_array<std::uint64_t>(alloc, count);
         ::foundation::core::HeapArray<std::uint64_t> model =
             ::foundation::core::mint_heap_array(alloc, count, std::uint64_t{0});
-        for (int step = 0; step < 64; ++step) {
-            std::uint64_t const key = stream.next_wide();
-            std::uint64_t const value = stream.next_wide();
-            array.at_masked(key) = value;
-            *model.get(key % count).expect("a key modulo the count is below the count") = value;
-        }
+        model = ::foundation::core::with_mut(std::move(model), [&array, &stream, count](auto cells) noexcept {
+            for (int step = 0; step < 64; ++step) {
+                std::uint64_t const key = stream.next_wide();
+                std::uint64_t const value = stream.next_wide();
+                array.at_masked(key) = value;
+                *cells.get(key % count).expect("a key modulo the count is below the count") = value;
+            }
+        });
         for (int step = 0; step < 64; ++step) {
             std::uint64_t const key = stream.next_wide();
             CRUCIBLE_FATAL_INVARIANT(array.at_masked(key)

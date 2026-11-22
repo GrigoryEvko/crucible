@@ -463,22 +463,25 @@ template <class E, Walker Under = Walker::Pointwise, class Op, std::size_t... Is
     auto const test = ::foundation::effects::testing::test();
     ::fixy::HeapArray<E> expected = ::fixy::mint_heap_array_copy<E>(test.alloc, ::fixy::View<E const>{run.view()});
 
-    // The oracle: walk() in the stated order, with the op on scalars and THE
-    // NAN RULE in each step, so a shared input reads the canonical NaN of an
-    // earlier step.
-    ::fixy::View<E> const expected_run = expected.view();
-    ::fixy::StridedView<E> const expected_out =
-        ::fixy::mint_strided_view(expected_run, sizes_of(drawn.out), strides_of(drawn.out), drawn.out.offset)
-            .expect("the output fits the run");
     auto const input_of = [&drawn](::fixy::View<E const> whole, std::size_t input) noexcept {
         Layout const& layout = *drawn.inputs.get(input).expect("an input is below the count");
         return ::fixy::mint_strided_view(whole, sizes_of(layout), strides_of(layout), layout.offset)
             .expect("an input fits the run");
     };
-    bool const is_walked =
-        ::fixy::walk([op](E& target, auto const&... values) noexcept { target = oracle_output<E, Op>(op(values...)); },
-                     expected_out, input_of(::fixy::View<E const>{expected_run}, Is)...)
+
+    // The oracle: walk() in the stated order, with the op on scalars and THE
+    // NAN RULE in each step, so a shared input reads the canonical NaN of an
+    // earlier step.  The walk writes the copy in a frame of the copy.
+    auto [is_walked, walked] = ::fixy::with_mut(std::move(expected), [&drawn, &input_of, op](auto frame_run) noexcept {
+        ::fixy::View<E> const expected_run = frame_run.view();
+        ::fixy::StridedView<E> const expected_out =
+            ::fixy::mint_strided_view(expected_run, sizes_of(drawn.out), strides_of(drawn.out), drawn.out.offset)
+                .expect("the output fits the run");
+        return ::fixy::walk(
+                   [op](E& target, auto const&... values) noexcept { target = oracle_output<E, Op>(op(values...)); },
+                   expected_out, input_of(::fixy::View<E const>{expected_run}, Is)...)
             .is_ok();
+    });
 
     // The walk under test, in a frame of the run.  The inputs are plain views
     // that the test makes before it mints the unique view of the output.
@@ -493,7 +496,7 @@ template <class E, Walker Under = Walker::Pointwise, class Op, std::size_t... Is
             return ::foundation::core::write_pointwise(out, op, input_of(whole, Is)...).is_ok();
         }
     });
-    return Written<E>{std::move(written), std::move(expected), is_walked && is_written};
+    return Written<E>{std::move(written), std::move(walked), is_walked && is_written};
 }
 
 // True when the walk under test over the views of a drawn case writes the

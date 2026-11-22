@@ -87,6 +87,11 @@ struct MatrixPlace {
     return place;
 }
 
+// The position of the element (row, column) in the array of the place.
+[[nodiscard]] inline std::size_t position_in(MatrixPlace const& place, std::size_t row, std::size_t column) noexcept {
+    return place.offset + row * place.row_stride + column * place.column_stride;
+}
+
 // A matrix of T in an array of its own.
 template <class T>
 struct Matrix {
@@ -95,7 +100,7 @@ struct Matrix {
     ::fixy::HeapArray<T> values;
 
     [[nodiscard]] std::size_t position(std::size_t row, std::size_t column) const noexcept {
-        return place.offset + row * place.row_stride + column * place.column_stride;
+        return position_in(place, row, column);
     }
     [[nodiscard]] T at(std::size_t row, std::size_t column) const noexcept {
         return *values.view()
@@ -113,22 +118,32 @@ struct Matrix {
     }
 };
 
+// Gives each element of the matrix to edit(row, column, element), row by
+// row, in one frame of the array of the matrix.  The frame holds the array,
+// so edit must not name the matrix.  Complexity: O(rows * columns) calls of
+// edit.
+template <class T, class Edit>
+void edit_matrix(Matrix<T>& matrix, Edit const& edit) noexcept {
+    MatrixShape const shape = matrix.shape;
+    MatrixPlace const place = matrix.place;
+    matrix.values = ::fixy::with_mut(std::move(matrix.values), [shape, place, &edit](auto run) noexcept {
+        for (std::size_t row = 0; row < shape.rows; ++row) {
+            for (std::size_t column = 0; column < shape.columns; ++column) {
+                edit(row, column,
+                     *run.get(position_in(place, row, column))
+                          .expect("a test reads an element at or past the count of its View"));
+            }
+        }
+    });
+}
+
 // A matrix of the shape and the layout, with each element 0 and each slot of
 // the array outside the matrix a NaN of a payload that no output has.
 template <class T>
 [[nodiscard]] Matrix<T> make_matrix(MatrixShape shape, Layout layout, std::size_t offset) noexcept {
     MatrixPlace const place = place_of(shape, layout, offset);
-    Matrix<T> matrix{shape, place, ::fixy::mint_heap_array(rig_alloc(), place.extent, T{})};
-    for (T& value : matrix.values) {
-        value = -::fixy::quiet_nan_of<T>;
-    }
-    for (std::size_t row = 0; row < shape.rows; ++row) {
-        for (std::size_t column = 0; column < shape.columns; ++column) {
-            *matrix.values.view()
-                 .get(matrix.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") = T{};
-        }
-    }
+    Matrix<T> matrix{shape, place, ::fixy::mint_heap_array<T>(rig_alloc(), place.extent, -::fixy::quiet_nan_of<T>)};
+    edit_matrix(matrix, [](std::size_t, std::size_t, T& value) noexcept { value = T{}; });
     return matrix;
 }
 
@@ -150,14 +165,9 @@ template <class T>
 
 template <class T>
 void fill_matrix(Matrix<T>& matrix, PhiloxStream& stream, std::uint64_t spread) noexcept {
-    for (std::size_t row = 0; row < matrix.shape.rows; ++row) {
-        for (std::size_t column = 0; column < matrix.shape.columns; ++column) {
-            *matrix.values.view()
-                 .get(matrix.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") =
-                draw_spread_value<T>(stream, spread);
-        }
-    }
+    edit_matrix(matrix, [&stream, spread](std::size_t, std::size_t, T& value) noexcept {
+        value = draw_spread_value<T>(stream, spread);
+    });
 }
 
 // The bits of a value as an unsigned word.

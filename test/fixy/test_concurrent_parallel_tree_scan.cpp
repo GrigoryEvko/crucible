@@ -106,9 +106,11 @@ void check_nan_scans(View<float const> all) noexcept {
 
 void test_nan_scans_are_canonical() {
     HeapArray<float> run = tree::draw_floats(tree::kLongest, 0x9A4A0006u);
-    ::crucible::test::put_specials(run.view(), 0x9A4A0007u);
-    *run.view().get(0).expect("a test reads an element at or past the count of its View") =
-        ::fixy::bit_cast<float>(0x7F800001u);
+    run = ::fixy::with_mut(std::move(run), [](auto elements) noexcept {
+        ::crucible::test::put_specials(elements.view(), 0x9A4A0007u);
+        *elements.get(0).expect("a test reads an element at or past the count of its View") =
+            ::fixy::bit_cast<float>(0x7F800001u);
+    });
     View<float const> const all{run.view()};
     check_nan_scans<spawn::BodyCoupling::WaitOnEachOther, 1>(all);
     check_nan_scans<spawn::BodyCoupling::WaitOnEachOther, 4>(all);

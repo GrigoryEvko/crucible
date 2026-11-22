@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -71,7 +72,9 @@ void check_prefixes() {
 
         fc::HeapArray<T> target = fc::mint_heap_array(test.alloc, lanes + 1, sentinel);
         V const stored{[](auto lane) noexcept { return static_cast<T>(decltype(lane)::value + 10); }};
-        simd::store_prefix(stored, target.view().window(0, count).expect("the count is at most the lane count"));
+        target = fc::with_mut(std::move(target), [&stored, count](auto cells) noexcept {
+            simd::store_prefix(stored, cells.view().window(0, count).expect("the count is at most the lane count"));
+        });
         std::size_t position = 0;
         for (T const element : target) {
             T const expected = position < count ? static_cast<T>(position + 10) : sentinel;

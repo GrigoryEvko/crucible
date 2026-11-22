@@ -219,34 +219,26 @@ template <class T>
 [[nodiscard]] T product_of_terms(::fixy::View<T const> firsts, ::fixy::View<T const> seconds,
                                  LaneCount lanes) noexcept {
     std::size_t const depth = firsts.size();
+    // The left factor is one row of the firsts, and the right factor is one
+    // column of the seconds.
+    auto const first_at = [firsts](std::size_t, std::size_t inner, T& value) noexcept {
+        value = *firsts.get(inner).expect("a test reads an element at or past the count of its View");
+    };
+    auto const second_at = [seconds](std::size_t inner, std::size_t, T& value) noexcept {
+        value = *seconds.get(inner).expect("a test reads an element at or past the count of its View");
+    };
     Matrix<T> left = make_matrix<T>(MatrixShape{1, depth}, Layout::RowMajor, 0);
     Matrix<T> right = make_matrix<T>(MatrixShape{depth, 1}, Layout::ColumnMajor, 0);
-    for (std::size_t inner = 0; inner < depth; ++inner) {
-        *left.values.view()
-             .get(left.position(0, inner))
-             .expect("a test reads an element at or past the count of its View") =
-            *firsts.get(inner).expect("a test reads an element at or past the count of its View");
-        *right.values.view()
-             .get(right.position(inner, 0))
-             .expect("a test reads an element at or past the count of its View") =
-            *seconds.get(inner).expect("a test reads an element at or past the count of its View");
-    }
+    ::crucible::test::edit_matrix(left, first_at);
+    ::crucible::test::edit_matrix(right, second_at);
     Matrix<T> out = make_matrix<T>(MatrixShape{1, 1}, Layout::RowMajor, 0);
     CRUCIBLE_TEST_ASSERT(kTest, multiply_into(out, left.view(), right.view(), lanes).is_ok());
     T const dot = out.at(0, 0);
     // The same terms on the row path and on the scalar path.
     Matrix<T> spread_left = make_matrix<T>(MatrixShape{1, depth}, Layout::Spread, 0);
     Matrix<T> row_right = make_matrix<T>(MatrixShape{depth, 1}, Layout::RowMajor, 0);
-    for (std::size_t inner = 0; inner < depth; ++inner) {
-        *spread_left.values.view()
-             .get(spread_left.position(0, inner))
-             .expect("a test reads an element at or past the count of its View") =
-            *firsts.get(inner).expect("a test reads an element at or past the count of its View");
-        *row_right.values.view()
-             .get(row_right.position(inner, 0))
-             .expect("a test reads an element at or past the count of its View") =
-            *seconds.get(inner).expect("a test reads an element at or past the count of its View");
-    }
+    ::crucible::test::edit_matrix(spread_left, first_at);
+    ::crucible::test::edit_matrix(row_right, second_at);
     Matrix<T> row_out = make_matrix<T>(MatrixShape{1, 1}, Layout::RowMajor, 0);
     CRUCIBLE_TEST_ASSERT(kTest, multiply_into(row_out, spread_left.view(), row_right.view(), lanes).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest,
@@ -357,29 +349,39 @@ void test_the_hard_cases_are_inside_the_bound() {
         std::size_t const kind = round % 4;
         Matrix<T> left = make_matrix<T>(MatrixShape{2, depth}, Layout::RowMajor, 0);
         Matrix<T> right = make_matrix<T>(MatrixShape{depth, 3}, Layout::ColumnMajor, 0);
-        for (std::size_t inner = 0; inner < depth; ++inner) {
-            for (std::size_t row = 0; row < 2; ++row) {
-                // Kind 1: products near and below the smallest subnormal
-                // value.  Kind 2: each odd term cancels the term before it.
-                T value = ::crucible::test::draw_spread_value<T>(stream, 30);
-                if (kind == 1) value = ::crucible::test::draw_spread_value<T>(stream, 2) * underflow_scale<T>();
-                if (kind == 2 && inner % 2 == 1) value = -left.at(row, inner - 1);
-                *left.values.view()
-                     .get(left.position(row, inner))
-                     .expect("a test reads an element at or past the count of its View") = value;
-            }
-            for (std::size_t column = 0; column < 3; ++column) {
-                // Kind 3: the products spread over more than 200 binades, and
-                // their sum stays below the largest float.
-                std::uint64_t const spread = kind != 3 ? 30 : sizeof(T) == sizeof(float) ? 85 : 400;
-                T value = ::crucible::test::draw_spread_value<T>(stream, spread);
-                if (kind == 1) value = ::crucible::test::draw_spread_value<T>(stream, 2) * underflow_scale<T>();
-                if (kind == 2 && inner % 2 == 1) value = right.at(inner - 1, column);
-                *right.values.view()
-                     .get(right.position(inner, column))
-                     .expect("a test reads an element at or past the count of its View") = value;
-            }
-        }
+        // The draws of the two factors interleave, so one frame of each array
+        // holds the whole loop.  Each frame holds its array, so the loop reads
+        // an earlier term through the run, at the place of its matrix.
+        ::crucible::test::MatrixPlace const left_place = left.place;
+        ::crucible::test::MatrixPlace const right_place = right.place;
+        left.values = with_mut(std::move(left.values), [&](auto left_run) noexcept {
+            right.values = with_mut(std::move(right.values), [&](auto right_run) noexcept {
+                auto const term_at = [](auto& run, ::crucible::test::MatrixPlace const& place, std::size_t row,
+                                        std::size_t column) noexcept -> T& {
+                    return *run.get(::crucible::test::position_in(place, row, column))
+                                .expect("a test reads an element at or past the count of its View");
+                };
+                for (std::size_t inner = 0; inner < depth; ++inner) {
+                    for (std::size_t row = 0; row < 2; ++row) {
+                        // Kind 1: products near and below the smallest subnormal
+                        // value.  Kind 2: each odd term cancels the term before it.
+                        T value = ::crucible::test::draw_spread_value<T>(stream, 30);
+                        if (kind == 1) value = ::crucible::test::draw_spread_value<T>(stream, 2) * underflow_scale<T>();
+                        if (kind == 2 && inner % 2 == 1) value = -term_at(left_run, left_place, row, inner - 1);
+                        term_at(left_run, left_place, row, inner) = value;
+                    }
+                    for (std::size_t column = 0; column < 3; ++column) {
+                        // Kind 3: the products spread over more than 200 binades,
+                        // and their sum stays below the largest float.
+                        std::uint64_t const spread = kind != 3 ? 30 : sizeof(T) == sizeof(float) ? 85 : 400;
+                        T value = ::crucible::test::draw_spread_value<T>(stream, spread);
+                        if (kind == 1) value = ::crucible::test::draw_spread_value<T>(stream, 2) * underflow_scale<T>();
+                        if (kind == 2 && inner % 2 == 1) value = term_at(right_run, right_place, inner - 1, column);
+                        term_at(right_run, right_place, inner, column) = value;
+                    }
+                }
+            });
+        });
         Matrix<T> out = make_matrix<T>(MatrixShape{2, 3}, Layout::RowMajor, 0);
         CRUCIBLE_TEST_ASSERT(kTest, multiply_into(out, left.view(), right.view(), LaneCount::Native).is_ok());
         for (std::size_t row = 0; row < 2; ++row) {
@@ -542,12 +544,9 @@ void test_sums_of_runs() {
 template <class T>
 void test_dot_products() {
     PhiloxStream stream{0x9D0C000000000007u};
-    ::fixy::HeapArray<T> firsts = ::fixy::mint_heap_array(::crucible::test::rig_alloc(), 300, T{});
-    ::fixy::HeapArray<T> seconds = ::fixy::mint_heap_array(::crucible::test::rig_alloc(), 300, T{});
-    for (T& value : firsts)
-        value = ::crucible::test::draw_spread_value<T>(stream, 12);
-    for (T& value : seconds)
-        value = ::crucible::test::draw_spread_value<T>(stream, 12);
+    auto const draw = [&stream](std::size_t) noexcept { return ::crucible::test::draw_spread_value<T>(stream, 12); };
+    ::fixy::HeapArray<T> const firsts = ::fixy::mint_heap_array_with<T>(::crucible::test::rig_alloc(), 300, draw);
+    ::fixy::HeapArray<T> const seconds = ::fixy::mint_heap_array_with<T>(::crucible::test::rig_alloc(), 300, draw);
     for (std::size_t count = 0; count <= 300; ++count) {
         ::fixy::View<T const> const left = ::fixy::View<T const>{firsts.view()}.window(0, count).expect("fits");
         ::fixy::View<T const> const right = ::fixy::View<T const>{seconds.view()}.window(0, count).expect("fits");

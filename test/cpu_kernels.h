@@ -420,45 +420,50 @@ inline void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
 
     ::fixy::HeapArray<float> weights =
         ::fixy::mint_heap_array_zeroed<float>(::foundation::effects::testing::test().alloc, S * S);
-    ::fixy::View<float> const attn = weights.view();
 
-    for (std::size_t b = 0; b < B; b++) {
-        std::size_t const base = b * S * D;
+    // Each sequence writes the weights again, so one frame of the weights
+    // holds the loop over the batch.
+    weights = ::fixy::with_mut(std::move(weights), [&](auto run) noexcept {
+        ::fixy::View<float> const attn = run.view();
+        for (std::size_t b = 0; b < B; b++) {
+            std::size_t const base = b * S * D;
 
-        for (std::size_t i = 0; i < S; i++)
-            for (std::size_t j = 0; j < S; j++) {
-                float dot = 0.0f;
-                for (std::size_t d = 0; d < D; d++)
-                    dot += detail::element_at(Q, Offset{base + i * D + d})
-                         * detail::element_at(K.value(), Offset{base + j * D + d});
-                detail::element_at(attn, Offset{i * S + j}) = dot * scale;
-            }
+            for (std::size_t i = 0; i < S; i++)
+                for (std::size_t j = 0; j < S; j++) {
+                    float dot = 0.0f;
+                    for (std::size_t d = 0; d < D; d++)
+                        dot += detail::element_at(Q, Offset{base + i * D + d})
+                             * detail::element_at(K.value(), Offset{base + j * D + d});
+                    detail::element_at(attn, Offset{i * S + j}) = dot * scale;
+                }
 
-        for (std::size_t i = 0; i < S; i++) {
-            std::size_t const row = i * S;
-            float mx = detail::element_at(attn, Offset{row});
-            for (std::size_t j = 1; j < S; j++)
-                mx = detail::max_keep_first(
-                    mx, ::fixy::side_as<side::Candidate>(detail::element_at(attn, Offset{row + j})));
-            float sum = 0.0f;
-            for (std::size_t j = 0; j < S; j++) {
-                detail::element_at(attn, Offset{row + j}) = std::exp(detail::element_at(attn, Offset{row + j}) - mx);
-                sum += detail::element_at(attn, Offset{row + j});
-            }
-            float inv = 1.0f / sum;
-            for (std::size_t j = 0; j < S; j++)
-                detail::element_at(attn, Offset{row + j}) *= inv;
-        }
-
-        for (std::size_t i = 0; i < S; i++)
-            for (std::size_t d = 0; d < D; d++) {
+            for (std::size_t i = 0; i < S; i++) {
+                std::size_t const row = i * S;
+                float mx = detail::element_at(attn, Offset{row});
+                for (std::size_t j = 1; j < S; j++)
+                    mx = detail::max_keep_first(
+                        mx, ::fixy::side_as<side::Candidate>(detail::element_at(attn, Offset{row + j})));
                 float sum = 0.0f;
+                for (std::size_t j = 0; j < S; j++) {
+                    detail::element_at(attn, Offset{row + j}) =
+                        std::exp(detail::element_at(attn, Offset{row + j}) - mx);
+                    sum += detail::element_at(attn, Offset{row + j});
+                }
+                float inv = 1.0f / sum;
                 for (std::size_t j = 0; j < S; j++)
-                    sum += detail::element_at(attn, Offset{i * S + j})
-                         * detail::element_at(V.value(), Offset{base + j * D + d});
-                detail::element_at(Y, Offset{base + i * D + d}) = sum;
+                    detail::element_at(attn, Offset{row + j}) *= inv;
             }
-    }
+
+            for (std::size_t i = 0; i < S; i++)
+                for (std::size_t d = 0; d < D; d++) {
+                    float sum = 0.0f;
+                    for (std::size_t j = 0; j < S; j++)
+                        sum += detail::element_at(attn, Offset{i * S + j})
+                             * detail::element_at(V.value(), Offset{base + j * D + d});
+                    detail::element_at(Y, Offset{base + i * D + d}) = sum;
+                }
+        }
+    });
 }
 
 // The mean over the batch of the negative log of the softmax

@@ -80,17 +80,13 @@ static void commit_head(crucible::Cipher& cipher, crucible::Cipher::OpenView con
 
 // The events of one session, at steps first, first + 1, ..., first + count - 1.
 static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint64_t first, std::size_t count) {
-    ::fixy::HeapArray<crucible::Cipher::SessionEvent> events = ::fixy::mint_heap_array(
-        g_test.alloc, count,
-        crucible::Cipher::SessionEvent::close(::fixy::session::RoleTagId{}, ::fixy::session::RoleTagId{}));
-    std::uint64_t step = first;
-    for (crucible::Cipher::SessionEvent& event : events.view()) {
-        event = crucible::Cipher::SessionEvent::cipher_event(
-            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step},
-            ::fixy::session::StateHash{0x5E550000u + step}, ::fixy::session::CipherEventOrder{step});
-        ++step;
-    }
-    return events;
+    return ::fixy::mint_heap_array_with<crucible::Cipher::SessionEvent>(
+        g_test.alloc, count, [first](std::size_t position) noexcept {
+            const std::uint64_t step = first + position;
+            return crucible::Cipher::SessionEvent::cipher_event(
+                ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step},
+                ::fixy::session::StateHash{0x5E550000u + step}, ::fixy::session::CipherEventOrder{step});
+        });
 }
 
 // The step of the event at position of a list of loaded events.
@@ -573,8 +569,10 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
 
     crucible::RegionNode& variant = *make_test_region(writers_dag, 0x62);
     variant.variant_id.advance(7);
-    ::fixy::HeapArray<std::byte> variant_image = ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0});
-    const std::size_t variant_bytes = crucible::serialize_region(::fixy::to(variant), variant_image.view());
+    auto [variant_bytes, variant_image] =
+        ::fixy::with_mut(::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0}), [&variant](auto run) noexcept {
+            return crucible::serialize_region(::fixy::to(variant), run.view());
+        });
     CRUCIBLE_TEST_ASSERT(kTest, variant_bytes > 0);
     write_object_file(cipher.root(), variant.content_hash,
                       variant_image.view().window(0, variant_bytes).expect("the writer writes inside its image"));
@@ -770,10 +768,13 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0xBADBADBADBADBAD0ULL)) == LoadError::file_open_failed);
 
         const crucible::RegionNode& other_region = *make_test_region(reason_dag_arena, 0x5E);
-        ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0});
-        const std::size_t image_bytes = crucible::serialize_region(::fixy::to(other_region), image.view());
+        auto [image_bytes, image] = ::fixy::with_mut(
+            ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0}), [&other_region](auto run) noexcept {
+                return crucible::serialize_region(::fixy::to(other_region), run.view());
+            });
         CRUCIBLE_TEST_ASSERT(kTest, image_bytes > 0);
-        const ::fixy::View<std::byte> sound = image.view().window(0, image_bytes).expect("the image holds its bytes");
+        const ::fixy::View<const std::byte> sound =
+            image.view().window(0, image_bytes).expect("the image holds its bytes");
 
         write_object_file(cipher.root(), crucible::ContentHash{0x1111111111111111ULL}, ::fixy::View<const std::byte>{});
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x1111111111111111ULL)) == LoadError::file_size);
@@ -786,8 +787,11 @@ int main() {
         write_object_file(cipher.root(), crucible::ContentHash{0x3333333333333333ULL},
                           sound.window(0, 16).expect("the image holds sixteen bytes"));
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x3333333333333333ULL)) == LoadError::truncated);
-        *sound.get(0).expect("the image holds its magic") = std::byte{0};
-        write_object_file(cipher.root(), crucible::ContentHash{0x4444444444444444ULL}, sound);
+        image.with_element(
+            0, [](std::byte& element) noexcept { element = std::byte{0}; },
+            [] noexcept { ::fixy::fatal("the image holds its magic"); });
+        write_object_file(cipher.root(), crucible::ContentHash{0x4444444444444444ULL},
+                          image.view().window(0, image_bytes).expect("the image holds its bytes"));
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x4444444444444444ULL)) == LoadError::bad_magic);
     }
 

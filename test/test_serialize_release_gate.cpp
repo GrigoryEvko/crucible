@@ -110,8 +110,8 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
 [[gnu::cold]] int main() {
     auto bg = ::foundation::effects::testing::test();
 
-    ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(bg.alloc, 65536, std::byte{0});
-    const size_t n = build_and_serialize(bg, buf.view());
+    auto [n, buf] = ::fixy::with_mut(::fixy::mint_heap_array(bg.alloc, 65536, std::byte{0}),
+                                     [bg](auto run) noexcept { return build_and_serialize(bg, run.view()); });
     if (n == 0) {
         ::fixy::report(::fixy::Sink::Err, "serialize failed\n");
         return 1;
@@ -162,16 +162,17 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
                            n);
             return 3;
         }
-        ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array(bg.alloc, n, std::byte{0});
-        ::fixy::copy(corrupt.view(), image).expect("the copy has the count of the image");
-        std::byte& target = *corrupt.get(c.off).expect("the offset is inside the image");
+        ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array_copy<std::byte>(bg.alloc, image);
+        const std::byte original = *corrupt.get(c.off).expect("the offset is inside the image");
         // Confirm we are actually flipping the byte to a DIFFERENT value
         // (otherwise the test would pass vacuously).
-        if (target == std::byte{c.bad}) {
+        if (original == std::byte{c.bad}) {
             ::fixy::report(::fixy::Sink::Err, "{}: corrupt byte equals original — no mutation\n", c.name);
             return 4;
         }
-        target = std::byte{c.bad};
+        corrupt.with_element(
+            c.off, [&c](std::byte& target) noexcept { target = std::byte{c.bad}; },
+            [] noexcept { ::fixy::fatal("the offset is inside the image"); });
         if (!is_rejected(bg, corrupt.view())) {
             ::fixy::report(::fixy::Sink::Err,
                            "{}: malformed byte {} at offset {} NOT rejected "

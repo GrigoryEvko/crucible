@@ -89,27 +89,29 @@ void check_reduce_on_stated_threads(View<std::uint64_t const> all) noexcept {
     HeapArray<::fixy::Atomic<std::uint32_t>> table =
         ::foundation::core::mint_heap_array_with<::fixy::Atomic<std::uint32_t>>(
             tree::test_alloc(), 256, [](std::size_t) noexcept { return ::fixy::Atomic<std::uint32_t>{0}; });
-    RecordingMix const mix{table.view(), ++next_generation};
-    auto const parallel = ::fixy::concurrent::reduce_by_tree_in_parallel<spawn::BodyCoupling::WaitOnEachOther, Shards>(
-        ctx, tree::test_alloc(), run, mix);
-    std::size_t const threads = threads_in(table.view());
-    std::uint64_t const single = ::foundation::core::reduce_by_tree(run, mix).expect("the run has elements");
-    CRUCIBLE_TEST_ASSERT(kTest, parallel.is_some());
-    for (std::uint64_t const value : parallel) {
-        CRUCIBLE_TEST_ASSERT(kTest, value == single);
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, threads == (Shards == 1 ? 1 : Shards + 1));
+    // The combine keeps a View of the table, so each call of the combine runs
+    // in the frame of the table.
+    table = ::fixy::with_mut(std::move(table), [&ctx, run](auto slots) noexcept {
+        RecordingMix const mix{slots.view(), ++next_generation};
+        auto const parallel =
+            ::fixy::concurrent::reduce_by_tree_in_parallel<spawn::BodyCoupling::WaitOnEachOther, Shards>(
+                ctx, tree::test_alloc(), run, mix);
+        std::size_t const threads = threads_in(slots.view());
+        std::uint64_t const single = ::foundation::core::reduce_by_tree(run, mix).expect("the run has elements");
+        CRUCIBLE_TEST_ASSERT(kTest, parallel.is_some());
+        for (std::uint64_t const value : parallel) {
+            CRUCIBLE_TEST_ASSERT(kTest, value == single);
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, threads == (Shards == 1 ? 1 : Shards + 1));
+    });
 }
 
 // Each count of threads gives the value of the reduce of one thread, and
 // two runs of 64 threads give two schedules of the operating system.
 void test_reduce_on_stated_threads() {
     ::crucible::test::PhiloxStream stream{0x9A4A0004u};
-    HeapArray<std::uint64_t> run =
-        ::foundation::core::mint_heap_array(tree::test_alloc(), tree::kLongest, std::uint64_t{0});
-    for (std::uint64_t& value : run) {
-        value = stream.next_wide();
-    }
+    HeapArray<std::uint64_t> const run = ::foundation::core::mint_heap_array_with<std::uint64_t>(
+        tree::test_alloc(), tree::kLongest, [&stream](std::size_t) noexcept { return stream.next_wide(); });
     View<std::uint64_t const> const all{run.view()};
     check_reduce_on_stated_threads<1>(all);
     check_reduce_on_stated_threads<2>(all);

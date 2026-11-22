@@ -1046,16 +1046,17 @@ static void test_heap_buffer_round_trip() {
     const fed::FederationKey key = key_of(0x0F0F0F0F0F0F0F0FULL, 0xF0F0F0F0F0F0F0F0ULL, 5, 6);
     const auto alloc = ::foundation::effects::testing::test().alloc;
 
-    ::fixy::HeapArray<std::byte> payload = ::fixy::mint_heap_array(alloc, 1024, std::byte{0x55});
-    bool is_odd = false;
-    for (std::byte& byte : payload.view()) {
-        if (is_odd) byte = std::byte{0xAA};
-        is_odd = !is_odd;
-    }
+    const ::fixy::HeapArray<std::byte> payload =
+        ::fixy::mint_heap_array_with<std::byte>(alloc, 1024, [](std::size_t position) noexcept {
+            const bool is_odd = position % 2 != 0;
+            return is_odd ? std::byte{0xAA} : std::byte{0x55};
+        });
 
-    ::fixy::HeapArray<std::byte> buf =
-        ::fixy::mint_heap_array(alloc, fed::FEDERATION_HEADER_BYTES + payload.size(), std::byte{0});
-    auto written = fed::serialize_federation_entry(buf.view(), key, payload.view());
+    auto [written, buf] =
+        ::fixy::with_mut(::fixy::mint_heap_array(alloc, fed::FEDERATION_HEADER_BYTES + payload.size(), std::byte{0}),
+                         [&key, &payload](auto run) noexcept {
+                             return fed::serialize_federation_entry(run.view(), key, payload.view());
+                         });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == buf.size());
 

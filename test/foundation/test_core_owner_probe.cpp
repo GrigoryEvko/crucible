@@ -410,11 +410,23 @@ struct HeapArrayProbe : ElementArms<HeapArrayProbe> {
 
     static Owner make(unsigned count) { return ::foundation::core::mint_heap_array(kAlloc, count, Elem<Tag>{}); }
 
+    // The element door with_element lends the first element, and a Ref of the
+    // new Inner leaves the door through a capture.  The Inner lives in its Box
+    // and not in the storage of the array, so no move of the array ends the
+    // Ref.
+    using InnerRef = Ref<Inner<Tag>, InnerBrand<Tag>>;
+
     static Inner<Tag>& give_first_an_inner(Owner& owner) {
-        for (Elem<Tag>& element : owner) {
-            return give_an_inner(element);
-        }
-        ::foundation::core::fatal("the HeapArray of the probe holds no element");
+        Option<InnerRef> given{::foundation::core::none};
+        bool const is_given = owner.with_element(
+            0,
+            [&given](Elem<Tag>& first) noexcept {
+                given = Option<InnerRef>::some(::foundation::core::to(give_an_inner(first)));
+                return true;
+            },
+            [] noexcept { return false; });
+        if (!is_given) ::foundation::core::fatal("the HeapArray of the probe holds no element");
+        return *static_cast<Option<InnerRef>&&>(given).expect("the frame of the first element gave its Inner");
     }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<HeapArray<LinearElement>>()); }

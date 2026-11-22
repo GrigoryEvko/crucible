@@ -482,12 +482,14 @@ static void test_spsc_stress() {
             }
 
             if (got > 0) {
-                for (uint32_t i = 0; i < got; ++i) {
-                    *mirror.view().get(received + i).expect("the ring delivers at most N entries") =
-                        out_entries.get(i)
-                            .expect("a test reads an element at or past the count of its array")
-                            ->schema_hash.raw();
-                }
+                mirror = ::fixy::with_mut(std::move(mirror), [&out_entries, received, got](auto run) noexcept {
+                    for (uint32_t i = 0; i < got; ++i) {
+                        *run.get(received + i).expect("the ring delivers at most N entries") =
+                            out_entries.get(i)
+                                .expect("a test reads an element at or past the count of its array")
+                                ->schema_hash.raw();
+                    }
+                });
                 received += got;
             } else if (producer_done.load_acquire() && ring->size().peek() == 0) {
                 break;

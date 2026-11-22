@@ -91,13 +91,8 @@ using ::crucible::test::with_kernel_context;
 
 [[nodiscard]] Matrix<float> drawn_matrix(PhiloxStream& stream, MatrixShape shape, Layout layout) noexcept {
     Matrix<float> matrix = make_matrix<float>(shape, layout, 1);
-    for (std::size_t row = 0; row < shape.rows; ++row) {
-        for (std::size_t column = 0; column < shape.columns; ++column) {
-            *matrix.values.view()
-                 .get(matrix.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") = draw_hard_value(stream);
-        }
-    }
+    ::crucible::test::edit_matrix(
+        matrix, [&stream](std::size_t, std::size_t, float& value) noexcept { value = draw_hard_value(stream); });
     return matrix;
 }
 
@@ -271,13 +266,9 @@ void test_the_exact_element_kernels() {
     Matrix<float> gated = make_matrix<float>(shape, Layout::Spread, 0);
     Matrix<float> filled = make_matrix<float>(shape, Layout::RowMajor, 0);
     Matrix<float> updated = make_matrix<float>(shape, Layout::RowMajor, 1);
-    for (std::size_t row = 0; row < 8; ++row) {
-        for (std::size_t column = 0; column < 24; ++column) {
-            *updated.values.view()
-                 .get(updated.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") = values.at(row, column);
-        }
-    }
+    ::crucible::test::edit_matrix(updated, [&values](std::size_t row, std::size_t column, float& value) noexcept {
+        value = values.at(row, column);
+    });
     float const fill_value = ::fixy::bit_cast<float>(std::uint32_t{0x7FA12345u});
     float const scale = -0.01f;
     with_kernel_context([&](KernelCtx const& ctx) noexcept {
@@ -314,13 +305,9 @@ void test_the_rounded_element_kernels() {
     Matrix<float> squares = make_matrix<float>(shape, Layout::RowMajor, 0);
     Matrix<float> scaled = make_matrix<float>(shape, Layout::ColumnMajor, 0);
     Matrix<float> quotients = make_matrix<float>(shape, Layout::RowMajor, 0);
-    for (std::size_t row = 0; row < 8; ++row) {
-        for (std::size_t column = 0; column < 24; ++column) {
-            *quotients.values.view()
-                 .get(quotients.position(row, column))
-                 .expect("a test reads an element at or past the count of its View") = lefts.at(row, column);
-        }
-    }
+    ::crucible::test::edit_matrix(quotients, [&lefts](std::size_t row, std::size_t column, float& value) noexcept {
+        value = lefts.at(row, column);
+    });
     float const scale = 2.0f / 192.0f;
     float const denominator = 3.0f;
     with_kernel_context([&](KernelCtx const& ctx) noexcept {

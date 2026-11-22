@@ -40,12 +40,9 @@ using ::foundation::core::View;
 }
 
 [[nodiscard]] HeapArray<float> draw_floats(std::size_t count, std::uint64_t seed) noexcept {
-    HeapArray<float> run = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
     ::crucible::test::PhiloxStream stream{seed};
-    for (float& value : run) {
-        value = draw_float(stream);
-    }
-    return run;
+    return ::foundation::core::mint_heap_array_with<float>(
+        test_alloc(), count, [&stream](std::size_t) noexcept { return draw_float(stream); });
 }
 
 [[nodiscard]] HeapArray<float> zeros(std::size_t count) noexcept {
@@ -222,29 +219,22 @@ enum class ZeroRun : std::uint8_t {
 };
 
 [[nodiscard]] HeapArray<float> zero_run(ZeroRun kind, std::size_t count, std::uint64_t seed) noexcept {
-    HeapArray<float> run = zeros(count);
     ::crucible::test::PhiloxStream stream{seed};
     float last = 0.0f;
-    std::size_t position = 0;
-    for (float& value : run) {
-        switch (kind) {
-            case ZeroRun::Positive:
-                value = 0.0f;
-                break;
-            case ZeroRun::Negative:
-                value = -0.0f;
-                break;
-            case ZeroRun::Alternating:
-                value = position % 2 == 0 ? 0.0f : -0.0f;
-                break;
-            default:
-                last = position % 2 == 0 ? draw_float(stream) : -last;
-                value = last;
-                break;
-        }
-        ++position;
-    }
-    return run;
+    return ::foundation::core::mint_heap_array_with<float>(
+        test_alloc(), count, [kind, &stream, &last](std::size_t position) noexcept {
+            switch (kind) {
+                case ZeroRun::Positive:
+                    return 0.0f;
+                case ZeroRun::Negative:
+                    return -0.0f;
+                case ZeroRun::Alternating:
+                    return position % 2 == 0 ? 0.0f : -0.0f;
+                default:
+                    last = position % 2 == 0 ? draw_float(stream) : -last;
+                    return last;
+            }
+        });
 }
 
 // The -0 that a sum scan in lanes adds for an absent term keeps the bits of
@@ -319,18 +309,19 @@ void test_scan_in_place_and_under_append() {
 
 [[nodiscard]] HeapArray<std::size_t> draw_order(std::size_t count, ::crucible::test::PhiloxStream& stream) noexcept {
     HeapArray<std::size_t> order = ::foundation::core::mint_heap_array(test_alloc(), count, std::size_t{0});
-    View<std::size_t> const slots = order.view();
-    for (std::size_t index = 0; index < count; ++index) {
-        *slots.get(index).expect("a test reads an element at or past the count of its View") = index;
-    }
-    for (std::size_t index = count; index > 1; --index) {
-        std::size_t const other = stream.below(index);
-        std::size_t const kept =
-            *slots.get(index - 1).expect("a test reads an element at or past the count of its View");
-        *slots.get(index - 1).expect("a test reads an element at or past the count of its View") =
-            *slots.get(other).expect("a test reads an element at or past the count of its View");
-        *slots.get(other).expect("a test reads an element at or past the count of its View") = kept;
-    }
+    order = ::foundation::core::with_mut(std::move(order), [&stream, count](auto slots) noexcept {
+        for (std::size_t index = 0; index < count; ++index) {
+            *slots.get(index).expect("a test reads an element at or past the count of its View") = index;
+        }
+        for (std::size_t index = count; index > 1; --index) {
+            std::size_t const other = stream.below(index);
+            std::size_t const kept =
+                *slots.get(index - 1).expect("a test reads an element at or past the count of its View");
+            *slots.get(index - 1).expect("a test reads an element at or past the count of its View") =
+                *slots.get(other).expect("a test reads an element at or past the count of its View");
+            *slots.get(other).expect("a test reads an element at or past the count of its View") = kept;
+        }
+    });
     return order;
 }
 
@@ -443,13 +434,15 @@ void test_scan_error_stays_inside_the_bound() {
     constexpr std::size_t kCount = 20000;
     HeapArray<float> const run = draw_floats(kCount, 0x5CA40005u);
     HeapArray<double> wide = ::foundation::core::mint_heap_array(test_alloc(), kCount, 0.0);
-    View<double> const wide_view = wide.view();
-    std::size_t position = 0;
-    for (float const value : run) {
-        *wide_view.get(position).expect("a test reads an element at or past the count of its View") =
-            static_cast<double>(value);
-        ++position;
-    }
+    wide = ::foundation::core::with_mut(std::move(wide), [&run](auto cells) noexcept {
+        std::size_t position = 0;
+        for (float const value : run) {
+            *cells.get(position).expect("a test reads an element at or past the count of its View") =
+                static_cast<double>(value);
+            ++position;
+        }
+    });
+    View<double const> const wide_view{wide.view()};
     HeapArray<float> out = zeros(kCount);
     HeapArray<double> exact = ::foundation::core::mint_heap_array(test_alloc(), kCount, 0.0);
     CRUCIBLE_TEST_ASSERT(kTest, scan_into(out, kCount, [&](auto part) noexcept {
@@ -485,10 +478,8 @@ void test_large_plans_agree_with_the_scans() {
     ::fixy::FixedArray<std::size_t, 5> const counts{127, 128, 129, 1000, 4097};
     ::crucible::test::PhiloxStream stream{0x5CA40006u};
     for (std::size_t const count : counts) {
-        HeapArray<std::uint64_t> leaves = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint64_t{0});
-        for (std::uint64_t& leaf : leaves) {
-            leaf = stream.next_wide();
-        }
+        HeapArray<std::uint64_t> const leaves = ::foundation::core::mint_heap_array_with<std::uint64_t>(
+            test_alloc(), count, [&stream](std::size_t) noexcept { return stream.next_wide(); });
         View<std::uint64_t const> const in{leaves.view()};
         ::fixy::FixedArray<::foundation::core::ScanKind, 2> const kinds{::foundation::core::ScanKind::Inclusive,
                                                                         ::foundation::core::ScanKind::Exclusive};
@@ -552,13 +543,15 @@ void check_scan_outputs(View<float const> want, View<float const> out) noexcept 
 // -inf gives 0xFFC00000 on x86.
 void test_nan_outputs_of_the_scans_are_canonical() {
     HeapArray<float> run = draw_floats(2100, 0x5CA40040u);
-    ::crucible::test::put_specials(run.view(), 0x5CA40041u);
-    *run.view().get(0).expect("a test reads an element at or past the count of its View") =
-        ::fixy::bit_cast<float>(0x7F800001u);
-    *run.view().get(1).expect("a test reads an element at or past the count of its View") =
-        ::fixy::bit_cast<float>(0x7F800000u);
-    *run.view().get(2).expect("a test reads an element at or past the count of its View") =
-        ::fixy::bit_cast<float>(0xFF800000u);
+    run = ::foundation::core::with_mut(std::move(run), [](auto cells) noexcept {
+        ::crucible::test::put_specials(cells.view(), 0x5CA40041u);
+        *cells.get(0).expect("a test reads an element at or past the count of its View") =
+            ::fixy::bit_cast<float>(0x7F800001u);
+        *cells.get(1).expect("a test reads an element at or past the count of its View") =
+            ::fixy::bit_cast<float>(0x7F800000u);
+        *cells.get(2).expect("a test reads an element at or past the count of its View") =
+            ::fixy::bit_cast<float>(0xFF800000u);
+    });
     View<float const> const all{run.view()};
     HeapArray<float> expected = zeros(run.size());
     HeapArray<float> got = zeros(run.size());

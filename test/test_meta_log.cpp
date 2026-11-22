@@ -212,7 +212,11 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunne
     ::fixy::HeapArray<TensorMeta> destination =
         ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, MetaLog::CAPACITY + 1, TensorMeta{});
     ::fixy::check::expect_dies(
-        test, [&log, &destination] noexcept { log.copy_run(0, destination.view()); },
+        test,
+        [&log, &destination] noexcept {
+            destination =
+                ::fixy::with_mut(std::move(destination), [&log](auto run) noexcept { log.copy_run(0, run.view()); });
+        },
         ::fixy::TextView{"foundation: contract violation: dst.size() <= CAPACITY"});
     ::fixy::check::pass(test, "  test_copy_run_refuses_long_run: PASSED\n");
 }

@@ -76,25 +76,20 @@ static_assert(fold_bytes(kFnvOffset, 'a', 1) == 0xAF63DC4C8601EC8Cu);
 
 template <class T>
 [[nodiscard]] HeapArray<T> draw_run(std::size_t count, std::uint64_t seed) noexcept {
-    HeapArray<T> run = ::fixy::mint_heap_array(test_alloc(), count, T{});
     PhiloxStream stream{seed};
-    for (T& value : run) {
+    return ::fixy::mint_heap_array_with<T>(test_alloc(), count, [&stream](std::size_t) noexcept {
         if constexpr (sizeof(T) == sizeof(float)) {
-            value = draw_float(stream);
+            return draw_float(stream);
         } else {
-            value = draw_double(stream);
+            return draw_double(stream);
         }
-    }
-    return run;
+    });
 }
 
 [[nodiscard]] HeapArray<std::uint64_t> draw_words(std::size_t count, std::uint64_t seed) noexcept {
-    HeapArray<std::uint64_t> run = ::fixy::mint_heap_array(test_alloc(), count, std::uint64_t{0});
     PhiloxStream stream{seed};
-    for (std::uint64_t& word : run) {
-        word = stream.next_wide();
-    }
-    return run;
+    return ::fixy::mint_heap_array_with<std::uint64_t>(test_alloc(), count,
+                                                       [&stream](std::size_t) noexcept { return stream.next_wide(); });
 }
 
 // The counts of a sum: each count to 70, and the counts around each power of
@@ -226,13 +221,13 @@ inline constexpr std::size_t kRunCount = 61;
 inline constexpr std::size_t kSegments = 80;
 
 [[nodiscard]] std::uint64_t digest_segment_sums(std::uint64_t seed) noexcept {
-    HeapArray<std::size_t> offsets = ::fixy::mint_heap_array(test_alloc(), kSegments + 1, std::size_t{0});
     PhiloxStream stream{seed};
     std::size_t end = 0;
-    for (std::size_t segment = 1; segment <= kSegments; ++segment) {
-        end += stream.below(49);
-        *offsets.view().get(segment).expect("a test reads an element at or past the count of its View") = end;
-    }
+    HeapArray<std::size_t> const offsets = ::fixy::mint_heap_array_with<std::size_t>(
+        test_alloc(), kSegments + 1, [&stream, &end](std::size_t segment) noexcept {
+            if (segment != 0) end += stream.below(49);
+            return end;
+        });
     HeapArray<float> const elements = draw_run<float>(end, seed + 1);
     HeapArray<float> sums = ::fixy::mint_heap_array(test_alloc(), kSegments, 0.0f);
     auto [is_summed, written] = with_mut(std::move(sums), [&](auto out) noexcept {
@@ -286,13 +281,13 @@ struct AddFloats {
 };
 
 [[nodiscard]] std::uint64_t digest_segment_reduces(std::uint64_t seed) noexcept {
-    HeapArray<std::size_t> offsets = ::fixy::mint_heap_array(test_alloc(), kSegments + 1, std::size_t{0});
     PhiloxStream stream{seed};
     std::size_t end = 0;
-    for (std::size_t segment = 1; segment <= kSegments; ++segment) {
-        end += stream.below(49);
-        *offsets.view().get(segment).expect("a test reads an element at or past the count of its View") = end;
-    }
+    HeapArray<std::size_t> const offsets = ::fixy::mint_heap_array_with<std::size_t>(
+        test_alloc(), kSegments + 1, [&stream, &end](std::size_t segment) noexcept {
+            if (segment != 0) end += stream.below(49);
+            return end;
+        });
     HeapArray<float> const elements = draw_run<float>(end, seed + 1);
     HeapArray<float> sums = ::fixy::mint_heap_array(test_alloc(), kSegments, 0.0f);
     auto [is_reduced, written] = with_mut(std::move(sums), [&](auto out) noexcept {
@@ -369,12 +364,11 @@ template <class T>
 // sort_stably of a copy of elements, and the digest of the sorted run.
 template <class T, class... Less>
 [[nodiscard]] std::uint64_t digest_stable_sort(View<T const> elements, Less... less) noexcept {
-    HeapArray<T> sorted = ::fixy::mint_heap_array(test_alloc(), elements.size(), T{});
+    HeapArray<T> sorted =
+        ::fixy::mint_heap_array_with<T>(test_alloc(), elements.size(), [elements](std::size_t position) noexcept {
+            return *elements.get(position).expect("a test reads an element at or past the count of its View");
+        });
     HeapArray<T> scratch = ::fixy::mint_heap_array(test_alloc(), elements.size(), T{});
-    std::size_t position = 0;
-    for (T& value : sorted) {
-        value = *elements.get(position++).expect("a test reads an element at or past the count of its View");
-    }
     bool is_sorted = false;
     sorted = with_mut(std::move(sorted), [&](auto out) noexcept {
         scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
@@ -389,13 +383,11 @@ template <class T, class... Less>
 // in its low half.  The order compares the keys only, so the low halves of
 // the sorted run show the stable order of the equal keys.
 [[nodiscard]] HeapArray<std::uint64_t> draw_keyed(std::size_t count, std::uint64_t seed) noexcept {
-    HeapArray<std::uint64_t> run = ::fixy::mint_heap_array(test_alloc(), count, std::uint64_t{0});
     PhiloxStream stream{seed};
     std::uint64_t position = 0;
-    for (std::uint64_t& word : run) {
-        word = (stream.below(16) << 32) | position++;
-    }
-    return run;
+    return ::fixy::mint_heap_array_with<std::uint64_t>(test_alloc(), count, [&stream, &position](std::size_t) noexcept {
+        return (stream.below(16) << 32) | position++;
+    });
 }
 
 struct KeyLess {
@@ -432,16 +424,20 @@ void test_golden_bits() {
     HeapArray<float> const floats = draw_run<float>(kLongest, 0x601D0001u);
     HeapArray<double> const doubles = draw_run<double>(kLongest, 0x601D0002u);
     HeapArray<float> special_floats = draw_run<float>(kLongest, 0x601D0003u);
-    ::crucible::test::put_specials(special_floats.view(), 0x601D0004u);
+    special_floats = with_mut(std::move(special_floats),
+                              [](auto cells) noexcept { ::crucible::test::put_specials(cells.view(), 0x601D0004u); });
     HeapArray<double> special_doubles = draw_run<double>(kLongest, 0x601D0005u);
-    ::crucible::test::put_specials(special_doubles.view(), 0x601D0006u);
+    special_doubles = with_mut(std::move(special_doubles),
+                               [](auto cells) noexcept { ::crucible::test::put_specials(cells.view(), 0x601D0006u); });
     HeapArray<std::uint64_t> const words = draw_words(kLongest, 0x601D0007u);
     HeapArray<float> const run_elements = draw_run<float>(kRuns * kRunCount, 0x601D0008u);
     HeapArray<std::uint64_t> const keyed = draw_keyed(1000, 0x601D000Au);
     HeapArray<float> sort_floats = draw_run<float>(1000, 0x601D000Bu);
-    ::crucible::test::put_specials(sort_floats.view(), 0x601D000Cu);
-    *sort_floats.view().get(0).expect("a test reads an element at or past the count of its View") = -0.0f;
-    *sort_floats.view().get(1).expect("a test reads an element at or past the count of its View") = 0.0f;
+    sort_floats = with_mut(std::move(sort_floats), [](auto cells) noexcept {
+        ::crucible::test::put_specials(cells.view(), 0x601D000Cu);
+        *cells.get(0).expect("a test reads an element at or past the count of its View") = -0.0f;
+        *cells.get(1).expect("a test reads an element at or past the count of its View") = 0.0f;
+    });
 
     View<float const> const float_view{floats.view()};
     View<float const> const special_float_view{special_floats.view()};

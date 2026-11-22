@@ -199,28 +199,32 @@ void test_sort_stably_is_stable() {
     ::crucible::test::PhiloxStream stream{0x50470002u};
     auto const by_key = [](Keyed const& left, Keyed const& right) noexcept { return is_below(left, right); };
     auto const check_count = [&](std::size_t count) noexcept {
-        HeapArray<Keyed> records = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
-        HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
         std::uint32_t position = 0;
-        for (Keyed& record : records) {
-            record = Keyed{static_cast<std::uint32_t>(stream.below(1 + count / 4)), position};
-            ++position;
-        }
+        HeapArray<Keyed> records = ::foundation::core::mint_heap_array_with<Keyed>(
+            test_alloc(), count, [&stream, &position, count](std::size_t) noexcept {
+                Keyed const record{static_cast<std::uint32_t>(stream.below(1 + count / 4)), position};
+                ++position;
+                return record;
+            });
+        HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
         CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(records, scratch, by_key));
         HeapArray<std::uint8_t> seen = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint8_t{0});
-        View<Keyed> const sorted = records.view();
-        for (std::size_t index = 0; index < count; ++index) {
-            Keyed const record = *sorted.get(index).expect("a test reads an element at or past the count of its View");
-            std::uint8_t& mark =
-                *seen.view().get(record.position).expect("a test reads an element at or past the count of its View");
-            CRUCIBLE_TEST_ASSERT(kTest, mark == 0);
-            mark = 1;
-            if (index == 0) continue;
-            Keyed const before =
-                *sorted.get(index - 1).expect("a test reads an element at or past the count of its View");
-            CRUCIBLE_TEST_ASSERT(kTest, before.key < record.key
-                                            || (before.key == record.key && before.position < record.position));
-        }
+        View<Keyed const> const sorted{records.view()};
+        seen = ::foundation::core::with_mut(std::move(seen), [sorted, count](auto marks) noexcept {
+            for (std::size_t index = 0; index < count; ++index) {
+                Keyed const record =
+                    *sorted.get(index).expect("a test reads an element at or past the count of its View");
+                std::uint8_t& mark =
+                    *marks.get(record.position).expect("a test reads an element at or past the count of its View");
+                CRUCIBLE_TEST_ASSERT(kTest, mark == 0);
+                mark = 1;
+                if (index == 0) continue;
+                Keyed const before =
+                    *sorted.get(index - 1).expect("a test reads an element at or past the count of its View");
+                CRUCIBLE_TEST_ASSERT(kTest, before.key < record.key
+                                                || (before.key == record.key && before.position < record.position));
+            }
+        });
     };
     for (std::size_t count = 0; count <= 300; ++count) {
         check_count(count);
@@ -237,13 +241,11 @@ void test_sort_stably_agrees_with_the_naive_sort() {
     ::crucible::test::PhiloxStream stream{0x50470003u};
     ::fixy::FixedArray<std::size_t, 8> const counts{0, 1, 2, 31, 32, 33, 100, 1500};
     for (std::size_t const count : counts) {
-        HeapArray<float> values = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
-        for (float& value : values) {
-            value = draw_special_float(stream);
-        }
+        HeapArray<float> values = ::foundation::core::mint_heap_array_with<float>(
+            test_alloc(), count, [&stream](std::size_t) noexcept { return draw_special_float(stream); });
         HeapArray<float> expected =
             ::foundation::core::mint_heap_array_copy<float>(test_alloc(), View<float const>{values.view()});
-        naive_sort(expected.view());
+        expected = ::foundation::core::with_mut(std::move(expected), [](auto run) noexcept { naive_sort(run.view()); });
         HeapArray<float> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
         CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(values, scratch));
         CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
@@ -259,13 +261,14 @@ void test_sort_stably_of_ordered_runs() {
     auto const by_key = [](Keyed const& left, Keyed const& right) noexcept { return is_below(left, right); };
     ::fixy::FixedArray<std::size_t, 9> const counts{1, 31, 32, 33, 64, 65, 300, 1000, 4097};
     for (std::size_t const count : counts) {
-        HeapArray<Keyed> records = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
-        HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
         std::uint32_t position = 0;
-        for (Keyed& record : records) {
-            record = Keyed{position / 3, position};
-            ++position;
-        }
+        HeapArray<Keyed> records =
+            ::foundation::core::mint_heap_array_with<Keyed>(test_alloc(), count, [&position](std::size_t) noexcept {
+                Keyed const record{position / 3, position};
+                ++position;
+                return record;
+            });
+        HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
         CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(records, scratch, by_key));
         position = 0;
         for (Keyed const record : records) {
@@ -274,10 +277,12 @@ void test_sort_stably_of_ordered_runs() {
         }
         auto const last = static_cast<std::uint32_t>(count - 1);
         position = 0;
-        for (Keyed& record : records) {
-            record = Keyed{(last - position) / 3, position};
-            ++position;
-        }
+        records = ::foundation::core::with_mut(std::move(records), [last, &position](auto cells) noexcept {
+            for (Keyed& record : cells) {
+                record = Keyed{(last - position) / 3, position};
+                ++position;
+            }
+        });
         CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(records, scratch, by_key));
         View<Keyed const> const sorted{records.view()};
         for (std::size_t index = 1; index < count; ++index) {
@@ -294,30 +299,36 @@ void test_sort_stably_of_ordered_runs() {
 // their input order, and each position of the input is there once.
 [[nodiscard]] bool is_stable_order(View<Keyed const> sorted) noexcept {
     HeapArray<std::uint8_t> seen = ::foundation::core::mint_heap_array(test_alloc(), sorted.size(), std::uint8_t{0});
-    for (std::size_t index = 0; index < sorted.size(); ++index) {
-        Keyed const record = *sorted.get(index).expect("a test reads an element at or past the count of its View");
-        if (record.position >= sorted.size()) return false;
-        std::uint8_t& mark =
-            *seen.view().get(record.position).expect("a test reads an element at or past the count of its View");
-        if (mark != 0) return false;
-        mark = 1;
-        if (index == 0) continue;
-        Keyed const before = *sorted.get(index - 1).expect("a test reads an element at or past the count of its View");
-        if (before.key > record.key || (before.key == record.key && before.position > record.position)) return false;
-    }
-    return true;
+    auto [is_stable, marked] = ::foundation::core::with_mut(std::move(seen), [sorted](auto marks) noexcept {
+        for (std::size_t index = 0; index < sorted.size(); ++index) {
+            Keyed const record = *sorted.get(index).expect("a test reads an element at or past the count of its View");
+            if (record.position >= sorted.size()) return false;
+            std::uint8_t& mark =
+                *marks.get(record.position).expect("a test reads an element at or past the count of its View");
+            if (mark != 0) return false;
+            mark = 1;
+            if (index == 0) continue;
+            Keyed const before =
+                *sorted.get(index - 1).expect("a test reads an element at or past the count of its View");
+            if (before.key > record.key || (before.key == record.key && before.position > record.position))
+                return false;
+        }
+        return true;
+    });
+    static_cast<void>(marked.size());
+    return is_stable;
 }
 
 // The records of count positions with the key of each position from a rule.
 template <class KeyRule>
 [[nodiscard]] HeapArray<Keyed> draw_records(std::size_t count, KeyRule rule) noexcept {
-    HeapArray<Keyed> records = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
     std::uint32_t position = 0;
-    for (Keyed& record : records) {
-        record = Keyed{rule(position), position};
-        ++position;
-    }
-    return records;
+    return ::foundation::core::mint_heap_array_with<Keyed>(test_alloc(), count,
+                                                           [&rule, &position](std::size_t) noexcept {
+                                                               Keyed const record{rule(position), position};
+                                                               ++position;
+                                                               return record;
+                                                           });
 }
 
 // The stable sort of the records by key, and whether the result is in stable
@@ -434,14 +445,18 @@ private:
 void test_sort_stably_bounds_the_adversary() {
     constexpr std::size_t count = std::size_t{1} << 16;
     HeapArray<std::uint32_t> keys = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint32_t{0});
-    QuicksortAdversary adversary{keys.view()};
     HeapArray<Keyed> probe = draw_records(count, [](std::uint32_t) noexcept { return std::uint32_t{0}; });
     HeapArray<Keyed> probe_scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
-    auto const by_adversary = [&](Keyed const& left, Keyed const& right) noexcept {
-        return adversary.is_below(left, right);
-    };
-    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(probe, probe_scratch, by_adversary));
-    adversary.freeze_each();
+    // The adversary keeps a View of the keys, so its whole life runs in the
+    // frame of the keys.
+    keys = ::foundation::core::with_mut(std::move(keys), [&probe, &probe_scratch](auto key_run) noexcept {
+        QuicksortAdversary adversary{key_run.view()};
+        auto const by_adversary = [&adversary](Keyed const& left, Keyed const& right) noexcept {
+            return adversary.is_below(left, right);
+        };
+        CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(probe, probe_scratch, by_adversary));
+        adversary.freeze_each();
+    });
     View<std::uint32_t const> const frozen{keys.view()};
     HeapArray<Keyed> records = draw_records(count, [&](std::uint32_t position) noexcept {
         return *frozen.get(position).expect("a test reads an element at or past the count of its View");
@@ -528,10 +543,8 @@ void check_radix_against_merge(::crucible::test::PhiloxStream& stream) noexcept 
     };
     ::fixy::FixedArray<std::size_t, 10> const counts{1, 255, 256, 257, 300, 1000, 4095, 4096, 4097, 20000};
     for (std::size_t const count : counts) {
-        HeapArray<T> radix = ::foundation::core::mint_heap_array(test_alloc(), count, T{});
-        for (T& value : radix) {
-            value = draw_element<T>(stream);
-        }
+        HeapArray<T> radix = ::foundation::core::mint_heap_array_with<T>(
+            test_alloc(), count, [&stream](std::size_t) noexcept { return draw_element<T>(stream); });
         HeapArray<T> merged = ::foundation::core::mint_heap_array_copy<T>(test_alloc(), View<T const>{radix.view()});
         HeapArray<T> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, T{});
         CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(radix, scratch));
@@ -579,12 +592,13 @@ void test_sort_stably_ends_on_a_random_order(::fixy::TestRunnerCtx const& test) 
     std::uint32_t seed = 0x50470010u;
     for (std::size_t const count : counts) {
         ::crucible::test::PhiloxStream stream{seed};
-        HeapArray<float> values = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
         float next = 0.0f;
-        for (float& value : values) {
-            value = next;
-            next += 1.0f;
-        }
+        HeapArray<float> values =
+            ::foundation::core::mint_heap_array_with<float>(test_alloc(), count, [&next](std::size_t) noexcept {
+                float const value = next;
+                next += 1.0f;
+                return value;
+            });
         HeapArray<float> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
         ::fixy::check::expect_dies(
             test,
@@ -644,14 +658,15 @@ void test_order_by_key_agrees_with_the_comparator_form() {
     ::crucible::test::PhiloxStream stream{0x50470007u};
     ::fixy::FixedArray<std::size_t, 8> const counts{1, 255, 256, 1000, 4095, 4096, 4097, 65536};
     for (std::size_t const count : counts) {
-        HeapArray<KeyedRecord> input = ::foundation::core::mint_heap_array(test_alloc(), count, KeyedRecord{});
         std::uint32_t position = 0;
-        for (KeyedRecord& record : input) {
-            float const key = position % 5 == 0 ? 1.5f : draw_special_float(stream);
-            auto const short_key = static_cast<std::int16_t>(static_cast<std::int32_t>(stream.below(600)) - 300);
-            record = KeyedRecord{.key = key, .short_key = short_key, .spare = 0, .position = position};
-            ++position;
-        }
+        HeapArray<KeyedRecord> const input = ::foundation::core::mint_heap_array_with<KeyedRecord>(
+            test_alloc(), count, [&stream, &position](std::size_t) noexcept {
+                float const key = position % 5 == 0 ? 1.5f : draw_special_float(stream);
+                auto const short_key = static_cast<std::int16_t>(static_cast<std::int32_t>(stream.below(600)) - 300);
+                KeyedRecord const record{.key = key, .short_key = short_key, .spare = 0, .position = position};
+                ++position;
+                return record;
+            });
         auto const by_short_key = [](KeyedRecord const& record) noexcept { return record.short_key; };
         check_order_by_key(input, ::foundation::core::order_by_key(&KeyedRecord::key),
                            [](KeyedRecord const& left, KeyedRecord const& right) noexcept {
@@ -677,12 +692,12 @@ void test_searches_agree_with_a_scan() {
     ::crucible::test::PhiloxStream stream{0x50470004u};
     for (int trial = 0; trial < 400; ++trial) {
         std::size_t const count = stream.below(80);
-        HeapArray<std::int32_t> values = ::foundation::core::mint_heap_array(test_alloc(), count, std::int32_t{0});
         std::int32_t next = -20;
-        for (std::int32_t& value : values) {
-            next += static_cast<std::int32_t>(stream.below(3));
-            value = next;
-        }
+        HeapArray<std::int32_t> const values = ::foundation::core::mint_heap_array_with<std::int32_t>(
+            test_alloc(), count, [&stream, &next](std::size_t) noexcept {
+                next += static_cast<std::int32_t>(stream.below(3));
+                return next;
+            });
         View<std::int32_t const> const sorted{values.view()};
         for (std::int32_t probe = -22; probe <= next + 2; ++probe) {
             std::size_t first_not_below = count;

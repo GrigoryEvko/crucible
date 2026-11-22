@@ -141,8 +141,10 @@ namespace {
     // An image of the branch holds the merkle hash of each target.  A
     // resolver that knows only the first target gives the second arm no
     // target, and the image of the loaded branch writes zero for it.
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
-    const size_t written = crucible::serialize_branch(::fixy::to(branch), image.view());
+    auto [written, image] =
+        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&branch](auto run) noexcept {
+            return crucible::serialize_branch(::fixy::to(branch), run.view());
+        });
     CRUCIBLE_TEST_ASSERT(kTest, written > 0);
     crucible::BranchNode& loaded =
         *crucible::deserialize_branch(
@@ -156,8 +158,10 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(loaded_first.target(), region_a));
     CRUCIBLE_TEST_ASSERT(kTest, loaded_second.target().is_none());
 
-    ::fixy::HeapArray<std::byte> image_again = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
-    const size_t written_again = crucible::serialize_branch(::fixy::to(loaded), image_again.view());
+    auto [written_again, image_again] =
+        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&loaded](auto run) noexcept {
+            return crucible::serialize_branch(::fixy::to(loaded), run.view());
+        });
     CRUCIBLE_TEST_ASSERT(kTest, written_again == written);
     // The hash of the second target is the last eight bytes of the image.
     for (size_t index = written - 8; index < written; ++index) {
