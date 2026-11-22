@@ -30,45 +30,47 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 // op[i] writes to slot i, reads from slot (i-1) mod N. Plan gives each
 // slot 256 B of a dummy pool.
 struct BenchRegion {
+    // The slot ids of each output and input, the zero metadata of each
+    // output and input, and no producer for each input.  Each op keeps a View
+    // that writes them, so they are runs of the arena.  The replay reads only
+    // the slot ids.
+    ::fixy::BumpArena arena{};
     ::fixy::HeapArray<TraceEntry> ops{};
-    ::fixy::HeapArray<SlotId> out_slots{};
-    ::fixy::HeapArray<SlotId> in_slots{};
-    // The zero metadata of each output and input, and no producer for each
-    // input.  The replay reads only the slot ids.
-    ::fixy::HeapArray<TensorMeta> out_metas{};
-    ::fixy::HeapArray<TensorMeta> in_metas{};
-    ::fixy::HeapArray<OpIndex> in_producers{};
     ::fixy::HeapArray<TensorSlot> slots{};
     MemoryPlan plan{};
     RegionNode region{};
     uint32_t num_ops = 0;
 
     explicit BenchRegion(uint32_t n) : num_ops{n} {
-        ops = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TraceEntry{});
-        out_slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, SlotId{});
-        in_slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, SlotId{});
-        out_metas = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorMeta{});
-        in_metas = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorMeta{});
-        in_producers = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, OpIndex{});
-        slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorSlot{});
+        auto const alloc = ::foundation::effects::testing::test().alloc;
+        const ::fixy::View<SlotId> out_slots = arena.array(alloc, n, SlotId{});
+        const ::fixy::View<SlotId> in_slots = arena.array(alloc, n, SlotId{});
+        const ::fixy::View<TensorMeta> out_metas = arena.array(alloc, n, TensorMeta{});
+        const ::fixy::View<TensorMeta> in_metas = arena.array(alloc, n, TensorMeta{});
+        const ::fixy::View<OpIndex> in_producers = arena.array(alloc, n, OpIndex{});
+        ops = ::fixy::mint_heap_array(alloc, n, TraceEntry{});
 
-        for (uint32_t i = 0; i < n; i++) {
-            const ::fixy::View<SlotId> out_slot = out_slots.view().window(i, 1).expect("i is below n");
-            const ::fixy::View<SlotId> in_slot = in_slots.view().window(i, 1).expect("i is below n");
-            ::fixy::fill(out_slot, SlotId{i});
-            ::fixy::fill(in_slot, SlotId{(i > 0) ? (i - 1) : (n - 1)});
+        // One frame of the ops writes each op.
+        ops = ::fixy::with_mut(
+            std::move(ops), [out_slots, in_slots, out_metas, in_metas, in_producers, n](auto run) noexcept {
+                for (uint32_t i = 0; i < n; i++) {
+                    const ::fixy::View<SlotId> out_slot = out_slots.window(i, 1).expect("i is below n");
+                    const ::fixy::View<SlotId> in_slot = in_slots.window(i, 1).expect("i is below n");
+                    ::fixy::fill(out_slot, SlotId{i});
+                    ::fixy::fill(in_slot, SlotId{(i > 0) ? (i - 1) : (n - 1)});
 
-            TraceEntry& op = *ops.get(i).expect("i is below n");
-            op.schema_hash = SchemaHash{1000 + i};
-            op.shape_hash = ShapeHash{2000 + i};
-            op.set_outputs(out_metas.view().window(i, 1).expect("i is below n"), out_slot);
-            op.set_inputs(in_metas.view().window(i, 1).expect("i is below n"),
-                          in_producers.view().window(i, 1).expect("i is below n"), in_slot);
-        }
+                    TraceEntry& op = *run.get(i).expect("i is below n");
+                    op.schema_hash = SchemaHash{1000 + i};
+                    op.shape_hash = ShapeHash{2000 + i};
+                    op.set_outputs(out_metas.window(i, 1).expect("i is below n"), out_slot);
+                    op.set_inputs(in_metas.window(i, 1).expect("i is below n"),
+                                  in_producers.window(i, 1).expect("i is below n"), in_slot);
+                }
+            });
 
-        uint32_t i = 0;
-        for (TensorSlot& slot : slots) {
-            slot = TensorSlot{.offset_bytes = i * 256ULL,
+        slots = ::fixy::mint_heap_array_with<TensorSlot>(alloc, n, [n](std::size_t position) noexcept {
+            const auto i = static_cast<uint32_t>(position);
+            return TensorSlot{.offset_bytes = i * 256ULL,
                               .nbytes = 256,
                               .birth_op = OpIndex{0},
                               .death_op = OpIndex{n},
@@ -80,8 +82,7 @@ struct BenchRegion {
                               .pad = {},
                               .slot_id = SlotId{i},
                               .pad2 = {}};
-            i++;
-        }
+        });
 
         plan.slots = slots.view();
         plan.num_external = 0;

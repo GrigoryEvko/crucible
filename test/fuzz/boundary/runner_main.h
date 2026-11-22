@@ -157,11 +157,14 @@ template <class Left, class Right>
     std::int64_t const size = fs::file_size(kCtx, file.ref()).value_or(-1);
     if (size < 0) return ::fixy::none;
     SeedBytes buffer = ::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), static_cast<std::size_t>(size));
-    std::size_t const count = fs::read_full(kCtx, file.ref(), buffer.view()).value_or(buffer.size() + 1);
-    if (count > buffer.size()) return ::fixy::none;
-    if (count == buffer.size()) return ::fixy::Option<SeedBytes>::some(std::move(buffer));
+    std::size_t const capacity = buffer.size();
+    auto [count, filled] = ::fixy::with_mut(std::move(buffer), [&file, capacity](auto run) noexcept {
+        return fs::read_full(kCtx, file.ref(), run.view()).value_or(capacity + 1);
+    });
+    if (count > filled.size()) return ::fixy::none;
+    if (count == filled.size()) return ::fixy::Option<SeedBytes>::some(std::move(filled));
     return ::fixy::Option<SeedBytes>::some(
-        copy_seed(::fixy::View<std::byte const>{buffer.view()}.window(0, count).expect("a read fits its buffer")));
+        copy_seed(::fixy::View<std::byte const>{filled.view()}.window(0, count).expect("a read fits its buffer")));
 }
 
 // The sanitized path of an argument, or no value after a report.

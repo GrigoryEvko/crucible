@@ -144,9 +144,11 @@ public:
     // The bytes of the seed.  Complexity: one copy of each byte.
     [[nodiscard]] SeedBytes finish() const noexcept {
         SeedBytes seed = ::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), bytes_.size());
-        ::fixy::View<std::byte> const target = seed.view();
-        bytes_.with_view([target](::fixy::View<std::byte const> all) noexcept {
-            ::fixy::copy(target, all).expect("the seed holds each byte of the writer");
+        seed = ::fixy::with_mut(std::move(seed), [this](auto run) noexcept {
+            ::fixy::View<std::byte> const target = run.view();
+            bytes_.with_view([target](::fixy::View<std::byte const> all) noexcept {
+                ::fixy::copy(target, all).expect("the seed holds each byte of the writer");
+            });
         });
         return seed;
     }

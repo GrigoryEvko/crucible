@@ -198,23 +198,24 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     }
 
     // Measurement: run build_trace N times, accumulate.
+    // The mint runs the iterations in the order of the samples, one sample
+    // for each iteration.
     double total_ns = 0;
-    ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array(A, iters, 0.0);
+    ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array_with<double>(
+        A, iters, [&scratch, &meta_log, &trace, &bg, &total_ns, nspc](std::size_t) noexcept {
+            const double ns = scratch.with_epoch([&]() noexcept {
+                bench::refill_meta_log(meta_log, trace);
 
-    for (uint32_t iter = 0; iter < iters; iter++) {
-        const double ns = scratch.with_epoch([&]() noexcept {
-            bench::refill_meta_log(meta_log, trace);
+                const uint64_t t0 = bench::rdtsc_start();
+                auto built = build_recorded(bg, scratch, trace);
+                const uint64_t t1 = bench::rdtsc_end();
 
-            const uint64_t t0 = bench::rdtsc_start();
-            auto built = build_recorded(bg, scratch, trace);
-            const uint64_t t1 = bench::rdtsc_end();
-
-            bench::do_not_optimize(built);
-            return static_cast<double>(t1 - t0) * nspc;
+                bench::do_not_optimize(built);
+                return static_cast<double>(t1 - t0) * nspc;
+            });
+            total_ns += ns;
+            return ns;
         });
-        total_ns += ns;
-        *samples.get(iter).expect("the samples hold one time for each iteration") = ns;
-    }
 
     if (iters == 0) ::fixy::fatal("bench_phases: the top-level breakdown takes at least one iteration");
     const ::fixy::HeapArray<double> sorted = bench::sorted_samples(std::move(samples));
@@ -372,12 +373,15 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         BuildScratchOfBench::ensure_buffers(bg, A, total_inputs, total_outputs);
         const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(bg),
                                               ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
-        for (BackgroundThread::SlotInfo& slot_info : BuildScratchOfBench::slots(bg)
-                                                         .view()
-                                                         .window(0, slot_cap)
-                                                         .expect("the slot scratch holds slot_cap slots")) {
-            slot_info = BackgroundThread::SlotInfo{};
-        }
+        // The growth above can give the scratch new storage, so the frame of
+        // the scratch opens after it, in the timed region.
+        ::fixy::HeapArray<BackgroundThread::SlotInfo>& scratch_slots = BuildScratchOfBench::slots(bg);
+        scratch_slots = ::fixy::with_mut(std::move(scratch_slots), [slot_cap](auto run) noexcept {
+            for (BackgroundThread::SlotInfo& slot_info :
+                 run.view().window(0, slot_cap).expect("the slot scratch holds slot_cap slots")) {
+                slot_info = BackgroundThread::SlotInfo{};
+            }
+        });
 
         const uint64_t t1 = bench::rdtsc_end();
 
@@ -412,9 +416,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
 
         for (uint32_t iter = 0; iter < iters; iter++) {
+            // The buffer is new in each iteration, so its frame is in the
+            // timed region.  The frame gives the buffer back with no
+            // assignment.
             const uint64_t t0 = bench::rdtsc_start();
-            ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::mint_heap_array(A, total_metas, TensorMeta{});
-            meta_log.copy_run(first_meta.raw(), meta_buffer.view());
+            ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::with_mut(
+                ::fixy::mint_heap_array(A, total_metas, TensorMeta{}),
+                [&meta_log, first_meta](auto run) noexcept { meta_log.copy_run(first_meta.raw(), run.view()); });
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(meta_buffer);
@@ -449,8 +457,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         ::fixy::HeapArray<TraceEntry> op_buffer = ::fixy::mint_heap_array(A, count, TraceEntry{});
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
-        ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::mint_heap_array(A, total_metas, TensorMeta{});
-        meta_log.copy_run(first_meta.raw(), meta_buffer.view());
+        ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::with_mut(
+            ::fixy::mint_heap_array(A, total_metas, TensorMeta{}),
+            [&meta_log, first_meta](auto run) noexcept { meta_log.copy_run(first_meta.raw(), run.view()); });
         ::fixy::HeapArray<int64_t> scalar_buffer = ::fixy::mint_heap_array(A, total_scalars, int64_t{0});
         ::fixy::HeapArray<OpIndex> producer_buffer = ::fixy::mint_heap_array(A, total_inputs, OpIndex{});
         ::fixy::HeapArray<SlotId> slot_buffer = ::fixy::mint_heap_array(A, total_inputs + total_outputs, SlotId{});
@@ -677,42 +686,44 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             return ref_graph->num_slots.get();
         });
 
-        // The slots of the build, and a copy that each turn writes back.
-        const ::fixy::View<BackgroundThread::SlotInfo> built_slots =
-            BuildScratchOfBench::slots(bg)
-                .view()
-                .window(0, num_slots)
-                .expect("the slot scratch holds the slots of the build");
-        const ::fixy::HeapArray<BackgroundThread::SlotInfo> saved_slots =
-            ::fixy::mint_heap_array_copy<BackgroundThread::SlotInfo>(A, built_slots);
+        // The slots of the build, and a copy that each turn writes back.  One
+        // frame of the scratch holds the whole loop, outside its timed region.
+        ::fixy::HeapArray<BackgroundThread::SlotInfo>& scratch_slots = BuildScratchOfBench::slots(bg);
+        scratch_slots =
+            ::fixy::with_mut(std::move(scratch_slots), [&ns_p3, iters, num_slots, nspc](auto scratch) noexcept {
+                const ::fixy::View<BackgroundThread::SlotInfo> built_slots =
+                    scratch.view().window(0, num_slots).expect("the slot scratch holds the slots of the build");
+                const ::fixy::HeapArray<BackgroundThread::SlotInfo> saved_slots =
+                    ::fixy::mint_heap_array_copy<BackgroundThread::SlotInfo>(A, built_slots);
 
-        for (uint32_t iter = 0; iter < iters; iter++) {
-            ::fixy::copy(built_slots, saved_slots.view()).expect("the two runs hold the slots of the build");
+                for (uint32_t iter = 0; iter < iters; iter++) {
+                    ::fixy::copy(built_slots, saved_slots.view()).expect("the two runs hold the slots of the build");
 
-            const uint64_t t0 = bench::rdtsc_start();
+                    const uint64_t t0 = bench::rdtsc_start();
 
-            ::fixy::HeapArray<TensorSlot> slots =
-                ::fixy::mint_heap_array_with<TensorSlot>(A, num_slots, [built_slots](size_t position) noexcept {
-                    BackgroundThread::SlotInfo const& info =
-                        *built_slots.get(position).expect("the slot of each position is built");
-                    return TensorSlot{.offset_bytes = 0,
-                                      .nbytes = info.nbytes,
-                                      .birth_op = info.birth_op,
-                                      .death_op = info.death_op,
-                                      .dtype = info.dtype,
-                                      .device_type = info.device_type,
-                                      .device_idx = info.device_idx,
-                                      .layout = info.layout,
-                                      .is_external = info.is_external,
-                                      .pad = {},
-                                      .slot_id = SlotId{static_cast<uint32_t>(position)},
-                                      .pad2 = {}};
-                });
+                    ::fixy::HeapArray<TensorSlot> slots =
+                        ::fixy::mint_heap_array_with<TensorSlot>(A, num_slots, [built_slots](size_t position) noexcept {
+                            BackgroundThread::SlotInfo const& info =
+                                *built_slots.get(position).expect("the slot of each position is built");
+                            return TensorSlot{.offset_bytes = 0,
+                                              .nbytes = info.nbytes,
+                                              .birth_op = info.birth_op,
+                                              .death_op = info.death_op,
+                                              .dtype = info.dtype,
+                                              .device_type = info.device_type,
+                                              .device_idx = info.device_idx,
+                                              .layout = info.layout,
+                                              .is_external = info.is_external,
+                                              .pad = {},
+                                              .slot_id = SlotId{static_cast<uint32_t>(position)},
+                                              .pad2 = {}};
+                        });
 
-            const uint64_t t1 = bench::rdtsc_end();
-            bench::do_not_optimize(slots);
-            ns_p3 += static_cast<double>(t1 - t0) * nspc;
-        }
+                    const uint64_t t1 = bench::rdtsc_end();
+                    bench::do_not_optimize(slots);
+                    ns_p3 += static_cast<double>(t1 - t0) * nspc;
+                }
+            });
     }
 
     const ::fixy::FixedArray<PhaseTiming, 8> phases{

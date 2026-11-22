@@ -114,8 +114,9 @@ enum class SeedSlotFault : std::uint8_t {
 
 // The image of a region, as the writer writes it.
 [[nodiscard]] inline SeedBytes region_image(const RegionNode& region) noexcept {
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test_alloc(), std::size_t{1} << 16, std::byte{0});
-    const std::size_t written = serialize_region(::fixy::to(region), image.view());
+    ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(test_alloc(), std::size_t{1} << 16, std::byte{0});
+    const auto [written, image] = ::fixy::with_mut(
+        std::move(blank), [&region](auto run) noexcept { return serialize_region(::fixy::to(region), run.view()); });
     return copy_seed(
         ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
 }
@@ -135,13 +136,19 @@ inline void add_region_regressions(SeedList& seeds) noexcept {
 
     // The header states a content hash that is not the hash of the ops.
     SeedBytes wrong_hash = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
-    const auto hash_byte = wrong_hash.view().get(kImageContentHashOffset).expect("the image holds its header");
-    *hash_byte = static_cast<std::byte>(static_cast<unsigned>(*hash_byte) ^ 0x01U);
+    wrong_hash.with_element(
+        kImageContentHashOffset,
+        [](std::byte& hash_byte) noexcept {
+            hash_byte = static_cast<std::byte>(static_cast<unsigned>(hash_byte) ^ 0x01U);
+        },
+        [] noexcept { ::fixy::fatal("the image holds its header"); });
     add_seed(seeds, std::move(wrong_hash));
 
     // The plan flag holds a byte that is no value of a bool.
     SeedBytes bad_bool = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
-    *bad_bool.view().get(kImageHasPlanOffset).expect("the image holds its plan flag") = std::byte{0x02};
+    bad_bool.with_element(
+        kImageHasPlanOffset, [](std::byte& flag) noexcept { flag = std::byte{0x02}; },
+        [] noexcept { ::fixy::fatal("the image holds its plan flag"); });
     add_seed(seeds, std::move(bad_bool));
 
     // A slot reaches past the pool, and a slot starts off the alignment.
@@ -176,8 +183,10 @@ inline void run_region(::fixy::View<std::byte const> bytes) noexcept {
 
         // The loaded region writes back to an image that loads to the same
         // region: the loader keeps every field the writer reads.
-        ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
-        const std::size_t written = serialize_region(::fixy::to(region), image.view());
+        ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
+        const auto [written, image] = ::fixy::with_mut(std::move(blank), [&region](auto run) noexcept {
+            return serialize_region(::fixy::to(region), run.view());
+        });
         CRUCIBLE_FUZZ_CLAIM("region", written > 0);
         const ::fixy::Option<LoadedRegionNode> reloaded =
             deserialize_region(alloc, image.view().window(0, written).expect("the writer writes inside its image"),

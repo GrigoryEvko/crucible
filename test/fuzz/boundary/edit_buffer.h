@@ -28,8 +28,10 @@ public:
         : front_{::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), seed.size() + room.raw())},
           back_{::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), seed.size() + room.raw())},
           count_{seed.size()} {
-        ::fixy::copy(front_.view().window(0, count_).expect("the buffer holds the seed"), seed)
-            .expect("the window holds the count of the seed");
+        front_ = ::fixy::with_mut(std::move(front_), [seed](auto run) noexcept {
+            ::fixy::copy(run.view().window(0, seed.size()).expect("the buffer holds the seed"), seed)
+                .expect("the window holds the count of the seed");
+        });
     }
 
     // The bytes of the input.
@@ -43,45 +45,54 @@ public:
 
     // The byte at a position below size(), xor mask.
     void xor_at(ByteCount at, std::byte mask) noexcept {
-        ::fixy::Ref<std::byte> const byte = byte_at_(at);
-        *byte = static_cast<std::byte>(static_cast<unsigned>(*byte) ^ static_cast<unsigned>(mask));
+        edit_byte_at_(at, [mask](std::byte& byte) noexcept {
+            byte = static_cast<std::byte>(static_cast<unsigned>(byte) ^ static_cast<unsigned>(mask));
+        });
     }
 
     // The byte at a position below size() becomes value.
-    void set_at(ByteCount at, std::byte value) noexcept { *byte_at_(at) = value; }
+    void set_at(ByteCount at, std::byte value) noexcept {
+        edit_byte_at_(at, [value](std::byte& byte) noexcept { byte = value; });
+    }
 
     // Puts the bytes of part before the byte at a position of at most size().
-    // Complexity: one copy of each byte.
+    // The frame of the second buffer reads the input through a View that the
+    // call makes before the frame.  Complexity: one copy of each byte.
     void insert_at(ByteCount at, ::fixy::View<std::byte const> part) noexcept {
         std::size_t const position = at.raw();
         std::size_t const tail = count_ - position;
-        ::fixy::View<std::byte> const target = back_.view();
         ::fixy::View<std::byte const> const source = view();
-        ::fixy::copy(target.window(0, position).expect("the head fits the buffer"),
-                     source.window(0, position).expect("an insert is at a position of the input"))
-            .expect("the two heads hold one count");
-        ::fixy::copy(target.window(position, part.size()).expect("the buffer has room for the part"), part)
-            .expect("the window holds the count of the part");
-        ::fixy::copy(target.window(position + part.size(), tail).expect("the tail fits the buffer"),
-                     source.window(position, tail).expect("the tail is in the input"))
-            .expect("the two tails hold one count");
+        back_ = ::fixy::with_mut(std::move(back_), [source, part, position, tail](auto run) noexcept {
+            ::fixy::View<std::byte> const target = run.view();
+            ::fixy::copy(target.window(0, position).expect("the head fits the buffer"),
+                         source.window(0, position).expect("an insert is at a position of the input"))
+                .expect("the two heads hold one count");
+            ::fixy::copy(target.window(position, part.size()).expect("the buffer has room for the part"), part)
+                .expect("the window holds the count of the part");
+            ::fixy::copy(target.window(position + part.size(), tail).expect("the tail fits the buffer"),
+                         source.window(position, tail).expect("the tail is in the input"))
+                .expect("the two tails hold one count");
+        });
         swap_();
         count_ += part.size();
     }
 
-    // Removes the byte at a position below size().  Complexity: one copy of
-    // each byte.
+    // Removes the byte at a position below size().  The frame of the second
+    // buffer reads the input as insert_at does.  Complexity: one copy of each
+    // byte.
     void erase_at(ByteCount at) noexcept {
         std::size_t const position = at.raw();
         std::size_t const tail = count_ - position - 1;
-        ::fixy::View<std::byte> const target = back_.view();
         ::fixy::View<std::byte const> const source = view();
-        ::fixy::copy(target.window(0, position).expect("the head fits the buffer"),
-                     source.window(0, position).expect("an erase is at a position of the input"))
-            .expect("the two heads hold one count");
-        ::fixy::copy(target.window(position, tail).expect("the tail fits the buffer"),
-                     source.window(position + 1, tail).expect("the tail is in the input"))
-            .expect("the two tails hold one count");
+        back_ = ::fixy::with_mut(std::move(back_), [source, position, tail](auto run) noexcept {
+            ::fixy::View<std::byte> const target = run.view();
+            ::fixy::copy(target.window(0, position).expect("the head fits the buffer"),
+                         source.window(0, position).expect("an erase is at a position of the input"))
+                .expect("the two heads hold one count");
+            ::fixy::copy(target.window(position, tail).expect("the tail fits the buffer"),
+                         source.window(position + 1, tail).expect("the tail is in the input"))
+                .expect("the two tails hold one count");
+        });
         swap_();
         count_ -= 1;
     }
@@ -93,9 +104,11 @@ public:
     }
 
 private:
-    [[nodiscard]] ::fixy::Ref<std::byte> byte_at_(ByteCount at) noexcept {
+    // Gives the byte at a position below size() to edit, in place.
+    template <class Edit>
+    void edit_byte_at_(ByteCount at, Edit edit) noexcept {
         if (at.raw() >= count_) ::fixy::fatal("an edit of a byte is at a position of the input");
-        return ::fixy::erase_brand(front_.view().get(at.raw()).expect("a position of the input is in the buffer"));
+        front_.with_element(at.raw(), edit, [] noexcept { ::fixy::fatal("a position of the input is in the buffer"); });
     }
 
     void swap_() noexcept {

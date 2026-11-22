@@ -87,10 +87,12 @@ using HeapSeeds = ::fixy::FixedList<Bytes, 4>;
     CRUCIBLE_FATAL_INVARIANT(units <= 0xFFFFU);
     std::size_t const size = ::fixy::encoded_size(value);
     Bytes input = ::fixy::mint_heap_array_zeroed<std::byte>(alloc(), kBudgetBytes + size);
-    ::fixy::View<std::byte> const whole = input.view();
-    *whole.get(0).expect("the input holds the budget") = static_cast<std::byte>(units & 0xFFU);
-    *whole.get(1).expect("the input holds the budget") = static_cast<std::byte>(units >> 8);
-    ::fixy::encode(value, whole.window(kBudgetBytes, size).expect("the input holds the image"));
+    input = ::fixy::with_mut(std::move(input), [&value, units, size](auto run) noexcept {
+        ::fixy::View<std::byte> const whole = run.view();
+        *whole.get(0).expect("the input holds the budget") = static_cast<std::byte>(units & 0xFFU);
+        *whole.get(1).expect("the input holds the budget") = static_cast<std::byte>(units >> 8);
+        ::fixy::encode(value, whole.window(kBudgetBytes, size).expect("the input holds the image"));
+    });
     return input;
 }
 
@@ -156,7 +158,8 @@ inline void run_protocol_heap(::fixy::View<std::byte const> input) noexcept {
                 CRUCIBLE_FATAL_INVARIANT(::fixy::encoded_size(value) == image.size());
                 CRUCIBLE_FATAL_INVARIANT(detail::storage_of(value) <= budget.raw());
                 detail::Bytes again = ::fixy::mint_heap_array_zeroed<std::byte>(detail::alloc(), image.size());
-                ::fixy::encode(value, again.view());
+                again = ::fixy::with_mut(std::move(again),
+                                         [&value](auto run) noexcept { ::fixy::encode(value, run.view()); });
                 detail::Bytes const& written = again;
                 CRUCIBLE_FATAL_INVARIANT(::fixy::equal(written.view(), image));
             },

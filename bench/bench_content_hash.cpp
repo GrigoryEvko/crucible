@@ -27,13 +27,15 @@ static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena& arena, uint32_t
         meta.strides[d] = tensor_dim((d == ndim - 1) ? 1 : 128);
     }
     ::fixy::HeapArray<TraceEntry> ops = ::fixy::mint_heap_array(A, count, TraceEntry{});
-    for (uint32_t i = 0; i < count; i++) {
-        auto& te = *ops.get(i).expect("i is below count");
-        te.schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
-        te.set_inputs(arena.array(A, num_inputs, meta), arena.array(A, num_inputs, OpIndex{}),
-                      arena.array(A, num_inputs, SlotId{}));
-        te.set_outputs(arena.array(A, 1, meta), arena.array(A, 1, SlotId{}));
-    }
+    ops = ::fixy::with_mut(std::move(ops), [&arena, &meta, count, num_inputs](auto run) noexcept {
+        for (uint32_t i = 0; i < count; i++) {
+            auto& te = *run.get(i).expect("i is below count");
+            te.schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
+            te.set_inputs(arena.array(A, num_inputs, meta), arena.array(A, num_inputs, OpIndex{}),
+                          arena.array(A, num_inputs, SlotId{}));
+            te.set_outputs(arena.array(A, 1, meta), arena.array(A, 1, SlotId{}));
+        }
+    });
     return ops;
 }
 

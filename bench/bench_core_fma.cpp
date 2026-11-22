@@ -68,18 +68,16 @@ template <typename Body>
 
 // The triples, from a linear congruential stream: a factor gets the exponent
 // of 1 and a random fraction, and an addend gets a random sign too.
+// The mint builds the values in the order of their positions, so the stream
+// gives the same values as a loop.
 [[nodiscard]] HeapArray<double> draw_triples() noexcept {
-    HeapArray<double> values = ::foundation::core::mint_heap_array(kAlloc, kValues, 0.0);
     std::uint64_t state = 0x9E3779B97F4A7C15u;
-    std::size_t index = 0;
-    for (double& value : values) {
+    return ::foundation::core::mint_heap_array_with<double>(kAlloc, kValues, [&state](std::size_t index) noexcept {
         state = state * 6364136223846793005u + 1442695040888963407u;
         std::uint64_t const fraction = state >> 12;
         std::uint64_t const sign = index % 3 == 2 ? (state & 1u) << 63 : 0u;
-        value = ::fixy::bit_cast<double>(sign | (std::uint64_t{1023} << 52) | fraction);
-        ++index;
-    }
-    return values;
+        return ::fixy::bit_cast<double>(sign | (std::uint64_t{1023} << 52) | fraction);
+    });
 }
 
 // The bits of a double, for the check of the units.

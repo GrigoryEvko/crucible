@@ -1955,12 +1955,13 @@ struct CI {
         const std::size_t position = (word * uint64_t{n}) >> 32;
         return *ns_samples.get(position).expect("the high half of a product with n is below n");
     };
-    ::fixy::HeapArray<double> estimates = ::fixy::mint_heap_array(alloc, B, 0.0);
-    for (size_t b = 0; b < B; ++b) {
-        const ::fixy::HeapArray<double> resample = sorted_samples(::fixy::mint_heap_array_with<double>(alloc, n, pick));
-        *estimates.get(b).expect("b is below the count of the resamples") =
-            percentile_interp(::fixy::View<const double>{resample.view()}, frac);
-    }
+    // The mint builds the estimates in the order of the resamples, so the draws keep their order.
+    ::fixy::HeapArray<double> estimates =
+        ::fixy::mint_heap_array_with<double>(alloc, B, [&alloc, &pick, n, frac](std::size_t) noexcept {
+            const ::fixy::HeapArray<double> resample =
+                sorted_samples(::fixy::mint_heap_array_with<double>(alloc, n, pick));
+            return percentile_interp(::fixy::View<const double>{resample.view()}, frac);
+        });
     estimates = sorted_samples(std::move(estimates));
     const ::fixy::View<const double> sorted{estimates.view()};
     return {
@@ -3091,8 +3092,12 @@ public:
                 const uint64_t d = (raw > ovh) ? (raw - ovh) : 0;
                 // After the reading of the end, so the check of the position
                 // is outside the timed region.  The windows share S samples.
-                *ns_samples.get(filled).expect("the windows take at most S samples") =
-                    (static_cast<double>(d) * nspc) / static_cast<double>(batch);
+                // The element door takes the value alone, so no closure holds
+                // the body of the bench.
+                const double sample_ns = (static_cast<double>(d) * nspc) / static_cast<double>(batch);
+                ns_samples.with_element(
+                    filled, [sample_ns](double& sample) noexcept { sample = sample_ns; },
+                    [] noexcept { ::fixy::fatal("the windows take at most S samples"); });
                 ++filled;
                 // The reading of the end of the sample is the clock of the
                 // part of the time of the window, so the check costs no read.

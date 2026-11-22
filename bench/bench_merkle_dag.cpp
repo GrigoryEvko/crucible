@@ -228,21 +228,23 @@ int run_bench(::fixy::os::Args const& arguments) {
         constexpr uint32_t NUM_SLOTS = 300;
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, NUM_SLOTS, TensorSlot{});
         bench_rng_state = 0x9999AAAABBBBCCCCULL;
-        uint32_t slot_index = 0;
-        for (TensorSlot& slot : slots) {
-            slot.slot_id = SlotId{slot_index};
-            slot.birth_op = OpIndex{static_cast<uint32_t>(bench_rand() % 400)};
-            slot.death_op = OpIndex{slot.birth_op.raw() + static_cast<uint32_t>(1 + bench_rand() % 80)};
-            slot.nbytes = 256 * (1 + bench_rand() % 64);
-            slot.dtype = ScalarType::Float;
-            slot.device_type = DeviceType::CUDA;
-            slot.device_idx = 0;
-            slot.is_external = (slot_index < 20);  // first 20 are params
-            // The planner writes the offset of each internal slot only, so
-            // each external slot keeps the zero of its member initializer.
-            CRUCIBLE_BENCH_CHECK(slot.offset_bytes == 0);
-            ++slot_index;
-        }
+        slots = ::fixy::with_mut(std::move(slots), [](auto run) noexcept {
+            uint32_t slot_index = 0;
+            for (TensorSlot& slot : run) {
+                slot.slot_id = SlotId{slot_index};
+                slot.birth_op = OpIndex{static_cast<uint32_t>(bench_rand() % 400)};
+                slot.death_op = OpIndex{slot.birth_op.raw() + static_cast<uint32_t>(1 + bench_rand() % 80)};
+                slot.nbytes = 256 * (1 + bench_rand() % 64);
+                slot.dtype = ScalarType::Float;
+                slot.device_type = DeviceType::CUDA;
+                slot.device_idx = 0;
+                slot.is_external = (slot_index < 20);  // first 20 are params
+                // The planner writes the offset of each internal slot only, so
+                // each external slot keeps the zero of its member initializer.
+                CRUCIBLE_BENCH_CHECK(slot.offset_bytes == 0);
+                ++slot_index;
+            }
+        });
         BackgroundThread bg{::foundation::effects::testing::test().alloc};
         // The planner writes the offsets into the slots, so each run plans a
         // copy of them in scratch.  The arrays of the sweep are in

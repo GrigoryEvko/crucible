@@ -151,42 +151,37 @@ template <typename Body>
 }
 
 // A float with a random sign, a random mantissa and an exponent from -12 to
-// 11, from a linear congruential stream: the data of probe E4.
+// 11, from a linear congruential stream: the data of probe E4.  The mint
+// builds the floats in the order of their positions.
 [[nodiscard]] HeapArray<float> draw_pool() noexcept {
-    HeapArray<float> run = ::foundation::core::mint_heap_array(kAlloc, kPoolCount, 0.0f);
     std::uint64_t state = 0x9E3779B97F4A7C15u;
-    for (float& value : run) {
+    return ::foundation::core::mint_heap_array_with<float>(kAlloc, kPoolCount, [&state](std::size_t) noexcept {
         state = state * 6364136223846793005u + 1442695040888963407u;
         auto const bits = static_cast<std::uint32_t>(state >> 32);
         std::uint32_t const exponent = 127u + (bits >> 23) % 24u - 12u;
-        value = ::fixy::bit_cast<float>((bits & 0x80000000u) | (exponent << 23) | (bits & 0x7FFFFFu));
-    }
-    return run;
+        return ::fixy::bit_cast<float>((bits & 0x80000000u) | (exponent << 23) | (bits & 0x7FFFFFu));
+    });
 }
 
 // The words of the float bits of the pool, as keys of an integer sort.
 [[nodiscard]] HeapArray<std::uint32_t> words_of(View<float const> pool) noexcept {
-    HeapArray<std::uint32_t> words = ::foundation::core::mint_heap_array(kAlloc, pool.size(), std::uint32_t{0});
-    std::size_t position = 0;
-    for (std::uint32_t& word : words) {
-        word = ::fixy::bit_cast<std::uint32_t>(*pool.get(position).expect("the element fits the pool"));
-        ++position;
-    }
-    return words;
+    return ::foundation::core::mint_heap_array_with<std::uint32_t>(
+        kAlloc, pool.size(), [&pool](std::size_t position) noexcept {
+            return ::fixy::bit_cast<std::uint32_t>(*pool.get(position).expect("the element fits the pool"));
+        });
 }
 
 // The words of 64 bits of the float bits of the pool, two floats for each
 // word, as keys of eight bytes.
 [[nodiscard]] HeapArray<std::uint64_t> wide_words_of(View<float const> pool) noexcept {
-    HeapArray<std::uint64_t> words = ::foundation::core::mint_heap_array(kAlloc, pool.size() / 2, std::uint64_t{0});
-    std::size_t position = 0;
-    for (std::uint64_t& word : words) {
-        std::uint64_t const low = ::fixy::bit_cast<std::uint32_t>(*pool.get(position).expect("the element fits"));
-        std::uint64_t const high = ::fixy::bit_cast<std::uint32_t>(*pool.get(position + 1).expect("the element fits"));
-        word = (high << 32) | low;
-        position += 2;
-    }
-    return words;
+    return ::foundation::core::mint_heap_array_with<std::uint64_t>(
+        kAlloc, pool.size() / 2, [&pool](std::size_t word) noexcept {
+            std::size_t const position = 2 * word;
+            std::uint64_t const low = ::fixy::bit_cast<std::uint32_t>(*pool.get(position).expect("the element fits"));
+            std::uint64_t const high =
+                ::fixy::bit_cast<std::uint32_t>(*pool.get(position + 1).expect("the element fits"));
+            return (high << 32) | low;
+        });
 }
 
 // The order of Ascending on a float, as a function of the caller, so that a
@@ -209,13 +204,11 @@ constexpr std::size_t kRecordPoolCount = std::size_t{1} << 22;
 // The records of the first floats of the pool: the key of each record is a
 // float of the pool, and its payload is its position.
 [[nodiscard]] HeapArray<KeyedRecord> records_of(View<float const> pool) noexcept {
-    HeapArray<KeyedRecord> records = ::foundation::core::mint_heap_array(kAlloc, kRecordPoolCount, KeyedRecord{});
-    std::uint32_t position = 0;
-    for (KeyedRecord& record : records) {
-        record = KeyedRecord{*pool.get(position).expect("the key fits the pool"), position};
-        ++position;
-    }
-    return records;
+    return ::foundation::core::mint_heap_array_with<KeyedRecord>(
+        kAlloc, kRecordPoolCount, [&pool](std::size_t position) noexcept {
+            return KeyedRecord{*pool.get(position).expect("the key fits the pool"),
+                               static_cast<std::uint32_t>(position)};
+        });
 }
 
 // The ascending order of the keys of the records as a function of the
@@ -266,7 +259,13 @@ class StableSortBody final {
 public:
     StableSortBody(View<T const> pool, Less less) noexcept : windows_{pool}, less_{less} {}
 
-    void before_sample() noexcept { static_cast<void>(::fixy::copy(work_.view(), windows_.next())); }
+    // The frame of the work buffer takes the window, which the cursor gives
+    // before the frame.
+    void before_sample() noexcept {
+        View<T const> const window = windows_.next();
+        work_ = with_mut(std::move(work_),
+                         [window](auto run) noexcept { static_cast<void>(::fixy::copy(run.view(), window)); });
+    }
 
     void operator()() noexcept { bench::do_not_optimize(sort_through_frames(work_, scratch_, less_)); }
 

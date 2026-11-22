@@ -118,15 +118,15 @@ namespace {
 // The runs of one scenario of Descriptors descriptors, and their line.
 template <std::size_t Descriptors, typename Batch>
 void report(::fixy::TextView label, Batch const& one_batch) {
-    ::fixy::HeapArray<double> run_p50s = ::fixy::mint_heap_array(kAlloc, kRuns, 0.0);
+    // Each mint calls its init in the order of the positions, so the runs and
+    // their samples come one after the other, as in a loop.
     Percentiles last{};
-    for (std::size_t run = 0; run < kRuns; run++) {
-        ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array(kAlloc, kSamples, 0.0);
-        for (std::size_t s = 0; s < kSamples; s++)
-            *samples.get(s).expect("a sample of a run is below kSamples") = one_batch();
-        last = percentiles_of(std::move(samples));
-        *run_p50s.get(run).expect("a run is below kRuns") = last.p50;
-    }
+    ::fixy::HeapArray<double> run_p50s =
+        ::fixy::mint_heap_array_with<double>(kAlloc, kRuns, [&one_batch, &last](std::size_t) noexcept {
+            last = percentiles_of(::fixy::mint_heap_array_with<double>(
+                kAlloc, kSamples, [&one_batch](std::size_t) noexcept { return one_batch(); }));
+            return last.p50;
+        });
     ::fixy::HeapArray<double> const sorted_p50s = bench::sorted_samples(std::move(run_p50s));
     const double median_p50 = *sorted_p50s.get(kRuns / 2).expect("the middle run is below kRuns");
     const double spread = (at_per_mille<1000>(sorted_p50s) - at_per_mille<0>(sorted_p50s)) / median_p50;

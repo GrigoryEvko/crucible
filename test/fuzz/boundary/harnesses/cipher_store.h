@@ -116,20 +116,25 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
     const std::size_t event_count = cursor.take<std::uint8_t>() % 9;
     ::fixy::HeapArray<std::byte> records =
         ::fixy::mint_heap_array(test_alloc(), event_count * sizeof(SessionEvent), std::byte{0});
-    for (std::size_t i = 0; i < event_count; ++i) {
-        const ::fixy::View<std::byte, sizeof(SessionEvent)> record =
-            records.view().window<sizeof(SessionEvent)>(i * sizeof(SessionEvent)).expect("the batch holds each record");
-        const ::fixy::View<std::byte const> input = cursor.take_bytes(sizeof(SessionEvent));
-        ::fixy::copy(::fixy::View<std::byte>{record}.window(0, input.size()).expect("an input holds at most a record"),
-                     input)
-            .expect("the window holds the count of the input");
-        const std::uint64_t step = std::uint64_t{first_step} + i;
-        ::fixy::copy(record.window<sizeof(step)>(detail::kRecordStepOffset).expect("the record holds a step"),
-                     ::fixy::bytes(step));
-        ::fixy::copy(
-            record.window<sizeof(session_raw)>(detail::kRecordSessionOffset).expect("the record holds a session"),
-            ::fixy::bytes(session_raw));
-    }
+    records = ::fixy::with_mut(std::move(records), [&cursor, event_count, first_step, session_raw](auto run) noexcept {
+        for (std::size_t i = 0; i < event_count; ++i) {
+            const ::fixy::View<std::byte, sizeof(SessionEvent)> record =
+                run.view()
+                    .template window<sizeof(SessionEvent)>(i * sizeof(SessionEvent))
+                    .expect("the batch holds each record");
+            const ::fixy::View<std::byte const> input = cursor.take_bytes(sizeof(SessionEvent));
+            ::fixy::copy(
+                ::fixy::View<std::byte>{record}.window(0, input.size()).expect("an input holds at most a record"),
+                input)
+                .expect("the window holds the count of the input");
+            const std::uint64_t step = std::uint64_t{first_step} + i;
+            ::fixy::copy(record.window<sizeof(step)>(detail::kRecordStepOffset).expect("the record holds a step"),
+                         ::fixy::bytes(step));
+            ::fixy::copy(
+                record.window<sizeof(session_raw)>(detail::kRecordSessionOffset).expect("the record holds a session"),
+                ::fixy::bytes(session_raw));
+        }
+    });
     const ::fixy::View<std::byte const> extra_index_lines = take_chunk();
 
     // The root of the store is the absolute path of the store directory.
@@ -150,10 +155,12 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
     if (event_count > 0) {
         // The batch file and its index line, as an attacker writes them.
         const ContentHash batch_hash = Cipher::session_event_batch_hash(records.view());
-        ::fixy::HeapArray<std::byte> entry = ::fixy::mint_heap_array(
+        ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(
             test_alloc(), cipher::federation::FEDERATION_HEADER_BYTES + records.size(), std::byte{0});
-        auto written = cipher::federation::serialize_federation_entry(
-            entry.view(), Cipher::session_event_batch_key(records.view()), records.view());
+        auto [written, entry] = ::fixy::with_mut(std::move(blank), [&records](auto run) noexcept {
+            return cipher::federation::serialize_federation_entry(
+                run.view(), Cipher::session_event_batch_key(records.view()), records.view());
+        });
         if (written.is_ok()) {
             const detail::HexName batch_name = detail::hex16(batch_hash.raw());
             detail::StorePath batch = session_dir;
@@ -296,7 +303,9 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
     }
     chunk(::fixy::View<std::byte const>{});
     SeedBytes bytes = seed.finish();
-    *bytes.view().get(first_record + patch_offset).expect("the patch is inside the first record") = patch_byte;
+    bytes.with_element(
+        first_record + patch_offset, [patch_byte](std::byte& patched) noexcept { patched = patch_byte; },
+        [] noexcept { ::fixy::fatal("the patch is inside the first record"); });
     return bytes;
 }
 

@@ -237,27 +237,31 @@ int main() {
                             roof_ns)
                    || has_failure;
     });
-    ::fixy::StridedView<float, 2> const out_view =
-        ::fixy::mint_strided_view(out.view(), plane_sizes.view(), plane_strides.view(), 0).expect("the plane fits");
-    has_failure = judge(budget(5),
-                        measure(bench::Run{"scope dense"},
-                                [&] {
-                                    std::size_t const adds = scope_add(out_view, left_view, right_view);
-                                    bench::do_not_optimize(adds);
-                                }),
-                        roof_ns)
-               || has_failure;
-    has_failure = judge(budget(6),
-                        measure(bench::Run{"scope transposed"},
-                                [&] {
-                                    std::size_t const adds = scope_add(out_view, transposed, right_view);
-                                    bench::do_not_optimize(adds);
-                                }),
-                        roof_ns)
-               || has_failure;
-    has_failure =
-        judge(budget(7), measure(bench::Run{"walk dense"}, [&] { walk_add(out_view, left_view, right_view); }), roof_ns)
-        || has_failure;
+    // The scope rows and the walk row, in a second frame of the output.
+    out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
+        ::fixy::StridedView<float, 2> const out_view =
+            ::fixy::mint_strided_view(run.view(), plane_sizes.view(), plane_strides.view(), 0).expect("the plane fits");
+        has_failure = judge(budget(5),
+                            measure(bench::Run{"scope dense"},
+                                    [&] {
+                                        std::size_t const adds = scope_add(out_view, left_view, right_view);
+                                        bench::do_not_optimize(adds);
+                                    }),
+                            roof_ns)
+                   || has_failure;
+        has_failure = judge(budget(6),
+                            measure(bench::Run{"scope transposed"},
+                                    [&] {
+                                        std::size_t const adds = scope_add(out_view, transposed, right_view);
+                                        bench::do_not_optimize(adds);
+                                    }),
+                            roof_ns)
+                   || has_failure;
+        has_failure =
+            judge(budget(7), measure(bench::Run{"walk dense"}, [&] { walk_add(out_view, left_view, right_view); }),
+                  roof_ns)
+            || has_failure;
+    });
     bench::print("verdict: {}\n", has_failure ? ::fixy::TextView{"FAIL"} : ::fixy::TextView{"PASS"});
     return has_failure ? 1 : 0;
 }

@@ -85,18 +85,23 @@ int main() {
 
         const size_t wire_cap =
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));
-        ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(A, wire_cap, std::byte{0});
+        ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(A, wire_cap, std::byte{0});
 
         const bench::RunName label_ser = bench::format_name("serialize_region   ({} ops)", ::fixy::Padded<4>{num_ops});
         const bench::RunName label_des = bench::format_name("deserialize_region ({} ops)", ::fixy::Padded<4>{num_ops});
 
-        bench::add_report(reports, bench::run(label_ser, [&] {
-                              size_t n = serialize_through_call(region, buf.view());
-                              bench::do_not_optimize(n);
-                          }));
+        // One frame of the buffer holds the row of serialize_region and the
+        // write that primes the buffer, outside the timed region.
+        auto [serial_len, buf] =
+            ::fixy::with_mut(std::move(blank), [&reports, &label_ser, &region](auto wire) noexcept {
+                bench::add_report(reports, bench::run(label_ser, [&] {
+                                      size_t n = serialize_through_call(region, wire.view());
+                                      bench::do_not_optimize(n);
+                                  }));
 
-        // Prime the buffer once — deserialize consumes stable bytes.
-        const size_t serial_len = serialize_through_call(region, buf.view());
+                // Prime the buffer once — deserialize consumes stable bytes.
+                return serialize_through_call(region, wire.view());
+            });
         if (serial_len == 0) {
             ::fixy::fatal("serialize_region wrote no byte for a region of {} ops", num_ops);
         }

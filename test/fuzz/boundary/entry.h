@@ -42,7 +42,9 @@ inline constexpr std::size_t kMaxSeeds = std::size_t{1} << 20;
 // byte.
 [[nodiscard]] inline SeedBytes copy_seed(::fixy::View<std::byte const> bytes) noexcept {
     SeedBytes seed = ::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), bytes.size());
-    ::fixy::copy(seed.view(), bytes).expect("a seed holds each byte of its source");
+    seed = ::fixy::with_mut(std::move(seed), [bytes](auto run) noexcept {
+        ::fixy::copy(run.view(), bytes).expect("a seed holds each byte of its source");
+    });
     return seed;
 }
 

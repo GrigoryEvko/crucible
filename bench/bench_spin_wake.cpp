@@ -285,16 +285,21 @@ struct MeasureWake {
     Form const& form;
     HeapArray<std::uint64_t> latencies;
 
+    // One frame of the latencies holds the whole loop of the rounds, so no
+    // round opens a door.  Only this thread writes the latencies.
     void operator()() noexcept {
         pin_to(cores.waiter);
-        std::uint32_t number = 0;
-        for (std::uint64_t& latency : latencies) {
-            ++number;
-            handshake.ready.store_release(number);
-            form.wait(line, Round{number});
-            std::uint64_t const woken = read_ordered_counter();
-            latency = core::saturating_sub(woken, handshake.stamp.load_acquire());
-        }
+        latencies = core::with_mut(std::move(latencies),
+                                   [&line = line, &handshake = handshake, &form = form](auto run) noexcept {
+                                       std::uint32_t number = 0;
+                                       for (std::uint64_t& latency : run) {
+                                           ++number;
+                                           handshake.ready.store_release(number);
+                                           form.wait(line, Round{number});
+                                           std::uint64_t const woken = read_ordered_counter();
+                                           latency = core::saturating_sub(woken, handshake.stamp.load_acquire());
+                                       }
+                                   });
     }
 };
 

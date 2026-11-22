@@ -64,17 +64,16 @@ template <typename Body>
 }
 
 // A float with a random sign, a random mantissa and an exponent from -12 to
-// 11, from a linear congruential stream: the data of probe E4.
+// 11, from a linear congruential stream: the data of probe E4.  The mint
+// builds the floats in the order of their positions.
 [[nodiscard]] HeapArray<float> draw_floats(std::size_t count) noexcept {
-    HeapArray<float> run = ::foundation::core::mint_heap_array(kAlloc, count, 0.0f);
     std::uint64_t state = 0x9E3779B97F4A7C15u;
-    for (float& value : run) {
+    return ::foundation::core::mint_heap_array_with<float>(kAlloc, count, [&state](std::size_t) noexcept {
         state = state * 6364136223846793005u + 1442695040888963407u;
         auto const bits = static_cast<std::uint32_t>(state >> 32);
         std::uint32_t const exponent = 127u + (bits >> 23) % 24u - 12u;
-        value = ::fixy::bit_cast<float>((bits & 0x80000000u) | (exponent << 23) | (bits & 0x7FFFFFu));
-    }
-    return run;
+        return ::fixy::bit_cast<float>((bits & 0x80000000u) | (exponent << 23) | (bits & 0x7FFFFFu));
+    });
 }
 
 [[nodiscard]] View<float const> first(View<float const> all, std::size_t count) noexcept {
@@ -237,12 +236,8 @@ void bench_runs_and_segments(View<float const> all) {
                       bench::do_not_optimize(::foundation::core::sum_runs_by_tree(run_view, std::move(out)).is_ok());
                   });
               }));
-    HeapArray<std::size_t> offsets = ::foundation::core::mint_heap_array(kAlloc, std::size_t{257}, std::size_t{0});
-    std::size_t start = 0;
-    for (std::size_t& segment_offset : offsets) {
-        segment_offset = start;
-        start += 256;
-    }
+    HeapArray<std::size_t> const offsets = ::foundation::core::mint_heap_array_with<std::size_t>(
+        kAlloc, std::size_t{257}, [](std::size_t segment) noexcept { return segment * 256; });
     HeapArray<float> segment_sums = ::foundation::core::mint_heap_array(kAlloc, std::size_t{256}, 0.0f);
     View<float const> const segmented = first(all, kCount);
     View<std::size_t const> const offset_view{offsets.view()};
@@ -283,12 +278,10 @@ int main() {
     bench::elevate_priority();
     HeapArray<float> const run = draw_floats(std::size_t{1} << 24);
     View<float const> const all{run.view()};
-    HeapArray<double> wide = ::foundation::core::mint_heap_array(kAlloc, std::size_t{65536}, 0.0);
-    std::size_t position = 0;
-    for (double& value : wide) {
-        value = static_cast<double>(*all.get(position).expect("the element fits the run"));
-        ++position;
-    }
+    HeapArray<double> const wide = ::foundation::core::mint_heap_array_with<double>(
+        kAlloc, std::size_t{65536}, [&all](std::size_t position) noexcept {
+            return static_cast<double>(*all.get(position).expect("the element fits the run"));
+        });
     bench_reduces(all, View<double const>{wide.view()});
     bench_runs_and_segments(all);
     bench_scans(all);

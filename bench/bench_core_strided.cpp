@@ -424,7 +424,6 @@ template <class Out>
     ::fixy::View<float const> const left_run = left.view();
     ::fixy::View<float const> const right_run = right.view();
     ::fixy::View<float const> const wide_run = wide.view();
-    Plane const out_view = plane_of(out.view(), rows, columns, columns, 1);
     PlaneRead const left_view = plane_of(left_run, rows, columns, columns, 1);
     PlaneRead const right_view = plane_of(right_run, rows, columns, columns, 1);
     PlaneRead const third_view = plane_of(::fixy::View<float const>{third.view()}, rows, columns, columns, 1);
@@ -449,117 +448,125 @@ template <class Out>
             .broadcast_to(plane_sizes.view())
             .expect("a row broadcasts to the plane");
 
-    print_row(level, "raw transposed",
-              measure(bench::Run{"raw transposed"}, wall,
-                      [&] {
-                          add_raw_strided(out.view(), left_run, right_run, rows, columns, 1, rows);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "raw step 2",
-              measure(bench::Run{"raw step 2"}, wall,
-                      [&] {
-                          add_raw_strided(out.view(), wide_run, right_run, rows, columns, 2 * columns, 2);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "raw transposed blocked",
-              measure(bench::Run{"raw transposed blocked"}, wall,
-                      [&] {
-                          add_raw_blocked(out.view(), left_run, right_run, rows, columns, rows);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    ::fixy::View<float const> const third_run = third.view();
-    ::fixy::View<float const> const fourth_run = fourth.view();
-    print_row(level, "raw four inputs",
-              measure(bench::Run{"raw four inputs"}, wall,
-                      [&] {
-                          four_raw(out.view(), left_run, right_run, third_run, fourth_run);
-                          bench::do_not_optimize(out);
-                      }),
-              five_views, roof);
-    print_row(level, "raw three inputs step 2",
-              measure(bench::Run{"raw three inputs step 2"}, wall,
-                      [&] {
-                          three_raw_strided(out.view(), left_run, right_run, wide_run, rows, columns, 2 * columns, 2);
-                          bench::do_not_optimize(out);
-                      }),
-              four_views, roof);
-    print_row(level, "raw three inputs step 3",
-              measure(bench::Run{"raw three inputs step 3"}, wall,
-                      [&] {
-                          three_raw_strided(out.view(), left_run, right_run, wider_run, rows, columns, 3 * columns, 3);
-                          bench::do_not_optimize(out);
-                      }),
-              four_views, roof);
-    print_row(level, "walk dense",
-              measure(bench::Run{"walk dense"}, wall,
-                      [&] {
-                          walk_add(out_view, left_view, right_view);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "walk broadcast",
-              measure(bench::Run{"walk broadcast"}, wall,
-                      [&] {
-                          walk_add(out_view, left_view, broadcast);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "walk step 2",
-              measure(bench::Run{"walk step 2"}, wall,
-                      [&] {
-                          walk_add(out_view, every_second, right_view);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "walk transposed",
-              measure(bench::Run{"walk transposed"}, wall,
-                      [&] {
-                          walk_add(out_view, transposed, right_view);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "walk three inputs",
-              measure(bench::Run{"walk three inputs"}, wall,
-                      [&] {
-                          walk_three(out_view, left_view, right_view, third_view);
-                          bench::do_not_optimize(out);
-                      }),
-              four_views, roof);
-    print_row(level, "scope dense",
-              measure(bench::Run{"scope dense"}, wall,
-                      [&] {
-                          std::size_t const adds = scope_add(out_view, left_view, right_view);
-                          bench::do_not_optimize(adds);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "scope transposed",
-              measure(bench::Run{"scope transposed"}, wall,
-                      [&] {
-                          std::size_t const adds = scope_add(out_view, transposed, right_view);
-                          bench::do_not_optimize(adds);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "scope walk dense",
-              measure(bench::Run{"scope walk dense"}, wall,
-                      [&] {
-                          std::size_t const adds = scope_walk_add(out_view, left_view, right_view);
-                          bench::do_not_optimize(adds);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
-    print_row(level, "scope walk transposed",
-              measure(bench::Run{"scope walk transposed"}, wall,
-                      [&] {
-                          std::size_t const adds = scope_walk_add(out_view, transposed, right_view);
-                          bench::do_not_optimize(adds);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
+    // The raw, walk and scope rows, in one frame of the output.  The frame
+    // holds the storage of the output, so the sink of each row takes the run
+    // of the frame, the pointer and the count that the owner held.
+    out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
+        Plane const out_view = plane_of(run.view(), rows, columns, columns, 1);
+        print_row(level, "raw transposed",
+                  measure(bench::Run{"raw transposed"}, wall,
+                          [&] {
+                              add_raw_strided(run.view(), left_run, right_run, rows, columns, 1, rows);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "raw step 2",
+                  measure(bench::Run{"raw step 2"}, wall,
+                          [&] {
+                              add_raw_strided(run.view(), wide_run, right_run, rows, columns, 2 * columns, 2);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "raw transposed blocked",
+                  measure(bench::Run{"raw transposed blocked"}, wall,
+                          [&] {
+                              add_raw_blocked(run.view(), left_run, right_run, rows, columns, rows);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        ::fixy::View<float const> const third_run = third.view();
+        ::fixy::View<float const> const fourth_run = fourth.view();
+        print_row(level, "raw four inputs",
+                  measure(bench::Run{"raw four inputs"}, wall,
+                          [&] {
+                              four_raw(run.view(), left_run, right_run, third_run, fourth_run);
+                              bench::do_not_optimize(run);
+                          }),
+                  five_views, roof);
+        print_row(level, "raw three inputs step 2",
+                  measure(bench::Run{"raw three inputs step 2"}, wall,
+                          [&] {
+                              three_raw_strided(run.view(), left_run, right_run, wide_run, rows, columns, 2 * columns,
+                                                2);
+                              bench::do_not_optimize(run);
+                          }),
+                  four_views, roof);
+        print_row(level, "raw three inputs step 3",
+                  measure(bench::Run{"raw three inputs step 3"}, wall,
+                          [&] {
+                              three_raw_strided(run.view(), left_run, right_run, wider_run, rows, columns, 3 * columns,
+                                                3);
+                              bench::do_not_optimize(run);
+                          }),
+                  four_views, roof);
+        print_row(level, "walk dense",
+                  measure(bench::Run{"walk dense"}, wall,
+                          [&] {
+                              walk_add(out_view, left_view, right_view);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "walk broadcast",
+                  measure(bench::Run{"walk broadcast"}, wall,
+                          [&] {
+                              walk_add(out_view, left_view, broadcast);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "walk step 2",
+                  measure(bench::Run{"walk step 2"}, wall,
+                          [&] {
+                              walk_add(out_view, every_second, right_view);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "walk transposed",
+                  measure(bench::Run{"walk transposed"}, wall,
+                          [&] {
+                              walk_add(out_view, transposed, right_view);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "walk three inputs",
+                  measure(bench::Run{"walk three inputs"}, wall,
+                          [&] {
+                              walk_three(out_view, left_view, right_view, third_view);
+                              bench::do_not_optimize(run);
+                          }),
+                  four_views, roof);
+        print_row(level, "scope dense",
+                  measure(bench::Run{"scope dense"}, wall,
+                          [&] {
+                              std::size_t const adds = scope_add(out_view, left_view, right_view);
+                              bench::do_not_optimize(adds);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "scope transposed",
+                  measure(bench::Run{"scope transposed"}, wall,
+                          [&] {
+                              std::size_t const adds = scope_add(out_view, transposed, right_view);
+                              bench::do_not_optimize(adds);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "scope walk dense",
+                  measure(bench::Run{"scope walk dense"}, wall,
+                          [&] {
+                              std::size_t const adds = scope_walk_add(out_view, left_view, right_view);
+                              bench::do_not_optimize(adds);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+        print_row(level, "scope walk transposed",
+                  measure(bench::Run{"scope walk transposed"}, wall,
+                          [&] {
+                              std::size_t const adds = scope_walk_add(out_view, transposed, right_view);
+                              bench::do_not_optimize(adds);
+                              bench::do_not_optimize(run);
+                          }),
+                  three_views, roof);
+    });
 
     // The pointwise rows, in one frame of the output.  The inputs are plain
     // views of other owners, so each walk compares the address ranges.

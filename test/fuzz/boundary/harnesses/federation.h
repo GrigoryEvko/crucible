@@ -76,9 +76,11 @@ inline void run_federation(::fixy::View<std::byte const> bytes) noexcept {
                                 view.payload.get(0).expect("the payload holds a byte"),
                                 entry_bytes.get(fed::FEDERATION_HEADER_BYTES).expect("the input holds the payload")));
 
-    ::fixy::HeapArray<std::byte> out =
+    ::fixy::HeapArray<std::byte> blank =
         ::fixy::mint_heap_array(test_alloc(), fed::FEDERATION_HEADER_BYTES + view.payload.size(), std::byte{0});
-    auto written = fed::serialize_federation_entry(out.view(), key, view.payload);
+    auto [written, out] = ::fixy::with_mut(std::move(blank), [&key, &view](auto run) noexcept {
+        return fed::serialize_federation_entry(run.view(), key, view.payload);
+    });
     CRUCIBLE_FUZZ_CLAIM("federation", written.is_ok());
     CRUCIBLE_FUZZ_CLAIM("federation", std::move(written).expect("an accepted entry writes back") == out.size());
     auto read_again = fed::deserialize_untrusted_federation_entry(out.view(), kReceiverAtomCount);

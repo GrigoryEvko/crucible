@@ -334,15 +334,20 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
         .right = plane_of(::fixy::View<float const>{right.view()}, level),
     };
 
-    bench::Report reference =
-        names.reference.core(placement.measuring_core)
-            .batch(1)
-            .warmup(16)
-            .max_wall_ms(kWallMs)
-            .measure([&out, &left, &right] {
-                add_raw(out.view(), ::fixy::View<float const>{left.view()}, ::fixy::View<float const>{right.view()});
-                bench::do_not_optimize(out);
-            });
+    // The raw row, in one frame of the output.  The frame holds the storage
+    // of the output, so the sink takes the run of the frame.
+    bench::Report reference{};
+    out = ::fixy::with_mut(std::move(out), [&reference, &names, &placement, &left, &right](auto run) noexcept {
+        reference = names.reference.core(placement.measuring_core)
+                        .batch(1)
+                        .warmup(16)
+                        .max_wall_ms(kWallMs)
+                        .measure([&run, &left, &right] {
+                            add_raw(run.view(), ::fixy::View<float const>{left.view()},
+                                    ::fixy::View<float const>{right.view()});
+                            bench::do_not_optimize(run);
+                        });
+    });
 
     constexpr BodyCoupling kWaiting = BodyCoupling::WaitOnEachOther;
     ::fixy::FixedList<bench::Report, 4> reports{};

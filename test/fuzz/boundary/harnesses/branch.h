@@ -28,8 +28,13 @@ namespace crucible::fuzz::boundary {
     for (std::uint32_t i = 0; i < arms; ++i)
         *branch->arms().get(i).expect("i is below the count of arms") =
             BranchNode::Arm{*values.get(i).expect("i is below the count of values"), TraceLink{}};
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
-    const std::size_t written = serialize_branch(::fixy::to(*branch), image.view());
+    ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
+    // The body takes the node by reference, because the Ref of the arena has
+    // the brand of this call, and a capture of it would give the closure that
+    // brand of internal linkage.
+    const auto [written, image] = ::fixy::with_mut(std::move(blank), [&node = *branch](auto run) noexcept {
+        return serialize_branch(::fixy::to(node), run.view());
+    });
     return copy_seed(
         ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
 }
@@ -52,7 +57,9 @@ inline constexpr std::size_t kImageGuardKindOffset = 32;
     // kind reaches the replay switch.
     add_seed(seeds, branch_image(unsorted.view()));
     SeedBytes bad_kind = branch_image(zero.view());
-    *bad_kind.view().get(kImageGuardKindOffset).expect("the image holds the guard kind") = std::byte{0x7F};
+    bad_kind.with_element(
+        kImageGuardKindOffset, [](std::byte& kind) noexcept { kind = std::byte{0x7F}; },
+        [] noexcept { ::fixy::fatal("the image holds the guard kind"); });
     add_seed(seeds, std::move(bad_kind));
     return seeds;
 }
@@ -69,8 +76,10 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
         CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
         CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
-        ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
-        const std::size_t written = serialize_branch(::fixy::to(*branch), image.view());
+        ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
+        const auto [written, image] = ::fixy::with_mut(std::move(blank), [&branch](auto run) noexcept {
+            return serialize_branch(::fixy::to(*branch), run.view());
+        });
         CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
         const ::fixy::Option<::fixy::Ref<BranchNode>> reloaded =
             deserialize_branch(alloc, image.view().window(0, written).expect("the writer writes inside its image"),

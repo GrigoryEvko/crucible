@@ -518,16 +518,21 @@ struct BaseAdapter {
                                                                              byte_of(stamp));
     }
 
-    // Writes the first byte of the block kRewrites times, through one Ref
-    // that the loop takes before its first write.  The barrier after each
-    // write keeps each store in the code.  Only cache-scratch writes a block
-    // again, and its blocks have the natural alignment.
+    // Writes the first byte of the block kRewrites times, through one
+    // element door that holds the whole loop, so the loop takes one check
+    // before its first write.  The barrier after each write keeps each store
+    // in the code.  Only cache-scratch writes a block again, and its blocks
+    // have the natural alignment.
     [[gnu::always_inline]] static void rewrite(Written<BlockAlignment::natural>& block, Stamp stamp) noexcept {
-        auto first = block.view().get(0).expect("a Written block holds at least 16 bytes");
-        for (std::uint32_t write = 0; write < kRewrites; ++write) {
-            *first = byte_of(stamp);
-            bench::clobber_memory();
-        }
+        block.with_element(
+            0,
+            [stamp] [[gnu::always_inline]] (std::uint8_t& first) noexcept {
+                for (std::uint32_t write = 0; write < kRewrites; ++write) {
+                    first = byte_of(stamp);
+                    bench::clobber_memory();
+                }
+            },
+            [] noexcept { ::fixy::fatal("a Written block holds at least 16 bytes"); });
     }
 
     template <BlockAlignment Align>
@@ -981,10 +986,18 @@ template <class Item>
         bench_alloc(), threads.raw(), [](std::size_t /*position*/) noexcept { return Mailbox<Item>{}; });
 }
 
-template <class Item>
-[[nodiscard, gnu::always_inline]] inline Mailbox<Item>& mailbox_of(Mailboxes<Item>& boxes,
-                                                                   bench::ThreadSlot slot) noexcept {
-    return *boxes.view().get(slot.raw()).expect("a slot of a row has a Mailbox");
+// Gives the Mailbox of slot to body, in place, through the element door of
+// the array.  Two threads use one Mailbox at the same time: its producer
+// writes head_ and the empty cells, and its consumer writes tail_ and the
+// full cells.  The acquire and release of the flag of each cell order the
+// two, so the element is safe for these concurrent writes.  The door writes
+// no state of the array, so the threads of a row call it on one array at the
+// same time.
+template <class Item, class Body>
+[[gnu::always_inline]] inline void with_mailbox_of(Mailboxes<Item>& boxes, bench::ThreadSlot slot,
+                                                   Body&& body) noexcept {
+    boxes.with_element(slot.raw(), static_cast<Body&&>(body),
+                       [] noexcept { ::fixy::fatal("a slot of a row has a Mailbox"); });
 }
 
 // The slot after slot in a ring of the threads of a row.
@@ -1112,10 +1125,13 @@ template <AllocatorAdapter A, std::size_t Slots, std::uint32_t HandOff, class By
                 bool const is_handed =
                     HandOff != 0 && state.threads.raw() > 1 && (draw >> 20) % (HandOff == 0 ? 1 : HandOff) == 0;
                 if (is_handed) {
-                    Mailbox<Block>& next = mailbox_of(inboxes, next_slot(state.slot, state.threads));
-                    ::fixy::Option<Block> rest = next.try_push(std::move(block));
-                    if (rest.is_some())
-                        give_block<A>(state.tally, std::move(rest).expect("the test above found a block"));
+                    with_mailbox_of(inboxes, next_slot(state.slot, state.threads),
+                                    [&state, &block] [[gnu::always_inline]] (Mailbox<Block> & next) noexcept {
+                                        ::fixy::Option<Block> rest = next.try_push(std::move(block));
+                                        if (rest.is_some())
+                                            give_block<A>(state.tally,
+                                                          std::move(rest).expect("the test above found a block"));
+                                    });
                 } else {
                     give_block<A>(state.tally, std::move(block));
                 }
@@ -1123,12 +1139,13 @@ template <AllocatorAdapter A, std::size_t Slots, std::uint32_t HandOff, class By
             slot = ::fixy::Option<Block>::some(take_block<A>(state.tally, bytes_of_draw(draw >> 8)));
         });
     if constexpr (HandOff != 0) {
-        Mailbox<Block>& own = mailbox_of(inboxes, state.slot);
-        for (std::uint32_t taken = 0; taken < 4; ++taken) {
-            ::fixy::Option<Block> received = own.try_pop();
-            if (received.is_none()) break;
-            give_block<A>(state.tally, std::move(received).expect("the test above found a block"));
-        }
+        with_mailbox_of(inboxes, state.slot, [&state] [[gnu::always_inline]] (Mailbox<Block> & own) noexcept {
+            for (std::uint32_t taken = 0; taken < 4; ++taken) {
+                ::fixy::Option<Block> received = own.try_pop();
+                if (received.is_none()) break;
+                give_block<A>(state.tally, std::move(received).expect("the test above found a block"));
+            }
+        });
     }
 }
 
@@ -1143,9 +1160,10 @@ void release_slots(Mailboxes<BlockOf<A, BlockAlignment::natural>>& inboxes,
             give_block<A>(tally, std::move(slot).expect("the test above found a block"));
         }
     });
-    Mailbox<Block>& own = mailbox_of(inboxes, state.slot);
-    for (::fixy::Option<Block> received = own.try_pop(); received.is_some(); received = own.try_pop())
-        give_block<A>(state.tally, std::move(received).expect("the loop test found a block"));
+    with_mailbox_of(inboxes, state.slot, [&state](Mailbox<Block>& own) noexcept {
+        for (::fixy::Option<Block> received = own.try_pop(); received.is_some(); received = own.try_pop())
+            give_block<A>(state.tally, std::move(received).expect("the loop test found a block"));
+    });
 }
 
 // larson and rptest: the replace of a random slot with a hand-off.
@@ -1300,17 +1318,21 @@ struct CacheScratch {
         Shared shared{.given = mint_mailboxes<Written>(threads)};
         for (std::uint32_t slot = 0; slot < threads.raw(); ++slot) {
             Written block = take_written<A>(shared.main_tally, kBytes, stamp_of(bench::kMeasuringSlot));
-            ::fixy::Option<Written> rest = mailbox_of(shared.given, bench::ThreadSlot{slot}).try_push(std::move(block));
-            if (rest.is_some()) ::fixy::fatal("an empty Mailbox took no block");
+            with_mailbox_of(shared.given, bench::ThreadSlot{slot}, [&block](Mailbox<Written>& inbox) noexcept {
+                ::fixy::Option<Written> rest = inbox.try_push(std::move(block));
+                if (rest.is_some()) ::fixy::fatal("an empty Mailbox took no block");
+            });
         }
         return shared;
     }
 
     [[nodiscard]] static Local start(Shared& shared, bench::ThreadSlot slot, ThreadCount /*threads*/) noexcept {
         Local local{.stamp = stamp_of(slot)};
-        ::fixy::Option<Written> given = mailbox_of(shared.given, slot).try_pop();
-        give_written<A>(local.tally, std::move(given).expect("the main thread gave each thread a block"),
-                        stamp_of(bench::kMeasuringSlot));
+        with_mailbox_of(shared.given, slot, [&local](Mailbox<Written>& inbox) noexcept {
+            ::fixy::Option<Written> given = inbox.try_pop();
+            give_written<A>(local.tally, std::move(given).expect("the main thread gave each thread a block"),
+                            stamp_of(bench::kMeasuringSlot));
+        });
         return local;
     }
 
@@ -1367,29 +1389,34 @@ struct ProducerConsumer {
         if (role_of(local.slot) == Role::producer) {
             bench::ThreadSlot const consumer{local.slot.raw() + 1};
             Written block = take_written<A>(local.tally, bytes_of_draw(local.draws.next()), stamp_of(local.slot));
-            ::fixy::Option<Written> rest =
-                push_waiting(control, mailbox_of(shared.inboxes, consumer), std::move(block));
-            if (rest.is_some()) {
-                give_written<A>(local.tally, std::move(rest).expect("the test above found a block"),
-                                stamp_of(local.slot));
+            with_mailbox_of(shared.inboxes, consumer,
+                            [&control, &local, &block] [[gnu::always_inline]] (Mailbox<Written> & inbox) noexcept {
+                                ::fixy::Option<Written> rest = push_waiting(control, inbox, std::move(block));
+                                if (rest.is_some()) {
+                                    give_written<A>(local.tally, std::move(rest).expect("the test above found a block"),
+                                                    stamp_of(local.slot));
+                                }
+                            });
+            return;
+        }
+        with_mailbox_of(shared.inboxes, local.slot, [&local] [[gnu::always_inline]] (Mailbox<Written> & own) noexcept {
+            ::fixy::Option<Written> received = own.try_pop();
+            if (received.is_none()) {
+                CRUCIBLE_SPIN_PAUSE;
+                return;
             }
-            return;
-        }
-        ::fixy::Option<Written> received = mailbox_of(shared.inboxes, local.slot).try_pop();
-        if (received.is_none()) {
-            CRUCIBLE_SPIN_PAUSE;
-            return;
-        }
-        give_written<A>(local.tally, std::move(received).expect("the test above found a block"),
-                        stamp_of(bench::ThreadSlot{local.slot.raw() - 1}));
+            give_written<A>(local.tally, std::move(received).expect("the test above found a block"),
+                            stamp_of(bench::ThreadSlot{local.slot.raw() - 1}));
+        });
     }
 
     static void finish(Shared& shared, Local& local) noexcept {
         if (role_of(local.slot) == Role::producer) return;
-        Mailbox<Written>& own = mailbox_of(shared.inboxes, local.slot);
         Stamp const stamp = stamp_of(bench::ThreadSlot{local.slot.raw() - 1});
-        for (::fixy::Option<Written> received = own.try_pop(); received.is_some(); received = own.try_pop())
-            give_written<A>(local.tally, std::move(received).expect("the loop test found a block"), stamp);
+        with_mailbox_of(shared.inboxes, local.slot, [&local, stamp](Mailbox<Written>& own) noexcept {
+            for (::fixy::Option<Written> received = own.try_pop(); received.is_some(); received = own.try_pop())
+                give_written<A>(local.tally, std::move(received).expect("the loop test found a block"), stamp);
+        });
     }
 };
 
@@ -2090,8 +2117,16 @@ struct RoundWorkload {
         return shared;
     }
 
-    [[nodiscard]] static Blocks& bank_of(Shared& shared, std::uint64_t bank, std::uint32_t slot) noexcept {
-        return *shared.banks.view().get(bank * shared.threads.raw() + slot).expect("a bank holds each slot");
+    // Gives the array of slot in bank to body, in place, through the element
+    // door of the banks.  The threads of one round call the door on the one
+    // array of the banks at the same time, and the door writes no state of
+    // that array.  Each thread of a round names other elements (THE ROUNDS),
+    // so no two threads write one element, and the join of the round orders
+    // its writes before the next round.
+    template <class Body>
+    static void with_bank_of(Shared& shared, std::uint64_t bank, std::uint32_t slot, Body&& body) noexcept {
+        shared.banks.with_element(bank * shared.threads.raw() + slot, static_cast<Body&&>(body),
+                                  [] noexcept { ::fixy::fatal("a bank holds each slot"); });
     }
 
     // The body of the thread of a slot in a round.  Each thread of a round
@@ -2108,10 +2143,13 @@ struct RoundWorkload {
         Blocks local{};
         if constexpr (Kind == RowKind::mstress) {
             std::uint32_t const from = static_cast<std::uint32_t>((slot.raw() + shared.round) % shared.threads.raw());
-            bank_of(shared, (shared.round + 1) % 2, from).with_mut([&tally](auto run) noexcept {
-                for (::fixy::Option<Block>& held : run) {
-                    if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
-                }
+            with_bank_of(shared, (shared.round + 1) % 2, from, [&tally](Blocks& taken) noexcept {
+                taken.with_mut([&tally](auto run) noexcept {
+                    for (::fixy::Option<Block>& held : run) {
+                        if (held.is_some())
+                            give_block<A>(tally, std::move(held).expect("the test above found a block"));
+                    }
+                });
             });
         }
         for (std::uint32_t replace = 0; replace < kReplaces; ++replace) {
@@ -2124,11 +2162,12 @@ struct RoundWorkload {
                 });
         }
         if constexpr (Kind == RowKind::mstress) {
-            Blocks& given = bank_of(shared, shared.round % 2, slot.raw());
-            given.with_mut([&local](auto given_run) noexcept {
-                local.with_mut([&given_run](auto local_run) noexcept {
-                    for (::fixy::Index<kSlots> const position : ::fixy::IndexRange<kSlots>{})
-                        given_run.view().at(position) = std::move(local_run.view().at(position));
+            with_bank_of(shared, shared.round % 2, slot.raw(), [&local](Blocks& given) noexcept {
+                given.with_mut([&local](auto given_run) noexcept {
+                    local.with_mut([&given_run](auto local_run) noexcept {
+                        for (::fixy::Index<kSlots> const position : ::fixy::IndexRange<kSlots>{})
+                            given_run.view().at(position) = std::move(local_run.view().at(position));
+                    });
                 });
             });
         } else {
@@ -2142,17 +2181,19 @@ struct RoundWorkload {
 
     // The release of each block of the two banks.
     static void finish(Shared& shared) noexcept {
-        shared.tallies.with_element(
-            ::fixy::Index<kMaxThreads>::check(0).expect("a round has slot 0"), [&shared](Tally& tally) noexcept {
-                for (Blocks& blocks : shared.banks) {
-                    blocks.with_mut([&tally](auto run) noexcept {
-                        for (::fixy::Option<Block>& held : run) {
-                            if (held.is_some())
-                                give_block<A>(tally, std::move(held).expect("the test above found a block"));
-                        }
-                    });
-                }
-            });
+        shared.banks = ::fixy::with_mut(std::move(shared.banks), [&tallies = shared.tallies](auto banks) noexcept {
+            tallies.with_element(
+                ::fixy::Index<kMaxThreads>::check(0).expect("a round has slot 0"), [&banks](Tally& tally) noexcept {
+                    for (Blocks& blocks : banks) {
+                        blocks.with_mut([&tally](auto run) noexcept {
+                            for (::fixy::Option<Block>& held : run) {
+                                if (held.is_some())
+                                    give_block<A>(tally, std::move(held).expect("the test above found a block"));
+                            }
+                        });
+                    }
+                });
+        });
     }
 };
 

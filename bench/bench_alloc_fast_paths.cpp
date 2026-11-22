@@ -597,12 +597,10 @@ void run_owner_measures() {
     static_cast<void>(claim_ticks());
     std::uint64_t const before = resident_bytes();
     std::uint32_t const claimed_before = alloc::alloc_root_.claimed_heaps();
-    ::fixy::HeapArray<double> samples =
-        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, kClaimThreads, 0.0);
-    for (std::size_t thread = 0; thread < kClaimThreads; ++thread) {
-        *samples.get(thread).expect("a thread of the measure lies below kClaimThreads") =
-            static_cast<double>(claim_ticks()) * bench::Timer::ns_per_cycle();
-    }
+    // The mint starts the threads one after the other, in the order of the samples.
+    ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array_with<double>(
+        ::foundation::effects::testing::test().alloc, kClaimThreads,
+        [](std::size_t) noexcept { return static_cast<double>(claim_ticks()) * bench::Timer::ns_per_cycle(); });
     std::uint64_t const after = resident_bytes();
     std::uint32_t const claimed = alloc::alloc_root_.claimed_heaps() - claimed_before;
     bench::Percentiles const claim = bench::Percentiles::compute(samples);
