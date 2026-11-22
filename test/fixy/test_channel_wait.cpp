@@ -180,7 +180,7 @@ template <class Consumer, class Producer, typename... PopTag>
 // parks.
 template <class Handle, class Policy, class Ctx>
 concept CanPushWaiting = requires(Handle& handle, Ctx const& ctx, cc::EventCount& room, Item const& item) {
-    handle.template push_waiting<Policy>(ctx, room, item);
+    cc::push_waiting<Policy>(ctx, handle, room, item);
 };
 
 // A wire of 4 cells with a slow consumer: the producer waits for room with
@@ -204,7 +204,7 @@ void expect_each_item_through_a_full_wire(::fixy::BgLoadCtx const& ctx, std::uin
     auto producer = [&items, &room, handle = channel.producer(std::move(producer_perm))](
                         ::fixy::BgLoadCtx const& bg) mutable noexcept {
         for (Item item = 0; item < kItems; ++item) {
-            handle.template push_waiting<Policy>(bg, room, item);
+            cc::push_waiting<Policy>(bg, handle, room, item);
             items.notify_one(bg);
         }
         std::move(handle).close();

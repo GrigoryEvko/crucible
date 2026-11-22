@@ -469,8 +469,11 @@ static_assert(are_tokens_sendable_and_not_shareable<::foundation::brand::Default
 // A token is closed: its public constructor takes the key of the mints, which
 // only a mint builds, so no thread builds a token past a mint (THE BUILD OF A
 // TOKEN of foundation/Transfer.h).  So a token of an own tag proves a door of
-// a class that states synchronized{}, and so do the lease and the guard of a
-// pool, whose constructors are private.
+// a class that states synchronized{}, and so does the lease of a pool, whose
+// constructor is private.  The guard of a share proves no such door, because
+// many holders hold a share at one time (THE SHARE): the fixtures
+// neg_synchronized_door_takes_a_share and neg_synchronized_nested_holds_a_share
+// refuse it.
 class[[= ::foundation::transfer::synchronized{}]] PermittedCount {
 public:
     struct Region {};
@@ -482,9 +485,10 @@ public:
 
     void add(Permission<Region, CountBrand>& /*token*/) noexcept { ++count_; }
     void add_leased(ExclusiveLease<Region, CountBrand>& /*lease*/) noexcept { ++count_; }
-    // The open hole of a share (THE NESTED CLASSES of foundation/Transfer.h):
-    // many holders hold a guard at one time, but the guard proves this door.
-    void add_shared(SharedPermissionGuard<Region, CountBrand>& /*guard*/) noexcept { ++count_; }
+    // A door that takes a share only reads, so it is const.
+    [[nodiscard]] int read_shared(SharedPermissionGuard<Region, CountBrand> const& /*guard*/) const noexcept {
+        return count_;
+    }
 
     // A nested handle that holds the exclusive token by value is a proof
     // holder, so its door writes the count with no parameter of its own, also

@@ -1926,6 +1926,18 @@ foundation_neg_compile_test(neg_synchronized_nested_constructor
   "failed: .anonymous.::Counter"
   "Counter::Handle::Handle\\(.anonymous.::Counter&\\)"
   "Counter::count_")
+# Many holders hold a share at one time, so a share proves no door: as a
+# parameter of a door and as a member of a nested class (THE SHARE).
+foundation_neg_compile_test(neg_synchronized_door_takes_a_share
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "Counter::add_shared\\(foundation::permissions::SharedPermissionGuard<Region, CounterBrand>&\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_nested_holds_a_share
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle::bump\\(\\)"
+  "Counter::count_")
 foundation_neg_compile_test(neg_synchronized_nested_deep_borrow
   "and a door of a nested class of it can write the class"
   "failed: .anonymous.::Counter"

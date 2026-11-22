@@ -197,13 +197,13 @@
 //     A parameter is a proof of the class when its bare type is a token and
 //     the token is tied to the class.  A token is a class that carries the
 //     annotation authority{} of foundation/Linear.h and does not copy, such as
-//     a Permission, a SoleWriter, an ExclusiveLease and the guard of a share,
-//     or a class that states thread_bound{}, such as the claim of a producer.
-//     A reference to const of a token counts only when the token is not
-//     Shareable, so no two threads read one token.  The token is tied to the
-//     class when it is the class or a member class of it, or when one of its
-//     type arguments is the class, a member class of it, or a type that a
-//     member alias of the class names.  So a token of an unrelated class, or
+//     a Permission, a SoleWriter and an ExclusiveLease, or a class that states
+//     thread_bound{}, such as the claim of a producer.  A reference to const
+//     of a token counts only when the token is not Shareable, so no two
+//     threads read one token, and a share counts never (THE SHARE).  The token
+//     is tied to the class when it is the class or a member class of it, or
+//     when one of its type arguments is the class, a member class of it, or a
+//     type that a member alias of the class names.  So a token of an unrelated class, or
 //     of a tag that the class does not declare as its own, proves nothing
 //     about the class.  A LoanKey carries no authority, so it never counts,
 //     and neither does a QuiescenceProof, which each thread can make.  A
@@ -259,11 +259,17 @@
 //     through a downcast, such as the base of the pops of a consumer handle,
 //     are not read.
 //
-//     One hole stays open: a guard of a share of an own tag carries authority
-//     and does not copy, so a parameter or a member of it proves a door that
-//     writes plain state, as for a lone token.  But many holders hold a share
-//     at one time.  The door add_shared of the class PermittedCount in the
-//     check file of foundation/permissions/Permission.h plants the hole.
+// THE SHARE
+//     Many holders hold a share of one pool at one time, so a share proves no
+//     one writer.  A token that states shares{}, such as the guard of a share
+//     of foundation/permissions/SharedPermission.h, is no proof of a door: as
+//     a parameter of a door, and as a member of a nested class, it counts as
+//     no proof.  A door whose class reaches the plain parts of the owner thus
+//     takes another proof, and a class whose holders write the owner at the
+//     same time, such as the producers of a merge channel, writes only parts
+//     that two threads can write.  The result of a claim door keeps a share:
+//     the door makes the share with one atomic step, and the share proves the
+//     claim of that step.
 //
 // THE EXEMPTION
 //     The check does not read the doors of crucible::BackgroundThread.  Nine
@@ -339,6 +345,7 @@ struct refers_deep final {};
 struct thread_bound final {};
 struct payload_cell final {};
 struct synchronized final {};
+struct shares final {};
 
 // A statement of the facts of a class that is only declared, and the seal of
 // a registry of such statements (THE OPAQUE TYPES).  is_synchronized states
@@ -932,9 +939,9 @@ enum class MakerSet : unsigned char {
 
 // True when the node of a parameter is a proof of the owner (THE PROOF OF A
 // DOOR).  A reference to const of a token counts only when the token is not
-// Shareable.
+// Shareable, and a share counts never (THE SHARE).
 [[nodiscard]] consteval bool is_proof_parameter(::foundation::reflect::TypeNode parameter, std::meta::info owner) {
-    if (!is_proof_type(parameter.type, owner)) return false;
+    if (!is_proof_type(parameter.type, owner) || states(parameter.type, ^^shares)) return false;
     if (!parameter.was_reference || !parameter.was_const) return true;
     return !::foundation::transfer::holds(parameter.type, Property::Share);
 }

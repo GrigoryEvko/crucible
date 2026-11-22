@@ -231,7 +231,7 @@ public:
             requires CtxFitsWaitPolicy<Ctx, Policy>
         void push_waiting(Ctx const& ctx, EventCount& room, value_type&& box) noexcept {
             word_type const word = seal_(std::move(box));
-            cells_.template push_waiting<Policy>(ctx, room, word);
+            ::fixy::concurrent::push_waiting<Policy>(ctx, cells_, room, word);
         }
 
         [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {

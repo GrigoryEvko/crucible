@@ -87,6 +87,7 @@
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
@@ -576,21 +577,6 @@ public:
             } else {
                 return ring_of_().try_push(item);
             }
-        }
-
-        // Pushes item.  While the channel is full, the call waits by Policy
-        // (THE POLICY of fixy/concurrent/EventCount.h): Spin spins, and
-        // SpinThenPark spins for its budget and then parks on room.  The
-        // condition of the wait is a push, so the push after the entry of a
-        // park in the count takes each cell that a pop freed before the entry.
-        // A consumer that notifies room after each receive then loses no wake
-        // of this producer.  The gate of the policy refuses a policy that
-        // parks to a context of the hot path, because that context owns no
-        // Block.
-        template <WaitPolicy Policy, class Ctx>
-            requires CtxFitsWaitPolicy<Ctx, Policy>
-        void push_waiting(Ctx const& ctx, EventCount& room, T const& item) noexcept {
-            wait_for<Policy>(ctx, room, [this, &item]() noexcept { return try_push(item); });
         }
 
         // The lane of this producer of the lanes form.
@@ -1206,6 +1192,26 @@ private:
     [[no_unique_address]] typename parts::producer_pool producer_pool_;
     ::foundation::EndpointClaim consumer_claim_;
 };
+
+// Pushes item through the producer handle.  While the channel is full, the
+// call waits by Policy (THE POLICY of fixy/concurrent/EventCount.h): Spin
+// spins, and SpinThenPark spins for its budget and then parks on room.  The
+// condition of the wait is a push, so the push after the entry of a park in
+// the count takes each cell that a pop freed before the entry.  A consumer
+// that notifies room after each receive then loses no wake of this producer.
+// The gate of the policy refuses a policy that parks to a context of the hot
+// path, because that context owns no Block.  The call is a free function, and
+// it reaches the channel only through the push of the handle, so a handle has
+// no door that the check of foundation/Transfer.h cannot read.
+template <WaitPolicy Policy, class Ctx, class Producer>
+    requires CtxFitsWaitPolicy<Ctx, Policy> && std::same_as<Producer, typename Producer::channel_type::ProducerHandle>
+void push_waiting(Ctx const& ctx, Producer& producer, EventCount& room,
+                  typename Producer::row_payload const& item) noexcept {
+    // The closure borrows the handle through a Ref, so the handle stays the
+    // linear value of its caller.
+    wait_for<Policy>(ctx, room,
+                     [handle = ::foundation::core::to(producer), &item]() noexcept { return handle->try_push(item); });
+}
 
 namespace detail {
 

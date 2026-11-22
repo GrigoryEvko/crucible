@@ -28,6 +28,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Text.h>
 #include <foundation/diag/RowHash.h>
@@ -36,7 +37,6 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/Instance.h>
 
-#include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -156,12 +156,16 @@ public:
 // A guard points at its pool, which each thread that holds a share writes
 // with atomic steps by design, so it moves between threads as its tag does
 // (foundation/Transfer.h, rule 6).  The guard conveys the authority of its
-// share, and it does not copy, so it is a token of the doors of a class that
-// owns its pool (THE PROOF OF A DOOR of foundation/Transfer.h).
+// share, and it does not copy.  Many holders hold a share at one time, so the
+// guard states shares{}: it proves no door that writes the plain parts of a
+// class, and only the result of a claim door keeps it (THE SHARE of
+// foundation/Transfer.h).
 template <typename Tag, typename Brand>
 class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::by_arguments{}]]
-                   [[= ::foundation::linear::authority{}]] SharedPermissionGuard {
-    SharedPermissionPool<Tag, Brand>* pool_ = nullptr;
+                   [[= ::foundation::linear::authority{}]][[= ::foundation::transfer::shares{}]] SharedPermissionGuard {
+    // The pool, through a pointer to const: the guard writes only the count
+    // of the pool, a mutable atomic cell, and never the parked permission.
+    SharedPermissionPool<Tag, Brand> const* pool_ = nullptr;
 
     constexpr explicit SharedPermissionGuard(SharedPermissionPool<Tag, Brand>& p) noexcept : pool_{&p} {}
     friend class SharedPermissionPool<Tag, Brand>;
@@ -375,10 +379,10 @@ public:
     static constexpr std::uint64_t COUNT_MASK = EXCLUSIVE_OUT_BIT - std::uint64_t{1};
 
     constexpr explicit SharedPermissionPool(Permission<Tag, Brand>&& exc) noexcept
-        : parked_{std::move(exc)}, state_{0} {}
+        : parked_{std::move(exc)}, state_{std::uint64_t{0}} {}
 
     ~SharedPermissionPool() {
-        if ((state_.load(std::memory_order_acquire) & COUNT_MASK) != 0) [[unlikely]] {
+        if ((state_.load_acquire() & COUNT_MASK) != 0) [[unlikely]] {
             shared_permission_pool_outlived_abort_();
         }
     }
@@ -433,23 +437,18 @@ public:
         // The token leaves the lease here, and the pool parks it again.
         parked_ = std::move(lease).leave_pool();
         // Release, so a later lend sees the freshly parked permission.
-        std::uint64_t expected = EXCLUSIVE_OUT_BIT;
-        const bool is_bit_cleared = state_.compare_exchange_strong(expected, 0, std::memory_order_release);
+        const bool is_bit_cleared = state_.cas_acq_rel(EXCLUSIVE_OUT_BIT, std::uint64_t{0}).is_ok();
         CRUCIBLE_FATAL_INVARIANT(is_bit_cleared);
     }
 
-    [[nodiscard]] std::uint64_t outstanding() const noexcept {
-        return state_.load(std::memory_order_acquire) & COUNT_MASK;
-    }
+    [[nodiscard]] std::uint64_t outstanding() const noexcept { return state_.load_acquire() & COUNT_MASK; }
 
-    [[nodiscard]] bool is_exclusive_out() const noexcept {
-        return (state_.load(std::memory_order_acquire) & EXCLUSIVE_OUT_BIT) != 0;
-    }
+    [[nodiscard]] bool is_exclusive_out() const noexcept { return (state_.load_acquire() & EXCLUSIVE_OUT_BIT) != 0; }
 
 private:
     [[nodiscard]] ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>> lend_raw_() noexcept {
         using Lent = ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>>;
-        std::uint64_t observed = state_.load(std::memory_order_acquire);
+        std::uint64_t observed = state_.load_acquire();
         for (;;) {
             if (observed & EXCLUSIVE_OUT_BIT) [[unlikely]] {
                 return Lent{::foundation::core::none};
@@ -459,10 +458,12 @@ private:
             }
             const std::uint64_t desired = observed + std::uint64_t{1};
             // Acquire-release, so this count update synchronizes with
-            // the compare-exchange in try_upgrade.
-            if (state_.compare_exchange_weak(observed, desired, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            // the compare-exchange in try_upgrade.  A failed exchange reads
+            // the state again.
+            if (state_.cas_weak_acq_rel(observed, desired).is_ok()) {
                 return Lent::some(SharedPermissionGuard<Tag, Brand>{*this});
             }
+            observed = state_.load_acquire();
         }
     }
 
@@ -473,9 +474,7 @@ private:
     // the lease.
     [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>> try_upgrade_raw_() noexcept {
         using Upgraded = ::foundation::core::Option<ExclusiveLease<Tag, Brand>>;
-        std::uint64_t expected = 0;
-        if (!state_.compare_exchange_strong(expected, EXCLUSIVE_OUT_BIT, std::memory_order_acq_rel,
-                                            std::memory_order_acquire)) {
+        if (state_.cas_acq_rel(std::uint64_t{0}, EXCLUSIVE_OUT_BIT).is_err()) {
             return Upgraded{::foundation::core::none};
         }
         // The parked permission is populated whenever the exclusive-out
@@ -492,7 +491,10 @@ private:
     // Holds a value exactly when the exclusive-out bit is clear.
     std::optional<Permission<Tag, Brand>> parked_;
 
-    alignas(64) std::atomic<std::uint64_t> state_;
+    // The count of the shares and the exclusive-out bit.  It is mutable, so a
+    // guard gives its share back through its pointer to const, which reaches
+    // no other part of the pool.
+    alignas(64) mutable ::foundation::core::Atomic<std::uint64_t> state_;
 };
 
 template <typename Tag, typename Brand>
@@ -503,7 +505,7 @@ SharedPermissionPool(Permission<Tag, Brand>&&) -> SharedPermissionPool<Tag, Bran
 template <typename Tag, typename Brand>
 inline SharedPermissionGuard<Tag, Brand>::~SharedPermissionGuard() {
     if (pool_ != nullptr) {
-        pool_->state_.fetch_sub(std::uint64_t{1}, std::memory_order_acq_rel);
+        static_cast<void>(pool_->state_.fetch_sub_acq_rel(std::uint64_t{1}));
     }
 }
 

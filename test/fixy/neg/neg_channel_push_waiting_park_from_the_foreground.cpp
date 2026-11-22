@@ -1,6 +1,6 @@
 // A context of the hot path owns no Block, so the producer handle of a channel
 // refuses it a wait policy that parks (THE POLICY of
-// fixy/concurrent/EventCount.h).  The foreground asks the handle for
+// fixy/concurrent/EventCount.h).  The foreground asks the push that waits for
 // SpinThenPark, so a push into a full channel would sleep in the kernel on the
 // hot path.
 
@@ -22,7 +22,7 @@ int main() {
     auto [producer_perm, consumer_perm] =
         ::foundation::permissions::mint_permission_split<Wire::producer_tag, Wire::consumer_tag>(std::move(root));
     auto producer = channel.producer(std::move(producer_perm));
-    producer.push_waiting<::fixy::concurrent::SpinThenPark<1000>>(::foundation::effects::testing::foreground(), room,
-                                                                  1);
+    ::fixy::concurrent::push_waiting<::fixy::concurrent::SpinThenPark<1000>>(
+        ::foundation::effects::testing::foreground(), producer, room, 1);
     return 0;
 }
