@@ -381,31 +381,9 @@ template <class VigilType>
 // one adapter is a check the next adapter does not have, and this file
 // already holds every other rule the boundary obeys.
 
-// Structural bounds on an Entry.  Each one names a downstream array
-// the recording pipeline indexes with the field:
-//
-//   - schema_hash != 0, because 0 is the invalid sentinel and the
-//     content hash and the region cache both key on this field
-//   - num_inputs at most kMaxOpInputs and num_outputs at most
-//     kMaxOpOutputs, so the records of the op fit the slots of an
-//     OpRecordStack
-//   - num_scalar_args at most 5, the width of Entry::scalar_values.
-//     BackgroundThread asserts the same bound when it drains the ring,
-//     so a larger count reaches a contract violation rather than the
-//     pipeline; the adapter rejects the operation here instead.
-//   - each data slot below num_scalar_args, and no bit of the word past the
-//     inline slots, because the replay binds the value of each data slot
-//     from Entry::scalar_values.
-[[nodiscard]] CRUCIBLE_HOT constexpr bool entry_is_well_formed(const crucible::TraceRing::Entry& entry) noexcept {
-    if (entry.schema_hash.raw() == 0) return false;
-    if (entry.num_inputs > crucible::kMaxOpInputs) return false;
-    if (entry.num_outputs > crucible::kMaxOpOutputs) return false;
-    for (const crucible::ScalarCount stored : crucible::ScalarCount::check(entry.num_scalar_args)) {
-        for (const crucible::DataSlots data : entry.data_slots())
-            return data.first(stored) == data;
-    }
-    return false;
-}
+// The structural bounds on an Entry are the checks of
+// crucible::entry_is_well_formed (crucible/ValidatedOp.h), the one validator
+// of an entry that the trace loader calls too.
 
 // The structural invariant of TensorMeta is that sizes[] and strides[]
 // are fixed arrays of kMaxTensorNDim entries.  An ndim past that makes
@@ -529,7 +507,7 @@ using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
 validate_ffi_op(crucible::TraceRing::FromPytorchEntryPtr raw, ::fixy::View<const crucible::TensorMeta> metas) noexcept {
     if (raw.value() == nullptr) return ::fixy::none;
     const crucible::TraceRing::Entry& entry = *raw.value();
-    if (!entry_is_well_formed(entry) || !metas_are_well_formed(metas)) return ::fixy::none;
+    if (!crucible::entry_is_well_formed(entry) || !metas_are_well_formed(metas)) return ::fixy::none;
     return crucible::mint_validated_op(std::move(raw).retag<ValidatedEntryTag>(), metas);
 }
 

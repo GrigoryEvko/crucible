@@ -24,12 +24,41 @@
 
 namespace crucible {
 
-// The most inputs and the most outputs of one op.  The trust ladder of the
-// vessel refuses an entry with more of either (entry_is_well_formed), so the
-// records of each op that the ladder admits fit kMaxOpRecords slots.
+// The most inputs and the most outputs of one op.  The trust ladder refuses
+// an entry with more of either (entry_is_well_formed), so the records of each
+// op that the ladder admits fit kMaxOpRecords slots.
 inline constexpr uint16_t kMaxOpInputs = 64;
 inline constexpr uint16_t kMaxOpOutputs = 64;
 inline constexpr uint32_t kMaxOpRecords = uint32_t{kMaxOpInputs} + uint32_t{kMaxOpOutputs};
+
+// The one validator of an entry from outside the process.  Each door that
+// makes an entry from outside values calls it: the C entries and the boxed
+// fallback of the vessel (validate_ffi_op), and the trace loader.  So an entry
+// that one door admits, each other door admits too.  Each bound names a
+// downstream array that the recording pipeline indexes with the field:
+//
+//   - schema_hash != 0, because 0 is the invalid sentinel and the
+//     content hash and the region cache both key on this field
+//   - num_inputs at most kMaxOpInputs and num_outputs at most
+//     kMaxOpOutputs, so the records of the op fit the slots of an
+//     OpRecordStack
+//   - num_scalar_args at most 5, the width of Entry::scalar_values.
+//     BackgroundThread asserts the same bound when it drains the ring, so
+//     a larger count ends the process there.  The validator refuses the
+//     entry first.
+//   - each data slot below num_scalar_args, and no bit of the word past the
+//     inline slots, because the replay binds the value of each data slot
+//     from Entry::scalar_values.
+[[nodiscard]] CRUCIBLE_HOT constexpr bool entry_is_well_formed(const TraceRing::Entry& entry) noexcept {
+    if (entry.schema_hash.raw() == 0) return false;
+    if (entry.num_inputs > kMaxOpInputs) return false;
+    if (entry.num_outputs > kMaxOpOutputs) return false;
+    for (const ScalarCount stored : ScalarCount::check(entry.num_scalar_args)) {
+        for (const DataSlots data : entry.data_slots())
+            return data.first(stored) == data;
+    }
+    return false;
+}
 
 // The slots of an OpRecordStack.
 using OpRecordSlots = ::foundation::core::WindowStack<TensorMeta, kMaxOpRecords>;

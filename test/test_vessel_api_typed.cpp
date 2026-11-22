@@ -776,14 +776,14 @@ void test_ladder_refuses_a_data_slot_past_the_inline_slots() {
     entry.schema_hash = crucible::SchemaHash{0x71};
     entry.num_scalar_args = 5;
     entry.data_slot_bits = 0x11;
-    EXPECT(crucible::vessel::entry_is_well_formed(entry), "data slots below the count of five are well formed");
+    EXPECT(crucible::entry_is_well_formed(entry), "data slots below the count of five are well formed");
     entry.data_slot_bits = 0x21;
-    EXPECT(!crucible::vessel::entry_is_well_formed(entry), "a data slot past the five inline slots is refused");
+    EXPECT(!crucible::entry_is_well_formed(entry), "a data slot past the five inline slots is refused");
     entry.data_slot_bits = 0x80;
-    EXPECT(!crucible::vessel::entry_is_well_formed(entry), "the high bit of the word is refused");
+    EXPECT(!crucible::entry_is_well_formed(entry), "the high bit of the word is refused");
     entry.num_scalar_args = 2;
     entry.data_slot_bits = 0x04;
-    EXPECT(!crucible::vessel::entry_is_well_formed(entry), "a data slot past the count is refused");
+    EXPECT(!crucible::entry_is_well_formed(entry), "a data slot past the count is refused");
 }
 
 // Each decoder gives the crucible enumerator of the same name, and no value

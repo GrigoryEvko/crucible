@@ -57,6 +57,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
+#include <crucible/ValidatedOp.h>
 #include <fixy/Core.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
@@ -158,8 +159,10 @@ enum class TraceLoadError : uint8_t {
     ReadFailed,
     // A metadata record breaks a claim of its type.
     MetaCorrupt,
-    // An op record holds more scalars than the inline slots, or a data slot
-    // past its count of scalars.
+    // An op record breaks a claim of an entry (entry_is_well_formed of
+    // crucible/ValidatedOp.h): a schema hash of zero, more inputs than
+    // kMaxOpInputs or more outputs than kMaxOpOutputs, more scalars than the
+    // inline slots, or a data slot past its count of scalars.
     OpCorrupt,
     // The metadata of an op runs past the metadata count.
     MetaRunPastCount,
@@ -268,7 +271,8 @@ template <CtxFitsTraceLoad Ctx>
 
 // Fills the ring entry, the metadata start, the scope hash and the callsite
 // hash of op i of trace from its record, and moves meta_cursor past the
-// tensors of the op.  An op whose metadata runs past the metadata count gives
+// tensors of the op.  An op that breaks a claim of an entry gives OpCorrupt,
+// and an op whose metadata runs past the metadata count gives
 // MetaRunPastCount.  A record of the first version is the first
 // TRACE_FIRST_OP_BYTES bytes of a record of today, so the op takes the depth
 // 0, the tag 0 on each scalar slot and no data slot (THE FIRST FORMAT).
@@ -296,18 +300,18 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
         scalar_types = read_record_field_<uint16_t, offsetof(TraceOpRecord, scalar_types)>(op_record);
         depth = OpDepth{read_record_field_<uint16_t, offsetof(TraceOpRecord, depth)>(op_record)};
     }
-    // An entry holds at most kScalarSlots scalars, and a data slot is one of
-    // them.  The build of a region ends the process on a larger count, so
-    // the load refuses it first, and a data slot past the inline slots or
-    // past the count.
-    bool is_well_formed = false;
-    for (const DataSlots data : DataSlots::from_bits(data_bits)) {
-        for (const ScalarCount stored : ScalarCount::check(num_scalars)) {
-            is_well_formed = data.first(stored) == data;
-            entry.set_data_slots(data);
-        }
-    }
-    if (!is_well_formed) [[unlikely]]
+    // The word of the data slots and the count of the scalars must fit the
+    // fields of an entry: no bit past the inline slots, and at most
+    // kScalarSlots scalars.  So a count of 261 does not narrow to 5.  The
+    // validator of an entry checks the other claims below.
+    const bool fits_entry = num_scalars <= kScalarSlots
+                         && DataSlots::from_bits(data_bits).match(
+                             [&entry](DataSlots data) noexcept {
+                                 entry.set_data_slots(data);
+                                 return true;
+                             },
+                             [] noexcept { return false; });
+    if (!fits_entry) [[unlikely]]
         return ::fixy::err(TraceLoadError::OpCorrupt);
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
@@ -334,6 +338,11 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
             [value](int64_t& held) noexcept { held = value; });
         ++lane;
     }
+    // The entry passes the one validator of an entry from outside, as an
+    // entry of the C entries does.  So the load admits no entry that the
+    // trust ladder of the vessel refuses.
+    if (!entry_is_well_formed(entry)) [[unlikely]]
+        return ::fixy::err(TraceLoadError::OpCorrupt);
 
     // Widened before adding: two 16-bit counts sum past what 16 bits hold,
     // and the wrap would turn an operation claiming tens of thousands of

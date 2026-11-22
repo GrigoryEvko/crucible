@@ -91,6 +91,9 @@ inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
                                               .walk()
                                               .try_zip(trace.meta_starts.view().walk())
                                               .expect("the arrays of a trace are parallel")) {
+        // The load admits only an entry that the trust ladder of the vessel
+        // admits.
+        CRUCIBLE_FUZZ_CLAIM("trace_file", entry_is_well_formed(*entry));
         const std::uint32_t tensors = std::uint32_t{entry->num_inputs} + std::uint32_t{entry->num_outputs};
         if (tensors == 0) continue;
         const MetaIndex start = *meta_start;

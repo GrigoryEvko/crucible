@@ -188,9 +188,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         }
 
         // The data slots of the entry, from their word, or no value when the
-        // word holds a bit past the inline slots.  The checks of an entry of
-        // a foreign caller refuse such a word (entry_is_well_formed of
-        // vessel/torch/vessel_api_typed.h), and set_data_slots writes none.
+        // word holds a bit past the inline slots.  The validator of an entry
+        // from outside refuses such a word (entry_is_well_formed of
+        // crucible/ValidatedOp.h), and set_data_slots writes none.
         [[nodiscard, gnu::pure]] constexpr ::fixy::Option<DataSlots> data_slots() const noexcept {
             return DataSlots::from_bits(data_slot_bits);
         }

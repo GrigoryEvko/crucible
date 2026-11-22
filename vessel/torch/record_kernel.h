@@ -1418,7 +1418,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // this operator can build: a schema hash other than zero, both tensor
     // counts at kCapacity, and the scalar count at its saturation point. A
     // change to any of those caps, or to a ladder bound, fails here.
-    static_assert(crucible::vessel::entry_is_well_formed(unboxed_entry_ceiling(kSchemaHash, kCapacity)),
+    static_assert(crucible::entry_is_well_formed(unboxed_entry_ceiling(kSchemaHash, kCapacity)),
                   "the trust ladder rejects an entry this operator can build, so append_trace_entry must not skip it");
 
     // The SchemaTable maps a schema hash to a human name, for the trace reader

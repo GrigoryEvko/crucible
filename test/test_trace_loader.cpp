@@ -905,6 +905,10 @@ static void test_the_writer_maxima_pass_the_check() {
 // out-of-bounds read driven by an untrusted file.  The loader must reject
 // such a file, so that the trace it returns is always self-consistent.
 
+// The schema hash of the op of a case that tests another field.  A schema
+// hash of zero breaks a claim of an entry, so the load refuses it.
+constexpr uint64_t kCaseSchemaHash = 0xC0DE0001ULL;
+
 // The load of a 1-op .crtrace with MetaCount metas, the given op tensor
 // counts and a name table of no name.  The metas region is zero-filled
 // (ndim=0, valid).  The file goes after the load.
@@ -915,9 +919,10 @@ static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op_with_metas(InputC
         16 + sizeof(TraceOpRecord) + std::size_t{MetaCount} * TRACE_META_BYTES + kEmptyNameTable;
     ::fixy::FixedArray<std::byte, kBytes> buf = make_image<kBytes>(
         HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = MetaCount});
-    // The op record begins at offset 16.  The two tensor counts sit at
-    // +72 and +74 inside it.
+    // The op record begins at offset 16.  The schema hash is its first
+    // field, and the two tensor counts sit at +72 and +74 inside it.
     buf.with_mut([input_count = num_inputs.value(), output_count = num_outputs.value()](auto run) noexcept {
+        write_record_field_<16>(run.view(), kCaseSchemaHash);
         write_record_field_<16 + 72>(run.view(), input_count);
         write_record_field_<16 + 74>(run.view(), output_count);
     });
@@ -946,12 +951,34 @@ static void test_meta_exact_count_loads() {
 }
 
 static void test_meta_count_uint16_overflow_rejected() {
-    // The two counts sum to 65536, which wraps to zero in 16 bits.  Summed
-    // in 32 bits it is a real claim of 65536 tensors, and the file holds
-    // two metas.
+    // The two counts sum to 65536, which wraps to zero in 16 bits.  The
+    // validator of an entry refuses the 65535 inputs before the sum.
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op_with_metas</*n_metas=*/2>(InputCount{65535}, OutputCount{1}),
-                                              TraceLoadError::MetaRunPastCount));
+                                              TraceLoadError::OpCorrupt));
     ::fixy::check::pass(kTest, "  test_meta_uint16_overflow:      PASSED\n");
+}
+
+// An op record that the trust ladder of the vessel refuses, the load refuses
+// too, because the two doors call entry_is_well_formed.  The old loader took
+// an op of the schema hash zero, and an op of 65 inputs or 65 outputs.
+static void test_op_that_the_ladder_refuses_is_refused() {
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op(TraceOpRecord{}), TraceLoadError::OpCorrupt)
+                                    && "the schema hash zero");
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op_with_metas<kMaxOpInputs + 1>(
+                                                  InputCount{uint16_t{kMaxOpInputs + 1}}, OutputCount{0}),
+                                              TraceLoadError::OpCorrupt)
+                                    && "one input past the bound");
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op_with_metas<kMaxOpOutputs + 1>(
+                                                  InputCount{0}, OutputCount{uint16_t{kMaxOpOutputs + 1}}),
+                                              TraceLoadError::OpCorrupt)
+                                    && "one output past the bound");
+    const LoadedTrace inputs = load_one_op_with_metas<kMaxOpInputs>(InputCount{kMaxOpInputs}, OutputCount{0})
+                                   .expect("an op of the most inputs loads");
+    CRUCIBLE_TEST_ASSERT(kTest, inputs.entries.get(0).expect("the trace holds one op")->num_inputs == kMaxOpInputs);
+    const LoadedTrace outputs = load_one_op_with_metas<kMaxOpOutputs>(InputCount{0}, OutputCount{kMaxOpOutputs})
+                                    .expect("an op of the most outputs loads");
+    CRUCIBLE_TEST_ASSERT(kTest, outputs.entries.get(0).expect("the trace holds one op")->num_outputs == kMaxOpOutputs);
+    ::fixy::check::pass(kTest, "  test_op_the_ladder_refuses:     PASSED\n");
 }
 
 // The peak resident size of this process, in kilobytes: the field VmHWM of
@@ -1012,6 +1039,7 @@ static bool loads_with_meta(const MetaRecord& record) {
         HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = 1});
     const uint16_t num_inputs = 1;
     buf.with_mut([num_inputs, &record](auto run) noexcept {
+        write_record_field_<16>(run.view(), kCaseSchemaHash);
         write_record_field_<16 + 72>(run.view(), num_inputs);
         ::fixy::copy(
             run.view().template window<sizeof(TensorMeta)>(kMetaAt).expect("the metadata record fits the image"),
@@ -1117,8 +1145,9 @@ int main() {
     test_meta_overrun_rejected();
     test_meta_exact_count_loads();
     test_meta_count_uint16_overflow_rejected();
+    test_op_that_the_ladder_refuses_is_refused();
     test_meta_bytes_break_no_claim_of_the_type();
     test_names_on_a_sealed_table_are_skipped();
-    ::fixy::check::pass(kTest, "test_trace_loader: 25 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_trace_loader: 26 groups, all passed\n");
     return 0;
 }
