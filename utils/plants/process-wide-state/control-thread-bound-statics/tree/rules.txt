@@ -1,0 +1,8 @@
+# The rule table of the control of the thread-bound statics.  The unit of
+# test/ is quarantined, and it can name the thread_bound marker and the Choice
+# family.  test/ is no directory of the libraries, so the rule gives no
+# unmarked-static there.
+
+admit foundation::transfer | the thread_bound marker, which the planted code names
+admit foundation::core | the Choice family, whose sums the planted code holds
+quarantine test/

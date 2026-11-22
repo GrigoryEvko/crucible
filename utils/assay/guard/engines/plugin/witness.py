@@ -117,7 +117,8 @@ THE DERIVED DIAGNOSTICS
     SPECIALIZATION_ERRORS of the rule specialization-home, a finding of a
     kind of BASE_NAMESPACE_ERRORS of the rule base-namespace, a finding of a
     kind of SCOPE_ERRORS of the rule brand-escape, a finding of a kind of
-    SUM_ERRORS of the rule must-consume, and a finding of a kind of
+    SUM_ERRORS of the rule must-consume, a finding of a kind of
+    STATIC_ERRORS of the rule process-wide-state, and a finding of a kind of
     FRESH_ERRORS of the rule fresh-brand give an error.
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
@@ -316,6 +317,17 @@ SUM_ERRORS = {
     "option-discarded": "the code discards a temporary linear sum, so its payload can drop: {entity}",
     "option-known-full": "a door that needs an empty linear sum runs on a sum that each path shows full: {entity}",
     "option-known-empty": "a door that needs a full linear sum runs on a sum that each path shows empty: {entity}",
+}
+# The rule process-wide-state, and the start of the error of each of its kinds that are errors in each mode: an object
+# with static storage duration that holds a thread_bound class, and an object with static or thread storage duration
+# that reaches a loan key or a keyed owner (THE THREAD-BOUND STATICS and THE LOAN-KEY STATICS of
+# utils/tools/quarantine/declaration.cpp).  Its other kinds are lines of a ledger.
+PROCESS_WIDE_RULE = "process-wide-state"
+STATIC_ERRORS = {
+    "thread-bound-static": "an object with static storage duration holds a value of a class that states "
+    "'thread_bound', so each thread reaches it: {entity}",
+    "loan-key-static": "an object with static or thread storage duration reaches a loan key or a keyed owner "
+    "through a path that is not const, so a body with no capture reaches it: {entity}",
 }
 # The rule fresh-brand, and the start of the error of each of its kinds (THE ERRORS of
 # utils/tools/quarantine/fresh_brand.cpp).  Each finding of the rule is an error in each mode.
@@ -814,13 +826,15 @@ def is_each_mode(finding: plugin_sections.Finding) -> bool:
     """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, a kind of
     SPECIALIZATION_ERRORS of the rule specialization-home, a kind of BASE_NAMESPACE_ERRORS of the rule
     base-namespace, a kind of SCOPE_ERRORS of the rule brand-escape, a kind of SUM_ERRORS of the rule must-consume,
-    or a kind of FRESH_ERRORS of the rule fresh-brand (THE DERIVED DIAGNOSTICS)."""
+    a kind of STATIC_ERRORS of the rule process-wide-state, or a kind of FRESH_ERRORS of the rule fresh-brand (THE
+    DERIVED DIAGNOSTICS)."""
     return (
         finding.rule in EACH_MODE_RULES
         or (finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS)
         or (finding.rule == BASE_NAMESPACE_RULE and finding.kind in BASE_NAMESPACE_ERRORS)
         or (finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS)
         or (finding.rule == MUST_CONSUME_RULE and finding.kind in SUM_ERRORS)
+        or (finding.rule == PROCESS_WIDE_RULE and finding.kind in STATIC_ERRORS)
         or (finding.rule == FRESH_BRAND_RULE and finding.kind in FRESH_ERRORS)
     )
 
@@ -854,6 +868,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, SCOPE_ERRORS[finding.kind]))
         elif finding.rule == MUST_CONSUME_RULE and finding.kind in SUM_ERRORS:
             errors.append((place, SUM_ERRORS[finding.kind].format(entity=finding.entity)))
+        elif finding.rule == PROCESS_WIDE_RULE and finding.kind in STATIC_ERRORS:
+            errors.append((place, STATIC_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == FRESH_BRAND_RULE and finding.kind in FRESH_ERRORS:
             errors.append((place, FRESH_ERRORS[finding.kind].format(entity=finding.entity)))
         else:

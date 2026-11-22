@@ -1,0 +1,14 @@
+# A thread_bound object (a session handle under check::Pinned) that one thread
+# parks in a global and another thread takes out (static_route.cpp).  No door
+# of foundation/Transfer.h sees the move.  The kind thread-bound-static
+# refuses the global of the thread_bound type and the global of a class that
+# holds one, in each mode (declaration.cpp, THE THREAD-BOUND STATICS).  This
+# unit was the known gap of the route in the control control-known-gaps of
+# must-consume.
+compile static_route src/static_route.cpp must-consume=on errors=static_route
+flag static_route -freflection
+exit static_route fail
+finding static_route process-wide-state thread-bound-static src/static_route.cpp:36:19 | planted::g_slot
+finding static_route process-wide-state unmarked-static src/static_route.cpp:36:19 | planted::g_slot
+finding static_route process-wide-state thread-bound-static src/static_route.cpp:37:8 | planted::g_parked
+finding static_route process-wide-state unmarked-static src/static_route.cpp:37:8 | planted::g_parked

@@ -1,0 +1,6 @@
+# The rule table of the control of the loan-key statics.  The unit of test/ is
+# quarantined, and it can name the core family of the base.  test/ is no
+# directory of the libraries, so the rule gives no unmarked-static there.
+
+admit foundation::core | the owners of the core family, which the planted code holds
+quarantine test/

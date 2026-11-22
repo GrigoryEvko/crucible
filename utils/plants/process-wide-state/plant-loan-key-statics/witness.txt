@@ -1,0 +1,20 @@
+# Each object with static or thread storage duration whose type reaches a
+# loan key or a keyed owner through a path that is not const is the kind
+# loan-key-static (declaration.cpp, THE LOAN-KEY STATICS), a compile error in
+# each mode: a keyed array and its key in a global, a holder of a keyed array
+# of a named brand in a global, in a thread_local object and in a static local
+# behind a function, and a global Ref of a holder.  The unit of src/ also gives
+# unmarked-static for each object that can change.
+compile report src/keyed.cpp errors=report
+flag report -freflection
+exit report fail
+finding report process-wide-state loan-key-static src/keyed.cpp:22:6 | planted::g_pair
+finding report process-wide-state unmarked-static src/keyed.cpp:22:6 | planted::g_pair
+finding report process-wide-state loan-key-static src/keyed.cpp:25:8 | planted::g_holder
+finding report process-wide-state unmarked-static src/keyed.cpp:25:8 | planted::g_holder
+finding report process-wide-state loan-key-static src/keyed.cpp:26:21 | planted::t_holder
+finding report process-wide-state unmarked-static src/keyed.cpp:26:21 | planted::t_holder
+finding report process-wide-state loan-key-static src/keyed.cpp:29:19 | planted::reach_holder()::held
+finding report process-wide-state unmarked-static src/keyed.cpp:29:19 | planted::reach_holder()::held
+finding report process-wide-state loan-key-static src/keyed.cpp:34:33 | planted::g_holder_ref
+finding report process-wide-state unmarked-static src/keyed.cpp:34:33 | planted::g_holder_ref

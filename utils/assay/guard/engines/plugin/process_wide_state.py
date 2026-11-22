@@ -26,6 +26,17 @@ THE RULE
       marker-not-inline        a marked object, and its variable or function
                                is not inline, and it has no unique symbol
       marker-without-object    a marked declaration that holds no object
+      thread-bound-static      an object with static storage duration whose
+                               type holds a class that states thread_bound,
+                               also a const one, in each file of the family.
+                               It is a compile error in each build and each
+                               mode, and no ledger row admits it
+      loan-key-static          an object with static or thread storage
+                               duration whose type reaches a LoanKey or a
+                               keyed owner through a path that is not const,
+                               in each file of the family.  It is a compile
+                               error in each build and each mode, and no
+                               ledger row admits it
     test/test_process_wide_across_libraries.cpp shows the effect of the
     marker with two libraries that dlopen loads with RTLD_LOCAL.  The rule
     reads the lines in the scope of its row of utils/registry.txt.
@@ -60,7 +71,19 @@ ACTIONS = {
     "has no unique symbol.  Make the holder inline",
     "marker-without-object": "carries CRUCIBLE_PROCESS_WIDE and holds no object with static storage duration that "
     "can change.  Remove the marker",
+    "thread-bound-static": "has static storage duration and holds a value of a class that states thread_bound, so "
+    "each thread reaches it.  Keep the value in an object of automatic storage duration, or make the object "
+    "thread_local",
+    "loan-key-static": "has static or thread storage duration and reaches a LoanKey or a keyed owner through a path "
+    "that is not const, so a body with no capture reaches it.  Keep the key and the owner in objects of automatic "
+    "storage duration, or make the path const",
 }
+
+# The kinds of an object with static storage duration that holds a thread_bound class, and of an object with static
+# or thread storage duration that reaches a loan key or a keyed owner, are compile errors in each build and each mode
+# (THE THREAD-BOUND STATICS and THE LOAN-KEY STATICS of utils/tools/quarantine/declaration.cpp), and no ledger row
+# admits them.
+REFUSED_KINDS = frozenset({"thread-bound-static", "loan-key-static"})
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:

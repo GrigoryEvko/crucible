@@ -253,7 +253,8 @@ concept KeyedElementBody = std::is_nothrow_invocable_v<Body&&, T&>
 
 template <class T, std::size_t N, ::foundation::brand::IsBrand Brand = ::foundation::brand::DefaultBrand>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
-class FixedArray final : private detail::ArrayStorage<T, N> {
+class[[= loan_key_mark_when<::foundation::brand::IsFreshBrand<Brand>>]] FixedArray final
+    : private detail::ArrayStorage<T, N> {
     using Storage = detail::ArrayStorage<T, N>;
     using Storage::elements_;
 

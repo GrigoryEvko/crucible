@@ -1,0 +1,7 @@
+# The control of the kind loan-key-static (declaration.cpp, THE LOAN-KEY
+# STATICS): a const holder, a static Ref of a const holder, a static of a class
+# with no keyed part, an unkeyed array, and a thread_local object of a class
+# with no keyed part.  The unit compiles, and it gives no line of the kind.
+compile report test/unkeyed.cpp
+flag report -freflection
+exit report pass

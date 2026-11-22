@@ -1,0 +1,10 @@
+# The control of the kind thread-bound-static (declaration.cpp, THE
+# THREAD-BOUND STATICS): a thread_local object of a thread_bound class, a
+# static of a class that holds no thread_bound class, a static whose type
+# argument is only a thread_bound brand, a static pointer, and a static local
+# of a class with no thread_bound part.  The unit compiles, and it gives no
+# line of the kind.
+compile report test/unbound.cpp
+flag report -freflection
+exit report pass
+finding report quarantine raw-pointer-object test/unbound.cpp:35:12 | g_pointer

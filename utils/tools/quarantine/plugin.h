@@ -254,6 +254,13 @@
 //     marker-not-inline     a marked object whose variable or function is not
 //                           inline
 //     marker-without-object a marked declaration that holds no such object
+//     thread-bound-static   an object with static storage duration whose type
+//                           holds a class that states thread_bound{}
+//                           (declaration.cpp, THE THREAD-BOUND STATICS)
+//     loan-key-static       an object with static or thread storage duration
+//                           whose type reaches a loan key or a keyed owner
+//                           through a path that is not const (declaration.cpp,
+//                           THE LOAN-KEY STATICS)
 //     The rule lifetime-twin:
 //     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
 //                           no deleted overload that refuses a temporary there
@@ -1017,6 +1024,8 @@ enum class Kind : std::uint8_t {
     marker_internal_linkage,
     marker_not_inline,
     marker_without_object,
+    thread_bound_static,
+    loan_key_static,
     missing_twin,
     unrostered_witness,
     route_union,
@@ -1313,6 +1322,10 @@ inline const char* kind_name(Kind kind) {
             return "marker-not-inline";
         case Kind::marker_without_object:
             return "marker-without-object";
+        case Kind::thread_bound_static:
+            return "thread-bound-static";
+        case Kind::loan_key_static:
+            return "loan-key-static";
         case Kind::missing_twin:
             return "missing-twin";
         case Kind::unrostered_witness:
@@ -1548,6 +1561,8 @@ inline Rule rule_of(Kind kind) {
         case Kind::marker_internal_linkage:
         case Kind::marker_not_inline:
         case Kind::marker_without_object:
+        case Kind::thread_bound_static:
+        case Kind::loan_key_static:
             return Rule::process_wide_state;
         case Kind::missing_twin:
             return Rule::lifetime_twin;
@@ -1695,6 +1710,8 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::fresh_deduced_brand:
         case Kind::fresh_named_brand:
         case Kind::linear_self_move:
+        case Kind::thread_bound_static:
+        case Kind::loan_key_static:
             return true;
         default:
             return false;
@@ -1846,6 +1863,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"process-wide-state", "marker-internal-linkage"},
     {"process-wide-state", "marker-not-inline"},
     {"process-wide-state", "marker-without-object"},
+    {"process-wide-state", "thread-bound-static"},
+    {"process-wide-state", "loan-key-static"},
     {"lifetime-twin", "missing-twin"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
@@ -2845,6 +2864,10 @@ void check_instantiation(tree function);
 void walk_declarations();
 void register_declarations(const char* plugin_name);
 std::string function_signature(tree function);
+// The error of one finding of the kind thread-bound-static or loan-key-static
+// that no region opts out (declaration.cpp, THE THREAD-BOUND STATICS and THE
+// LOAN-KEY STATICS).
+void report_static_reach(const Finding& finding);
 
 // True when a rule of each body reads the code of FUNCTION in this unit: an
 // instance of a template of a base or a quarantined file in each unit that

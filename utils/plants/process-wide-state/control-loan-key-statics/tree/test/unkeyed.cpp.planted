@@ -1,0 +1,32 @@
+// Objects with static or thread storage duration that reach no loan key and
+// no keyed owner through a path that is not const.  Each one compiles, and the
+// rule gives no line of the kind loan-key-static for it.
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+
+namespace planted {
+
+namespace core = ::foundation::core;
+
+struct HolderBrand final {};
+
+struct Holder {
+    core::FixedArray<int, 64, HolderBrand> array{};
+};
+
+struct Plain {
+    core::FixedArray<int, 4> values{};
+};
+
+// A const holder lends no writer, and a const Ref of a holder reads it only.
+const Holder g_constant{};
+core::Option<core::Ref<Holder const>> g_read_only{};
+
+// A static of a class with no keyed part, an unkeyed array, and a
+// thread_local one.
+Plain g_plain{};
+core::FixedArray<int, 4> g_unkeyed{};
+thread_local Plain t_plain{};
+
+}  // namespace planted

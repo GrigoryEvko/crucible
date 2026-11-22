@@ -274,6 +274,21 @@ public:
     [[nodiscard]] constexpr T const* operator->() const& noexcept { return object_; }
 };
 
+// The mark of a loan key and of a keyed owner.  The kind loan-key-static of
+// the rule process-wide-state (utils/tools/quarantine/declaration.cpp, THE
+// LOAN-KEY STATICS) refuses an object of static or thread storage duration
+// that reaches a class with the mark, because a body with no capture reaches
+// such an object and the gate does not see it.  A class template whose
+// instances are keyed only for some arguments writes loan_key_mark_when.
+struct loan_key_mark final {};
+struct no_loan_key_mark final {};
+
+template <bool IsKeyed>
+inline constexpr auto loan_key_mark_when = no_loan_key_mark{};
+
+template <>
+inline constexpr auto loan_key_mark_when<true> = loan_key_mark{};
+
 // The key of the frames of the keyed owners of one brand (THE LOAN KEY).  The
 // class is empty, so it costs no byte and no instruction.  It is linear: each
 // path gives it back to its holder or ends it through a door.  It does not
@@ -288,7 +303,7 @@ public:
 // brand.
 template <class Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::scope_end_door{}]]
-                   [[= ::foundation::transfer::not_shareable{}]] LoanKey final {
+                   [[= ::foundation::transfer::not_shareable{}]][[= loan_key_mark{}]] LoanKey final {
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
 public:

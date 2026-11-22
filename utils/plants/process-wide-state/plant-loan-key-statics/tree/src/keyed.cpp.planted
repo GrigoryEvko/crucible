@@ -1,0 +1,36 @@
+// Objects with static or thread storage duration that reach a loan key or a
+// keyed owner through a path that is not const.  A body with no capture
+// reaches each of them, and the gate of a keyed frame door reads only the
+// captures of a body, so such an object would let a body open a second frame
+// of an owner.
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+
+namespace planted {
+
+namespace core = ::foundation::core;
+
+// The brand of the member of a holder, and the holder.
+struct HolderBrand final {};
+
+struct Holder {
+    core::FixedArray<int, 64, HolderBrand> array{};
+};
+
+// A keyed array and its key in a global.
+auto g_pair = core::mint_fixed_array<int, 4>();
+
+// A holder in a global, in a thread_local object, and behind a function.
+Holder g_holder{};
+thread_local Holder t_holder{};
+
+Holder& reach_holder() noexcept {
+    static Holder held{};
+    return held;
+}
+
+// A global that refers to a holder.
+core::Option<core::Ref<Holder>> g_holder_ref{};
+
+}  // namespace planted

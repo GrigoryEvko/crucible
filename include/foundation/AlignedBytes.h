@@ -816,7 +816,7 @@ void with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> cons
 // the bytes only through the ViewMuts of the frame.
 template <class Brand>
     requires ::foundation::brand::IsFreshBrand<Brand>
-class [[nodiscard]] KeyedBytes final {
+class [[nodiscard]][[= core::loan_key_mark{}]] KeyedBytes final {
     AlignedBytes bytes_{};
 
 public:

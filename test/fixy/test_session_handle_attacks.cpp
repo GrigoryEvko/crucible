@@ -598,10 +598,9 @@ using LeftProto = s::Recv<Ping, s::End>;
 // If a body gives the pinned endpoint away with no release, the endpoint
 // steps on the other thread with no holder note, and the watch does not see
 // the wait.  The forked sides open pinned, so no run-time check catches that
-// route.  A refusal at compile time of a global of a thread_bound type is the
-// check for it, and the known-gap control of must-consume
-// (utils/plants/must-consume/control-known-gaps, static_route.cpp) holds the
-// route until that refusal exists.
+// route.  The kind thread-bound-static of the rule process-wide-state refuses
+// a global of a thread_bound type at compile time, and the plant
+// utils/plants/process-wide-state/plant-static-route holds the route.
 struct GiveAwayBody;
 using RightHead =
     s::detail::forked_head_t<s::dual_of_t<LeftProto>, RightEnd, s::DefaultAbandonmentPolicy, GiveAwayBody>;

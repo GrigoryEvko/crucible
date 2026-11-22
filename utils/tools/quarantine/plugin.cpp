@@ -640,6 +640,8 @@ void report(bool can_add_dependencies) {
             report_option_end(finding);
         } else if (rule_of_finding == Rule::fresh_brand && !is_out) {
             report_fresh_brand(finding);
+        } else if ((finding.kind == Kind::thread_bound_static || finding.kind == Kind::loan_key_static) && !is_out) {
+            report_static_reach(finding);
         } else if (is_each_mode_kind(finding.kind) && !is_out) {
             report_unit_fact(finding);
         } else if (rule_of_finding != Rule::quarantine && is_error && !is_out) {

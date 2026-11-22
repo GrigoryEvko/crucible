@@ -1,0 +1,32 @@
+# Each object with static storage duration whose type holds a class that
+# states thread_bound{} is the kind thread-bound-static (declaration.cpp, THE
+# THREAD-BOUND STATICS), a compile error in each mode: a global of the class,
+# a global that holds it through an Option, a member, a base or an array, a
+# constant global, a reference, a global with internal linkage, two constexpr
+# globals, a static data member, a static local, also a constant one, and a
+# global of the global namespace.  The unit of src/ also gives unmarked-static
+# for each object that can change, and the quarantine gives the C array.
+compile report src/bound.cpp errors=report
+flag report -freflection
+exit report fail
+finding report process-wide-state thread-bound-static src/bound.cpp:37:11 | planted::g_end
+finding report process-wide-state unmarked-static src/bound.cpp:37:11 | planted::g_end
+finding report process-wide-state thread-bound-static src/bound.cpp:38:19 | planted::g_slot
+finding report process-wide-state unmarked-static src/bound.cpp:38:19 | planted::g_slot
+finding report process-wide-state thread-bound-static src/bound.cpp:39:8 | planted::g_parked
+finding report process-wide-state unmarked-static src/bound.cpp:39:8 | planted::g_parked
+finding report process-wide-state thread-bound-static src/bound.cpp:40:9 | planted::g_derived
+finding report process-wide-state unmarked-static src/bound.cpp:40:9 | planted::g_derived
+finding report quarantine c-array-object src/bound.cpp:40:9 | g_derived
+finding report process-wide-state thread-bound-static src/bound.cpp:41:17 | planted::g_constant
+finding report process-wide-state thread-bound-static src/bound.cpp:42:12 | planted::g_reference
+finding report process-wide-state thread-bound-static src/bound.cpp:46:26 | planted::s_hidden
+finding report process-wide-state unmarked-static src/bound.cpp:46:26 | planted::s_hidden
+finding report process-wide-state thread-bound-static src/bound.cpp:47:28 | planted::s_folded
+finding report process-wide-state thread-bound-static src/bound.cpp:48:21 | planted::g_folded
+finding report process-wide-state thread-bound-static src/bound.cpp:53:37 | planted::Registry::parked
+finding report process-wide-state unmarked-static src/bound.cpp:53:37 | planted::Registry::parked
+finding report process-wide-state thread-bound-static src/bound.cpp:58:30 | planted::park_locally()::local
+finding report process-wide-state unmarked-static src/bound.cpp:58:30 | planted::park_locally()::local
+finding report process-wide-state thread-bound-static src/bound.cpp:59:26 | planted::park_locally()::constant_local
+finding report process-wide-state thread-bound-static src/bound.cpp:69:37 | s_global

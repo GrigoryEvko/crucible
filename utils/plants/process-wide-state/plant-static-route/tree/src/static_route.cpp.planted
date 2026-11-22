@@ -2,9 +2,7 @@
 // of foundation/Transfer.h.  PinnedEnd stands for a session handle under
 // check::Pinned, whose policy is thread_bound.  One thread parks the object in
 // a global, and another thread takes it out and uses it.  No door sees the
-// move, so the type does not refuse it, and the rule gives no line for it.  A
-// static or a global of a thread_bound type, or of a type that holds one, is
-// the form that a refusal at compile time must close.
+// move, so the kind thread-bound-static refuses each global at compile time.
 #include <foundation/Linear.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>

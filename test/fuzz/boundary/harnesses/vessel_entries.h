@@ -82,10 +82,12 @@ enum class TableState : std::uint8_t {
 
 // The Vigil whose producer claim the registration takes.  The harness makes
 // it once, on the thread of the harness, before the first input clears the
-// tables.  Its start seals the global table, and the clear of each input
-// opens it again.  No thread of the Vigil reads a schema table.
+// tables.  The Vigil holds a value of one owner thread, so it is thread_local,
+// and no other thread reaches it.  Its start seals the global table, and the
+// clear of each input opens it again.  No thread of the Vigil reads a schema
+// table.
 [[nodiscard]] inline Vigil& harness_vigil() noexcept {
-    static Vigil vigil{};
+    thread_local Vigil vigil{};
     return vigil;
 }
 

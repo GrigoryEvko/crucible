@@ -180,6 +180,42 @@
 //     local.  The function of a static local of a lambda is the function that
 //     holds the lambda.
 //
+// THE THREAD-BOUND STATICS (the rule process-wide-state)
+//     A class that states thread_bound{} of foundation/Transfer.h belongs to
+//     one owner thread, and only the doors of foundation/Transfer.h move a
+//     value between threads.  Each thread reaches an object with static
+//     storage duration, so such an object moves a value to another thread
+//     with no door, as a parked session handle in a global does.  So a
+//     variable with static storage duration whose type holds such a class is
+//     the kind thread-bound-static, as Rust asks Sync of a static: a variable
+//     at namespace scope, a static data member and a static local, also a
+//     const one and a reference.  A type holds the class when it is the
+//     class, or through a reference to it, an element of an array, a base, a
+//     data member, or the first type argument of a class that states
+//     by_arguments{}, payload_cell{}, refers{}, refers_unique{} or
+//     refers_deep{}, at each depth.  Each other type argument can be a brand
+//     or a tag, which names no object, and a pointer holds nothing, so the
+//     walk reads neither.  A thread_local object belongs to one thread, so it
+//     can hold such a class.  The rule reads each file of the family (THE
+//     SCOPE), so a test can hold no such global either.  A variable of a type
+//     that depends on a template parameter is read in no instance.
+//
+// THE LOAN-KEY STATICS (the rule process-wide-state)
+//     A loan key of foundation/core/Frame.h opens the frames of the keyed
+//     owners of its brand one at a time, because the gate of each keyed door
+//     refuses a body that reaches a key of the brand.  The gate reads what the
+//     body captures.  A body with no capture reaches each object of static or
+//     thread storage duration, so such an object that reaches a key or a keyed
+//     owner would let a body open a second frame of an owner.  So a variable
+//     with static or thread storage duration whose type reaches a class with
+//     the annotation loan_key_mark{} through a path that is not const is the
+//     kind loan-key-static: a variable at namespace scope, a static data member
+//     and a static local, also a thread_local one.  The walk of the
+//     thread-bound statics reads the parts, and this walk goes on through a
+//     reference and a pointer too, because a reference to a holder reaches the
+//     keys of the holder.  A const part ends the path: a const key moves into
+//     no door, and a const owner lends no writer.
+//
 // THE RULE lifetime-twin (CLAUDE.md section XVI)
 //     The macro CRUCIBLE_LIFETIMEBOUND gives the attribute
 //     quarantine::lifetimebound, which this plugin registers on a parameter.
@@ -2578,6 +2614,133 @@ void check_process_wide_variable(tree decl, bool is_templated) {
     }
 }
 
+// The two walks of the static kinds: the walk of a class that states
+// thread_bound{} (THE THREAD-BOUND STATICS), and the walk of a class with the
+// annotation loan_key_mark{} through each path that is not const (THE
+// LOAN-KEY STATICS).
+enum class StaticWalk : std::uint8_t {
+    thread_bound,
+    loan_key,
+};
+
+// The answer of each walk for each class, by its TYPE_UID, which no
+// collection reuses (THE COLLECTIONS of plugin.h).
+std::unordered_map<unsigned, bool> thread_bound_classes;
+std::unordered_map<unsigned, bool> loan_key_classes;
+
+// True when TYPE holds a class of the mark of WALK (THE THREAD-BOUND STATICS,
+// THE LOAN-KEY STATICS).  A class that the walk meets again during its walk
+// holds nothing, so a type that reaches itself ends the walk.  An incomplete
+// class is read in no part.  Complexity: linear in the distinct classes that
+// the type reaches, one time for each class and each walk in a unit.
+bool holds_static_mark(tree type, StaticWalk walk, int depth) {
+    static tree const thread_bound = get_identifier("thread_bound");
+    static tree const transfer = get_identifier("transfer");
+    static tree const loan_key_mark = get_identifier("loan_key_mark");
+    static tree const core = get_identifier("core");
+    static tree const first_argument_annotations[] = {
+        get_identifier("by_arguments"),  get_identifier("payload_cell"), get_identifier("refers"),
+        get_identifier("refers_unique"), get_identifier("refers_deep"),
+    };
+    bool const is_key_walk = walk == StaticWalk::loan_key;
+    if (depth > kTypeDepth) {
+        return false;
+    }
+    // A reference and an array reach their element in each walk, and a
+    // pointer reaches it in the walk of the keys.  A const part ends the path
+    // of the keys.
+    for (int step = 0; type != NULL_TREE && type != error_mark_node && step < kTypeDepth; ++step) {
+        if (is_key_walk && TYPE_READONLY(type)) {
+            return false;
+        }
+        bool const is_reached = TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == ARRAY_TYPE
+                             || (is_key_walk && TREE_CODE(type) == POINTER_TYPE);
+        if (!is_reached) {
+            break;
+        }
+        type = TREE_TYPE(type);
+    }
+    if (type == NULL_TREE || type == error_mark_node) {
+        return false;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
+        return false;
+    }
+    std::unordered_map<unsigned, bool>& answers = is_key_walk ? loan_key_classes : thread_bound_classes;
+    auto found = answers.find(TYPE_UID(type));
+    if (found != answers.end()) {
+        return found->second;
+    }
+    answers.emplace(TYPE_UID(type), false);
+    bool is_held = is_key_walk ? carries_base_annotation(TYPE_ATTRIBUTES(type), loan_key_mark, core)
+                               : carries_base_annotation(TYPE_ATTRIBUTES(type), thread_bound, transfer);
+    tree binfo = TYPE_BINFO(type);
+    for (unsigned index = 0; !is_held && binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+        is_held = holds_static_mark(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), walk, depth + 1);
+    }
+    for (tree field = TYPE_FIELDS(type); !is_held && field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL) {
+            is_held = holds_static_mark(TREE_TYPE(field), walk, depth + 1);
+        }
+    }
+    // A class that owns or refers to the object of its first type argument
+    // behind a pointer or in its own bytes states it, as a Box, a Ref and an
+    // Option do.  Each other type argument can be a brand or a tag, which
+    // names no object.
+    bool is_first_argument_held = false;
+    for (tree name : first_argument_annotations) {
+        is_first_argument_held =
+            is_first_argument_held || carries_base_annotation(TYPE_ATTRIBUTES(type), name, transfer);
+    }
+    tree info = CLASSTYPE_TEMPLATE_INFO(type);
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    if (!is_held && is_first_argument_held && arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0) {
+        tree argument = TREE_VEC_ELT(arguments, 0);
+        is_held = argument != NULL_TREE && TYPE_P(argument) && holds_static_mark(argument, walk, depth + 1);
+    }
+    answers[TYPE_UID(type)] = is_held;
+    return is_held;
+}
+
+// A variable with static storage duration whose type holds a class that
+// states thread_bound{}, and a variable with static or thread storage
+// duration whose type reaches a loan key or a keyed owner (THE THREAD-BOUND
+// STATICS, THE LOAN-KEY STATICS).  ENTITY names it.
+void check_static_reach(tree decl, const std::string& entity) {
+    if (!VAR_P(decl) || DECL_ARTIFICIAL(decl)) {
+        return;
+    }
+    duration_kind const duration = decl_storage_duration(decl);
+    if (duration != dk_static && duration != dk_thread) {
+        return;
+    }
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
+        return;
+    }
+    if (duration == dk_static && holds_static_mark(type, StaticWalk::thread_bound, 0)) {
+        record_property(Kind::thread_bound_static, property_place(DECL_SOURCE_LOCATION(decl)), entity);
+    }
+    if (holds_static_mark(type, StaticWalk::loan_key, 0)) {
+        record_property(Kind::loan_key_static, property_place(DECL_SOURCE_LOCATION(decl)), entity);
+    }
+}
+
+// Each static and thread_local local of the blocks from BLOCK on, and of
+// their subblocks, for the static kinds (check_static_reach).  Complexity:
+// O(blocks and declarations of the body).
+void check_static_reach_locals(tree block, const std::string& prefix, int depth) {
+    for (; block != NULL_TREE && depth < kBlockDepth; block = BLOCK_CHAIN(block)) {
+        for (tree decl = BLOCK_VARS(block); decl != NULL_TREE; decl = DECL_CHAIN(decl)) {
+            if (VAR_P(decl) && !DECL_THIS_EXTERN(decl)) {
+                check_static_reach(decl, prefix + "::" + simple_name(decl));
+            }
+        }
+        check_static_reach_locals(BLOCK_SUBBLOCKS(block), prefix, depth + 1);
+    }
+}
+
 // Each static local of the blocks from BLOCK on, and of their subblocks.
 // Complexity: O(blocks and declarations of the body).
 void collect_static_locals(tree block, std::vector<tree>& objects, int depth) {
@@ -2618,6 +2781,7 @@ void check_static_locals(tree function, bool is_processing) {
     if (body == NULL_TREE || TREE_CODE(body) != BLOCK) {
         return;
     }
+    check_static_reach_locals(body, holder_name(function), 0);
     std::vector<tree> objects;
     collect_static_locals(body, objects, 0);
     if (objects.empty()) {
@@ -3429,6 +3593,7 @@ struct PropertyWalk {
         check_process_wide_variable(decl, is_templated);
         if (!is_templated) {
             check_padded_declaration(decl, Kind::padded_member, padding);
+            check_static_reach(decl, qualified_name(decl));
         }
         if (is_honesty_marker(decl)) {
             note_stub(stubs, property_place(DECL_SOURCE_LOCATION(decl)), qualified_name(decl), true);
@@ -3653,6 +3818,37 @@ void walk_declarations() {
     properties.namespace_decl(global_namespace);
     report_stubs(properties.stubs);
     report_lifetime_claims();
+}
+
+// The error of one finding of the kind thread-bound-static or loan-key-static
+// (THE THREAD-BOUND STATICS, THE LOAN-KEY STATICS), in each mode.  The message
+// does not start with "quarantine: ", so a regex of a negative fixture reads
+// it.
+void report_static_reach(const Finding& finding) {
+    if (finding.kind == Kind::loan_key_static) {
+        error_at(finding.spelling,
+                 "an object with static or thread storage duration reaches a loan key or a keyed owner through a path "
+                 "that is not const, so a body with no capture reaches it: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "the gate of a keyed frame door reads what the body captures, and a body that captures nothing reaches "
+               "this object, so it could open a second frame of an owner");
+        inform(finding.spelling,
+               "keep the key and the keyed owner in objects of automatic storage duration, or make the path const");
+        return;
+    }
+    error_at(finding.spelling,
+             "an object with static storage duration holds a value of a class that states %<thread_bound%>, so each "
+             "thread reaches it: %s",
+             finding.entity.c_str());
+    inform(finding.spelling,
+           "one thread can park a value of one owner thread in the object, and a different thread can take it out "
+           "with no door of %<foundation/Transfer.h%>");
+    inform(finding.spelling, "keep the value in an object of automatic storage duration, give it to a door of "
+                             "%<foundation/Transfer.h%>, or make the object %<thread_local%>");
+    inform(finding.spelling,
+           "a test of the route itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
+           "%<foundation/Quarantine.h%>");
 }
 
 // Registers the attributes of the family, the hooks of the foreign symbols

@@ -1,0 +1,6 @@
+# The rule table of the plant of the loan-key statics.  The unit of src/ is
+# quarantined, and it can name the core family of the base, whose keyed owners
+# and keys the planted code holds.
+
+admit foundation::core | the keyed owners and the keys of the core family, which the planted code holds
+quarantine src/

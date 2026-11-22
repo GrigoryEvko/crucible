@@ -1,0 +1,71 @@
+// Objects with static storage duration whose types hold a class that states
+// thread_bound{}.  Each thread reaches such an object, so one thread can park
+// a value in it and a different thread can take the value out, with no door
+// of foundation/Transfer.h.
+#include <foundation/Transfer.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::transfer::thread_bound{}]] PinnedEnd {
+    int handle = 0;
+    constexpr explicit PinnedEnd(int value) noexcept : handle{value} {}
+    constexpr PinnedEnd(PinnedEnd&&) noexcept = default;
+    constexpr PinnedEnd& operator=(PinnedEnd&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    PinnedEnd(const PinnedEnd&) = delete;
+};
+
+// A class that holds the object through a member, and a class that holds it
+// through a base.
+struct Parked {
+    Option<PinnedEnd> end;
+};
+
+struct Derived : PinnedEnd {
+    constexpr Derived() noexcept : PinnedEnd{0} {}
+};
+
+// A global of the class, a global that holds it through an Option, a global
+// of a class that holds it, an array, and a constant one.
+PinnedEnd g_end{1};
+Option<PinnedEnd> g_slot{};
+Parked g_parked{};
+Derived g_derived[2]{};
+const PinnedEnd g_constant{2};
+PinnedEnd& g_reference = g_end;
+
+// A global with internal linkage, a constexpr global with internal linkage, and
+// a static data member.
+static Option<PinnedEnd> s_hidden{};
+static constexpr PinnedEnd s_folded{3};
+constexpr PinnedEnd g_folded{4};
+
+PinnedEnd const& folded_end() noexcept { return s_folded.handle == 3 ? s_folded : g_folded; }
+
+struct Registry {
+    static inline Option<PinnedEnd> parked{};
+};
+
+// A static local, also a constant one.
+void park_locally(PinnedEnd&& end) noexcept {
+    static Option<PinnedEnd> local{};
+    static const Derived constant_local{};
+    local.fill(std::move(end));
+    (void)constant_local;
+}
+
+void park_in_the_hidden_global(PinnedEnd&& end) noexcept { s_hidden.fill(std::move(end)); }
+
+}  // namespace planted
+
+// A global of the global namespace, with internal linkage.
+static constexpr planted::PinnedEnd s_global{5};
+
+planted::PinnedEnd const& global_end() noexcept { return s_global; }

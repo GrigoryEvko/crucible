@@ -1,0 +1,46 @@
+// Objects with static or thread storage duration that hold no class that
+// states thread_bound{}, and objects of one thread that hold one.  Each one
+// compiles, and the rule gives no line for it.
+#include <foundation/Transfer.h>
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::transfer::thread_bound{}]] PinnedEnd {
+    int handle = 0;
+};
+
+// A class that two threads can read: it holds no thread_bound class.
+struct Shared {
+    int value = 0;
+};
+
+// A class whose type argument is a brand: it holds no value of the argument.
+template <class Brand>
+struct Branded {
+    int value = 0;
+};
+
+// A thread_local object belongs to one thread, so it can hold the class.
+thread_local PinnedEnd t_end{1};
+thread_local Option<PinnedEnd> t_slot{};
+
+// A static of a class that holds no thread_bound class, a static whose type
+// argument is a thread_bound brand, and a static pointer, which holds nothing.
+Shared g_shared{2};
+Option<Shared> g_shared_slot{};
+Branded<PinnedEnd> g_branded{};
+PinnedEnd* g_pointer = nullptr;
+
+// A static local of a class with no thread_bound part, and a thread_local one
+// of the class.
+int count_calls() noexcept {
+    static Shared calls{};
+    thread_local PinnedEnd per_thread{3};
+    calls.value += per_thread.handle;
+    return calls.value;
+}
+
+}  // namespace planted

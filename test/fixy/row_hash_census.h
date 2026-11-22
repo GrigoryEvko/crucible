@@ -999,6 +999,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::LoanKey,
      "the key of the frames of the keyed owners of one brand: it is empty, holds no value and makes no claim about "
      "what an owner holds"},
+    {^^::foundation::core::loan_key_mark,
+     "the annotation of a loan key and of a keyed owner: it is empty and is never a value in a signature"},
+    {^^::foundation::core::no_loan_key_mark,
+     "the annotation of an owner with no key: it is empty and is never a value in a signature"},
     {^^::foundation::KeyedBytes,
      "a block of bytes that opens its windows only with its key: it holds storage and makes no claim about what the "
      "bytes hold"},
