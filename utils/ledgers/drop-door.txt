@@ -11,6 +11,6 @@ reason test/ | the tests write a token back through a reference in a door body, 
 bench/ | untracked-assignment | 1 | - | -
 include/fixy/concurrent/ | untracked-assignment | 1 | - | -
 include/fixy/session/ | untracked-assignment | 2 | - | -
-include/foundation/core/ | destroy | 9 | - | the alternatives of Option and Result end the lifetime of a payload, and in a test build the consume tracker gives the end of a Linear a destructor.  The test cell of an Option of a Linear of a Ref adds the end of a Linear of a Ref
+include/foundation/core/ | destroy | 24 | - | the alternatives of Option and Result end the lifetime of a payload, and in a test build the consume tracker gives the end of a Linear a destructor.  The test cell of an Option of a Linear of a Ref adds the end of a Linear of a Ref.  The frame of the thread doors holds each body in an Option, so the take of each linear body type ends the moved-from body in its slot, and a full Option, which no correct run ends because expect_none checks each Option after the join, shares the line.  A frame slot whose drop_door member ends the moved-from storage, and whose end ends the process when it is full, retires the lines of the bodies
 include/foundation/permissions/ | untracked-assignment | 1 | - | -
 test/foundation/ | untracked-assignment | 1 | - | -
