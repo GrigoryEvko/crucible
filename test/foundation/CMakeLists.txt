@@ -4739,6 +4739,31 @@ foundation_neg_compile_test(neg_core_view_first_of_specialized
 foundation_neg_compile_test(neg_core_view_first_of_unnamed_tag
   "converting to .const foundation::core::detail::BaseLayerRead. from initializer list would use explicit constructor"
   "constexpr foundation::core::detail::BaseLayerRead::BaseLayerRead\\(\\). declared here")
+# The key of an owner on the core comes only from the protected run_key_() of
+# OwnerCore, so a unit that derives from no core makes no View of raw parts.
+foundation_neg_compile_test(neg_core_owner_run_key_outside_owner
+  "foundation::core::detail::OwnerRunKey foundation::core::OwnerCore<State>::run_key_\\(\\) \\[with State = \\{anonymous\\}::LoneState\\]. is protected within this context"
+  "declared protected here")
+# Each door of an owner above Region.h gives the raw constructors of a View
+# only to its owner, so a unit of another group calls no member of the door.
+foundation_neg_compile_test(neg_core_fixed_list_slots_door_forged
+  "foundation::core::FixedListSlotsDoor::live_slots_\\(T\\*, std::size_t\\) \\[with T = int; std::size_t = long unsigned int\\]. is private within this context"
+  "List\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_fixed_heap_array_count_door_forged
+  "foundation::core::FixedHeapArrayCountDoor::held_run_\\(T\\*\\) \\[with long unsigned int N = 4; T = int\\]. is private within this context"
+  "FixedHeapArray\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_run_set_layout_door_forged
+  "foundation::core::RunSetLayoutDoor::held_run_\\(Element\\*, std::size_t\\) \\[with Element = int; std::size_t = long unsigned int\\]. is private within this context"
+  "RunSet\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_tested_window_door_forged
+  "foundation::core::TestedWindowDoor::started_run_\\(uint8_t\\*, std::size_t\\) \\[with T = int; uint8_t = unsigned char; std::size_t = long unsigned int\\]. is private within this context"
+  "AlignedBytes\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_arena_array_door_forged
+  "foundation::core::ArenaArrayDoor::built_run_\\(T\\*, std::size_t\\) \\[with T = int; std::size_t = long unsigned int\\]. is private within this context"
+  "BumpArena\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_committed_range_door_forged
+  "foundation::core::CommittedRangeDoor::committed_bytes_\\(uint8_t\\*, std::size_t\\). is private within this context"
+  "PageSource\\.h:[0-9]+:[0-9]+: note: declared private here")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result

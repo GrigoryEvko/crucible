@@ -165,8 +165,8 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 214 | - | -
-include/fixy/ | base-std-object | 80 | - | -
+include/fixy/ | base-std-entity | 202 | - | -
+include/fixy/ | base-std-object | 78 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 2 | - | -
@@ -175,7 +175,7 @@ include/fixy/ | replace-pending:<functional> | 1 | - | -
 include/fixy/ | replace-pending:<limits> | 2 | - | -
 include/fixy/ | replace-pending:<memory> | 2 | - | -
 include/fixy/ | replace-pending:<optional> | 4 | - | -
-include/fixy/ | replace-pending:<span> | 3 | - | -
+include/fixy/ | replace-pending:<span> | 2 | - | -
 include/fixy/ | replace-pending:<string> | 4 | - | -
 include/fixy/ | replace-pending:<string_view> | 9 | - | -
 include/fixy/ | replace-pending:<tuple> | 4 | - | -
@@ -198,8 +198,8 @@ include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/concurrent/ | base-c-library-call | 4 | - | -
 include/fixy/concurrent/ | base-std-entity | 84 | - | -
-include/fixy/concurrent/ | base-std-object | 24 | - | -
-include/fixy/concurrent/ | replace-pending:<array> | 5 | - | -
+include/fixy/concurrent/ | base-std-object | 22 | - | -
+include/fixy/concurrent/ | replace-pending:<array> | 4 | - | -
 include/fixy/concurrent/ | replace-pending:<bit> | 2 | - | -
 include/fixy/concurrent/ | replace-pending:<cstring> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<limits> | 1 | - | -
@@ -460,7 +460,7 @@ test/fixy/ | std-entity | 2064 | - | -
 test/fixy/ | std-object | 664 | - | -
 test/fixy/neg/ | c-array-object | 42 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 349 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 350 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -542,7 +542,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 68 | - | -
+test/fixy/neg/ | std-entity | 67 | - | -
 test/fixy/neg/ | std-object | 29 | - | -
 test/foundation/ | c-array-object | 6 | - | -
 test/foundation/ | c-library-call | 2 | - | -
@@ -693,7 +693,7 @@ test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 2 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 8 | - | -
-test/layer/checks/fixy/ | std-entity | 71 | - | -
+test/layer/checks/fixy/ | std-entity | 70 | - | -
 test/layer/checks/fixy/ | std-object | 5 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 18 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 4 | - | -

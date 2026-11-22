@@ -479,6 +479,12 @@ home owner foundation::effects::host::ImageReader include/foundation/effects/Ima
 home owner foundation::effects::host::AtomOwner include/foundation/effects/Effect.h | the owner of the bare value atoms Alloc, IO and Block, whose friends are the three contexts and extract_bare, so a second definition builds an atom from nothing
 home federation foundation::permissions::FederationAdmission include/fixy/Federation.h | the federation door: the key of a federation peer token befriends this class template, and its definition builds the key only after a handshake verifies
 home owner foundation::core::BitCursor include/foundation/core/BitSet.h | the cursor of the walk of the keys of a bit set: Index befriends this class template for the road of_bit_of_set_, and its one definition makes each key of a live BitSet<N> with no check
+home owner foundation::core::FixedListSlotsDoor include/foundation/core/List.h | the door of a FixedList to the raw constructors of a View: View befriends it, and its one definition gives the View of the first count slots, which the list keeps alive, only to FixedList
+home owner foundation::core::FixedHeapArrayCountDoor include/foundation/core/FixedHeapArray.h | the door of a FixedHeapArray to the raw constructors of a View: View befriends it, and its one definition gives the View of the N elements of the held HeapArray only to FixedHeapArray
+home owner foundation::core::RunSetLayoutDoor include/foundation/core/RunSet.h | the door of a RunSet to the raw constructors of a View: View befriends it, and its one definition gives the View of a run that set<I> took from a View only to RunSet, whose layout keeps one pointer for each run
+home owner foundation::core::TestedWindowDoor include/foundation/AlignedBytes.h | the door of a tested window of a block to the raw constructors of a View: View befriends it, and its one definition starts and gives the elements of a window that passed its tests only to the tested window and the door of the list of windows
+home owner foundation::core::ArenaArrayDoor include/foundation/core/BumpArena.h | the door of a BumpArena to the raw constructors of a View: View befriends it, and its one definition gives the elements that array() built in new bytes of the arena only to BumpArena
+home owner foundation::core::CommittedRangeDoor include/foundation/os/PageSource.h | the door of a Reservation to the raw constructors of a View: View befriends it, and its one definition gives the bytes of a committed range only to Reservation
 
 home combine foundation::reflect::combine_ids include/foundation/reflect/Mix.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
 
@@ -861,6 +867,17 @@ witness <foundation/core/Identity.h> private | foundation::core::Identity | foun
 # array takes the key that only ViewDoor builds.
 witness <foundation/core/Region.h> private | foundation::core::View<int> | foundation::core::View<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Region.h> private | foundation::core::detail::ViewKey | foundation::core::detail::ViewKey{}
+# An owner on the core reaches the raw constructors of a View through the key
+# that only OwnerCore builds, and only for the run that its state holds.
+witness <foundation/core/Owner.h> private | foundation::core::detail::OwnerRunKey | foundation::core::detail::OwnerRunKey{}
+# The doors of the owners above Region.h hold static members only, so no
+# caller builds a door, and only the owner of each reaches its members.
+witness <foundation/core/List.h> deleted | foundation::core::FixedListSlotsDoor | foundation::core::FixedListSlotsDoor{}
+witness <foundation/core/FixedHeapArray.h> deleted | foundation::core::FixedHeapArrayCountDoor | foundation::core::FixedHeapArrayCountDoor{}
+witness <foundation/core/RunSet.h> deleted | foundation::core::RunSetLayoutDoor | foundation::core::RunSetLayoutDoor{}
+witness <foundation/AlignedBytes.h> deleted | foundation::core::TestedWindowDoor | foundation::core::TestedWindowDoor{}
+witness <foundation/core/BumpArena.h> deleted | foundation::core::ArenaArrayDoor | foundation::core::ArenaArrayDoor{}
+witness <foundation/os/PageSource.h> deleted | foundation::core::CommittedRangeDoor | foundation::core::CommittedRangeDoor{}
 # A ViewMut, the chunks of its split and a RefMut come only from a frame door
 # or a split, so no pointer, no count and no object that a caller holds become
 # a unique borrow.  Each constructor takes the key that only FrameDoor builds.
@@ -1051,7 +1068,7 @@ witness <fixy/SharedRegion.h> deleted | fixy::SharedRegion<int, foundation::perm
 # The read the three axes agreed on.  Its constructor is private behind
 # a key only mint_shared_read holds, because a read built beside the
 # mint would carry a brand, a share and a row that nobody weighed.
-witness <fixy/SharedRegion.h> private | fixy::SharedRead<int, foundation::permissions::tag::HugePageTag> | fixy::SharedRead<int, foundation::permissions::tag::HugePageTag>{fixy::detail::shared_read_mint_t{}, std::span<int const>{}}
+witness <fixy/SharedRegion.h> private | fixy::SharedRead<int, foundation::permissions::tag::HugePageTag> | fixy::SharedRead<int, foundation::permissions::tag::HugePageTag>{fixy::detail::shared_read_mint_t{}, foundation::core::View<int const>{}}
 # A borrow that names what has to be presented before it can be read.
 # The obligation is the whole value of the type, so a carrier assembled
 # beside the mint carries one nobody weighed.  The key is handed over in

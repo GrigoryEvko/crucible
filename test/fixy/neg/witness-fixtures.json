@@ -252,6 +252,11 @@
       "constructor": "\\bAlloc\\("
     },
     {
+      "name": "neg_witness_core_arenaarraydoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bArenaArrayDoor\\("
+    },
+    {
       "name": "neg_witness_core_atomic_word_key_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\batomic_word_key\\("
@@ -300,6 +305,11 @@
       "name": "neg_witness_core_brandedview_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bBrandedView\\("
+    },
+    {
+      "name": "neg_witness_core_committedrangedoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bCommittedRangeDoor\\("
     },
     {
       "name": "neg_witness_core_ctext_direct_construction",
@@ -387,6 +397,11 @@
       "constructor": "\\bCursor\\("
     },
     {
+      "name": "neg_witness_core_detail_ownerrunkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bOwnerRunKey\\("
+    },
+    {
       "name": "neg_witness_core_detail_refkey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bRefKey\\("
@@ -455,6 +470,16 @@
       "name": "neg_witness_core_fixedheaparray_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bFixedHeapArray\\("
+    },
+    {
+      "name": "neg_witness_core_fixedheaparraycountdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bFixedHeapArrayCountDoor\\("
+    },
+    {
+      "name": "neg_witness_core_fixedlistslotsdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bFixedListSlotsDoor\\("
     },
     {
       "name": "neg_witness_core_growlist_direct_construction",
@@ -577,6 +602,11 @@
       "constructor": "\\bRunAddress\\("
     },
     {
+      "name": "neg_witness_core_runsetlayoutdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bRunSetLayoutDoor\\("
+    },
+    {
       "name": "neg_witness_core_seat_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bSeat\\("
@@ -640,6 +670,11 @@
       "name": "neg_witness_core_stridedviewmut_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bStridedViewMut\\("
+    },
+    {
+      "name": "neg_witness_core_testedwindowdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bTestedWindowDoor\\("
     },
     {
       "name": "neg_witness_core_textview_direct_construction",
@@ -1916,6 +1951,34 @@
     {
       "type": "foundation::core::detail::ViewKey",
       "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::detail::OwnerRunKey",
+      "header": "foundation/core/Owner.h"
+    },
+    {
+      "type": "foundation::core::FixedListSlotsDoor",
+      "header": "foundation/core/List.h"
+    },
+    {
+      "type": "foundation::core::FixedHeapArrayCountDoor",
+      "header": "foundation/core/FixedHeapArray.h"
+    },
+    {
+      "type": "foundation::core::RunSetLayoutDoor",
+      "header": "foundation/core/RunSet.h"
+    },
+    {
+      "type": "foundation::core::TestedWindowDoor",
+      "header": "foundation/AlignedBytes.h"
+    },
+    {
+      "type": "foundation::core::ArenaArrayDoor",
+      "header": "foundation/core/BumpArena.h"
+    },
+    {
+      "type": "foundation::core::CommittedRangeDoor",
+      "header": "foundation/os/PageSource.h"
     },
     {
       "type": "foundation::core::ViewMut<int, forge::brand>",

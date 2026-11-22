@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::SharedRead<int, foundation::permissions::tag::HugePageTag>{fixy::detail::shared_read_mint_t{}, std::span<int const>{}};
+    [[maybe_unused]] auto forged = fixy::SharedRead<int, foundation::permissions::tag::HugePageTag>{fixy::detail::shared_read_mint_t{}, foundation::core::View<int const>{}};
     return 0;
 }
