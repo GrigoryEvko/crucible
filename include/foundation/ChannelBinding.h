@@ -43,9 +43,9 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Report.h>
 
-#include <atomic>
 #include <type_traits>
 #include <utility>
 
@@ -169,10 +169,11 @@ private:
 // what the last holder released, so a new holder sees each write of the
 // last one.
 //
-// Two threads take and release one claim at the same time through its atomic
-// cell, which is private, so the class states synchronized{} (THE SHARED
-// WRITE of foundation/Transfer.h).
-class[[= ::foundation::transfer::synchronized{}]] EndpointClaim {
+// Two threads take and release one claim at the same time through its one
+// member, an Atomic of the base.  So the class is Synchronized by its
+// structure, and it states no transfer fact (THE SHARED WRITE of
+// foundation/Transfer.h).
+class EndpointClaim {
 public:
     constexpr EndpointClaim() noexcept = default;
 
@@ -186,15 +187,15 @@ public:
     // Takes the role for a new handle, or ends the process when a live
     // handle holds it.  The detail names the role in the report.
     void take(::foundation::core::TextView detail) noexcept {
-        if (held_.exchange(true, std::memory_order_acq_rel)) [[unlikely]] {
+        if (held_.exchange_acq_rel(true)) [[unlikely]] {
             second_holder_abort_(detail);
         }
     }
 
     // The handle that holds the role calls this when it ends.
-    void release() noexcept { held_.store(false, std::memory_order_release); }
+    void release() noexcept { held_.store_release(false); }
 
-    [[nodiscard]] bool is_held() const noexcept { return held_.load(std::memory_order_acquire); }
+    [[nodiscard]] bool is_held() const noexcept { return held_.load_acquire(); }
 
 private:
     // The text names the category LinearityViolation of the diagnostic
@@ -204,7 +205,7 @@ private:
                                   detail);
     }
 
-    std::atomic<bool> held_{false};
+    ::foundation::core::Atomic<bool> held_{false};
 };
 
 }  // namespace foundation

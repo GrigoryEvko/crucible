@@ -17,11 +17,14 @@ static_assert(sizeof(ChannelIdentity<int>) == sizeof(int*));
 static_assert(!ChannelIdentity<int>{}.is_bound());
 static_assert(ChannelIdentity<int>{} == ChannelIdentity<int>{nullptr});
 
-// A claim is one flag, and it lives in the channel, which does not move.
-static_assert(sizeof(EndpointClaim) == sizeof(std::atomic<bool>));
-static_assert(std::atomic<bool>::is_always_lock_free);
+// A claim is one flag, and it lives in the channel, which does not move.  Its
+// one member is an Atomic of the base, so it is Synchronized by its structure
+// and states no transfer fact.
+static_assert(sizeof(EndpointClaim) == sizeof(core::Atomic<bool>));
+static_assert(sizeof(EndpointClaim) == sizeof(bool));
 static_assert(!std::is_copy_constructible_v<EndpointClaim> && !std::is_move_constructible_v<EndpointClaim>);
 static_assert(transfer::Synchronized<EndpointClaim>);
+static_assert(!transfer::detail::states(^^EndpointClaim, ^^transfer::synchronized));
 
 namespace detail::channel_binding_self_test {
 

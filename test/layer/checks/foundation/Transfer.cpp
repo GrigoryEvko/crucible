@@ -162,8 +162,8 @@ struct[[= refers_deep{}]] CopiesFromConst {
 };
 static_assert(!Shareable<CopiesFromConst<int>> && !Sendable<CopiesFromConst<int>>);
 
-// A class that states synchronized{} is a target that two threads can write.
-// EndpointClaim states it over its private atomic cell.
+// A class whose parts are Synchronized is a target that two threads can
+// write.  EndpointClaim holds one Atomic of the base.
 struct ClaimRef {
     ::foundation::EndpointClaim& claim;
 };
