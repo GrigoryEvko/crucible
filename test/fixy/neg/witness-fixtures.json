@@ -247,6 +247,11 @@
       "constructor": "\\bBitCursor\\("
     },
     {
+      "name": "neg_witness_core_bitkeys_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBitKeys\\("
+    },
+    {
       "name": "neg_witness_core_bitset_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bBitSet\\("
@@ -2003,6 +2008,10 @@
     },
     {
       "type": "foundation::core::BitCursor<foundation::core::Index<8>, unsigned char>",
+      "header": "foundation/core/BitSet.h"
+    },
+    {
+      "type": "foundation::core::BitKeys<foundation::core::Index<8>, unsigned char>",
       "header": "foundation/core/BitSet.h"
     },
     {

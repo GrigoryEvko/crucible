@@ -478,6 +478,7 @@ home owner foundation::effects::host::ProducerClaim include/foundation/effects/C
 home owner foundation::effects::host::ImageReader include/foundation/effects/ImageRead.h | the owner of the key of an image read of a counter or a clock, whose one friend is mint_from_image, the door that asks for a context that owns IO
 home owner foundation::effects::host::AtomOwner include/foundation/effects/Effect.h | the owner of the bare value atoms Alloc, IO and Block, whose friends are the three contexts and extract_bare, so a second definition builds an atom from nothing
 home federation foundation::permissions::FederationAdmission include/fixy/Federation.h | the federation door: the key of a federation peer token befriends this class template, and its definition builds the key only after a handshake verifies
+home owner foundation::core::BitCursor include/foundation/core/BitSet.h | the cursor of the walk of the keys of a bit set: Index befriends this class template for the road of_bit_of_set_, and its one definition makes each key of a live BitSet<N> with no check
 
 home combine foundation::reflect::combine_ids include/foundation/reflect/Mix.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
 
@@ -939,6 +940,7 @@ witness <foundation/core/Grow.h> no-match | foundation::core::HeapText | foundat
 # becomes a key of a set.
 witness <foundation/core/BitSet.h> no-match | foundation::core::BitSet<8> | foundation::core::BitSet<8>{forge::rvalue<unsigned char>()}
 witness <foundation/core/BitSet.h> private | foundation::core::BitCursor<foundation::core::Index<8>, unsigned char> | foundation::core::BitCursor<foundation::core::Index<8>, unsigned char>{forge::rvalue<foundation::core::View<unsigned char const>>()}
+witness <foundation/core/BitSet.h> private | foundation::core::BitKeys<foundation::core::Index<8>, unsigned char> | foundation::core::BitKeys<foundation::core::Index<8>, unsigned char>{forge::rvalue<foundation::core::View<unsigned char const>>()}
 # A HeapBitSet, a SlotMap and a SmallList have no constructor from a pointer,
 # so the destructor frees only storage that a mint or an append allocated.
 # The one constructor of each is private, and its mint is its friend, so each

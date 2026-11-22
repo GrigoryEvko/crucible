@@ -76,10 +76,13 @@ constexpr std::size_t numa_mask_words = numa_mask_bits / numa_mask_word_bits;
 // Sets the bit of each node of NODES in the words of WORDS, which start at
 // zero.  Linear in the count of the nodes.
 void fill_mask_words(NumaNodeMask const& nodes, unsigned long (&words)[numa_mask_words]) noexcept {
-    for (NumaNodeMask::Slot const slot : nodes.slots()) {
-        std::size_t const bit = slot.raw();
-        words[bit / numa_mask_word_bits] |= 1UL << (bit % numa_mask_word_bits);
-    }
+    auto const slots = nodes.slots();
+    slots.with_keys([&words](auto const& keys) noexcept {
+        for (NumaNodeMask::Slot const slot : keys) {
+            std::size_t const bit = slot.raw();
+            words[bit / numa_mask_word_bits] |= 1UL << (bit % numa_mask_word_bits);
+        }
+    });
 }
 
 // The nodes of the bits of WORDS, or eoverflow for a bit past the nodes that

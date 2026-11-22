@@ -894,7 +894,8 @@ struct HeapBitSetProbe {
         Owner const target{static_cast<Owner&&>(through(source))};
         CRUCIBLE_FATAL_INVARIANT(target.extent().raw() == 64);
         CRUCIBLE_FATAL_INVARIANT(through(source).extent().raw() == 0 && through(source).is_empty());
-        CRUCIBLE_FATAL_INVARIANT(through(source).begin() == through(source).end());
+        CRUCIBLE_FATAL_INVARIANT(
+            through(source).with_keys([](auto const& ids) noexcept { return ids.begin() == ids.end(); }));
         expect_dies(
             test, [&source] noexcept { static_cast<void>(through(source).test(SlotId{0})); },
             ::foundation::core::TextView{"foundation: fatal: a HeapBitSet got an id at or past the count of its mint"});

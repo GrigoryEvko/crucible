@@ -72,11 +72,13 @@ void test_fixed_set_verbs() {
     CRUCIBLE_FATAL_INVARIANT(set.size() == 5 && !set.test(index_of<130>(64)));
     std::size_t expected_count = 0;
     std::size_t last = 0;
-    for (Index<130> const index : set) {
-        CRUCIBLE_FATAL_INVARIANT(expected_count == 0 || index.raw() > last);
-        last = index.raw();
-        ++expected_count;
-    }
+    set.with_keys([&expected_count, &last](auto const& keys) noexcept {
+        for (Index<130> const index : keys) {
+            CRUCIBLE_FATAL_INVARIANT(expected_count == 0 || index.raw() > last);
+            last = index.raw();
+            ++expected_count;
+        }
+    });
     CRUCIBLE_FATAL_INVARIANT(expected_count == 5 && last == 129);
     BitSet<130> const copied = set;
     set.clear();
@@ -91,10 +93,13 @@ void test_heap_set_verbs() {
     set.set(SlotId{129});
     CRUCIBLE_FATAL_INVARIANT(set.size() == 3 && set.test(SlotId{64}) && !set.test(SlotId{65}));
     set.reset(SlotId{64});
-    std::uint32_t sum = 0;
-    for (SlotId const id : set) {
-        sum += id.raw() + 1;
-    }
+    std::uint32_t const sum = set.with_keys([](auto const& ids) noexcept {
+        std::uint32_t total = 0;
+        for (SlotId const id : ids) {
+            total += id.raw() + 1;
+        }
+        return total;
+    });
     CRUCIBLE_FATAL_INVARIANT(sum == 1 + 130);
     set.clear();
     CRUCIBLE_FATAL_INVARIANT(set.is_empty() && set.size() == 0);
@@ -102,10 +107,12 @@ void test_heap_set_verbs() {
     HeapBitSet<SlotTag> const none = heap_set_of(0);
     HeapBitSet<SlotTag> const fresh{};
     CRUCIBLE_FATAL_INVARIANT(none.extent().raw() == 0 && none.is_empty() && none == fresh);
-    for (SlotId const id : none) {
-        static_cast<void>(id);
-        ::foundation::core::fatal("an empty set gives no id to a walk");
-    }
+    none.with_keys([](auto const& ids) noexcept {
+        for (SlotId const id : ids) {
+            static_cast<void>(id);
+            ::foundation::core::fatal("an empty set gives no id to a walk");
+        }
+    });
 }
 
 // Two heap sets of different counts give LengthMismatch for each change, and
@@ -169,7 +176,7 @@ void test_refusals(::fixy::TestRunnerCtx const& test) {
         [] noexcept {
             BitSet<8> set{};
             set.set(index_of<8>(7));
-            static_cast<void>(*set.end());
+            set.with_keys([](auto const& keys) noexcept { static_cast<void>(*keys.end()); });
         },
         ::foundation::core::TextView{
             "foundation: fatal: a read or a step through the end cursor of a walk of a bit set"});
@@ -207,11 +214,13 @@ void test_domain_keys_and_words() {
     slots.set(ScalarSlot::first);
     slots.set(ScalarSlot::fourth);
     CRUCIBLE_FATAL_INVARIANT(slots.size() == 2 && slots.test(ScalarSlot::first) && !slots.test(ScalarSlot::fifth));
-    std::uint8_t expected = 0;
-    for (ScalarSlot const slot : slots) {
-        CRUCIBLE_FATAL_INVARIANT(static_cast<std::uint8_t>(slot) == expected);
-        expected = 3;
-    }
+    slots.with_keys([](auto const& keys) noexcept {
+        std::uint8_t expected = 0;
+        for (ScalarSlot const slot : keys) {
+            CRUCIBLE_FATAL_INVARIANT(static_cast<std::uint8_t>(slot) == expected);
+            expected = 3;
+        }
+    });
     std::uint8_t const word = slots.bits();
     CRUCIBLE_FATAL_INVARIANT(word == 0x09u);
     BitSet<5, ScalarSlot> const back =
@@ -235,11 +244,14 @@ void test_role_keys_and_words() {
     slots.set(SlotKey{index_of<5>(0)});
     CRUCIBLE_FATAL_INVARIANT(slots.size() == 2 && slots.test(SlotKey{index_of<5>(3)})
                              && !slots.test(SlotKey{index_of<5>(4)}));
-    std::size_t walked = 0;
-    for (SlotKey const slot : slots) {
-        CRUCIBLE_FATAL_INVARIANT(slot.value().raw() == (walked == 0 ? 0u : 3u));
-        ++walked;
-    }
+    std::size_t const walked = slots.with_keys([](auto const& keys) noexcept {
+        std::size_t count = 0;
+        for (SlotKey const slot : keys) {
+            CRUCIBLE_FATAL_INVARIANT(slot.value().raw() == (count == 0 ? 0u : 3u));
+            ++count;
+        }
+        return count;
+    });
     BitSet<5, SlotKey> const back =
         mint_bit_set_from_bits<5, SlotKey>(slots.bits()).expect("the word holds no bit past 5");
     CRUCIBLE_FATAL_INVARIANT(walked == 2 && back == slots && slots.bits() == 0x09u);
@@ -316,7 +328,11 @@ struct HeapSide {
 
 // Compares a set with its model: each flag, the count, the walk in the order
 // of the indexes, and the bits past the count, which no index reaches and the
-// walk must never give.  Complexity: O(count).
+// walk must never give.  size() counts each bit of each word, so a bit at or
+// past the count makes size() larger than the count of the members.  The walk
+// of a BitSet<N> makes its keys with no check (THE WALK of BitSet.h), so this
+// compare after each change is the check that each door keeps the top bits
+// clear.  Complexity: O(count).
 template <class Side>
 void expect_agrees(typename Side::Set const& set, Model const& model) {
     std::size_t members = 0;
@@ -325,17 +341,20 @@ void expect_agrees(typename Side::Set const& set, Model const& model) {
         members += model.at(raw) ? 1uz : 0uz;
     }
     CRUCIBLE_FATAL_INVARIANT(set.size() == members && set.is_empty() == (members == 0));
-    std::size_t next = 0;
-    std::size_t walked = 0;
-    for (auto const member : set) {
-        std::size_t const raw = Side::raw_of(member);
-        CRUCIBLE_FATAL_INVARIANT(raw >= next && raw < model.count && model.at(raw));
-        for (std::size_t skipped = next; skipped != raw; ++skipped) {
-            CRUCIBLE_FATAL_INVARIANT(!model.at(skipped));
+    std::size_t const walked = set.with_keys([&model](auto const& keys) noexcept {
+        std::size_t next = 0;
+        std::size_t count = 0;
+        for (auto const member : keys) {
+            std::size_t const raw = Side::raw_of(member);
+            CRUCIBLE_FATAL_INVARIANT(raw >= next && raw < model.count && model.at(raw));
+            for (std::size_t skipped = next; skipped != raw; ++skipped) {
+                CRUCIBLE_FATAL_INVARIANT(!model.at(skipped));
+            }
+            next = raw + 1;
+            ++count;
         }
-        next = raw + 1;
-        ++walked;
-    }
+        return count;
+    });
     CRUCIBLE_FATAL_INVARIANT(walked == members);
 }
 
@@ -410,7 +429,44 @@ void expect_property(std::uint64_t seed) {
     }
 }
 
+// The property of the one door from a word, mint_bit_set_from_bits: a word
+// with a bit at or past N gives no set, and each other word gives the set of
+// its bits, whose size() is the popcount of the word.  So no set that the door
+// gives holds a bit at or past N.  The stream has a fixed seed.
+template <std::size_t N>
+void expect_mint_from_bits_keeps_top_bits_clear(std::uint64_t seed) {
+    using Word = decltype(BitSet<N>{}.bits());
+    constexpr std::size_t bits_of_word = sizeof(Word) * 8;
+    ::crucible::test::PhiloxStream stream{seed};
+    for (int step = 0; step < 4096; ++step) {
+        // A word of each width, so the bits past N are clear in about half of
+        // the words of a narrow set.
+        std::uint64_t const raw = stream.below(~std::uint64_t{0}) >> stream.below(bits_of_word);
+        Word const word = static_cast<Word>(raw);
+        bool has_top_bit = false;
+        if constexpr (N < bits_of_word) {
+            has_top_bit = (std::uint64_t{word} >> N) != 0;
+        }
+        auto const minted = mint_bit_set_from_bits<N>(word);
+        CRUCIBLE_FATAL_INVARIANT(minted.is_some() == !has_top_bit);
+        bool const is_set_of_the_word = minted.match(
+            [word](BitSet<N> const& set) noexcept {
+                return set.size() == static_cast<std::size_t>(::foundation::core::popcount(std::uint64_t{word}))
+                    && set.bits() == word;
+            },
+            []() noexcept { return true; });
+        CRUCIBLE_FATAL_INVARIANT(is_set_of_the_word);
+    }
+}
+
 void test_sets_agree_with_the_model() {
+    expect_mint_from_bits_keeps_top_bits_clear<1>(0x4001u);
+    expect_mint_from_bits_keeps_top_bits_clear<5>(0x4005u);
+    expect_mint_from_bits_keeps_top_bits_clear<8>(0x4008u);
+    expect_mint_from_bits_keeps_top_bits_clear<15>(0x4015u);
+    expect_mint_from_bits_keeps_top_bits_clear<33>(0x4033u);
+    expect_mint_from_bits_keeps_top_bits_clear<63>(0x4063u);
+    expect_mint_from_bits_keeps_top_bits_clear<64>(0x4064u);
     expect_property<FixedSide<1>>(0x1001u);
     expect_property<FixedSide<5>>(0x1005u);
     expect_property<FixedSide<8>>(0x1008u);

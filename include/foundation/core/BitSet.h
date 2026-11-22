@@ -68,10 +68,11 @@
 //                               popcount has no name of its own
 //   is_empty()                  true when the set holds no key
 //   clear()                     takes each key out
-//   for (key : set)             each key of the set, in the order of the
-//                               positions.  The walk reads the words from the
-//                               first, so no order comes from an address or a
-//                               hash
+//   with_keys(body)             lends body the walk of the keys of the set
+//                               (THE WALK), so `for (key : keys)` gives each
+//                               key of the set in the order of the positions.
+//                               The walk reads the words from the first, so no
+//                               order comes from an address or a hash
 //   unite(other)                each key of other joins this set
 //   intersect(other)            only the keys that other holds stay
 //   subtract(other)             each key of other leaves this set
@@ -95,6 +96,16 @@
 //   last word stay zero in each state, because no verb sets one, the mint from
 //   a word refuses one, and each operation of two sets keeps a zero bit zero.
 //   So size(), ==, the queries and the walk read whole words with no mask.
+//
+// THE WALK
+//   The frame door with_keys lends its body a walk of the keys, BitKeys, for
+//   the time of the call.  The walk and its cursors do not copy and do not
+//   move, and a set has no begin() and no end(), so no cursor outlives its
+//   set.  So the words that a cursor reads are the words of the live set, and
+//   by THE WORDS each of their bits lies below N.  A cursor of a BitSet<N>
+//   then makes each Index<N> through the road of the walk of Index.h, with no
+//   check.  The ids of a HeapBitSet prove no bound, so each verb that takes
+//   an id compares it with the count.
 //
 // A HeapBitSet owns its words alone, on the owner core of
 // foundation/core/Owner.h.  A move gives the words to the target and leaves
@@ -343,12 +354,23 @@ template <std::size_t N, class Key = Index<N>, class Word>
     requires CanMintBitSetFromBits<N, Key, Word>
 [[nodiscard]] constexpr Option<BitSet<N, Key>> mint_bit_set_from_bits(Word bits) noexcept;
 
+template <class Member, class Word>
+class BitKeys;
+
+namespace detail {
+
+// The mark of the constructor of the end cursor of a run of words.
+struct BitCursorEnd final {};
+
+}  // namespace detail
+
 // The position of a walk over the keys of a bit set: the word of the next
 // key, and the bits of that word from that key on.  At the end the word is
-// the count of the words and the bits are zero.  Only the sets build a
-// cursor, and a cursor borrows the words of its set.  A read or a step at the
-// end ends the process in each build, so a cursor never makes a key past its
-// set.
+// the count of the words and the bits are zero.  Only the walk of a set
+// (BitKeys) builds a cursor, and a cursor borrows the words of its set.  A
+// cursor does not copy and does not move, so it lives only in the frame door
+// with_keys of its set, and each key that it makes is a key of the live set.
+// A read or a step at the end ends the process in each build.
 template <class Member, class Word>
 class BitCursor final {
     Word const* words_ = nullptr;
@@ -357,12 +379,7 @@ class BitCursor final {
     std::uint64_t bits_ = 0;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    template <std::size_t N, class Key>
-        requires IndexCount<N> && BitSetKey<Key, N>
-    friend class BitSet;
-    template <class Tag>
-        requires std::is_class_v<Tag>
-    friend class HeapBitSet;
+    friend class BitKeys<Member, Word>;
 
     // The cursor at the first key of the words, or at their end.
     constexpr explicit BitCursor(View<Word const> words) noexcept : word_count_{words.size()} {
@@ -373,6 +390,10 @@ class BitCursor final {
         }
     }
 
+    // The end cursor of a run of words.
+    constexpr BitCursor(detail::BitCursorEnd, View<Word const> words) noexcept
+        : word_{words.size()}, word_count_{words.size()} {}
+
     // Moves to the first word with a bit, or to the end.  Complexity: linear
     // in the words that hold no bit.
     constexpr void skip_empty_words_() noexcept {
@@ -381,32 +402,31 @@ class BitCursor final {
         }
     }
 
-    // The end cursor of a run of words.
-    [[nodiscard]] static constexpr BitCursor end_of_(View<Word const> words) noexcept {
-        BitCursor cursor{View<Word const>{}};
-        cursor.word_ = words.size();
-        cursor.word_count_ = words.size();
-        return cursor;
-    }
-
 public:
+    BitCursor(BitCursor const&) = delete("a cursor borrows the words of its set: a copy could outlive the set");
+    BitCursor& operator=(BitCursor const&) = delete("a cursor borrows the words of its set: a copy could outlive "
+                                                    "the set");
+    BitCursor(BitCursor&&) = delete("a cursor borrows the words of its set: a move could carry it past the set");
+    BitCursor& operator=(BitCursor&&) = delete("a cursor borrows the words of its set: a move could carry it past "
+                                               "the set");
+    ~BitCursor() = default;
+
     [[nodiscard]] constexpr Member operator*() const noexcept {
         if (bits_ == 0) [[unlikely]] {
             detail::report_bit_cursor_at_end_();
         }
-        // The position comes from a bit of the set, so it is below the count
-        // of the set, and the key of each kind holds it.  A proven key takes
-        // the check of its Index: the cursor holds the address of the words,
-        // and words that a different object reuses can hold a bit past the
-        // count.
+        // The position comes from a bit of the live set, so it is below the
+        // count of the set, and the key of each kind holds it.  A proven key
+        // takes the road of its Index for the walk of a set
+        // (Index::of_bit_of_set_), whose comment states the proof.
         std::size_t const position = word_ * detail::bits_in_<Word> + static_cast<std::size_t>(countr_zero(bits_));
         if constexpr (std::is_scoped_enum_v<Member>) {
             return static_cast<Member>(position);
         } else if constexpr (requires { typename Member::tag_type; }) {
             using Proven = typename Member::value_type;
-            return Member{Proven::check(position).expect("a bit of a set lies below the count of the set")};
+            return Member{Proven::of_bit_of_set_(position)};
         } else if constexpr (detail::BitKeyKind<Member>::is_proven) {
-            return Member::check(position).expect("a bit of a set lies below the count of the set");
+            return Member::of_bit_of_set_(position);
         } else {
             using IdWord = std::remove_cvref_t<decltype(std::declval<Member const&>().raw())>;
             return Member{detail::position_as_<IdWord>(position)};
@@ -424,6 +444,40 @@ public:
 
     [[nodiscard]] friend constexpr bool operator==(BitCursor const& left, BitCursor const& right) noexcept {
         return left.word_ == right.word_ && left.bits_ == right.bits_;
+    }
+};
+
+// The walk of the keys of a bit set, which the frame door with_keys of the
+// set lends to its body for the time of the call: the loop
+// `for (Key key : keys)` gives each key of the set in order.  The walk and
+// its cursors do not copy and do not move, so no walk and no cursor outlives
+// the call.  A cursor is a prvalue of begin() and end(), so the loop needs no
+// copy of it.
+template <class Member, class Word>
+class [[nodiscard]] BitKeys final {
+    View<Word const> words_{};
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    template <std::size_t N, class Key>
+        requires IndexCount<N> && BitSetKey<Key, N>
+    friend class BitSet;
+    template <class Tag>
+        requires std::is_class_v<Tag>
+    friend class HeapBitSet;
+
+    constexpr explicit BitKeys(View<Word const> words) noexcept : words_{words} {}
+
+public:
+    BitKeys(BitKeys const&) = delete("the walk borrows the words of its set: a copy could outlive the set");
+    BitKeys& operator=(BitKeys const&) = delete("the walk borrows the words of its set: a copy could outlive the set");
+    BitKeys(BitKeys&&) = delete("the walk borrows the words of its set: a move could carry it past the set");
+    BitKeys& operator=(BitKeys&&) = delete("the walk borrows the words of its set: a move could carry it past the "
+                                           "set");
+    ~BitKeys() = default;
+
+    [[nodiscard]] constexpr BitCursor<Member, Word> begin() const& noexcept { return BitCursor<Member, Word>{words_}; }
+    [[nodiscard]] constexpr BitCursor<Member, Word> end() const& noexcept {
+        return BitCursor<Member, Word>{detail::BitCursorEnd{}, words_};
     }
 };
 
@@ -534,14 +588,32 @@ public:
     // Complexity: O(N / W).
     constexpr void clear() & noexcept { words_ = FixedArray<Word, word_count_>{}; }
 
-    // The walk `for (Key key : set)`.  Complexity of a full walk:
+    // The frame door of the keys (THE WALK): body gets the walk of the keys
+    // of the set for the time of the call, as in
+    // `set.with_keys([&](auto const& keys) noexcept { for (Key key : keys) { ... } })`,
+    // and the door gives the result of body, which holds no borrow.  The walk
+    // and its cursors do not copy and do not move, so each key that a cursor
+    // makes is a key of the live set.  Complexity of a full walk:
     // O(N / W + size()).
-    [[nodiscard]] constexpr BitCursor<Key, Word> begin() const& noexcept { return BitCursor<Key, Word>{words_.view()}; }
-    [[nodiscard]] constexpr BitCursor<Key, Word> end() const& noexcept {
-        return BitCursor<Key, Word>::end_of_(words_.view());
+    template <class Body>
+        requires std::is_invocable_v<Body, BitKeys<Key, Word> const&>
+              && HoldsNoBorrow<std::invoke_result_t<Body, BitKeys<Key, Word> const&>>
+    constexpr std::invoke_result_t<Body, BitKeys<Key, Word> const&>
+    with_keys(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, BitKeys<Key, Word> const&>) {
+        BitKeys<Key, Word> const keys{words_.view()};
+        return static_cast<Body&&>(body)(keys);
     }
-    void begin() const&& = delete("a cursor of a temporary BitSet points into an object that the full expression ends");
-    void end() const&& = delete("a cursor of a temporary BitSet points into an object that the full expression ends");
+    template <class Body>
+    void with_keys(Body&& body) const&& =
+        delete("a walk of a temporary BitSet reads an object that the full expression ends");
+
+    // A cursor that a caller held could outlive the set, and its keys would
+    // read words that a different object reuses: walk the keys in the body of
+    // with_keys.
+    void begin() const = delete("a cursor that a caller holds could outlive its set: walk the keys in the body of "
+                                "with_keys");
+    void end() const = delete("a cursor that a caller holds could outlive its set: walk the keys in the body of "
+                              "with_keys");
 
     // The four changes of THE OPERATIONS.  Each one keeps the zero bits past
     // N zero.  Complexity: O(N / W).
@@ -734,18 +806,32 @@ public:
         }
     }
 
-    // The walk `for (BitId<Tag> id : set)`.  Complexity of a full walk:
+    // The frame door of the ids (THE WALK): body gets the walk of the ids of
+    // the set for the time of the call, as in
+    // `set.with_keys([&](auto const& ids) noexcept { for (BitId<Tag> id : ids) { ... } })`,
+    // and the door gives the result of body, which holds no borrow.  The walk
+    // and its cursors do not copy and do not move, so no cursor outlives the
+    // storage of the set.  An id is not a proven index: each door of the set
+    // compares an id with the count of the set.  Complexity of a full walk:
     // O(extent() / 64 + size()).
-    [[nodiscard]] constexpr BitCursor<BitId<Tag>, std::uint64_t> begin() const& noexcept {
-        return BitCursor<BitId<Tag>, std::uint64_t>{words_()};
+    template <class Body>
+        requires std::is_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>
+              && HoldsNoBorrow<std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>>
+    constexpr std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&> with_keys(
+        Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>) {
+        BitKeys<BitId<Tag>, std::uint64_t> const ids{words_()};
+        return static_cast<Body&&>(body)(ids);
     }
-    [[nodiscard]] constexpr BitCursor<BitId<Tag>, std::uint64_t> end() const& noexcept {
-        return BitCursor<BitId<Tag>, std::uint64_t>::end_of_(words_());
-    }
-    void begin() const&& = delete("a cursor of a temporary HeapBitSet points into storage that the full expression "
-                                  "frees");
-    void end() const&& = delete("a cursor of a temporary HeapBitSet points into storage that the full expression "
-                                "frees");
+    template <class Body>
+    void with_keys(Body&& body) const&& =
+        delete("a walk of a temporary HeapBitSet reads storage that the full expression frees");
+
+    // A cursor that a caller held could outlive the storage of the set: walk
+    // the ids in the body of with_keys.
+    void begin() const = delete("a cursor that a caller holds could outlive the storage of its set: walk the ids in "
+                                "the body of with_keys");
+    void end() const = delete("a cursor that a caller holds could outlive the storage of its set: walk the ids in "
+                              "the body of with_keys");
 
     // The four changes of THE OPERATIONS.  Two counts that differ give
     // LengthMismatch, and the change writes nothing.  Complexity:

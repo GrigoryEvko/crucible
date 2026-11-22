@@ -269,15 +269,18 @@ struct CounterSums {
 [[nodiscard]] fixy::Option<CounterSums> sum_counters(BgCtx const& ctx, fixy::NumaNodeMask const& nodes) noexcept {
     CounterSums sums{};
     bool is_whole = true;
-    for (fixy::NumaNodeMask::Slot const slot : nodes.slots()) {
-        fixy::numa::read_allocation_counters(ctx, fixy::numa_node_of_slot(slot))
-            .match(
-                [&sums](fixy::numa::NodeAllocationCounters counters) noexcept {
-                    sums.hit += counters.hit;
-                    sums.foreign += counters.foreign;
-                },
-                [&is_whole](fixy::numa::NumaQueryError) noexcept { is_whole = false; });
-    }
+    auto const slots = nodes.slots();
+    slots.with_keys([&ctx, &sums, &is_whole](auto const& keys) noexcept {
+        for (fixy::NumaNodeMask::Slot const slot : keys) {
+            fixy::numa::read_allocation_counters(ctx, fixy::numa_node_of_slot(slot))
+                .match(
+                    [&sums](fixy::numa::NodeAllocationCounters counters) noexcept {
+                        sums.hit += counters.hit;
+                        sums.foreign += counters.foreign;
+                    },
+                    [&is_whole](fixy::numa::NumaQueryError) noexcept { is_whole = false; });
+        }
+    });
     if (!is_whole) return fixy::none;
     return fixy::Option<CounterSums>::some(sums);
 }
@@ -416,11 +419,14 @@ template <class Proof>
 // linear in the nodes of the mask.
 [[nodiscard]] std::size_t pages_on_nodes(fixy::numa::PageNodeCensus const& census,
                                          fixy::NumaNodeMask const& nodes) noexcept {
-    std::size_t pages = 0;
-    for (fixy::NumaNodeMask::Slot const slot : nodes.slots()) {
-        pages += census.pages_on(fixy::numa_node_of_slot(slot));
-    }
-    return pages;
+    auto const slots = nodes.slots();
+    return slots.with_keys([&census](auto const& keys) noexcept {
+        std::size_t pages = 0;
+        for (fixy::NumaNodeMask::Slot const slot : keys) {
+            pages += census.pages_on(fixy::numa_node_of_slot(slot));
+        }
+        return pages;
+    });
 }
 
 // An interleave over the allowed nodes sends the pages of a region to each of
@@ -443,10 +449,14 @@ template <class Proof>
         return 1;
     }
     TouchedRegion const touched = touch_region(ctx, std::move(placement), nodes);
-    std::size_t nodes_with_a_page = 0;
-    for (fixy::NumaNodeMask::Slot const slot : nodes.slots()) {
-        if (touched.census.pages_on(fixy::numa_node_of_slot(slot)) != 0) ++nodes_with_a_page;
-    }
+    auto const slots = nodes.slots();
+    std::size_t const nodes_with_a_page = slots.with_keys([&touched](auto const& keys) noexcept {
+        std::size_t count = 0;
+        for (fixy::NumaNodeMask::Slot const slot : keys) {
+            if (touched.census.pages_on(fixy::numa_node_of_slot(slot)) != 0) ++count;
+        }
+        return count;
+    });
     std::size_t const on_mask = pages_on_nodes(touched.census, nodes);
     if (on_mask != touched.census.pages()) {
         fixy::report(fixy::Sink::Err, "an interleave put {} of {} pages on its {} allowed nodes\n", on_mask,
@@ -471,10 +481,14 @@ template <class Proof>
     BgCtx ctx{eff::testing::bg()};
     fixy::NumaNodeMask const allowed = allowed_nodes(ctx);
     if (allowed.is_empty()) return 1;
-    fixy::NumaNodeId node = fixy::NumaNodeId::None;
-    for (fixy::NumaNodeMask::Slot const slot : allowed.slots()) {
-        node = fixy::numa_node_of_slot(slot);
-    }
+    auto const allowed_slots = allowed.slots();
+    fixy::NumaNodeId const node = allowed_slots.with_keys([](auto const& keys) noexcept {
+        fixy::NumaNodeId last = fixy::NumaNodeId::None;
+        for (fixy::NumaNodeMask::Slot const slot : keys) {
+            last = fixy::numa_node_of_slot(slot);
+        }
+        return last;
+    });
     fixy::NumaNodeMask const one_node = fixy::make_numa_node_mask(node).expect("an allowed node is concrete");
     auto placed = fixy::numa::mint_numa_policy<fixy::NumaPolicy::preferred>(ctx, map_two_pages(ctx), one_node);
     if (placed.is_err()) {

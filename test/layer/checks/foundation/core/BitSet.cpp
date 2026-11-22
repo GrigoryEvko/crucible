@@ -120,10 +120,27 @@ static_assert(Unites<BitSet<64>, BitSet<64>> && !Unites<BitSet<64>, BitSet<65>>)
 static_assert(!Unites<BitSet<5, ScalarSlot>, BitSet<5>> && Unites<BitSet<5, ScalarSlot>, BitSet<5, ScalarSlot>>);
 static_assert(Unites<HeapBitSet<SlotTag>, HeapBitSet<SlotTag>> && !Unites<HeapBitSet<SlotTag>, HeapBitSet<OpTag>>);
 
-// A walk of a temporary set is refused.
+// No set gives a cursor to a caller: a set has no begin() and no end(), and
+// with_keys lends the walk of its keys to a body.  The walk and its cursors do
+// not copy and do not move, so no cursor outlives the call of the door.  A walk
+// of a temporary set is refused.
 template <class Set>
 concept WalksTemporary = requires { std::declval<Set>().begin(); };
+template <class Set>
+concept GivesCursor = requires(Set const& set) { set.begin(); };
 static_assert(!WalksTemporary<BitSet<64>> && !WalksTemporary<HeapBitSet<SlotTag>>);
+static_assert(!GivesCursor<BitSet<64>> && !GivesCursor<BitSet<5, ScalarSlot>> && !GivesCursor<HeapBitSet<SlotTag>>);
+template <class Walk>
+concept StaysInItsFrame = !std::is_copy_constructible_v<Walk> && !std::is_move_constructible_v<Walk>
+                       && !std::is_copy_assignable_v<Walk> && !std::is_move_assignable_v<Walk>;
+static_assert(StaysInItsFrame<BitKeys<Index<64>, std::uint64_t>> && StaysInItsFrame<BitKeys<SlotKey, std::uint8_t>>);
+static_assert(StaysInItsFrame<BitCursor<Index<64>, std::uint64_t>>
+              && StaysInItsFrame<BitCursor<BitId<SlotTag>, std::uint64_t>>);
+// A body whose result holds a cursor binds to no door.
+template <class Set>
+concept LendsCursorOut =
+    requires(Set const& set) { set.with_keys([](auto const & keys) noexcept { return keys.begin(); }); };
+static_assert(!LendsCursorOut<BitSet<64>> && !LendsCursorOut<HeapBitSet<SlotTag>>);
 
 // The word of a set of at most 64 positions is its storage word, and a set
 // past 64 positions has no word.
@@ -147,7 +164,7 @@ static_assert(!CanMintHeapBitSet<int, Alloc>);
 // The surface of each set is closed over the shared verbs and the names of
 // the family.
 inline constexpr TextView bit_set_names{"index_type set reset test bits is_empty clear unite intersect subtract flip "
-                                        "is_subset_of is_disjoint_from extent"};
+                                        "is_subset_of is_disjoint_from extent with_keys"};
 CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitSet<1>);
 CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitSet<130>);
 CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitSet<5, ScalarSlot>);
@@ -168,11 +185,13 @@ template <std::size_t N, class... Positions>
 // The sum of the indexes of a walk, each plus one, so an index 0 counts.
 template <std::size_t N>
 [[nodiscard]] consteval std::size_t walk_sum(BitSet<N> const& set) noexcept {
-    std::size_t sum = 0;
-    for (Index<N> const index : set) {
-        sum += index.raw() + 1;
-    }
-    return sum;
+    return set.with_keys([](auto const& keys) noexcept {
+        std::size_t sum = 0;
+        for (Index<N> const index : keys) {
+            sum += index.raw() + 1;
+        }
+        return sum;
+    });
 }
 
 // set, reset, test, size, the walk and clear in a constant evaluation, at
@@ -226,12 +245,14 @@ static_assert(two_set_operations());
     std::size_t walked = 0;
     bool is_in_order = true;
     std::uint8_t last = 0;
-    for (ScalarSlot const slot : slots) {
-        auto const raw = static_cast<std::uint8_t>(slot);
-        is_in_order = is_in_order && (walked == 0 || raw > last);
-        last = raw;
-        ++walked;
-    }
+    slots.with_keys([&walked, &is_in_order, &last](auto const& keys) noexcept {
+        for (ScalarSlot const slot : keys) {
+            auto const raw = static_cast<std::uint8_t>(slot);
+            is_in_order = is_in_order && (walked == 0 || raw > last);
+            last = raw;
+            ++walked;
+        }
+    });
     std::uint8_t const word = slots.bits();
     BitSet<5, ScalarSlot> const back =
         mint_bit_set_from_bits<5, ScalarSlot>(word).expect("a word of the set holds no bit past it");
@@ -252,10 +273,13 @@ static_assert(domain_keys_and_words());
     BitSet<5, SlotKey> slots{};
     slots.set(SlotKey{index<4>()});
     slots.set(SlotKey{index<1>()});
-    std::size_t sum = 0;
-    for (SlotKey const slot : slots) {
-        sum = sum * 10 + slot.value().raw();
-    }
+    std::size_t const sum = slots.with_keys([](auto const& keys) noexcept {
+        std::size_t digits = 0;
+        for (SlotKey const slot : keys) {
+            digits = digits * 10 + slot.value().raw();
+        }
+        return digits;
+    });
     BitSet<5, SlotKey> const back =
         mint_bit_set_from_bits<5, SlotKey>(slots.bits()).expect("a word of the set holds no bit past it");
     return sum == 14 && slots.bits() == 0x12u && back == slots && back.test(SlotKey{index<1>()})

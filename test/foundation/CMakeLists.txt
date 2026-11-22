@@ -3906,6 +3906,20 @@ foundation_neg_compile_test(neg_core_index_door_key_forged
 foundation_neg_compile_test(neg_core_index_static_past_count
   "could not convert .foundation::core::index<4>\\(\\). from .foundation::core::StaticIndex<4>. to .foundation::core::Index<4>."
   "In function .foundation::core::Index<4> past_the_end\\(\\).")
+# The road of the walk of the keys of a bit set gives an Index with no check,
+# so only the cursor of that walk reaches it.
+foundation_neg_compile_test(neg_core_index_bit_road_is_private
+  "of_bit_of_set_\\(std::size_t\\) \\[with long unsigned int Count = 8; std::size_t = long unsigned int\\]. is private within this context"
+  "neg_core_index_bit_road_is_private\\.cpp:10:")
+# A set has no begin(): a cursor that a caller held could outlive the set.
+# The frame door with_keys lends the walk to a body.
+foundation_neg_compile_test(neg_core_bit_set_walk_outside_frame
+  "use of deleted function .void foundation::core::BitSet<N, Key>::begin\\(\\) const"
+  "a cursor that a caller holds could outlive its set: walk the keys in the body of with_keys")
+# A cursor of the walk does not copy, so no copy leaves the frame.
+foundation_neg_compile_test(neg_core_bit_cursor_copied_out_of_frame
+  "use of deleted function .foundation::core::BitCursor<Member, Word>::BitCursor\\(const foundation::core::BitCursor<Member, Word>&\\)"
+  "a cursor borrows the words of its set: a copy could outlive the set")
 foundation_neg_compile_test(neg_core_fixed_array_partial_list
   "no matching function for call to .foundation::core::FixedArray<int, 3>::FixedArray\\(<brace-enclosed initializer list>\\)."
   "ArrayStorage\\(foundation::core::detail::ArrayParameter<T, Positions>\\.\\.\\.\\) requires  N <= foundation::core::detail::max_listed_array_count && \\(is_nothrow_move_constructible_v<T>\\) \\[with T = int; long unsigned int N = 3; long unsigned int \\.\\.\\.Positions = \\{0, 1, 2\\}\\]."

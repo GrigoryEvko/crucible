@@ -17,13 +17,13 @@
 // does no check: the type proves the bound, and the check ran one time,
 // where the index was made.  The only roads to an Index are check(), mask()
 // for a count that is a power of two, the conversion from a StaticIndex, the
-// conversion from an Index of a smaller N, the loop of an IndexRange, and the
-// position of a CyclicIndex.
-// The constructor from a number is private, and the seal refuses
-// std::bit_cast and a lifetime start over bytes, so no number becomes an
-// Index without its check.  This header names no friend that a different
-// header defines, so no class of a different header makes an Index with no
-// check.
+// conversion from an Index of a smaller N, the loop of an IndexRange, the
+// position of a CyclicIndex, and the walk of the keys of a BitSet<N>, whose
+// road states its proof.  The constructor from a number is private, and the
+// seal refuses std::bit_cast and a lifetime start over bytes, so no number
+// becomes an Index without its check.  The one friend that a different
+// header defines is the cursor of that walk, so no other class of a
+// different header makes an Index with no check.
 //
 // THE CHECK AFTER A COMPARE
 //   A word that a different invariant already bounds, such as a position of
@@ -82,6 +82,11 @@ template <std::size_t Count>
     requires IndexCount<Count>
 class CyclicIndex;
 
+// The cursor of the walk of the keys of a bit set (foundation/core/BitSet.h),
+// the one friend of the road of_bit_of_set_.
+template <class Member, class Word>
+class BitCursor;
+
 namespace detail {
 
 // The word of an Index<Count>: the narrowest word that holds Count, because
@@ -107,6 +112,22 @@ class Index final {
     friend struct niche<Index>;
 
     constexpr explicit Index(Word value) noexcept : value_{value} {}
+
+    // The road of the walk of the keys of a BitSet<Count>
+    // (foundation/core/BitSet.h): the cursor of the walk gives the index of
+    // the position of each bit that it reads, with no check.  The proof has
+    // two parts.  Each door of the set keeps each bit at or past Count clear,
+    // with the mask of the top word.  And the frame door with_keys keeps the
+    // walk inside the life of the set, because a cursor does not copy and
+    // does not move.  So the position of each bit that the walk reads lies
+    // below Count.  The cursor is the one friend of the road, and its home
+    // row of utils/rule-table.txt admits its one definition only in BitSet.h.
+    [[nodiscard]] static constexpr Index of_bit_of_set_(std::size_t position) noexcept {
+        return Index{static_cast<Word>(position)};
+    }
+
+    template <class Member, class BitWord>
+    friend class BitCursor;
 
 public:
     // The index raw, or no value when raw is not below Count.  One compare.

@@ -1154,6 +1154,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::BitCursor,
      "the position of a walk over the indexes of a bit set: it lives inside the loop, and it is never a value in a "
      "signature"},
+    {^^::foundation::core::BitKeys,
+     "the walk of the keys of a bit set that the frame door with_keys lends: it lives in the call of the door, and it "
+     "is never a value in a signature"},
     {^^::foundation::core::PackedWord,
      "one unsigned word of bit fields: it holds bits and makes no claim about what the fields name"},
     {^^::foundation::core::BitField,
