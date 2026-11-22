@@ -1,0 +1,35 @@
+// No return names an object that ends with the frame, and no line names the
+// rule view-escape: a borrow of a parameter by reference, a View that a
+// parameter by value holds, a window of a View, an erased Ref of a parameter
+// by reference, a value that a local list holds, and a local list by value.
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+fc::View<int const> view_of_reference(fc::FixedList<int, 4> const& list) { return list.view(); }
+
+fc::View<int const> view_of_view(fc::View<int const> run) { return run; }
+
+fc::Option<fc::View<int const>> window_of_view(fc::View<int const> run) { return run.window(0, 1); }
+
+fc::Ref<int> erased_ref_of_reference(int& value) { return fc::erase_brand(fc::to(value)); }
+
+int value_of_local_list() {
+    fc::FixedList<int, 4> list{};
+    static_cast<void>(list.append(6));
+    return *std::move(std::as_const(list).get(0)).expect("one element");
+}
+
+fc::FixedList<int, 4> local_list_by_value() {
+    fc::FixedList<int, 4> list{};
+    static_cast<void>(list.append(7));
+    return list;
+}
+
+}  // namespace planted

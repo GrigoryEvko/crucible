@@ -4329,6 +4329,25 @@ foundation_neg_compile_test(neg_core_view_mut_split_of_named
 foundation_neg_compile_test(neg_core_view_mut_split_of_const
   "use of deleted function .void foundation::core::split_chunks\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a part")
+# A function gives back no borrow of an object that ends with its frame: the
+# rule view-escape refuses the Ref of a local, its erased Ref, the View of a
+# local list for reading and for writing, and the Ref of an element of a
+# parameter by value.
+foundation_neg_compile_test(neg_core_return_ref_of_local
+  "neg_core_return_ref_of_local\\.cpp:14:[0-9]+: error: this function gives back a borrow of the local value"
+  "and that object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_return_erased_ref_of_local
+  "neg_core_return_erased_ref_of_local\\.cpp:13:[0-9]+: error: this function gives back a borrow of the local value"
+  "and that object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_return_view_of_local_list
+  "neg_core_return_view_of_local_list\\.cpp:17:[0-9]+: error: this function gives back a borrow of the local list"
+  "and that object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_return_view_of_local_list_mut
+  "neg_core_return_view_of_local_list_mut\\.cpp:15:[0-9]+: error: this function gives back a borrow of the local list"
+  "and that object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_return_ref_of_parameter
+  "neg_core_return_ref_of_parameter\\.cpp:14:[0-9]+: error: this function gives back a borrow of the parameter list"
+  "and that object ends with the frame of the function")
 # get_mut gives a RefMut, which does not copy, and a const ViewMut gives none.
 foundation_neg_compile_test(neg_core_view_mut_get_mut_copied
   "neg_core_view_mut_get_mut_copied\\.cpp:16:[0-9]+: error: use of deleted function .foundation::core::RefMut<T, Brand>::RefMut\\(const foundation::core::RefMut<T, Brand>&\\)"

@@ -123,7 +123,8 @@ THE DERIVED DIAGNOSTICS
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
     contract-specifier gives the error of the contract rule, a finding of the
-    rules binding-hook and borrow-match gives the start of its error, and a
+    rules binding-hook, borrow-match and view-escape gives the start of its
+    error, and a
     finding of the rules specialization-home, base-namespace and fresh-brand,
     of a scope kind of the rule brand-escape or of a sum kind of the rule
     must-consume gives the text of its kind.
@@ -281,9 +282,14 @@ BORROW_ERROR = "this arm of a borrow match writes the sum that the match reads (
 # of borrow.cpp).
 BORROW_LOOP_MARK = "loop "
 BORROW_LOOP_ERROR = "this body of a loop over a sum writes the sum that the loop reads ({entity})"
-# The rules that give an error in each mode for each finding: the contract rule, the rules binding-hook and
-# borrow-match and the rules of the family unit fact.
-EACH_MODE_RULES = frozenset((CONTRACT_RULE, BINDING_RULE, BORROW_RULE, "contract-semantic", "fast-math-override"))
+# The rule view-escape, and the start of its error (THE ERRORS of utils/tools/quarantine/escape.cpp).
+ESCAPE_RULE = "view-escape"
+ESCAPE_ERROR = "this function gives back a {entity}, and that object ends with the frame of the function"
+# The rules that give an error in each mode for each finding: the contract rule, the rules binding-hook,
+# borrow-match and view-escape and the rules of the family unit fact.
+EACH_MODE_RULES = frozenset(
+    (CONTRACT_RULE, BINDING_RULE, BORROW_RULE, ESCAPE_RULE, "contract-semantic", "fast-math-override")
+)
 # The rule specialization-home, and the start of the error of each of its kinds that is an error in each mode
 # (THE DERIVED DIAGNOSTICS, and THE ERRORS of utils/tools/quarantine/specialization.cpp).  The record open-extension
 # is no error.
@@ -860,6 +866,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, BORROW_LOOP_ERROR.format(entity=finding.entity.removeprefix(BORROW_LOOP_MARK))))
         elif finding.rule == BORROW_RULE:
             errors.append((place, BORROW_ERROR.format(entity=finding.entity)))
+        elif finding.rule == ESCAPE_RULE:
+            errors.append((place, ESCAPE_ERROR.format(entity=finding.entity)))
         elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:
             errors.append((place, SPECIALIZATION_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == BASE_NAMESPACE_RULE and finding.kind in BASE_NAMESPACE_ERRORS:

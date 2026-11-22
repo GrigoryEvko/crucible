@@ -264,6 +264,9 @@
 //     The rule lifetime-twin:
 //     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
 //                           no deleted overload that refuses a temporary there
+//     The rule view-escape (escape.cpp, THE FINDING, in each mode):
+//     escaped-borrow        a return of a borrow of a local, of a parameter by
+//                           value or of a temporary
 //     The rule proof-routes (expression.cpp, THE PROOF ROUTES):
 //     union                 a union definition
 //     pointer-cast          a cast to a pointer or a reference to a proof type
@@ -863,6 +866,7 @@ enum class Rule : std::uint8_t {
     stub_discipline,
     process_wide_state,
     lifetime_twin,
+    view_escape,
     witness_roster,
     proof_routes,
     padded_list,
@@ -1036,6 +1040,7 @@ enum class Kind : std::uint8_t {
     thread_bound_static,
     loan_key_static,
     missing_twin,
+    escaped_borrow,
     unrostered_witness,
     route_union,
     route_pointer_cast,
@@ -1173,6 +1178,8 @@ inline const char* rule_name(Rule rule) {
             return "process-wide-state";
         case Rule::lifetime_twin:
             return "lifetime-twin";
+        case Rule::view_escape:
+            return "view-escape";
         case Rule::witness_roster:
             return "witness-roster";
         case Rule::proof_routes:
@@ -1359,6 +1366,8 @@ inline const char* kind_name(Kind kind) {
             return "loan-key-static";
         case Kind::missing_twin:
             return "missing-twin";
+        case Kind::escaped_borrow:
+            return "escaped-borrow";
         case Kind::unrostered_witness:
             return "unrostered-witness";
         case Kind::route_union:
@@ -1601,6 +1610,8 @@ inline Rule rule_of(Kind kind) {
             return Rule::process_wide_state;
         case Kind::missing_twin:
             return Rule::lifetime_twin;
+        case Kind::escaped_borrow:
+            return Rule::view_escape;
         case Kind::unrostered_witness:
             return Rule::witness_roster;
         case Kind::route_union:
@@ -1722,9 +1733,10 @@ inline Rule rule_of(Kind kind) {
 // rules specialization-home, base-namespace and fresh-brand, the escapes of a
 // scope brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp), the
 // end of a linear sum with a payload of the rule must-consume (THE SUMS of
-// linear.cpp), and a bit copy into the tag of a sum (THE CLOSED TAGS of
-// library.cpp).  No enforce mode changes such a finding, and an opt-out region
-// covers it.
+// linear.cpp), a bit copy into the tag of a sum (THE CLOSED TAGS of
+// library.cpp), and a return of a borrow of an object that ends with the frame
+// of the rule view-escape (escape.cpp).  No enforce mode changes such a
+// finding, and an opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::forged_tag:
@@ -1749,6 +1761,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::linear_self_move:
         case Kind::thread_bound_static:
         case Kind::loan_key_static:
+        case Kind::escaped_borrow:
             return true;
         default:
             return false;
@@ -1903,6 +1916,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"process-wide-state", "thread-bound-static"},
     {"process-wide-state", "loan-key-static"},
     {"lifetime-twin", "missing-twin"},
+    {"view-escape", "escaped-borrow"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
     {"proof-routes", "pointer-cast"},
@@ -2973,6 +2987,13 @@ void report_binding_hook(const Finding& finding);
 void register_borrow_match(const char* plugin_name);
 void finish_borrow_matches();
 void report_borrow_match(const Finding& finding);
+
+// escape.cpp: the family view escape, the rule view-escape.  It records a
+// return of a borrow of an object that ends with the frame (THE FINDING of
+// escape.cpp), and report_view_escape() gives the error of one finding that no
+// region opts out.
+void register_view_escape(const char* plugin_name);
+void report_view_escape(const Finding& finding);
 
 // home.cpp: the family home, where a definition or a specialization stands.
 // The place helpers of THE PLACE and THE SITES of home.cpp, which the family

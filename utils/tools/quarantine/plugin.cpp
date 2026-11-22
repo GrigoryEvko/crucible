@@ -682,6 +682,8 @@ void report(bool can_add_dependencies) {
             report_forged_tag(finding);
         } else if (finding.kind == Kind::borrow_match && !is_out) {
             report_borrow_match(finding);
+        } else if (finding.kind == Kind::escaped_borrow && !is_out) {
+            report_view_escape(finding);
         } else if (rule_of_finding == Rule::specialization_home && !is_out) {
             report_specialization(finding);
         } else if (rule_of_finding == Rule::base_namespace && !is_out) {
@@ -914,6 +916,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_binding_hook(plugin_info->base_name);
     register_closed_tags(plugin_info->base_name);
     register_borrow_match(plugin_info->base_name);
+    register_view_escape(plugin_info->base_name);
     register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);
     register_declarations(plugin_info->base_name);

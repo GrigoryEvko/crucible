@@ -1,0 +1,54 @@
+// Each return of a borrow of an object that ends with the frame is a finding:
+// a Ref of a local, the erased Ref of a local, the View of a local list for
+// reading and for writing, the Ref of an element of a parameter by value, a
+// View that a local takes first, and a View of an owner on the heap that a
+// local holds.  The opt-out region turns one return into opted-out.
+#include <foundation/Quarantine.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+auto ref_of_local() {
+    int value = 1;
+    return fc::to(value);
+}
+
+fc::Ref<int> erased_ref_of_local() {
+    int value = 2;
+    return fc::erase_brand(fc::to(value));
+}
+
+fc::View<int const> view_of_local_list() {
+    fc::FixedList<int, 4> list{};
+    static_cast<void>(list.append(3));
+    return std::as_const(list).view();
+}
+
+fc::View<int> view_of_local_list_for_writing() {
+    fc::FixedList<int, 4> list{};
+    static_cast<void>(list.append(4));
+    return list.view();
+}
+
+auto ref_of_parameter(fc::FixedList<int, 4> list) { return std::move(list.append(5)).expect("room"); }
+
+fc::View<int const> view_through_a_local() {
+    fc::FixedList<int, 4> list{};
+    fc::View<int const> const run = std::as_const(list).view();
+    return run;
+}
+
+fc::View<int const> view_in_a_region() {
+    fc::FixedList<int, 4> list{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test returns the view of a local list")
+    return std::as_const(list).view();
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+}
+
+}  // namespace planted
