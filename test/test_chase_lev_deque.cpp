@@ -10,6 +10,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
+#include <foundation/Linear.h>
+#include <foundation/Transfer.h>
 #include <foundation/effects/Effect.h>
 
 #include <atomic>
@@ -25,11 +27,24 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
+// The value of a take that gives no item.  Each test pushes only smaller
+// values.
+constexpr std::uint64_t kNoItem = ~std::uint64_t{0};
+
+// The item of a take, or kNoItem.
+template <class T>
+[[nodiscard]] std::uint64_t item_or_none(::fixy::Option<T> taken) noexcept {
+    return std::move(taken).match([](T item) noexcept { return std::uint64_t{item}; },
+                                  []() noexcept { return kNoItem; });
+}
+
 }  // namespace
 
 using namespace fixy::concurrent;
 
 using TestDeque = ChaseLevDeque<uint64_t, 256>;
+using TestOwner = TestDeque::OwnerEnd;
+using TestStealer = TestDeque::StealerEnd;
 
 // The tag of a snapshot of the deque.  The test context holds Nondet.
 static constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::testing::test().nondet;
@@ -38,104 +53,130 @@ static_assert(!std::is_copy_constructible_v<TestDeque>, "ChaseLevDeque must not 
 static_assert(!std::is_move_constructible_v<TestDeque>, "ChaseLevDeque must not be movable (interior atomics)");
 static_assert(TestDeque::capacity() == 256);
 
+// THE ENDS of fixy/concurrent/ChaseLevDeque.h.  The OwnerEnd moves to another
+// thread, and no two threads read one.  A StealerEnd copies, and two threads
+// can use one at the same time.  The deque itself is Synchronized by its
+// cells, so a Ref of it moves to a thief.
+static_assert(!std::is_copy_constructible_v<TestOwner> && std::is_move_constructible_v<TestOwner>);
+static_assert(::foundation::transfer::Sendable<TestOwner> && !::foundation::transfer::Shareable<TestOwner>);
+static_assert(std::is_copy_constructible_v<TestStealer> && ::foundation::transfer::Synchronized<TestStealer>);
+static_assert(::foundation::transfer::Sendable<TestStealer> && ::foundation::transfer::Synchronized<TestDeque>);
+
 struct NotTriviallyCopyable {
     int x;
     NotTriviallyCopyable(const NotTriviallyCopyable&) {}
 };
 static_assert(!DequeValue<NotTriviallyCopyable>);
 
-// A pointer is admitted because it fits in a lock-free atomic, which
-// is what the steal protocol needs of the payload.
-static_assert(DequeValue<int*>);
+// A pointer fits a lock-free cell, but it moves an object to a thief with no
+// transfer check, so a deque refuses it.
+static_assert(!DequeValue<int*>);
 static_assert(DequeValue<uint64_t>);
 
 static void test_empty_deque() {
     ChaseLevDeque<uint64_t, 64> dq;
-    CRUCIBLE_TEST_ASSERT(kTest, dq.empty_approx(kSnapshot));
-    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, !dq.pop_bottom().has_value());
-    CRUCIBLE_TEST_ASSERT(kTest, !dq.steal_top().has_value());
+    auto ends = mint_chase_lev_ends(dq);
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.empty_approx(kSnapshot));
+    CRUCIBLE_TEST_ASSERT(kTest, ends.stealer.size_approx(kSnapshot) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.pop_bottom().is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ends.stealer.steal_top().is_none());
+    ::foundation::linear::drop(std::move(ends.owner));
     ::fixy::check::pass(kTest, "  test_empty_deque: PASSED\n");
 }
 
 static void test_single_thread_lifo() {
     ChaseLevDeque<uint64_t, 64> dq;
+    auto ends = mint_chase_lev_ends(dq);
 
     for (uint64_t i = 0; i < 32; ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(i));
+        CRUCIBLE_TEST_ASSERT(kTest, ends.owner.push_bottom(i));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 32);
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.size_approx(kSnapshot) == 32);
 
     // The owner's own end is last in, first out.
     for (uint64_t i = 0; i < 32; ++i) {
         const uint64_t expected = 31 - i;
-        const auto opt = dq.pop_bottom();
-        CRUCIBLE_TEST_ASSERT(kTest, opt.has_value());
-        CRUCIBLE_TEST_ASSERT(kTest, *opt == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, item_or_none(ends.owner.pop_bottom()) == expected);
     }
-    CRUCIBLE_TEST_ASSERT(kTest, dq.empty_approx(kSnapshot));
-    CRUCIBLE_TEST_ASSERT(kTest, !dq.pop_bottom().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.empty_approx(kSnapshot));
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.pop_bottom().is_none());
 
+    ::foundation::linear::drop(std::move(ends.owner));
     ::fixy::check::pass(kTest, "  test_single_thread_lifo: PASSED\n");
 }
 
 static void test_single_thread_steal_fifo() {
     ChaseLevDeque<uint64_t, 64> dq;
+    auto ends = mint_chase_lev_ends(dq);
 
     for (uint64_t i = 0; i < 32; ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(i));
+        CRUCIBLE_TEST_ASSERT(kTest, ends.owner.push_bottom(i));
     }
-    // The thief's end is the opposite one, so it drains oldest first.
+    // The thief's end is the opposite one, so it drains oldest first.  A
+    // copy of the StealerEnd steals from the same deque.
+    ChaseLevDeque<uint64_t, 64>::StealerEnd const thief = ends.stealer;
     for (uint64_t i = 0; i < 32; ++i) {
-        const auto opt = dq.steal_top();
-        CRUCIBLE_TEST_ASSERT(kTest, opt.has_value());
-        CRUCIBLE_TEST_ASSERT(kTest, *opt == i);
+        CRUCIBLE_TEST_ASSERT(kTest, item_or_none(thief.steal_top()) == i);
     }
-    CRUCIBLE_TEST_ASSERT(kTest, !dq.steal_top().has_value());
+    CRUCIBLE_TEST_ASSERT(kTest, ends.stealer.steal_top().is_none());
 
+    ::foundation::linear::drop(std::move(ends.owner));
     ::fixy::check::pass(kTest, "  test_single_thread_steal_fifo: PASSED\n");
 }
 
 static void test_capacity_bound() {
     ChaseLevDeque<uint64_t, 8> dq;
+    auto ends = mint_chase_lev_ends(dq);
     for (uint64_t i = 0; i < 8; ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(i));
+        CRUCIBLE_TEST_ASSERT(kTest, ends.owner.push_bottom(i));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, !dq.push_bottom(99));
-    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, !ends.owner.push_bottom(99));
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.size_approx(kSnapshot) == 8);
 
     // Freeing one slot has to make room again, so the refusal above is
     // about occupancy and not a latched state.
-    auto popped = dq.pop_bottom();
-    CRUCIBLE_TEST_ASSERT(kTest, popped.has_value());
-    CRUCIBLE_TEST_ASSERT(kTest, *popped == 7);
-    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(99));
-    CRUCIBLE_TEST_ASSERT(kTest, dq.size_approx(kSnapshot) == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, item_or_none(ends.owner.pop_bottom()) == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.push_bottom(99));
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.size_approx(kSnapshot) == 8);
 
+    ::foundation::linear::drop(std::move(ends.owner));
     ::fixy::check::pass(kTest, "  test_capacity_bound: PASSED\n");
 }
 
 static void test_interleaved_single_thread() {
     ChaseLevDeque<uint64_t, 32> dq;
+    auto ends = mint_chase_lev_ends(dq);
 
-    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(1));
-    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(2));
-    CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(3));
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.push_bottom(1));
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.push_bottom(2));
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.push_bottom(3));
 
     // Stealing from the owning thread is unusual but permitted, and it
     // takes from the far end just as a thief would.
-    auto a = dq.steal_top();
-    CRUCIBLE_TEST_ASSERT(kTest, a.has_value() && *a == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, item_or_none(ends.stealer.steal_top()) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, item_or_none(ends.owner.pop_bottom()) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, item_or_none(ends.stealer.steal_top()) == 2);
 
-    auto b = dq.pop_bottom();
-    CRUCIBLE_TEST_ASSERT(kTest, b.has_value() && *b == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, ends.owner.empty_approx(kSnapshot));
 
-    auto c = dq.steal_top();
-    CRUCIBLE_TEST_ASSERT(kTest, c.has_value() && *c == 2);
-
-    CRUCIBLE_TEST_ASSERT(kTest, dq.empty_approx(kSnapshot));
-
+    ::foundation::linear::drop(std::move(ends.owner));
     ::fixy::check::pass(kTest, "  test_interleaved_single_thread: PASSED\n");
+}
+
+// The mint takes the claim of the owner for the life of the deque, so a
+// second mint of one deque ends the process.
+static void mint_the_ends_two_times() {
+    ChaseLevDeque<uint64_t, 8> dq;
+    auto first = mint_chase_lev_ends(dq);
+    auto second = mint_chase_lev_ends(dq);
+    ::foundation::linear::drop(std::move(second.owner));
+    ::foundation::linear::drop(std::move(first.owner));
+}
+
+static void test_one_owner() {
+    ::fixy::check::expect_dies(kTest, mint_the_ends_two_times,
+                               ::fixy::TextView{"a second OwnerEnd of one work-stealing"});
+    ::fixy::check::pass(kTest, "  test_one_owner: PASSED\n");
 }
 
 // The owner both produces and consumes here, so the contended element
@@ -150,6 +191,7 @@ static void test_stress_one_owner_n_thieves() {
                    N_THIEVES);
 
     ChaseLevDeque<uint64_t, CAPACITY> dq;
+    auto ends = mint_chase_lev_ends(dq);
     std::atomic<bool> owner_done{false};
     std::atomic<uint64_t> duplicate_count{0};
     std::atomic<uint64_t> empty_steal_count{0};
@@ -174,52 +216,48 @@ static void test_stress_one_owner_n_thieves() {
             duplicate_count.fetch_add(1, std::memory_order_relaxed);
         }
     };
+    // Gives the item of a take to receive, and false when the take gave none.
+    auto receive_taken = [&receive](::fixy::Option<uint64_t> taken) {
+        std::uint64_t const item = item_or_none(std::move(taken));
+        if (item == kNoItem) return false;
+        receive(item);
+        return true;
+    };
 
-    std::jthread owner([&](std::stop_token /*st*/) {
+    // The OwnerEnd moves into the closure of the owner thread, which ends it.
+    std::jthread owner([&, owner_end = std::move(ends.owner)](std::stop_token /*st*/) mutable {
         for (uint64_t i = 0; i < N_ITEMS; ++i) {
             // A full queue means the thieves are behind.  The owner
             // takes from its own end while it waits, so the retry
             // cannot deadlock even if every thief stalls.
-            while (!dq.push_bottom(i)) {
-                if (auto opt = dq.pop_bottom()) {
-                    receive(*opt);
-                }
+            while (!owner_end.push_bottom(i)) {
+                static_cast<void>(receive_taken(owner_end.pop_bottom()));
                 CRUCIBLE_SPIN_PAUSE;
             }
             // These interleaved takes are what put the owner and a
             // thief on the same element, which is the race the whole
             // protocol exists to resolve.
             if ((i & 0x3F) == 0) {
-                if (auto opt = dq.pop_bottom()) {
-                    receive(*opt);
-                }
+                static_cast<void>(receive_taken(owner_end.pop_bottom()));
             }
         }
-        while (auto opt = dq.pop_bottom()) {
-            receive(*opt);
-        }
+        while (receive_taken(owner_end.pop_bottom())) {}
+        ::foundation::linear::drop(std::move(owner_end));
         owner_done.store(true, std::memory_order_release);
     });
 
     std::vector<std::jthread> thieves;
     for (int t = 0; t < N_THIEVES; ++t) {
-        thieves.emplace_back([&](std::stop_token /*st*/) {
+        thieves.emplace_back([&, stealer = ends.stealer](std::stop_token /*st*/) {
             while (true) {
-                if (auto opt = dq.steal_top()) {
-                    receive(*opt);
-                } else {
-                    empty_steal_count.fetch_add(1, std::memory_order_relaxed);
-                    if (owner_done.load(std::memory_order_acquire) && dq.empty_approx(kSnapshot)) {
-                        // The emptiness query is approximate, so a
-                        // thief only leaves after one more steal comes
-                        // back with nothing.  Trusting the query alone
-                        // would strand the last item.
-                        if (auto last = dq.steal_top()) {
-                            receive(*last);
-                        } else {
-                            break;
-                        }
-                    }
+                if (receive_taken(stealer.steal_top())) continue;
+                empty_steal_count.fetch_add(1, std::memory_order_relaxed);
+                if (owner_done.load(std::memory_order_acquire) && stealer.empty_approx(kSnapshot)) {
+                    // The emptiness query is approximate, so a
+                    // thief only leaves after one more steal comes
+                    // back with nothing.  Trusting the query alone
+                    // would strand the last item.
+                    if (!receive_taken(stealer.steal_top())) break;
                 }
             }
         });
@@ -263,6 +301,7 @@ static void test_stress_high_contention() {
                    N_THIEVES, CAPACITY);
 
     ChaseLevDeque<uint32_t, CAPACITY> dq;
+    auto ends = mint_chase_lev_ends(dq);
     std::atomic<bool> owner_done{false};
     std::atomic<uint64_t> duplicate_count{0};
 
@@ -270,7 +309,7 @@ static void test_stress_high_contention() {
     for (auto& m : markers)
         m.store(false, std::memory_order_relaxed);
 
-    auto receive = [&](uint32_t item) {
+    auto receive = [&](std::uint64_t item) {
         if (item >= N_ITEMS) {
             duplicate_count.fetch_add(1, std::memory_order_relaxed);
             return;
@@ -280,34 +319,33 @@ static void test_stress_high_contention() {
             duplicate_count.fetch_add(1, std::memory_order_relaxed);
         }
     };
+    // Gives the item of a take to receive, and false when the take gave none.
+    auto receive_taken = [&receive](::fixy::Option<uint32_t> taken) {
+        std::uint64_t const item = item_or_none(std::move(taken));
+        if (item == kNoItem) return false;
+        receive(item);
+        return true;
+    };
 
-    std::jthread owner([&](std::stop_token /*st*/) {
+    std::jthread owner([&, owner_end = std::move(ends.owner)](std::stop_token /*st*/) mutable {
         for (uint32_t i = 0; i < N_ITEMS; ++i) {
-            while (!dq.push_bottom(i)) {
-                if (auto opt = dq.pop_bottom()) {
-                    receive(*opt);
-                }
+            while (!owner_end.push_bottom(i)) {
+                static_cast<void>(receive_taken(owner_end.pop_bottom()));
                 CRUCIBLE_SPIN_PAUSE;
             }
         }
-        while (auto opt = dq.pop_bottom()) {
-            receive(*opt);
-        }
+        while (receive_taken(owner_end.pop_bottom())) {}
+        ::foundation::linear::drop(std::move(owner_end));
         owner_done.store(true, std::memory_order_release);
     });
 
     std::vector<std::jthread> thieves;
     for (int t = 0; t < N_THIEVES; ++t) {
-        thieves.emplace_back([&](std::stop_token /*st*/) {
+        thieves.emplace_back([&, stealer = ends.stealer](std::stop_token /*st*/) {
             while (true) {
-                if (auto opt = dq.steal_top()) {
-                    receive(*opt);
-                } else if (owner_done.load(std::memory_order_acquire) && dq.empty_approx(kSnapshot)) {
-                    if (auto last = dq.steal_top()) {
-                        receive(*last);
-                    } else {
-                        break;
-                    }
+                if (receive_taken(stealer.steal_top())) continue;
+                if (owner_done.load(std::memory_order_acquire) && stealer.empty_approx(kSnapshot)) {
+                    if (!receive_taken(stealer.steal_top())) break;
                 }
             }
         });
@@ -331,29 +369,6 @@ static void test_stress_high_contention() {
     ::fixy::check::pass(kTest, "  test_stress_high_contention: PASSED\n");
 }
 
-// A pointer payload is the shape real work items take, and it is also
-// the width where the lock-free atomic guarantee has to hold.
-static void test_pointer_payload() {
-    ChaseLevDeque<int*, 64> dq;
-
-    int values[10];
-    for (int i = 0; i < 10; ++i) {
-        values[i] = i * 100;
-        CRUCIBLE_TEST_ASSERT(kTest, dq.push_bottom(&values[i]));
-    }
-
-    // The pointers come back in reverse, and each one still addresses
-    // the value it was taken from.
-    for (int i = 9; i >= 0; --i) {
-        auto opt = dq.pop_bottom();
-        CRUCIBLE_TEST_ASSERT(kTest, opt.has_value());
-        CRUCIBLE_TEST_ASSERT(kTest, *opt == &values[i]);
-        CRUCIBLE_TEST_ASSERT(kTest, **opt == i * 100);
-    }
-
-    ::fixy::check::pass(kTest, "  test_pointer_payload: PASSED\n");
-}
-
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_chase_lev_deque:\n");
 
@@ -362,7 +377,7 @@ int main() {
     test_single_thread_steal_fifo();
     test_capacity_bound();
     test_interleaved_single_thread();
-    test_pointer_payload();
+    test_one_owner();
     test_stress_one_owner_n_thieves();
     test_stress_high_contention();
 

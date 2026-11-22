@@ -1,6 +1,7 @@
-// A cell holds its value in std::atomic<T>, and a thief reads it without a
-// lock.  A 64-byte value is not always lock-free, so DequeValue refuses it
-// and the caller passes a pointer instead.
+// A cell holds its value in an Atomic of the base, and a thief reads it
+// without a lock.  A 64-byte value fits no word of a lock-free atomic
+// instruction, so DequeValue refuses it, and the caller passes an index into
+// storage of its own instead.
 
 #include <fixy/concurrent/ChaseLevDeque.h>
 

@@ -4641,7 +4641,20 @@ fixy_neg_compile_test(neg_chase_lev_deque_capacity_not_power_of_two
   "In instantiation of .class fixy::concurrent::ChaseLevDeque<int, 12>.")
 fixy_neg_compile_test(neg_chase_lev_deque_value_not_lock_free
   "template constraint failure for .template<class T, long unsigned int Capacity>  requires  DequeValue<T> class fixy::concurrent::ChaseLevDeque."
-  "the expression .std::atomic<_Tp>::is_always_lock_free .with T = <unnamed>::WideValue.. evaluated to .false.")
+  "required for the satisfaction of .AtomicValue<T>. .with T = <unnamed>::WideValue.")
+# The ends split the deque (THE ENDS of fixy/concurrent/ChaseLevDeque.h): the
+# OwnerEnd does not copy, so no second owner pushes, a StealerEnd has no push,
+# and a raw pointer, which moves an object with no transfer check, is no value
+# of a deque.
+fixy_neg_compile_test(neg_chase_lev_deque_second_owner
+  "use of deleted function .fixy::concurrent::ChaseLevDeque<T, Capacity>::OwnerEnd::OwnerEnd\\(const"
+  "an OwnerEnd is the one writer of the bottom of its deque, and a copy is a second")
+fixy_neg_compile_test(neg_chase_lev_deque_push_from_stealer
+  "has no member named .push_bottom."
+  "class fixy::concurrent::ChaseLevDeque<long unsigned int, 8>::StealerEnd")
+fixy_neg_compile_test(neg_chase_lev_deque_raw_pointer
+  "template constraint failure for .template<class T, long unsigned int Capacity>  requires  DequeValue<T> class fixy::concurrent::ChaseLevDeque."
+  "required for the satisfaction of .Sendable<T>. .with T = int\\*.")
 
 # A capacity that is not a power of two makes the mask drop bits, and
 # two live positions collide on one slot with nothing to detect it.

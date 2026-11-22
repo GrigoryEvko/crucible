@@ -1332,6 +1332,12 @@ inline constexpr StatedZero kZeros[] = {
      "the key of the constructor of an end: an empty class that lives for one construction inside a split"},
     {^^::fixy::concurrent::SpscSplitParts,
      "the result of the split mint: the split and the key of each side, which a binding takes apart at once"},
+    {^^::fixy::concurrent::DequeBottom,
+     "the role of the bottom cell of a work-stealing deque: an empty class that the proof of its writer names"},
+    {^^::fixy::concurrent::DequeEndBrand,
+     "the brand of the Ref of an end of a deque: an empty class that is never a value, and the end folds it"},
+    {^^::fixy::concurrent::DequeEnds,
+     "the result of the mint of the ends of a deque: the OwnerEnd and a StealerEnd, which a binding takes apart"},
     {^^::fixy::WideStart,
      "the start of a WideMonotonic: a value below the start limit that the count takes at its mint or reset, and the "
      "count folds its claim"},
