@@ -421,6 +421,108 @@ static void test_second_writer_beside_the_sole_writer_ends_the_process() {
     ::fixy::check::pass(kTest, "  test_second_writer_ends:        PASSED\n");
 }
 
+// The validator of a name from outside takes a name of a boundary tag only:
+// a name that crossed no boundary, or that passed it, does not go through it.
+static_assert(SchemaNameBoundary<source::External> && SchemaNameBoundary<source::ABIBoundary>);
+static_assert(!SchemaNameBoundary<source::Sanitized> && !SchemaNameBoundary<source::FromInternal>);
+
+// The refusal of sanitize_schema_name for a name of the tag External, or no
+// value when it gives the Sanitized name.
+static ::fixy::Option<SchemaNameError> refusal_of(SchemaHash hash, ::fixy::TextView name) {
+    return sanitize_schema_name(hash, ::fixy::mint_tagged<source::External>(name)).err();
+}
+
+// sanitize_schema_name refuses a hash of zero, an empty name, a name past
+// SCHEMA_NAME_MAX characters and a name that holds a zero, and it gives each
+// other name with its characters.  A name of the C interface passes the same
+// checks.
+static void test_sanitize_schema_name_refuses_each_bad_name() {
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(H(0), "aten::x") == ::fixy::some(SchemaNameError::zero_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(H(0x7), ::fixy::TextView{}) == ::fixy::some(SchemaNameError::empty));
+    ::fixy::FixedText<SCHEMA_NAME_MAX + 1> longest{};
+    for (std::size_t character = 0; character < SCHEMA_NAME_MAX; ++character) {
+        CRUCIBLE_TEST_ASSERT(kTest, longest.append('n').is_ok());
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(H(0x7), longest.view()).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, longest.append('n').is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(H(0x7), longest.view()) == ::fixy::some(SchemaNameError::too_long));
+    ::fixy::FixedText<8> leading_zero{};
+    ::fixy::FixedText<8> inner_zero{};
+    CRUCIBLE_TEST_ASSERT(kTest, leading_zero.append('\0').is_ok() && leading_zero.append('x').is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, inner_zero.append('y').is_ok() && inner_zero.append('\0').is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(H(0x7), leading_zero.view()) == ::fixy::some(SchemaNameError::holds_zero));
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(H(0x7), inner_zero.view()) == ::fixy::some(SchemaNameError::holds_zero));
+    const SchemaTable::SanitizedName from_abi =
+        sanitize_schema_name(H(0x7), ::fixy::mint_tagged<source::ABIBoundary>(::fixy::TextView{"aten::abi"}))
+            .expect("a valid name of the C interface passes");
+    CRUCIBLE_TEST_ASSERT(kTest, from_abi.value() == ::fixy::TextView{"aten::abi"});
+    ::fixy::check::pass(kTest, "  test_sanitize_schema_name:      PASSED\n");
+}
+
+// One name of a walk of register_names.
+struct WalkName {
+    SchemaHash hash{};
+    ::fixy::TextView name{};
+};
+
+// Registers the names of a walk through register_names.  Each name goes
+// through sanitize_schema_name, as a name from outside does.
+template <std::size_t Count>
+static SchemaRegistration register_walk(SchemaTable& t, SchemaTable::MutableView const& view,
+                                        ::fixy::FixedArray<WalkName, Count> const& names) {
+    return t.register_names(
+        kTest, ::foundation::effects::testing::test().alloc, view,
+        [&names](SchemaTable::AddName const& add_name) noexcept {
+            for (const WalkName& entry : names) {
+                add_name(entry.hash, sanitize_schema_name(entry.hash, ::fixy::mint_tagged<source::External>(entry.name))
+                                         .expect("each name of the case passes the validator"));
+            }
+        });
+}
+
+// register_names writes each name of a walk or none.  A walk that gives a
+// held hash a different name, a walk that gives one hash two times, and a walk
+// of more new hashes than the table has places for write nothing, also not
+// the names before the refused one.  A walk of held names and new names
+// writes each new name, also into the last place.  A sealed table refuses the
+// walk.
+static void test_register_names_writes_each_name_or_none() {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x42), S("first"));
+    const ::fixy::FixedArray<WalkName, 2> held_hash_renamed{WalkName{.hash = H(0x41), .name = "aten::a"},
+                                                            WalkName{.hash = H(0x42), .name = "second"}};
+    CRUCIBLE_TEST_ASSERT(kTest, is_collision(register_walk(t, mv, held_hash_renamed)));
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1 && missing(t.lookup(H(0x41))) && eq(t.lookup(H(0x42)), "first"));
+    const ::fixy::FixedArray<WalkName, 2> hash_two_times{WalkName{.hash = H(0x43), .name = "aten::b"},
+                                                         WalkName{.hash = H(0x43), .name = "aten::b"}};
+    CRUCIBLE_TEST_ASSERT(kTest, is_collision(register_walk(t, mv, hash_two_times)));
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1 && missing(t.lookup(H(0x43))));
+    const ::fixy::FixedArray<WalkName, 2> held_and_new{WalkName{.hash = H(0x42), .name = "first"},
+                                                       WalkName{.hash = H(0x44), .name = "aten::c"}};
+    CRUCIBLE_TEST_ASSERT(kTest, register_walk(t, mv, held_and_new).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == 2 && eq(t.lookup(H(0x44)), "aten::c"));
+
+    // The table takes fillers until it has one place.
+    for (uint32_t i = 0; t.count() < SCHEMA_TABLE_CAP - 1; ++i) {
+        const ::fixy::FixedText<16> name = op_name(i);
+        reg(t, mv, filler_hash(i), S(name.view()));
+    }
+    const ::fixy::FixedArray<WalkName, 2> two_new{WalkName{.hash = H(0x45), .name = "aten::d"},
+                                                  WalkName{.hash = H(0x46), .name = "aten::e"}};
+    CRUCIBLE_TEST_ASSERT(kTest, is_full(register_walk(t, mv, two_new)));
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP - 1 && missing(t.lookup(H(0x45))));
+    const ::fixy::FixedArray<WalkName, 2> held_and_last{WalkName{.hash = H(0x44), .name = "aten::c"},
+                                                        WalkName{.hash = H(0x45), .name = "aten::d"}};
+    CRUCIBLE_TEST_ASSERT(kTest, register_walk(t, mv, held_and_last).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP && eq(t.lookup(H(0x45)), "aten::d"));
+
+    t.seal(kTest);
+    const ::fixy::FixedArray<WalkName, 1> held_only{WalkName{.hash = H(0x42), .name = "first"}};
+    CRUCIBLE_TEST_ASSERT(kTest, is_sealed_refusal(register_walk(t, mv, held_only)));
+    ::fixy::check::pass(kTest, "  test_register_names_or_none:    PASSED\n");
+}
+
 // A table holds 512 entries, and each padding byte of an entry costs one
 // store at each initialization of an automatic table (padding_bytes.h).
 static void test_entry_has_no_padding_byte() {
@@ -450,7 +552,9 @@ int main() {
     test_lookup_works_post_seal();
     test_sole_writer_registers_with_one_exchange();
     test_second_writer_beside_the_sole_writer_ends_the_process();
+    test_sanitize_schema_name_refuses_each_bad_name();
+    test_register_names_writes_each_name_or_none();
     test_entry_has_no_padding_byte();
-    ::fixy::check::pass(kTest, "test_schema_table: 22 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_schema_table: 24 groups, all passed\n");
     return 0;
 }

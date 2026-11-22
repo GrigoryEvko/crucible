@@ -184,6 +184,80 @@ public:
                              [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
     }
 
+    // The callable that a walk of names calls for each name: its hash and its
+    // Sanitized name.
+    using AddName = ::fixy::CallRef<void(SchemaHash, SanitizedName const&) noexcept>;
+
+    // Registers each name of a walk from outside the process, or none.  The
+    // walk calls its AddName for each name, and it gives the same names in
+    // the same order at each call.  The table runs the walk two times in one
+    // write section.  The first walk checks each name: a different name of a
+    // held hash, or a hash that the walk gives two times, is a collision, and
+    // a new hash past SCHEMA_TABLE_CAP names is a full table.  The second walk
+    // writes each name only when the first walk refused none.  So a refusal
+    // writes no name, and no seal and no other writer runs between the check
+    // and the writes.  It gives sealed, and writes nothing, when the table
+    // was sealed first.  An empty name is not a registration, as for
+    // register_name.  Complexity: the walk two times, O(log n) and linear in
+    // the names of the walk for each name, and O(n) for each new hash.
+    template <typename Ctx, typename Walk>
+        requires CtxMayEnterWriteSection<Ctx> && std::is_invocable_r_v<void, Walk&, AddName const&>
+    [[nodiscard]] SchemaRegistration register_names(Ctx const& writer, ::foundation::effects::Alloc allocation,
+                                                    MutableView const& view, Walk&& walk_names) {
+        CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
+        ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
+        const bool was_open = seal_.with_write_section(writer, [&] {
+            NameCheck check{};
+            auto check_name = [this, &check](SchemaHash hash, SanitizedName const& name) noexcept {
+                if (check.refusal.is_some()) return;
+                const ::fixy::TextView characters = characters_of_(name.value());
+                if (characters.size() == 0) return;
+                switch (judge_name_(check, hash, characters)) {
+                    case NameVerdict::collision:
+                        check.refusal = ::fixy::some(SchemaRefusal::collision);
+                        return;
+                    case NameVerdict::full:
+                        check.refusal = ::fixy::some(SchemaRefusal::full);
+                        return;
+                    case NameVerdict::added:
+                        ++check.added;
+                        break;
+                    case NameVerdict::held:
+                        break;
+                    default:
+                        ::fixy::unreachable();
+                }
+                const bool is_kept = check.hashes.append(hash).is_ok();
+                CRUCIBLE_FATAL_INVARIANT(is_kept);
+            };
+            const AddName add_to_check{check_name};
+            walk_names(add_to_check);
+            if (check.refusal.is_some()) {
+                refusal = check.refusal;
+                return;
+            }
+            NameCheck const& checked = check;
+            std::size_t written = 0;
+            auto write_name = [this, &checked, &written, allocation](SchemaHash hash,
+                                                                     SanitizedName const& name) noexcept {
+                const ::fixy::TextView characters = characters_of_(name.value());
+                if (characters.size() == 0) return;
+                const bool is_checked_name = checked.hashes.get(written).match(
+                    [hash](auto held) noexcept { return *held == hash; }, [] noexcept { return false; });
+                CRUCIBLE_FATAL_INVARIANT(is_checked_name);
+                const bool is_written = write_name_(allocation, hash, characters, false).is_none();
+                CRUCIBLE_FATAL_INVARIANT(is_written);
+                ++written;
+            };
+            const AddName add_to_table{write_name};
+            walk_names(add_to_table);
+            CRUCIBLE_FATAL_INVARIANT(written == checked.hashes.size());
+        });
+        if (!was_open) return ::fixy::err(SchemaRefusal::sealed);
+        return refusal.match([](SchemaRefusal why) noexcept { return SchemaRegistration{::fixy::err(why)}; },
+                             [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
+    }
+
     // The unqualified form is safe in either phase. The overload taking a
     // sealed view exists so a caller holding the borrow past the registration
     // phase can say so at the call site.  A hash that the table does not hold
@@ -244,6 +318,46 @@ public:
     }
 
 private:
+    // The state of the first walk of register_names: the hash of each name
+    // that passed, the count of the hashes that the table does not hold, and
+    // the first refusal.
+    struct NameCheck {
+        ::fixy::FixedList<SchemaHash, SCHEMA_TABLE_CAP> hashes{};
+        std::uint32_t added = 0;
+        ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
+    };
+
+    // The verdict of one name of a walk: the table holds it, it takes a new
+    // place, or the table refuses it.
+    enum class NameVerdict : std::uint8_t {
+        held,
+        added,
+        collision,
+        full,
+    };
+
+    // The verdict of the name of hash with characters, against the table and
+    // the names of check.  A hash of check is a collision, because a walk
+    // gives each hash one time.  A new hash finds a place while the table
+    // and the new hashes of check hold fewer than SCHEMA_TABLE_CAP names.  Each
+    // hash of check is a held hash or a new hash, so check holds at most
+    // SCHEMA_TABLE_CAP hashes.  Complexity: O(log n) and linear in check.
+    [[nodiscard]] NameVerdict judge_name_(NameCheck const& check, SchemaHash hash,
+                                          ::fixy::TextView characters) const noexcept {
+        for (const SchemaHash earlier : check.hashes.view()) {
+            if (earlier == hash) return NameVerdict::collision;
+        }
+        const ::fixy::Option<LookupName> held = lookup(hash);
+        if (held.is_some()) {
+            const bool is_same_name = held.match(
+                [characters](LookupName const& found) noexcept { return found.value().view() == characters; },
+                [] noexcept { return false; });
+            return is_same_name ? NameVerdict::held : NameVerdict::collision;
+        }
+        if (entries_.size() + check.added >= SCHEMA_TABLE_CAP) return NameVerdict::full;
+        return NameVerdict::added;
+    }
+
     // Runs inside the write section, so no seal and no other writer runs
     // at the same time.  It gives the refusal of a name from outside, or no
     // value when the table holds the name.  A hash that the table holds

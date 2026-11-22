@@ -61,6 +61,37 @@ namespace crucible::fuzz::boundary {
     return seeds;
 }
 
+// Each name of a loaded trace passes sanitize_schema_name, the validator of
+// the C entry, and the global table holds it with its characters.  The image
+// gives each hash one time, and the table started empty, so the table holds
+// as many names as the image.
+inline void claim_names_registered(::fixy::View<std::byte const> image) noexcept {
+    const auto checked = CheckedTraceImage::check(image);
+    CRUCIBLE_FUZZ_CLAIM("trace_file", checked.is_ok());
+    checked.match(
+        [](CheckedTraceImage const& trace_image) noexcept {
+            CRUCIBLE_FUZZ_CLAIM("trace_file", global_schema_table().count() == trace_image.num_names());
+            ::fixy::View<std::byte const> rest = trace_image.names();
+            for (std::uint32_t index = 0; index < trace_image.num_names(); ++index) {
+                const detail::TraceName name =
+                    detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
+                const ::fixy::FixedText<SCHEMA_NAME_MAX> text = detail::trace_name_text_(name);
+                CRUCIBLE_FUZZ_CLAIM(
+                    "trace_file",
+                    sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
+                        .is_ok());
+                const ::fixy::Option<SchemaTable::LookupName> held = global_schema_table().lookup(name.hash);
+                const bool is_held_name = held.match(
+                    [&text](SchemaTable::LookupName const& found) noexcept {
+                        return found.value().view() == text.view();
+                    },
+                    [] noexcept { return false; });
+                CRUCIBLE_FUZZ_CLAIM("trace_file", is_held_name);
+            }
+        },
+        [](TraceLoadError) noexcept {});
+}
+
 inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
     constexpr std::size_t kMaxInputBytes = std::size_t{1} << 20;
     const ::fixy::View<std::byte const> image =
@@ -77,18 +108,22 @@ inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
         std::move(sanitized_path).expect("the scratch path passes the check");
     // The descriptor closes in the write, before the load.
     if (!write_scratch_file("input.crtrace", image)) return;
-    // The load registers the names of the trace into the global table, so a
-    // second name of one hash reaches the refusal of a collision.  The table
-    // starts empty at each run, so no name of an earlier input collides.  A
-    // trace can name more schemas than the table holds, and the table then
-    // refuses each name past its capacity.
+    // The load registers the names of the trace into the global table, each
+    // of them or none.  The table starts empty at each run, so no name of an
+    // earlier input collides.  A trace can name more schemas than the table
+    // holds, and the load then refuses the whole trace.
     constexpr VigilFgCtx kForeground = ::foundation::effects::testing::foreground<Vigil>();
     global_schema_table().clear(::foundation::effects::testing::test());
     auto loaded = load_trace(kHarnessCtx, kForeground, path);
-    if (loaded.is_err()) return;
+    // A refused load registers no name.
+    if (loaded.is_err()) {
+        CRUCIBLE_FUZZ_CLAIM("trace_file", global_schema_table().count() == 0);
+        return;
+    }
     const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
 
     CRUCIBLE_FUZZ_CLAIM("trace_file", global_schema_table().count() <= SCHEMA_TABLE_CAP);
+    claim_names_registered(image);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.metas.size() == trace.num_metas);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.entries.size() == trace.num_ops);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.depths.size() == trace.num_ops);

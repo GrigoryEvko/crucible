@@ -526,9 +526,11 @@ static TraceImage make_zero_op_header() {
 // The trace of trace_path gives aten::add, aten::mul and aten::matmul to
 // three hashes.  The table holds a different name of the hash of aten::mul
 // first.  Input from outside can be wrong, so the table keeps its first name
-// and refuses aten::mul.  The load stops the names of the trace there, it
-// reports the reason, and the process lives.  The load runs in a child, so
-// the test reads the report on the standard error of the child.
+// and refuses aten::mul.  The load refuses the whole trace, it registers no
+// name of it, not even aten::add before aten::mul, it reports the reason, and
+// the process lives.  The load runs in a child, so the test reads the report
+// on the standard error of the child.  The old load registered aten::add and
+// gave the trace.
 static void
 test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
     global_schema_table().clear(::foundation::effects::testing::test());
@@ -553,24 +555,25 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
             ::fixy::process::spawn_child(
                 kTestIo,
                 [&trace_path] noexcept {
-                    const LoadedTrace loaded = load_trace(kTestIo, kVigilForeground, trace_path)
-                                                   .expect("a colliding name ends the names of the trace only");
-                    const bool keeps_earlier = is_named(global_schema_table().lookup(kFirstHash), "aten::add");
+                    const bool is_refused =
+                        is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path), TraceLoadError::NameCollision);
+                    const bool skips_earlier = missing(global_schema_table().lookup(kFirstHash));
                     const bool keeps_held = is_named(global_schema_table().lookup(kHeldHash), "aten::held");
-                    const bool stops_there = missing(global_schema_table().lookup(kLaterHash));
-                    if (loaded.num_ops != 0 || !keeps_earlier || !keeps_held || !stops_there) {
-                        ::fixy::fatal("the colliding name changed the table");
+                    const bool skips_later = missing(global_schema_table().lookup(kLaterHash));
+                    const bool keeps_count = global_schema_table().count() == 1;
+                    if (!is_refused || !skips_earlier || !keeps_held || !skips_later || !keeps_count) {
+                        ::fixy::fatal("the colliding name did not refuse the whole trace");
                     }
                 })
                 .expect("the test starts a child"))
             .expect("the test waits for its child");
     CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0));
     CRUCIBLE_TEST_ASSERT(
-        kTest,
-        ::fixy::find(report.output(),
-                     ::fixy::TextView{"load_trace: the trace gives the schema hash 13527480966017541734 the name "
-                                      "aten::mul, and the schema table holds a different name of that hash"})
-            .is_some());
+        kTest, ::fixy::find(report.output(),
+                            ::fixy::TextView{"load_trace: the schema table holds a different name of a schema hash of "
+                                             "the trace, so the load refuses the trace and registers none of its 3 "
+                                             "names"})
+                   .is_some());
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kHeldHash), "aten::held"));
 
     global_schema_table().clear(::foundation::effects::testing::test());
@@ -579,11 +582,12 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
 
 // The trace of trace_path gives aten::add, aten::mul and aten::matmul to
 // three hashes, and the table holds one name less than SCHEMA_TABLE_CAP
-// first.  aten::add takes the last place.  A full table refuses aten::mul,
-// because input from outside can name more schemas than the table holds.  The
-// load stops the names of the trace there, it reports the reason, and the
-// process lives.  The load runs in a child, so the test reads the report on
-// the standard error of the child.
+// first.  The table has one place, and the trace has three new names.  Input
+// from outside can name more schemas than the table holds, so the load
+// refuses the whole trace, it registers no name of it, it reports the reason,
+// and the process lives.  The load runs in a child, so the test reads the
+// report on the standard error of the child.  The old load put aten::add in
+// the last place and gave the trace.
 static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
     global_schema_table().clear(::foundation::effects::testing::test());
     constexpr SchemaHash kFirstHash{0xAAAA111122223333ULL};
@@ -606,28 +610,49 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == SCHEMA_TABLE_CAP - 1);
 
     const ::fixy::process::ChildReport report =
-        ::fixy::process::wait(
-            ::fixy::process::spawn_child(
-                kTestIo,
-                [&trace_path] noexcept {
-                    const LoadedTrace loaded = load_trace(kTestIo, kVigilForeground, trace_path)
-                                                   .expect("a full schema table ends the names of the trace only");
-                    const bool keeps_earlier = is_named(global_schema_table().lookup(kFirstHash), "aten::add");
-                    const bool refuses_next = missing(global_schema_table().lookup(kRefusedHash));
-                    const bool stops_there = missing(global_schema_table().lookup(kLaterHash));
-                    const bool is_full_table = global_schema_table().count() == SCHEMA_TABLE_CAP;
-                    if (loaded.num_ops != 0 || !keeps_earlier || !refuses_next || !stops_there || !is_full_table) {
-                        ::fixy::fatal("the full schema table took a name past its last place");
-                    }
-                })
-                .expect("the test starts a child"))
+        ::fixy::process::wait(::fixy::process::spawn_child(
+                                  kTestIo,
+                                  [&trace_path] noexcept {
+                                      const bool is_refused =
+                                          is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path),
+                                                        TraceLoadError::NameTableFull);
+                                      const bool skips_first = missing(global_schema_table().lookup(kFirstHash));
+                                      const bool skips_next = missing(global_schema_table().lookup(kRefusedHash));
+                                      const bool skips_later = missing(global_schema_table().lookup(kLaterHash));
+                                      const bool keeps_count = global_schema_table().count() == SCHEMA_TABLE_CAP - 1;
+                                      if (!is_refused || !skips_first || !skips_next || !skips_later || !keeps_count) {
+                                          ::fixy::fatal("the full schema table took a name of a refused trace");
+                                      }
+                                  })
+                                  .expect("the test starts a child"))
             .expect("the test waits for its child");
     CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0));
     CRUCIBLE_TEST_ASSERT(
         kTest, ::fixy::find(report.output(),
-                            ::fixy::TextView{"load_trace: the schema table holds 512 names, so it refuses the name "
-                                             "aten::mul of the schema hash 13527480966017541734"})
+                            ::fixy::TextView{"load_trace: the schema table holds at most 512 names and has no place "
+                                             "for each new name of the trace, so the load refuses the trace and "
+                                             "registers none of its 3 names"})
                    .is_some());
+
+    // A table with three places takes the three new names of the trace.
+    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table()
+        .mint_mutable_view(kVigilForeground)
+        .match(
+            [](SchemaTable::MutableView view) noexcept {
+                for (uint64_t filler = 1; filler <= SCHEMA_TABLE_CAP - 3; ++filler) {
+                    const bool was_registered =
+                        register_schema_name(
+                            kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
+                            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::filler"}))
+                            .is_ok();
+                    CRUCIBLE_TEST_ASSERT(kTest, was_registered);
+                }
+            },
+            []() noexcept {});
+    CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == SCHEMA_TABLE_CAP);
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kLaterHash), "aten::matmul"));
 
     global_schema_table().clear(::foundation::effects::testing::test());
     ::fixy::check::pass(kTest, "  test_schema_name_table_full_is_refused: PASSED\n");
@@ -1158,8 +1183,11 @@ static void test_meta_bytes_break_no_claim_of_the_type() {
     ::fixy::check::pass(kTest, "  test_meta_bytes_checked:        PASSED\n");
 }
 
-static void test_names_on_a_sealed_table_are_skipped() {
-    // The trace loads, and its names stay out of the sealed table.
+// A sealed table takes no name, so a load that registers the names refuses a
+// trace with names, and the table stays empty.  The old load gave the trace
+// with no name in the table.  A trace with no name loads, and a load that
+// skips the names loads each trace.
+static void test_names_on_a_sealed_table_refuse_the_load() {
     global_schema_table().clear(::foundation::effects::testing::test());
     global_schema_table().seal(kTest);
 
@@ -1172,13 +1200,23 @@ static void test_names_on_a_sealed_table_are_skipped() {
 
     constexpr ::fixy::CText kFileName{"crtrace-sealed.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(buf.view(), kFileName);
-    const bool is_loaded = load_trace(kTestIo, kVigilForeground, path).is_ok();
+    const bool is_refused = is_refused_as(load_trace(kTestIo, kVigilForeground, path), TraceLoadError::NameTableSealed);
+    const bool is_skipped = load_trace(kTestIo, path).is_ok();
     remove_image(kFileName);
 
-    CRUCIBLE_TEST_ASSERT(kTest, is_loaded);
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused);
+    CRUCIBLE_TEST_ASSERT(kTest, is_skipped);
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().is_sealed());
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));
+
+    auto nameless = make_zero_op_header();
+    append_le<uint32_t>(nameless, 0);
+    constexpr ::fixy::CText kNamelessFile{"crtrace-sealed-nameless.bin"};
+    const ::fixy::Path<::fixy::tags::source::Sanitized> nameless_path = write_image(nameless.view(), kNamelessFile);
+    const bool is_nameless_loaded = load_trace(kTestIo, kVigilForeground, nameless_path).is_ok();
+    remove_image(kNamelessFile);
+    CRUCIBLE_TEST_ASSERT(kTest, is_nameless_loaded);
 
     global_schema_table().clear(::foundation::effects::testing::test());
     ::fixy::check::pass(kTest, "  test_names_on_sealed_table:     PASSED\n");
@@ -1212,7 +1250,7 @@ int main() {
     test_meta_count_uint16_overflow_rejected();
     test_op_that_the_ladder_refuses_is_refused();
     test_meta_bytes_break_no_claim_of_the_type();
-    test_names_on_a_sealed_table_are_skipped();
+    test_names_on_a_sealed_table_refuse_the_load();
     ::fixy::check::pass(kTest, "test_trace_loader: 27 groups, all passed\n");
     return 0;
 }

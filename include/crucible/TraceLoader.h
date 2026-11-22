@@ -78,8 +78,9 @@ inline constexpr uint32_t MAX_METAS = 1u << 24;
 
 // The most names of a name table.  The writer writes the union of the global
 // schema table and the late schema table (crucible/SchemaTable.h), each of
-// SCHEMA_TABLE_CAP names.  A load registers the names that the global table
-// has room for, and the table refuses each name after that.
+// SCHEMA_TABLE_CAP names.  A load that registers the names registers each
+// name of the trace or none, so the global table refuses a trace of more new
+// names than it has places for.
 inline constexpr uint32_t TRACE_NAMES_MAX = 2 * SCHEMA_TABLE_CAP;
 
 // The typed gates of the three counts of a file.  The loader takes each count
@@ -181,6 +182,14 @@ enum class TraceLoadError : uint8_t {
     // Two names of the table have one schema hash.  The writer writes each
     // hash one time.
     NameRepeated,
+    // The schema table holds a different name of a hash of the trace.  The
+    // load registers no name of the trace.
+    NameCollision,
+    // The schema table has no place for each new name of the trace.  The
+    // load registers no name of the trace.
+    NameTableFull,
+    // The schema table is sealed, and the trace has names to register.
+    NameTableSealed,
 };
 
 // The loader reads each field from the bytes of the file with no byte swap.
@@ -393,25 +402,12 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
     return ::fixy::Unit{};
 }
 
-// The report of a name of a trace that the schema table refuses, because the
-// table holds a different name of its hash.  The load keeps the names before
-// it, and the table of names of the trace stops there.
-[[gnu::cold, gnu::noinline]] inline void report_name_collision_(uint64_t schema_hash, ::fixy::TextView name) noexcept {
-    ::fixy::report(::fixy::Sink::Err,
-                   "load_trace: the trace gives the schema hash {} the name {}, and the schema table holds a "
-                   "different name of that hash, so the names of the trace stop there\n",
-                   schema_hash, name);
-}
-
-// The report of a name of a trace that the schema table refuses, because the
-// table holds SCHEMA_TABLE_CAP names and the hash is not one of them.  The
-// load keeps the names before it, and the table of names of the trace stops
-// there.
-[[gnu::cold, gnu::noinline]] inline void report_name_table_full_(uint64_t schema_hash, ::fixy::TextView name) noexcept {
-    ::fixy::report(::fixy::Sink::Err,
-                   "load_trace: the schema table holds {} names, so it refuses the name {} of the schema hash {}, "
-                   "and the names of the trace stop there\n",
-                   SCHEMA_TABLE_CAP, name, schema_hash);
+// The error of a load for a refusal of the schema table: a different name of
+// a held hash, a table with no room for each new name, or a sealed table.
+[[nodiscard]] inline TraceLoadError trace_refusal_error_(SchemaRegistration const& registration) noexcept {
+    if (is_collision(registration)) return TraceLoadError::NameCollision;
+    if (is_full(registration)) return TraceLoadError::NameTableFull;
+    return TraceLoadError::NameTableSealed;
 }
 
 }  // namespace detail
@@ -850,6 +846,34 @@ template <std::size_t OpBytes, std::size_t MetaBytes>
     return ::fixy::Unit{};
 }
 
+// The report of a load of image that the schema table refused for the reason
+// error.  The load registers no name of the trace.
+[[gnu::cold, gnu::noinline]] inline void report_name_refusal_(TraceLoadError error,
+                                                              CheckedTraceImage const& image) noexcept {
+    switch (error) {
+        case TraceLoadError::NameCollision:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: the schema table holds a different name of a schema hash of the trace, so "
+                           "the load refuses the trace and registers none of its {} names\n",
+                           image.num_names());
+            return;
+        case TraceLoadError::NameTableFull:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: the schema table holds at most {} names and has no place for each new name "
+                           "of the trace, so the load refuses the trace and registers none of its {} names\n",
+                           SCHEMA_TABLE_CAP, image.num_names());
+            return;
+        case TraceLoadError::NameTableSealed:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: the schema table is sealed, so the load refuses the trace and registers none "
+                           "of its {} names\n",
+                           image.num_names());
+            return;
+        default:
+            return;
+    }
+}
+
 }  // namespace detail
 
 // THE WRITER
@@ -958,8 +982,10 @@ enum class TraceNameUse : uint8_t {
 
 // Loads the trace at path (THE LOAD DOOR).  With register_names, the schema
 // names of the trace go into the global table through schema_table_view after
-// the whole trace decodes.  An empty view means that the table is sealed, and
-// the names then stay out.  Complexity: linear in the bytes of the file.
+// the whole trace decodes, each of them or none.  A name that the table
+// refuses refuses the load (NameCollision, NameTableFull), and an empty view
+// means that the table is sealed (NameTableSealed).  Complexity: linear in the
+// bytes of the file.
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
 load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& path,
@@ -1051,44 +1077,36 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     }
 
     // The whole trace decodes before the first name goes into the table, so a
-    // refused file registers no name.  Once the table is sealed the background
-    // thread reads it with no lock, so a trace loaded after the seal keeps its
-    // names out of the table.  The trace itself still loads.
+    // refused file registers no name.  The table then checks each name of the
+    // trace before it writes the first one, in one write section
+    // (SchemaTable::register_names).  So a name that the table refuses
+    // refuses the whole load, and the load registers no name of the trace.
+    // Once the table is sealed the background thread reads it with no lock,
+    // so a sealed table refuses each trace that has names.  A load with no
+    // name, or a load that skips the names, needs no table.
     if (name_use == TraceNameUse::skip || checked.num_names() == 0) return trace;
-    if (schema_table_view.is_none()) {
-        ::fixy::report(::fixy::Sink::Err,
-                       "load_trace: the schema table is sealed, so the {} names of the trace are not registered\n",
-                       checked.num_names());
-        return trace;
-    }
-    ::fixy::View<std::byte const> rest = checked.names();
-    for (uint32_t index = 0; index < checked.num_names(); ++index) {
-        const detail::TraceName entry =
-            detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
-        const ::fixy::FixedText<SCHEMA_NAME_MAX> name_text = detail::trace_name_text_(entry);
-        // The check of the image ran sanitize_schema_name on each name, and
-        // the same validator gives the Sanitized name here.  A seal that
-        // lands during the load ends the names here too: the table refuses
-        // every later write.
-        const SchemaTable::SanitizedName name =
-            sanitize_schema_name(entry.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view()))
-                .expect("the check of the image ran the same validator on each name");
-        // A name that the table refuses ends the names here.  A collision is a
-        // name that the file gives a held hash in place of its first name.  A
-        // full table holds SCHEMA_TABLE_CAP names and refuses each new hash.
-        // The report names the name of each of the two.
-        const SchemaRegistration registration = schema_table_view.match(
-            [&](SchemaTable::MutableView const& view) {
-                return register_schema_name(io, io.cap().alloc, view, entry.hash, name);
-            },
-            [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
-        if (registration.is_err()) {
-            if (is_collision(registration)) detail::report_name_collision_(entry.hash.raw(), name_text.view());
-            if (is_full(registration)) detail::report_name_table_full_(entry.hash.raw(), name_text.view());
-            break;
+    const auto walk_names = [&checked](SchemaTable::AddName const& add_name) noexcept {
+        ::fixy::View<std::byte const> rest = checked.names();
+        for (uint32_t index = 0; index < checked.num_names(); ++index) {
+            const detail::TraceName entry =
+                detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
+            const ::fixy::FixedText<SCHEMA_NAME_MAX> name_text = detail::trace_name_text_(entry);
+            // The check of the image ran sanitize_schema_name on each name,
+            // and the same validator gives the Sanitized name here.
+            add_name(entry.hash, sanitize_schema_name(
+                                     entry.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view()))
+                                     .expect("the check of the image ran the same validator on each name"));
         }
-    }
-    return trace;
+    };
+    const SchemaRegistration registration = schema_table_view.match(
+        [&io, &walk_names](SchemaTable::MutableView const& view) {
+            return global_schema_table().register_names(io, io.cap().alloc, view, walk_names);
+        },
+        [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
+    if (registration.is_ok()) return trace;
+    const TraceLoadError error = detail::trace_refusal_error_(registration);
+    detail::report_name_refusal_(error, checked);
+    return ::fixy::err(error);
 }
 
 // Loads the trace at path.  The open and the reads can wait on the file
