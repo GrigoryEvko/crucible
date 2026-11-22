@@ -241,6 +241,48 @@ void test_frame_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
     static_cast<void>(target_back);
 }
 
+// The read frame of a Box lends the object as a const reference in place and
+// gives the result of the body.  The Box stays with the caller, so a named
+// Box, a const Box and a temporary Box each give a read, and the read frame
+// builds and ends no object.  A body that gives void runs for its effect on a
+// local of the caller.
+void test_read_frame() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    {
+        Box<CountedObject> const held = mint_box<CountedObject>(alloc, 8);
+        int const label =
+            ::foundation::core::with_view(held, [](CountedObject const& object) noexcept { return object.label(); });
+        CRUCIBLE_FATAL_INVARIANT(label == 8 && live_objects == 1);
+        int seen = 0;
+        ::foundation::core::with_view(held, [&seen](CountedObject const& object) noexcept { seen = object.label(); });
+        CRUCIBLE_FATAL_INVARIANT(seen == 8 && live_objects == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+    Box<Pair> pair = mint_box<Pair>(alloc, 3, 4);
+    int const sum =
+        ::foundation::core::with_view(pair, [](Pair const& object) noexcept { return object.first + object.second; });
+    int const temporary_first = ::foundation::core::with_view(mint_box<Pair>(alloc, 9, 1),
+                                                              [](Pair const& object) noexcept { return object.first; });
+    CRUCIBLE_FATAL_INVARIANT(sum == 7 && temporary_first == 9 && pair->second == 4);
+    static_assert(sizeof(Box<Pair>) == sizeof(void*));
+}
+
+// The read frame of a moved-from Box ends the process before the body runs,
+// as operator* does.  The door runs in a child through expect_dies.
+void test_read_frame_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
+    Box<int> source = mint_box<int>(::foundation::effects::testing::test().alloc, 4);
+    Box<int> target{std::move(source)};
+    ::fixy::check::expect_dies(
+        test,
+        [&source] noexcept {
+            static_cast<void>(::foundation::core::with_view(source, [](int const& object) noexcept { return object; }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
+    int const value = ::foundation::core::with_view(target, [](int const& object) noexcept { return object; });
+    CRUCIBLE_FATAL_INVARIANT(value == 4);
+}
+
 // The allocation door gives malloc storage up to an alignment of 16 and
 // aligned_alloc storage above it.  Each alignment from 8 to 4096 gives a
 // Box at that alignment, and its object holds its value.
@@ -466,6 +508,8 @@ int main() {
     test_borrow_of_moved_from_aborts(test);
     test_frame_door();
     test_frame_of_moved_from_aborts(test);
+    test_read_frame();
+    test_read_frame_of_moved_from_aborts(test);
     test_each_alignment();
     test_agrees_with_plain_model();
     test_box_of_a_declared_type();

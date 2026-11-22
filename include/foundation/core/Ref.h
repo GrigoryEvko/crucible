@@ -58,7 +58,9 @@
 // the caller gives up, and frees the storage.  The frame door
 // with_mut(std::move(box), body) lends the object to a body while the Box is
 // in the frame of the door, so no move or end of the Box can come while the
-// body holds the reference (THE FRAME OF A BOX below).
+// body holds the reference (THE FRAME OF A BOX below).  The read door
+// with_view(box, body) lends the object as a const reference in place, and
+// the result of the body holds no borrow (THE READ FRAME OF A BOX below).
 //
 // C++ keeps a moved-from object alive, and no type can refuse its use.  So
 // each access tests for the object in each build, and a Box with no object
@@ -1090,6 +1092,45 @@ template <class Owner, class Body>
 void with_mut(Owner&& box, Body&& body) = delete(
     "with_mut takes the Box into its frame and gives it back: pass std::move(box), and keep the Box that the call "
     "returns");
+
+// THE READ FRAME OF A BOX
+//   with_view(box, body) lends the object of a Box to body as T const& in
+//   place, for the time of the call, and gives the result of body.  The Box
+//   stays with the caller, and the door writes no byte of it and adds none to
+//   it.  The door carries the annotation borrow_match, so the rule
+//   borrow-match refuses a body that assigns, moves or consumes the name of
+//   the Box, such as a consume or a mint_hole of it.  The result of the body
+//   holds no borrow, so no reference to the object outlives the call, and a
+//   later move or end of the Box ends no object that a borrow names.  A Box
+//   with no object ends the process at the door, as operator* does.  A
+//   function that the body calls can still reach the Box, as it can reach an
+//   inline owner in the frame of its door (THE TWO FORMS OF AN OWNER of
+//   foundation/core/Frame.h).  A body cannot move a linear payload out of a
+//   const reference, so the door takes a Box of each payload.
+
+// The body of the read frame of a Box of T: it takes the object as T const&
+// with no throw, and it gives void or a value that holds no borrow.
+template <class Body, class T>
+concept BoxReadBody = std::is_nothrow_invocable_v<Body&&, T const&>
+                   && (std::is_void_v<detail::body_result_t<Body&&, T const&>>
+                       || HoldsNoBorrow<detail::body_result_t<Body&&, T const&>>);
+
+// The read frame of a Box (THE READ FRAME OF A BOX).  The result holds no
+// borrow, so the deduced type of a value is the result of the body.
+// Complexity: O(1), and the cost of the body.
+template <BoxPayload T, class Body>
+    requires CompleteBoxPayload<T> && BoxReadBody<Body, T>
+[[= ::foundation::linear::borrow_match{}]] auto with_view(Box<T> const& box, Body&& body) noexcept {
+    return static_cast<Body&&>(body)(*box);
+}
+
+// A body whose result holds a borrow binds to this overload, so the refusal
+// gives its reason.
+template <BoxPayload T, class Body>
+    requires CompleteBoxPayload<T> && std::is_nothrow_invocable_v<Body&&, T const&> && (!BoxReadBody<Body, T>)
+void with_view(Box<T> const& box, Body&& body) =
+    delete("the result of the read frame of a Box holds no reference and no address, because a later move or end of "
+           "the Box ends the object: give a plain value");
 
 // Size bytes of heap storage at the alignment Align, with no object in it.
 // The annotation no_start_over_bytes refuses a Hole to the checked lifetime

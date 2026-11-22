@@ -3383,6 +3383,18 @@ foundation_neg_compile_test(neg_core_box_frame_borrow_result
 foundation_neg_compile_test(neg_core_box_frame_hole_of_lent
   "neg_core_box_frame_hole_of_lent\\.cpp:18:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(move box\\)"
   "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
+# The read frame of a Box lends a const reference in place: its result holds
+# no borrow, and the rule borrow-match refuses a body that consumes the Box or
+# gives its storage to a Hole while the reference lives.
+foundation_neg_compile_test(neg_core_box_read_borrow_result
+  "neg_core_box_read_borrow_result\\.cpp:13:[0-9]+: error: use of deleted function .void foundation::core::with_view\\(const Box<T>&, Body&&\\)"
+  "the result of the read frame of a Box holds no reference and no address")
+foundation_neg_compile_test(neg_core_box_read_consume_in_body
+  "neg_core_box_read_consume_in_body\\.cpp:17:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(move box\\)"
+  "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_box_read_hole_of_lent
+  "neg_core_box_read_hole_of_lent\\.cpp:19:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(move box\\)"
+  "the payload that the arm borrows can end while the arm holds its reference")
 # A Box of a linear payload has no frame door, as an Option of a linear
 # payload has none: the body could move the object out and leave the Box full.
 foundation_neg_compile_test(neg_core_box_frame_linear_payload
