@@ -1122,6 +1122,9 @@ inline constexpr StatedZero kZeros[] = {
      "signature"},
     {^^::foundation::core::IndexRange,
      "the loop over the indexes of a count: it holds nothing, and it is never a value in a signature"},
+    {^^::foundation::core::CyclicIndex,
+     "the position of a turn over the first live positions of a count, such as the turn of a ring of lanes: a "
+     "member of its holder, and it makes no claim about an element"},
     {^^::foundation::core::FixedArray,
      "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::HeapArray,

@@ -91,6 +91,52 @@ static_assert(ReadsInside<0> && ReadsInside<1>);
 static_assert(!ReadsInside<2>);
 static_assert(!ReadsInside<3>);
 
+// A cyclic index holds two words of its count, and no number makes one.  The
+// seal refuses std::bit_cast, so no state past the bounds is made.
+static_assert(sizeof(CyclicIndex<4>) == 2 * sizeof(std::uint32_t));
+static_assert(!std::is_trivially_copyable_v<CyclicIndex<4>>);
+static_assert(!std::is_constructible_v<CyclicIndex<4>, std::uint32_t>);
+static_assert(!std::is_constructible_v<CyclicIndex<4>, std::uint32_t, std::uint32_t>);
+static_assert(std::is_same_v<decltype(CyclicIndex<4>{}.at()), Index<4>>);
+
+// The position and ten times the live count after StepsBefore steps, Drops
+// drops and StepsAfter steps, in that order.
+template <int StepsBefore, int Drops, int StepsAfter>
+[[nodiscard]] consteval std::size_t position_after() noexcept {
+    CyclicIndex<4> turn{};
+    for (int step = 0; step < StepsBefore; ++step) {
+        turn.step();
+    }
+    for (int drop = 0; drop < Drops; ++drop) {
+        turn.drop();
+    }
+    for (int step = 0; step < StepsAfter; ++step) {
+        turn.step();
+    }
+    return turn.at().raw() + 10 * turn.live();
+}
+
+// Each position of a full turn lives, and a step from the last position goes
+// back to the first.
+static_assert(position_after<0, 0, 0>() == 0 + 40);
+static_assert(position_after<0, 0, 3>() == 3 + 40);
+static_assert(position_after<0, 0, 4>() == 0 + 40);
+// A drop keeps the cursor on the position after it, which moves down by one,
+// and a drop of the last position goes back to the first.
+static_assert(position_after<1, 1, 0>() == 1 + 30);
+static_assert(position_after<3, 1, 0>() == 0 + 30);
+static_assert(position_after<1, 1, 2>() == 0 + 30);
+// With no live position, the cursor stays at the first position.
+static_assert(position_after<0, 4, 0>() == 0);
+static_assert(position_after<0, 4, 3>() == 0);
+
+// A drop with no live position calls the fatal exit, which is not a constant
+// expression.
+template <int Drops>
+concept DropsInside = requires { typename std::integral_constant<std::size_t, position_after<0, Drops, 0>()>; };
+static_assert(DropsInside<4>);
+static_assert(!DropsInside<5>);
+
 }  // namespace detail::index_checks
 
 }  // namespace foundation::core

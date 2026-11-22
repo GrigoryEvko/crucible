@@ -184,7 +184,7 @@ public:
     // lane of the turn is empty and open, or NoItem::Closed after the last
     // item of the last lane.  Only the one consumer calls it.
     [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive() noexcept {
-        if (live_count_.raw() != 0) [[likely]] {
+        if (!turn_.is_empty()) [[likely]] {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_some()) [[likely]] {
                 step_turn_();
@@ -209,7 +209,7 @@ public:
     template <typename Drop>
         requires std::is_nothrow_invocable_v<Drop&, T>
     void drain(Drop&& drop) noexcept {
-        while (live_count_.raw() != 0) {
+        while (!turn_.is_empty()) {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_some()) {
                 step_turn_();
@@ -262,7 +262,7 @@ private:
     // The lane of the turn.  The type of the turn and the type of each lane of
     // the turn prove them below lane_count, so the reads have no check.
     [[nodiscard, gnu::always_inline]] detail::LaneOf<T, LaneCapacity>& lane_of_turn_() noexcept {
-        return lane_at_(turn_);
+        return lane_at_(turn_.at());
     }
 
     // The lane at a position of the turn.  Only the one consumer calls it, and
@@ -275,8 +275,8 @@ private:
     }
 
     // The Index of a position of the turn.  Each caller compares the position
-    // with live_count_ first, which is at most lane_count, so the optimizer
-    // removes the check.
+    // with the live count of the turn first, which is at most lane_count, so
+    // the optimizer removes the check.
     [[nodiscard, gnu::always_inline]] static lane_index position_(std::size_t position) noexcept {
         return lane_index::check(position).expect("a position of the turn of a lane ring lies below its lanes");
     }
@@ -287,15 +287,12 @@ private:
     }
 
     // The turn moves to the next lane of the turn, and from the last lane to
-    // the first.  A pop of an item comes before each step, so the step also
-    // records that a lane can hold deferred pops (THE ROOM).
+    // the first.  The type of the turn keeps its position below the count of
+    // the turn, so the step has no check.  A pop of an item comes before each
+    // step, so the step also records that a lane can hold deferred pops (THE
+    // ROOM).
     [[gnu::always_inline]] void step_turn_() noexcept {
-        // The position after the last lane of the turn goes back to the first.
-        // Each other position is below the count of the turn, and so below
-        // lane_count: the fallback of its check is never taken.
-        std::size_t const next = turn_.raw() + 1;
-        lane_index const first{::foundation::core::index<0>()};
-        turn_ = lane_index::check(next < live_count_.raw() ? next : 0).value_or(first);
+        turn_.step();
         tails_ = LaneTails::deferred;
     }
 
@@ -303,7 +300,7 @@ private:
     // (THE ROOM).  A lane out of the turn published its tail when it left.
     // Complexity: linear in the lanes of the turn.
     CRUCIBLE_COLD void publish_each_tail_() noexcept {
-        for (std::size_t position = 0; position < live_count_.raw(); ++position) {
+        for (std::size_t position = 0; position < turn_.live(); ++position) {
             lane_at_(position_(position)).ring.publish_tail();
         }
         tails_ = LaneTails::published;
@@ -314,12 +311,11 @@ private:
     // names the next lane.  Complexity: linear in the lanes.
     CRUCIBLE_COLD void leave_turn_() noexcept {
         lane_of_turn_().ring.publish_tail();
-        for (std::size_t position = turn_.raw() + 1; position < live_count_.raw(); ++position) {
+        for (std::size_t position = turn_.at().raw() + 1; position < turn_.live(); ++position) {
             TurnLane const next = live_.at(position_(position));
             live_.with_element(position_(position - 1), [next](TurnLane& lane) noexcept { lane = next; });
         }
-        live_count_ = live_count_type::check(live_count_.raw() - 1).expect("a lane leaves a turn that holds it");
-        if (turn_.raw() == live_count_.raw()) turn_ = lane_index{::foundation::core::index<0>()};
+        turn_.drop();
     }
 
     // The receive after a pop that found the lane of the turn empty (THE END
@@ -328,7 +324,7 @@ private:
     // acquire read of its end, and an empty ended lane leaves the turn.  Then
     // the next lane of the turn gets its pop.
     [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {
-        while (live_count_.raw() != 0) {
+        while (!turn_.is_empty()) {
             detail::LaneOf<T, LaneCapacity>& lane = lane_of_turn_();
             if (lane.end->load_acquire() == LaneEnd::open) {
                 if (tails_ == LaneTails::deferred) publish_each_tail_();
@@ -337,7 +333,7 @@ private:
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_none()) {
                 leave_turn_();
-                if (live_count_.raw() == 0) break;
+                if (turn_.is_empty()) break;
                 item = pop_lane_of_turn_();
             }
             if (item.is_some()) {
@@ -356,13 +352,9 @@ private:
                 lane, [](detail::LaneOf<T, LaneCapacity>& held) noexcept { held.end->store_release(LaneEnd::open); });
             live_.with_element(lane, [lane](TurnLane& slot) noexcept { slot.lane = lane; });
         }
-        live_count_ = live_count_type{::foundation::core::index<lane_count>()};
-        turn_ = lane_index{::foundation::core::index<0>()};
+        turn_ = ::foundation::core::CyclicIndex<lane_count>{};
         tails_ = LaneTails::published;
     }
-
-    // The count of the lanes of the turn, from 0 to lane_count.
-    using live_count_type = ::foundation::core::Index<lane_count + 1>;
 
     // A lane of the turn.  The type of its index proves it a lane of the ring.
     struct TurnLane final {
@@ -374,11 +366,10 @@ private:
     ::foundation::core::FixedArray<detail::LaneOf<T, LaneCapacity>, lane_count> lanes_{};
 
     // The consumer is the one reader and the one writer of the turn: the lanes
-    // of the turn in the order of their index, their count, the position of
-    // the next pop, and whether a lane can hold deferred pops (THE ROOM).
+    // of the turn in the order of their index, their count with the position
+    // of the next pop, and whether a lane can hold deferred pops (THE ROOM).
     // They start on a line of their own, so a push never reads them.
-    alignas(64) lane_index turn_{::foundation::core::index<0>()};
-    live_count_type live_count_{::foundation::core::index<0>()};
+    alignas(64)::foundation::core::CyclicIndex<lane_count> turn_{};
     LaneTails tails_ = LaneTails::published;
     ::foundation::core::FixedArray<TurnLane, lane_count> live_{};
 };

@@ -9,12 +9,16 @@
 //   IndexRange<N>     each Index<N> from 0 to N - 1, for the loop
 //                     `for (Index<N> index : IndexRange<N>{})`.  The owners
 //                     and the Views of a fixed extent give it as indices().
+//   CyclicIndex<N>    a position that goes around the first live positions
+//                     of N, where the live count only decreases, such as the
+//                     turn of a ring of lanes.  at() gives an Index<N>.
 //
 // An operation that takes an Index<N>, such as at() of a FixedArray<T, N>,
 // does no check: the type proves the bound, and the check ran one time,
 // where the index was made.  The only roads to an Index are check(), mask()
 // for a count that is a power of two, the conversion from a StaticIndex, the
-// conversion from an Index of a smaller N, and the loop of an IndexRange.
+// conversion from an Index of a smaller N, the loop of an IndexRange, and the
+// position of a CyclicIndex.
 // The constructor from a number is private, and the seal refuses
 // std::bit_cast and a lifetime start over bytes, so no number becomes an
 // Index without its check.  This header names no friend that a different
@@ -74,6 +78,10 @@ template <std::size_t Count>
     requires IndexCount<Count>
 class IndexRange;
 
+template <std::size_t Count>
+    requires IndexCount<Count>
+class CyclicIndex;
+
 namespace detail {
 
 // The word of an Index<Count>: the narrowest word that holds Count, because
@@ -95,6 +103,7 @@ class Index final {
         requires IndexCount<OtherCount>
     friend class Index;
     friend class IndexCursor<Count>;
+    friend class CyclicIndex<Count>;
     friend struct niche<Index>;
 
     constexpr explicit Index(Word value) noexcept : value_{value} {}
@@ -203,6 +212,59 @@ public:
     [[nodiscard]] static constexpr IndexCursor<Count> begin() noexcept { return IndexCursor<Count>{0}; }
     [[nodiscard]] static constexpr IndexCursor<Count> end() noexcept {
         return IndexCursor<Count>{static_cast<detail::IndexWord<Count>>(Count)};
+    }
+};
+
+// A position that goes around the first live positions of Count, such as the
+// turn of a ring of lanes.  The live count starts at Count and only
+// decreases: drop() removes the position of the cursor, and the caller moves
+// the elements after it down by one.  The position stays below the live count
+// while a position lives, and it is zero when no position lives.  So at() is
+// an Index<Count> with no check, and step() is one compare and one select.
+// The seal refuses std::bit_cast and a lifetime start over bytes, so no state
+// past these bounds is made.
+template <std::size_t Count>
+    requires IndexCount<Count>
+class CyclicIndex final {
+    using Word = detail::IndexWord<Count>;
+
+    Word at_ = 0;
+    Word live_ = static_cast<Word>(Count);
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+public:
+    // Each of the Count positions lives, and the cursor is at position 0.
+    constexpr CyclicIndex() noexcept = default;
+
+    // The position of the cursor, which is below Count in each state.
+    [[nodiscard]] constexpr Index<Count> at() const noexcept { return Index<Count>{at_}; }
+
+    // The count of the live positions, from 0 to Count.
+    [[nodiscard]] constexpr std::size_t live() const noexcept {
+        std::size_t const live = live_;
+        [[assume(live <= Count)]];
+        return live;
+    }
+
+    [[nodiscard]] constexpr bool is_empty() const noexcept { return live_ == 0; }
+
+    // A step to the next live position, and from the last live position back
+    // to position 0.  With no live position, the cursor stays at position 0.
+    constexpr void step() noexcept {
+        Word const next = static_cast<Word>(at_ + 1);
+        at_ = next < live_ ? next : Word{0};
+    }
+
+    // Removes the position of the cursor from the live positions.  The cursor
+    // then names the position after it, which moves down by one, or position
+    // 0 after the last.  A drop with no live position ends the process in each
+    // build.
+    constexpr void drop() noexcept {
+        if (live_ == 0) [[unlikely]] {
+            fatal("a drop of a position of a cyclic index with no live position");
+        }
+        --live_;
+        if (at_ == live_) at_ = 0;
     }
 };
 
