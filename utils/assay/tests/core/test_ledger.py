@@ -368,6 +368,36 @@ def reason_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
             lambda: rule_ledger.reasoned(ledger, rule_ledger.RowReason(("b.py",), "", "")), rule_ledger.LedgerError
         ),
     )
+    shared_text = (
+        "format 1\nrule count-rule\n"
+        "a.py | kind | 2 | namespace-scope: n::detail | the reason of a\n"
+        "a.py | kind | 1 | namespace-scope: m::detail | the second reason of a\n"
+        "b.py | kind | 3 | namespace-scope: n::detail | the reason of b\n"
+    )
+    shared = rule_ledger.parse(shared_text, "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    expect(
+        "an entity that names rows of two files and a path that names two rows are refused, so no reason of a "
+        "different row changes",
+        refuses(
+            lambda: rule_ledger.reasoned(shared, rule_ledger.RowReason(("namespace-scope: n::detail",), "", "x")),
+            rule_ledger.LedgerError,
+        )
+        and refuses(
+            lambda: rule_ledger.reasoned(shared, rule_ledger.RowReason(("a.py",), "kind", "x")),
+            rule_ledger.LedgerError,
+        ),
+    )
+    one_key = rule_ledger.Key("a.py", "kind", "namespace-scope: n::detail")
+    named = rule_ledger.reasoned(
+        shared, rule_ledger.RowReason(("a.py | namespace-scope: n::detail",), "", "a corrected reason")
+    )
+    expect(
+        "an item 'PATH | ENTITY' changes the reason of that one row, and the row of the same entity in a different "
+        "file and the row of the same file with a different entity keep their reasons",
+        named.base[one_key].reason == "a corrected reason"
+        and {key: entry for key, entry in named.base.items() if key != one_key}
+        == {key: entry for key, entry in shared.base.items() if key != one_key},
+    )
     maximum = table["max-rule"]
     test_key = rule_ledger.Key("", "test", "slow_test")
     output_key = rule_ledger.Key("@build/test/slow_test", "test", "")

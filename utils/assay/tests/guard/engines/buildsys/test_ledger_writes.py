@@ -4,13 +4,15 @@
 test.  Each case makes a planted build with assay.guard.engines.buildsys.planted
 and writes a ledger or a list of it with `guard write`, or with the function of
 the rule.  The cases of the list compile planted headers with the patched
-compiler (assay.core.testing, THE COMPILER).  Exit 0 when each case holds,
-else 1.
+compiler (assay.core.testing, THE COMPILER).  The cases of the reason of a
+row write the reason of one row of a planted ledger of a count rule, of each
+rule of the policy max and of the rule of the policy baseline.  Exit 0 when
+each case holds, else 1.
 """
 
 import tempfile
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest import mock
 
@@ -107,6 +109,100 @@ compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Mint.cpp.o tes
 deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Mint.cpp.o | test/layer/checks/fixy/Mint.cpp system.h \
 include/fixy/Mint.h
 """
+
+
+@dataclass(frozen=True, slots=True)
+class RowShape:
+    """Two rows of one ledger with distinct reasons, for row_reason_cases().
+
+    `shared` is an item that names the two rows together, or "" when no item of the shape does.  `shared_kind` narrows
+    it.  `item` and `kind` name only the first row.
+    """
+
+    rule: str
+    rows: tuple[str, str]
+    shared: str
+    shared_kind: str
+    item: str
+    kind: str
+
+
+# A count rule of the engine plugin, each rule of the policy max, and the rule of the policy baseline.  The rows of
+# owners have the form of the roster row and of a test row of one entity, which a write of the reason of the roster row
+# by its entity changed together.
+ROW_SHAPES = (
+    RowShape(
+        "owners",
+        (
+            "@build/test/roster.h | detail-use | 36 | namespace-scope: foundation::core::detail | the roster reason",
+            "test/fixy/test_float.cpp | detail-use | 3 | namespace-scope: foundation::core::detail | the test reason",
+        ),
+        "namespace-scope: foundation::core::detail",
+        "",
+        "@build/test/roster.h | namespace-scope: foundation::core::detail",
+        "",
+    ),
+    RowShape(
+        "header-alone",
+        ("include/fixy/A.h | fixy | 6.6 | - | the reason of A", "include/fixy/B.h | fixy | 6.7 | - | the reason of B"),
+        "",
+        "",
+        "include/fixy/A.h",
+        "",
+    ),
+    RowShape(
+        "object-size",
+        (
+            "@build/CMakeFiles/a.dir/a.cpp.o | function | 300 | - | the reason of the function",
+            "@build/CMakeFiles/a.dir/a.cpp.o | object | 900 | - | the reason of the object",
+        ),
+        "@build/CMakeFiles/a.dir/a.cpp.o",
+        "",
+        "@build/CMakeFiles/a.dir/a.cpp.o",
+        "function",
+    ),
+    RowShape(
+        "step-cost",
+        (
+            "- | fixture | 50 | shared_step | the reason of the fixture",
+            "- | test | 700 | shared_step | the test reason",
+        ),
+        "shared_step",
+        "",
+        "- | shared_step",
+        "fixture",
+    ),
+    RowShape(
+        "step-memory",
+        (
+            "- | test | 2 | big_test | the reason of the test",
+            "@build/lib/libx.so | link | 2 | - | the reason of the link",
+        ),
+        "",
+        "",
+        "big_test",
+        "",
+    ),
+    RowShape(
+        "static-tls",
+        ("@build/lib/liba.so | - | 300 | - | the reason of a", "@build/lib/libb.so | - | 400 | - | the reason of b"),
+        "",
+        "",
+        "@build/lib/liba.so",
+        "",
+    ),
+    RowShape(
+        "instruction-total",
+        (
+            "- | x86_64-debug-asan-v3 | 100 | objects | the reason of the debug build",
+            "- | x86_64-release | 200 | objects | the reason of the release build",
+        ),
+        "objects",
+        "",
+        "objects",
+        "x86_64-debug-asan-v3",
+    ),
+)
 
 
 def run_write(context: BuildContext, rule_id: str, reason: str) -> tuple[int, str]:
@@ -473,6 +569,55 @@ def list_text(context: BuildContext) -> str:
     return (context.root / header_constexpr.LIST).read_text(encoding="utf-8")
 
 
+def kind_option(kind: str) -> list[str]:
+    """Return the words of the option --kind of a kind, or no word for the kind ""."""
+    return ["--kind", kind] if kind else []
+
+
+def run_row_write(words: list[str]) -> tuple[int, str]:
+    """Run `guard write` with the words of a write of the reason of a row, and give its status and its output."""
+    return testing.captured(lambda: guard_write.main(words))
+
+
+def row_reason_cases(expect: testing.Expect) -> None:
+    """Write the reason of one row with `guard write --row` in a ledger of each shape of ROW_SHAPES.
+
+    The write of the item and the kind of the first row changes only the reason of that row.  The write of an item that
+    names the two rows is refused with the status 1, and the ledger keeps its bytes.
+    """
+    registry = rule_registry.load()
+    with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
+        root = Path(scratch)
+        (root / rule_ledger.LEDGER_DIRECTORY).mkdir(parents=True)
+        for shape in ROW_SHAPES:
+            rule = registry.rules[shape.rule]
+            head = f"format 1\nrule {shape.rule}\n"
+            path = rule_ledger.ledger_path(shape.rule, root)
+            path.write_text(head + "".join(f"{row}\n" for row in shape.rows), encoding="utf-8")
+            planted = rule_ledger.read(rule, root)
+            (first_key,) = rule_ledger.parse(head + shape.rows[0] + "\n", "row", shape.rule, rule.policy).base
+            words = ["--rule", shape.rule, "--root", str(root), "--reason", "a corrected reason"]
+            if shape.shared:
+                before = path.read_bytes()
+                status, said = run_row_write([*words, "--row", shape.shared, *kind_option(shape.shared_kind)])
+                expect(
+                    f"guard write --row of {shape.rule} refuses '{shape.shared}', which names the two rows, with "
+                    f"status 1, and the ledger keeps its bytes: status {status}, {said.strip()[:160]!r}",
+                    status == 1 and path.read_bytes() == before and "names 2 rows" in said,
+                )
+            status, said = run_row_write([*words, "--row", shape.item, *kind_option(shape.kind)])
+            reasons = {key: entry.reason for key, entry in rule_ledger.read(rule, root).base.items()}
+            values = {key: entry.value for key, entry in rule_ledger.read(rule, root).base.items()}
+            expected = {key: entry.reason for key, entry in planted.base.items()} | {first_key: "a corrected reason"}
+            expect(
+                f"guard write --row of {shape.rule} with '{shape.item}' and the kind '{shape.kind}' changes the reason "
+                f"of that one row, and the other row keeps its reason and each value: status {status}, {reasons}",
+                status == 0
+                and reasons == expected
+                and values == {key: entry.value for key, entry in planted.base.items()},
+            )
+
+
 def list_cases(expect: testing.Expect) -> None:
     """Remove the rows that no header makes necessary from a list with no compile, through `guard write` (THE WRITE)."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
@@ -544,5 +689,14 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (record_cases, fixture_cases, object_prune_cases, header_prune_cases, lower_cases, list_cases, compile_cases),
+        (
+            record_cases,
+            fixture_cases,
+            object_prune_cases,
+            header_prune_cases,
+            lower_cases,
+            row_reason_cases,
+            list_cases,
+            compile_cases,
+        ),
     )

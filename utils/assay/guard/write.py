@@ -36,14 +36,15 @@ ledger itself refuses it.  With --reason and no mode, each row of those paths
 that the write keeps gets the reason, and its count does not change.  A row
 that must stay then tells why, and a stale reason gets a correct one.
 
---row names rows of the ledger by their path or their entity, and --kind
-narrows them to one kind.  The command then writes the reason of --reason
-into each named row, and it changes no value and no other row (THE REASON
-OF A ROW of assay.core.ledger).  It reads no build, so it takes no
---build-dir, no mode and no --path, and it applies to each rule with a
-ledger, also of the policy max.  An item that names no row is refused.  This
-write corrects the reason of a row whose value holds, so no change of a
-ledger needs a hand edit.
+--row names one row of the ledger for each item: by its path, by its
+entity, or by both as "PATH | ENTITY".  --kind narrows the rows to one
+kind.  The command then writes the reason of --reason into each named row,
+and it changes no value and no other row (THE REASON OF A ROW of
+assay.core.ledger).  It reads no build, so it takes no --build-dir, no mode
+and no --path, and it applies to each rule with a ledger, also of the
+policy max.  An item that names no row, and an item that names more than
+one row, are refused, and the ledger stays.  This write corrects the reason
+of a row whose value holds, so no change of a ledger needs a hand edit.
 
 --lower with --row lowers each named row of a rule of the module
 assay.guard.engines.buildsys.cost_budgets to the largest measure of its

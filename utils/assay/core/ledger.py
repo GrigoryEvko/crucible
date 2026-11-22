@@ -115,13 +115,23 @@ THE PATHS
 
 THE REASON OF A ROW
     reasoned() gives the named rows of a ledger a new reason, and it changes
-    no value and no other row (`guard write --row ITEM --reason TEXT`).  An
-    item names each row whose path or entity is the item, and a kind narrows
-    the rows to that kind.  A row of a max ledger of a test has no path, so
-    its item is its entity.  The write reads no build and no finding, so it
-    applies to each policy with a ledger, also to a row whose value holds.
-    An item that names no row is an error, so a typing error changes nothing
-    and does not pass in silence.
+    no value and no other row (`guard write --row ITEM --reason TEXT`).
+    Each item names exactly one row (named_keys()):
+      * An item "PATH | ENTITY" names the row with that path and that
+        entity, as the first and the fourth cell of the row give them.  "-"
+        is an empty path or entity.  A path has no space, so the first " | "
+        of an item ends its path.
+      * Each other item names the row whose path or entity is the item.
+      * A kind narrows the rows to that kind.
+    An item that names no row is an error, so a typing error changes
+    nothing and does not pass in silence.  An item that names more than one
+    row is an error too: rows of different files can have one entity, and
+    a file can have many rows, each with its own reason.  The error gives
+    each row that the item names, so the caller can name one row.  A row of
+    a max ledger names one item of one kind, so its path or its entity and
+    its kind name it.  A row of a test has no path, so its item is its
+    entity.  The write reads no build and no finding, so it applies to each
+    policy with a ledger, also to a row whose value holds.
 
 THE REDUCE
     The count of a key of a ledger that a build gives is the largest count of
@@ -747,32 +757,55 @@ def merged_paths(
     return replace(written, base={**kept, **own})
 
 
+def key_text(key: Key) -> str:
+    """Return the path, the kind and the entity of a key as the cells of its row give them: "PATH | KIND | ENTITY"."""
+    cells = (head_of_path(key.path), key.kind or rows_grammar.EMPTY_CELL, key.entity or rows_grammar.EMPTY_CELL)
+    return rows_grammar.SEPARATOR.join(cells)
+
+
+def named_keys(ledger: Ledger, item: str, kind: str) -> list[Key]:
+    """Return the sorted keys of the rows that an item names, of the kind `kind`, or of each kind for "".
+
+    THE REASON OF A ROW gives the forms of an item.  An empty item names no row.  Complexity: linear in the rows.
+    """
+    path, separator, entity = item.partition(rows_grammar.SEPARATOR)
+    if separator:
+        wanted = (path_of_head(path), "" if entity == rows_grammar.EMPTY_CELL else entity)
+        found = [key for key in ledger.base if (key.path, key.entity) == wanted]
+    else:
+        found = [key for key in ledger.base if item and item in (key.path, key.entity)]
+    return sorted(key for key in found if not kind or key.kind == kind)
+
+
 def reasoned(ledger: Ledger, request: RowReason) -> Ledger:
-    """Return the ledger with the reason of the request in each row that it names (THE REASON OF A ROW).
+    """Return the ledger with the reason of the request in the one row that each item names (THE REASON OF A ROW).
 
     Raises:
-        LedgerError: If the request gives no reason, or an item names no row of the kind of the request
+        LedgerError: If the request gives no reason, or an item names no row or more than one row of the kind of the
+            request
 
     Complexity: linear in the rows times the items.
     """
     if not request.reason:
         raise LedgerError("a write of the reason of a row gives the reason with --reason TEXT")
-
-    def is_named(key: Key, item: str) -> bool:
-        """Tell if an item names the row of a key: its path or its entity, of the kind of the request."""
-        return item in (key.path, key.entity) and (not request.kind or key.kind == request.kind)
-
-    unnamed = [item for item in request.items if not item or not any(is_named(key, item) for key in ledger.base)]
-    if unnamed:
-        of_kind = f" of the kind {request.kind}" if request.kind else ""
-        raise LedgerError(
-            f"the ledger of {ledger.rule} has no row{of_kind} whose path or entity is '{unnamed[0]}'.  Give the path "
-            f"or the entity of the row as the ledger holds it"
-        )
-    base = {
-        key: replace(entry, reason=request.reason) if any(is_named(key, item) for item in request.items) else entry
-        for key, entry in ledger.base.items()
-    }
+    of_kind = f" of the kind {request.kind}" if request.kind else ""
+    named: set[Key] = set()
+    for item in request.items:
+        keys = named_keys(ledger, item, request.kind)
+        if not keys:
+            raise LedgerError(
+                f"the ledger of {ledger.rule} has no row{of_kind} that '{item}' names.  Give the path, the entity, or "
+                f"'PATH | ENTITY' of the row as the ledger holds them"
+            )
+        if len(keys) > 1:
+            shown = "; ".join(key_text(key) for key in keys)
+            raise LedgerError(
+                f"'{item}' names {len(keys)} rows{of_kind} of the ledger of {ledger.rule}, and a write of a reason "
+                f"changes one row for each item: {shown}.  Give 'PATH | ENTITY' of one row, and --kind KIND when two "
+                f"rows of different kinds have that path and that entity"
+            )
+        named.add(keys[0])
+    base = {key: replace(entry, reason=request.reason) if key in named else entry for key, entry in ledger.base.items()}
     return replace(ledger, base=base)
 
 
