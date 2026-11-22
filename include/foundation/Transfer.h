@@ -738,8 +738,8 @@ inline constexpr int closed_walk_depth = 4;
 // than a copy or a move constructor, is not deleted.  A class with no such
 // constructor is a key: only its friends and its own members build it.
 [[nodiscard]] consteval bool has_public_maker(std::meta::info bare) {
-    const std::meta::info maker = ::foundation::reflect::find_member(
-        bare, std::meta::access_context::unprivileged(), [](std::meta::info member) {
+    const std::meta::info maker =
+        ::foundation::reflect::find_member(bare, std::meta::access_context::unprivileged(), [](std::meta::info member) {
             if (std::meta::is_constructor_template(member)) return true;
             if (!std::meta::is_constructor(member) || std::meta::is_deleted(member)) return false;
             return !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
