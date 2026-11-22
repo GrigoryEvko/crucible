@@ -53,6 +53,14 @@ struct[[= linear_when<IsLinear>]] Conditional {
 
 inline constexpr auto captures_token = [token = Token{}] { static_cast<void>(token); };
 
+// A context and a key that a body of the once door takes by reference.
+struct OnceContext {
+    int base = 0;
+};
+struct OnceKey {
+    int uses = 0;
+};
+
 }  // namespace linear_checks
 
 namespace lc = linear_checks;
@@ -120,5 +128,44 @@ inline constexpr auto drop_probe = [](auto&& value) -> decltype(drop(static_cast
 static_assert(std::is_invocable_v<decltype(drop_probe), lc::Token&&>);
 static_assert(!std::is_invocable_v<decltype(drop_probe), lc::Token&>);
 static_assert(!std::is_invocable_v<decltype(drop_probe), int&&>);
+
+// The once door owns the closure and calls it one time, and its result is the
+// result of that call.  A closure that moves its linear capture out goes
+// through it.
+static_assert(call_once([value = 7]() noexcept { return value + 1; }) == 8);
+static_assert([] {
+    lc::Token token;
+    call_once([held = static_cast<lc::Token&&>(token)]() mutable noexcept { drop(static_cast<lc::Token&&>(held)); });
+    return true;
+}());
+// The door forwards its arguments to the one call: a context by a reference
+// to const and a key by a reference that the body writes.
+static_assert([] {
+    lc::OnceContext const context{40};
+    lc::OnceKey key{};
+    int const result = call_once(
+        [extra = 2](lc::OnceContext const& held_context, lc::OnceKey& held_key) noexcept {
+            ++held_key.uses;
+            return held_context.base + extra;
+        },
+        context, key);
+    return result == 42 && key.uses == 1;
+}());
+// The probe of one call of the once door.  It takes a closure as an rvalue
+// only, so a named closure stays with no second name that can call it again.
+inline constexpr auto once_probe = [](auto&& closure) -> decltype(call_once(static_cast<decltype(closure)&&>(closure))) {
+};
+using GiveOne = decltype([]() noexcept { return 1; });
+static_assert(std::is_invocable_v<decltype(once_probe), GiveOne&&>);
+static_assert(!std::is_invocable_v<decltype(once_probe), GiveOne&>);
+static_assert(!std::is_invocable_v<decltype(once_probe), GiveOne const&&>);
+static_assert(!std::is_invocable_v<decltype(once_probe), int&&>);
+// The door refuses arguments that the closure does not take.
+inline constexpr auto once_with_probe = [](auto&& closure, auto&& argument)
+    -> decltype(call_once(static_cast<decltype(closure)&&>(closure), static_cast<decltype(argument)&&>(argument))) {};
+using TakesKey = decltype([](lc::OnceKey& key) noexcept { return key.uses; });
+static_assert(std::is_invocable_v<decltype(once_with_probe), TakesKey&&, lc::OnceKey&>);
+static_assert(!std::is_invocable_v<decltype(once_with_probe), TakesKey&&, lc::OnceContext&>);
+static_assert(!std::is_invocable_v<decltype(once_with_probe), TakesKey&, lc::OnceKey&>);
 
 }  // namespace foundation::linear

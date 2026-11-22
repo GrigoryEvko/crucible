@@ -79,8 +79,11 @@
 //
 // THE DOORS
 //     A door ends each linear value of its frame (P10 of the plan).  A
-//     function that carries the annotation drop_door or detach_door is a door,
-//     and so is each function that a linear-door row of the rule table names.
+//     function that carries the annotation drop_door, detach_door or once_door
+//     is a door, and so is each function that a linear-door row of the rule
+//     table names.  The once door call_once of include/foundation/Linear.h
+//     owns a closure and calls it one time, so a call of the door runs the
+//     summary of the call operator of the closure (THE SUMMARIES).
 //     The rule gives no finding unconsumed, unconsumed-on-path or
 //     discarded-temporary in the body of a door.  It still gives
 //     double-consume and assign-over-live there.  It gives the record door for
@@ -242,7 +245,8 @@
 //         only names a reference needs no complete class, so a parameter of
 //         an incomplete class counts as one that can name a sum.
 //     The call of a call operator consumes each sum that its summary leaves
-//     empty.  A call of a closure, and a call that takes a closure, can run
+//     empty, and so does a call of the once door that takes the closure.  A
+//     call of a closure, and a call of each other callee that takes it, can run
 //     its body.  So after such a call, each other sum that the closure
 //     captures by reference and that its summary names holds a payload
 //     again, also after a consume.  A closure with no summary can fill each
@@ -421,6 +425,8 @@ struct LinearNames {
     tree tests_empty = NULL_TREE;
     tree needs_full = NULL_TREE;
     tree needs_empty = NULL_TREE;
+    // The annotation of the once door (THE DOORS).
+    tree once_door = NULL_TREE;
 };
 
 LinearNames linear_names;
@@ -2519,11 +2525,20 @@ private:
         if (callee != NULL_TREE && LAMBDA_FUNCTION_P(callee)) {
             apply_closure_call(callee, location, state);
         }
+        // The once door calls the closure that it takes one time, and each
+        // other callee can call it at each later point (THE DOORS).
+        bool is_once_door = callee != NULL_TREE && carries_linear_annotation(callee, linear_names.once_door);
         for (int index = 0; index < count; ++index) {
             tree argument_type = TREE_TYPE(argument_at(call, index));
             argument_type =
                 argument_type != NULL_TREE && TYPE_REF_P(argument_type) ? TREE_TYPE(argument_type) : argument_type;
-            if (argument_type != NULL_TREE && LAMBDA_TYPE_P(argument_type)) {
+            if (argument_type == NULL_TREE || !LAMBDA_TYPE_P(argument_type)) {
+                continue;
+            }
+            tree call_operator = is_once_door ? lambda_function(argument_type) : NULL_TREE;
+            if (call_operator != NULL_TREE) {
+                apply_closure_call(call_operator, location, state);
+            } else {
                 apply_closure_fills(argument_type, ClosureCall::later_too, nullptr, state);
             }
         }
@@ -4010,11 +4025,13 @@ bool has_linear_parameter(tree function) {
     return false;
 }
 
-// True when FUNCTION carries the annotation drop_door or detach_door.
+// True when FUNCTION carries the annotation drop_door, detach_door or
+// once_door.  The once door ends the closure that it calls (THE DOORS).
 bool carries_door_annotation(tree function) {
     tree attributes = DECL_ATTRIBUTES(function);
     return carries_annotation(attributes, linear_names.drop_door)
-        || carries_annotation(attributes, linear_names.detach_door);
+        || carries_annotation(attributes, linear_names.detach_door)
+        || carries_annotation(attributes, linear_names.once_door);
 }
 
 // The linear-door row that names FUNCTION, or null.
@@ -4641,6 +4658,7 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.tests_empty = get_identifier("tests_empty");
     linear_names.needs_full = get_identifier("needs_full");
     linear_names.needs_empty = get_identifier("needs_empty");
+    linear_names.once_door = get_identifier("once_door");
     if (checks_must_consume) {
         register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
         register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);

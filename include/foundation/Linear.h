@@ -37,6 +37,9 @@
 // Each exit from linearity is a named door.  The annotations of this
 // header name the doors: drop_door and detach_door on a function, and
 // scope_end_door on a class whose destructor releases its resource.  The
+// annotation once_door marks a function that owns a closure and calls it one
+// time, such as call_once, the one door of a closure that moves a linear
+// capture out.  The
 // annotation authority marks a class whose value conveys an authority,
 // which the gate of foundation/effects/Computation.h reads.  The annotation
 // binding_hook marks the hook get<I> of a structured binding, such as the
@@ -84,6 +87,11 @@ struct detach_door final {};
 // The annotation of a class whose destructor releases its resource.  The
 // end of the scope of a value of the class is then its named door.
 struct scope_end_door final {};
+
+// The annotation of a function that owns a closure and calls it one time,
+// such as call_once.  The rule must-consume admits the call of a closure that
+// moves a linear capture out only in such a function.
+struct once_door final {};
 
 // The annotation of the hook get<I> of a structured binding.  A direct call
 // on an rvalue moves one part out and drops the other parts.
@@ -211,5 +219,33 @@ template <LinearValue T>
 template <class T>
     requires(is_linear_type(^^T))
 constexpr void drop(T&) = delete("the drop door ends a linear value that the caller gives up.  Pass it with std::move");
+
+// A closure that the once door can call: a class, not a reference and not
+// const, that runs as an rvalue with the arguments.
+template <class Closure, class... Arguments>
+concept OnceClosure = std::is_class_v<Closure> && !std::is_reference_v<Closure> && !std::is_const_v<Closure>
+                   && std::is_invocable_v<Closure&&, Arguments&&...>;
+
+// The once door.  The closure moves into the frame of the door, and the door
+// calls it one time with the forwarded arguments, such as a context and a
+// key by reference, so no second call of the same closure can follow.  A
+// closure whose call operator moves a linear capture out goes through this
+// door: each other call of it can run the body again and give a second value
+// of one capture (the rule must-consume).  The result is a value, so it holds
+// no reference into the closure, whose end follows the call.
+template <class Closure, class... Arguments>
+    requires OnceClosure<Closure, Arguments...>
+[[= once_door{}]] constexpr auto
+call_once(Closure&& closure, Arguments&&... arguments) noexcept(std::is_nothrow_invocable_v<Closure&&, Arguments&&...>) {
+    Closure owned(static_cast<Closure&&>(closure));
+    return static_cast<Closure&&>(owned)(static_cast<Arguments&&>(arguments)...);
+}
+
+// A named closure stays with the caller, so a call of it here would leave a
+// second name that can call it again.  The deleted twin gives the reason.
+template <class Closure, class... Arguments>
+    requires(std::is_class_v<Closure>)
+constexpr void call_once(Closure&, Arguments&&...) = delete("the once door takes the closure that the caller gives "
+                                                            "up.  Pass it with std::move");
 
 }  // namespace foundation::linear
