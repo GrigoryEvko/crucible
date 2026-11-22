@@ -55,7 +55,10 @@
 // the borrow as a Ref with the fresh brand of the call.  The overloads for
 // an rvalue are deleted, because a borrow of a temporary Box dangles at the
 // end of the full expression.  consume() moves the object out of a Box that
-// the caller gives up, and frees the storage.
+// the caller gives up, and frees the storage.  The frame door
+// with_mut(std::move(box), body) lends the object to a body while the Box is
+// in the frame of the door, so no move or end of the Box can come while the
+// body holds the reference (THE FRAME OF A BOX below).
 //
 // C++ keeps a moved-from object alive, and no type can refuse its use.  So
 // each access tests for the object in each build, and a Box with no object
@@ -870,6 +873,11 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box<T>>]][[= 
         return object;
     }
 
+    // The object of a Box in the frame of its door (THE FRAME OF A BOX), with
+    // the key that only a frame door builds.  A Box with no object ends the
+    // process here, because a moved-from Box can still come to the door.
+    [[nodiscard]] friend T& frame_object_(detail::FrameKey const& /*key*/, Box& box) noexcept { return *box.held_(); }
+
 public:
     // Takes the storage of the size and the alignment of T from the
     // allocation door, and builds the object from the arguments in it.  Only
@@ -998,6 +1006,80 @@ template <BoxPayload T, class Authority>
 [[nodiscard]] Box<T> claim_box(BoxWord<T, Authority> word, box_word_key<Authority> const& key) noexcept {
     return Box<T>{word, key};
 }
+
+// THE FRAME OF A BOX
+//   with_mut(std::move(box), body) is the frame door of a Box, in the form of
+//   the doors of the owners on the heap (foundation/core/Frame.h).  The Box
+//   moves into the frame of the door, body gets the object as T& for the time
+//   of the call, and the door gives the Box back: alone for a body that gives
+//   void, and after the result in a Record for each other body.  While the
+//   body runs, the caller holds no name for the object: the name that it
+//   moved from holds no object.  So no code ends the object, moves it, or
+//   gives its storage to a Hole while the body holds the reference, also in a
+//   function that the body calls.
+//
+//   The door carries the annotation borrow_match, so the rule borrow-match
+//   refuses a body that assigns or moves the name of the caller, such as a
+//   mint_hole of that name or a move of it into a closure.  The result of the
+//   body holds no borrow, so no reference to the object leaves the frame.  A
+//   Box with no object ends the process at the door.  In the Release code, a
+//   body that reads the object costs what operator-> costs, and a body that
+//   writes it adds one store of the pointer of the Box: the move back.
+
+// The body of the frame door of a Box of T: it takes the object as T& with
+// no throw, and it gives void or a value that holds no borrow and fits a
+// Record, so the value leaves the frame with the Box.
+template <class Body, class T>
+concept BoxFrameBody = std::is_nothrow_invocable_v<Body&&, T&>
+                    && (std::is_void_v<detail::body_result_t<Body&&, T&>>
+                        || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
+                            && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>));
+
+// A body whose result does not leave the frame: the refused twin of the door
+// binds to it.
+template <class Body, class T>
+concept RefusedBoxFrameBody = std::is_nothrow_invocable_v<Body&&, T&> && (!BoxFrameBody<Body, T>);
+
+// The type that the frame door of a Box of T gives back for a body.
+template <class Body, class T>
+using box_frame_return_t = detail::frame_return_t<detail::body_result_t<Body&&, T&>, Box<T>>;
+
+// The frame door of a Box (THE FRAME OF A BOX).  Complexity: O(1), and the
+// cost of the body.
+template <BoxPayload T, class Body>
+    requires CompleteBoxPayload<T> && BoxFrameBody<Body, T>
+[[= ::foundation::linear::borrow_match{}]] [[nodiscard]] box_frame_return_t<Body, T> with_mut(Box<T>&& box,
+                                                                                              Body&& body) noexcept {
+    using Given = detail::body_result_t<Body&&, T&>;
+    // The test of the object comes before the move, so no fatal path stands
+    // between the move in and the move out, and the optimizer can drop the
+    // store of the moved-from Box when the body does not read it.
+    T& object = frame_object_(detail::FrameDoor::key(), box);
+    Box<T> held{std::move(box)};
+    if constexpr (std::is_void_v<Given>) {
+        static_cast<Body&&>(body)(object);
+        return held;
+    } else {
+        return detail::frame_return_t<Given, Box<T>>{static_cast<Body&&>(body)(object), std::move(held)};
+    }
+}
+
+// A body whose result holds a borrow binds to this overload, so the refusal
+// gives its reason.
+template <BoxPayload T, class Body>
+    requires CompleteBoxPayload<T> && RefusedBoxFrameBody<Body, T>
+void with_mut(Box<T>&& box, Body&& body) =
+    delete("the result of a frame door leaves the frame, so it holds no reference and no address: give a plain value");
+
+// A named Box stays with the caller while the body runs, so the body could
+// end its object beside the reference through a capture.  This twin refuses
+// a named Box and a const one, which cannot move into the frame.
+template <class Owner, class Body>
+    requires(std::is_lvalue_reference_v<Owner> || std::is_const_v<std::remove_reference_t<Owner>>)
+             && ::foundation::reflect::IsInstanceOf<std::remove_cvref_t<Owner>, ^^Box>
+void with_mut(Owner&& box, Body&& body) = delete(
+    "with_mut takes the Box into its frame and gives it back: pass std::move(box), and keep the Box that the call "
+    "returns");
 
 // Size bytes of heap storage at the alignment Align, with no object in it.
 // The annotation no_start_over_bytes refuses a Hole to the checked lifetime

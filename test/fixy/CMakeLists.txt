@@ -6654,6 +6654,11 @@ fixy_neg_compile_test(neg_thread_run_beside_each_writes_a_plain_int
 fixy_neg_compile_test(neg_thread_run_beside_owns_a_view_of_the_frame
   "static assertion failed: run_beside: the body captures .reads. \\(field [_a-z]+, type foundation::core::View<const int, 2>\\)"
   "its type is not SendableBeside")
+# A body of run_beside takes no Box whose object a frame door of the Box lends:
+# the rule borrow-match refuses the move of the Box in the body of the frame.
+fixy_neg_compile_test(neg_thread_run_beside_takes_a_lent_box
+  "neg_thread_run_beside_takes_a_lent_box\\.cpp:22:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(move box\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
 # A body of run_joined captures no context, no object of one owner thread,
 # and no atomic cell of a reference to such an object.
 fixy_neg_compile_test(neg_thread_run_joined_captures_a_kernel_context

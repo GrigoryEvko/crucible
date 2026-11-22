@@ -3313,6 +3313,18 @@ foundation_neg_compile_test(neg_core_box_mint_of_declared_type
 foundation_neg_compile_test(neg_core_box_end_of_declared_type
   "static assertion failed: a Box ends its object only where the type of the object is complete"
   "define the destructor of the owner where the type is defined")
+# The frame door of a Box takes the Box into its frame: a named Box and a
+# result that holds a borrow do not compile, and the rule borrow-match refuses
+# a move of the Box in the body, such as the mint of a Hole of it.
+foundation_neg_compile_test(neg_core_box_frame_named
+  "neg_core_box_frame_named\\.cpp:12:[0-9]+: error: use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\)"
+  "with_mut takes the Box into its frame and gives it back")
+foundation_neg_compile_test(neg_core_box_frame_borrow_result
+  "neg_core_box_frame_borrow_result\\.cpp:15:[0-9]+: error: use of deleted function .void foundation::core::with_mut\\(Box<T>&&, Body&&\\)"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_box_frame_hole_of_lent
+  "neg_core_box_frame_hole_of_lent\\.cpp:18:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(move box\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
 
 # A Hole holds the storage of one object with no object in it.  Its mint
 # from the allocation door takes the allocation tag and a shape of a power
