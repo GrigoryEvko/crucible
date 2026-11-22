@@ -46,10 +46,11 @@ static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "
               "and a Capability conveys the effect it authorizes.  A third means a new kind of payload "
               "whose rule has to be written beside its roster entry.");
-static_assert(sizeof(c::detail::transparent_payload_families) == 14 * sizeof(std::meta::info),
-              "Fourteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
+static_assert(sizeof(c::detail::transparent_payload_families) == 15 * sizeof(std::meta::info),
+              "Fifteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
               "The five containers (WriteOnce, FixedArray, HeapArray, RunSet, std::vector) hide their "
-              "elements, and a Box hides its object.  A new wrapper that unwraps is one line here.");
+              "elements, a Box hides its object, and an Option hides its payload.  A new wrapper that unwraps "
+              "is one line here.");
 static_assert(std::size(c::detail::leaf_payload_families) == 2,
               "Two families are admitted as leaves: a Saturated value and a PackedWord.  Every entry is a claim "
               "that the template hides no effect row, which is why a leaf needs a line rather than falling "
@@ -69,6 +70,12 @@ struct PaddedSlot {
 
 struct HeldComputations {
     ::fixy::FixedArray<BgComp, 2> computations;
+};
+
+// A message that may own an arena, as the region of a build does.
+struct HoldsOptionalArena {
+    ::fixy::Option<::fixy::Box<::fixy::BumpArena>> arena{};
+    std::uint32_t count = 0;
 };
 
 void every_row_is_a_runtime_object() {
@@ -117,6 +124,12 @@ void a_container_reports_its_element() {
     // of the object.
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::Box<BgComp>>, eff::Row<eff::Effect::Bg>>));
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::Box<std::uint64_t>>, eff::Row<>>));
+    // An Option holds its payload by value, so an Option of an owner carries
+    // the row of what the owner holds, and an empty Option needs no other row.
+    EXPECT((std::is_same_v<c::payload_row_t<::fixy::Option<::fixy::Box<BgComp>>>, eff::Row<eff::Effect::Bg>>));
+    EXPECT((std::is_same_v<c::payload_row_t<::fixy::Option<BgComp>>, eff::Row<eff::Effect::Bg>>));
+    EXPECT((std::is_same_v<c::payload_row_t<::fixy::Option<std::uint64_t>>, eff::Row<>>));
+    EXPECT((std::is_same_v<c::payload_row_t<HoldsOptionalArena>, eff::Row<>>));
     // A RunSet hides the element of each run, so a row of one run reaches
     // the set.
     using ::foundation::core::RunOf;

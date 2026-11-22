@@ -1002,32 +1002,34 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
 
         // One epoch of the build scratch covers this work item.  The graph
         // and its CSR arrays die at its end, so only the region leaves the
-        // epoch.  The region owns its buffers and does not point into the
-        // scratch.  A work that the build refuses (BuildRefusal) builds no
-        // region.
-        ::fixy::Option<BuiltRegion> built{::fixy::none};
+        // epoch, in the publish message.  The region owns its buffers and
+        // does not point into the scratch.  A work that the build refuses
+        // (BuildRefusal) builds no region.  The local holds the Box of the
+        // message, not the region, so the region and the Option of its arena
+        // lie only in the heap object of the Box.
+        ::fixy::Option<::fixy::Box<BgGraphPublish>> publish{::fixy::none};
         owner.build_scratch_.with_epoch([&]() noexcept {
             owner
                 .build_trace_(ctx.cap().alloc, owner.build_scratch_, work->trace.view(), work->meta_starts.view(),
                               work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view(),
                               work->numerics)
-                .match([&](BuiltTrace trace) noexcept { built = ::fixy::some(std::move(trace.region)); },
-                       [](BuildRefusal /*refusal*/) noexcept {});
+                .match(
+                    [&](BuiltTrace trace) noexcept {
+                        publish = ::fixy::some(::fixy::mint_box<BgGraphPublish>(
+                            ctx.cap().alloc, BgGraphPublish{.kind = BgGraphPublish::Kind::Region,
+                                                            .region = std::move(trace.region),
+                                                            .reset_point = work->reset_point}));
+                    },
+                    [](BuildRefusal /*refusal*/) noexcept {});
         });
 
         // A refused work sends no region.  The floor of a later commit marker
         // releases its records.
-        if (built.is_none()) {
+        if (publish.is_none()) {
             continue;
         }
 
-        BuiltRegion region = std::move(built).expect("the build made a region");
-
-        push_pipeline(
-            ctx, parks.graph_publish, out,
-            ::fixy::mint_box<BgGraphPublish>(ctx.cap().alloc, BgGraphPublish{.kind = BgGraphPublish::Kind::Region,
-                                                                             .region = std::move(region),
-                                                                             .reset_point = work->reset_point}));
+        push_pipeline(ctx, parks.graph_publish, out, std::move(publish).expect("the build made a region"));
     }
     close_and_wake(ctx, parks.graph_publish, std::move(out));
 }

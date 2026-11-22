@@ -68,6 +68,22 @@ static_assert(
     std::is_same_v<payload_row_t<::fixy::Stale<::fixy::Secret<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, BgComp>>>>,
                    eff::Row<eff::Effect::Bg>>);
 
+// ── an Option hides its payload, and refuses an address ─────────────
+//
+// An Option holds its payload by value, so an Option of an owner answers for
+// what the owner holds.  An Option of an address is refused.  An Option of a
+// borrow of the base is refused where the walk reaches the borrow, whose
+// family is on no roster.
+static_assert(std::is_same_v<payload_row_t<::foundation::core::Option<BgComp>>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<::foundation::core::Option<::foundation::core::Box<BgComp>>>,
+                             eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<::foundation::core::Option<int>>, eff::Row<>>);
+static_assert(!payload_row_is_classified<::foundation::core::Option<int const*>>(),
+              "an Option of an address holds a borrow of an object that no part of the payload owns");
+struct borrowed_brand {};
+static_assert(!payload_row_is_classified<::foundation::core::Option<::foundation::core::Ref<int, borrowed_brand>>>(),
+              "an Option of a Ref holds a borrow of an object that no part of the payload owns");
+
 // ── a rostered leaf reports nothing, and says so deliberately ───────
 static_assert(std::is_same_v<payload_row_t<::fixy::Saturated<unsigned>>, eff::Row<>>);
 

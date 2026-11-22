@@ -267,6 +267,10 @@ PROBE_FILES: dict[str, str] = {
         "the rvalue match of an owning OneOf leaves the moved-from alternative in the source, which the source still "
         "holds"
     ),
+    "test/test_build_address_reuse.cpp": (
+        "a region of a build that a move or a move assignment emptied holds no arena and no run, so each of its Views "
+        "is empty"
+    ),
     "test/test_metalog_session.cpp": "a use of a moved-from channel handle aborts",
     "test/test_perf_lock_contention_smoke.cpp": (
         "a moved-from LockContention reports zero for each accessor and an empty timeline"

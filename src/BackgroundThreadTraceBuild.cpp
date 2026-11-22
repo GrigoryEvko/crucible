@@ -574,8 +574,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     runs.set<BuiltRegion::kSlots>(tensor_slots);
     return BuiltTrace{.graph = graph,
                       .region = BuiltRegion{BuiltRegion::Parts{
-                          .arena = ::fixy::mint_heap_array_with<::fixy::Box<::fixy::BumpArena>>(
-                              a, 1, [&region_arena](size_t) noexcept { return std::move(region_arena); }),
+                          .arena = ::fixy::Option<::fixy::Box<::fixy::BumpArena>>::some(std::move(region_arena)),
                           .runs = runs,
                           .content_hash = graph->content_hash,
                           .numerics = numerics}}};

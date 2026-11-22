@@ -5149,6 +5149,12 @@ fixy_neg_compile_test(neg_payload_row_unclassified_hides_effect
 fixy_neg_compile_test(neg_payload_row_member_hides_unclassified
   "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
   "The refused type: \\{anonymous\\}::UnclassifiedWrapper<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int> >")
+# An Option holds its payload by value, so the walk reads it.  A message that
+# holds an Option of a Ref holds a borrow of an object that no part of the
+# message owns, and the walk refuses the Ref where it reaches it.
+fixy_neg_compile_test(neg_payload_row_option_of_a_ref
+  "static assertion failed: payload_row<T>: T is, or holds, a type this extractor cannot classify"
+  "The refused type: foundation::core::Ref<int")
 
 # ── The machine topology ──────────────────────────────────────────────
 #

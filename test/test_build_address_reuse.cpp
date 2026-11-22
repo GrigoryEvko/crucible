@@ -212,6 +212,38 @@ struct Rig {
     return rig.build();
 }
 
+// True when each run of a region is empty: the region holds no arena and no
+// run, as the default region does.
+[[nodiscard]] bool has_no_run(const BackgroundThread::BuiltRegion& region) {
+    return region.ops().size() == 0 && region.metas().size() == 0 && region.scalars().size() == 0
+        && region.producers().size() == 0 && region.slot_ids().size() == 0 && region.slots().size() == 0;
+}
+
+// A move takes the arena and the runs of a region, and a move assignment
+// does the same, so each View of the source is empty after it.  The target
+// holds the runs of the build, with the same hash.
+void test_moved_from_region_has_no_run() {
+    BackgroundThread::BuiltRegion region = build_three_ops(kZ);
+    const size_t ops = region.ops().size();
+    const size_t slots = region.slots().size();
+    const crucible::ContentHash hash = region.content_hash();
+    CRUCIBLE_TEST_ASSERT(kTest, ops == 3 && slots > 0);
+
+    BackgroundThread::BuiltRegion moved{std::move(region)};
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_run(region));
+    CRUCIBLE_TEST_ASSERT(kTest, moved.ops().size() == ops && moved.slots().size() == slots);
+    CRUCIBLE_TEST_ASSERT(kTest, moved.content_hash() == hash);
+
+    BackgroundThread::BuiltRegion assigned{};
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_run(assigned));
+    assigned = std::move(moved);
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_run(moved));
+    CRUCIBLE_TEST_ASSERT(kTest, assigned.ops().size() == ops && assigned.slots().size() == slots);
+    CRUCIBLE_TEST_ASSERT(kTest, assigned.content_hash()
+                                    == crucible::compute_content_hash(assigned.ops(), assigned.numerics()));
+    ::fixy::check::pass(kTest, "  test_moved_from_region_has_no_run: PASSED\n");
+}
+
 void test_reused_address_keeps_the_hash() {
     const BackgroundThread::BuiltRegion fresh = build_three_ops(kZ);
     const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
@@ -484,6 +516,7 @@ int main() {
     // start() seals.  These tests build without start(), so they seal here.
     crucible::global_schema_table().seal(kTest);
     crucible::global_ckernel_table().value()->seal(kTest);
+    test_moved_from_region_has_no_run();
     test_reused_address_keeps_the_hash();
     test_reused_address_gets_a_new_slot();
     test_view_at_an_offset_reads_its_base();

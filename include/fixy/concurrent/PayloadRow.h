@@ -45,6 +45,13 @@
 // The empty row is therefore an answer the walk derives, never a default
 // it falls back to.  The diagnostic names the refused type.
 //
+// An Option is transparent, because it holds its payload by value, so an
+// Option of an owner, such as a Box, carries the row of what the owner
+// holds.  An Option of an address is refused: its payload is a borrow of an
+// object that the payload does not own.  An Option of a borrow of the base,
+// such as a Ref or a View, is refused where the walk reaches the borrow,
+// whose family is on no roster.
+//
 // A Computation carries its own row and the row of its payload.  The
 // payload is a value the receiver can take out of the carrier, so a
 // capability inside a carrier at the empty row still conveys its effect.
@@ -133,6 +140,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::foundation::core::HeapArray,  // the elements; the alignment holds no row
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row
     ^^::foundation::core::Box,  // the one object that the Box owns
+    ^^::foundation::core::Option,  // the payload, held by value; an Option of an address is refused
     ^^std::vector,  // the elements; the allocator holds no row
 };
 
@@ -209,8 +217,8 @@ inline constexpr std::meta::info leaf_payload_families[] = {
 // The payload a transparent family hides.  Reading the member alias
 // instantiates the wrapper, which each rostered family permits.  A
 // FixedArray and a HeapArray of the Region family name their element
-// element_type, a Box hides the type of its object, and each other family
-// names it value_type.
+// element_type, a Box and an Option hide the type of their payload, and each
+// other family names it value_type.
 template <class T>
 struct hidden_payload {
     using type = typename T::value_type;
@@ -230,6 +238,20 @@ template <::foundation::core::BoxPayload T>
 struct hidden_payload<::foundation::core::Box<T>> {
     using type = T;
 };
+
+template <::foundation::core::ChoicePayload T>
+struct hidden_payload<::foundation::core::Option<T>> {
+    using type = T;
+};
+
+// True when the type is an address: a pointer, a pointer to a member or a
+// reference.  An Option holds its payload by value, so an Option of an
+// address holds a borrow of an object that the Option does not own.
+[[nodiscard]] consteval bool is_address(std::meta::info type) noexcept {
+    if (std::meta::is_reference_type(type)) return true;
+    const std::meta::info bare = std::meta::dealias(std::meta::remove_cv(std::meta::dealias(type)));
+    return std::meta::is_pointer_type(bare) || std::meta::is_member_pointer_type(bare);
+}
 
 template <class T>
 using hidden_payload_t = typename hidden_payload<T>::type;
@@ -309,7 +331,18 @@ struct PayloadRowWalk {
                     walked.effect_mask |= effect_bit(std::meta::extract<::foundation::effects::Effect>(arguments[0]));
                 }
             } else if (is_transparent(type)) {
-                reach(std::meta::substitute(^^hidden_payload_t, {type}));
+                const std::meta::info hidden = std::meta::substitute(^^hidden_payload_t, {type});
+                // An Option of an address carries a borrow of an object that
+                // no part of the payload owns, so the walk refuses it.  A
+                // borrow of the base, such as a Ref or a View, is on no
+                // roster, so the walk refuses an Option of one when it
+                // reaches the borrow.
+                const bool is_option = family_of_payload(type) == ^^::foundation::core::Option;
+                if (is_option && is_address(hidden)) {
+                    refuse(type);
+                    continue;
+                }
+                reach(hidden);
             } else if (is_rostered_leaf(type)) {
                 continue;
             } else if (const payload_family_rule rule = layer_rule_of(type, layer_rules);

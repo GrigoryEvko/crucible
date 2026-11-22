@@ -624,10 +624,35 @@ public:
     // its runs, and it moves only as a whole.  Only BackgroundThread builds a
     // region with parts, and only the publish stage writes the ops and the
     // slots of a region.  The default region holds no arena and no run, as
-    // in a commit message.
+    // in a commit message, and so does a region that a move took the parts
+    // of.
     class[[= ::foundation::transfer::sendable{}]] BuiltRegion {
     public:
         BuiltRegion() noexcept = default;
+
+        // A move takes the arena and the runs, and leaves the source with no
+        // arena and no run, so each View of a moved-from region is empty.
+        BuiltRegion(BuiltRegion&& other) noexcept
+            : arena_{std::move(other.arena_)},
+              runs_{other.runs_},
+              content_hash_{other.content_hash_},
+              numerics_{other.numerics_} {
+            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena>>{::fixy::none};
+            other.runs_ = Runs{};
+        }
+        BuiltRegion& operator=(BuiltRegion&& other) noexcept {
+            arena_ = std::move(other.arena_);
+            runs_ = other.runs_;
+            content_hash_ = other.content_hash_;
+            numerics_ = other.numerics_;
+            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena>>{::fixy::none};
+            other.runs_ = Runs{};
+            return *this;
+        }
+        BuiltRegion(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
+        BuiltRegion&
+        operator=(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
+        ~BuiltRegion() = default;
 
         [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return runs_.view<kOps>(); }
         [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return runs_.view<kMetas>(); }
@@ -655,10 +680,10 @@ public:
                                     ::fixy::RunOf<int64_t, kScalars>, ::fixy::RunOf<OpIndex, kProducers>,
                                     ::fixy::RunOf<SlotId, kSlotIds>, ::fixy::RunOf<TensorSlot, kSlots>>;
 
-        // The parts of one build: the arena of the region, in an array of
-        // one Box, and the runs that the arena gave.
+        // The parts of one build: the arena of the region, and the runs that
+        // the arena gave.
         struct Parts {
-            ::fixy::HeapArray<::fixy::Box<::fixy::BumpArena>> arena{};
+            ::fixy::Option<::fixy::Box<::fixy::BumpArena>> arena{};
             Runs runs{};
             ContentHash content_hash{};
             NumericsHash numerics{};
@@ -670,10 +695,9 @@ public:
               content_hash_{parts.content_hash},
               numerics_{parts.numerics} {}
 
-        // The arena that owns each run below: one Box in the region of a
-        // build, and none in the default region.  An Option of a Box would
-        // state the same, but the payload walk refuses an Option.
-        ::fixy::HeapArray<::fixy::Box<::fixy::BumpArena>> arena_{};
+        // The arena that owns each run below: a Box in the region of a build,
+        // and none in the default region.
+        ::fixy::Option<::fixy::Box<::fixy::BumpArena>> arena_{};
         Runs runs_{};
         ContentHash content_hash_{};
         // The numerics hash that the content hash folds.
