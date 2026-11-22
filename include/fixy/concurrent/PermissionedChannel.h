@@ -154,8 +154,8 @@ namespace detail {
 struct no_producer_pool {};
 
 // The lane of a producer handle and the claims of the lanes, for a form with
-// no lanes: none.  The lane takes the first index, as the lane of the lanes
-// form does, so one initializer fits each form.
+// no lanes: none.  The handle of each such form builds it from the first
+// index.
 struct no_lane {
     constexpr explicit no_lane(::foundation::core::StaticIndex<0> /*first*/) noexcept {}
 };
@@ -221,11 +221,12 @@ template <RingValue T, std::size_t Capacity, LaneCount Lanes, typename ProducerT
 struct channel_form_parts<ChannelForm::lanes, T, Capacity, Lanes, ProducerTag, Brand, Owner> {
     using ring_type = LaneRing<T, Capacity, Lanes, Owner>;
     // The producer handle holds one share of the pool, which parks the
-    // producer token, and its lane.  The claim of the lane keeps one live
-    // producer handle of each lane.
+    // producer token, and the proof of its lane.  The channel mints the proof
+    // under the claim of the lane, so one live producer handle holds the
+    // proof of each lane (THE WRITERS of fixy/concurrent/LaneRing.h).
     using producer_share = ::foundation::permissions::SharedPermissionGuard<ProducerTag, Brand>;
     using producer_pool = ::foundation::permissions::SharedPermissionPool<ProducerTag, Brand>;
-    using lane = LaneIndex<Lanes>;
+    using lane = typename ring_type::LaneProof;
     using lane_claims = ::foundation::core::FixedArray<::foundation::EndpointClaim, static_cast<std::size_t>(Lanes)>;
     using channel_discipline = ::fixy::row_discipline::lanes_channel;
     using producer_discipline = ::fixy::row_discipline::lanes_producer;
@@ -399,17 +400,21 @@ public:
         // assumes every producer out.
         ::foundation::ChannelBinding<PermissionedChannel> ch_;
         [[no_unique_address]] typename parts::producer_share share_;
-        // The lane of a producer of the lanes form, and no value in another
-        // form.
-        [[no_unique_address]] typename parts::lane lane_{::foundation::core::index<0>()};
+        // The proof of the lane of a producer of the lanes form, and no value
+        // in another form.  Each constructor builds it.
+        [[no_unique_address]] typename parts::lane lane_;
 
         constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
             requires(Form != ChannelForm::lanes)
-            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}}, share_{std::move(share)} {}
+            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}},
+              share_{std::move(share)},
+              lane_{::foundation::core::index<0>()} {}
         constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share,
-                                 lane_index lane) noexcept
+                                 typename parts::lane&& lane) noexcept
             requires(Form == ChannelForm::lanes)
-            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}}, share_{std::move(share)}, lane_{lane} {}
+            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}},
+              share_{std::move(share)},
+              lane_{std::move(lane)} {}
         friend class PermissionedChannel;
 
     public:
@@ -507,7 +512,7 @@ public:
         [[nodiscard]] constexpr lane_index lane() const noexcept
             requires(Form == ChannelForm::lanes)
         {
-            return lane_;
+            return lane_.lane();
         }
 
         // Snapshots.  Sound for telemetry and for deciding whether to keep
@@ -548,10 +553,8 @@ public:
         [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_(PopTag... tag) noexcept {
             if constexpr (Form == ChannelForm::wire) {
                 return ch_->ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
-            } else if constexpr (Form == ChannelForm::merge) {
-                return ch_->ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
             } else {
-                return ch_->ring_.try_pop(tag...);
+                return ch_->ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
             }
         }
 
@@ -564,7 +567,7 @@ public:
                 }
                 return ch_->receive_after_empty_(tag...);
             } else if constexpr (Form == ChannelForm::lanes) {
-                return ch_->ring_.try_receive();
+                return ch_->ring_.try_receive(PermissionedChannel::prove_consumer_());
             } else {
                 ::foundation::core::Option<T> item = ch_->ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
                 if (item.is_some()) [[likely]] {
@@ -713,12 +716,12 @@ public:
         lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
             claim.take("two live producer handles of one lane of a lanes channel.");
         });
-        if (ring_.end_of_lane_(lane) == LaneEnd::ended) [[unlikely]] {
+        if (ring_.end_of_lane(lane) == LaneEnd::ended) [[unlikely]] {
             ::foundation::core::fatal("a producer handle of a lane that ended. A lane ends one time in a stream, and "
                                       "the drain of the channel opens each lane again.");
         }
         return ::foundation::core::Option<ProducerHandle>::some(ProducerHandle{
-            *this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share"), lane});
+            *this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share"), prove_lane_(lane)});
     }
 
     // Takes the claim of the consumer role first, so a second live consumer
@@ -748,6 +751,60 @@ public:
     using recombined_token =
         std::conditional_t<is_pooled, RecombinedParts, ::foundation::permissions::Permission<whole_tag, Brand>>;
 
+    // The ring of a recombined access (with_recombined_access).  It holds the
+    // token of the access, so its holder holds each role of the channel, and
+    // it gives the push of each form.  Each push makes the proof of its writer
+    // here: the proof of the producer of a wire, and the proof of a lane of a
+    // lanes channel under the claim of the lane.  A push of a merge claims its
+    // ticket itself.  The class does not copy and does not move, so it lives
+    // only in the frame of the access, which takes the token back at its end.
+    class RecombinedRing {
+        PermissionedChannel& channel_;
+        recombined_token token_;
+
+        RecombinedRing(PermissionedChannel& channel, recombined_token&& token) noexcept
+            : channel_{channel}, token_{std::move(token)} {}
+        [[nodiscard]] recombined_token release_() && noexcept { return std::move(token_); }
+        friend class PermissionedChannel;
+
+    public:
+        RecombinedRing(RecombinedRing const&) =
+            delete("the ring of a recombined access lives in the frame of the access");
+        RecombinedRing(RecombinedRing&&) = delete("the ring of a recombined access lives in the frame of the access");
+        RecombinedRing& operator=(RecombinedRing const&) = delete("the ring of a recombined access does not copy");
+        RecombinedRing& operator=(RecombinedRing&&) = delete("the ring of a recombined access does not move");
+        ~RecombinedRing() = default;
+
+        // Pushes item, or gives false when the ring is full.
+        [[nodiscard]] bool try_push(T const& item) noexcept
+            requires(Form != ChannelForm::lanes)
+        {
+            if constexpr (Form == ChannelForm::wire) {
+                return channel_.ring_.try_push_proven(PermissionedChannel::prove_producer_(), item);
+            } else {
+                return channel_.ring_.try_push(item);
+            }
+        }
+
+        // Pushes item into LANE, or gives false when the lane is full.  The
+        // claim of the lane and the proof of the lane last for the push.
+        [[nodiscard]] bool try_push(lane_index lane, T const& item) noexcept
+            requires(Form == ChannelForm::lanes)
+        {
+            channel_.lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
+                claim.take("a push of a recombined access into a lane while a producer handle of the lane lives.");
+            });
+            bool const is_pushed = channel_.ring_.try_push(PermissionedChannel::prove_lane_(lane), item);
+            channel_.lane_claims_.with_element(lane,
+                                               [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
+            return is_pushed;
+        }
+
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return channel_.ring_.size_approx(nondet);
+        }
+    };
+
     // Scoped exclusive access to the ring, the one scoped-access verb of each
     // form.  The token is the type-level proof that no handle of its root is
     // alive: the whole permission of a wire, or the lease and the consumer
@@ -756,14 +813,15 @@ public:
     // ends the process here, and no handle can start while the body runs.  A
     // lease of another channel of the same type ends the process, because only
     // the identity of the pool tells two such channels apart.  The body gets
-    // the ring: it can fill it before the first session or drain what the
-    // last one left.  The token comes back, so the caller can split the whole
-    // again or deposit the lease.
+    // the ring of the access, which holds the token: it can fill the ring
+    // before the first session.  The drain empties what the last session
+    // left.  The token comes back, so the caller can split the whole again or
+    // deposit the lease.
     template <typename Body>
-        requires std::is_invocable_v<Body, ring_type&>
+        requires std::is_invocable_v<Body, RecombinedRing&>
     [[nodiscard]] recombined_token
     with_recombined_access(recombined_token&& token,
-                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ring_type&>) {
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body, RecombinedRing&>) {
         if constexpr (Form == ChannelForm::wire) {
             producer_claim_.take("recombined access to a wire channel while its producer handle lives.");
         } else {
@@ -778,10 +836,11 @@ public:
             }
         }
         consumer_claim_.take("recombined access to a channel while its consumer handle lives.");
-        std::forward<Body>(body)(ring_);
+        RecombinedRing ring{*this, std::move(token)};
+        std::forward<Body>(body)(ring);
         consumer_claim_.release();
         producer_claim_.release();
-        return std::move(token);
+        return std::move(ring).release_();
     }
 
     // Takes the producer root of a merge or a lanes channel out of its pool
@@ -912,11 +971,7 @@ public:
                 ::foundation::core::fatal("a drain of a {} channel while a producer handle lives.",
                                           pooled_text_({.merge = "merge", .lanes = "lanes"}));
             }
-            if constexpr (Form == ChannelForm::merge) {
-                ring_.drain(prove_consumer_(), std::forward<Drop>(drop));
-            } else {
-                ring_.drain(std::forward<Drop>(drop));
-            }
+            ring_.drain(prove_consumer_(), std::forward<Drop>(drop));
             producer_pool_.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
         }
     }
@@ -958,7 +1013,7 @@ public:
     // snapshot for a test: a consumer reads the end through try_receive.
     [[nodiscard]] bool is_closed() const noexcept {
         if constexpr (Form == ChannelForm::lanes) {
-            return ring_.is_each_lane_ended_();
+            return ring_.is_each_lane_ended();
         } else {
             return producers_.is_closed();
         }
@@ -987,10 +1042,18 @@ private:
         return typename ring_type::producer_proof{};
     }
 
-    [[nodiscard]] static constexpr auto prove_consumer_() noexcept
-        requires(Form != ChannelForm::lanes)
+    [[nodiscard]] static constexpr auto prove_consumer_() noexcept { return typename ring_type::consumer_proof{}; }
+
+    // The proof of a lane of the lanes form (THE WRITERS of
+    // fixy/concurrent/LaneRing.h).  The ring names this channel as its owner,
+    // so only this channel mints it.  Each caller holds the claim of the lane:
+    // the producer door, which gives the proof to the handle for its life, and
+    // the push of a recombined access, which ends the proof and the claim
+    // after the push.
+    [[nodiscard]] static constexpr auto prove_lane_(lane_index lane) noexcept
+        requires(Form == ChannelForm::lanes)
     {
-        return typename ring_type::consumer_proof{};
+        return typename ring_type::LaneProof{lane};
     }
 
     // The end of a producer handle with its token or its share.  The last one
@@ -999,10 +1062,11 @@ private:
     // so the next claim of the lane reads the end.  A handle ends one time, so
     // the end is cold, and a stage that holds the handle keeps one call in
     // place of the loop of the roster.
-    CRUCIBLE_COLD void end_producer_(typename parts::lane lane) noexcept {
+    CRUCIBLE_COLD void end_producer_(typename parts::lane const& lane) noexcept {
         if constexpr (Form == ChannelForm::lanes) {
             ring_.end_lane(lane);
-            lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
+            lane_claims_.with_element(lane.lane(),
+                                      [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
         } else {
             static_cast<void>(lane);
             producers_.end_producer();

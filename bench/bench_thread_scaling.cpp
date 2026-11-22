@@ -322,6 +322,18 @@ struct MpscOwner final {
     [[nodiscard]] static constexpr auto consumer() noexcept { return Ring::consumer_proof{}; }
 };
 
+// The owner of the ring of lanes of the rows (THE WRITERS of
+// fixy/concurrent/LaneRing.h).  Each producer of a row holds one lane, and one
+// thread pops, so the bench mints the proof of a lane for each push of its
+// producer, and the proof of the consumer for each pop, as the lanes channel
+// mints them for its handles.
+struct LanesOwner final {
+    using Ring = ::fixy::concurrent::LaneRing<Item, kLaneCapacity, kBenchLanes, LanesOwner>;
+
+    [[nodiscard]] static Ring::LaneProof lane(BenchLaneIndex lane) noexcept { return Ring::LaneProof{lane}; }
+    [[nodiscard]] static Ring::ConsumerProof consumer() noexcept { return Ring::ConsumerProof{}; }
+};
+
 // True for an op with one consumer on the thread of a slot.
 template <OpKind Kind>
 inline constexpr bool kHasConsumer = Kind != OpKind::SharedAdd && Kind != OpKind::OwnAdd;
@@ -439,7 +451,7 @@ struct RowControl {
 struct RowState : RowControl {
     MpscOwner::Ring mpsc{};
     MpscOwner::PackedRing mpsc_packed{};
-    ::fixy::concurrent::LaneRing<Item, kLaneCapacity, kBenchLanes> lanes{};
+    LanesOwner::Ring lanes{};
     ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
     ProvenOwner::Ring spsc_proven{};
     MpscReference mpsc_reference{};
@@ -518,13 +530,15 @@ template <OpKind Kind>
     } else if constexpr (Kind == OpKind::MpscPush) {
         push_waiting(state, [&state]() noexcept { return state.mpsc.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::LanesPush) {
-        push_waiting(state, [&state, &seat]() noexcept { return state.lanes.try_push(seat.lane, Item{1}); });
+        push_waiting(state,
+                     [&state, &seat]() noexcept { return state.lanes.try_push(LanesOwner::lane(seat.lane), Item{1}); });
     } else if constexpr (Kind == OpKind::MpscSlowPush) {
         wait_for_pace(seat);
         push_waiting(state, [&state]() noexcept { return state.mpsc.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::LanesSlowPush) {
         wait_for_pace(seat);
-        push_waiting(state, [&state, &seat]() noexcept { return state.lanes.try_push(seat.lane, Item{1}); });
+        push_waiting(state,
+                     [&state, &seat]() noexcept { return state.lanes.try_push(LanesOwner::lane(seat.lane), Item{1}); });
     } else if constexpr (Kind == OpKind::MpscPackedPush) {
         push_waiting(state, [&state]() noexcept { return state.mpsc_packed.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
@@ -617,7 +631,7 @@ template <OpKind Kind>
     } else if constexpr (Kind == OpKind::LanesPush || Kind == OpKind::LanesSlowPush) {
         // The pop of the ring of lanes is in the order of its lanes, so it
         // takes no tag of Nondet.
-        return take_one(state.lanes.try_pop());
+        return take_one(state.lanes.try_pop(LanesOwner::consumer()));
     } else if constexpr (Kind == OpKind::MpscPackedPush) {
         return take_one(state.mpsc_packed.try_pop(MpscOwner::consumer(), merge));
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
@@ -918,7 +932,7 @@ void end_lanes_past_the_producers(RowState& state, ThreadCount threads) noexcept
     if constexpr (kIsLanes<Kind>) {
         std::uint32_t const producers = threads.raw() - 1;
         for (BenchLaneIndex const lane : ::fixy::IndexRange<static_cast<std::size_t>(kBenchLanes)>{}) {
-            if (lane.raw() >= producers) state.lanes.end_lane(lane);
+            if (lane.raw() >= producers) state.lanes.end_lane(LanesOwner::lane(lane));
         }
     }
 }

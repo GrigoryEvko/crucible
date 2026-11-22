@@ -48,6 +48,22 @@ using WaitPolicy = cc::SpinThenPark<2000>;
 // context holds Nondet.
 constexpr eff::cap::Nondet kNondet = eff::testing::test().nondet;
 
+// The owner of each ring of lanes of the test.  It mints the proof of a lane
+// and the proof of the consumer (THE WRITERS of fixy/concurrent/LaneRing.h).
+// A walk holds the producer of each lane and the consumer on one thread, and
+// a threaded run gives each lane to the thread of its producer.
+struct LanesOwner final {
+    template <class Ring>
+    [[nodiscard]] static typename Ring::LaneProof lane(Ring const& /*ring*/, typename Ring::lane_index lane) noexcept {
+        return typename Ring::LaneProof{lane};
+    }
+
+    template <class Ring>
+    [[nodiscard]] static typename Ring::ConsumerProof consumer(Ring const& /*ring*/) noexcept {
+        return typename Ring::ConsumerProof{};
+    }
+};
+
 // The codes of a receive that gives no item.  No push gives either code.
 constexpr Item kEmpty = ~Item{0};
 constexpr Item kClosed = ~Item{0} - 1;
@@ -55,9 +71,9 @@ constexpr Item kClosed = ~Item{0} - 1;
 // The item of a receive, or the code of its end.
 template <class Ring>
 [[nodiscard]] Item receive_code(Ring& ring) noexcept {
-    return ring.try_receive().match(
-        [](Item item) noexcept { return item; },
-        [](cc::NoItem why) noexcept { return why == cc::NoItem::Closed ? kClosed : kEmpty; });
+    return ring.try_receive(LanesOwner::consumer(ring))
+        .match([](Item item) noexcept { return item; },
+               [](cc::NoItem why) noexcept { return why == cc::NoItem::Closed ? kClosed : kEmpty; });
 }
 
 // Takes one receive for each code of expected, in order, and ends the test at
@@ -72,7 +88,7 @@ void expect_receives(Ring& ring, ::fixy::FixedArray<Item, N> const& expected) no
 
 // ── The walks on one thread ─────────────────────────────────────────────
 
-using Small = cc::LaneRing<Item, 4, cc::LaneCount{3}>;
+using Small = cc::LaneRing<Item, 4, cc::LaneCount{3}, LanesOwner>;
 constexpr Small::lane_index kFirst{::fixy::index<0>()};
 constexpr Small::lane_index kSecond{::fixy::index<1>()};
 constexpr Small::lane_index kThird{::fixy::index<2>()};
@@ -82,7 +98,8 @@ constexpr Small::lane_index kThird{::fixy::index<2>()};
 template <std::size_t N>
 void push_each(Small& ring, Small::lane_index lane, ::fixy::FixedArray<Item, N> const& items) noexcept {
     for (Item const item : items) {
-        if (!ring.try_push(lane, item)) ::fixy::fatal("a lane refused item {} below its capacity", item);
+        if (!ring.try_push(LanesOwner::lane(ring, lane), item))
+            ::fixy::fatal("a lane refused item {} below its capacity", item);
     }
 }
 
@@ -100,7 +117,7 @@ void walk_turn_wait_and_full_lane(::fixy::TestRunnerCtx const& test) noexcept {
     expect_receives(ring, ::fixy::FixedArray<Item, 5>{101, 201, 301, 102, kEmpty});
 
     push_each(ring, kSecond, ::fixy::FixedArray<Item, 4>{202, 203, 204, 205});
-    CRUCIBLE_TEST_ASSERT(test, !ring.try_push(kSecond, 206));
+    CRUCIBLE_TEST_ASSERT(test, !ring.try_push(LanesOwner::lane(ring, kSecond), 206));
     expect_receives(ring, ::fixy::FixedArray<Item, 2>{202, kEmpty});
 }
 
@@ -112,19 +129,19 @@ void walk_end_of_lanes(::fixy::TestRunnerCtx const& test) noexcept {
     push_each(ring, kFirst, ::fixy::FixedArray<Item, 1>{101});
     push_each(ring, kSecond, ::fixy::FixedArray<Item, 3>{201, 202, 203});
     push_each(ring, kThird, ::fixy::FixedArray<Item, 1>{301});
-    ring.end_lane(kThird);
+    ring.end_lane(LanesOwner::lane(ring, kThird));
     expect_receives(ring, ::fixy::FixedArray<Item, 4>{101, 201, 301, kEmpty});
 
     // The third lane gave its last item, so after it leaves the turn, the turn
     // goes from the second lane to the first.
     push_each(ring, kFirst, ::fixy::FixedArray<Item, 2>{102, 103});
     expect_receives(ring, ::fixy::FixedArray<Item, 5>{102, 202, 103, 203, kEmpty});
-    ring.end_lane(kFirst);
+    ring.end_lane(LanesOwner::lane(ring, kFirst));
     push_each(ring, kSecond, ::fixy::FixedArray<Item, 1>{204});
     expect_receives(ring, ::fixy::FixedArray<Item, 2>{204, kEmpty});
-    ring.end_lane(kSecond);
+    ring.end_lane(LanesOwner::lane(ring, kSecond));
     expect_receives(ring, ::fixy::FixedArray<Item, 2>{kClosed, kClosed});
-    CRUCIBLE_TEST_ASSERT(test, ring.try_pop().is_none());
+    CRUCIBLE_TEST_ASSERT(test, ring.try_pop(LanesOwner::consumer(ring)).is_none());
 }
 
 // The drain gives the items in the order of the turn, with each empty lane
@@ -139,7 +156,7 @@ void walk_drain(::fixy::TestRunnerCtx const& test) noexcept {
     push_each(ring, kFirst, ::fixy::FixedArray<Item, 2>{102, 103});
     push_each(ring, kSecond, ::fixy::FixedArray<Item, 1>{202});
     ::fixy::FixedList<Item, 8> drained{};
-    ring.drain([&drained](Item item) noexcept {
+    ring.drain(LanesOwner::consumer(ring), [&drained](Item item) noexcept {
         static_cast<void>(drained.append(item).expect("the walk drains at most eight items"));
     });
     ::fixy::FixedArray<Item, 4> const order{301, 102, 202, 103};
@@ -160,7 +177,7 @@ void walk_drain(::fixy::TestRunnerCtx const& test) noexcept {
 
 // A ring of two lanes of 16 cells, which publishes the tail of a lane at each
 // four deferred pops (THE ROOM of the header).
-using Wide = cc::LaneRing<Item, 16, cc::LaneCount{2}>;
+using Wide = cc::LaneRing<Item, 16, cc::LaneCount{2}, LanesOwner>;
 static_assert(Wide::tail_interval == 4);
 static_assert(Small::tail_interval == 1);
 constexpr Wide::lane_index kWideFirst{::fixy::index<0>()};
@@ -170,7 +187,7 @@ constexpr Wide::lane_index kWideSecond{::fixy::index<1>()};
 // Gives the count of the items that went in.
 [[nodiscard]] std::uint64_t fill_lane(Wide& ring, Wide::lane_index lane, Item first) noexcept {
     std::uint64_t count = 0;
-    while (ring.try_push(lane, first + count))
+    while (ring.try_push(LanesOwner::lane(ring, lane), first + count))
         ++count;
     return count;
 }
@@ -202,8 +219,8 @@ void walk_room_after_empty(::fixy::TestRunnerCtx const& test) noexcept {
 
     // The end of each lane: the ring gives the 32 items that the lanes hold,
     // and each lane publishes its tail when it leaves the turn.
-    ring.end_lane(kWideFirst);
-    ring.end_lane(kWideSecond);
+    ring.end_lane(LanesOwner::lane(ring, kWideFirst));
+    ring.end_lane(LanesOwner::lane(ring, kWideSecond));
     std::uint64_t received = 0;
     Item code = receive_code(ring);
     while (code != kClosed && code != kEmpty) {
@@ -217,15 +234,15 @@ void walk_room_after_empty(::fixy::TestRunnerCtx const& test) noexcept {
 // A lane ends one time in a stream, and a second end ends the process.
 void second_end() noexcept {
     Small ring{};
-    ring.end_lane(kSecond);
-    ring.end_lane(kSecond);
+    ring.end_lane(LanesOwner::lane(ring, kSecond));
+    ring.end_lane(LanesOwner::lane(ring, kSecond));
 }
 
 // ── The threaded case ───────────────────────────────────────────────────
 
 constexpr cc::LaneCount kLanes{4};
 constexpr std::size_t kLaneCapacity = 16;
-using Lanes = cc::LaneRing<Item, kLaneCapacity, kLanes>;
+using Lanes = cc::LaneRing<Item, kLaneCapacity, kLanes, LanesOwner>;
 using LaneIndex = Lanes::lane_index;
 // The consumer publishes the tail of a lane at each four pops of the lane, so
 // the runs take the deferred pops of THE ROOM.
@@ -361,14 +378,14 @@ template <class Ring>
             Item const item = item_at(lane, place);
             cc::wait_for<WaitPolicy>(ctx, run.room, [&run, lane, item]() noexcept {
                 if constexpr (kIsLanes<Ring>) {
-                    return run.ring.try_push(lane, item);
+                    return run.ring.try_push(LanesOwner::lane(run.ring, lane), item);
                 } else {
                     return run.ring.try_push(item);
                 }
             });
             run.items.notify_one(ctx);
         }
-        if constexpr (kIsLanes<Ring>) run.ring.end_lane(lane);
+        if constexpr (kIsLanes<Ring>) run.ring.end_lane(LanesOwner::lane(run.ring, lane));
         static_cast<void>(run.finished.fetch_add_acq_rel(1));
         run.items.notify_one(ctx);
     };

@@ -202,7 +202,7 @@ void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
     CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && channel.producer(kFirst).is_none());
     auto back = channel.with_recombined_access(
         Lanes::RecombinedParts{.root = std::move(withdrawn), .consumer = std::move(consumer_perm)},
-        [](Lanes::ring_type& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
+        [](Lanes::RecombinedRing& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
     channel.deposit_producer_root(std::move(back.root));
     CRUCIBLE_TEST_ASSERT(test, !channel.is_exclusive_active());
 

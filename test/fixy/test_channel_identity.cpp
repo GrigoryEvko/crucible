@@ -119,7 +119,7 @@ void merge_recombined_access_with_the_root_of_another_channel() {
     auto lease = other.try_withdraw_producer_root().expect("the root comes out with no producer out");
     auto parts = channel.with_recombined_access(
         Mpsc::RecombinedParts{.root = std::move(lease), .consumer = std::move(consumer_perm)},
-        [](Mpsc::ring_type&) noexcept {});
+        [](Mpsc::RecombinedRing&) noexcept {});
     ::foundation::linear::drop(std::move(parts.root));
     ::foundation::linear::drop(std::move(parts.consumer));
 }
@@ -136,7 +136,7 @@ void deposit_during_a_recombined_access() {
     auto lease = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
     auto parts = channel.with_recombined_access(
         Mpsc::RecombinedParts{.root = std::move(lease), .consumer = std::move(consumer_perm)},
-        [&channel, &other](Mpsc::ring_type&) noexcept {
+        [&channel, &other](Mpsc::RecombinedRing&) noexcept {
             channel.deposit_producer_root(
                 other.try_withdraw_producer_root().expect("the root comes out with no producer out"));
         });

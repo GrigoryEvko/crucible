@@ -5807,6 +5807,14 @@ fixy_neg_compile_test(neg_sequence_cells_forged_write_ticket
 fixy_neg_compile_test(neg_sequence_cells_ticket_written_twice
   "use of deleted function .fixy::concurrent::SequenceCells<T, Capacity, Owner, Spacing>::WriteTicket::"
   "a ticket writes its value one time, as the value that its mint gives")
+# Only the owner of a ring of lanes mints the proof of a lane, and a push into a
+# lane takes that proof, not the index of the lane.
+fixy_neg_compile_test(neg_lane_ring_forged_lane_proof
+  "LaneRing<T, LaneCapacity, Lanes, Owner>::LaneProof::LaneProof\\("
+  "is private within this context")
+fixy_neg_compile_test(neg_lane_ring_push_without_proof
+  "cannot convert .fixy::concurrent::LaneRing<int, 8, .fixy::concurrent::LaneCount.2, .anonymous.::Owner>::lane_index."
+  "LaneProof&")
 # A pop of the raw MPSC ring is a merge, so it takes the tag of Nondet.  A
 # drain gives the items in the order of the merge, so its drop holds no state.
 fixy_neg_compile_test(neg_mpsc_ring_pop_without_nondet_tag

@@ -57,7 +57,17 @@ using Snap = AtomicSnapshot<std::uint64_t>;
 
 // A ring of two lanes of 16 cells each.  The round trip pushes into the lane
 // of the turn and receives the item, so each receive steps the turn.
-using TwoLanes = ::fixy::concurrent::LaneRing<std::uint64_t, 16, ::fixy::concurrent::LaneCount{2}>;
+// The owner of the ring of lanes of the round trip.  It mints the proof of a
+// lane and the proof of the consumer (THE WRITERS of fixy/concurrent/LaneRing.h),
+// because one thread pushes into each lane and pops.
+struct TwoLanesOwner final {
+    using Ring = ::fixy::concurrent::LaneRing<std::uint64_t, 16, ::fixy::concurrent::LaneCount{2}, TwoLanesOwner>;
+
+    [[nodiscard]] static Ring::LaneProof lane(Ring::lane_index lane) noexcept { return Ring::LaneProof{lane}; }
+    [[nodiscard]] static Ring::ConsumerProof consumer() noexcept { return Ring::ConsumerProof{}; }
+};
+
+using TwoLanes = TwoLanesOwner::Ring;
 
 // The allocation capability of the rings and the snapshots of the rows.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
@@ -226,8 +236,8 @@ int main() {
             std::uint64_t i = 0;
             return bench::run("lane_ring round-trip (push to the lane of the turn + try_receive)", [&] {
                 ++i;
-                (void)ring->try_push(TwoLanes::lane_index::mask(i - 1), i);
-                auto v = ring->try_receive();
+                (void)ring->try_push(TwoLanesOwner::lane(TwoLanes::lane_index::mask(i - 1)), i);
+                auto v = ring->try_receive(TwoLanesOwner::consumer());
                 bench::do_not_optimize(v);
             });
         }(),

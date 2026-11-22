@@ -54,9 +54,25 @@
 //   room, so THE ORDER does not change.
 //
 // THE OWNER
-//   A ring with an Owner lets Owner read the end of a lane and the end of the
-//   stream, so the producer door of a channel refuses a lane that ended
-//   (fixy/concurrent/PermissionedChannel.h).
+//   Owner, such as the lanes channel of fixy/concurrent/PermissionedChannel.h,
+//   mints the proofs of the ring (THE WRITERS).  Each thread can read the end
+//   of a lane and the end of the stream, so the producer door of a channel
+//   refuses a lane that ended.
+//
+// THE WRITERS
+//   Each part of the ring has its writer in a type, so two threads can write
+//   the ring at the same time, and the ring states synchronized{}
+//   (foundation/Transfer.h).  The producer of a lane writes the producer side
+//   of the SPSC ring of its lane: its head, its own copy of the head, its
+//   cache of the tail and the cells that it fills.  Each push takes the
+//   LaneProof of that lane, which only Owner mints, one time for each holder
+//   of the lane, such as under the claim of the lane of a channel.  The SPSC
+//   ring of the lane then takes the proof of its one producer (THE PROVEN FORM
+//   of fixy/concurrent/SpscRing.h).  The end of a lane takes the same proof,
+//   and the end word is atomic.  The consumer writes the consumer side of each
+//   SPSC ring, the turn, the state of the tails and the lanes of the turn.
+//   Each pop takes the ConsumerProof, which only Owner mints for its one
+//   consumer.
 //
 // THE COSTS
 //   A push is the push of one SPSC ring.  A pop is the deferred pop of one
@@ -120,16 +136,20 @@ namespace detail {
 // the end word, and the consumer reads it after a pop that found the ring
 // empty.  The class is outside the ring, so the array of the ring reads the
 // default constructor of a complete class (foundation/core/Array.h).
-template <RingValue T, std::size_t Capacity>
+template <RingValue T, std::size_t Capacity, class RingOwner>
 struct LaneOf {
-    SpscRing<T, Capacity> ring{};
+    using ring_type = SpscRing<T, Capacity, RingOwner>;
+    ring_type ring{};
     ::foundation::core::CacheLine<::foundation::core::Atomic<LaneEnd>> end{LaneEnd::open};
 };
 
 }  // namespace detail
 
-template <RingValue T, std::size_t LaneCapacity, LaneCount Lanes, class Owner = void>
-class LaneRing : public ::foundation::Pinned<LaneRing<T, LaneCapacity, Lanes, Owner>> {
+template <RingValue T, std::size_t LaneCapacity, LaneCount Lanes, class Owner>
+class[[= ::foundation::transfer::synchronized{}]] LaneRing
+    : public ::foundation::Pinned<LaneRing<T, LaneCapacity, Lanes, Owner>> {
+    using lane_type = detail::LaneOf<T, LaneCapacity, LaneRing>;
+
 public:
     static constexpr std::size_t lane_count = static_cast<std::size_t>(Lanes);
     static constexpr std::size_t lane_capacity = LaneCapacity;
@@ -143,6 +163,41 @@ public:
     using value_type = T;
     using lane_index = LaneIndex<Lanes>;
     using owner_type = Owner;
+
+    // The proof of the one producer of one lane (THE WRITERS).  Only Owner
+    // mints one.  It moves with the holder of the lane, and it does not copy.
+    class[[= ::foundation::linear::authority{}]][[= ::foundation::transfer::not_shareable{}]] LaneProof final {
+        lane_index lane_{::foundation::core::index<0>()};
+
+        explicit constexpr LaneProof(lane_index lane) noexcept : lane_{lane} {}
+        friend Owner;
+
+    public:
+        LaneProof(LaneProof const&) = delete("a lane has one producer, and a copy of its proof is a second");
+        LaneProof& operator=(LaneProof const&) = delete("a lane has one producer, and a copy of its proof is a second");
+        constexpr LaneProof(LaneProof&&) noexcept = default;
+        LaneProof& operator=(LaneProof&&) = delete("the proof of a lane names one lane for its life");
+        ~LaneProof() = default;
+
+        // The lane of the proof.
+        [[nodiscard]] constexpr lane_index lane() const noexcept { return lane_; }
+    };
+
+    // The proof of the one consumer (THE WRITERS).  Only Owner mints one, for
+    // the call of its consumer, and it does not copy or move.
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] ConsumerProof final {
+        constexpr ConsumerProof() noexcept {}
+        friend Owner;
+
+    public:
+        ConsumerProof(ConsumerProof const&) = delete("a proof of the consumer lives for the call of its owner");
+        ConsumerProof(ConsumerProof&&) = delete("a proof of the consumer lives for the call of its owner");
+        ConsumerProof&
+        operator=(ConsumerProof const&) = delete("a proof of the consumer lives for the call of its owner");
+        ConsumerProof& operator=(ConsumerProof&&) = delete("a proof of the consumer lives for the call of its owner");
+        ~ConsumerProof() = default;
+    };
+    using consumer_proof = ConsumerProof;
     static constexpr std::size_t channel_capacity = LaneCapacity * lane_count;
     using row_discipline = ::fixy::row_discipline::lane_ring;
     using row_payload = T;
@@ -158,22 +213,23 @@ public:
     // Each lane is open and in the turn, and the turn starts at lane 0.
     LaneRing() noexcept { open_each_lane_(); }
 
-    // The push of the one producer of LANE.  It gives false when the lane is
-    // full.  A push from two threads into one lane corrupts the lane, and the
-    // checked publish of the SPSC ring ends the process at the next publish.
-    // The element door writes no state of the array of lanes, so the producers
-    // of two lanes call it at the same time: each writes its own lane, and the
-    // SPSC ring of a lane takes its one producer and the one consumer at once.
-    [[nodiscard, gnu::hot]] bool try_push(lane_index lane, T const& item) noexcept {
-        return lanes_.with_element(
-            lane, [&item](detail::LaneOf<T, LaneCapacity>& held) noexcept { return held.ring.try_push(item); });
+    // The push of the one producer of the lane of the proof.  It gives false
+    // when the lane is full.  The proof names the one producer, so the SPSC
+    // ring of the lane takes the proven push.  The element door writes no
+    // state of the array of lanes, so the producers of two lanes call it at
+    // the same time: each writes its own lane, and the SPSC ring of a lane
+    // takes its one producer and the one consumer at once.
+    [[nodiscard, gnu::hot]] bool try_push(LaneProof const& proof, T const& item) noexcept {
+        return lanes_.with_element(proof.lane(), [&item](lane_type& held) noexcept {
+            return held.ring.try_push_proven(prove_lane_producer_(), item);
+        });
     }
 
-    // The producer of LANE ends it after its last push (THE END OF A LANE).
-    // A second end of one lane in a stream ends the process.  The end of a
-    // lane is an Atomic, which the consumer reads at the same time.
-    void end_lane(lane_index lane) noexcept {
-        lanes_.with_element(lane, [](detail::LaneOf<T, LaneCapacity>& held) noexcept {
+    // The producer of the lane of the proof ends it after its last push (THE
+    // END OF A LANE).  A second end of one lane in a stream ends the process.
+    // The end of a lane is an Atomic, which the consumer reads at the same time.
+    void end_lane(LaneProof const& proof) noexcept {
+        lanes_.with_element(proof.lane(), [](lane_type& held) noexcept {
             ::foundation::core::Atomic<LaneEnd>& end = *held.end;
             CRUCIBLE_FATAL_INVARIANT(end.load_acquire() == LaneEnd::open);
             end.store_release(LaneEnd::ended);
@@ -182,8 +238,8 @@ public:
 
     // The next item of the merged stream (THE ORDER), NoItem::Empty while the
     // lane of the turn is empty and open, or NoItem::Closed after the last
-    // item of the last lane.  Only the one consumer calls it.
-    [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive() noexcept {
+    // item of the last lane.  The proof names the one consumer.
+    [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive(ConsumerProof const& /*proof*/) noexcept {
         if (!turn_.is_empty()) [[likely]] {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_some()) [[likely]] {
@@ -196,19 +252,21 @@ public:
 
     // The next item of the merged stream, or no value when try_receive gives
     // no item.  It does not tell a wait from the end of the stream.
-    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept { return try_receive().ok(); }
+    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop(ConsumerProof const& proof) noexcept {
+        return try_receive(proof).ok();
+    }
 
     // Gives each item that the lanes hold to drop, and then opens each lane
     // again for a new stream, with the turn at lane 0.  The items come in the
     // order of THE ORDER, with each empty lane taken as ended.  That order is
     // a function of the items of the lanes, so the drop can hold state.  Each
     // lane publishes its tail when it leaves the turn, so the drain ends with
-    // no deferred pop.  The caller holds the ring alone: no push and no pop
-    // runs at the same time.  Complexity: linear in the items, and quadratic
-    // in the lanes at most.
+    // no deferred pop.  The proof names the one consumer, and the caller holds
+    // the ring alone: no push runs at the same time.  Complexity: linear in
+    // the items, and quadratic in the lanes at most.
     template <typename Drop>
         requires std::is_nothrow_invocable_v<Drop&, T>
-    void drain(Drop&& drop) noexcept {
+    void drain(ConsumerProof const& /*proof*/, Drop&& drop) noexcept {
         while (!turn_.is_empty()) {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_some()) {
@@ -226,7 +284,7 @@ public:
     // bare tag of Nondet.  Each one counts the deferred pops of a lane as
     // items (THE COSTS).  Complexity: linear in the lanes.
     [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-        for (detail::LaneOf<T, LaneCapacity> const& lane : lanes_) {
+        for (lane_type const& lane : lanes_) {
             if (!lane.ring.empty_approx(nondet)) return false;
         }
         return true;
@@ -234,7 +292,7 @@ public:
 
     [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
         std::size_t count = 0;
-        for (detail::LaneOf<T, LaneCapacity> const& lane : lanes_) {
+        for (lane_type const& lane : lanes_) {
             count += lane.ring.size_approx(nondet);
         }
         return count;
@@ -242,35 +300,31 @@ public:
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return channel_capacity; }
 
-private:
-    friend Owner;
-
     // The end word of LANE, with acquire order (THE OWNER).  The producer door
     // of a channel reads it after it takes the claim of the lane, so the read
     // comes after the end of the last producer of the lane.
-    [[nodiscard]] LaneEnd end_of_lane_(lane_index lane) const noexcept { return lanes_.at(lane).end->load_acquire(); }
+    [[nodiscard]] LaneEnd end_of_lane(lane_index lane) const noexcept { return lanes_.at(lane).end->load_acquire(); }
 
     // True when each lane ended, with acquire order (THE OWNER).  Complexity:
     // linear in the lanes.
-    [[nodiscard]] bool is_each_lane_ended_() const noexcept {
-        for (detail::LaneOf<T, LaneCapacity> const& lane : lanes_) {
+    [[nodiscard]] bool is_each_lane_ended() const noexcept {
+        for (lane_type const& lane : lanes_) {
             if (lane.end->load_acquire() == LaneEnd::open) return false;
         }
         return true;
     }
 
+private:
     // The lane of the turn.  The type of the turn and the type of each lane of
     // the turn prove them below lane_count, so the reads have no check.
-    [[nodiscard, gnu::always_inline]] detail::LaneOf<T, LaneCapacity>& lane_of_turn_() noexcept {
-        return lane_at_(turn_.at());
-    }
+    [[nodiscard, gnu::always_inline]] lane_type& lane_of_turn_() noexcept { return lane_at_(turn_.at()); }
 
     // The lane at a position of the turn.  Only the one consumer calls it, and
     // the producers write only the SPSC ring and the end of their lanes, which
     // are atomic.  The ring reaches its own lane through the keyed run of a
     // frame, because a FixedArray gives no other reference that writes an
     // element.
-    [[nodiscard, gnu::always_inline]] detail::LaneOf<T, LaneCapacity>& lane_at_(lane_index position) noexcept {
+    [[nodiscard, gnu::always_inline]] lane_type& lane_at_(lane_index position) noexcept {
         return frame_run_(::foundation::core::detail::FrameDoor::key(), lanes_).at(live_.at(position).lane);
     }
 
@@ -279,6 +333,14 @@ private:
     // the optimizer removes the check.
     [[nodiscard, gnu::always_inline]] static lane_index position_(std::size_t position) noexcept {
         return lane_index::check(position).expect("a position of the turn of a lane ring lies below its lanes");
+    }
+
+    // The proof of the one producer of the SPSC ring of a lane.  The ring
+    // names this ring as its owner, so only this ring makes it, and only a push
+    // that takes the proof of its lane calls it (THE WRITERS).
+    [[nodiscard, gnu::always_inline]] static constexpr typename lane_type::ring_type::producer_proof
+    prove_lane_producer_() noexcept {
+        return typename lane_type::ring_type::producer_proof{};
     }
 
     // The deferred pop of the lane of the turn (THE ROOM).
@@ -325,7 +387,7 @@ private:
     // the next lane of the turn gets its pop.
     [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {
         while (!turn_.is_empty()) {
-            detail::LaneOf<T, LaneCapacity>& lane = lane_of_turn_();
+            lane_type& lane = lane_of_turn_();
             if (lane.end->load_acquire() == LaneEnd::open) {
                 if (tails_ == LaneTails::deferred) publish_each_tail_();
                 return ::foundation::core::err(NoItem::Empty);
@@ -348,8 +410,7 @@ private:
     // turn is at lane 0.  A new ring and a drained ring hold no deferred pop.
     void open_each_lane_() noexcept {
         for (lane_index const lane : ::foundation::core::IndexRange<lane_count>{}) {
-            lanes_.with_element(
-                lane, [](detail::LaneOf<T, LaneCapacity>& held) noexcept { held.end->store_release(LaneEnd::open); });
+            lanes_.with_element(lane, [](lane_type& held) noexcept { held.end->store_release(LaneEnd::open); });
             live_.with_element(lane, [lane](TurnLane& slot) noexcept { slot.lane = lane; });
         }
         turn_ = ::foundation::core::CyclicIndex<lane_count>{};
@@ -362,13 +423,17 @@ private:
     };
 
     // The lanes.  Each one holds the lines of its SPSC ring and the line of
-    // its end word, so no two lanes share a line.
-    ::foundation::core::FixedArray<detail::LaneOf<T, LaneCapacity>, lane_count> lanes_{};
+    // its end word, so no two lanes share a line.  The proof of a lane admits
+    // each write of the producer side of its SPSC ring and of its end word, and
+    // the proof of the consumer admits each write of the consumer side (THE
+    // WRITERS).
+    ::foundation::core::FixedArray<lane_type, lane_count> lanes_{};
 
     // The consumer is the one reader and the one writer of the turn: the lanes
     // of the turn in the order of their index, their count with the position
     // of the next pop, and whether a lane can hold deferred pops (THE ROOM).
-    // They start on a line of their own, so a push never reads them.
+    // The proof of the consumer admits each write of them.  They start on a
+    // line of their own, so a push never reads them.
     alignas(64)::foundation::core::CyclicIndex<lane_count> turn_{};
     LaneTails tails_ = LaneTails::published;
     ::foundation::core::FixedArray<TurnLane, lane_count> live_{};

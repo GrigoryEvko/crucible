@@ -436,7 +436,7 @@ static_assert(row_hash_contribution_v<LanesWitness::ProducerHandle>
               != row_hash_contribution_v<MpscWitness::ProducerHandle>);
 static_assert(row_hash_contribution_v<LanesWitness::ProducerHandle>
               != row_hash_contribution_v<LanesWitness::ConsumerHandle>);
-static_assert(row_hash_contribution_v<::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}>>
+static_assert(row_hash_contribution_v<::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}, void>>
               != row_hash_contribution_v<::fixy::concurrent::SpscRing<int, 8>>);
 
 }  // namespace census

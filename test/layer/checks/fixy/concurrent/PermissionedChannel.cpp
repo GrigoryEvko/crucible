@@ -107,11 +107,11 @@ static_assert(std::is_same_v<producer_handle_value_t<Merge::ProducerHandle>, int
 template <typename Channel>
 concept GivesRecombinedAccess = requires(
     Channel& channel, ::foundation::permissions::Permission<typename Channel::whole_tag, WitnessBrand>&& whole) {
-    channel.with_recombined_access(std::move(whole), [](typename Channel::ring_type&) noexcept {});
+    channel.with_recombined_access(std::move(whole), [](typename Channel::RecombinedRing&) noexcept {});
 };
 template <typename Channel>
 concept GivesLeasedAccess = requires(Channel& channel, typename Channel::RecombinedParts&& parts) {
-    channel.with_recombined_access(std::move(parts), [](typename Channel::ring_type&) noexcept {});
+    channel.with_recombined_access(std::move(parts), [](typename Channel::RecombinedRing&) noexcept {});
 };
 template <typename Channel>
 concept HasRootDoors = requires(Channel& channel) { channel.try_withdraw_producer_root(); };

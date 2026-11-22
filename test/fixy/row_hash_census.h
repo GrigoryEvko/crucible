@@ -860,7 +860,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::ChaseLevDeque, ^^::fixy::concurrent::ChaseLevDeque<int, 8>},
     {^^::fixy::concurrent::MpscRing, ^^::fixy::concurrent::MpscRing<int, 8, void>},
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
-    {^^::fixy::concurrent::LaneRing, ^^::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}>},
+    {^^::fixy::concurrent::LaneRing, ^^::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}, void>},
     {^^::fixy::concurrent::PermissionedChannel, ^^SpscWitness},
     {^^::fixy::concurrent::PermissionedBoxChannel, ^^SpscBoxWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
