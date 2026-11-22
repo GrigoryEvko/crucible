@@ -13,7 +13,9 @@
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
-#include <array>
+#include "../owned_region_unchecked_arena.h"
+
+#include <cstddef>
 #include <utility>
 
 namespace eff = foundation::effects;
@@ -26,14 +28,14 @@ struct IoRegion {
 using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
 using TestCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
-std::array<int, 16> storage{};
 }  // namespace
 
 int main() {
     TestCtx test_ctx{eff::testing::test()};
     BgCtx ctx{eff::testing::bg()};
-    auto region =
-        fixy::mint_owned_region(storage.data(), storage.size(), perm::mint_permission_root<IoRegion>(test_ctx));
+    test_owned_region::UncheckedArena arena{};
+    auto region = fixy::mint_owned_region<int>(eff::testing::test().alloc, arena, std::size_t{16},
+                                               perm::mint_permission_root<IoRegion>(test_ctx));
     [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>(
         ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto shard, auto) noexcept { (void)shard; });
     return 0;

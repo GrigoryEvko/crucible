@@ -8,6 +8,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <utility>
 
 namespace eff = ::foundation::effects;
@@ -21,8 +23,9 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Nonde
 
 int main() {
     BgCtx const ctx{eff::testing::bg()};
-    ::fixy::SharedRegion shared{
-        ::fixy::mint_owned_region<int>(nullptr, 0uz, ::foundation::permissions::mint_permission_root<Cache>())};
+    test_owned_region::UncheckedArena arena{};
+    ::fixy::SharedRegion shared{::fixy::mint_owned_region<int>(
+        eff::testing::test().alloc, arena, 0uz, ::foundation::permissions::mint_permission_root<Cache>())};
     auto guard = shared.lend(ctx).expect("an idle region lends a share");
     auto read = ::fixy::mint_shared_read(ctx, guard, shared);
     ::foundation::core::View<int const> const kept =

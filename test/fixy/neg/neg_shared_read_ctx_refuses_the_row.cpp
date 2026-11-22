@@ -7,6 +7,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <cstddef>
 #include <utility>
 
@@ -22,12 +24,12 @@ using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg,
 }  // namespace
 
 int main() {
-    static int storage[2] = {};
+    test_owned_region::UncheckedArena arena{};
     IoCtx io{::foundation::effects::testing::bg()};
     FgCtx fg = ::foundation::effects::testing::foreground();
 
-    auto region = ::fixy::mint_owned_region(storage, std::size_t{2},
-                                            ::foundation::permissions::mint_permission_root<Spilled>(io));
+    auto region = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{2},
+                                                 ::foundation::permissions::mint_permission_root<Spilled>(io));
     ::fixy::SharedRegion shared{std::move(region)};
     auto guard = shared.lend(io).expect("an idle region lends a share");
 

@@ -12,7 +12,9 @@
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
-#include <array>
+#include "../owned_region_unchecked_arena.h"
+
+#include <cstddef>
 #include <utility>
 
 namespace eff = foundation::effects;
@@ -23,12 +25,13 @@ struct RegionWhole {
     using permission_row = ::foundation::effects::Row<>;
 };
 using TestCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;
-std::array<int, 16> storage{};
 }  // namespace
 
 int main() {
     TestCtx ctx{eff::testing::test()};
-    auto region = fixy::mint_owned_region(storage.data(), storage.size(), perm::mint_permission_root<RegionWhole>());
+    test_owned_region::UncheckedArena arena{};
+    auto region = fixy::mint_owned_region<int>(eff::testing::test().alloc, arena, std::size_t{16},
+                                               perm::mint_permission_root<RegionWhole>());
     [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 1>(
         ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto shard, auto) noexcept { (void)shard; });
     return 0;

@@ -18,7 +18,6 @@
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/permissions/Permission.h>
 
 #include <fixy/Core.h>
 #include <fixy/check/Check.h>
@@ -29,7 +28,6 @@
 #include <utility>
 
 namespace eff = ::foundation::effects;
-namespace perm = ::foundation::permissions;
 namespace s = ::fixy::session;
 
 namespace {
@@ -38,8 +36,11 @@ using ::fixy::check::pass;
 
 // ── The two obligations, and what discharges each ────────────────────
 
+// The region of the cell of the effect comes from a region scope door.  A
+// region scope door mints the tokens of Cache.
 struct Cache {
     using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
 };
 struct Spilled {
     using permission_row = eff::Row<eff::Effect::IO>;
@@ -111,25 +112,31 @@ concept HasBareAccessor = requires(Wit const& w) { w.size(); } || requires(Wit c
 // ── EFFECT ───────────────────────────────────────────────────────────
 
 void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it(::fixy::TestRunnerCtx const& test) {
-    static std::uint64_t storage[4] = {2, 4, 6, 8};
     FgCtx ctx = eff::testing::foreground();
+    auto const storage = ::fixy::with_region<Cache>(
+        ::fixy::mint_heap_array_with<std::uint64_t>(
+            eff::testing::test().alloc, 4,
+            [](std::size_t position) noexcept { return std::uint64_t{2 * (position + 1)}; }),
+        [&test, &ctx](auto region) noexcept {
+            auto borrow = ::fixy::mint_borrowed(region);
+            auto witnessed = ::fixy::session::mint_witnessed_under<Cache>(borrow);
 
-    auto region = ::fixy::mint_owned_region(storage, std::size_t{4}, perm::mint_permission_root<Cache>());
-    auto borrow = ::fixy::mint_borrowed(region);
-    auto witnessed = ::fixy::session::mint_witnessed_under<Cache>(borrow);
+            // The obligation is the row of the tag that the caller names.
+            static_assert(
+                std::is_same_v<typename decltype(witnessed)::witness_type, ::fixy::session::witness::UnderRow<Cache>>);
 
-    // The obligation is the row of the tag that the caller names.
-    static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::session::witness::UnderRow<Cache>>);
+            auto read = deref(witnessed, ctx);
+            CRUCIBLE_TEST_ASSERT(test, read.size() == 4);
+            CRUCIBLE_TEST_ASSERT(test, element_of(read, 0) == 2);
+            CRUCIBLE_TEST_ASSERT(test, element_of(read, 3) == 8);
 
-    auto read = deref(witnessed, ctx);
-    CRUCIBLE_TEST_ASSERT(test, read.size() == 4);
-    CRUCIBLE_TEST_ASSERT(test, element_of(read, 0) == 2);
-    CRUCIBLE_TEST_ASSERT(test, element_of(read, 3) == 8);
-
-    std::uint64_t sum = 0;
-    for (std::uint64_t value : read)
-        sum += value;
-    CRUCIBLE_TEST_ASSERT(test, sum == 20);
+            std::uint64_t sum = 0;
+            for (std::uint64_t value : read)
+                sum += value;
+            CRUCIBLE_TEST_ASSERT(test, sum == 20);
+            return region;
+        });
+    CRUCIBLE_TEST_ASSERT(test, storage.size() == 4);
 }
 
 void test_a_context_that_refuses_the_row_refuses_the_read() {

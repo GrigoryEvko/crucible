@@ -21,7 +21,6 @@
 #include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
 
@@ -32,12 +31,12 @@
 
 namespace fc = ::fixy::concurrent;
 namespace eff = ::foundation::effects;
-namespace perm = ::foundation::permissions;
 
 // The permission over the piece table that the rule arm splits into
-// shards.
+// shards.  A region scope door mints it.
 struct PieceTableWhole {
     using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
 };
 
 namespace {
@@ -156,9 +155,10 @@ struct Workload {
 using Sink = ::fixy::Atomic<std::uint64_t, ::fixy::Counter>;
 
 // The tag of the region of the rows of the product, which the rule arm of
-// the matrix multiply splits into shards.
+// the matrix multiply splits into shards.  A region scope door mints it.
 struct ProductWhole {
     using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
 };
 
 // The piece table that the rule arm splits.  Element i names piece i
@@ -291,43 +291,49 @@ void run_sequential(WorkloadInputs const& inputs, Sink& sink, ::fixy::View<Produ
 // only its own whole rows.  Each other workload splits the piece table, one
 // shard for each piece.  Each shard reads the inputs through a const
 // reference, and notes its CPU in the tally.  The threads take the cores of
-// rule_thread_options.  ROWS is the run of the rows of the product in the
-// frame of measure_once.
-void run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::View<ProductRow> rows, Sink& sink,
-              PieceTable& pieces, bench::CpuTally& tally, bench::Cores const& cores) noexcept {
+// rule_thread_options.  ROWS is the ViewMut of the rows of the product in the
+// frame of measure_once.  A region scope door covers the rows for the matrix
+// multiply, and the function gives ROWS back.  A region scope door covers
+// the run that the frame door of the piece table lends.
+template <typename RowsBrand>
+[[nodiscard]] ::fixy::ViewMut<ProductRow, RowsBrand>
+run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::ViewMut<ProductRow, RowsBrand> rows, Sink& sink,
+         PieceTable& pieces, bench::CpuTally& tally, bench::Cores const& cores) noexcept {
     const BgCtx ctx{eff::testing::bg()};
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
     const ::fixy::thread::ThreadOptions options = rule_thread_options(cores, budget);
     if (inputs.kind == WorkloadKind::L2MatrixMultiply) {
-        auto region = ::fixy::mint_owned_region(::foundation::core::foreign_first(rows), rows.size(),
-                                                perm::mint_permission_root<ProductWhole>());
-        auto whole =
-            ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent, kPieces>(
-                ctx, test, budget, std::move(region),
-                [&inputs, &sink, &tally](auto shard, auto place) noexcept {
-                    tally.note_calling_thread();
-                    if (shard.size() == 0) return;
-                    run_l2_rows(inputs, Range{place.first(), place.first() + shard.size()}, sink,
-                                ::foundation::core::foreign_first(shard.view()));
-                },
-                options);
-        ::foundation::linear::drop(std::move(whole));
-        return;
+        return ::fixy::with_region<ProductWhole>(
+            std::move(rows), [&ctx, &test, budget, &options, &inputs, &sink, &tally](auto region) noexcept {
+                return ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent,
+                                                                            kPieces>(
+                    ctx, test, budget, std::move(region),
+                    [&inputs, &sink, &tally](auto shard, auto place) noexcept {
+                        tally.note_calling_thread();
+                        if (shard.size() == 0) return;
+                        run_l2_rows(inputs, Range{place.first(), place.first() + shard.size()}, sink,
+                                    ::foundation::core::foreign_first(shard.view()));
+                    },
+                    options);
+            });
     }
-    auto region = ::fixy::mint_owned_region(::foundation::core::foreign_first(pieces.view()), kPieces,
-                                            perm::mint_permission_root<PieceTableWhole>());
-    auto whole =
-        ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent, kPieces>(
-            ctx, test, budget, std::move(region),
-            [&inputs, &sink, &tally](auto shard, auto place) noexcept {
-                static_cast<void>(place);
-                tally.note_calling_thread();
-                for (const std::uint32_t piece : shard) {
-                    run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);
-                }
-            },
-            options);
-    ::foundation::linear::drop(std::move(whole));
+    pieces.with_mut([&ctx, &test, budget, &options, &inputs, &sink, &tally](auto run) noexcept {
+        static_cast<void>(::fixy::with_region<PieceTableWhole>(
+            std::move(run), [&ctx, &test, budget, &options, &inputs, &sink, &tally](auto region) noexcept {
+                return ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent,
+                                                                            kPieces>(
+                    ctx, test, budget, std::move(region),
+                    [&inputs, &sink, &tally](auto shard, auto place) noexcept {
+                        static_cast<void>(place);
+                        tally.note_calling_thread();
+                        for (const std::uint32_t piece : shard) {
+                            run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);
+                        }
+                    },
+                    options);
+            }));
+    });
+    return rows;
 }
 
 }  // namespace
@@ -533,7 +539,7 @@ namespace {
                                  run_sequential(inputs, sink, product);
                                  break;
                              case Strategy::Rule:
-                                 run_rule(inputs, budget, product, sink, pieces, tally, cores);
+                                 rows = run_rule(inputs, budget, std::move(rows), sink, pieces, tally, cores);
                                  break;
                              case Strategy::ForcedParallel:
                                  run_forced_parallel(inputs, workers, product, sink, tally, cores);

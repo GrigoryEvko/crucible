@@ -8,6 +8,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <cstddef>
 #include <utility>
 
@@ -21,14 +23,13 @@ using BgCtx = ::foundation::effects::ExecCtx<
 }  // namespace
 
 int main() {
-    static int storage_a[2] = {};
-    static int storage_b[2] = {};
+    test_owned_region::UncheckedArena arena{};
     BgCtx ctx{::foundation::effects::testing::bg()};
 
-    auto region_a =
-        ::fixy::mint_owned_region(storage_a, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>());
-    auto region_b =
-        ::fixy::mint_owned_region(storage_b, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>());
+    auto region_a = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{2},
+                                                   ::foundation::permissions::mint_permission_root<Cache>());
+    auto region_b = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{2},
+                                                   ::foundation::permissions::mint_permission_root<Cache>());
     ::fixy::SharedRegion shared_a{std::move(region_a)};
     ::fixy::SharedRegion shared_b{std::move(region_b)};
 

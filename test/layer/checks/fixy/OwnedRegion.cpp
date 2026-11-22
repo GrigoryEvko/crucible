@@ -176,23 +176,21 @@ static_assert(!ArrayArena<BumpArena, HoldsPermission>,
               "the arena must not start the lifetime of an aggregate that holds a proof type");
 
 // A region minted from a branded permission carries that brand.  Its borrow
-// is a View of its const elements, which names no brand.  The split and the
-// recombine are not constexpr, so the brand of a shard is pinned at runtime
-// in test/fixy/test_owned_region.cpp.
+// is a View of its const elements, which names no brand.  The arena door and
+// the region scope door are not constexpr, so the checks read the types of
+// the calls.  test/fixy/test_owned_region.cpp reads the elements of a region,
+// and the brand of a shard, at run time.
 [[nodiscard]] consteval bool region_carries_its_permission_brand() noexcept {
-    int storage[4] = {1, 2, 3, 4};
-    auto perm = ::foundation::permissions::mint_permission_root<test_tag_a>();
-    using Brand = ::foundation::brand::brand_of_t<decltype(perm)>;
-    auto region = mint_owned_region(storage, 4, std::move(perm));
-    static_assert(std::is_same_v<decltype(region), OwnedRegion<int, test_tag_a, Brand>>);
-    static_assert(::foundation::brand::IsBranded<decltype(region)>);
-    auto borrow = mint_borrowed(region);
-    static_assert(std::is_same_v<decltype(borrow), ::foundation::core::View<int const>>);
-    bool is_third_of_storage = false;
-    for (auto const third : borrow.get(2)) {
-        is_third_of_storage = *third == 3 && __builtin_addressof(*third) == storage + 2;
-    }
-    return borrow.size() == 4 && is_third_of_storage;
+    using RootPermission = decltype(::foundation::permissions::mint_permission_root<test_tag_a>());
+    using Brand = ::foundation::brand::brand_of_t<RootPermission>;
+    using Region =
+        decltype(mint_owned_region<int>(std::declval<::foundation::effects::Alloc>(), std::declval<BumpArena&>(),
+                                        std::size_t{4}, std::declval<RootPermission&&>()));
+    static_assert(std::is_same_v<Region, OwnedRegion<int, test_tag_a, Brand>>);
+    static_assert(::foundation::brand::IsBranded<Region>);
+    using Borrow = decltype(mint_borrowed(std::declval<Region const&>()));
+    static_assert(std::is_same_v<Borrow, ::foundation::core::View<int const>>);
+    return true;
 }
 static_assert(region_carries_its_permission_brand());
 

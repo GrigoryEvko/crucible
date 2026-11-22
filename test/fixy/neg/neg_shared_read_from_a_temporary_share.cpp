@@ -7,6 +7,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <cstddef>
 #include <utility>
 
@@ -20,11 +22,11 @@ using BgCtx = ::foundation::effects::ExecCtx<
 }  // namespace
 
 int main() {
-    static int storage[2] = {};
+    test_owned_region::UncheckedArena arena{};
     BgCtx ctx{::foundation::effects::testing::bg()};
 
-    auto region =
-        ::fixy::mint_owned_region(storage, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>());
+    auto region = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{2},
+                                                 ::foundation::permissions::mint_permission_root<Cache>());
     ::fixy::SharedRegion shared{std::move(region)};
 
     auto read = ::fixy::mint_shared_read(ctx, shared.lend(ctx).expect("an idle region lends a share"), shared);

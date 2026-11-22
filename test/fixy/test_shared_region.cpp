@@ -11,7 +11,9 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/core/BumpArena.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
@@ -46,6 +48,46 @@ struct Cache {
 struct Spilled {
     using permission_row = eff::Row<eff::Effect::IO>;
 };
+// The tag of the regions of the region scope door.  A region scope door mints
+// its tokens.
+struct ScopedCache {
+    using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
+};
+
+// The arena of the regions of a root permission: a bump arena of the base,
+// which gives each request a run that no other request holds.  Each element
+// of a run holds the value-initialized T.
+class Arena {
+    ::foundation::core::BumpArena bump_{std::size_t{1} << 12};
+
+public:
+    template <typename T>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    [[nodiscard]] ::fixy::View<T> alloc_array(eff::Alloc alloc, std::size_t count) noexcept {
+        return bump_.array(alloc, count, T{});
+    }
+};
+
+// The allocation capability of the test context.
+[[nodiscard]] eff::Alloc test_alloc() noexcept { return eff::testing::test().alloc; }
+
+// The storage of count elements that hold first, first + 1, and on.
+[[nodiscard]] ::fixy::HeapArray<std::uint64_t> storage_from(std::uint64_t first, std::size_t count) noexcept {
+    return ::fixy::mint_heap_array_with<std::uint64_t>(
+        test_alloc(), count, [first](std::size_t position) noexcept { return first + std::uint64_t{position}; });
+}
+
+// Writes first, first + 1, and on into the elements of a region, and gives
+// the region back.  Complexity: O(region.size()).
+template <typename Region>
+[[nodiscard]] Region write_from(std::uint64_t first, Region region) noexcept {
+    return ::fixy::with_mut(std::move(region), [first](auto run) noexcept {
+        std::uint64_t value = first;
+        for (std::uint64_t& element : run)
+            element = value++;
+    });
+}
 
 // The question each cell below asks of the mint, written once.
 template <typename Ctx, typename Guard, typename Region>
@@ -64,111 +106,116 @@ template <typename Read>
         position, [](std::uint64_t const& value) noexcept { return value; }, []() noexcept { return kNoCell; });
 }
 
+// The region comes from a region scope door, so the region goes back to the
+// door at the end: the upgrade gives it back when no share is out.
 void test_a_read_sees_the_region(TestRunnerCtx const& test) {
-    static std::uint64_t storage[6] = {10, 11, 12, 13, 14, 15};
     BgCtx ctx{eff::testing::bg()};
+    auto const storage = ::fixy::with_region<ScopedCache>(storage_from(10, 6), [&test, &ctx](auto region) noexcept {
+        ::fixy::SharedRegion shared{std::move(region)};
+        CRUCIBLE_TEST_ASSERT(test, shared.size() == 6);
+        CRUCIBLE_TEST_ASSERT(test, !shared.empty());
+        {
+            auto guard = shared.lend(ctx).expect("an idle region lends a share");
 
-    auto region = ::fixy::mint_owned_region(storage, std::size_t{6}, perm::mint_permission_root<Cache>());
-    ::fixy::SharedRegion shared{std::move(region)};
-    CRUCIBLE_TEST_ASSERT(test, shared.size() == 6);
-    CRUCIBLE_TEST_ASSERT(test, !shared.empty());
+            auto read = ::fixy::mint_shared_read(ctx, guard, shared);
+            CRUCIBLE_TEST_ASSERT(test, read.size() == 6);
+            CRUCIBLE_TEST_ASSERT(test, read_at(read, 0) == 10);
+            CRUCIBLE_TEST_ASSERT(test, read_at(read, 5) == 15);
 
-    auto guard = shared.lend(ctx).expect("an idle region lends a share");
+            std::uint64_t const sum = read.with_view([](::fixy::View<std::uint64_t const> run) noexcept {
+                std::uint64_t total = 0;
+                for (std::uint64_t value : run)
+                    total += value;
+                return total;
+            });
+            CRUCIBLE_TEST_ASSERT(test, sum == 75);
 
-    auto read = ::fixy::mint_shared_read(ctx, guard, shared);
-    CRUCIBLE_TEST_ASSERT(test, read.size() == 6);
-    CRUCIBLE_TEST_ASSERT(test, read_at(read, 0) == 10);
-    CRUCIBLE_TEST_ASSERT(test, read_at(read, 5) == 15);
+            // The element door compares the position with the count, so a
+            // read at or past the end runs on_none, and no arm reads past
+            // the elements.
+            CRUCIBLE_TEST_ASSERT(test, read_at(read, read.size()) == kNoCell);
+            CRUCIBLE_TEST_ASSERT(test, read_at(read, read.size() + 1) == kNoCell);
 
-    std::uint64_t const sum = read.with_view([](::fixy::View<std::uint64_t const> run) noexcept {
-        std::uint64_t total = 0;
-        for (std::uint64_t value : run)
-            total += value;
-        return total;
+            // The read names the instance it was taken against, and the
+            // share it stands on is the guard's.
+            static_assert(::foundation::brand::SameBrand<decltype(read), decltype(guard)>);
+        }
+        return shared.try_upgrade(ctx).expect("no share is out, so the upgrade gives the region");
     });
-    CRUCIBLE_TEST_ASSERT(test, sum == 75);
-
-    // The element door compares the position with the count, so a read at
-    // or past the end runs on_none, and no arm reads past the elements.
-    CRUCIBLE_TEST_ASSERT(test, read_at(read, read.size()) == kNoCell);
-    CRUCIBLE_TEST_ASSERT(test, read_at(read, read.size() + 1) == kNoCell);
-
-    // The read names the instance it was taken against, and the share
-    // it stands on is the guard's.
-    static_assert(::foundation::brand::SameBrand<decltype(read), decltype(guard)>);
+    CRUCIBLE_TEST_ASSERT(test, storage.size() == 6);
 }
 
 void test_an_upgrade_waits_for_every_share(TestRunnerCtx const& test) {
-    static std::uint64_t storage[4] = {1, 2, 3, 4};
     BgCtx ctx{eff::testing::bg()};
+    auto const storage = ::fixy::with_region<ScopedCache>(storage_from(1, 4), [&test, &ctx](auto region) noexcept {
+        ::fixy::View<std::uint64_t const> const all = ::fixy::mint_borrowed(region);
+        ::fixy::SharedRegion shared{std::move(region)};
 
-    auto region = ::fixy::mint_owned_region(storage, std::size_t{4}, perm::mint_permission_root<Cache>());
-    ::fixy::View<std::uint64_t const> const all = ::fixy::mint_borrowed(region);
-    ::fixy::SharedRegion shared{std::move(region)};
+        {
+            auto guard = shared.lend(ctx);
+            CRUCIBLE_TEST_ASSERT(test, guard.is_some());
+            CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 1);
+            // A region that the upgrade gives here ends at once.
+            const bool is_upgraded_under_a_share = shared.try_upgrade(ctx).match(
+                [](auto owned) noexcept {
+                    ::foundation::linear::drop(std::move(owned));
+                    return true;
+                },
+                []() noexcept { return false; });
+            CRUCIBLE_TEST_ASSERT(test, !is_upgraded_under_a_share);
+        }
 
-    {
-        auto guard = shared.lend(ctx);
-        CRUCIBLE_TEST_ASSERT(test, guard.is_some());
-        CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 1);
-        // A region that the upgrade gives here ends at once.
-        const bool is_upgraded_under_a_share = shared.try_upgrade(ctx).match(
-            [](auto owned) noexcept {
-                ::foundation::linear::drop(std::move(owned));
-                return true;
-            },
-            []() noexcept { return false; });
-        CRUCIBLE_TEST_ASSERT(test, !is_upgraded_under_a_share);
-    }
-
-    CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 0);
-    const bool is_whole_region = shared.try_upgrade(ctx).match(
-        [all](auto owned) noexcept {
-            const bool is_same_region = owned.size() == 4
-                                     && ::foundation::core::offset_of(all, ::fixy::mint_borrowed(owned))
-                                            == ::foundation::core::Option<std::size_t>::some(0uz);
-            ::foundation::linear::drop(std::move(owned));
-            return is_same_region;
-        },
-        []() noexcept { return false; });
-    CRUCIBLE_TEST_ASSERT(test, is_whole_region);
+        CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 0);
+        auto owned = shared.try_upgrade(ctx).expect("no share is out, so the upgrade gives the region");
+        const bool is_whole_region = owned.size() == 4
+                                  && ::foundation::core::offset_of(all, ::fixy::mint_borrowed(owned))
+                                         == ::foundation::core::Option<std::size_t>::some(0uz);
+        CRUCIBLE_TEST_ASSERT(test, is_whole_region);
+        return owned;
+    });
+    CRUCIBLE_TEST_ASSERT(test, storage.size() == 4);
 }
 
 void test_two_readers_hold_one_region(TestRunnerCtx const& test) {
-    static std::uint64_t storage[3] = {7, 8, 9};
     BgCtx ctx{eff::testing::bg()};
+    auto const storage = ::fixy::with_region<ScopedCache>(storage_from(7, 3), [&test, &ctx](auto region) noexcept {
+        ::fixy::SharedRegion shared{std::move(region)};
+        {
+            auto first = shared.lend(ctx).expect("an idle region lends a share");
+            auto second = shared.lend(ctx).expect("a region lends a second share");
+            CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 2);
 
-    auto region = ::fixy::mint_owned_region(storage, std::size_t{3}, perm::mint_permission_root<Cache>());
-    ::fixy::SharedRegion shared{std::move(region)};
-
-    auto first = shared.lend(ctx).expect("an idle region lends a share");
-    auto second = shared.lend(ctx).expect("a region lends a second share");
-    CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 2);
-
-    auto read_a = ::fixy::mint_shared_read(ctx, first, shared);
-    auto read_b = ::fixy::mint_shared_read(ctx, second, shared);
-    CRUCIBLE_TEST_ASSERT(test, read_a.size() == 3 && read_b.size() == 3);
-    CRUCIBLE_TEST_ASSERT(test, read_at(read_a, 1) == 8 && read_at(read_b, 1) == 8);
-    // The two reads lend one run: the run of each lies inside the other at
-    // the position zero.
-    const bool is_one_run = read_a.with_view([&read_b](::fixy::View<std::uint64_t const> run_a) noexcept {
-        return read_b.with_view([run_a](::fixy::View<std::uint64_t const> run_b) noexcept {
-            return ::foundation::core::offset_of(run_a, run_b) == ::foundation::core::Option<std::size_t>::some(0uz)
-                && run_a.size() == run_b.size();
-        });
+            auto read_a = ::fixy::mint_shared_read(ctx, first, shared);
+            auto read_b = ::fixy::mint_shared_read(ctx, second, shared);
+            CRUCIBLE_TEST_ASSERT(test, read_a.size() == 3 && read_b.size() == 3);
+            CRUCIBLE_TEST_ASSERT(test, read_at(read_a, 1) == 8 && read_at(read_b, 1) == 8);
+            // The two reads lend one run: the run of each lies inside the
+            // other at the position zero.
+            const bool is_one_run = read_a.with_view([&read_b](::fixy::View<std::uint64_t const> run_a) noexcept {
+                return read_b.with_view([run_a](::fixy::View<std::uint64_t const> run_b) noexcept {
+                    return ::foundation::core::offset_of(run_a, run_b)
+                            == ::foundation::core::Option<std::size_t>::some(0uz)
+                        && run_a.size() == run_b.size();
+                });
+            });
+            CRUCIBLE_TEST_ASSERT(test, is_one_run);
+        }
+        return shared.try_upgrade(ctx).expect("no share is out, so the upgrade gives the region");
     });
-    CRUCIBLE_TEST_ASSERT(test, is_one_run);
+    CRUCIBLE_TEST_ASSERT(test, storage.size() == 3);
 }
 
 // The composition, as a type question.  Two regions of one tag minted at
 // two sites are two brands, so the guard of the first does not read the
 // second even though the share and the row are both in order.
 void test_a_share_of_another_region_does_not_read_this_one(TestRunnerCtx const& test) {
-    static std::uint64_t storage_a[2] = {1, 2};
-    static std::uint64_t storage_b[2] = {3, 4};
+    Arena arena;
     BgCtx ctx{eff::testing::bg()};
 
-    auto region_a = ::fixy::mint_owned_region(storage_a, std::size_t{2}, perm::mint_permission_root<Cache>());
-    auto region_b = ::fixy::mint_owned_region(storage_b, std::size_t{2}, perm::mint_permission_root<Cache>());
+    auto region_a = write_from(1, ::fixy::mint_owned_region<std::uint64_t>(test_alloc(), arena, std::size_t{2},
+                                                                           perm::mint_permission_root<Cache>()));
+    auto region_b = write_from(3, ::fixy::mint_owned_region<std::uint64_t>(test_alloc(), arena, std::size_t{2},
+                                                                           perm::mint_permission_root<Cache>()));
     static_assert(!::foundation::brand::SameBrand<decltype(region_a), decltype(region_b)>,
                   "two roots at two sites are two brands");
 
@@ -214,12 +261,12 @@ void test_a_context_that_refuses_the_row_refuses_the_read(TestRunnerCtx const& t
 // region holds the singleton root of the tag, and the root goes back when no
 // share is out.
 void test_the_erased_brand_reads_nothing(TestRunnerCtx const& test) {
-    static std::uint64_t storage[2] = {5, 6};
+    Arena arena;
     BgCtx ctx{eff::testing::bg()};
 
     using test_shared_region_singleton::ErasedCache;
-    ::fixy::SharedRegion<std::uint64_t, ErasedCache> shared{::fixy::OwnedRegion<std::uint64_t, ErasedCache>::wrap(
-        storage, std::size_t{2}, perm::mint_singleton_root<ErasedCache>())};
+    ::fixy::SharedRegion<std::uint64_t, ErasedCache> shared{::fixy::OwnedRegion<std::uint64_t, ErasedCache>::adopt(
+        test_alloc(), arena, std::size_t{2}, perm::mint_singleton_root<ErasedCache>())};
     {
         auto guard = shared.lend(ctx).expect("an idle region lends a share");
         using Guard = decltype(guard);
@@ -233,18 +280,19 @@ void test_the_erased_brand_reads_nothing(TestRunnerCtx const& test) {
 
 // A brand names a mint site, so two regions built by one statement are
 // one type, and so are their guards.  The mint asks the guard at run time
-// which pool it holds a share of.
-auto region_at_one_site(std::uint64_t* storage) {
-    return ::fixy::mint_owned_region(storage, std::size_t{2}, perm::mint_permission_root<Cache>());
+// which pool it holds a share of.  Each region takes a fresh run of the arena,
+// and its elements hold first and first + 1.
+auto region_at_one_site(Arena& arena, std::uint64_t first) {
+    return write_from(first, ::fixy::mint_owned_region<std::uint64_t>(test_alloc(), arena, std::size_t{2},
+                                                                      perm::mint_permission_root<Cache>()));
 }
 
 void test_a_share_of_a_region_of_the_same_site_aborts(TestRunnerCtx const& test) {
-    static std::uint64_t storage_a[2] = {7, 8};
-    static std::uint64_t storage_b[2] = {9, 10};
+    Arena arena;
     BgCtx ctx{eff::testing::bg()};
 
-    ::fixy::SharedRegion shared_a{region_at_one_site(storage_a)};
-    ::fixy::SharedRegion shared_b{region_at_one_site(storage_b)};
+    ::fixy::SharedRegion shared_a{region_at_one_site(arena, 7)};
+    ::fixy::SharedRegion shared_b{region_at_one_site(arena, 9)};
     static_assert(std::is_same_v<decltype(shared_a), decltype(shared_b)>, "one site is one brand");
 
     auto guard_a = shared_a.lend(ctx).expect("an idle region lends a share");
@@ -260,8 +308,9 @@ void test_a_share_of_a_region_of_the_same_site_aborts(TestRunnerCtx const& test)
 // The door takes the base and the count out of the region it consumes.
 // A region that kept them could write the bytes that every share reads.
 void test_the_consumed_region_is_empty(TestRunnerCtx const& test) {
-    static std::uint64_t storage[3] = {4, 5, 6};
-    auto region = ::fixy::mint_owned_region(storage, std::size_t{3}, perm::mint_permission_root<Cache>());
+    Arena arena;
+    auto region = ::fixy::mint_owned_region<std::uint64_t>(test_alloc(), arena, std::size_t{3},
+                                                           perm::mint_permission_root<Cache>());
     ::fixy::SharedRegion shared{std::move(region)};
     CRUCIBLE_TEST_ASSERT(test, region.empty());
     // The consumed region is at a null base, so it lies inside the run of a

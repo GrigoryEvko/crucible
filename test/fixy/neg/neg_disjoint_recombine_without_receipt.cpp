@@ -4,7 +4,10 @@
 // receipt, so the one-argument call is no call at all.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+
+#include "../owned_region_unchecked_arena.h"
 
 #include <cstddef>
 #include <tuple>
@@ -17,9 +20,9 @@ struct Buffer {
 }  // namespace
 
 int main() {
-    int storage[4] = {};
-    auto region =
-        ::fixy::mint_owned_region(storage, std::size_t{4}, ::foundation::permissions::mint_permission_root<Buffer>());
+    test_owned_region::UncheckedArena arena{};
+    auto region = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{4},
+                                                 ::foundation::permissions::mint_permission_root<Buffer>());
     using Region = decltype(region);
     auto parts = ::fixy::mint_split<2>(std::move(region));
     auto whole = Region::recombine(std::move(parts.shards));

@@ -6,9 +6,15 @@
 // fixtures neg_owned_region_unchecked_arena_* name it.
 //
 // The allocator gives no storage: each request gets the empty View.  The door
-// never calls it for a type that it refuses.  For each other type the door
-// ends the process, because the View does not hold the count of the request,
-// and a death test of test_owned_region reads that end.
+// never calls it for a type that it refuses, or for a count of zero.  For
+// each other type and count the door ends the process, because the View does
+// not hold the count of the request, and a death test of test_owned_region
+// reads that end.
+//
+// The negative-compile fixtures of the region doors, of the shared read and
+// of the parallel doors of fixy/concurrent/Spawn.h name it too.  They take a
+// region from the arena door, and they never run, so no fixture calls the
+// allocator.
 
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>

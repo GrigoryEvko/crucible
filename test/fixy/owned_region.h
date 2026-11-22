@@ -1,6 +1,6 @@
 #pragma once
 
-// The shared part of test_owned_region: the two permission tags, the bump
+// The shared part of test_owned_region: the permission tags, the bump
 // arena, the split of every total into one shard count, and the tests of
 // each other source file.  owned_region_unchecked_arena.h gives the
 // allocator with no constraint of its own.  test_owned_region.cpp lists the source files of
@@ -11,6 +11,7 @@
 #include <fixy/OwnedRegion.h>
 #include <fixy/check/Check.h>
 #include <foundation/Lifetime.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/BumpArena.h>
 #include <foundation/core/Region.h>
 
@@ -24,7 +25,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <memory>
 #include <tuple>
 #include <utility>
 
@@ -41,6 +41,13 @@ struct DataA {
 };
 struct DataB {
     using permission_row = ::foundation::effects::Row<>;
+};
+
+// The tag of the regions of the region scope door.  A region scope door mints
+// its tokens.
+struct DataScope {
+    using permission_row = ::foundation::effects::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
 };
 
 // The smallest thing adopt asks of an arena: a bump arena of the base, which
@@ -94,57 +101,73 @@ template <typename Region>
     return true;
 }
 
-// One shard count over every total from 0 to 64.  The storage is a heap
-// block of exactly `total` elements, so AddressSanitizer reports a write
-// past its end.  At a total of zero the block has one element, because the
-// optimizer refuses an allocation of zero (-Werror=alloc-zero) and the empty
-// region writes nothing.  A total of zero also runs over a null base, which
-// is the region that an arena gives for a request of zero elements.
+// The split of one region of total elements into N shards, and its rebuild.
+// The function writes each element, checks the shards and the whole that
+// recombine gives, and gives back that whole.  Complexity: O(total).
+template <std::size_t N, typename Region>
+[[nodiscard]] Region split_and_recombine_one_region(TestRunnerCtx const& test, std::size_t total,
+                                                    Region region) noexcept {
+    // Each element holds its own position, so the elements of a shard tell
+    // the range that the split gave it.
+    auto seeded = ::fixy::with_mut(std::move(region), [](auto run) noexcept {
+        std::uint32_t position = 0;
+        for (std::uint32_t& element : run)
+            element = position++;
+    });
+    ::foundation::core::View<std::uint32_t const> const all = ::fixy::mint_borrowed(seeded);
+    auto parts = ::fixy::mint_split<N>(std::move(seeded));
+
+    // Each shard starts where the one before it ends, holds the count or one
+    // element more than the count of every other shard, and holds the
+    // positions of its own range.  So no two shards hold one element, and
+    // each element is in a shard.
+    std::size_t next_start = 0;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        (
+            [&] {
+                auto& shard = std::get<Is>(parts.shards);
+                CRUCIBLE_TEST_ASSERT(test, starts_at(all, shard, next_start));
+                CRUCIBLE_TEST_ASSERT(test, shard.size() == total / N || shard.size() == total / N + 1);
+                CRUCIBLE_TEST_ASSERT(test, holds_positions_from(shard, next_start));
+                next_start += shard.size();
+            }(),
+            ...);
+    }(std::make_index_sequence<N>{});
+    CRUCIBLE_TEST_ASSERT(test, next_start == total);
+
+    // recombine accepts every split, and the whole it gives back is the run
+    // that the split cut.
+    auto whole = Region::recombine(std::move(parts.witness), std::move(parts.shards));
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, whole, 0));
+    CRUCIBLE_TEST_ASSERT(test, whole.size() == total);
+    CRUCIBLE_TEST_ASSERT(test, holds_positions_from(whole, 0));
+    return whole;
+}
+
+// One shard count over every total from 0 to 64.  A region scope door covers
+// a HeapArray of exactly `total` elements, so AddressSanitizer reports a
+// write past its end.  At a total of zero the HeapArray holds no storage, so
+// the region is at a null base, as the region that an arena gives for a
+// request of zero elements.  A last run of zero elements starts at a base
+// that is not null: the empty part of a split of a block of one element.
 template <std::size_t N>
 void split_and_recombine_every_total(TestRunnerCtx const& test) {
     for (std::size_t total = 0; total <= 64; ++total) {
-        const bool also_null_base = total == 0;
-        for (int pass = 0; pass < (also_null_base ? 2 : 1); ++pass) {
-            auto storage = std::make_unique<std::uint32_t[]>(total == 0 ? 1 : total);
-            std::uint32_t* const base = pass == 0 ? storage.get() : nullptr;
-            auto region = ::fixy::mint_owned_region(base, total, mint_permission_root<DataA>());
-            using Region = decltype(region);
-            // Each element holds its own position, so the elements of a
-            // shard tell the range that the split gave it.
-            auto seeded = ::fixy::with_mut(std::move(region), [](auto run) noexcept {
-                std::uint32_t position = 0;
-                for (std::uint32_t& element : run)
-                    element = position++;
+        ::foundation::core::HeapArray<std::uint32_t> const storage = ::fixy::with_region<DataScope>(
+            ::foundation::core::mint_heap_array(test_alloc_token(), total, std::uint32_t{0}),
+            [&test, total](auto region) noexcept {
+                return split_and_recombine_one_region<N>(test, total, std::move(region));
             });
-            ::foundation::core::View<std::uint32_t const> const all = ::fixy::mint_borrowed(seeded);
-            auto parts = ::fixy::mint_split<N>(std::move(seeded));
-
-            // Each shard starts where the one before it ends, holds the
-            // count or one element more than the count of every other
-            // shard, and holds the positions of its own range.  So no two
-            // shards hold one element, and each element is in a shard.
-            std::size_t next_start = 0;
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (
-                    [&] {
-                        auto& shard = std::get<Is>(parts.shards);
-                        CRUCIBLE_TEST_ASSERT(test, starts_at(all, shard, next_start));
-                        CRUCIBLE_TEST_ASSERT(test, shard.size() == total / N || shard.size() == total / N + 1);
-                        CRUCIBLE_TEST_ASSERT(test, holds_positions_from(shard, next_start));
-                        next_start += shard.size();
-                    }(),
-                    ...);
-            }(std::make_index_sequence<N>{});
-            CRUCIBLE_TEST_ASSERT(test, next_start == total);
-
-            // recombine accepts every split, and the whole it gives back is
-            // the run that the split cut.
-            auto whole = Region::recombine(std::move(parts.witness), std::move(parts.shards));
-            CRUCIBLE_TEST_ASSERT(test, starts_at(all, whole, 0));
-            CRUCIBLE_TEST_ASSERT(test, whole.size() == total);
-            CRUCIBLE_TEST_ASSERT(test, holds_positions_from(whole, 0));
-        }
+        CRUCIBLE_TEST_ASSERT(test, storage.size() == total);
     }
+    ::foundation::core::FixedArray<std::uint32_t, 1> block{};
+    block.with_mut([&test](auto run) noexcept {
+        auto [empty, rest] = ::foundation::core::split_at(std::move(run), 0).expect("each run holds the offset zero");
+        static_cast<void>(rest);
+        static_cast<void>(::fixy::with_region<DataScope>(std::move(empty), [&test](auto region) noexcept {
+            return split_and_recombine_one_region<N>(test, 0, std::move(region));
+        }));
+    });
 }
 
 // Every total from 0 to 64 into the shard counts of one range

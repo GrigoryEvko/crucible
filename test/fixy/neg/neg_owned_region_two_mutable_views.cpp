@@ -4,7 +4,10 @@
 // the const elements, and a write takes the frame door with_mut.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+
+#include "../owned_region_unchecked_arena.h"
 
 #include <utility>
 
@@ -15,8 +18,9 @@ struct RegionWhole {
 }  // namespace
 
 int main() {
-    auto region =
-        ::fixy::mint_owned_region<int>(nullptr, 0uz, ::foundation::permissions::mint_permission_root<RegionWhole>());
+    test_owned_region::UncheckedArena arena{};
+    auto region = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, 0uz,
+                                                 ::foundation::permissions::mint_permission_root<RegionWhole>());
     ::foundation::core::View<int> const first = ::fixy::mint_borrowed(region), second = ::fixy::mint_borrowed(region);
     *first.get(0).expect("a write through the first borrow") = 1;
     *second.get(0).expect("a write through the second borrow") = 2;

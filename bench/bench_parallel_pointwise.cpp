@@ -230,9 +230,11 @@ void print_line(LineBasis const& basis, Level const& level, bench::Report const&
 }
 
 // The tag of the region of the probe of the shards: no element, because a
-// shard of the probe reads none.
+// shard of the probe reads none.  A region scope door over an empty HeapArray
+// mints it, and an empty HeapArray holds no storage.
 struct ShardProbeCells final {
     using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
 };
 
 // Prints the CPU and the L3 group of each shard of a walk of Shards shards
@@ -244,21 +246,23 @@ void print_shard_cores(Placement const& placement) noexcept {
     BgCtx const ctx{eff::testing::bg()};
     ::fixy::TestRunnerCtx const test{eff::testing::test()};
     ::fixy::FixedArray<::fixy::Atomic<std::uint64_t>, Shards> cpus{};
-    auto whole = ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
-        ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64},
-        ::fixy::mint_owned_region<std::uint32_t>(nullptr, std::size_t{0},
-                                                 ::foundation::permissions::mint_permission_root<ShardProbeCells>()),
-        [&cpus](auto shard, auto place) noexcept {
-            static_cast<void>(shard);
-            ::fixy::FixedText<1024> stat{};
-            bool const is_read = ::foundation::os::read_file("/proc/thread-self/stat", stat).is_ok();
-            std::uint64_t const cpu = is_read ? bench::detail::processor_of_stat(stat.view()).value_or(kNoCpu) : kNoCpu;
-            // Each shard writes only the Atomic of its own index, and the main thread reads it after the join.
-            cpus.with_element(place.index(),
-                              [cpu](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(cpu); });
-        },
-        options_of<Shards>(placement));
-    ::foundation::linear::drop(std::move(whole));
+    static_cast<void>(::fixy::with_region<ShardProbeCells>(
+        ::fixy::HeapArray<std::uint32_t>{}, [&ctx, &test, &cpus, &placement](auto region) noexcept {
+            return ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
+                ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
+                [&cpus](auto shard, auto place) noexcept {
+                    static_cast<void>(shard);
+                    ::fixy::FixedText<1024> stat{};
+                    bool const is_read = ::foundation::os::read_file("/proc/thread-self/stat", stat).is_ok();
+                    std::uint64_t const cpu =
+                        is_read ? bench::detail::processor_of_stat(stat.view()).value_or(kNoCpu) : kNoCpu;
+                    // Each shard writes only the Atomic of its own index, and the main thread reads it after the
+                    // join.
+                    cpus.with_element(place.index(),
+                                      [cpu](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(cpu); });
+                },
+                options_of<Shards>(placement));
+        }));
     bench::print("  {} shards, probed with the options of the walk:", Shards);
     for (auto const [index, cell] : cpus.enumerate()) {
         std::uint64_t const cpu = cell->load_acquire();
@@ -288,16 +292,16 @@ template <std::size_t Shards>
     return run.core(placement.measuring_core).batch(1).warmup(16).max_wall_ms(kWallMs).measure([&options] {
         BgCtx const ctx{eff::testing::bg()};
         ::fixy::TestRunnerCtx const test{eff::testing::test()};
-        auto whole = ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
-            ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64},
-            ::fixy::mint_owned_region<std::uint32_t>(
-                nullptr, std::size_t{0}, ::foundation::permissions::mint_permission_root<ShardProbeCells>()),
-            [](auto shard, auto place) noexcept {
-                static_cast<void>(shard);
-                static_cast<void>(place);
-            },
-            options);
-        ::foundation::linear::drop(std::move(whole));
+        static_cast<void>(::fixy::with_region<ShardProbeCells>(
+            ::fixy::HeapArray<std::uint32_t>{}, [&ctx, &test, &options](auto region) noexcept {
+                return ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
+                    ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
+                    [](auto shard, auto place) noexcept {
+                        static_cast<void>(shard);
+                        static_cast<void>(place);
+                    },
+                    options);
+            }));
     });
 }
 

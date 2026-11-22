@@ -7379,7 +7379,7 @@ fixy_neg_compile_test(neg_brand_owned_region_cross_brand
 
 # The region's tag is the permission's tag.
 fixy_neg_compile_test(neg_brand_owned_region_tag_mismatch
-  "no matching function for call to .mint_owned_region<int, \\{anonymous\\}::Buffer>\\("
+  "no matching function for call to .mint_owned_region<int, test_owned_region::UncheckedArena, \\{anonymous\\}::Buffer>\\("
   "mismatched types .\\{anonymous\\}::Buffer. and .\\{anonymous\\}::OtherBuffer.")
 
 # Two mints of a view are two brands: the refusal by identity.
@@ -7654,12 +7654,42 @@ fixy_neg_compile_test(neg_shared_read_view_leaves_its_door
 # borrows of one region write no element.
 fixy_neg_compile_test(neg_owned_region_two_mutable_views
   "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
-  "neg_owned_region_two_mutable_views\\.cpp:20:")
+  "neg_owned_region_two_mutable_views\\.cpp:24:")
 # The frame door takes a region by move, so a body that opens the door of
 # the same named region gets the deleted twin of a named region.
 fixy_neg_compile_test(neg_owned_region_nested_frame_door
   "use of deleted function .void fixy::with_mut\\(OwnedRegion<T, Tag, Brand>&, Body&&\\)"
   "with_mut takes the region into its frame and gives it back: pass std::move\\(region\\)")
+
+# No door builds a region over a raw address apart from the foreign door, so
+# no two regions cover one buffer.
+fixy_neg_compile_test(neg_owned_region_two_regions_over_one_buffer
+  "no matching function for call to .mint_owned_region\\(uint64_t \\[4\\], std::size_t"
+  "candidate expects 4 arguments, 3 provided")
+# The foreign door takes a run of objects, and the token by move.
+fixy_neg_compile_test(neg_foreign_owned_region_of_functions
+  "no matching function for call to .mint_foreign_owned_region\\(void \\(\\*\\)\\(\\) noexcept"
+  "the expression .is_object_v<T> \\[with T = void\\(\\)noexcept \\(true\\)\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_foreign_owned_region_named_permission
+  "cannot bind rvalue reference of type"
+  "Permission<\\{anonymous\\}::ForeignRun, foundation::permissions:"
+  "initializing argument 3 of")
+
+# A region scope door takes its storage by move, and its body gives the
+# region back, alone or beside a value that names no brand of the frame.
+fixy_neg_compile_test(neg_region_scope_storage_by_name
+  "no matching function for call to .with_region<\\{anonymous\\}::Slots>\\(foundation::core::HeapArray<int, 4>&,"
+  "cannot bind rvalue reference of type .foundation::core::HeapArray<int, 4>&&. to lvalue")
+fixy_neg_compile_test(neg_region_scope_body_drops_the_region
+  "no matching function for call to .with_region<\\{anonymous\\}::Slots>"
+  "required for the satisfaction of .RegionScopeBody<Body, T, Tag, Fresh>."
+  "fixy::detail::region_scope_value<.*>::fits \\[with Body = ")
+# GCC names no clause of the refusal of a value that names the scope brand.
+# The same body with a plain value in place of the brand compiles, so the
+# brand is the one cause.
+fixy_neg_compile_test(neg_region_scope_brand_leaves_the_door
+  "no matching function for call to .with_region<\\{anonymous\\}::Slots>"
+  "neg_region_scope_brand_leaves_the_door\\.cpp:27:43:")
 
 # ── The consume tracker ───────────────────────────────────────────────
 #

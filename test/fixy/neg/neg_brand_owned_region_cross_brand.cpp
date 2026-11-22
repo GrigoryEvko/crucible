@@ -4,7 +4,10 @@
 // deduction.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+
+#include "../owned_region_unchecked_arena.h"
 
 #include <cstddef>
 
@@ -19,12 +22,11 @@ constexpr void same_region(::fixy::OwnedRegion<int, Buffer, Brand>&,
 }  // namespace
 
 int main() {
-    int storage_a[4] = {};
-    int storage_b[4] = {};
-    auto first =
-        ::fixy::mint_owned_region(storage_a, std::size_t{4}, ::foundation::permissions::mint_permission_root<Buffer>());
-    auto second =
-        ::fixy::mint_owned_region(storage_b, std::size_t{4}, ::foundation::permissions::mint_permission_root<Buffer>());
+    test_owned_region::UncheckedArena arena{};
+    auto first = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{4},
+                                                ::foundation::permissions::mint_permission_root<Buffer>());
+    auto second = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{4},
+                                                 ::foundation::permissions::mint_permission_root<Buffer>());
     same_region(first, second);
     return 0;
 }

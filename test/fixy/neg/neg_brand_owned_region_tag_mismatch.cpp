@@ -4,7 +4,10 @@
 // unify, and no region is made.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+
+#include "../owned_region_unchecked_arena.h"
 
 #include <cstddef>
 
@@ -18,9 +21,10 @@ struct OtherBuffer {
 }  // namespace
 
 int main() {
-    int storage[4] = {};
-    auto region = ::fixy::mint_owned_region<int, Buffer>(
-        storage, std::size_t{4}, ::foundation::permissions::mint_permission_root<OtherBuffer>());
+    test_owned_region::UncheckedArena arena{};
+    auto region = ::fixy::mint_owned_region<int, test_owned_region::UncheckedArena, Buffer>(
+        ::foundation::effects::testing::test().alloc, arena, std::size_t{4},
+        ::foundation::permissions::mint_permission_root<OtherBuffer>());
     (void)region;
     return 0;
 }

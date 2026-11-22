@@ -9,6 +9,8 @@
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <utility>
 
 namespace eff = foundation::effects;
@@ -31,7 +33,9 @@ struct RegionBody {
 
 int main() {
     BgCtx ctx{eff::testing::bg()};
-    auto region = fixy::mint_owned_region<int>(nullptr, 0uz, perm::mint_permission_root<RegionWhole>());
+    test_owned_region::UncheckedArena arena{};
+    auto region =
+        fixy::mint_owned_region<int>(eff::testing::test().alloc, arena, 0uz, perm::mint_permission_root<RegionWhole>());
     [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>(
         ctx, fixy::concurrent::WorkBudget{}, std::move(region), RegionBody{});
     return 0;

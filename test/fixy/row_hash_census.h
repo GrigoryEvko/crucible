@@ -1362,6 +1362,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::PathTraversal, kVocabulary},
     {^^::fixy::Unsplit, kVocabulary},
     {^^::fixy::Slice, kVocabulary},
+    {^^::fixy::RegionScopeDoor,
+     "the scope door of a region tag: static private members only, no object of it exists, and it is never a value"},
     {^^::fixy::SplitParts, "a return bundle of a Disjoint witness and its shards, destructured at the call "
                            "site; each member folds on its own"},
     {^^::fixy::split_parts_for_, kMetafunction},

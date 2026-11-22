@@ -5,7 +5,10 @@
 // are two types and neither converts to the other.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+
+#include "../owned_region_unchecked_arena.h"
 
 #include <cstddef>
 #include <tuple>
@@ -16,23 +19,19 @@ struct Buffer {
     using permission_row = ::foundation::effects::Row<>;
 };
 
-int storage_a[4] = {};
-int storage_b[4] = {};
-
-// The arguments of the root mint are concrete, so each instantiation of the
-// template shares one brand (foundation/Brand.h).  The two regions below are
-// then one type, and the brand does not refuse the mixed rebuild.  The
-// receipt is what refuses.
-template <auto& Storage>
-auto region_at_one_site() {
-    return ::fixy::mint_owned_region(Storage, std::size_t{4},
-                                     ::foundation::permissions::mint_permission_root<Buffer>());
+// One function is one site of the root mint, so each call shares one brand
+// (foundation/Brand.h).  The two regions below are then one type, and the
+// brand does not refuse the mixed rebuild.  The receipt is what refuses.
+auto region_at_one_site(test_owned_region::UncheckedArena& arena) {
+    return ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{4},
+                                          ::foundation::permissions::mint_permission_root<Buffer>());
 }
 }  // namespace
 
 int main() {
-    auto first = region_at_one_site<storage_a>();
-    auto second = region_at_one_site<storage_b>();
+    test_owned_region::UncheckedArena arena{};
+    auto first = region_at_one_site(arena);
+    auto second = region_at_one_site(arena);
     using Region = decltype(first);
     auto parts_first = ::fixy::mint_split<2>(std::move(first));
     auto parts_second = ::fixy::mint_split<2>(std::move(second));

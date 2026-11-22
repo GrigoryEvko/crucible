@@ -5,7 +5,10 @@
 // pack and the assertion fires.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+
+#include "../owned_region_unchecked_arena.h"
 
 #include <cstddef>
 #include <utility>
@@ -21,9 +24,9 @@ struct HeldName {};
 }  // namespace
 
 int main() {
-    int storage[4] = {};
-    auto region =
-        ::fixy::mint_owned_region(storage, std::size_t{4}, ::foundation::permissions::mint_permission_root<Buffer>());
+    test_owned_region::UncheckedArena arena{};
+    auto region = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{4},
+                                                 ::foundation::permissions::mint_permission_root<Buffer>());
     auto parts = ::fixy::mint_split<2, HeldName>(std::move(region));
     (void)parts;
     return 0;

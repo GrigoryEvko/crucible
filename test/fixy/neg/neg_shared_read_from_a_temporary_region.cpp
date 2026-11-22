@@ -9,6 +9,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <cstddef>
 #include <utility>
 
@@ -21,20 +23,20 @@ using BgCtx = ::foundation::effects::ExecCtx<
     ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Nondet>>;
 
 // Each call returns a region of the same brand.
-auto region_over(int* storage) {
+auto region_over(test_owned_region::UncheckedArena& arena) {
     return ::fixy::SharedRegion{
-        ::fixy::mint_owned_region(storage, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>())};
+        ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, std::size_t{2},
+                                       ::foundation::permissions::mint_permission_root<Cache>())};
 }
 }  // namespace
 
 int main() {
-    static int kept[2] = {};
-    static int dropped[2] = {};
+    test_owned_region::UncheckedArena arena{};
     BgCtx ctx{::foundation::effects::testing::bg()};
 
-    auto shared = region_over(kept);
+    auto shared = region_over(arena);
     auto guard = shared.lend(ctx).expect("an idle region lends a share");
-    auto read = ::fixy::mint_shared_read(ctx, guard, region_over(dropped));
+    auto read = ::fixy::mint_shared_read(ctx, guard, region_over(arena));
     (void)read;
     return 0;
 }

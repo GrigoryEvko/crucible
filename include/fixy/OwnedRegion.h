@@ -26,7 +26,7 @@
 // template argument can catch.
 //
 // The surrendered Permission is the one door: the constructor is
-// private, and adopt and wrap each take a token by rvalue.  A join
+// private, and each mint takes a token by rvalue.  A join
 // rebuilds the parent by surrendering the shards to `recombine`, which
 // combines their Slice permissions back into the parent's.  A rebuild
 // has to consume the thing it reissues.  A helper that takes no
@@ -36,8 +36,11 @@
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Owner.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
@@ -267,22 +270,33 @@ class OwnedRegion;
 template <typename T, typename Tag, typename Brand>
 class SharedRegion;
 
-// The branded doors.  Each takes the permission by rvalue and hands
-// back a region of that permission's brand, so `mint_owned_region(base,
-// count, std::move(perm))` is the whole spelling and the brand is never
-// written.  The static members adopt and wrap on the class are the
-// erased doors: they take a permission of the class's own brand, and a
-// class spelled without one is on the erased identity.
+// The branded doors.  Each takes the permission by rvalue and hands back a
+// region of that permission's brand, so the brand is never written.  The
+// arena door takes fresh storage of an arena, so no two regions of it cover
+// one buffer.  The foreign door takes a run that a foreign ABI gives, so a
+// call stands only at the edge of a foreign ABI, in an opt-out region of the
+// class ABI.  Each other region comes from a region scope door (with_region),
+// which holds its storage for its frame.  The static member adopt on the
+// class is the erased arena door: it takes a permission of the class's own
+// brand, and a class spelled without one is on the erased identity.
 template <typename T, typename Tag, typename Brand>
     requires std::is_object_v<T>
 [[nodiscard]] constexpr OwnedRegion<T, Tag, Brand>
-mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept;
+mint_foreign_owned_region(T* base, std::size_t count,
+                          ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept;
 
 template <typename T, typename Allocator, typename Tag, typename Brand>
     requires ArrayArena<Allocator, T>
 [[nodiscard]] OwnedRegion<T, Tag, Brand>
 mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
                   ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept;
+
+// The scope door of a region over the storage of a frame (with_region).  Only
+// it builds the key of the scope mint of a region tag, and it builds a region
+// only over a run that its frame holds.  Its members are private, and the two
+// region scope doors are its friends, so a tag names it and no other code
+// opens a region through it.
+class RegionScopeDoor;
 
 namespace detail::owner {
 
@@ -333,10 +347,14 @@ class [[nodiscard]][[= ::foundation::linear::linear{}]] OwnedRegion
     template <typename U, typename UTag, typename UBrand>
     friend class SharedRegion;
 
+    // The scope door builds a region over the run that its frame holds.
+    friend class RegionScopeDoor;
+
     template <typename U, typename UTag, typename UBrand>
         requires std::is_object_v<U>
     friend constexpr OwnedRegion<U, UTag, UBrand>
-    mint_owned_region(U* base, std::size_t count, ::foundation::permissions::Permission<UTag, UBrand>&& perm) noexcept;
+    mint_foreign_owned_region(U* base, std::size_t count,
+                              ::foundation::permissions::Permission<UTag, UBrand>&& perm) noexcept;
 
     template <typename U, typename Allocator, typename UTag, typename UBrand>
         requires ArrayArena<Allocator, U>
@@ -385,18 +403,9 @@ public:
         return ::fixy::mint_owned_region<T>(alloc_token, arena, count, std::move(perm));
     }
 
-    // Wraps storage allocated elsewhere.  The region owns the
-    // Permission proof but not the storage, so the caller keeps
-    // responsibility for the buffer's lifetime.  The body is the mint
-    // over a pointer.
-    [[nodiscard]] static constexpr OwnedRegion wrap(T* base, std::size_t count,
-                                                    ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
-        return ::fixy::mint_owned_region(base, count, std::move(perm));
-    }
-
     // The release door.  The region gives its token back to the caller,
     // and it covers no byte after the call.  The storage stays with its
-    // owner, as for wrap().
+    // owner: the arena, the frame of a scope door, or the foreign side.
     [[nodiscard]] constexpr ::foundation::permissions::Permission<Tag, Brand> release() && noexcept {
         this->reset_();
         return std::move(perm_);
@@ -412,8 +421,8 @@ public:
     // key of a frame keeps each caller outside the base out, so only a frame
     // door gives a View that writes the elements of a region: with_mut below,
     // and the runner of mint_parallel_for (fixy/concurrent/Spawn.h), which
-    // lends each body the run of its shard.  The mint over a pointer checked
-    // the base and the count, and a split and a recombine keep the two inside
+    // lends each body the run of its shard.  Each mint of a region gives a
+    // checked base and count, and a split and a recombine keep the two inside
     // that run, so the View takes the key of an owner on the core with no
     // check.
     [[nodiscard]] friend constexpr ::foundation::core::View<T>
@@ -492,16 +501,19 @@ private:
 template <typename T, typename Tag, typename Brand>
     requires std::is_object_v<T>
 [[nodiscard]] constexpr OwnedRegion<T, Tag, Brand>
-mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
-    // The base and the count come from the caller, so the mint checks the two
-    // once, here: it ends the process on a count past the largest count of a
-    // View, and on a null base with a count.  Each frame door and each borrow
-    // of the region then makes its View with no check.
+mint_foreign_owned_region(T* base, std::size_t count,
+                          ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
+    // The base and the count come from the foreign side, so the mint checks
+    // the two once, here: it ends the process on a count past the largest
+    // count of a View, and on a null base with a count.  It does not prove that
+    // no other region covers the run, and that the run lives: the caller at the
+    // edge of the foreign ABI keeps both.  Each frame door and each borrow of
+    // the region then makes its View with no check.
     if (count > ::foundation::core::max_view_count(sizeof(T))) [[unlikely]] {
-        ::foundation::core::fatal("mint_owned_region got a count past the largest count of a View");
+        ::foundation::core::fatal("mint_foreign_owned_region got a count past the largest count of a View");
     }
     if (base == nullptr && count != 0) [[unlikely]] {
-        ::foundation::core::fatal("mint_owned_region got a null pointer with a count");
+        ::foundation::core::fatal("mint_foreign_owned_region got a null pointer with a count");
     }
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }
@@ -525,8 +537,8 @@ mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, st
 // than the region.  The region is taken by lvalue reference and the twins
 // refuse a temporary region, whose storage may be gone at the end of the
 // statement.  A write takes the frame door with_mut below, so no two Views
-// of one region write the same elements.  The mint over a pointer checked
-// the base and the count, so the View takes the key of an owner on the core.
+// of one region write the same elements.  Each mint of a region gives a
+// checked base and count, so the View takes the key of an owner on the core.
 template <typename T, typename Tag, typename Brand>
     requires ::foundation::brand::IsBrand<Brand>
 [[nodiscard]] constexpr ::foundation::core::View<T const> mint_borrowed(OwnedRegion<T, Tag, Brand> const& region
@@ -598,6 +610,163 @@ template <class T, class Tag, class Brand, class Body>
 void with_mut(OwnedRegion<T, Tag, Brand> const& region, Body&& body) = delete(
     "a const region lends no writer of its elements: read them through mint_borrowed, or take a region that is not "
     "const");
+
+// Region scope doors
+//
+// with_region<Tag>(std::move(storage), body) holds the storage of a region for
+// its frame: a HeapArray that the door gives back, or a ViewMut that the door
+// gives back.  It mints the token of Tag on the scope brand of its call with
+// the scope mint of foundation/permissions/Permission.h, so Tag names this door
+// as its scope_door, and only this door mints a token of Tag.  The body takes
+// the region by value and gives it back: alone, or after its result in a
+// Record.  The region is linear, so a body that drops it has no region to give
+// back, and a body that gives another value does not fit the door.
+//
+// The brand of the region is the scope brand, so the rule brand-escape refuses
+// each result and each object of static storage duration that holds it: no
+// region outlives its storage, and no second region covers the storage while
+// the frame holds it.  After the body the door ends the token and gives the
+// storage back, after the result of the body in a Record.  Complexity: O(1),
+// and the cost of body.
+
+// A tag of a region scope door: a tag that the scope mint admits, whose door is
+// this one.
+template <typename Tag>
+concept RegionScopeTag =
+    ::foundation::permissions::ScopeMintableTag<Tag> && std::same_as<typename Tag::scope_door, RegionScopeDoor>;
+
+namespace detail {
+
+// The value that a body of a region scope door gives beside the region: void
+// for a body that gives the region alone, and the first part of a Record of a
+// value and the region.
+template <typename Given, typename Region>
+struct region_scope_value {
+    static constexpr bool fits = false;
+};
+
+template <typename Region>
+struct region_scope_value<Region, Region> {
+    static constexpr bool fits = true;
+    using type = void;
+};
+
+template <typename Value, typename Region>
+struct region_scope_value<::foundation::core::Record<Value, Region>, Region> {
+    static constexpr bool fits = true;
+    using type = Value;
+};
+
+}  // namespace detail
+
+// A body of a region scope door: it takes the region by value with no throw,
+// and gives the region back alone, or after a value that holds no borrow and
+// names no brand of the frame in a Record.
+template <typename Body, typename T, typename Tag, typename Brand>
+concept RegionScopeBody =
+    std::is_nothrow_invocable_v<Body&&, OwnedRegion<T, Tag, Brand>&&>
+    && detail::region_scope_value<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Brand>&&>,
+                                  OwnedRegion<T, Tag, Brand>>::fits
+    && (std::same_as<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Brand>&&>, OwnedRegion<T, Tag, Brand>>
+        || ::foundation::core::FrameResult<
+            typename detail::region_scope_value<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Brand>&&>,
+                                                OwnedRegion<T, Tag, Brand>>::type,
+            Brand>);
+
+// The region scope door over a HeapArray, declared here for the friend of the
+// door below.  The pack refuses each explicit argument after the tag.
+template <typename Tag, class... Refused, typename T, std::size_t Align, typename Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && RegionScopeTag<Tag> && RegionScopeBody<Body, T, Tag, Fresh>
+[[nodiscard]] auto with_region(::foundation::core::HeapArray<T, Align>&& storage, Body&& body) noexcept;
+
+// The region scope door over a ViewMut, declared here for the same reason.
+template <typename Tag, class... Refused, typename T, typename RunBrand, std::size_t Extent, typename Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && RegionScopeTag<Tag> && RegionScopeBody<Body, T, Tag, Fresh>
+[[nodiscard]] auto with_region(::foundation::core::ViewMut<T, RunBrand, Extent>&& run, Body&& body) noexcept;
+
+class RegionScopeDoor final : ::foundation::NoObject<RegionScopeDoor> {
+    template <typename Tag, class... Refused, typename T, std::size_t Align, typename Body,
+              ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && RegionScopeTag<Tag> && RegionScopeBody<Body, T, Tag, Fresh>
+    friend auto with_region(::foundation::core::HeapArray<T, Align>&& storage, Body&& body) noexcept;
+
+    template <typename Tag, class... Refused, typename T, typename RunBrand, std::size_t Extent, typename Body,
+              ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && RegionScopeTag<Tag> && RegionScopeBody<Body, T, Tag, Fresh>
+    friend auto with_region(::foundation::core::ViewMut<T, RunBrand, Extent>&& run, Body&& body) noexcept;
+
+    // The region over the run of the frame, with the token of Tag on the scope
+    // brand.  The run comes from storage that the frame holds, so its first
+    // element and its count need no check.
+    template <typename T, typename Tag, ::foundation::brand::IsBrand Brand>
+    [[nodiscard]] static OwnedRegion<T, Tag, Brand> open(T* first, std::size_t count) noexcept {
+        ::foundation::permissions::scope_mint_key<Tag> const key{};
+        return OwnedRegion<T, Tag, Brand>{first, count,
+                                          ::foundation::permissions::mint_scope_permission<Tag, Brand>(key)};
+    }
+
+    // Runs the body on the region, ends the region and its token, and gives the
+    // value of the body: void, or the first part of the Record.
+    template <typename T, typename Tag, ::foundation::brand::IsBrand Brand, typename Body>
+    [[nodiscard]] static auto run(OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept {
+        using Region = OwnedRegion<T, Tag, Brand>;
+        using Given = std::invoke_result_t<Body&&, Region&&>;
+        if constexpr (std::same_as<Given, Region>) {
+            ::foundation::linear::drop(static_cast<Body&&>(body)(std::move(region)).release());
+        } else {
+            auto [value, back] = static_cast<Body&&>(body)(std::move(region));
+            ::foundation::linear::drop(std::move(back).release());
+            return value;
+        }
+    }
+};
+
+// The region scope door over a HeapArray.  The storage moves into the frame,
+// and the door gives it back.
+template <typename Tag, class... Refused, typename T, std::size_t Align, typename Body,
+          ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0) && RegionScopeTag<Tag> && RegionScopeBody<Body, T, Tag, Fresh>
+auto with_region(::foundation::core::HeapArray<T, Align>&& storage, Body&& body) noexcept {
+    ::foundation::core::HeapArray<T, Align> held{std::move(storage)};
+    using Value = typename detail::region_scope_value<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Fresh>&&>,
+                                                      OwnedRegion<T, Tag, Fresh>>::type;
+    auto region =
+        RegionScopeDoor::open<T, Tag, Fresh>(first_of_(::foundation::core::detail::BaseLayerRead{},
+                                                       frame_run_(::foundation::core::detail::FrameDoor::key(), held)),
+                                             held.size());
+    if constexpr (std::is_void_v<Value>) {
+        RegionScopeDoor::run(std::move(region), static_cast<Body&&>(body));
+        return held;
+    } else {
+        Value value = RegionScopeDoor::run(std::move(region), static_cast<Body&&>(body));
+        return ::foundation::core::Record<Value, ::foundation::core::HeapArray<T, Align>>{std::move(value),
+                                                                                          std::move(held)};
+    }
+}
+
+// The region scope door over a ViewMut.  The borrow moves into the frame, and
+// the door gives it back, so the region covers the run of the borrow only
+// while the frame holds it.
+template <typename Tag, class... Refused, typename T, typename RunBrand, std::size_t Extent, typename Body,
+          ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0) && RegionScopeTag<Tag> && RegionScopeBody<Body, T, Tag, Fresh>
+auto with_region(::foundation::core::ViewMut<T, RunBrand, Extent>&& run, Body&& body) noexcept {
+    using Run = ::foundation::core::ViewMut<T, RunBrand, Extent>;
+    Run held{std::move(run)};
+    using Value = typename detail::region_scope_value<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Fresh>&&>,
+                                                      OwnedRegion<T, Tag, Fresh>>::type;
+    auto region =
+        RegionScopeDoor::open<T, Tag, Fresh>(first_of_(::foundation::core::detail::BaseLayerRead{}, held), held.size());
+    if constexpr (std::is_void_v<Value>) {
+        RegionScopeDoor::run(std::move(region), static_cast<Body&&>(body));
+        return held;
+    } else {
+        Value value = RegionScopeDoor::run(std::move(region), static_cast<Body&&>(body));
+        return ::foundation::core::Record<Value, Run>{std::move(value), std::move(held)};
+    }
+}
 
 template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand, typename SplitName>
     requires(N > 0 && std::is_object_v<T>)

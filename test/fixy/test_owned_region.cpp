@@ -17,10 +17,10 @@
 //
 //   owned_region.h                the shared part
 //   this file                     the compile-time properties, adopt,
-//                                 wrap, the brand, the refusals of
-//                                 recombine, the doors that empty a
-//                                 region, the driver of every total and
-//                                 count, and main
+//                                 the region scope door, the brand, the
+//                                 refusals of recombine, the doors that
+//                                 empty a region, the driver of every
+//                                 total and count, and main
 //   ..._split.cpp                 splits into shards and the rebuild of
 //                                 the whole
 //   ..._every_total_<k>.cpp       every total over the shard counts of
@@ -179,22 +179,25 @@ void test_adopt_refuses_a_run_of_another_count(TestRunnerCtx const& test) {
         kRefusedRun);
 }
 
-void test_wrap_borrows_storage(TestRunnerCtx const& test) {
-    std::uint64_t storage[6] = {1, 2, 3, 4, 5, 6};
-    auto perm = mint_permission_root<DataB>();
-    using Brand = decltype(perm)::brand_type;
-    auto region = OwnedRegion<std::uint64_t, DataB, Brand>::wrap(storage, 6, std::move(perm));
-
-    // The region proves ownership of the bytes but does not own the
-    // storage, so a write through it lands in the caller's array.
-    auto written = ::fixy::with_mut(
-        std::move(region), [](auto run) noexcept { *run.get(5).expect("the region holds six elements") = 60; });
-    CRUCIBLE_TEST_ASSERT(test, storage[5] == 60);
-
-    std::uint64_t sum = 0;
-    for (auto v : ::fixy::mint_borrowed(written))
-        sum += v;
-    CRUCIBLE_TEST_ASSERT(test, sum == 1 + 2 + 3 + 4 + 5 + 60);
+// The region scope door covers the run that the frame door of an array
+// lends.  The region proves ownership of the bytes but does not own the
+// storage, so a write through it lands in the array of the caller.
+void test_region_scope_door_writes_its_storage(TestRunnerCtx const& test) {
+    ::fixy::FixedArray<std::uint64_t, 6> storage{1, 2, 3, 4, 5, 6};
+    storage.with_mut([&test](auto run) noexcept {
+        auto [sum, back] = ::fixy::with_region<DataScope>(std::move(run), [](auto region) noexcept {
+            auto written = ::fixy::with_mut(std::move(region), [](auto elements) noexcept {
+                *elements.get(5).expect("the region holds six elements") = 60;
+            });
+            std::uint64_t total = 0;
+            for (auto const value : ::fixy::mint_borrowed(written))
+                total += value;
+            return ::foundation::core::Record{total, std::move(written)};
+        });
+        static_cast<void>(back);
+        CRUCIBLE_TEST_ASSERT(test, sum == 1 + 2 + 3 + 4 + 5 + 60);
+    });
+    CRUCIBLE_TEST_ASSERT(test, storage.at(::fixy::index<5>()) == 60);
 }
 
 // Every total from 0 to 64 into every shard count from 1 to 16.  A split
@@ -213,10 +216,10 @@ void test_split_and_recombine_every_total_and_count(TestRunnerCtx const& test) {
 // spelling from any of them.  A borrow of the region is a View, which
 // names no brand.
 void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
-    static std::uint64_t storage[8] = {};
+    Arena arena;
     auto perm = mint_permission_root<DataA>();
     using Brand = ::foundation::brand::brand_of_t<decltype(perm)>;
-    auto region = ::fixy::mint_owned_region(storage, std::size_t{8}, std::move(perm));
+    auto region = ::fixy::mint_owned_region<std::uint64_t>(test_alloc_token(), arena, std::size_t{8}, std::move(perm));
     static_assert(std::is_same_v<decltype(region), OwnedRegion<std::uint64_t, DataA, Brand>>);
     using Region = decltype(region);
 
@@ -248,9 +251,11 @@ void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
 // and shard 1 of another is well typed, and recombine aborts on it, because
 // shard 1 does not start where shard 0 ends.  A region on the erased brand
 // does not split at all: the split of its token refuses the erased identity
-// (neg_permission_split_of_a_singleton_root).
-auto split_branded_in_two(std::uint64_t* storage) {
-    return ::fixy::mint_split<2>(::fixy::mint_owned_region(storage, std::size_t{4}, mint_permission_root<DataA>()));
+// (neg_permission_split_of_a_singleton_root).  Each region takes a fresh run
+// of the arena.
+auto split_branded_in_two(Arena& arena) {
+    return ::fixy::mint_split<2>(::fixy::mint_owned_region<std::uint64_t>(test_alloc_token(), arena, std::size_t{4},
+                                                                          mint_permission_root<DataA>()));
 }
 
 // The mixed tuple takes shard 1 of the second region, so the second
@@ -260,11 +265,9 @@ auto split_branded_in_two(std::uint64_t* storage) {
 // Check family.
 template <typename Split>
 void require_mixed_rebuild_aborts(TestRunnerCtx const& test, Split split) {
-    static std::uint64_t first[4] = {};
-    static std::uint64_t second[4] = {};
-    static std::uint64_t third[4] = {};
-    auto parts_a = split(first);
-    auto parts_b = split(second);
+    Arena arena;
+    auto parts_a = split(arena);
+    auto parts_b = split(arena);
     static_assert(std::is_same_v<decltype(parts_a), decltype(parts_b)>, "one split site is one type");
     using Whole = std::remove_cvref_t<decltype(std::get<0>(parts_a.shards))>::brand_type;
     using Region = OwnedRegion<std::uint64_t, DataA, Whole>;
@@ -275,7 +278,7 @@ void require_mixed_rebuild_aborts(TestRunnerCtx const& test, Split split) {
             (void)Region::recombine(std::move(parts_a.witness), std::move(mixed));
         },
         kRefusedRecombine);
-    auto parts_c = split(third);
+    auto parts_c = split(arena);
     ::foundation::core::View<std::uint64_t const> const first_shard =
         ::fixy::mint_borrowed(std::get<0>(parts_c.shards));
     auto whole = Region::recombine(std::move(parts_c.witness), std::move(parts_c.shards));
@@ -292,8 +295,8 @@ void require_mixed_rebuild_aborts(TestRunnerCtx const& test, Split split) {
 // moves a tuple element and then the tuple.
 template <std::size_t KeptIndex>
 void require_recombine_aborts_without_shard(TestRunnerCtx const& test) {
-    static std::uint64_t storage[4] = {};
-    auto parts = split_branded_in_two(storage);
+    Arena arena;
+    auto parts = split_branded_in_two(arena);
     using Region = OwnedRegion<std::uint64_t, DataA,
                                typename std::remove_cvref_t<decltype(std::get<0>(parts.shards))>::brand_type>;
     expect_dies(
@@ -316,8 +319,8 @@ void test_recombine_refuses_a_shard_moved_out_of_the_tuple(TestRunnerCtx const& 
 
 // One mint site is one brand, so two regions from this helper are one
 // type and one can be assigned to the other.
-auto branded_at_one_site(std::uint64_t* storage, std::size_t count) {
-    return ::fixy::mint_owned_region(storage, count, mint_permission_root<DataA>());
+auto branded_at_one_site(Arena& arena, std::size_t count) {
+    return ::fixy::mint_owned_region<std::uint64_t>(test_alloc_token(), arena, count, mint_permission_root<DataA>());
 }
 
 // Each door that consumes a region leaves it empty: the move, the split,
@@ -325,8 +328,8 @@ auto branded_at_one_site(std::uint64_t* storage, std::size_t count) {
 // its successor owns.  A region has no move assignment, because the
 // assignment would drop the token of the target.
 void test_every_consuming_door_empties_the_region(TestRunnerCtx const& test) {
-    static std::uint64_t storage[4] = {1, 2, 3, 4};
-    auto source = branded_at_one_site(storage, 4);
+    Arena arena;
+    auto source = branded_at_one_site(arena, 4);
     using Branded = decltype(source);
     ::foundation::core::View<std::uint64_t const> const all = ::fixy::mint_borrowed(source);
 
@@ -342,12 +345,13 @@ void test_every_consuming_door_empties_the_region(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, lies_outside(all, std::get<1>(parts.shards)));
     CRUCIBLE_TEST_ASSERT(test, starts_at(all, whole, 0) && whole.size() == 4);
 
-    // The release door gives the token back, and the token wraps the same
-    // storage again.
+    // The release door gives the token back, and the token adopts a fresh
+    // run of the arena, which lies past the run of the released region.
     auto token = std::move(whole).release();
     CRUCIBLE_FATAL_INVARIANT(lies_outside(all, whole));
-    auto rewrapped = Branded::wrap(storage, 4, std::move(token));
-    CRUCIBLE_FATAL_INVARIANT(starts_at(all, rewrapped, 0) && rewrapped.size() == 4);
+    auto readopted = Branded::adopt(test_alloc_token(), arena, 4, std::move(token));
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::offset_of(all, ::fixy::mint_borrowed(readopted)).is_none()
+                             && readopted.size() == 4);
 }
 
 void test_recombine_refuses_shards_of_two_regions_of_one_site(TestRunnerCtx const& test) {
@@ -392,8 +396,8 @@ int main() {
     pass(test, "  test_adopt_and_view: PASSED\n");
     test_adopt_refuses_a_run_of_another_count(test);
     pass(test, "  test_adopt_refuses_a_run_of_another_count: PASSED\n");
-    test_wrap_borrows_storage(test);
-    pass(test, "  test_wrap_borrows_storage: PASSED\n");
+    test_region_scope_door_writes_its_storage(test);
+    pass(test, "  test_region_scope_door_writes_its_storage: PASSED\n");
     test_split_into_chunk_math(test);
     pass(test, "  test_split_into_chunk_math: PASSED\n");
     test_split_uneven(test);

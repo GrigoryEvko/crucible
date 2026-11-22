@@ -7,6 +7,8 @@
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <cstddef>
 #include <utility>
 
@@ -24,8 +26,9 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc
 // element and the fixture runs nothing.
 int main() {
     BgCtx ctx{eff::testing::bg()};
-    auto region =
-        fixy::mint_owned_region(static_cast<int*>(nullptr), std::size_t{0}, perm::mint_permission_root<RegionWhole>());
+    test_owned_region::UncheckedArena arena{};
+    auto region = fixy::mint_owned_region<int>(eff::testing::test().alloc, arena, std::size_t{0},
+                                               perm::mint_permission_root<RegionWhole>());
     [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<2>(
         ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto shard, auto) noexcept { (void)shard; });
     return 0;

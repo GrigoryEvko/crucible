@@ -5,7 +5,10 @@
 // named region refuses the inner door.
 
 #include <fixy/OwnedRegion.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
+
+#include "../owned_region_unchecked_arena.h"
 
 #include <utility>
 
@@ -16,8 +19,9 @@ struct RegionWhole {
 }  // namespace
 
 int main() {
-    auto region =
-        ::fixy::mint_owned_region<int>(nullptr, 0uz, ::foundation::permissions::mint_permission_root<RegionWhole>());
+    test_owned_region::UncheckedArena arena{};
+    auto region = ::fixy::mint_owned_region<int>(::foundation::effects::testing::test().alloc, arena, 0uz,
+                                                 ::foundation::permissions::mint_permission_root<RegionWhole>());
     auto back = ::fixy::with_mut(std::move(region), [&region](auto outer) noexcept {
         ::fixy::with_mut(region, [](auto inner) noexcept { static_cast<void>(inner.size()); });
         static_cast<void>(outer.size());

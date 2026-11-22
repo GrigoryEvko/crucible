@@ -17,7 +17,6 @@
 #include <foundation/permissions/Permission.h>
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -46,8 +45,39 @@ struct Right {
     using permission_row = eff::Row<>;
 };
 
+// The tag of the regions of the region scope door.  A region scope door mints
+// its tokens.
 struct RegionWhole {
     using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
+};
+
+// The tag of a region of const elements, which the arena door mints from a
+// root permission.
+struct ReadRegion {
+    using permission_row = eff::Row<>;
+};
+
+// The allocation capability of the test context.
+[[nodiscard]] eff::Alloc test_alloc() noexcept { return eff::testing::test().alloc; }
+
+// The arena of a region of const elements: the request gets fresh elements
+// that hold their positions, in a HeapArray that the arena holds for its
+// life.  The arena takes one request, and a second request ends the process.
+class PositionArena {
+    fixy::HeapArray<int> held_{};
+
+public:
+    template <typename T>
+        requires std::is_same_v<T, int const>
+    [[nodiscard]] fixy::View<int const> alloc_array(eff::Alloc alloc, std::size_t count) noexcept {
+        if (held_.size() != 0) [[unlikely]] {
+            fixy::fatal("the arena of positions takes one request");
+        }
+        held_ = fixy::mint_heap_array_with<int>(
+            alloc, count, [](std::size_t position) noexcept { return static_cast<int>(position); });
+        return held_.view();
+    }
 };
 
 }  // namespace
@@ -281,18 +311,20 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
     constexpr std::size_t kShards = 4;
 
     BgCtx ctx{eff::testing::bg()};
-    static std::array<int, kCount> storage{};
-    storage.fill(0);
-
-    auto region = fixy::mint_owned_region(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
 
     // The body gets the ViewMut of its shard, and the shard stays in the
-    // tuple of the runner, so recombine can consume it.
-    auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, kShards>(
-        ctx, dram_bound_budget(), std::move(region), [](auto shard, auto) noexcept {
-            for (int& element : shard) {
-                element += 1;
-            }
+    // tuple of the runner, so recombine can consume it.  The region scope
+    // door gives the storage back after the count of the recombined region.
+    auto [whole_count, storage] =
+        fixy::with_region<RegionWhole>(fixy::mint_heap_array(test_alloc(), kCount, 0), [&ctx](auto region) noexcept {
+            auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, kShards>(
+                ctx, dram_bound_budget(), std::move(region), [](auto shard, auto) noexcept {
+                    for (int& element : shard) {
+                        element += 1;
+                    }
+                });
+            std::size_t const count = whole.size();
+            return fixy::Record{count, std::move(whole)};
         });
 
     long sum = 0;
@@ -308,16 +340,18 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
     }
 
     // Every element must be exactly one, not an average of one.
-    for (std::size_t index = 0; index < kCount; ++index) {
-        if (storage[index] != 1) {
-            std::fprintf(stderr, "mint_parallel_for: element %zu is %d, want 1\n", index, storage[index]);
+    std::size_t index = 0;
+    for (const int element : storage) {
+        if (element != 1) {
+            ::fixy::report(::fixy::Sink::Err, "mint_parallel_for: element {} is {}, want 1\n", index, element);
             return 1;
         }
+        ++index;
     }
 
     // The recombined region describes the same storage it started with.
-    if (whole.size() != kCount) {
-        std::fprintf(stderr, "the recombined region reports %zu elements, want %zu\n", whole.size(), kCount);
+    if (whole_count != kCount) {
+        ::fixy::report(::fixy::Sink::Err, "the recombined region reports {} elements, want {}\n", whole_count, kCount);
         return 1;
     }
     return 0;
@@ -328,25 +362,29 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
 [[nodiscard]] int parallel_for_with_one_shard_runs_inline() {
     constexpr std::size_t kCount = 64;
     BgCtx ctx{eff::testing::bg()};
-    static std::array<int, kCount> storage{};
-    storage.fill(7);
 
-    auto region = fixy::mint_owned_region(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
-    auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, 1>(
-        ctx, dram_bound_budget(), std::move(region), [](auto shard, auto) noexcept {
-            for (int& element : shard) {
-                element = 9;
-            }
+    auto [whole_count, storage] =
+        fixy::with_region<RegionWhole>(fixy::mint_heap_array(test_alloc(), kCount, 7), [&ctx](auto region) noexcept {
+            auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, 1>(
+                ctx, dram_bound_budget(), std::move(region), [](auto shard, auto) noexcept {
+                    for (int& element : shard) {
+                        element = 9;
+                    }
+                });
+            std::size_t const count = whole.size();
+            return fixy::Record{count, std::move(whole)};
         });
 
-    for (std::size_t index = 0; index < kCount; ++index) {
-        if (storage[index] != 9) {
-            std::fprintf(stderr, "the single-shard body did not run: element %zu is %d\n", index, storage[index]);
+    std::size_t index = 0;
+    for (const int element : storage) {
+        if (element != 9) {
+            ::fixy::report(::fixy::Sink::Err, "the single-shard body did not run: element {} is {}\n", index, element);
             return 1;
         }
+        ++index;
     }
-    if (whole.size() != kCount) {
-        std::fprintf(stderr, "the single-shard recombine lost elements: %zu of %zu\n", whole.size(), kCount);
+    if (whole_count != kCount) {
+        ::fixy::report(::fixy::Sink::Err, "the single-shard recombine lost elements: {} of {}\n", whole_count, kCount);
         return 1;
     }
     return 0;
@@ -356,20 +394,19 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
 // the body reads, and the place of each shard gives the position of its first
 // element in the region.  Each shard stores the sum of its elements and its
 // first position in the cells of its own index, so no two shards write one
-// cell.  The split cuts 4099 elements into 1025, 1025, 1025 and 1024.
+// cell.  The split cuts 4099 elements into 1025, 1025, 1025 and 1024.  The
+// arena door gives the region of const elements, whose elements hold their
+// positions.
 [[nodiscard]] int parallel_for_of_const_elements_reads_each_shard() {
     constexpr std::size_t kCount = 4099;
     constexpr std::size_t kShards = 4;
     BgCtx ctx{eff::testing::bg()};
-    static std::array<int, kCount> storage{};
-    for (std::size_t index = 0; index < kCount; ++index) {
-        storage[index] = static_cast<int>(index);
-    }
+    PositionArena arena{};
     ::fixy::FixedArray<::fixy::Atomic<std::uint64_t>, kShards> sums{};
     ::fixy::FixedArray<::fixy::Atomic<std::uint64_t>, kShards> firsts{};
     auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, kShards>(
         ctx, dram_bound_budget(),
-        fixy::mint_owned_region(std::as_const(storage).data(), kCount, perm::mint_permission_root<RegionWhole>()),
+        fixy::mint_owned_region<int const>(test_alloc(), arena, kCount, perm::mint_permission_root<ReadRegion>()),
         [&sums, &firsts](auto shard, auto place) noexcept {
             std::uint64_t sum = 0;
             for (int const element : shard) {
@@ -414,25 +451,28 @@ struct ShardRecord {
 // shards share a record, and the body captures nothing.
 template <std::size_t Shards>
 struct ShardThreads {
-    std::array<ShardRecord, Shards> records{};
+    ::fixy::FixedArray<ShardRecord, Shards> records{};
 
-    // Runs the shards under one budget and records who ran each one.
+    // Runs the shards under one budget and records who ran each one.  The
+    // region scope door covers the run that the frame door of the records
+    // lends.
     void run(fixy::concurrent::WorkBudget budget) noexcept {
         BgCtx ctx{eff::testing::bg()};
-        auto region = fixy::mint_owned_region(records.data(), Shards, perm::mint_permission_root<RegionWhole>());
-        auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, Shards>(
-            ctx, budget, std::move(region), [](auto shard, auto) noexcept {
-                for (ShardRecord& record : shard) {
-                    record.thread = std::this_thread::get_id();
-                    ++record.runs;
-                }
-            });
-        (void)whole;
+        records.with_mut([&ctx, budget](auto elements) noexcept {
+            static_cast<void>(fixy::with_region<RegionWhole>(std::move(elements), [&ctx, budget](auto region) noexcept {
+                return spawn::mint_parallel_for<spawn::BodyCoupling::Independent, Shards>(
+                    ctx, budget, std::move(region), [](auto shard, auto) noexcept {
+                        for (ShardRecord& record : shard) {
+                            record.thread = std::this_thread::get_id();
+                            ++record.runs;
+                        }
+                    });
+            }));
+        });
     }
 
     [[nodiscard]] bool every_shard_ran_once() const noexcept {
-        return std::all_of(records.begin(), records.end(),
-                           [](ShardRecord const& record) noexcept { return record.runs == 1; });
+        return records.view().walk().all_of([](ShardRecord const& record) noexcept { return record.runs == 1; });
     }
 
     [[nodiscard]] std::size_t distinct_threads() const noexcept {
@@ -444,8 +484,8 @@ struct ShardThreads {
     }
 
     [[nodiscard]] bool ran_on(std::thread::id thread) const noexcept {
-        return std::any_of(records.begin(), records.end(),
-                           [thread](ShardRecord const& record) noexcept { return record.thread == thread; });
+        return records.view().walk().any_of(
+            [thread](ShardRecord const& record) noexcept { return record.thread == thread; });
     }
 };
 
@@ -463,29 +503,31 @@ template <std::size_t Shards>
     ::fixy::futex::FutexWord gate{0};
     ::fixy::Atomic<int> stuck_shards{0};
     BgCtx ctx{eff::testing::bg()};
-    auto region =
-        fixy::mint_owned_region<std::uint32_t>(nullptr, std::size_t{0}, perm::mint_permission_root<RegionWhole>());
     // The last shard opens the gate and wakes the others, which sleep on the
     // futex word of the gate.  Threads that spin on one word can starve the
-    // threads that still have to arrive.
-    auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::WaitOnEachOther, Shards>(
-        ctx, budget, std::move(region), [&arrivals, &gate, &stuck_shards](auto shard, auto) noexcept {
-            static_cast<void>(shard);
-            ++barrier_shards_on_this_thread;
-            if (is_main_thread || barrier_shards_on_this_thread > 1) {
-                static_cast<void>(stuck_shards.fetch_add_acq_rel(1));
-                return;
-            }
-            const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Block>> waiter{eff::testing::bg()};
-            if (arrivals.fetch_add_acq_rel(1) + 1 == Shards) {
-                gate.store_release(1);
-                static_cast<void>(::fixy::futex::wake_all(waiter, gate).expect("the kernel wakes the shards"));
-            }
-            while (gate.load_acquire() == 0) {
-                static_cast<void>(::fixy::futex::wait(waiter, gate, 0).expect("a shard waits on the gate"));
-            }
-        });
-    ::foundation::linear::drop(std::move(whole));
+    // threads that still have to arrive.  The region scope door covers an
+    // empty HeapArray, which holds no storage.
+    auto const barrier_body = [&arrivals, &gate, &stuck_shards](auto shard, auto) noexcept {
+        static_cast<void>(shard);
+        ++barrier_shards_on_this_thread;
+        if (is_main_thread || barrier_shards_on_this_thread > 1) {
+            static_cast<void>(stuck_shards.fetch_add_acq_rel(1));
+            return;
+        }
+        const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Block>> waiter{eff::testing::bg()};
+        if (arrivals.fetch_add_acq_rel(1) + 1 == Shards) {
+            gate.store_release(1);
+            static_cast<void>(::fixy::futex::wake_all(waiter, gate).expect("the kernel wakes the shards"));
+        }
+        while (gate.load_acquire() == 0) {
+            static_cast<void>(::fixy::futex::wait(waiter, gate, 0).expect("a shard waits on the gate"));
+        }
+    };
+    static_cast<void>(fixy::with_region<RegionWhole>(
+        fixy::HeapArray<std::uint32_t>{}, [&ctx, budget, &barrier_body](auto region) noexcept {
+            return spawn::mint_parallel_for<spawn::BodyCoupling::WaitOnEachOther, Shards>(
+                ctx, budget, std::move(region), barrier_body);
+        }));
     return stuck_shards.load_acquire();
 }
 
@@ -501,12 +543,12 @@ void run_waiting_shards_with_refused_workers() noexcept {
         .affinity = ::foundation::algebra::lattices::AffinityMask::single(
             ::foundation::algebra::lattices::AffinityMask::kMaxCore),
     };
-    auto region =
-        fixy::mint_owned_region<std::uint32_t>(nullptr, std::size_t{0}, perm::mint_permission_root<RegionWhole>());
-    auto whole = spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::WaitOnEachOther, Shards>(
-        ctx, test_ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
-        [](auto shard, auto) noexcept { static_cast<void>(shard); }, refused_options);
-    ::foundation::linear::drop(std::move(whole));
+    static_cast<void>(fixy::with_region<RegionWhole>(
+        fixy::HeapArray<std::uint32_t>{}, [&ctx, &test_ctx, &refused_options](auto region) noexcept {
+            return spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::WaitOnEachOther, Shards>(
+                ctx, test_ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
+                [](auto shard, auto) noexcept { static_cast<void>(shard); }, refused_options);
+        }));
 }
 
 // Shards that wait on each other cannot run one after another on the calling
@@ -618,34 +660,35 @@ void run_waiting_shards_with_refused_workers() noexcept {
         .affinity = ::foundation::algebra::lattices::AffinityMask::single(
             ::foundation::algebra::lattices::AffinityMask::kMaxCore),
     };
-    std::array<std::uint32_t, kShards> storage{};
     ::fixy::Atomic<bool> has_run_off_main{false};
 
-    auto whole = spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::Independent, kShards>(
-        ctx, test_ctx, budget,
-        fixy::mint_owned_region(storage.data(), kShards, perm::mint_permission_root<RegionWhole>()),
-        [&has_run_off_main](auto shard, auto) noexcept {
-            if (!is_main_thread) has_run_off_main.store_release(true);
-            for (std::uint32_t& element : shard) {
-                ++element;
-            }
-        },
-        refused_options);
+    // The region scope door gives back the storage that the shards wrote.
+    auto const storage = fixy::with_region<RegionWhole>(
+        fixy::mint_heap_array(test_alloc(), kShards, std::uint32_t{0}),
+        [&ctx, &test_ctx, budget, &refused_options, &has_run_off_main](auto region) noexcept {
+            return spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::Independent, kShards>(
+                ctx, test_ctx, budget, std::move(region),
+                [&has_run_off_main](auto shard, auto) noexcept {
+                    if (!is_main_thread) has_run_off_main.store_release(true);
+                    for (std::uint32_t& element : shard) {
+                        ++element;
+                    }
+                },
+                refused_options);
+        });
 
     // The count of the shards of the region, and the first shard that did
-    // not run one time.  The region ends at the drop door before a check
-    // can return.
+    // not run one time.
     std::size_t shard_count = 0;
     std::size_t wrong_shard = kShards;
     std::uint32_t wrong_runs = 0;
-    for (const std::uint32_t runs : ::fixy::mint_borrowed(whole)) {
+    for (const std::uint32_t runs : storage) {
         if (runs != 1u && wrong_shard == kShards) {
             wrong_shard = shard_count;
             wrong_runs = runs;
         }
         ++shard_count;
     }
-    ::foundation::linear::drop(std::move(whole));
 
     if (has_run_off_main.load_acquire()) {
         ::fixy::report(::fixy::Sink::Err, "mint_parallel_for: a shard ran on a worker that the door refused\n");

@@ -186,6 +186,7 @@ template <typename T>
 // pass of the scan.
 struct ParallelScanParts {
     using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
 };
 
 // The parts of out at the cut of the Shards shards of a region of grains
@@ -312,28 +313,32 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, In cons
     // region of the call, and each shard reads the carries of its grains.
     auto parts = detail::split_by_shards_<Shards>(std::move(out), grains);
     ::foundation::core::View<T const> const all_carries = ::fixy::mint_borrowed(scanned);
-    ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
-        ctx, budget,
-        ::fixy::mint_owned_region(first_of_(::foundation::core::detail::BaseLayerRead{},
-                                            frame_run_(::foundation::core::detail::FrameDoor::key(), parts)),
-                                  Shards, ::foundation::permissions::mint_permission_root<detail::ParallelScanParts>()),
-        [in, all_carries, kind, grains](auto shard, auto place) noexcept {
-            std::size_t const index = place.index().raw();
-            CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
-            auto own = std::move(*detail::first_of_run_(shard)).expect("each shard takes its part one time");
-            std::size_t const first = ::fixy::detail::shard_start(grains, Shards, index);
-            std::size_t const count = ::fixy::detail::shard_start(grains, Shards, index + 1) - first;
-            if (count == 0) return;
-            ::foundation::core::View<T const> const shard_carries =
-                all_carries.window(first, count).expect("the grains of a shard lie inside the carries");
-            if (kind == ::foundation::core::ScanKind::Inclusive) {
-                ::foundation::core::scan_inclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
-                                                                                   std::move(own));
-            } else {
-                ::foundation::core::scan_exclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
-                                                                                   std::move(own));
-            }
-        }));
+    // The region of the parts lives in the frame of the parts: the frame door
+    // of the parts lends their run, and the region scope door covers it.
+    parts.with_mut([&ctx, budget, in, all_carries, kind, grains](auto run) noexcept {
+        static_cast<void>(::fixy::with_region<detail::ParallelScanParts>(
+            std::move(run), [&ctx, budget, in, all_carries, kind, grains](auto region) noexcept {
+                return spawn::mint_parallel_for<Coupling, Shards>(
+                    ctx, budget, std::move(region), [in, all_carries, kind, grains](auto shard, auto place) noexcept {
+                        std::size_t const index = place.index().raw();
+                        CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
+                        auto own =
+                            std::move(*detail::first_of_run_(shard)).expect("each shard takes its part one time");
+                        std::size_t const first = ::fixy::detail::shard_start(grains, Shards, index);
+                        std::size_t const count = ::fixy::detail::shard_start(grains, Shards, index + 1) - first;
+                        if (count == 0) return;
+                        ::foundation::core::View<T const> const shard_carries =
+                            all_carries.window(first, count).expect("the grains of a shard lie inside the carries");
+                        if (kind == ::foundation::core::ScanKind::Inclusive) {
+                            ::foundation::core::scan_inclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
+                                                                                               std::move(own));
+                        } else {
+                            ::foundation::core::scan_exclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
+                                                                                               std::move(own));
+                        }
+                    });
+            }));
+    });
     return scanned;
 }
 
@@ -347,19 +352,8 @@ namespace detail {
 // for the length of one call.
 struct ParallelTreeSlots {
     using permission_row = eff::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
 };
-
-// The first element of the slots, for the region of a form.  Each form makes
-// its region in its own body with a fresh root permission, so the brand of
-// the region stays in the call that made it.  The keyed run of the frame
-// doors gives the writable slots of the storage, the storage stays with the
-// form for the call, and the region gives the split of mint_parallel_for and
-// no other access.
-template <typename T>
-[[nodiscard]] T* first_slot_of_(::foundation::core::HeapArray<T>& storage) noexcept {
-    return first_of_(::foundation::core::detail::BaseLayerRead{},
-                     frame_run_(::foundation::core::detail::FrameDoor::key(), storage));
-}
 
 }  // namespace detail
 
@@ -373,14 +367,15 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T>
 [[nodiscard]] T sum_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc,
                                         ::foundation::core::View<T const> elements) noexcept {
-    ::foundation::core::HeapArray<T> storage =
-        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), T{});
-    auto parts = sum_by_tree_in_parallel<Coupling, Shards>(
-        ctx, elements,
-        ::fixy::mint_owned_region(detail::first_slot_of_(storage), storage.size(),
-                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()));
-    T const sum = parts.sum;
-    ::foundation::linear::drop(std::move(parts.partials));
+    // The slots live in the frame of a region scope door, which gives the
+    // storage back after the sum.
+    auto [sum, storage] = ::fixy::with_region<detail::ParallelTreeSlots>(
+        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), T{}),
+        [&ctx, elements](auto slots) noexcept {
+            auto parts = sum_by_tree_in_parallel<Coupling, Shards>(ctx, elements, std::move(slots));
+            return ::foundation::core::Record{parts.sum, std::move(parts.partials)};
+        });
+    static_cast<void>(storage);
     return sum;
 }
 
@@ -399,16 +394,14 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
                                                                        Combine combine) noexcept {
     if (elements.size() == 0) return ::foundation::core::none;
     T const& fill = *elements.get(0).expect("the run has a first element");
-    ::foundation::core::HeapArray<T> storage =
-        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), fill);
-    auto parts = reduce_by_tree_in_parallel<Coupling, Shards>(
-        ctx, elements,
-        ::fixy::mint_owned_region(detail::first_slot_of_(storage), storage.size(),
-                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
-        combine);
-    ::foundation::core::Option<T> value = std::move(parts.value);
-    ::foundation::linear::drop(std::move(parts.partials));
-    return value;
+    auto [value, storage] = ::fixy::with_region<detail::ParallelTreeSlots>(
+        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), fill),
+        [&ctx, elements, combine](auto slots) noexcept {
+            auto parts = reduce_by_tree_in_parallel<Coupling, Shards>(ctx, elements, std::move(slots), combine);
+            return ::foundation::core::Record{std::move(parts.value), std::move(parts.partials)};
+        });
+    static_cast<void>(storage);
+    return std::move(value);
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {
@@ -422,19 +415,18 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
          && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T> && detail::TreeInput<In, T>
 void scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc, ::foundation::core::ScanKind kind,
                            In const& input, ::foundation::core::ViewMut<T, OutBrand, OutExtent> out) noexcept {
-    ::foundation::core::HeapArray<T> storage =
-        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(input.size()), T{});
-    ::foundation::linear::drop(scan_sums_in_parallel<Coupling, Shards>(
-        ctx, kind, input, std::move(out),
-        ::fixy::mint_owned_region(detail::first_slot_of_(storage), storage.size(),
-                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>())));
+    ::foundation::core::HeapArray<T> const storage = ::fixy::with_region<detail::ParallelTreeSlots>(
+        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(input.size()), T{}),
+        [&ctx, kind, &input, &out](auto carries) noexcept {
+            return scan_sums_in_parallel<Coupling, Shards>(ctx, kind, input, std::move(out), std::move(carries));
+        });
+    static_cast<void>(storage);
 }
 
 // The tree sum of each segment, by shards of the segments: sums[s] is the
 // tree sum of the elements [offsets[s], offsets[s + 1]), with the bits of
-// sum_segments_by_tree.  The form wraps the run of the ViewMut of the sums in a
-// region of its own, so the split of mint_parallel_for gives each shard its
-// own sums.  The offsets must pass check_segment_offsets for the count of the
+// sum_segments_by_tree.  A region scope door covers the run of the ViewMut of
+// the sums, so the split of mint_parallel_for gives each shard its own sums.  The offsets must pass check_segment_offsets for the count of the
 // sums, and the elements share no element with the sums (THE INPUT OF A
 // SCAN).  Offsets that fail the check, and elements that share an element with
 // the sums, end the process before any write.  Complexity: O(n + S) in Shards
@@ -457,18 +449,19 @@ void sum_segments_by_tree_in_parallel(Ctx const& ctx, In const& input,
             ::foundation::core::fatal("a parallel segmented sum got elements that share storage with its sums");
         }
     }
-    ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
-        ctx, detail::budget_of_<T>(elements.size(), sums.size()),
-        ::fixy::mint_owned_region(detail::first_of_run_(sums), sums.size(),
-                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
-        [elements, offsets](auto shard, auto place) noexcept {
-            if (shard.size() == 0) return;
-            ::foundation::core::View<std::size_t const> const own_offsets =
-                offsets.window(place.first(), shard.size() + 1)
-                    .expect("the offsets of a shard fit the checked offsets");
-            static_cast<void>(::foundation::core::detail::sum_segments_by_tree_(
-                                  elements, own_offsets, detail::first_of_run_(shard), shard.size())
-                                  .expect("a window of checked offsets passes the check"));
+    WorkBudget const budget = detail::budget_of_<T>(elements.size(), sums.size());
+    static_cast<void>(::fixy::with_region<detail::ParallelTreeSlots>(
+        std::move(sums), [&ctx, budget, elements, offsets](auto region) noexcept {
+            return spawn::mint_parallel_for<Coupling, Shards>(
+                ctx, budget, std::move(region), [elements, offsets](auto shard, auto place) noexcept {
+                    if (shard.size() == 0) return;
+                    ::foundation::core::View<std::size_t const> const own_offsets =
+                        offsets.window(place.first(), shard.size() + 1)
+                            .expect("the offsets of a shard fit the checked offsets");
+                    static_cast<void>(::foundation::core::detail::sum_segments_by_tree_(
+                                          elements, own_offsets, detail::first_of_run_(shard), shard.size())
+                                          .expect("a window of checked offsets passes the check"));
+                });
         }));
 }
 

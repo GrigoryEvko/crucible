@@ -14,6 +14,8 @@
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/permissions/Permission.h>
 
+#include "../owned_region_unchecked_arena.h"
+
 #include <utility>
 
 namespace eff = foundation::effects;
@@ -26,8 +28,9 @@ struct RegionWhole {
 
 int main() {
     eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    auto parts = fixy::mint_split<2>(
-        fixy::mint_owned_region<int>(nullptr, 0uz, foundation::permissions::mint_permission_root<RegionWhole>()));
+    test_owned_region::UncheckedArena arena{};
+    auto parts = fixy::mint_split<2>(fixy::mint_owned_region<int>(
+        eff::testing::test().alloc, arena, 0uz, foundation::permissions::mint_permission_root<RegionWhole>()));
     [[maybe_unused]] auto started = fixy::spawn::ParallelForRunner::run_shards_(
         ctx, parts.shards, [](auto shard, auto) noexcept { static_cast<void>(shard); }, std::size_t{2},
         fixy::thread::ThreadOptions{}, std::make_index_sequence<2>{});
