@@ -1,0 +1,33 @@
+// A quarantined unit that uses the classes of the layer only through its
+// public doors: a range-for over a walk and over a range, an auto local, a
+// copy and a move of a walk and of a stage, a public alias, a public class
+// with a detail base, and a macro of the layer.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+int walk_all(int count) {
+    int sum = 0;
+    for (int value : ::foundation::effects::walk(count)) {
+        sum += value;
+    }
+    for (int value : ::foundation::effects::range(count)) {
+        sum += value;
+    }
+    auto walked = ::foundation::effects::walk(count);
+    auto copied = walked;
+    auto moved = static_cast<decltype(walked)&&>(copied);
+    sum += moved.size() + walked.size();
+    auto made = ::foundation::effects::stage(count);
+    auto made_copy = made;
+    auto made_moved = static_cast<decltype(made)&&>(made_copy);
+    sum += static_cast<int>(sizeof(made_moved));
+    ::foundation::effects::PublishedAlias const published{count};
+    sum += published.value();
+    ::foundation::effects::Public const open{};
+    sum += open.read() + (::foundation::effects::Public::is_inline() ? 1 : 0);
+    auto const built = PLANTED_STAGE(count);
+    return sum + static_cast<int>(sizeof(built));
+}
+
+}  // namespace planted

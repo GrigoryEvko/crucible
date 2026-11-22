@@ -1,0 +1,10 @@
+# The deduced uses that the rule does not see (THE DEDUCED USES of owner.cpp):
+# a constructor in a constant initializer, which the front end folds, an
+# aggregate initializer, which calls no constructor, and a static member
+# function that a dependent qualified name calls in a pattern.  The unit
+# gives no use.  A change of the rule that sees one of them changes this
+# control.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use

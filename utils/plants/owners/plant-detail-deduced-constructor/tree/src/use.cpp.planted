@@ -1,0 +1,32 @@
+// A quarantined unit that makes a stage of the layer with no name of the
+// detail namespace: through the type that decltype deduces from a public
+// walk, and through a template parameter.  A spelled constructor gives one
+// finding on its line.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+template <class Inner>
+Inner stage_of(::foundation::effects::Walk<Inner> const& walk) noexcept;
+
+int forge_by_decltype(int count) {
+    using Forged = decltype(stage_of(::foundation::effects::walk(3)));
+    Forged const stage{count};
+    return ::foundation::effects::Walk<Forged>{stage}.size();
+}
+
+template <class Walked>
+int forge_by_parameter(Walked const& walked, int count) {
+    using Forged = decltype(stage_of(walked));
+    Forged const stage{count};
+    return stage.size_();
+}
+
+int forge_through_template(int count) { return forge_by_parameter(::foundation::effects::walk(3), count); }
+
+int forge_by_name(int count) {
+    ::foundation::effects::detail::Stage const stage{count};
+    return ::foundation::effects::walk(stage.mark).size();
+}
+
+}  // namespace planted

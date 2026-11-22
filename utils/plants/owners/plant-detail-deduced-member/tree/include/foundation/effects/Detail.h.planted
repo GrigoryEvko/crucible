@@ -1,0 +1,109 @@
+// A base header with the shapes of the walks of the layer: a detail stage
+// with a public constructor, a named member, a static member, a data member
+// and a nested cursor, a detail range, a detail aggregate, a public walk over
+// a stage, a public alias of a detail class, a public class with a detail
+// base, and a macro that makes a stage.
+#pragma once
+
+namespace foundation::effects::detail {
+
+// A stage: a public constructor that takes any count, a named member, a
+// static member, a data member, and the cursor of a walk.
+class Stage {
+    int count_ = 0;
+
+public:
+    int mark = 0;
+
+    // The cursor: the operators of a range-for.
+    class Cursor {
+        int at_ = 0;
+
+    public:
+        constexpr explicit Cursor(int at) noexcept : at_{at} {}
+        [[nodiscard]] constexpr int operator*() const noexcept { return at_; }
+        constexpr Cursor& operator++() noexcept {
+            ++at_;
+            return *this;
+        }
+        [[nodiscard]] friend constexpr bool operator==(Cursor const& left, Cursor const& right) noexcept {
+            return left.at_ == right.at_;
+        }
+    };
+
+    constexpr explicit Stage(int count) noexcept : count_{count} {}
+    // A copy and a move that the source of the class gives, so a copy calls
+    // a constructor.
+    constexpr Stage(Stage const& other) noexcept : count_{other.count_}, mark{other.mark} {}
+    constexpr Stage(Stage&& other) noexcept : count_{other.count_}, mark{other.mark} {}
+    [[nodiscard]] constexpr int size_() const noexcept { return count_; }
+    [[nodiscard]] static constexpr Stage make_(int count) noexcept { return Stage{count}; }
+    [[nodiscard]] constexpr Cursor begin_() const noexcept { return Cursor{0}; }
+    [[nodiscard]] constexpr Cursor end_() const noexcept { return Cursor{count_}; }
+};
+
+// A range that a public function gives: begin() and end() of a range-for.
+class Range {
+    int count_ = 0;
+
+public:
+    constexpr explicit Range(int count) noexcept : count_{count} {}
+    [[nodiscard]] constexpr Stage::Cursor begin() const noexcept { return Stage::Cursor{0}; }
+    [[nodiscard]] constexpr Stage::Cursor end() const noexcept { return Stage::Cursor{count_}; }
+};
+
+// An aggregate: its initializer calls no constructor.
+struct Cell {
+    int value = 0;
+};
+
+// A class that a public alias names.
+class Published {
+    int seed_ = 0;
+
+public:
+    constexpr explicit Published(int seed) noexcept : seed_{seed} {}
+    [[nodiscard]] constexpr int value() const noexcept { return seed_; }
+};
+
+// The detail base of a public class.
+class Base {
+public:
+    [[nodiscard]] static constexpr bool is_inline() noexcept { return true; }
+    [[nodiscard]] constexpr int read() const noexcept { return 2; }
+};
+
+}  // namespace foundation::effects::detail
+
+// A macro of the layer that makes a stage: its body is a site of the row.
+#define PLANTED_STAGE(count) ::foundation::effects::detail::Stage::make_(count)
+
+namespace foundation::effects {
+
+// A public walk over a stage: its begin() and end() call the stage.
+template <class Inner>
+class Walk {
+    Inner stage_;
+
+public:
+    constexpr explicit Walk(Inner stage) noexcept : stage_{stage} {}
+    [[nodiscard]] constexpr detail::Stage::Cursor begin() const noexcept { return stage_.begin_(); }
+    [[nodiscard]] constexpr detail::Stage::Cursor end() const noexcept { return stage_.end_(); }
+    [[nodiscard]] constexpr int size() const noexcept { return stage_.size_(); }
+};
+
+[[nodiscard]] constexpr Walk<detail::Stage> walk(int count) noexcept { return Walk<detail::Stage>{detail::Stage{count}}; }
+[[nodiscard]] constexpr detail::Stage stage(int count) noexcept { return detail::Stage{count}; }
+[[nodiscard]] constexpr detail::Range range(int count) noexcept { return detail::Range{count}; }
+[[nodiscard]] constexpr detail::Cell cell(int value) noexcept { return detail::Cell{value}; }
+
+using PublishedAlias = detail::Published;
+
+// A public class with a detail base, which publishes two members of the base.
+class Public : private detail::Base {
+public:
+    using detail::Base::is_inline;
+    using detail::Base::read;
+};
+
+}  // namespace foundation::effects

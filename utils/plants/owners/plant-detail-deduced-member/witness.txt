@@ -1,0 +1,13 @@
+# A function outside the layer takes a stage and a range of the layer from
+# public functions, with no name of the detail namespace, and uses their
+# members: a member function, a data member, a static member function
+# through an alias, and begin() of a range.  Each one is a deduced use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use owners detail-use src/use.cpp:11:27 | planted::read_members(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:12:10 | planted::read_members(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:14:31 | planted::read_members(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:15:19 | planted::read_members(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:19:55 | planted::step_range(int): deduced foundation::effects::detail

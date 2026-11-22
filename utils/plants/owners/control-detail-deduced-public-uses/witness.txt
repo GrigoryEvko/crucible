@@ -1,0 +1,10 @@
+# A function outside the layer uses the classes of the layer only through
+# its public doors: a range-for over a walk and over a range, whose calls of
+# begin(), end() and of the operators of the cursor the source does not
+# spell, an auto local, a copy and a move of a walk and of a stage, a public
+# alias, a public class with a detail base, and a macro of the layer.  The
+# unit gives no use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use

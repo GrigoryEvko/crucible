@@ -42,7 +42,11 @@ THE PROOFS
     function in a namespace with the name `detail` does the work of a door
     with no gate of its own, so only the base names it.  A type alias of a
     type of a `detail` namespace is a public name of the base, and a call
-    that argument-dependent lookup finds names no namespace.
+    that argument-dependent lookup finds names no namespace.  A use of a
+    member of a class of a `detail` namespace through a type that the source
+    does not spell, such as a constructor or a member function of a stage that
+    decltype or a template parameter gives, is the kind detail-use with the
+    shape "deduced HEAD" (THE DEDUCED USES of owner.cpp).
 
 THE UNCHECKED WALKS
     In GCC 16, a splice of a nonstatic data member has no access check, and

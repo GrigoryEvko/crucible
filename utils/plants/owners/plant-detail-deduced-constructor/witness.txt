@@ -1,0 +1,15 @@
+# A function outside the layer makes a stage of the layer with no name of
+# the detail namespace: through the type that decltype deduces, and through a
+# template parameter, where the instantiation also calls a member of the
+# stage.  Each call of the constructor and of the member is a deduced use.  A
+# spelled constructor gives one finding on its line, and a member of that
+# stage on a later line is a deduced use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use owners detail-use src/use.cpp:14:29 | planted::forge_by_decltype(int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:21:18 | planted::forge_by_parameter(const T0_0&, int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:22:18 | planted::forge_by_parameter(const T0_0&, int): deduced foundation::effects::detail
+finding use owners detail-use src/use.cpp:28:28 | planted::forge_by_name(int): foundation::effects::detail
+finding use owners detail-use src/use.cpp:29:46 | planted::forge_by_name(int): deduced foundation::effects::detail

@@ -1134,11 +1134,13 @@ void check_owned_call(tree call, location_t location, tree function) {
 
 // ── The names of the source (THE NAMES OF THE SOURCE) ───────────────────
 
-// The name of a detail namespace, the prefix of the shape of a friend, the
-// shapes of a member splice and of a walked return, and the files of the
-// classes of the rule of the open static members.
+// The name of a detail namespace, the prefixes of the shapes of a friend and
+// of a deduced use (THE DEDUCED USES), the shapes of a member splice and of a
+// walked return, and the files of the classes of the rule of the open static
+// members.
 constexpr char kDetailName[] = "detail";
 constexpr char kFriendPrefix[] = "friend ";
+constexpr char kDeducedPrefix[] = "deduced ";
 constexpr char kSpliceShape[] = "member splice";
 constexpr char kWalkedShape[] = "walked return";
 constexpr const char* kMemberRoots[] = {"include/foundation/", "include/fixy/", "include/crucible/"};
@@ -1242,6 +1244,9 @@ struct NameRules {
     // each name of the head that an event gave while the parser read the
     // class.  A qualified friend is such a name (check_door_friends).
     std::unordered_set<unsigned long long> class_heads;
+    // The file, the line and the entity of each finding of the kind detail-use
+    // of a name that the source spells (spelled_line_key, THE DEDUCED USES).
+    std::unordered_set<std::string> spelled_detail_lines;
 };
 
 NameRules name_rules;
@@ -1617,12 +1622,20 @@ std::string name_holder_text(tree function, location_t location, bool is_macro_r
     return holder != NULL_TREE ? holder_signature(holder) : std::string(kNoHolder);
 }
 
+// The key of a finding with ENTITY on the line of PLACE
+// (NameRules::spelled_detail_lines).
+std::string spelled_line_key(const Place& place, const std::string& entity) {
+    return place.file->relative + ':' + std::to_string(place.line) + ' ' + entity;
+}
+
 // One use of the kind KIND with SHAPE at LOCATION, in the body of FUNCTION, or
 // in an initializer when FUNCTION is null.  A use at a site of ROW is none.  A
 // base file counts in its sentinel unit, and a late event counts in each unit
 // (is_late_event).  A use of a kind of the unchecked row (is_unchecked_kind)
 // that the body of a macro spells also counts at the expansion point of the
-// macro, in the scope of the expansion (THE NAMES OF THE SOURCE).
+// macro, in the scope of the expansion (THE NAMES OF THE SOURCE).  A use of the
+// kind detail-use of a spelled name keeps the key of its line (THE DEDUCED
+// USES).
 void record_named(Kind kind, const OwnerRow* row, const std::string& shape, location_t location, tree function,
                   bool is_late) {
     Place place = owned_place(location);
@@ -1630,7 +1643,11 @@ void record_named(Kind kind, const OwnerRow* row, const std::string& shape, loca
         || (row != nullptr && is_at_site(*row, place, function))) {
         return;
     }
-    add_finding(kind, nullptr, place, name_holder_text(function, location, true) + ": " + shape);
+    std::string entity = name_holder_text(function, location, true) + ": " + shape;
+    if (kind == Kind::detail_use && !has_prefix(shape, kDeducedPrefix)) {
+        name_rules.spelled_detail_lines.insert(spelled_line_key(place, entity));
+    }
+    add_finding(kind, nullptr, place, entity);
     if (!is_unchecked_kind(kind) || spelling_macro_of(location).empty()) {
         return;
     }
@@ -2003,10 +2020,18 @@ inline void judge_decl_event(tree decl, location_t location) {
     judge_event(decl, location);
 }
 
+// THE DEDUCED USES below.
+void judge_deduced_name(tree node, location_t location);
+void note_published_alias(tree type, location_t location);
+
 // An event of an overload set: THE FIRST TEST of its first function in the
 // usual shapes, a member function and a function, and named_decl for each
-// other node that is no declaration.
+// other node that is no declaration.  A member function also gives its
+// deduced use (THE DEDUCED USES).
 [[gnu::noinline]] void judge_overload_event(tree node, location_t location) {
+    if (BASELINK_P(node) && name_rules.has_detail_rows) {
+        judge_deduced_name(node, location);
+    }
     tree functions = BASELINK_P(node) ? BASELINK_FUNCTIONS(node) : node;
     tree first = functions != NULL_TREE && TREE_CODE(functions) == OVERLOAD ? OVL_FIRST(functions) : functions;
     tree decl = first != NULL_TREE && DECL_P(first) ? first : named_decl(node);
@@ -2738,6 +2763,7 @@ void on_using_form(void* gcc_data, void*) {
     build_name_rules();
     bool is_late = is_late_event();
     if (data->kind == PLUGIN_ALIAS_DECLARATION) {
+        note_published_alias(data->target, data->location);
         std::string access = access_name_of(data->target);
         if (!access.empty()) {
             record_named(Kind::access_alias, name_rules.unchecked_row, access, data->location, current_function_decl,
@@ -2763,12 +2789,329 @@ void on_using_form(void* gcc_data, void*) {
     }
 }
 
+// ── The deduced uses (THE DEDUCED USES) ─────────────────────────────────
+
+// THE DEDUCED USES
+//     A use of a class of a detail namespace can spell no name of that
+//     namespace: a type that decltype or auto deduces, a template parameter,
+//     or an alias of a file outside the base.  So the rule also counts each
+//     such use of a member of a class of a detail row, at a place outside the
+//     sites of the row, as the kind detail-use with the shape "deduced HEAD"
+//     (record_deduced_use):
+//       * a call of a constructor that is not a copy or a move constructor,
+//         from the walk of a body and of the body of each instantiation of a
+//         pattern of a quarantined file (check_deduced_call)
+//       * a member access of a member function or of a data member, through
+//         an object of such a class (judge_deduced_member)
+//       * a member function that a qualified name names through such a
+//         class, such as Stage::make() (judge_deduced_name).
+//     The member is a member of a class of a detail row, and the class that
+//     the use reaches is one too (deduced_use_of).  These uses are the public
+//     uses of the base, and they give no finding:
+//       * an operator, a conversion function and a destructor, such as the
+//         operator*, the operator++ and the operator== of a cursor
+//       * a copy and a move of a value of such a class
+//       * a member access that the source does not spell, such as the calls
+//         of begin() and end() of a range-for and of get of a structured
+//         binding
+//       * a member of a detail base of a class outside the detail namespaces,
+//         such as a member that a using-declaration of a public class gives
+//       * a use of a class that a public alias of the base names
+//         (is_published): an alias of a base file outside each detail
+//         namespace and each function, which no class of a detail row and no
+//         private or protected access holds.  A function-local alias of the
+//         base publishes nothing.
+//     A deduced use on a line where its holder spells a name of the same head
+//     gives no second finding: the finding of the spelled name holds the line,
+//     such as the call of the constructor of detail::Stage<T>{view}.  The
+//     parser gives the events of a body before the walk of the body, and the
+//     events of a line in the order of its tokens.
+//     A use that the front end folds into a constant keeps no call, and an
+//     aggregate initializer of such a class calls no constructor, so neither
+//     counts.  The walk cannot tell an aggregate initializer from a folded
+//     constant of a public class that holds a detail member.  Each member
+//     access of such an aggregate still counts.  A dependent qualified name in
+//     a pattern gives no event, and the instantiation of a call of a static
+//     member function keeps no qualifier, so such a call gives no use.
+
+// The TYPE_UID of each class, and the DECL_UID of each class template, that a
+// public alias of the base names (note_published_alias).  A UID is never used
+// again, so the sets stay true after a collection (THE COLLECTIONS of
+// plugin.h).
+struct PublishedClasses {
+    std::unordered_set<unsigned> classes;
+    std::unordered_set<unsigned> templates;
+};
+
+PublishedClasses published_classes;
+
+// The row and the outermost detail namespace of a detail row that hold the
+// class TYPE, or no row.  A class whose scopes have no head name costs one
+// walk of its scopes (may_be_held).
+Held detail_class_head(tree type) {
+    if (!name_rules.has_detail_rows || type == NULL_TREE || !CLASS_TYPE_P(type)) {
+        return Held{};
+    }
+    tree decl = TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(type));
+    if (decl == NULL_TREE || !may_be_held(decl)) {
+        return Held{};
+    }
+    Held held = held_by(decl);
+    return held.row != nullptr && held.row->kind == Kind::detail_use ? held : Held{};
+}
+
+// The most general template of the class TYPE, or null for a class that no
+// template gives.
+tree class_template_of(tree type) {
+    if (!CLASS_TYPE_P(type) || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree template_decl = CLASSTYPE_TI_TEMPLATE(type);
+    return template_decl != NULL_TREE && TREE_CODE(template_decl) == TEMPLATE_DECL
+             ? most_general_template(template_decl)
+             : NULL_TREE;
+}
+
+// True when a public alias of the base names the class TYPE or its class
+// template (THE DEDUCED USES).
+bool is_published(tree type) {
+    tree main = TYPE_MAIN_VARIANT(type);
+    if (published_classes.classes.count(TYPE_UID(main)) != 0) {
+        return true;
+    }
+    tree template_decl = class_template_of(main);
+    return template_decl != NULL_TREE && published_classes.templates.count(DECL_UID(template_decl)) != 0;
+}
+
+// The alias declaration of the type TYPE at LOCATION, when it is a public
+// alias of the base that names a class of a detail row: an alias of a base
+// file, outside each function, each detail namespace and each class of a
+// detail row, with public access in a class.  The event of the declaration
+// comes before the parser gives a member its access, so the access of the
+// class decides.  An alias of a dependent type names each class of its class
+// template (THE DEDUCED USES).
+void note_published_alias(tree type, location_t location) {
+    if (!name_rules.has_detail_rows || type == NULL_TREE || !TYPE_P(type) || current_function_decl != NULL_TREE) {
+        return;
+    }
+    tree target = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(target) || (current_class_type != NULL_TREE && current_access_specifier != access_public_node)) {
+        return;
+    }
+    location_t point = linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
+    const FileEntry* entry = ordinary_file_at(point);
+    if (entry == nullptr || entry->file_class != FileClass::base || detail_class_head(target).row == nullptr) {
+        return;
+    }
+    bool is_hidden = current_class_type != NULL_TREE ? detail_class_head(current_class_type).row != nullptr
+                                                     : detail_head_of(current_namespace) != NULL_TREE;
+    if (is_hidden) {
+        return;
+    }
+    if (!uses_template_parms(target)) {
+        published_classes.classes.insert(TYPE_UID(target));
+    } else if (tree template_decl = class_template_of(target)) {
+        published_classes.templates.insert(DECL_UID(template_decl));
+    }
+}
+
+// The form of a deduced use.
+enum class DeducedForm : std::uint8_t {
+    constructor,
+    member_function,
+    data_member,
+};
+
+// One deduced use: the row and the head of the class that it reaches, that
+// class, the member, and the form.  A use with no row is no deduced use.  The
+// record lives in one call, so it can hold trees.
+struct DeducedUse {
+    Held held;
+    tree reached = NULL_TREE;
+    tree member = NULL_TREE;
+    DeducedForm form = DeducedForm::member_function;
+};
+
+// The deduced use of MEMBER through the class REACHED (THE DEDUCED USES): a
+// member of a class of a detail row, which is no operator, no conversion
+// function, no destructor and no copy or move constructor, through a class of
+// a detail row that no public alias names.  Each other pair gives a use with
+// no row.
+DeducedUse deduced_use_of(tree member, tree reached) {
+    if (member != NULL_TREE && TREE_CODE(member) == TEMPLATE_DECL) {
+        member = DECL_TEMPLATE_RESULT(member);
+    }
+    if (member == NULL_TREE || reached == NULL_TREE || !TYPE_P(reached)) {
+        return DeducedUse{};
+    }
+    DeducedUse use;
+    if (TREE_CODE(member) == FUNCTION_DECL) {
+        if (DECL_CLONED_FUNCTION_P(member)) {
+            member = DECL_CLONED_FUNCTION(member);
+        }
+        bool is_copy_or_move =
+            DECL_CONSTRUCTOR_P(member) && (DECL_COPY_CONSTRUCTOR_P(member) || DECL_MOVE_CONSTRUCTOR_P(member));
+        if (DECL_OVERLOADED_OPERATOR_P(member) || DECL_CONV_FN_P(member) || DECL_DESTRUCTOR_P(member)
+            || is_copy_or_move) {
+            return DeducedUse{};
+        }
+        use.form = DECL_CONSTRUCTOR_P(member) ? DeducedForm::constructor : DeducedForm::member_function;
+    } else if (TREE_CODE(member) == FIELD_DECL || VAR_P(member)) {
+        use.form = DeducedForm::data_member;
+    } else {
+        return DeducedUse{};
+    }
+    tree scope = CP_DECL_CONTEXT(member);
+    Held held = detail_class_head(reached);
+    if (held.row == nullptr || !TYPE_P(scope) || detail_class_head(scope).row == nullptr || is_published(reached)) {
+        return DeducedUse{};
+    }
+    use.held = held;
+    use.reached = TYPE_MAIN_VARIANT(reached);
+    use.member = member;
+    return use;
+}
+
+// The one record of the deduced use USE at LOCATION in the body of FUNCTION:
+// the kind detail-use with the shape "deduced HEAD", unless the holder spells
+// a name of the same head on the line (THE DEDUCED USES).  Each reader of a
+// deduced use gives it here, so a kind of a second row that reads such a use
+// reads it here too.
+void record_deduced_use(const DeducedUse& use, location_t location, tree function, bool is_late) {
+    if (use.held.row == nullptr) {
+        return;
+    }
+    Place place = owned_place(location);
+    if (place.file == nullptr) {
+        return;
+    }
+    std::string spelled = name_holder_text(function, location, true) + ": " + shape_of(use.held);
+    if (name_rules.spelled_detail_lines.count(spelled_line_key(place, spelled)) != 0) {
+        return;
+    }
+    record_named(Kind::detail_use, use.held.row, kDeducedPrefix + shape_of(use.held), location, function, is_late);
+}
+
+// A call of a constructor at NODE of the walk of a body of FUNCTION (THE
+// DEDUCED USES).  A copy of a default argument or of a default member
+// initializer has the place of its declaration, as for check_owned_call.
+void check_deduced_call(tree node, location_t location, tree function) {
+    if (!name_rules.has_detail_rows || (TREE_CODE(node) != CALL_EXPR && TREE_CODE(node) != AGGR_INIT_EXPR)) {
+        return;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(node);
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || !DECL_CONSTRUCTOR_P(callee)) {
+        return;
+    }
+    DeducedUse use = deduced_use_of(callee, DECL_CONTEXT(callee));
+    if (use.held.row == nullptr) {
+        return;
+    }
+    bool is_late = function != NULL_TREE && is_in_instantiation(function);
+    if (is_copied_call(node, callee_of(node))) {
+        location = EXPR_LOCATION(callee_of(node));
+        function = NULL_TREE;
+    }
+    record_deduced_use(use, location, function, is_late);
+}
+
+// The state of the walk of the body of an instantiation: its function, and the
+// location of the last node with a location.
+struct DeducedWalk {
+    tree function = NULL_TREE;
+    location_t last = UNKNOWN_LOCATION;
+};
+
+tree visit_deduced_node(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    auto& walk = *static_cast<DeducedWalk*>(data);
+    if (TREE_CODE(node) == LAMBDA_EXPR) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
+        walk.last = EXPR_LOCATION(node);
+    }
+    check_deduced_call(node, walk.last, walk.function);
+    return NULL_TREE;
+}
+
+// The calls of a constructor of the body of the instantiation FUNCTION of a
+// pattern of a quarantined file.  The walk of a body reads no instantiation,
+// and a pattern holds no call that a dependent type makes (THE DEDUCED USES).
+// A lambda is a function of its own.  Complexity: O(nodes of the body).
+void check_deduced_instance(tree function) {
+    if (!name_rules.has_detail_rows || DECL_SAVED_TREE(function) == NULL_TREE) {
+        return;
+    }
+    Place place = owned_place(DECL_SOURCE_LOCATION(function));
+    if (place.file == nullptr || place.file_class != FileClass::quarantined) {
+        return;
+    }
+    DeducedWalk walk;
+    walk.function = function;
+    walk.last = DECL_SOURCE_LOCATION(function);
+    cp_walk_tree_without_duplicates(&DECL_SAVED_TREE(function), visit_deduced_node, &walk);
+}
+
+// True when the source spells the name of MEMBER at the caret of LOCATION.
+// The front end gives a member access of a range-for and of a structured
+// binding the location of the statement or of the declaration.
+bool spells_member_at(tree member, location_t location) {
+    tree name = DECL_NAME(member);
+    return name != NULL_TREE && TREE_CODE(name) == IDENTIFIER_NODE && spells_identifier_at(location, name, true);
+}
+
+// A member access of MEMBER, which the detail row of HELD holds, through an
+// object of the class OBJECT_TYPE (THE DEDUCED USES).  A use at an ordinary
+// location of a site of the row costs one test of the last line map.
+void judge_deduced_member(const Held& held, tree member, tree object_type, location_t location) {
+    if (!linemap_location_from_macro_expansion_p(line_table, location) && is_at_detail_site(*held.row, location)) {
+        return;
+    }
+    DeducedUse use = deduced_use_of(member, object_type);
+    if (use.held.row != nullptr && spells_member_at(use.member, location)) {
+        record_deduced_use(use, location, current_function_decl, is_late_event());
+    }
+}
+
+// A qualified name of a member function that names its class through a class
+// of a detail row, such as Stage::make() (THE DEDUCED USES).  NODE is the
+// BASELINK of the event, and its access class is the class that the name
+// names.  A function whose scopes have no head name leaves after one read of
+// the list of the member verdicts.
+[[gnu::noinline]] void judge_deduced_name(tree node, location_t location) {
+    tree member = named_decl(node);
+    if (member == NULL_TREE
+        || (DECL_UID(member) < kVerdictSlots && first_test.member_verdicts[DECL_UID(member)] == kVerdictFree)) {
+        return;
+    }
+    if (!may_be_held(member)) {
+        if (DECL_UID(member) < kVerdictSlots) {
+            first_test.member_verdicts[DECL_UID(member)] = kVerdictFree;
+        }
+        return;
+    }
+    if (!linemap_location_from_macro_expansion_p(line_table, location)) {
+        const FileEntry* entry = ordinary_file_at(location);
+        if (entry != nullptr && entry->file_class == FileClass::base && !entry->is_sentinel && !is_late_event()) {
+            return;
+        }
+    }
+    tree binfo = BASELINK_ACCESS_BINFO(node) != NULL_TREE ? BASELINK_ACCESS_BINFO(node) : BASELINK_BINFO(node);
+    DeducedUse use = deduced_use_of(member, binfo != NULL_TREE ? BINFO_TYPE(binfo) : NULL_TREE);
+    if (use.held.row != nullptr && spells_member_at(use.member, location)) {
+        record_deduced_use(use, location, current_function_decl, is_late_event());
+    }
+}
+
 // The member of a class member access: a member of a class of a head of a door
-// kind, the unchecked function through an object, and a member that a splice
-// designates.  A member of a class whose name and scope are no head costs two
-// tests of the bits of the head names, and the list of the member verdicts
-// keeps that verdict for each later access.
-[[gnu::noinline]] void judge_member_access(tree node, location_t location, bool is_splice) {
+// kind, the unchecked function through an object, a member that a splice
+// designates, and a member of a class of a detail row (THE DEDUCED USES).  A
+// member of a class whose scopes have no head name costs a walk of its scopes,
+// and the list of the member verdicts keeps that verdict for each later
+// access.
+[[gnu::noinline]] void judge_member_access(tree node, tree object_type, location_t location, bool is_splice) {
     build_name_rules();
     if (is_splice && name_rules.unchecked_row != nullptr) {
         record_named(Kind::member_splice, name_rules.unchecked_row, kSpliceShape, location, current_function_decl,
@@ -2788,19 +3131,20 @@ void on_using_form(void* gcc_data, void*) {
     }
     tree scope = CP_DECL_CONTEXT(member);
     tree class_decl = scope != NULL_TREE && TYPE_P(scope) ? TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(scope)) : NULL_TREE;
-    tree outer = class_decl != NULL_TREE ? CP_DECL_CONTEXT(class_decl) : NULL_TREE;
-    bool can_be_held = class_decl != NULL_TREE
-                    && (is_head_name(DECL_NAME(class_decl))
-                        || (outer != NULL_TREE && DECL_P(outer) && is_head_name(DECL_NAME(outer))));
-    if (!can_be_held) {
+    if (class_decl == NULL_TREE || !may_be_held(class_decl)) {
         if (DECL_UID(member) < kVerdictSlots) {
             first_test.member_verdicts[DECL_UID(member)] = kVerdictFree;
         }
         return;
     }
     Held held = held_by(member);
-    if (held.row != nullptr && is_door_kind(held.row->kind)) {
+    if (held.row == nullptr) {
+        return;
+    }
+    if (is_door_kind(held.row->kind)) {
         record_held(held, "", location, current_function_decl, is_late_event());
+    } else if (held.row->kind == Kind::detail_use) {
+        judge_deduced_member(held, member, object_type, location);
     }
 }
 
@@ -2814,7 +3158,7 @@ void on_using_form(void* gcc_data, void*) {
 // root leaves after one test of the location.  For the rules of THE NAMES OF
 // THE SOURCE, an access to a data member that no rule can judge, with no
 // splice, leaves after one read of the list of member verdicts.
-void on_member_access(tree node, tree, location_t location, bool is_splice, void*) {
+void on_member_access(tree node, tree object_type, location_t location, bool is_splice, void*) {
     bool is_outside = location - first_test.outside_first < first_test.outside_length
                    || (location - first_test.inside_first >= first_test.inside_length && judge_location(location));
     if (!is_outside
@@ -2828,7 +3172,7 @@ void on_member_access(tree node, tree, location_t location, bool is_splice, void
         && first_test.member_verdicts[DECL_UID(node)] == kVerdictFree) {
         return;
     }
-    judge_member_access(node, location, is_splice);
+    judge_member_access(node, object_type, location, is_splice);
 }
 
 // The reflection of a library namespace and the splice of a library entity in
@@ -3393,8 +3737,13 @@ void on_finish_parse_function_names(void* gcc_data, void*) {
 // end lowers its body.
 void on_pre_genericize_names(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
-    if (function != NULL_TREE && TREE_CODE(function) == FUNCTION_DECL && !is_in_instantiation(function)) {
-        build_name_rules();
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return;
+    }
+    build_name_rules();
+    if (is_in_instantiation(function)) {
+        check_deduced_instance(function);
+    } else {
         check_walked_return(function, false);
     }
 }
@@ -3413,6 +3762,7 @@ void check_owned_node(tree node, location_t location, tree function) {
     if (has_name_rows()) {
         build_name_rules();
         check_named_node(node, location, function);
+        check_deduced_call(node, location, function);
     }
     if (TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR) {
         check_owned_call(node, location, function);

@@ -1,0 +1,29 @@
+// A quarantined unit with the deduced uses that the rule does not see: a
+// constructor in a constant initializer, which the front end folds, an
+// aggregate initializer, which calls no constructor, and a static member
+// function that a dependent qualified name calls in a pattern.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+template <class Inner>
+Inner stage_of(::foundation::effects::Walk<Inner> const& walk) noexcept;
+
+int fold_and_aggregate(int value) {
+    using Forged = decltype(stage_of(::foundation::effects::walk(3)));
+    constexpr Forged folded{4};
+    using Made = decltype(::foundation::effects::cell(1));
+    Made const made{value};
+    return static_cast<int>(sizeof(folded) + sizeof(made));
+}
+
+template <class Walked>
+int remake(Walked const& walked, int count) {
+    using Forged = decltype(stage_of(walked));
+    Forged const remade = Forged::make_(count);
+    return static_cast<int>(sizeof(remade));
+}
+
+int remake_through_template(int count) { return remake(::foundation::effects::walk(3), count); }
+
+}  // namespace planted

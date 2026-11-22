@@ -1,0 +1,23 @@
+// A quarantined unit that takes a stage and a range of the layer from public
+// functions, with no name of the detail namespace, and uses their members: a
+// member function, a data member, a static member function through an alias,
+// and begin() of a range.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+int read_members(int count) {
+    auto made = ::foundation::effects::stage(count);
+    int const size = made.size_();
+    made.mark = size;
+    using Made = decltype(made);
+    Made const remade = Made::make_(size);
+    return remade.size_();
+}
+
+int step_range(int count) {
+    auto cursor = ::foundation::effects::range(count).begin();
+    return *cursor;
+}
+
+}  // namespace planted
