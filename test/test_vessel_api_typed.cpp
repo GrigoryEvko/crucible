@@ -624,6 +624,25 @@ void test_schema_name_registration_codes() {
     EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash + 1, ::fixy::TextView{})
                == CRUCIBLE_SCHEMA_NAME_REFUSED,
            "an empty name gives the refusal code");
+
+    // A table keeps the characters before the first zero of a name, so a
+    // name that starts with a zero would register an empty name, and a name
+    // with a zero inside would register other characters than it holds.
+    ::fixy::FixedText<8> leading_zero{};
+    ::fixy::FixedText<8> inner_zero{};
+    for (const char character : ::fixy::TextView{"aten::"})
+        EXPECT(inner_zero.append(character).is_ok(), "the text holds the characters of the case");
+    EXPECT(leading_zero.append('\0').is_ok() && leading_zero.append('x').is_ok(), "the text holds a zero and a letter");
+    EXPECT(inner_zero.append('\0').is_ok() && inner_zero.append('y').is_ok(), "the text holds a zero and a letter");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash + 2, leading_zero.view())
+               == CRUCIBLE_SCHEMA_NAME_REFUSED,
+           "a name that starts with a zero gives the refusal code");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash + 3, inner_zero.view())
+               == CRUCIBLE_SCHEMA_NAME_REFUSED,
+           "a name with a zero inside gives the refusal code");
+    EXPECT(crucible::vessel::schema_name_typed(crucible::SchemaHash{held_hash + 2}).is_none()
+               && crucible::vessel::schema_name_typed(crucible::SchemaHash{held_hash + 3}).is_none(),
+           "a refused name leaves the tables as they were");
 }
 
 // A table that holds SCHEMA_TABLE_CAP names gives the code of a full table

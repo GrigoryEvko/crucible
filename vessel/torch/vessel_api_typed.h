@@ -323,9 +323,13 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 //
 // crucible_register_schema_name reads the C text of its name, and gives the
 // code of register_schema_name_typed.  A hash of zero, or a name that is
-// empty or longer than kMaxSchemaNameBytes, gives
-// CRUCIBLE_SCHEMA_NAME_REFUSED, and the tables stay as they were.  These
-// checks are the sanitizer of the boundary, so each other name is Sanitized.
+// empty, longer than kMaxSchemaNameBytes or that holds a zero byte, gives
+// CRUCIBLE_SCHEMA_NAME_REFUSED, and the tables stay as they were.  A table
+// keeps the characters of a name before its first zero, so a name with a
+// zero would register other characters than the caller gave.  The C entry
+// reads its name up to the first zero, and the door refuses the zero for each
+// other caller.  These checks are the sanitizer of the boundary, so each
+// other name is Sanitized.
 // Its registration gives CRUCIBLE_SCHEMA_NAME_REGISTERED,
 // CRUCIBLE_SCHEMA_NAME_COLLISION when the table holds a different name of
 // the hash, or CRUCIBLE_SCHEMA_NAME_FULL when the table holds
@@ -343,6 +347,7 @@ template <class VigilType>
 [[nodiscard, gnu::cold]] int register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
                                                         ::fixy::TextView name) noexcept {
     if (schema_hash == 0 || name.size() == 0 || name.size() > kMaxSchemaNameBytes) return CRUCIBLE_SCHEMA_NAME_REFUSED;
+    if (::fixy::find(name, '\0').is_some()) return CRUCIBLE_SCHEMA_NAME_REFUSED;
     const auto name_tag =
         ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name).retag<::fixy::tags::source::Sanitized>();
     const crucible::SchemaRegistration registration =
