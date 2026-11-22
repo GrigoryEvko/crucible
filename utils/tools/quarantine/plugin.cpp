@@ -146,7 +146,27 @@
 //     unit.  A file with no mode stamp adds DIR/enforce.txt.  A change of the
 //     mode of a file then compiles again only the units with such a finding in
 //     that file.  An opted-out finding, a finding of the contract rule and a
-//     finding of a family rule add nothing, because no mode changes them.
+//     finding of a family rule add nothing, because no mode changes them.  A
+//     counted line adds its stamp, also in a region (THE COUNTED LINES).
+//
+// THE COUNTED LINES
+//     A line of a rule of kCountedLineRules of plugin.h, the rules of the
+//     family linear, is a counted line.  The count ledger of its rule counts
+//     the lines of each directory and kind, and a line is no error in the mode
+//     report.  But in a file of the enforce mode error, a counted line whose
+//     directory and kind have no count row in the ledger utils/ledgers/RULE.txt
+//     under the root is an error at the compile (load_counted_rows of
+//     rule_table.cpp).  So a new kind of line in such a directory, such as a
+//     new drop in src/ where the ledger counts none, stops the compile of the
+//     developer, and a count row comes only from a deliberate write of the
+//     ledger.  A count row above zero keeps each line of its directory and kind
+//     a line of the report, and the module of the rule judges its count.  No
+//     region covers a counted line.  The mode stamp of a file of the enforce
+//     mode error holds the count rows of its directory (utils/assay/loop/
+//     stamps.py), so a change of those rows compiles again only the units with
+//     a counted line in a file of that directory.  ccache does not hash the
+//     ledgers, so a cached object can miss such an error, and the module of
+//     the rule still refuses its line.
 //
 // THE SECTION
 //     A unit that writes an object puts the report into the section
@@ -267,6 +287,32 @@ void write_section(const std::vector<std::string>& lines) {
     fwrite(text.data(), 1, text.size(), asm_out_file);
 }
 
+// True when FINDING is a counted line: a line of a rule of kCountedLineRules
+// that is no record (THE COUNTED LINES).
+bool is_counted_line(const Finding& finding) {
+    return is_family_kind(finding.kind) && !is_record_kind(finding.kind) && is_counted_line_rule(rule_of(finding.kind));
+}
+
+// The directory of a path relative to the root, with '/' at its end, as the
+// key of a ledger row (directory_of of assay.guard.engines.plugin.quarantine).
+// A file at the root has the directory "./".
+std::string directory_of(const std::string& relative) {
+    std::size_t slash = relative.rfind('/');
+    return slash == std::string::npos ? std::string("./") : relative.substr(0, slash + 1);
+}
+
+// True when the counted line FINDING is an error: its file has the enforce
+// mode error, and the ledger of its rule has no count row of its directory
+// and kind (THE COUNTED LINES).
+bool is_refused_counted_line(const Finding& finding) {
+    if (!is_counted_line(finding) || finding.file == nullptr || !finding.file->is_error_mode) {
+        return false;
+    }
+    std::string key = std::string(rule_name(rule_of(finding.kind))) + " " + kind_text(finding) + " "
+                    + directory_of(finding.file->relative);
+    return state.counted_rows.count(key) == 0;
+}
+
 // The mode stamp of each file with a finding that a mode can make an error,
 // in the dependency file of the unit (THE DEPENDENCIES).  Complexity: O(findings).
 void add_mode_dependencies() {
@@ -277,8 +323,10 @@ void add_mode_dependencies() {
     std::unordered_set<const FileEntry*> files;
     bool needs_enforce = false;
     for (const Finding& finding : state.findings) {
-        if (is_each_mode_kind(finding.kind) || is_family_kind(finding.kind) || finding.file == nullptr
-            || is_opted_out(finding) || !files.insert(finding.file).second) {
+        bool is_counted = is_counted_line(finding);
+        bool is_moded = is_counted || (!is_each_mode_kind(finding.kind) && !is_family_kind(finding.kind));
+        if (!is_moded || finding.file == nullptr || (!is_counted && is_opted_out(finding))
+            || !files.insert(finding.file).second) {
             continue;
         }
         std::string stamp = state.stamps_dir + "/modes/" + finding.file->relative;
@@ -329,6 +377,12 @@ void report_family(const Finding& finding, std::vector<std::string>& lines, bool
                  "quarantine: %s %s; the rule %s refuses this code, and %<python3 utils/bin/guard explain %s%> "
                  "gives the rule and its action",
                  kind.c_str(), finding.entity.c_str(), rule, rule);
+    } else if (is_refused_counted_line(finding)) {
+        error_at(finding.spelling,
+                 "quarantine: %s %s; the ledger of the rule %s counts no line of this kind in %s, whose enforce mode "
+                 "is error, so the rule refuses this code, and %<python3 utils/bin/guard explain %s%> gives the rule "
+                 "and its action",
+                 kind.c_str(), finding.entity.c_str(), rule, directory_of(finding.file->relative).c_str(), rule);
     } else if (state.out_dir.empty() && !has_section) {
         inform(finding.spelling, "quarantine: %s %s", kind.c_str(), finding.entity.c_str());
     }
@@ -845,7 +899,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         error("quarantine: give the rule table with %<-fplugin-arg-%s-rules=PATH%>", state.plugin_name.c_str());
         return 1;
     }
-    if (!load_rule_table(rules_argument)) {
+    if (!load_rule_table(rules_argument) || !load_counted_rows()) {
         return 1;
     }
     if (!not_standalone_argument.empty() && !load_not_standalone(not_standalone_argument)) {

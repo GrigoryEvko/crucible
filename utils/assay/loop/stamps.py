@@ -24,13 +24,22 @@ files under the directory OUT:
     modes/PATH    One mode stamp for each source file that a layer row or a
                   quarantine row holds.  The stamp gives two words, each
                   "error" or "report": the enforce mode of each kind of the
-                  file, and the enforce mode of its include kinds.  The plugin
+                  file, and the enforce mode of its include kinds.  The stamp
+                  of a file of the mode error then gives the word RULE:KIND of
+                  each count row above zero of its directory in the ledger of
+                  each rule of COUNTED_LINE_RULES, sorted (THE COUNTED LINES
+                  of utils/tools/quarantine/plugin.cpp).  The plugin
                   names the mode stamp of each file with a finding in the
                   dependencies of the unit.  So a change
-                  of the mode of a file compiles again only the units with a
-                  finding in that file.  For a file with no mode stamp, such as
+                  of the mode of a file, or of the count rows of its
+                  directory, compiles again only the units with a finding in
+                  that file.  For a file with no mode stamp, such as
                   a file that the tree got after the last configure, the plugin
                   names enforce.txt.
+    counted.txt   The path of the ledger of each rule of COUNTED_LINE_RULES
+                  that the tree holds, one for each line.  Quarantine.cmake
+                  makes the configure depend on each one, so a change of a
+                  ledger writes the stamps again.
 
 The command writes a file only when its content changes, so a configure run
 with no change of a fact or a mode makes no unit dirty.  It removes the mode
@@ -48,11 +57,29 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
 
+from assay.core import rows as rows_grammar
 from assay.core import ruletable as layer_rules
+
+# The rules whose lines are counted lines (THE COUNTED LINES of utils/tools/quarantine/plugin.cpp): the rules of the
+# family linear.  kCountedLineRules of utils/tools/quarantine/plugin.h names the same rules, and the self-test compares
+# the two lists.  A rule with a count ledger joins with one row in each list.
+COUNTED_LINE_RULES = (
+    "must-consume",
+    "linear-containment",
+    "linear-capture",
+    "drop-door",
+    "linear-forge",
+    "brand-escape",
+    "brand-reentry",
+)
+COUNTED_FILE = "counted.txt"
+LEDGERS = Path("utils") / "ledgers"
+PLUGIN_HEADER = Path(__file__).resolve().parents[2] / "tools" / "quarantine" / "plugin.h"
 
 # The suffixes of a file that a C++ unit can read.  A finding in a file with a
 # different suffix gets enforce.txt as its dependency.
@@ -125,16 +152,56 @@ def enforce_text(table: layer_rules.RuleTable) -> str:
     return "".join(f"enforce {path} {mode} {scope}\n" for path, mode, scope in rows)
 
 
-def source_files(root: Path, table: layer_rules.RuleTable, build: Path | None) -> dict[str, str]:
+def directory_of(relative: str) -> str:
+    """Return the directory of a path relative to the root, with '/' at its end, or "./" for a file at the root.
+
+    It is the key of a ledger row (directory_of of assay.guard.engines.plugin.quarantine).
+    """
+    parent, slash, _ = relative.rpartition("/")
+    return f"{parent}/" if slash else "./"
+
+
+def counted_rows(root: Path) -> tuple[dict[str, tuple[str, ...]], list[str]]:
+    """Return the words RULE:KIND of the count rows above zero of each directory, and the path of each ledger.
+
+    The ledgers are those of COUNTED_LINE_RULES under ROOT.  A count row is
+    `PATH | KIND | COUNT | ENTITY | REASON`, with one word before its cells, so
+    the rows `format`, `rule` and `reason` are no count rows.  Complexity:
+    linear in the rows of the ledgers.
+
+    Raises:
+        rows_grammar.RowsError: When a ledger does not obey the rows grammar, or a count is no number
+    """
+    kinds: dict[str, set[str]] = {}
+    ledgers: list[str] = []
+    for rule in COUNTED_LINE_RULES:
+        path = root / LEDGERS / f"{rule}.txt"
+        if not path.is_file():
+            continue
+        ledgers.append(path.as_posix())
+        for row in rows_grammar.read(path):
+            if len(row.words) != 1 or len(row.cells) < 2:
+                continue
+            if rows_grammar.number(row.cells[1], 2**32 - 1, row, "the count of a row") > 0:
+                kinds.setdefault(row.words[0], set()).add(f"{rule}:{row.cells[0]}")
+    return {directory: tuple(sorted(words)) for directory, words in kinds.items()}, ledgers
+
+
+def source_files(
+    root: Path, table: layer_rules.RuleTable, build: Path | None, counted: dict[str, tuple[str, ...]]
+) -> dict[str, str]:
     """Return the enforce mode of each source file that a layer row or a quarantine row holds.
 
     The walk reads each directory of a row one time.  It skips the build
-    directory and each directory that a symbolic link names.  Complexity:
-    O(files under the rows) times O(rows) for the class and the mode.
+    directory and each directory that a symbolic link names.  A file of the
+    mode error also gets the counted kinds of its directory from COUNTED.
+    Complexity: O(files under the rows) times O(rows) for the class and the
+    mode.
 
     Returns:
-        A map from the path relative to ROOT to the two modes of the file, each "error" or "report".  The first is the
-        mode of each kind, and the second is the mode of the include kinds
+        A map from the path relative to ROOT to the two modes of the file, each "error" or "report", and then the
+        counted kinds RULE:KIND of a file of the mode error.  The first mode is the mode of each kind, and the second is
+        the mode of the include kinds
     """
     paths = sorted({path for layer in table.layers for path in layer.paths} | set(table.quarantines))
     candidates: set[str] = set()
@@ -154,8 +221,13 @@ def source_files(root: Path, table: layer_rules.RuleTable, build: Path | None) -
     modes: dict[str, str] = {}
     for relative in sorted(candidates):
         file_class, _ = table.class_of(relative)
-        if file_class in MODE_CLASSES:
-            modes[relative] = f"{table.mode_of(relative)} {table.include_mode_of(relative)}"
+        if file_class not in MODE_CLASSES:
+            continue
+        mode = table.mode_of(relative)
+        words = [mode, table.include_mode_of(relative)]
+        if mode == "error":
+            words += counted.get(directory_of(relative), ())
+        modes[relative] = " ".join(words)
     return modes
 
 
@@ -195,22 +267,33 @@ def remove_stale(modes_root: Path, modes: dict[str, str]) -> int:
 
 
 def write_stamps(root: Path, rules: Path, out: Path, build: Path | None) -> tuple[int, int]:
-    """Write facts.txt, enforce.txt and the mode stamps of the rule table RULES under OUT.
+    """Write facts.txt, enforce.txt, counted.txt and the mode stamps of the rule table RULES under OUT.
 
     Returns:
         The number of files written and the number of mode stamps removed
 
     Raises:
         layer_rules.TableError: When the table does not obey its format
+        rows_grammar.RowsError: When a ledger of COUNTED_LINE_RULES does not obey its format
     """
     table = layer_rules.load(rules)
+    counted, ledgers = counted_rows(root)
     written = int(write_if_changed(out / "facts.txt", facts_text(table)))
     written += int(write_if_changed(out / "enforce.txt", enforce_text(table)))
-    modes = source_files(root, table, build)
+    written += int(write_if_changed(out / COUNTED_FILE, "".join(f"{ledger}\n" for ledger in ledgers)))
+    modes = source_files(root, table, build, counted)
     modes_root = out / MODES_DIRECTORY
     for relative, mode in modes.items():
         written += int(write_if_changed(modes_root / relative, f"{mode}\n"))
     return written, remove_stale(modes_root, modes)
+
+
+def plugin_counted_rules() -> tuple[str, ...]:
+    """Return the rules of kCountedLineRules of plugin.h, each enumerator with '-' in place of each '_'."""
+    text = PLUGIN_HEADER.read_text(encoding="utf-8")
+    start = text.index("kCountedLineRules[] = {")
+    body = text[start : text.index("};", start)]
+    return tuple(name.replace("_", "-") for name in re.findall(r"Rule::(\w+)", body))
 
 
 def self_test() -> int:
@@ -246,8 +329,8 @@ def self_test() -> int:
         written, _ = run(base_table)
         first = stamps()
         facts = (out / "facts.txt").read_text(encoding="utf-8")
-        expect("the first run writes facts.txt, enforce.txt and a stamp for each held source file",
-               written == 5 and set(first) == {"include/low/Low.h", "app/main.cpp", "app/util.h"})
+        expect("the first run writes facts.txt, enforce.txt, counted.txt and a stamp for each held source file",
+               written == 6 and set(first) == {"include/low/Low.h", "app/main.cpp", "app/util.h"})
         expect("a file with no source suffix, a file of the build directory and a file of no row get no stamp",
                not {"app/notes.txt", "build/gen.h", "other/free.cpp"} & set(first))
         expect("facts.txt holds no reason, no comment and no `until` family",
@@ -295,6 +378,36 @@ def self_test() -> int:
         expect("a language row is a fact",
                "language low include/low/Low.h\n" in (out / "facts.txt").read_text(encoding="utf-8"))
 
+        expect("the rules of counted lines are the rules of kCountedLineRules of plugin.h",
+               plugin_counted_rules() == COUNTED_LINE_RULES)
+        ledger = root / LEDGERS / "must-consume.txt"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text("format 1\nrule must-consume\nreason app/ | planted\napp/ | unconsumed | 2 | - | -\n"
+                          "app/ | double-consume | 0 | - | -\ninclude/low/ | unconsumed | 1 | - | -\n",
+                          encoding="utf-8")
+        app_error = reordered.replace("enforce app/ report", "enforce app/ error")
+        run(app_error)
+        counted = stamps()
+        expect("a file of the mode error gets each counted kind above zero of its directory, and a report file none",
+               counted["app/main.cpp"][0] == "error error must-consume:unconsumed\n"
+               and counted["include/low/Low.h"][0] == "report report\n"
+               and (out / COUNTED_FILE).read_text(encoding="utf-8") == f"{ledger.as_posix()}\n")
+        ledger.write_text("format 1\nrule must-consume\nreason app/ | planted\napp/ | unconsumed | 0 | - | -\n"
+                          "include/low/ | unconsumed | 2 | - | -\n", encoding="utf-8")
+        run(app_error)
+        changed = {path for path, value in stamps().items() if counted.get(path) != value}
+        expect("a count row that falls to zero changes the stamps of its directory only, and a report file keeps its",
+               changed == {"app/main.cpp", "app/util.h"} and stamps()["app/main.cpp"][0] == "error error\n")
+        ledger.write_text("format 1\nrule must-consume\napp/ | unconsumed | many | - | -\n", encoding="utf-8")
+        try:
+            run(reordered)
+            refused_count = False
+        except rows_grammar.RowsError:
+            refused_count = True
+        expect("a ledger row whose count is no number is refused", refused_count)
+        ledger.unlink()
+        run(reordered)
+
         (root / "app" / "util.h").unlink()
         _, removed = run(base_table)
         expect("the stamp of a file that does not exist any more goes", removed == 1 and "app/util.h" not in stamps())
@@ -335,7 +448,7 @@ def main(argv: list[str]) -> int:
     build = args.build.resolve() if args.build is not None else None
     try:
         write_stamps(args.root.resolve(), args.rules, args.out, build)
-    except layer_rules.TableError as failure:
+    except (layer_rules.TableError, rows_grammar.RowsError) as failure:
         print(f"quarantine_stamps: {failure}", file=sys.stderr)
         return 1
     except OSError as failure:

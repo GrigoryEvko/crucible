@@ -1,0 +1,10 @@
+# A counted line in a file of the enforce mode error is a compile error when
+# the ledger of its rule counts no line of its directory and kind (THE COUNTED
+# LINES of utils/tools/quarantine/plugin.cpp): a new drop in src/, where the
+# tree holds no ledger of must-consume.  The line stays in the report.
+
+compile drop src/drop.cpp must-consume=on
+flag drop -freflection
+exit drop fail
+finding drop must-consume unconsumed src/drop.cpp:20:11 | planted::drops: token (planted::Token)
+error drop src/drop.cpp:20 | quarantine: unconsumed planted::drops: token (planted::Token); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

@@ -1,0 +1,24 @@
+// A new drop of a linear token in src/, whose enforce mode is error.  The
+// ledger of must-consume of this tree counts no line of src/, so the line is
+// a compile error (THE COUNTED LINES of utils/tools/quarantine/plugin.cpp).
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+int drops(int value) noexcept {
+    Token token{value};
+    return token.handle;
+}
+
+}  // namespace planted

@@ -1,0 +1,4 @@
+# The ledger of the control.  It counts the drop of src/drop.cpp.
+format 1
+rule must-consume
+src/ | unconsumed | 1 | - | the planted drop of the control

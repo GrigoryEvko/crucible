@@ -69,7 +69,10 @@
 #     other text of the registry changes none.
 #   - The plugin names the mode stamp of each file with a finding in the
 #     dependency file of the unit.  A change of the enforce mode of a file
-#     compiles again only the units with a finding in that file.
+#     compiles again only the units with a finding in that file.  The stamp of
+#     a file of the mode error also holds the count rows of its directory in
+#     the ledgers of the rules with counted lines (THE COUNTED LINES of
+#     plugin.cpp), and each such ledger reruns the configure.
 #   - ccache hashes enforce.txt (extra_files_to_hash), so a unit that compiles
 #     again after a change of a mode never gets the object of the old mode.
 #   ccache ignores the paths that the plugin arguments name, so the build
@@ -330,6 +333,10 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CRUCIBLE_LOOP}" "${_crucible_quarantine_utils}/assay/loop/stamps.py"
   "${_crucible_quarantine_utils}/assay/core/ruletable.py" "${_crucible_quarantine_utils}/assay/core/rows.py"
   "${_crucible_quarantine_utils}/assay/core/paths.py")
+# The ledgers of the rules with counted lines, which counted.txt names (THE
+# COUNTED LINES of plugin.cpp).  A change of one writes the mode stamps again.
+file(STRINGS "${_crucible_quarantine_out}/counted.txt" _crucible_quarantine_counted_ledgers)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_crucible_quarantine_counted_ledgers})
 
 # The threshold of the rule padded-list (THE INPUTS OF A COMPILE).
 include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/Guards.cmake")

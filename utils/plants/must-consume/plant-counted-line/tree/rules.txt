@@ -1,0 +1,6 @@
+# The rule table of this plant.  The unit of src/ is quarantined, its enforce
+# mode is error, and it can name the vocabulary of the linear marker.
+
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+quarantine src/
+enforce src/ error

@@ -985,4 +985,46 @@ bool load_not_standalone(const std::string& path) {
     return true;
 }
 
+// Reads the count rows of the ledger utils/ledgers/RULE.txt of each rule of
+// kCountedLineRules under the source root (THE COUNTED LINES of plugin.cpp).
+// A row `PATH | KIND | COUNT | ENTITY | REASON` above zero gives the key
+// "RULE KIND PATH".  The rows `format`, `rule` and `reason` have more than one
+// word before their cells, so the reader skips them.  A tree with no such
+// ledger, such as the tree of a plant, has no row.  Returns false after an
+// error.  Complexity: linear in the bytes of the ledgers.
+bool load_counted_rows() {
+    for (Rule rule : kCountedLineRules) {
+        std::string path = state.root + "/utils/ledgers/" + rule_name(rule) + ".txt";
+        struct stat status;
+        if (::stat(path.c_str(), &status) != 0) {
+            continue;
+        }
+        std::string text;
+        if (!read_bytes(path, "the ledger of a rule with counted lines", text)) {
+            return false;
+        }
+        crucible_rows::Rows rows = crucible_rows::parse(text);
+        if (!rows.is_valid()) {
+            error("quarantine: %s:%d: %s", path.c_str(), rows.problem_line, rows.problem.c_str());
+            return false;
+        }
+        for (const crucible_rows::Row& row : rows.rows) {
+            if (row.words.size() != 1 || row.cells.size() < 2) {
+                continue;
+            }
+            std::uint64_t count = 0;
+            if (!crucible_rows::number(row.cells[1], UINT32_MAX, count)) {
+                error("quarantine: %s:%d: the count of a row is %qs, which is no count; write the ledger with "
+                      "%<python3 utils/bin/guard write --rule %s%>",
+                      path.c_str(), row.line, row.cells[1].c_str(), rule_name(rule));
+                return false;
+            }
+            if (count > 0) {
+                state.counted_rows.insert(std::string(rule_name(rule)) + " " + row.cells[0] + " " + row.words[0]);
+            }
+        }
+    }
+    return true;
+}
+
 }  // namespace crucible_plugin

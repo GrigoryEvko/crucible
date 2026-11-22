@@ -1218,6 +1218,26 @@ inline const char* rule_name(Rule rule) {
 // The rules of the family owner, in the order of the enumeration.
 inline constexpr Rule kOwnerRules[] = {Rule::syscalls, Rule::owners};
 
+// The rules whose lines are counted lines (THE COUNTED LINES of plugin.cpp):
+// the rules of the family linear.  A line of such a rule in a file of the
+// enforce mode error is an error when the count ledger of the rule has no row
+// of its directory and kind.  A rule with a count ledger joins with one row.
+// COUNTED_LINE_RULES of utils/assay/loop/stamps.py names the same rules, and
+// its self-test compares the two lists.
+inline constexpr Rule kCountedLineRules[] = {Rule::must_consume, Rule::linear_containment, Rule::linear_capture,
+                                             Rule::drop_door,    Rule::linear_forge,       Rule::brand_escape,
+                                             Rule::brand_reentry};
+
+// True when RULE is a rule of kCountedLineRules.
+inline bool is_counted_line_rule(Rule rule) {
+    for (Rule counted : kCountedLineRules) {
+        if (counted == rule) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // True when an owner row of the kind KIND reads the names that the source
 // spells, from the events of the parser (owner.cpp, THE NAMES OF THE SOURCE).
 // A row of each other kind reads the calls of the walk of a body (THE OWNER
@@ -2161,6 +2181,10 @@ struct State {
     // names, relative to the root, such as include/crucible/ledger/ProbeSupport.h
     // (THE SENTINEL).
     std::unordered_set<std::string> not_standalone_headers;
+    // Each count row above zero of the ledger of each rule of
+    // kCountedLineRules under the root, as "RULE KIND DIRECTORY" (THE COUNTED
+    // LINES of plugin.cpp).
+    std::unordered_set<std::string> counted_rows;
     bool was_reported = false;
     RuleTable table;
 
@@ -2766,6 +2790,11 @@ bool load_rule_table(const std::string& path);
 // PATH into state.not_standalone_headers (THE SENTINEL).  Returns false after
 // an error.
 bool load_not_standalone(const std::string& path);
+// rule_table.cpp: reads the count rows of the ledger of each rule of
+// kCountedLineRules under the source root into state.counted_rows (THE
+// COUNTED LINES of plugin.cpp).  A tree with no such ledger has no row.
+// Returns false after an error.
+bool load_counted_rows();
 
 // regions.cpp: the opt-out regions.
 inline constexpr char kBeginMacro[] = "CRUCIBLE_I_KNOW_WHAT_IM_DOING";

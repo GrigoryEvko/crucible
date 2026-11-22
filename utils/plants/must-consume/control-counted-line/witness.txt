@@ -1,0 +1,11 @@
+# A counted line in a file of the enforce mode error stays a line of the
+# report when the ledger of its rule counts a line of its directory and kind
+# (THE COUNTED LINES of utils/tools/quarantine/plugin.cpp): the drop of src/,
+# whose row in the ledger of this tree counts one line.  The module of the rule
+# judges the count, which holds.
+
+compile drop src/drop.cpp must-consume=on
+flag drop -freflection
+exit drop pass
+judge drop
+finding drop must-consume unconsumed src/drop.cpp:21:11 | planted::drops: token (planted::Token)
