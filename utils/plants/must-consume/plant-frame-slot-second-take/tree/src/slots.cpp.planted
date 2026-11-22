@@ -1,0 +1,30 @@
+// A frame slot gives its body one time.  The take consumes the slot, so a
+// second take of one slot is a double consume.
+#include <fixy/os/ThreadTasks.h>
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] [[= ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+    [[nodiscard]] constexpr int consume() && noexcept { return handle; }
+};
+
+int second_take() {
+    auto body = [token = Token{1}]() mutable noexcept { return std::move(token).consume(); };
+    ::fixy::thread::FrameSlot<decltype(body)> slot{std::move(body)};
+    int const first = std::move(slot).take()();
+    int const second = std::move(slot).take()();
+    return first + second;
+}
+
+}  // namespace planted

@@ -1,0 +1,9 @@
+# A second take of one frame slot is a double consume (the frame slot of
+# include/fixy/os/ThreadTasks.h): the take consumes the slot (line 26).  The
+# directory src/ has the enforce mode error, and the tree holds no ledger of
+# must-consume, so the counted line is a compile error.
+compile slots src/slots.cpp must-consume=on
+flag slots -freflection
+exit slots fail
+finding slots must-consume double-consume src/slots.cpp:26:44 | planted::second_take: slot (fixy::thread::FrameSlot<planted::second_take()::<lambda()> >)
+error slots src/slots.cpp:26 | quarantine: double-consume planted::second_take: slot (fixy::thread::FrameSlot<planted::second_take()::<lambda()> >); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

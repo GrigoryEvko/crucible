@@ -1,0 +1,10 @@
+# The rule table of this plant.  The unit of src/ is quarantined, its enforce
+# mode is error, and it can name the thread doors, the vocabulary of the
+# linear marker of the repository and std::move.
+
+admit fixy::thread | the frame slot of the thread doors, which the planted code holds
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit foundation::lifetime | the annotation of the token that refuses a start over its bytes
+admit std::move | the cast of each consume
+quarantine src/
+enforce src/ error

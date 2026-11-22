@@ -126,12 +126,12 @@
 //     overload with the reason.  Without it, one keyed body given two times
 //     would mint a key on each thread and open two frames of one owner that it
 //     holds by value, and one mutable body given two times would write its own
-//     captures from two threads.  Each body then moves into an Option of the
-//     frame.  The thread of a body takes it out of its Option and gives it to
+//     captures from two threads.  Each body then moves into a FrameSlot of the
+//     frame.  The thread of a body takes it out of its slot and gives it to
 //     the once door call_once of foundation/Linear.h, which owns it, calls it
 //     one time and ends it.  A continuation goes through the once door too.
-//     After the join, each Option is empty, and expect_none checks it: the
-//     door drops no body.  The body owns each value that it captures by value,
+//     After the join, expect_taken checks each slot, and the end of a full
+//     slot ends the process: the door drops no body.  The body owns each value that it captures by value,
 //     and it consumes each linear one on each path (the kind
 //     capture-unconsumed of the rule must-consume).  A body that the caller
 //     reads after the call gives that value back as its result (THE RESULTS).
@@ -497,6 +497,60 @@ template <typename... Parts>
 using start_error_t =
     std::conditional_t<detail::holds_linear_part_<Parts...>, RefusedStart<Parts...>, ::foundation::os::Errno>;
 
+// The slot of one body in the frame of a thread door (the bodies by move).  It
+// holds the body from the start of the call until the thread of the body
+// takes it out through the address that its task holds, so the frame keeps it
+// in one place.  take() moves the body out and leaves the slot empty, and a
+// slot gives its body one time.  The frame checks each slot with expect_taken
+// after the join.  The end of a slot that still holds its body ends the
+// process: no correct run reaches it, so no door drops a body.  The body is a
+// plain member, so the end of the slot ends the moved body in place.
+template <typename Body>
+class[[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^Body)>]]
+     [[= ::foundation::lifetime::no_start_over_bytes{}]] FrameSlot final {
+public:
+    constexpr explicit FrameSlot(Body&& body) noexcept : held_(static_cast<Body&&>(body)) {}
+    FrameSlot(FrameSlot const&) = delete("a frame slot holds its body one time");
+    FrameSlot& operator=(FrameSlot const&) = delete("a frame slot holds its body one time");
+    FrameSlot& operator=(FrameSlot&&) = delete("a frame slot keeps its body in one place");
+
+    // A move gives the body to the new slot and leaves the source empty.
+    constexpr FrameSlot(FrameSlot&& source) noexcept
+        : held_(static_cast<Body&&>(source.held_)), is_full_{source.is_full_} {
+        source.is_full_ = false;
+    }
+
+    constexpr ~FrameSlot() {
+        if (is_full_) [[unlikely]] {
+            ::foundation::core::fatal("a frame slot ends with a body that no thread took");
+        }
+    }
+
+    // The body, out of a slot that the caller gives up.
+    [[nodiscard]] constexpr Body take() && noexcept {
+        if (!is_full_) [[unlikely]] {
+            ::foundation::core::fatal("a frame slot gives its body one time");
+        }
+        is_full_ = false;
+        return static_cast<Body&&>(held_);
+    }
+
+    Body take() & = delete("take() moves the body out: give the slot up with std::move(slot).take()");
+    Body take() const& = delete("take() moves the body out, and a const slot keeps its body");
+
+    // The end of a slot after the join: the process ends with the reason when
+    // the slot still holds its body.
+    constexpr void expect_taken(::foundation::core::Fmt<> why) && noexcept {
+        if (is_full_) [[unlikely]] {
+            ::foundation::core::fatal(why);
+        }
+    }
+
+private:
+    Body held_;
+    bool is_full_ = true;
+};
+
 namespace detail {
 
 // Calls the body one time with the context that it takes, and gives its value.
@@ -536,18 +590,16 @@ template <typename Ctx, typename Body>
     }
 }
 
-// Takes the body out of its Option in the frame of the door, calls it one
-// time, and writes its value into its slot.  The Option is empty after the
-// take, so the door reads that the thread took the body (THE BODIES BY MOVE).
+// Takes the body out of its slot in the frame of the door, calls it one time,
+// and writes its value.  The slot is empty after the take, so the door reads
+// that the thread took the body (the bodies by move).
 template <typename Ctx, typename Body>
 void run_joined_body_(void* frame) noexcept {
     using Value = joined_result_t_<Ctx, Body>;
     joined_body_ const& joined = *static_cast<joined_body_ const*>(frame);
-    *static_cast<::foundation::core::Option<Value>*>(joined.value) = ::foundation::core::Option<Value>::some(
-        call_joined_body_<Ctx, Body>(static_cast<::foundation::core::Option<Body>*>(joined.body)
-                                         ->take()
-                                         .expect("the frame of the door gives each body to one thread"),
-                                     *static_cast<Ctx const*>(joined.ctx)));
+    *static_cast<::foundation::core::Option<Value>*>(joined.value) =
+        ::foundation::core::Option<Value>::some(call_joined_body_<Ctx, Body>(
+            std::move(*static_cast<FrameSlot<Body>*>(joined.body)).take(), *static_cast<Ctx const*>(joined.ctx)));
 }
 
 // Registers HOOK for the child of each fork (THE FORK HOOK).  The error is
@@ -595,13 +647,12 @@ namespace detail {
 
 // Each body is a parameter by value, so each body is an object of this frame,
 // also when the caller moves one object two times.  Each body then moves into
-// an Option of the frame, and its thread takes it out (THE BODIES BY MOVE).
+// a frame slot, and its thread takes it out (the bodies by move).
 template <typename Ctx, std::size_t... Is, typename... Bodies>
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, start_error_t<Bodies...>>
 run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is...> /*order*/,
             Bodies... bodies) noexcept {
-    ::foundation::core::Record<::foundation::core::Option<Bodies>...> owned{
-        ::foundation::core::Option<Bodies>::some(static_cast<Bodies&&>(bodies))...};
+    ::foundation::core::Record<FrameSlot<Bodies>...> owned{FrameSlot<Bodies>{static_cast<Bodies&&>(bodies)}...};
     ::foundation::core::Record<::foundation::core::Option<joined_result_t_<Ctx, Bodies>>...> slots{};
     joined_body_ joined[sizeof...(Bodies)]{
         joined_body_{&owned.at(::foundation::core::index<Is>()), &ctx, &slots.at(::foundation::core::index<Is>())}...};
@@ -610,31 +661,24 @@ run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is
     using Joined = ::foundation::core::Result<Values, start_error_t<Bodies...>>;
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
         run_thread_tasks(::foundation::core::detail::view_of_array_(tasks), options);
-    // Each path checks that each Option is empty after its last use of the
-    // frame.
     if (started.is_err()) {
         ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
-        // No thread ran, so each Option still holds its body (THE ERRORS).
+        // No thread ran, so each slot still holds its body (the errors).
         if constexpr (holds_linear_part_<Bodies...>) {
-            Joined refusal{::foundation::core::err(RefusedStart<Bodies...>{
-                error,
-                ::foundation::core::Record<Bodies...>{
-                    owned.at(::foundation::core::index<Is>()).take().expect("no thread ran a refused body")...}})};
-            (std::move(owned.at(::foundation::core::index<Is>())).expect_none("the refusal holds each body"), ...);
-            return refusal;
+            return Joined{::foundation::core::err(
+                RefusedStart<Bodies...>{error, ::foundation::core::Record<Bodies...>{
+                                                   std::move(owned.at(::foundation::core::index<Is>())).take()...}})};
         } else {
+            (static_cast<void>(std::move(owned.at(::foundation::core::index<Is>())).take()), ...);
             return Joined{::foundation::core::err(error)};
         }
     }
+    (std::move(owned.at(::foundation::core::index<Is>())).expect_taken("the thread of each body took it"), ...);
     if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
-        Joined joined_values{::foundation::core::Unit{}};
-        (std::move(owned.at(::foundation::core::index<Is>())).expect_none("the thread of each body took it"), ...);
-        return joined_values;
+        return Joined{::foundation::core::Unit{}};
     } else {
-        Joined joined_values{Values{
+        return Joined{Values{
             std::move(slots.at(::foundation::core::index<Is>())).expect("each body of the call ran one time")...}};
-        (std::move(owned.at(::foundation::core::index<Is>())).expect_none("the thread of each body took it"), ...);
-        return joined_values;
     }
 }
 
@@ -731,33 +775,27 @@ inline constexpr ::foundation::closure::DoorPolicy beside_caller_policy{::founda
 namespace detail {
 
 // run_beside with the body and the continuation by value, so each is an
-// object of this frame.  The body then moves into an Option of the frame,
-// and its thread takes it out (THE BODIES BY MOVE).
+// object of this frame.  The body then moves into a frame slot, and its thread
+// takes it out (the bodies by move).
 template <typename Ctx, typename Body, typename Continuation>
 [[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, start_error_t<Body, Continuation>>
 run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuation continuation) noexcept {
     using Values = beside_values_t<Ctx, Body, Continuation>;
     using Beside = ::foundation::core::Result<Values, start_error_t<Body, Continuation>>;
-    constexpr ::foundation::core::StaticIndex<0> only = ::foundation::core::index<0>();
-    ::foundation::core::Record<::foundation::core::Option<Body>> owned{
-        ::foundation::core::Option<Body>::some(static_cast<Body&&>(body))};
+    FrameSlot<Body> owned{static_cast<Body&&>(body)};
     ::foundation::core::Option<joined_result_t_<Ctx, Body>> slot{};
-    joined_body_ joined{&owned.at(only), &ctx, &slot};
+    joined_body_ joined{&owned, &ctx, &slot};
     thread_task task{&joined, &run_joined_body_<Ctx, Body>};
     ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> started = start_thread_task(task, options);
-    // Each path checks that the Option is empty after its last use of the
-    // frame.
     if (started.is_err()) {
         ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
-        // No thread ran, so the Option still holds the body (THE ERRORS).
+        // No thread ran, so the slot still holds the body (the errors).
         if constexpr (holds_linear_part_<Body, Continuation>) {
-            Beside refusal{::foundation::core::err(RefusedStart<Body, Continuation>{
-                error, ::foundation::core::Record<Body, Continuation>{
-                           owned.at(only).take().expect("no thread ran a refused body"),
-                           static_cast<Continuation&&>(continuation)}})};
-            std::move(owned.at(only)).expect_none("the refusal holds the body");
-            return refusal;
+            return Beside{::foundation::core::err(RefusedStart<Body, Continuation>{
+                error, ::foundation::core::Record<Body, Continuation>{std::move(owned).take(),
+                                                                      static_cast<Continuation&&>(continuation)}})};
         } else {
+            static_cast<void>(std::move(owned).take());
             return Beside{::foundation::core::err(error)};
         }
     }
@@ -766,24 +804,19 @@ run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuatio
     if constexpr (std::is_void_v<std::invoke_result_t<Continuation>>) {
         ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
         join_thread_task(handle);
+        std::move(owned).expect_taken("the thread of the body took it");
         if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
-            Beside joined_values{::foundation::core::Unit{}};
-            std::move(owned.at(only)).expect_none("the thread of the body took it");
-            return joined_values;
+            return Beside{::foundation::core::Unit{}};
         } else {
-            Beside joined_values{
+            return Beside{
                 Values{std::move(slot).expect("the body of the thread ran one time"), ::foundation::core::Unit{}}};
-            std::move(owned.at(only)).expect_none("the thread of the body took it");
-            return joined_values;
         }
     } else {
         beside_result_t_<Continuation> continued =
             ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
         join_thread_task(handle);
-        Beside joined_values{
-            Values{std::move(slot).expect("the body of the thread ran one time"), std::move(continued)}};
-        std::move(owned.at(only)).expect_none("the thread of the body took it");
-        return joined_values;
+        std::move(owned).expect_taken("the thread of the body took it");
+        return Beside{Values{std::move(slot).expect("the body of the thread ran one time"), std::move(continued)}};
     }
 }
 

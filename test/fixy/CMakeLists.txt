@@ -6848,6 +6848,15 @@ endforeach()
 fixy_neg_compile_test(neg_root_door_two_of_one
   "static assertion failed: a body of a root door names two keys of one brand"
   "neg_root_door_two_of_one\\.cpp")
+# A frame slot of the thread doors holds its body one time: a copy of a slot
+# meets its deleted copy, and a take of a named slot meets the deleted take
+# of an lvalue, which would leave the moved body for a second read.
+fixy_neg_compile_test(neg_frame_slot_copy
+  "neg_frame_slot_copy\\.cpp:[0-9]+:[0-9]+: error: use of deleted function"
+  "a frame slot holds its body one time")
+fixy_neg_compile_test(neg_frame_slot_named_take
+  "neg_frame_slot_named_take\\.cpp:[0-9]+:[0-9]+: error: use of deleted function"
+  "take\\(\\) moves the body out: give the slot up with std::move\\(slot\\)\\.take\\(\\)")
 # A root door takes each body by move into its own frame, so one body object
 # given two times as an lvalue does not compile, with a key or without one.
 fixy_neg_compile_test(neg_root_door_same_body_twice
