@@ -429,11 +429,10 @@ public:
 // does not satisfy the clause.  A region of const elements gives the View of
 // its elements in place of the ViewMut (shard_run_t).
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
-concept CtxFitsParallelFor =
-    (N > 0)
-    && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg> && perm::CtxAdmitsPermission<Whole, Ctx>
-    && std::is_nothrow_invocable_v<Body&, shard_run_t<T, ::fixy::Slice<Whole, 0>>, ShardPlace<N>>
-    && (N == 1 || std::is_copy_constructible_v<Body>);
+concept CtxFitsParallelFor = (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
+                          && perm::CtxAdmitsPermission<Whole, Ctx>
+                          && std::is_nothrow_invocable_v<Body&, shard_run_t<T, ::fixy::Slice<Whole, 0>>, ShardPlace<N>>
+                          && (N == 1 || std::is_copy_constructible_v<Body>);
 
 // The gate of the door of a test (design note 5).  The context passes the
 // gate of mint_parallel_for.  The second context owns Test, which only the

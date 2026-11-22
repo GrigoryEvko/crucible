@@ -526,9 +526,19 @@ template <class... Refused, class T, class Tag, class Brand, class Body,
     ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
     OwnedRegion<T, Tag, Brand>>
 with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept {
+    using Run = ::foundation::core::ViewMut<T, Fresh>;
+    using Given = ::foundation::core::detail::body_result_t<Body&&, Run>;
     OwnedRegion<T, Tag, Brand> held{std::move(region)};
     ::foundation::core::View<T> const run = frame_run_(::foundation::core::detail::FrameDoor::key(), held);
-    return ::foundation::core::detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
+    // The body runs before the region leaves the frame: a braced list runs
+    // its parts in order.
+    if constexpr (std::is_void_v<Given>) {
+        static_cast<Body&&>(body)(Run{::foundation::core::detail::FrameDoor::key(), run});
+        return held;
+    } else {
+        return ::foundation::core::detail::frame_return_t<Given, OwnedRegion<T, Tag, Brand>>{
+            static_cast<Body&&>(body)(Run{::foundation::core::detail::FrameDoor::key(), run}), std::move(held)};
+    }
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds

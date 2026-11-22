@@ -81,6 +81,19 @@ template <typename T, typename Region>
     return region.empty() && ::foundation::core::offset_of(whole, ::fixy::mint_borrowed(region)).is_none();
 }
 
+// True when the elements of a region hold the positions from first on, one
+// for each element: the elements of a shard of a run whose elements hold
+// their own positions.  Complexity: O(region.size()).
+template <typename Region>
+[[nodiscard]] bool holds_positions_from(Region const& region, std::size_t first) noexcept {
+    std::size_t position = first;
+    for (auto const element : ::fixy::mint_borrowed(region)) {
+        if (element != position) return false;
+        ++position;
+    }
+    return true;
+}
+
 // One shard count over every total from 0 to 64.  The storage is a heap
 // block of exactly `total` elements, so AddressSanitizer reports a write
 // past its end.  At a total of zero the block has one element, because the
@@ -96,43 +109,40 @@ void split_and_recombine_every_total(TestRunnerCtx const& test) {
             std::uint32_t* const base = pass == 0 ? storage.get() : nullptr;
             auto region = ::fixy::mint_owned_region(base, total, mint_permission_root<DataA>());
             using Region = decltype(region);
-            ::foundation::core::View<std::uint32_t const> const all = ::fixy::mint_borrowed(region);
-            auto parts = ::fixy::mint_split<N>(std::move(region));
+            // Each element holds its own position, so the elements of a
+            // shard tell the range that the split gave it.
+            auto seeded = ::fixy::with_mut(std::move(region), [](auto run) noexcept {
+                std::uint32_t position = 0;
+                for (std::uint32_t& element : run)
+                    element = position++;
+            });
+            ::foundation::core::View<std::uint32_t const> const all = ::fixy::mint_borrowed(seeded);
+            auto parts = ::fixy::mint_split<N>(std::move(seeded));
 
             // Each shard starts where the one before it ends, holds the
             // count or one element more than the count of every other
-            // shard, and writes its own index over its range through its
-            // frame door.  The frame door gives each shard back, and the
-            // shards that it gives make the tuple of the recombine.  A
-            // braced list runs its parts in order.
-            std::array<std::size_t, N> sizes{};
+            // shard, and holds the positions of its own range.  So no two
+            // shards hold one element, and each element is in a shard.
             std::size_t next_start = 0;
-            auto written = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return std::tuple{[&] {
-                    auto& shard = std::get<Is>(parts.shards);
-                    CRUCIBLE_TEST_ASSERT(test, starts_at(all, shard, next_start));
-                    CRUCIBLE_TEST_ASSERT(test, shard.size() == total / N || shard.size() == total / N + 1);
-                    sizes[Is] = shard.size();
-                    next_start += shard.size();
-                    return ::fixy::with_mut(std::move(shard), [](auto run) noexcept {
-                        for (std::uint32_t& element : run)
-                            element = static_cast<std::uint32_t>(Is);
-                    });
-                }()...};
+            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                (
+                    [&] {
+                        auto& shard = std::get<Is>(parts.shards);
+                        CRUCIBLE_TEST_ASSERT(test, starts_at(all, shard, next_start));
+                        CRUCIBLE_TEST_ASSERT(test, shard.size() == total / N || shard.size() == total / N + 1);
+                        CRUCIBLE_TEST_ASSERT(test, holds_positions_from(shard, next_start));
+                        next_start += shard.size();
+                    }(),
+                    ...);
             }(std::make_index_sequence<N>{});
             CRUCIBLE_TEST_ASSERT(test, next_start == total);
 
-            // recombine accepts every split, and the whole it gives back
-            // holds each shard's index exactly over that shard's range.
-            auto whole = Region::recombine(std::move(parts.witness), std::move(written));
+            // recombine accepts every split, and the whole it gives back is
+            // the run that the split cut.
+            auto whole = Region::recombine(std::move(parts.witness), std::move(parts.shards));
             CRUCIBLE_TEST_ASSERT(test, starts_at(all, whole, 0));
             CRUCIBLE_TEST_ASSERT(test, whole.size() == total);
-            std::size_t position = 0;
-            for (std::size_t shard_index = 0; shard_index < N; ++shard_index) {
-                for (std::size_t element = 0; element < sizes[shard_index]; ++element, ++position) {
-                    CRUCIBLE_TEST_ASSERT(test, whole.cspan()[position] == shard_index);
-                }
-            }
+            CRUCIBLE_TEST_ASSERT(test, holds_positions_from(whole, 0));
         }
     }
 }

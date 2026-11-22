@@ -92,21 +92,20 @@ void test_split_smaller_than_n(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, starts_at(all, s7, 5));
 }
 
-// The frame of one shard: it writes the slice index of the shard over the
-// range of the shard, and gives the shard back.
+// One shard of 800 elements in 8 shards: it holds the 100 positions of the
+// range of its slice index.
 template <typename Shard>
-[[nodiscard]] Shard write_slice_index(Shard& shard) noexcept {
-    constexpr std::uint64_t shard_index = Shard::tag_type::index;
-    return ::fixy::with_mut(std::move(shard), [](auto run) noexcept {
-        for (std::uint64_t& element : run)
-            element = shard_index;
-    });
+void check_slice_range(TestRunnerCtx const& test, Shard const& shard) {
+    constexpr std::size_t shard_index = Shard::tag_type::index;
+    CRUCIBLE_TEST_ASSERT(test, shard.size() == 100);
+    CRUCIBLE_TEST_ASSERT(test, holds_positions_from(shard, shard_index * 100));
 }
 
-// The join, spelled out once: every shard writes its own slice index over its range, and the shards are
-// then surrendered to recombine, which folds their Slice permissions
-// back into the parent's.  The post-join scan shows both that no shard
-// wrote outside its range and that no element went unwritten.
+// The join, spelled out once: every shard holds the positions of its own
+// range, and the shards are then surrendered to recombine, which folds their
+// Slice permissions back into the parent's.  The scan of the shards shows
+// both that no two shards hold one element and that each element is in a
+// shard.
 void test_split_then_rebuild_through_recombine(TestRunnerCtx const& test) {
     Arena arena;
     constexpr std::size_t N = 800;  // 8 × 100, exact division
@@ -114,35 +113,30 @@ void test_split_then_rebuild_through_recombine(TestRunnerCtx const& test) {
     using Whole = OwnedRegion<std::uint64_t, DataA, decltype(perm)::brand_type>;
     auto region = Whole::adopt(test_alloc_token(), arena, N, std::move(perm));
 
-    // A value no shard index can produce, so an untouched element is
-    // distinguishable from a written one.
+    // Each element holds its own position, so the elements of a shard tell
+    // the range that the split gave it.
     auto seeded = ::fixy::with_mut(std::move(region), [](auto run) noexcept {
+        std::uint64_t position = 0;
         for (std::uint64_t& element : run)
-            element = 0xDEAD;
+            element = position++;
     });
 
     ::foundation::core::View<std::uint64_t const> const all = ::fixy::mint_borrowed(seeded);
     const std::size_t count = seeded.size();
 
-    // Each shard writes through its frame door, which gives the shard back,
-    // and the shards that it gives make the tuple of the recombine.
     auto parts = ::fixy::mint_split<8>(std::move(seeded));
-    auto written = std::apply([](auto&... sub) { return std::tuple{write_slice_index(sub)...}; }, parts.shards);
+    std::apply([&test](auto const&... shard) { (check_slice_range(test, shard), ...); }, parts.shards);
 
     // The receipt the split wrote is surrendered beside the shards, and
     // it is what tells recombine that one split produced them.
-    auto recombined = Whole::recombine(std::move(parts.witness), std::move(written));
+    auto recombined = Whole::recombine(std::move(parts.witness), std::move(parts.shards));
 
     // recombine derives both from the shards rather than being told, so
     // check it recovered the extent the split started from.
     CRUCIBLE_TEST_ASSERT(test, starts_at(all, recombined, 0));
     CRUCIBLE_TEST_ASSERT(test, recombined.size() == count);
     CRUCIBLE_TEST_ASSERT(test, recombined.size() == N);
-    for (std::size_t shard = 0; shard < 8; ++shard) {
-        for (std::size_t i = 0; i < 100; ++i) {
-            CRUCIBLE_TEST_ASSERT(test, recombined.cspan()[shard * 100 + i] == shard);
-        }
-    }
+    CRUCIBLE_TEST_ASSERT(test, holds_positions_from(recombined, 0));
 }
 
 }  // namespace test_owned_region
