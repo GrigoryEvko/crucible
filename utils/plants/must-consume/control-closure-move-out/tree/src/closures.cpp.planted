@@ -1,0 +1,110 @@
+// The forms that the rule of the closures that move a capture admits (THE
+// CLOSURES THAT MOVE A CAPTURE of linear.cpp).
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+struct Plain {
+    int value = 0;
+};
+
+void sink(Token&& token) noexcept;
+void take(Plain&& plain) noexcept;
+[[nodiscard]] int look(Token const& token) noexcept;
+[[nodiscard]] Token renew(Token&& token) noexcept;
+
+// The once door owns the closure and calls it one time.
+void call_once_gives_the_token() {
+    auto give = [token = Token{1}]() mutable noexcept { return std::move(token); };
+    sink(::foundation::linear::call_once(std::move(give)));
+}
+
+// A closure that only reads its linear capture, called two times.
+void reading_closure_called_twice() {
+    auto read = [token = Token{2}]() noexcept { return look(token); };
+    (void)read();
+    (void)read();
+    (void)::foundation::linear::call_once(std::move(read));
+}
+
+// A closure that moves a capture of no linear type out, called two times.
+void plain_capture_moved_out_twice() {
+    auto give = [plain = Plain{3}]() mutable noexcept { take(std::move(plain)); };
+    give();
+    give();
+}
+
+// A closure that moves its capture out and gives it a new value before each
+// exit, called two times: each call ends with a live capture.
+void capture_moved_out_and_back() {
+    Token held{4};
+    auto step = [&held]() noexcept { held = renew(std::move(held)); };
+    step();
+    step();
+    sink(std::move(held));
+}
+
+// A closure that the full expression ends, called one time.
+void temporary_closure_called_once() {
+    Token held{5};
+    [&held]() noexcept { sink(std::move(held)); }();
+}
+
+// A door that takes the closure that the caller gives up and forwards it to
+// the call.
+template <class Body>
+void run_given(Body&& body) noexcept {
+    std::forward<Body>(body)();
+}
+
+void closure_given_to_a_forwarding_door() {
+    Token held{6};
+    auto give = [&held]() noexcept { sink(std::move(held)); };
+    run_given(std::move(give));
+}
+
+// A call of an rvalue of a closure that the frame owns: the rule use-after-move
+// refuses each later use of the name.
+void rvalue_of_an_owned_closure() {
+    Token held{7};
+    auto give = [&held]() noexcept { sink(std::move(held)); };
+    std::move(give)();
+}
+
+// A door that takes the closure by value and calls an rvalue of it.
+template <class Body>
+void run_owned(Body body) noexcept {
+    std::move(body)();
+}
+
+void closure_given_by_value() {
+    Token held{8};
+    run_owned([&held]() noexcept { sink(std::move(held)); });
+}
+
+// A closure that captures a body by reference and gives it to the once door,
+// as the child branch of a door that forks.
+template <class Body>
+void run_in_a_child(Body&& body) noexcept {
+    auto child = [&body]() noexcept { ::foundation::linear::call_once(std::forward<Body>(body)); };
+    ::foundation::linear::call_once(std::move(child));
+}
+
+void body_given_to_the_once_door_in_a_capture() {
+    run_in_a_child([token = Token{9}]() mutable noexcept { sink(std::move(token)); });
+}
+
+}  // namespace planted

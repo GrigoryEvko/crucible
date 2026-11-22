@@ -53,6 +53,14 @@
 //   exit_now(test, code) ends the calling process with code, and runs no
 //   exit hook and no static destructor.
 //
+//   The child calls the body one time, and the parent does not call it.  A
+//   closure that the caller gives up goes to the once door call_once of
+//   foundation/Linear.h in the child.  So a closure that moves a linear
+//   capture out is a legal body, and the rule must-consume reads its one
+//   call.  A body that the caller lends, and a function, get one call in
+//   place.  A lent closure that moves a linear capture out gives the line
+//   closure-move-out of must-consume at that call, so give such a body up.
+//
 //   Each call of the door takes a context that owns the Test capability, so
 //   only a test starts a child.  The steps of the child door of
 //   foundation/os/ChildProcess.h do the work: the C library forks, waits and
@@ -116,6 +124,7 @@
 // raises SIGSTOP and sends SIGKILL.
 
 #include <fixy/atoms/Syscall.h>
+#include <foundation/Linear.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
@@ -696,21 +705,29 @@ concept ChildBody = std::is_invocable_v<Body&> || std::is_invocable_v<Body&, For
 // (THE CHILD DOOR).  The parent gets the Child, or the error of the pipe or
 // of the fork.  The body runs only in the child, and it may use only what is
 // safe after a fork.  A body that takes a ForkedChild gets the proof of the
-// child.
+// child.  A closure that the caller gives up goes to the once door, and a
+// lent body or a function gets one call in place (THE CHILD DOOR).
 template <eff::IsExecCtx Ctx, typename Body>
     requires CtxFitsChildProcess<Ctx> && ChildBody<Body>
 [[nodiscard]] ::foundation::core::Result<Child, ::foundation::os::Errno> spawn_child(Ctx const& /*test*/,
                                                                                      Body&& body) noexcept {
     namespace os = ::foundation::os;
+    namespace linear = ::foundation::linear;
     // The arm of the start runs the body in the child and ends the child, so
-    // the start is a match and not a map.
+    // the start is a match and not a map.  The match calls the arm one time.
     using Spawned = ::foundation::core::Result<Child, os::Errno>;
     return os::detail::start_child_().match(
         [&body](os::detail::ChildStart start) noexcept -> Spawned {
             if (start.child == 0) {
                 if constexpr (std::is_invocable_v<Body&, ForkedChild const&>) {
                     ForkedChild const proof = detail::ChildDoor::make_forked_child();
-                    body(proof);
+                    if constexpr (linear::OnceClosure<Body, ForkedChild const&>) {
+                        linear::call_once(static_cast<Body&&>(body), proof);
+                    } else {
+                        body(proof);
+                    }
+                } else if constexpr (linear::OnceClosure<Body>) {
+                    linear::call_once(static_cast<Body&&>(body));
                 } else {
                     body();
                 }
@@ -749,7 +766,9 @@ wait_within(Child&& child, WaitLimit limit) noexcept {
 // and then ends with the exit code 0 (THE TRACED CHILD).  memory tells what
 // the tracer can read.  The parent gets the TracedChild, or the error of the
 // pipe, of the fork or of the trace.  The body runs only in the child, and it
-// may use only what is safe after a fork.
+// may use only what is safe after a fork.  A closure that the caller gives up
+// goes to the once door, and a lent body or a function gets one call in place
+// (THE CHILD DOOR).
 template <eff::IsExecCtx Ctx, typename Body>
     requires CtxFitsChildProcess<Ctx> && std::is_invocable_v<Body&>
 [[nodiscard]] ::foundation::core::Result<TracedChild, ::foundation::os::Errno>
@@ -760,7 +779,11 @@ spawn_traced_child(Ctx const& /*test*/, TracedMemory memory, Body&& body) noexce
         [&body, memory](os::detail::ChildStart start) noexcept -> Spawned {
             if (start.child == 0) {
                 detail::enter_trace_(memory);
-                body();
+                if constexpr (::foundation::linear::OnceClosure<Body>) {
+                    ::foundation::linear::call_once(static_cast<Body&&>(body));
+                } else {
+                    body();
+                }
                 os::detail::exit_child_(0);
             }
             return detail::attach_tracer_(detail::ChildParts{start.child, start.error_output});

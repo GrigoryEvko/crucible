@@ -160,8 +160,9 @@ fail_assertion(Ctx const& /*test*/, char const (&condition)[Length], char const*
 // Runs body in a child process (THE DEATH TEST).  The test continues when
 // the child ends by SIGABRT and its standard error holds expected.  Each
 // other end, and an error of the child door, ends the test with the site of
-// the call.  Complexity: one child process, and O(n) in the bytes of its
-// output.
+// the call.  The body goes on to the child door as the caller gave it, so a
+// closure that the caller gives up reaches the once door in the child.
+// Complexity: one child process, and O(n) in the bytes of its output.
 template <TestContext Ctx, typename Body>
     requires std::is_invocable_v<Body&>
 void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expected,
@@ -171,7 +172,7 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
     namespace process = ::fixy::process;
     using Collected = core::Result<process::ChildReport, os::Errno>;
     Collected collected =
-        process::spawn_child(test, body)
+        process::spawn_child(test, static_cast<Body&&>(body))
             .match([](process::Child child) noexcept -> Collected { return process::wait(std::move(child)); },
                    [](os::Errno error) noexcept -> Collected { return core::err(error); });
     if (collected.is_err()) [[unlikely]] {
@@ -191,8 +192,9 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
 // Runs body in a child process with the default action of FATAL_SIGNAL (THE
 // DEATH BY A SIGNAL).  The test continues when the child ends by that
 // signal.  Each other end, and an error of the child door, ends the test with
-// the site of the call.  Complexity: one child process, and O(n) in the bytes
-// of its output.
+// the site of the call.  A closure that the caller gives up goes to the once
+// door in the child, and a lent body or a function gets one call in place.
+// Complexity: one child process, and O(n) in the bytes of its output.
 template <TestContext Ctx, typename Body>
     requires std::is_invocable_v<Body&>
 void expect_dies_by(Ctx const& test, Body&& body, ::fixy::signal::FatalSignal fatal_signal,
@@ -205,7 +207,11 @@ void expect_dies_by(Ctx const& test, Body&& body, ::fixy::signal::FatalSignal fa
         process::spawn_child(test,
                              [&test, &body, fatal_signal](process::ForkedChild const& child) noexcept {
                                  ::fixy::signal::reset_to_default(test, child, fatal_signal);
-                                 body();
+                                 if constexpr (::foundation::linear::OnceClosure<Body>) {
+                                     ::foundation::linear::call_once(static_cast<Body&&>(body));
+                                 } else {
+                                     body();
+                                 }
                              })
             .match([](process::Child child) noexcept -> Collected { return process::wait(std::move(child)); },
                    [](os::Errno error) noexcept -> Collected { return core::err(error); });

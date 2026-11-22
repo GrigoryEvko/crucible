@@ -1,0 +1,116 @@
+// The calls of a closure whose call operator moves a linear capture out (THE
+// CLOSURES THAT MOVE A CAPTURE of linear.cpp).  Each call can run again, and
+// a second call gives a second token of one token.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that is linear by its two token fields.
+struct Pair {
+    Token first;
+    Token second;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] bool should_give() noexcept;
+
+// Two calls of a closure that gives its capture out give two tokens.
+void two_calls_give_two_tokens() {
+    auto give = [token = Token{1}]() mutable noexcept { return std::move(token); };
+    sink(give());
+    sink(give());
+    sink(::foundation::linear::call_once(std::move(give)));
+}
+
+// A closure that moves a capture by reference out, called one time by name:
+// the name stays, so a later call moves the moved-from token again.
+void reference_capture_moved_out() {
+    Token held{2};
+    auto give = [&held]() noexcept { sink(std::move(held)); };
+    give();
+}
+
+// A door that borrows the closure can call it more than one time.
+template <class Body>
+void run_body(Body& body) noexcept {
+    body();
+}
+
+void borrowed_closure_in_a_door() {
+    auto give = [token = Token{3}]() mutable noexcept { sink(std::move(token)); };
+    run_body(give);
+    ::foundation::linear::call_once(std::move(give));
+}
+
+// A closure that moves one field of a captured pair out.
+void field_of_a_capture_moved_out() {
+    auto give = [pair = Pair{Token{4}, Token{5}}]() mutable noexcept { sink(std::move(pair.first)); };
+    give();
+    ::foundation::linear::call_once(std::move(give));
+}
+
+// A closure that moves its capture out on one path only.
+void moved_out_on_one_path() {
+    auto give = [token = Token{6}]() mutable noexcept {
+        if (should_give()) {
+            sink(std::move(token));
+        }
+    };
+    give();
+    ::foundation::linear::call_once(std::move(give));
+}
+
+// A closure that captures a body by reference and calls it, as the child
+// branch of a door that forks: the call borrows the body.
+template <class Body>
+void run_in_a_child(Body&& body) noexcept {
+    auto child = [&body]() noexcept { body(); };
+    ::foundation::linear::call_once(std::move(child));
+}
+
+void body_called_through_a_capture() {
+    run_in_a_child([token = Token{7}]() mutable noexcept { sink(std::move(token)); });
+}
+
+// A door that gives a closure that it borrows to the once door: the closure
+// stays with the caller, so a second call of the door runs it again.
+template <class Body>
+void give_borrowed_to_the_once_door(Body& body) noexcept {
+    ::foundation::linear::call_once(std::move(body));
+}
+
+void borrowed_closure_to_the_once_door_twice() {
+    Token held{8};
+    auto give = [&held]() noexcept { sink(std::move(held)); };
+    give_borrowed_to_the_once_door(give);
+    give_borrowed_to_the_once_door(give);
+}
+
+// A closure that gives a body that it captures by reference to the once door,
+// called two times.
+template <class Body>
+void run_twice_in_a_child(Body&& body) noexcept {
+    auto child = [&body]() noexcept { ::foundation::linear::call_once(std::forward<Body>(body)); };
+    child();
+    child();
+}
+
+void captured_body_to_the_once_door_twice() {
+    Token held{9};
+    run_twice_in_a_child([&held]() noexcept { sink(std::move(held)); });
+}
+
+}  // namespace planted

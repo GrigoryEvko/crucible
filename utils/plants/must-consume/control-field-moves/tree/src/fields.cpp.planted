@@ -35,7 +35,7 @@ void through_accessor(Box box) { take(static_cast<Token&&>(box.get())); }
 void captured_by_reference() {
     Token token;
     auto consume = [&token] { take(static_cast<Token&&>(token)); };
-    consume();
+    ::foundation::linear::call_once(static_cast<decltype(consume)&&>(consume));
 }
 
 void read_then_moved() {

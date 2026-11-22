@@ -94,11 +94,11 @@ void mutable_borrow_then_the_consume() {
     sink(std::move(held).expect("the Option holds the token"));
 }
 
-// A closure that consumes the sum itself.
+// A closure that consumes the sum itself, which the once door calls one time.
 void closure_consumes_the_sum() {
     Option<Token> held = Option<Token>::some(Token{8});
     auto finish = [&held] { sink(std::move(held).expect("the Option holds the token")); };
-    finish();
+    ::foundation::linear::call_once(std::move(finish));
 }
 
 // A generic closure that only reads the sum, called after the consume.

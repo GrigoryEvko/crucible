@@ -1,0 +1,9 @@
+# The rule table of this control.  The unit of src/ is quarantined, its enforce
+# mode is error, and it can name the vocabulary of the linear marker of the
+# repository, std::move and std::forward.
+
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit std::move | the cast of each consume
+admit std::forward | the cast of the forwarding door
+quarantine src/
+enforce src/ error

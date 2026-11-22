@@ -134,6 +134,9 @@
 //                          sum that each path shows empty (THE SUMS)
 //     borrow-move-out      a consume of a lent object that a path keeps to
 //                          an exit (THE LENT PARAMETERS)
+//     closure-move-out     a call of a closure that moves a linear capture
+//                          out, outside a once door (THE CLOSURES THAT MOVE A
+//                          CAPTURE)
 //     The entity is FUNCTION: OBJECT (TYPE), and FUNCTION: temporary (TYPE)
 //     for a temporary.  FUNCTION has no template argument.  TYPE is the type
 //     of the object or the temporary with its template arguments, and each
@@ -142,7 +145,8 @@
 //     an instance that ends a different type gives its own line, and the
 //     ledger counts each type.  The key of a ledger row holds no line of an
 //     exit.  The entity of unanalyzed is FUNCTION, and the entity of door is
-//     the function of its row.
+//     the function of its row.  The TYPE of closure-move-out is the type of
+//     the closure (THE CLOSURES THAT MOVE A CAPTURE).
 //
 // THE FIELDS
 //     An object of a class that is linear by its parts gets one slot for each
@@ -325,6 +329,37 @@
 //     capture by reference is no such alias, because the summary of the
 //     closure tells what each call of it does.
 //
+// THE CLOSURES THAT MOVE A CAPTURE
+//     A call operator of a lambda has no qualifier &&, so each call of a
+//     closure reads its captures as members of a borrowed object.  A body
+//     that consumes a linear capture, or a linear field of one, leaves a
+//     valid moved-from value in the closure.  So a second call gives a second
+//     value of one capture, such as a second exclusive token of one
+//     permission, and no type and no run-time state refuses it.
+//     The summary walk of the call operator gives the fact: a path to an exit
+//     leaves a linear capture, by copy or by a reference that is not const,
+//     or one of its fields consumed (note_closure_summary).  A walk with a
+//     goto fails closed.
+//     A call of such a closure, and a call of a function with the annotation
+//     once_door that takes such a closure, needs an object that the frame
+//     gives up: a temporary closure, or an rvalue of a local or of a
+//     parameter by value or by an rvalue reference (is_object_given_up).
+//     The full expression ends a temporary, and the rule use-after-move
+//     refuses a later use of a name that a cast spends.  Each other such call
+//     gives the kind closure-move-out, such as a call of a closure that a
+//     door borrows, or a call of the once door with a closure that a
+//     parameter lends.  The once door call_once of include/foundation/Linear.h
+//     moves the closure into its frame and calls an rvalue of it, so its own
+//     call meets the test.
+//     A call operator that gives a capture of its own closure to the once
+//     door gives no line there: the closure then moves a capture out too, so
+//     each call of that closure meets the test (check_closure_calls).
+//     The entity is FUNCTION: OBJECT (TYPE), with the name of the object of
+//     the closure or the word closure, and the type of the closure.
+//     The kind is a counted line of the ledger (THE COUNTED LINES of
+//     plugin.cpp): a directory of the enforce mode error with no count row of
+//     the kind refuses it at compile time.
+//
 // THE SELF-MOVES
 //     A move assignment whose target and source are one object is the kind
 //     self-move, at the assignment: an operator= that takes an rvalue
@@ -470,7 +505,8 @@ struct LinearNames {
     tree tests_empty = NULL_TREE;
     tree needs_full = NULL_TREE;
     tree needs_empty = NULL_TREE;
-    // The annotation of the once door (THE DOORS).
+    // The annotation of the once door (THE DOORS, THE CLOSURES THAT MOVE A
+    // CAPTURE).
     tree once_door = NULL_TREE;
 };
 
@@ -751,6 +787,124 @@ std::unordered_set<unsigned> returns_sum_reference;
 std::unordered_set<unsigned> summarized_functions;
 std::unordered_map<unsigned, std::vector<unsigned>> waiting_kept_facts;
 
+// THE CLOSURES THAT MOVE A CAPTURE: each call operator whose body moves a
+// linear capture out, by its DECL_UID.
+std::unordered_set<unsigned> closure_moves_out;
+
+// True when CALL calls the call operator of a closure that moves a linear
+// capture out, with an implicit object parameter (THE CLOSURES THAT MOVE A
+// CAPTURE).
+bool calls_moving_closure(tree call) {
+    if (call == NULL_TREE || TREE_CODE(call) != CALL_EXPR) {
+        return false;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(call);
+    return callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL && TREE_CODE(TREE_TYPE(callee)) == METHOD_TYPE
+        && !FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(callee)) && closure_moves_out.count(DECL_UID(callee)) != 0;
+}
+
+// True when TYPE, or the type that the reference TYPE names, is a closure
+// whose call operator moves a linear capture out (THE CLOSURES THAT MOVE A
+// CAPTURE).
+bool is_moving_closure_type(tree type) {
+    if (type != NULL_TREE && TYPE_REF_P(type)) {
+        type = TREE_TYPE(type);
+    }
+    if (type == NULL_TREE || !LAMBDA_TYPE_P(type)) {
+        return false;
+    }
+    tree call_operator = lambda_function(TYPE_MAIN_VARIANT(type));
+    return call_operator != NULL_TREE && closure_moves_out.count(DECL_UID(call_operator)) != 0;
+}
+
+// True when CALL calls a closure that moves a linear capture out, or calls a
+// function with the annotation once_door with such a closure, so the walk
+// must read the object of the closure (THE CLOSURES THAT MOVE A CAPTURE).
+// Complexity: linear in the arguments of the call.
+bool calls_with_moving_closure(tree call) {
+    if (calls_moving_closure(call)) {
+        return true;
+    }
+    if (call == NULL_TREE || TREE_CODE(call) != CALL_EXPR) {
+        return false;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(call);
+    if (callee == NULL_TREE || !carries_annotation(DECL_ATTRIBUTES(callee), linear_names.once_door)) {
+        return false;
+    }
+    for (int index = 0; index < call_expr_nargs(call); ++index) {
+        if (is_moving_closure_type(TREE_TYPE(CALL_EXPR_ARG(call, index)))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when NAME is an object of the frame of the function: a local that is
+// no reference and no capture, or a parameter by value or by an rvalue
+// reference, which the caller gave up.
+bool is_frame_owned_name(tree name) {
+    if (name == NULL_TREE || TREE_TYPE(name) == NULL_TREE) {
+        return false;
+    }
+    bool is_lvalue_reference = TYPE_REF_P(TREE_TYPE(name)) && !TYPE_REF_IS_RVALUE(TREE_TYPE(name));
+    if (TREE_CODE(name) == PARM_DECL) {
+        return !is_lvalue_reference;
+    }
+    return VAR_P(name) && !TYPE_REF_P(TREE_TYPE(name)) && !DECL_HAS_VALUE_EXPR_P(name) && !TREE_STATIC(name)
+        && !DECL_EXTERNAL(name);
+}
+
+// True when the object OBJECT of a call of a closure is a temporary, or an
+// rvalue that std::move, std::forward or a cast to an rvalue reference gives
+// of an object of the frame (is_frame_owned_name).  The full expression ends
+// a temporary, so no second call reaches it, and the rule use-after-move
+// refuses each later use of a name that such a cast spends.  A cast of a
+// borrowed object, such as a parameter by an lvalue reference, a capture or
+// the object behind a pointer, gives nothing up (THE CLOSURES THAT MOVE A
+// CAPTURE).
+bool is_object_given_up(tree object) {
+    bool saw_rvalue = false;
+    for (int depth = 0; object != NULL_TREE && depth < kTypeDepth; ++depth) {
+        object = tree_strip_any_location_wrapper(object);
+        switch (TREE_CODE(object)) {
+            case ADDR_EXPR:
+            case NON_LVALUE_EXPR:
+            case INDIRECT_REF:
+                object = TREE_OPERAND(object, 0);
+                continue;
+            case NOP_EXPR:
+            case CONVERT_EXPR:
+            case STATIC_CAST_EXPR:
+            case VIEW_CONVERT_EXPR:
+                saw_rvalue = saw_rvalue
+                          || (TREE_TYPE(object) != NULL_TREE && TYPE_REF_P(TREE_TYPE(object))
+                              && TYPE_REF_IS_RVALUE(TREE_TYPE(object)));
+                object = TREE_OPERAND(object, 0);
+                continue;
+            case TARGET_EXPR:
+            case CONSTRUCTOR:
+                return true;
+            case CALL_EXPR: {
+                tree callee = cp_get_callee_fndecl_nofold(object);
+                tree type = TREE_TYPE(object);
+                if (!is_std_move_cast(callee) || call_expr_nargs(object) < 1) {
+                    return false;
+                }
+                saw_rvalue = saw_rvalue || (type != NULL_TREE && TYPE_REF_P(type) && TYPE_REF_IS_RVALUE(type));
+                object = CALL_EXPR_ARG(object, 0);
+                continue;
+            }
+            case VAR_DECL:
+            case PARM_DECL:
+                return saw_rvalue && is_frame_owned_name(object);
+            default:
+                return false;
+        }
+    }
+    return false;
+}
+
 // THE SUMMARIES: what a callee does with a reference parameter that names a
 // linear sum, at one point of the unit.
 enum class KeptFact : std::uint8_t {
@@ -806,6 +960,17 @@ void resolve_waiting_kept_facts() {
 bool is_sum_capture(tree field) {
     tree type = field != NULL_TREE ? TREE_TYPE(field) : NULL_TREE;
     return type != NULL_TREE && TYPE_REF_P(type) && !TYPE_READONLY(TREE_TYPE(type)) && is_linear_sum(TREE_TYPE(type));
+}
+
+// True when FIELD is a capture of a linear value that the body of the call
+// operator can move out: a capture by copy, or a capture by a reference that
+// is not const (THE CLOSURES THAT MOVE A CAPTURE).
+bool is_linear_capture(tree field) {
+    tree type = field != NULL_TREE && TREE_CODE(field) == FIELD_DECL ? TREE_TYPE(field) : NULL_TREE;
+    if (type != NULL_TREE && TYPE_REF_P(type)) {
+        type = TYPE_READONLY(TREE_TYPE(type)) ? NULL_TREE : TREE_TYPE(type);
+    }
+    return type != NULL_TREE && is_linear_type(type);
 }
 
 // True when a parameter of the type PARAMETER_TYPE lets the callee write its
@@ -1022,12 +1187,14 @@ struct Slot {
     // A closure captured the object by reference, so the rule cannot see its
     // consume, and the rule linear-capture reports the capture (THE CAPTURES).
     bool is_escaped = false;
-    // THE SUMMARIES: the object is a capture by reference of a linear sum in
-    // the body of a call operator, which the closure borrows.  Its end
-    // gives no finding, and LEAVES_PAYLOAD tells that a path to an exit can
-    // leave a payload in it.
+    // THE SUMMARIES: the object is a capture of a linear value in the body of
+    // a call operator, which the call borrows from the closure.  Its end
+    // gives no finding.  LEAVES_PAYLOAD tells that a path to an exit can
+    // leave a payload in a sum, and LEAVES_MOVED_OUT that a path to an exit
+    // can leave the capture consumed (THE CLOSURES THAT MOVE A CAPTURE).
     bool is_capture_borrow = false;
     bool leaves_payload = false;
+    bool leaves_moved_out = false;
     unsigned capture_field_uid = 0;
     // THE LENT PARAMETERS: the object is a parameter that the caller lends,
     // the location of its first consume, and whether a path reaches an exit
@@ -1238,12 +1405,28 @@ public:
             return fields;
         }
         for (const Slot& entry : slots_) {
-            if (entry.is_capture_borrow && !entry.leaves_payload) {
+            if (entry.is_capture_borrow && entry.is_sum && !entry.leaves_payload) {
                 fields.push_back(entry.capture_field_uid);
             }
         }
         return fields;
     }
+
+    // THE CLOSURES THAT MOVE A CAPTURE: true when a path to an exit of the
+    // call operator leaves a linear capture consumed, or when the body gives
+    // a capture that is such a closure to the once door.  A walk with a goto
+    // fails closed for each linear capture (is_unanalyzed).
+    [[nodiscard]] bool moves_capture_out() const {
+        if (is_unanalyzed_) {
+            return std::any_of(slots_.begin(), slots_.end(), [](const Slot& entry) { return entry.is_capture_borrow; });
+        }
+        return gives_capture_to_once_door_ || std::any_of(slots_.begin(), slots_.end(), [](const Slot& entry) {
+                   return entry.is_capture_borrow && entry.leaves_moved_out;
+               });
+    }
+
+    // True when the body has a goto or a label, so the walk did not read it.
+    [[nodiscard]] bool is_unanalyzed() const { return is_unanalyzed_; }
 
 private:
     tree function_;
@@ -1280,6 +1463,9 @@ private:
     // UNKNOWN_LOCATION at the end of the body.
     location_t next_statement_ = UNKNOWN_LOCATION;
     bool is_unanalyzed_ = false;
+    // THE CLOSURES THAT MOVE A CAPTURE: the body gives a capture of its
+    // closure that moves a linear capture out to the once door.
+    bool gives_capture_to_once_door_ = false;
     // THE DROPPED ELEMENTS: the original of each dropped element of this
     // body, and the statement that owns its move.
     struct Orphan {
@@ -1484,17 +1670,20 @@ private:
             return false;
         }
         tree field = capture_field_of(DECL_VALUE_EXPR(decl), TYPE_MAIN_VARIANT(closure));
-        if (!is_sum_capture(field)) {
+        if (!is_linear_capture(field)) {
             return false;
         }
+        tree type = TREE_TYPE(field);
+        type = TYPE_REF_P(type) ? TREE_TYPE(type) : type;
         slot = slots_.size();
         Slot entry;
         entry.decl = decl;
-        entry.is_sum = true;
+        entry.is_sum = is_linear_sum(type);
         entry.is_capture_borrow = true;
         entry.capture_field_uid = DECL_UID(field);
         slots_.push_back(entry);
         slot_of_.emplace(decl, slot);
+        add_field_slots(slot, type);
         return true;
     }
 
@@ -2150,11 +2339,16 @@ private:
                     // spent value of the caller.
                     slots_[slot].has_spent_exit = entry.has_spent_exit || (!entry.is_escaped && is_spent(state, slot));
                 } else if (entry.is_capture_borrow) {
-                    // THE SUMMARIES: the closure borrows the sum, so its end
+                    // THE SUMMARIES: the call borrows the capture, so its end
                     // gives no finding.  A slot that the walk never made live
-                    // fails closed.
+                    // fails closed for the two facts.
                     bool is_empty_here = status == Status::consumed || state.get_content(slot) == Content::empty;
+                    bool is_kept_here = status == Status::live;
+                    for (std::size_t part : entry.fields) {
+                        is_kept_here = is_kept_here && state.get(part) == Status::live;
+                    }
                     slots_[slot].leaves_payload = slots_[slot].leaves_payload || !is_empty_here;
+                    slots_[slot].leaves_moved_out = slots_[slot].leaves_moved_out || !is_kept_here;
                 } else if (entry.ends_at_scope || (entry.is_escaped && !entry.is_sum)) {
                     // The end of the scope is the door of the object, or a
                     // capture by reference hides the consume (THE CAPTURES).
@@ -2746,6 +2940,10 @@ private:
                 consume(decl, field, state, location);
             }
         }
+        if (state.is_reachable) {
+            check_closure_calls(call, callee, location);
+        }
+        bool is_once_door = callee != NULL_TREE && carries_linear_annotation(callee, linear_names.once_door);
         // THE SUMMARIES: the call of a closure runs its body, and a call that
         // takes a closure can run it, also at a later call.
         if (callee != NULL_TREE && LAMBDA_FUNCTION_P(callee)) {
@@ -2753,7 +2951,6 @@ private:
         }
         // The once door calls the closure that it takes one time, and each
         // other callee can call it at each later point (THE DOORS).
-        bool is_once_door = callee != NULL_TREE && carries_linear_annotation(callee, linear_names.once_door);
         for (int index = 0; index < count; ++index) {
             tree argument_type = TREE_TYPE(argument_at(call, index));
             argument_type =
@@ -2771,6 +2968,74 @@ private:
         if (callee != NULL_TREE && TREE_THIS_VOLATILE(callee)) {
             state.is_reachable = false;
         }
+    }
+
+    // THE CLOSURES THAT MOVE A CAPTURE: a call of such a closure, and a call
+    // of the once door that takes such a closure, needs an object that the
+    // frame gives up (is_object_given_up).  A call operator that gives a
+    // capture of its own closure to the once door moves a capture out too,
+    // so the walk notes it, and the calls of that closure meet the same test.
+    void check_closure_calls(tree call, tree callee, location_t location) {
+        int count = argument_count(call);
+        if (calls_moving_closure(call) && count >= 1 && !is_object_given_up(argument_at(call, 0))) {
+            add_pending(Kind::linear_closure_move_out, location,
+                        closure_entity(argument_at(call, 0), DECL_CONTEXT(callee)));
+        }
+        if (callee == NULL_TREE || !carries_linear_annotation(callee, linear_names.once_door)) {
+            return;
+        }
+        for (int index = 0; index < count; ++index) {
+            tree argument = argument_at(call, index);
+            if (!is_moving_closure_type(TREE_TYPE(argument)) || is_object_given_up(argument)) {
+                continue;
+            }
+            if (names_own_capture(argument)) {
+                gives_capture_to_once_door_ = true;
+                continue;
+            }
+            add_pending(Kind::linear_closure_move_out, location, closure_entity(argument, TREE_TYPE(argument)));
+        }
+    }
+
+    // True when OBJECT names a capture of the closure of the call operator
+    // that the walk reads, through std::move, std::forward and the casts (THE
+    // CLOSURES THAT MOVE A CAPTURE).
+    bool names_own_capture(tree object) const {
+        tree closure = DECL_CONTEXT(function_);
+        if (closure == NULL_TREE || !LAMBDA_TYPE_P(closure)) {
+            return false;
+        }
+        for (int depth = 0; object != NULL_TREE && depth < kTypeDepth; ++depth) {
+            object = tree_strip_any_location_wrapper(object);
+            tree_code code = TREE_CODE(object);
+            if (code == NOP_EXPR || code == CONVERT_EXPR || code == NON_LVALUE_EXPR || code == VIEW_CONVERT_EXPR
+                || code == STATIC_CAST_EXPR) {
+                object = TREE_OPERAND(object, 0);
+            } else if (code == CALL_EXPR && call_expr_nargs(object) >= 1
+                       && is_std_move_cast(cp_get_callee_fndecl_nofold(object))) {
+                object = CALL_EXPR_ARG(object, 0);
+            } else {
+                break;
+            }
+        }
+        return capture_field_of(object, TYPE_MAIN_VARIANT(closure)) != NULL_TREE;
+    }
+
+    // FUNCTION: OBJECT (TYPE) for a call that takes the closure OBJECT of the
+    // type CLOSURE_TYPE, with the name of the object of the closure or the
+    // word closure (THE CLOSURES THAT MOVE A CAPTURE).
+    std::string closure_entity(tree object, tree closure_type) const {
+        bool saw_rvalue = false;
+        tree named = strip_to_tracked(object, saw_rvalue);
+        if (named == NULL_TREE) {
+            named = self_move_place(object);
+        }
+        bool is_named = named != NULL_TREE && (TREE_CODE(named) == VAR_DECL || TREE_CODE(named) == PARM_DECL);
+        if (closure_type != NULL_TREE && TYPE_REF_P(closure_type)) {
+            closure_type = TREE_TYPE(closure_type);
+        }
+        return function_text(function_) + ": " + (is_named ? simple_name(named) : std::string{"closure"}) + " ("
+             + linear_type_text(closure_type) + ")";
     }
 
     // THE SUMMARIES: true when the callee CALLEE can keep a reference
@@ -3271,20 +3536,28 @@ void analyze_body(tree function, bool is_door) {
     deferred_findings.push_back(DeferredFindings{first.findings(), second.findings(), first.unknown_callees()});
 }
 
-// THE SUMMARIES: the capture fields of the closure of the call operator
-// FUNCTION that each path of its body leaves empty.  Only a closure that
-// captures a linear sum by reference gets the walk.  Complexity: one walk of
-// the body for such a closure.
-void note_closure_empties(tree function) {
+// THE SUMMARIES and THE CLOSURES THAT MOVE A CAPTURE: the capture fields of
+// the closure of the call operator FUNCTION whose sum each path of its body
+// leaves empty, and whether a path leaves a linear capture consumed or gives
+// a capture that moves a linear capture out to the once door.  Only a closure
+// with a linear capture, or with a capture of such a closure, gets the walk.
+// A walk with a goto fails closed for a capture of such a closure.
+// Complexity: one walk of the body for such a closure.
+void note_closure_summary(tree function) {
     tree closure = DECL_CONTEXT(function);
     if (closure == NULL_TREE || !LAMBDA_TYPE_P(closure)) {
         return;
     }
-    bool captures_sum = false;
-    for (tree field = TYPE_FIELDS(closure); field != NULL_TREE && !captures_sum; field = DECL_CHAIN(field)) {
-        captures_sum = TREE_CODE(field) == FIELD_DECL && is_sum_capture(field);
+    bool captures_linear = false;
+    bool captures_moving_closure = false;
+    for (tree field = TYPE_FIELDS(closure); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) != FIELD_DECL) {
+            continue;
+        }
+        captures_linear = captures_linear || is_linear_capture(field);
+        captures_moving_closure = captures_moving_closure || is_moving_closure_type(TREE_TYPE(field));
     }
-    if (!captures_sum) {
+    if (!captures_linear && !captures_moving_closure) {
         return;
     }
     Analysis walk(function, false, UnknownCallee::can_keep, WalkPurpose::summary);
@@ -3292,6 +3565,9 @@ void note_closure_empties(tree function) {
     std::vector<unsigned> emptied = walk.emptied_capture_fields();
     if (!emptied.empty()) {
         closure_empties[DECL_UID(function)] = std::move(emptied);
+    }
+    if (walk.moves_capture_out() || (captures_moving_closure && walk.is_unanalyzed())) {
+        closure_moves_out.insert(DECL_UID(function));
     }
 }
 
@@ -4315,7 +4591,7 @@ tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
         && is_linear_type(TREE_TYPE(node))) {
         walk.has_linear = true;
     }
-    if (is_move_assignment_call(node)) {
+    if (is_move_assignment_call(node) || calls_with_moving_closure(node)) {
         walk.has_linear = true;
     }
     return NULL_TREE;
@@ -4375,7 +4651,7 @@ tree find_linear(tree* node_pointer, int* walk_subtrees, void*) {
         && is_linear_type(TREE_TYPE(node))) {
         return node;
     }
-    if (is_move_assignment_call(node)) {
+    if (is_move_assignment_call(node) || calls_with_moving_closure(node)) {
         return node;
     }
     return NULL_TREE;
@@ -4790,7 +5066,7 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
     if (linear_mode.checks_must_consume) {
         if (LAMBDA_FUNCTION_P(function)) {
             note_closure_fills(function);
-            note_closure_empties(function);
+            note_closure_summary(function);
         }
         note_kept_references(function);
     }

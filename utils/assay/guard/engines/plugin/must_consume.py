@@ -23,6 +23,15 @@ THE RULE
                             (REFUSED_KINDS)
       discarded-temporary   a linear temporary that the code discards
       unanalyzed            a function with a goto or a label
+      borrow-move-out       a function moves a linear value out of a
+                            parameter that its caller lends, and a path
+                            leaves the parameter spent (linear.cpp, THE LENT
+                            PARAMETERS)
+      closure-move-out      a call of a closure whose call operator moves a
+                            linear capture out, outside the once door
+                            call_once of include/foundation/Linear.h, so a
+                            second call gives a second value (linear.cpp, THE
+                            CLOSURES THAT MOVE A CAPTURE)
     A linear sum gives the kinds of THE SUMS in place of unconsumed,
     unconsumed-on-path and discarded-temporary.
     The plugin reads a body of a base file in the sentinel unit of the file,
@@ -129,6 +138,8 @@ ACTIONS = {
     "borrow-move-out": "the function moves the value out of a parameter that its caller lends, and a path leaves it "
     "spent.  Take the value with foundation::linear::exchange, give the parameter a value again on each path, or take "
     "it by value",
+    "closure-move-out": "a call of a closure that moves a linear capture out can run again and give a second value.  "
+    "Give the closure to foundation::linear::call_once, which owns it and calls it one time",
 }
 # The kinds of THE SUMS.  Each line is a compile error, and no ledger row admits one.
 SUM_KINDS = ("option-unconsumed", "option-discarded", "option-known-full", "option-known-empty")
