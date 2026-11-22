@@ -133,7 +133,10 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
 
 }  // namespace detail
 
-class BumpArena final {
+// The arena owns its blocks, and no door stores a pointer or a borrow that a
+// caller gives, so a body that captures the arena stores no borrow in it
+// (owns_its_storage of foundation/core/Owner.h).
+class[[= owns_its_storage{}]] BumpArena final {
 public:
     // The bytes of blocks that an arena keeps when an epoch ends, until
     // set_retained_limit sets a different limit.  An arena that holds more

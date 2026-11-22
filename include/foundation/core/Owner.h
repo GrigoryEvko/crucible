@@ -109,6 +109,12 @@ concept GivesOwnerOperations = std::is_trivially_copyable_v<State> && std::is_no
 template <class State>
 concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 
+// The mark of an owner that is no class on OwnerCore and that holds its
+// storage through pointers: no door of the class stores a pointer or a
+// borrow that a caller gives.  The store check of a frame body
+// (foundation/core/CaptureStore.h) reads its type arguments and no member.
+struct owns_its_storage final {};
+
 template <OwnerState State>
 class OwnerCore {
 protected:

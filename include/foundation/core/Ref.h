@@ -316,9 +316,10 @@ namespace detail {
 // current access context reads it.  The loops index the lists, as the other
 // reads of reflection in this layer do.  Complexity: quadratic in the members
 // of the type, because each step reads the list again, and a closure with no
-// capture has few members.  Linear in the type arguments at each depth.
+// capture has few members.  Linear in the type arguments at each depth.  An
+// incomplete class, such as a tag that a unit only declares, is no brand.
 [[nodiscard]] consteval bool names_scope_brand(std::meta::info type) {
-    if (!std::meta::is_class_type(type)) return false;
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
     std::meta::access_context const context = std::meta::access_context::current();
     std::size_t const member_count = std::meta::members_of(type, context).size();
     for (std::size_t index = 0; index < member_count; ++index) {
