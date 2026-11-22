@@ -14,7 +14,7 @@ Arguments
                afl-fuzz stops leaves its scratch directory there, so the
                command removes OUT_DIR/tmp when it exits, also when a step
                fails.  OUT_DIR/afl of an earlier campaign goes into the kept
-               state before the instances start (THE KEPT CORPUS).
+               state before the instances start (the kept corpus).
     HARNESS    A harness of test/fuzz/CMakeLists.txt, such as region: the
                first argument of a line crucible_boundary_fuzzer(NAME ...)
                (harness_names()).  A header of the harness directory that no
@@ -55,7 +55,7 @@ Findings
     campaign, and the report names the first input and the command that
     replays it: the harness binary with the input as its argument.
 
-THE KEPT CORPUS
+Kept corpus
     afl-fuzz refuses an output directory that holds a session of more than
     25 minutes (OUTPUT_GRACE of AFL++).  After a shorter session, it deletes
     the crashes and the hangs of that session.  So each campaign starts with
@@ -115,13 +115,13 @@ _HARNESS_LINE = re.compile(r"^crucible_boundary_fuzzer\(\s*([A-Za-z0-9_]+)\b")
 _RUN_DEFINITION = re.compile(r"^inline void run_([A-Za-z0-9_]+)\(", re.MULTILINE)
 # The file that afl-fuzz writes in each crashes directory, which is no saved input.
 AFL_README = "README.txt"
-# The pin and the tool of `setup install` that give the AFL++ tools (THE ENVIRONMENT).
+# The pin and the tool of `setup install` that give the AFL++ tools (the environment).
 AFL_TOOL = "aflplusplus"
 # The entry of the CMake cache that names the compiler of an instrumented build (configure_and_build()).
 COMPILER_ENTRY = "CMAKE_CXX_COMPILER"
 # The directory of the kept state of the campaigns in the work root, the two directories of the state of a harness, the
 # directory of a new corpus that afl-cmin writes and the directory of the corpus during the swap (minimized()), the
-# prefix of a seed from the corpus, and the digits of the SHA-256 in the name of a kept input (THE KEPT CORPUS).
+# prefix of a seed from the corpus, and the digits of the SHA-256 in the name of a kept input (the kept corpus).
 KEPT_ROOT = "fuzz-campaigns"
 CORPUS = "corpus"
 FINDINGS = "findings"
@@ -142,8 +142,8 @@ SANITIZER_OPTIONS = {
     "AFL_NO_AFFINITY": "1",
     "AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES": "1",
     "AFL_NO_UI": "1",
-    # A seed of the kept corpus that crashes the harness of this time is a saved crash of the campaign (THE KEPT
-    # CORPUS), not a seed that afl-fuzz skips.
+    # A seed of the kept corpus that crashes the harness of this time is a saved crash of the campaign (the kept
+    # corpus), not a seed that afl-fuzz skips.
     "AFL_CRASHING_SEEDS_AS_NEW_CRASH": "1",
 }
 
@@ -267,7 +267,7 @@ def campaign_verdict(statuses: Sequence[int], findings: Findings, binary: Path) 
 
 
 def afl_directory() -> Path:
-    """Return the directory of the AFL++ tools: AFL_BIN, else the install of the pin aflplusplus (THE ENVIRONMENT).
+    """Return the directory of the AFL++ tools: AFL_BIN, else the install of the pin aflplusplus (the environment).
 
     Raises:
         setup_install.InstallError: If AFL_BIN is not set, and the pinned AFL++ is not installed for the patched GCC
@@ -277,7 +277,7 @@ def afl_directory() -> Path:
 
 
 def kept_directory(harness: str) -> Path:
-    """Return the kept state of a harness: KEPT_ROOT/HARNESS in the work root (THE KEPT CORPUS).
+    """Return the kept state of a harness: KEPT_ROOT/HARNESS in the work root (the kept corpus).
 
     The directory can be missing.
     """
@@ -285,7 +285,7 @@ def kept_directory(harness: str) -> Path:
 
 
 def content_name(path: Path) -> str:
-    """Return the first CONTENT_DIGITS digits of the SHA-256 of the bytes of a file (THE KEPT CORPUS).
+    """Return the first CONTENT_DIGITS digits of the SHA-256 of the bytes of a file (the kept corpus).
 
     Two inputs with the same bytes get the same name, so the name of an input of the corpus never changes.
     Complexity: linear in the bytes of the file.
@@ -294,7 +294,7 @@ def content_name(path: Path) -> str:
 
 
 def finding_name(path: Path) -> str:
-    """Return the name of a saved input in the kept findings: KIND-DIGEST-INSTANCE-NAME (THE KEPT CORPUS).
+    """Return the name of a saved input in the kept findings: KIND-DIGEST-INSTANCE-NAME (the kept corpus).
 
     KIND is crashes or hangs and INSTANCE the instance of afl-fuzz, from the path OUT_DIR/afl/INSTANCE/KIND/NAME.  Two
     inputs with the same bytes get the same name.  Complexity: linear in the bytes of the input.
@@ -306,7 +306,7 @@ def harvested(out_dir: Path, kept: Path, staging: Path) -> tuple[Path, ...]:
     """Move the output of an earlier campaign out of OUT_DIR/afl, remove OUT_DIR/afl, and return the moved inputs.
 
     Each saved crash and hang goes into kept/FINDINGS, and each input of the queue of each instance is copied into
-    staging with the digits of its SHA-256 as its name (THE KEPT CORPUS).  An OUT_DIR with no afl directory gives
+    staging with the digits of its SHA-256 as its name (the kept corpus).  An OUT_DIR with no afl directory gives
     nothing.  Complexity: linear in the bytes of the files of OUT_DIR/afl.
 
     Args:
@@ -340,7 +340,7 @@ def minimized(kept: Path, staging: Path, afl_bin: Path, binary: Path, cpus: int)
     when afl-cmin cannot start, runs past its limit or fails.  Each input has the digits of its SHA-256 as its name,
     so an input of the corpus and the same input of a queue give one file, and afl-cmin keeps the name.  The output
     of afl-cmin replaces the corpus only after a run with the status 0.  A staging with no input changes nothing
-    (THE KEPT CORPUS).  Complexity: one run of afl-cmin on the inputs.
+    (the kept corpus).  Complexity: one run of afl-cmin on the inputs.
 
     Args:
         kept: The kept state of the harness
@@ -566,7 +566,7 @@ def run_instances(campaign: Campaign, afl_bin: Path, binary: Path, cmplog_binary
                   kept: Path) -> tuple[list[int], Findings]:
     """Keep the output of an earlier campaign, write the seeds, run one instance on each core, and read the findings.
 
-    The build of the harness comes first (configure_and_build()).  THE KEPT CORPUS gives the steps before the
+    The build of the harness comes first (configure_and_build()).  The kept corpus gives the steps before the
     instances.  The step removes OUT_DIR/tmp at its end, also after an error.
 
     Args:

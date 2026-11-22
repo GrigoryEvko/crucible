@@ -766,7 +766,7 @@ def key_text(key: Key) -> str:
 def named_keys(ledger: Ledger, item: str, kind: str) -> list[Key]:
     """Return the sorted keys of the rows that an item names, of the kind `kind`, or of each kind for "".
 
-    THE REASON OF A ROW gives the forms of an item.  An empty item names no row.  Complexity: linear in the rows.
+    The reason of a row gives the forms of an item.  An empty item names no row.  Complexity: linear in the rows.
     """
     path, separator, entity = item.partition(rows_grammar.SEPARATOR)
     if separator:
@@ -778,7 +778,7 @@ def named_keys(ledger: Ledger, item: str, kind: str) -> list[Key]:
 
 
 def reasoned(ledger: Ledger, request: RowReason) -> Ledger:
-    """Return the ledger with the reason of the request in the one row that each item names (THE REASON OF A ROW).
+    """Return the ledger with the reason of the request in the one row that each item names (the reason of a row).
 
     Raises:
         LedgerError: If the request gives no reason, or an item names no row or more than one row of the kind of the

@@ -4,7 +4,7 @@
 test.  Each case makes a planted build with assay.guard.engines.buildsys.planted
 and writes a ledger or a list of it with `guard write`, or with the function of
 the rule.  The cases of the list compile planted headers with the patched
-compiler (assay.core.testing, THE COMPILER).  The cases of the reason of a
+compiler (assay.core.testing, the compiler).  The cases of the reason of a
 row write the reason of one row of a planted ledger of a count rule, of each
 rule of the policy max and of the rule of the policy baseline.  Exit 0 when
 each case holds, else 1.

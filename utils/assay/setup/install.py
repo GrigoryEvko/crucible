@@ -78,13 +78,13 @@ Tools
                  measure.  --print-bin prints the directory src of the source.
     aflplusplus  The AFL++ tools of the nightly fuzz campaigns (the pin
                  aflplusplus), built from their source for the patched GCC
-                 (THE BUILT TOOL).  --print-bin prints the bin directory,
+                 (the built tool).  --print-bin prints the bin directory,
                  which `loop fuzz` reads (assay.loop.fuzz).
     No tool comes from PATH, because a program of PATH is an input that no pin
     holds.  The build of aflplusplus runs make and the shell of the host, as
     the build of the patched GCC does.
 
-THE BUILT TOOL
+Built tool
     The GCC plugin of AFL++ loads only into the GCC whose plugin headers built
     it: it refuses a GCC with a different version, date or configuration.  So
     the install builds AFL++ with the patched GCC of the toolchain file
@@ -94,7 +94,7 @@ THE BUILT TOOL
     build compiles with it.  The output of `g++-16p -v` names that GCC
     (compiler_identity()).  Its SHA-256 goes into the name of the directory
     and into the stamp, so a new build of the patched GCC needs a new install,
-    and the old directory stays until THE BOUND removes it.  The check
+    and the old directory stays until the rule of the section Bound removes it.  The check
     compiles a probe unit with afl-g++-fast and that GCC, which fails when
     the plugin and the GCC disagree.  afl-cc finds the plugin in ../lib/afl
     beside its own program, so the directory works at each path.
@@ -415,9 +415,9 @@ class Tool:
     moves the download into a directory to publish.  `program` gives what
     --print-bin prints.  A tool with `exports_bin` gives its bin directory to
     GITHUB_PATH.  `requires` names the pins of the packages of a tool of
-    via=pip, other than its own pin (THE PIP TOOLS).  `identity` gives the
-    text that names the toolchain of a built tool, or is None (THE BUILT
-    TOOL).
+    via=pip, other than its own pin (the pip tools).  `identity` gives the
+    text that names the toolchain of a built tool, or is None (the built
+    tool).
     """
 
     name: str
@@ -479,7 +479,7 @@ def tool_digest(tool: Tool, pin: pin_table.Pin, table: Pins) -> str:
     It is the digest of the pin.  For a tool with more pins, it is the
     SHA-256 of the name and the digest of each of its pins.  For a built tool,
     it is the SHA-256 of the digest of the pin and the identity of its
-    toolchain (THE BUILT TOOL).
+    toolchain (the built tool).
 
     Raises:
         InstallError: If the table has no pin of a package of the tool, or the toolchain of a built tool is absent
@@ -909,7 +909,7 @@ def verify_source(files: tuple[str, ...], directory: Path, pin: pin_table.Pin, t
         raise InstallError(f"{directory} holds no {', '.join(missing)}.", NOT_PINNED)
 
 
-# The built tool of the fuzz campaigns (THE BUILT TOOL).
+# The built tool of the fuzz campaigns (the built tool).
 
 # The programs of the AFL++ install that `loop fuzz` runs, and the plugin of the GCC mode.
 AFL_PROGRAMS = ("afl-fuzz", "afl-cmin", "afl-showmap", "afl-gcc-fast", "afl-g++-fast")
@@ -933,7 +933,7 @@ def afl_environment() -> dict[str, str]:
 def compiler_identity() -> str:
     """Return the output of `g++-16p -v` of the patched GCC of the toolchain file, which names that GCC.
 
-    THE BUILT TOOL gives its use.
+    The built tool gives its use.
 
     Raises:
         InstallError: With the status UNSUPPORTED when the compiler is absent or `-v` fails
@@ -951,7 +951,7 @@ def compiler_identity() -> str:
 def afl_build(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
     """Unpack the source of AFL++, build it with the patched GCC, install it into staging/out, and return staging/out.
 
-    THE BUILT TOOL gives the steps.  Complexity: one build of AFL++.
+    The built tool gives the steps.  Complexity: one build of AFL++.
 
     Raises:
         InstallError: With the status UNSUPPORTED when make cannot start, and NOT_PINNED when a step fails

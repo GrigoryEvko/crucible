@@ -746,7 +746,7 @@ template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
 inline constexpr bool unproven_nested_door_refusal = refuse_unproven_nested_door<Class, Door, Part>();
 
 // The refusal of a member function template with no specialization for the
-// probe body and none for a probe context (THE DOORS OF A SYNCHRONIZED CLASS):
+// probe body and none for a probe context (the doors of a synchronized class):
 // the check cannot read its parameters, so it fails closed.
 template <std::meta::info Class, std::meta::info Door>
 consteval bool refuse_unreadable_door() {
@@ -836,7 +836,7 @@ void a_door_probe_context_stands_outside_its_seal() noexcept;
     return specialized;
 }
 
-// One class whose doors the check does not read (THE EXEMPTION): the name of
+// One class whose doors the check does not read (the exemption): the name of
 // its namespace, which lies in the global namespace, and its own name.  The
 // check file of foundation/Transfer.h pins the table to the one class.
 struct synchronized_door_exemption {

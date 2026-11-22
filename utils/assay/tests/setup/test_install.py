@@ -573,7 +573,7 @@ def planted_compiler(path: Path, identity: str) -> Path:
 
 
 def built_cases(expect: Expect, work: Path) -> None:
-    """Check the built tool AFL++: its pin, its directory and stamp from the patched GCC, and its check (THE BUILT TOOL)."""
+    """Check the built tool AFL++: its pin, its directory and stamp from the patched GCC, and its check (the built tool)."""
     tool = install.TOOLS["aflplusplus"]
     pin = install.pin_of(tool, pin_table.load())
     expect("the pin of AFL++ is the archive of one commit of AFL++, which serves each host, with its SHA-256",

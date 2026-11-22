@@ -65,8 +65,8 @@
 //   process.  A deferred pop can follow a pop of another form.
 //
 //   A ring with an Owner also gives try_pop_deferred_proven and
-//   publish_tail_proven, which take the proof of the consumer (THE PROVEN
-//   FORM).  Each publish of the proven form stores the tail from the copy and
+//   publish_tail_proven, which take the proof of the consumer (the proven
+//   form).  Each publish of the proven form stores the tail from the copy and
 //   the count, and it loads nothing from the published tail.
 
 #include <fixy/Mutation.h>
@@ -193,8 +193,8 @@ public:
         return pop_deferred_<Interval, TailPublish::checked>();
     }
 
-    // The deferred pop of the one consumer that the proof names (THE PROVEN
-    // FORM and THE DEFERRED TAIL).
+    // The deferred pop of the one consumer that the proof names (the proven
+    // form and the deferred tail).
     template <std::size_t Interval>
     [[nodiscard]] CRUCIBLE_HOT ::foundation::core::Option<T>
     try_pop_deferred_proven(consumer_proof const& /*proof*/) noexcept
@@ -208,8 +208,8 @@ public:
     // the consumer freed.  Only the consumer calls it.
     void publish_tail() noexcept { publish_deferred_<TailPublish::checked>(); }
 
-    // The publish of the tail of the one consumer that the proof names (THE
-    // PROVEN FORM and THE DEFERRED TAIL).
+    // The publish of the tail of the one consumer that the proof names (the
+    // proven form and the deferred tail).
     void publish_tail_proven(consumer_proof const& /*proof*/) noexcept
         requires(!std::is_void_v<Owner>)
     {
@@ -330,8 +330,8 @@ private:
     [[nodiscard]] static constexpr tail_writer_ prove_tail_writer_() noexcept { return {}; }
 
     // How a deferred publish stores the tail: checked against the published
-    // tail, or from the copy alone, after the proof of the consumer (THE
-    // DEFERRED TAIL).
+    // tail, or from the copy alone, after the proof of the consumer (the
+    // deferred tail).
     enum class TailPublish : unsigned char {
         checked = 0,
         proven = 1,
@@ -347,7 +347,7 @@ private:
         }
     }
 
-    // The body of the two deferred pops (THE DEFERRED TAIL).
+    // The body of the two deferred pops (the deferred tail).
     template <std::size_t Interval, TailPublish Publish>
     [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_deferred_() noexcept {
         static_assert(Interval > 0 && Interval <= Capacity,
@@ -370,7 +370,7 @@ private:
         return ::foundation::core::Option<T>::some(result);
     }
 
-    // The body of the two publishes of the tail (THE DEFERRED TAIL).
+    // The body of the two publishes of the tail (the deferred tail).
     template <TailPublish Publish>
     [[gnu::always_inline]] void publish_deferred_() noexcept {
         if (deferred_pops_ == 0) return;

@@ -95,7 +95,7 @@ python3 utils/bin/setup install aflplusplus
 ```
 
 The GCC plugin loads only into the GCC that built it, so a new build of the
-patched GCC needs this command again (THE BUILT TOOL of
+patched GCC needs this command again (the built tool of
 `utils/assay/setup/install.py`).  The cmplog pass gives the comparison
 feedback.
 
@@ -112,7 +112,7 @@ The command keeps the campaign off the cores that the host reserves.  A
 campaign that saves a crash or a hang fails, and its report gives the
 command that replays the first input.  The next campaign moves each saved
 input into `~/.cache/crucible-work/fuzz-campaigns/HARNESS/findings`, and it
-gives the queue to the corpus beside it (THE KEPT CORPUS of
+gives the queue to the corpus beside it (the kept corpus of
 `utils/assay/loop/fuzz.py`).  Minimize each saved input with `afl-tmin`,
 find the root cause, and fix it at the boundary.  Then add the input to the
 seeds of the harness, as a literal or as a patch to an image that a writer

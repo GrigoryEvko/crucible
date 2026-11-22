@@ -1023,7 +1023,7 @@ public:
     // takes the exclusive of its pool here.  So a live handle of each role
     // ends the process, and no handle starts while the drain runs.  The claim
     // holds the role of the consumer, so a wire drains with the proof of the
-    // one consumer of its ring (THE PROVEN FORM of fixy/concurrent/SpscRing.h).
+    // one consumer of its ring (the proven form of fixy/concurrent/SpscRing.h).
     // A claim of
     // another channel of the same type ends the process, because only the
     // identity of a channel tells two such channels apart.  Each producer

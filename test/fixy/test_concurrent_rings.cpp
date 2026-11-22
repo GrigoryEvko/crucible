@@ -587,8 +587,8 @@ struct ProvenOwner final {
 }
 
 // The proven deferred pop publishes the tail at each Interval pops, and the
-// proven publish publishes it at any time, as the checked forms do (THE
-// DEFERRED TAIL of fixy/concurrent/SpscRing.h).  The producer sees the free
+// proven publish publishes it at any time, as the checked forms do (the
+// deferred tail of fixy/concurrent/SpscRing.h).  The producer sees the free
 // cells only after a publish.  A checked pop after a proven publish finds the
 // published tail at the copy, so its check holds.
 [[nodiscard]] int spsc_proven_deferred_tail_follows_its_publishes() {

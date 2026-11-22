@@ -4402,7 +4402,7 @@ bool is_frame_object(tree node) {
 // True when the class TYPE has a door that consumes a const object: a member
 // function with the qualifier const&& that is not deleted, or a mutable
 // field.  The walk reads the class, each base and each member that it holds
-// by value, to the depth kTypeDepth (THE CAPTURES).  Complexity: linear in
+// by value, to the depth kTypeDepth (the captures).  Complexity: linear in
 // the members of the classes that it reads.
 bool consumes_through_const(tree type, int depth) {
     tree main = TYPE_MAIN_VARIANT(type);
@@ -4439,7 +4439,7 @@ bool consumes_through_const(tree type, int depth) {
 // is a linear class with the annotation loan_key_mark of
 // foundation/core/Frame.h, and the end of its scope is its door, so the
 // closure hides no consume of it.  A capture by const reference of a class
-// with no door that consumes a const object only reads it (THE CAPTURES).
+// with no door that consumes a const object only reads it (the captures).
 bool is_linear_reference_capture(tree closure, tree field) {
     static tree const loan_key_mark = get_identifier("loan_key_mark");
     static tree const core = get_identifier("core");

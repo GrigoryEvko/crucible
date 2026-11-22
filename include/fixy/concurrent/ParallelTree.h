@@ -427,8 +427,8 @@ void scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc, ::fo
 // tree sum of the elements [offsets[s], offsets[s + 1]), with the bits of
 // sum_segments_by_tree.  A region scope door covers the run of the ViewMut of
 // the sums, so the split of mint_parallel_for gives each shard its own sums.  The offsets must pass check_segment_offsets for the count of the
-// sums, and the elements share no element with the sums (THE INPUT OF A
-// SCAN).  Offsets that fail the check, and elements that share an element with
+// sums, and the elements share no element with the sums (the input of a
+// scan).  Offsets that fail the check, and elements that share an element with
 // the sums, end the process before any write.  Complexity: O(n + S) in Shards
 // shards.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename In, typename T, typename SumBrand,

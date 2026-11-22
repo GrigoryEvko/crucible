@@ -176,7 +176,7 @@ private:
 
 // The body of a frame door of one end: it takes the end with no throw, its
 // result holds no borrow and fits a Record, it reaches no key of the side
-// (THE GATE of foundation/core/Frame.h), and it holds no linear value by
+// (the gate of foundation/core/Frame.h), and it holds no linear value by
 // value (HoldsNoLinearValue of foundation/Linear.h).
 template <class Body, class End, class KeyBrand>
 concept SpscEndBody =

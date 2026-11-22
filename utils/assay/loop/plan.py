@@ -53,7 +53,7 @@ Sampled items
     evidence` adds the CPU seconds of a campaign to the key of a harness.
     The step fuzz runs a campaign of each harness with the AFL++ of the pin
     aflplusplus, and the kept state of `loop fuzz` gives each campaign the
-    corpus of the earlier ones (THE KEPT CORPUS of assay.loop.fuzz).
+    corpus of the earlier ones (the kept corpus of assay.loop.fuzz).
 
     An item is not sampled when one run gives the full evidence for its
     inputs.  The step gauge judges the medians of the runs of one call, the

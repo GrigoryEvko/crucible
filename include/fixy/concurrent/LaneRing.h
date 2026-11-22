@@ -362,7 +362,7 @@ private:
         return typename lane_type::ring_type::consumer_proof{};
     }
 
-    // The deferred pop of the lane of the turn (THE ROOM).
+    // The deferred pop of the lane of the turn (the room).
     [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_lane_of_turn_() noexcept {
         return lane_of_turn_().ring.template try_pop_deferred_proven<tail_interval>(prove_lane_consumer_());
     }

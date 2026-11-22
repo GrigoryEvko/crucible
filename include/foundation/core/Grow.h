@@ -487,7 +487,7 @@ public:
                   && (!::foundation::linear::HoldsNoLinearValue<Body>)
     void with_view(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
-    // The lend of the elements to the frame door with_mut (THE LEND COUNT):
+    // The lend of the elements to the frame door with_mut (the lend count):
     // body gets the View of the elements, and the list lends its storage
     // until body returns.  The key of a frame keeps each caller outside the
     // base out, so only with_mut gives a View that writes the elements.  The

@@ -134,7 +134,7 @@
 //     slot ends the process: the door drops no body.  The body owns each value that it captures by value,
 //     and it consumes each linear one on each path (the kind
 //     capture-unconsumed of the rule must-consume).  A body that the caller
-//     reads after the call gives that value back as its result (THE RESULTS).
+//     reads after the call gives that value back as its result (the results).
 //
 // Results
 //     A body of run_joined gives a value, or gives nothing.  Each thread
@@ -464,8 +464,8 @@ concept JoinedValue = ::foundation::transfer::Sendable<Value> && ::foundation::c
 
 // The frame of one body of run_joined: the Option that holds the body, the
 // context of the call and the slot of the value of the body.  The Option and
-// the slot live in the frame of the door, which waits for each thread (THE
-// CONTEXT OF A BODY, THE BODIES BY MOVE, THE RESULTS).
+// the slot live in the frame of the door, which waits for each thread (the
+// context of a body, the bodies by move, the results).
 struct joined_body_ {
     void* body = nullptr;
     void const* ctx = nullptr;
@@ -473,14 +473,14 @@ struct joined_body_ {
 };
 
 // True when a part of a call, a body or a continuation, holds a linear value
-// (THE ERRORS).
+// (the errors).
 template <typename... Parts>
 inline constexpr bool holds_linear_part_ = (::foundation::linear::is_linear_v<Parts> || ...);
 
 }  // namespace detail
 
-// The refusal of a start of a call with a part that holds a linear value (THE
-// ERRORS): the error number of the call that failed, and each part that no
+// The refusal of a start of a call with a part that holds a linear value (the
+// errors): the error number of the call that failed, and each part that no
 // thread ran, in the order of the call.  The caller binds the parts, and it
 // starts each one again or ends it, such as through end_unrun_body of
 // foundation/Linear.h.
@@ -490,7 +490,7 @@ struct RefusedStart {
     ::foundation::core::Record<Parts...> parts{};
 };
 
-// The error of a start of a call with these parts (THE ERRORS): a
+// The error of a start of a call with these parts (the errors): a
 // RefusedStart when a part holds a linear value, and the error number for
 // each other call.
 template <typename... Parts>
@@ -824,9 +824,9 @@ run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuatio
 
 // Runs the body on a thread of its own with the options, runs the
 // continuation on the calling thread at the same time, and joins the thread
-// when the continuation returns (THE THREAD BESIDE THE CALLER).  A start that
+// when the continuation returns (the thread beside the caller).  A start that
 // fails is the error of the call, and the continuation does not run then
-// (THE ERRORS).
+// (the errors).
 template <typename Ctx, typename Body, typename Continuation>
     requires(!NamesABodyAsAnLvalue<Body>)
          && CtxStartsThreads<Ctx> && JoinedBody<Body, Ctx> && BesideContinuation<Continuation>
@@ -926,7 +926,7 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
     if (started.is_err()) {
         ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
         // The body holds no linear value (beside_each_policy), so only the
-        // continuation can come back (THE ERRORS).
+        // continuation can come back (the errors).
         if constexpr (detail::holds_linear_part_<Continuation>) {
             return Continued{::foundation::core::err(RefusedStart<Continuation>{
                 error, ::foundation::core::Record<Continuation>{static_cast<Continuation&&>(continuation)}})};
