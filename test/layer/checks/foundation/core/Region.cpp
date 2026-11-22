@@ -362,6 +362,18 @@ static_assert(std::is_same_v<decltype(offset_of(std::declval<View<int>>(), std::
 static_assert(
     std::is_same_v<decltype(offset_of(std::declval<View<int const>>(), std::declval<int&>())), Option<std::size_t>>);
 
+// classify_overlap takes two Views of one element type, with or without a
+// const and of each extent, and gives a RunOverlap of one byte, the answer
+// type of the plan of foundation/core/Pointwise.h too.  Two Views of two
+// element types do not share a run, so the query refuses them.
+template <class Left, class Right>
+constexpr bool classify_overlap_accepts = requires(Left left, Right right) { classify_overlap(left, right); };
+static_assert(std::is_same_v<decltype(classify_overlap(std::declval<View<int>>(), std::declval<View<int const, 4>>())),
+                             RunOverlap>);
+static_assert(sizeof(RunOverlap) == 1);
+static_assert(classify_overlap_accepts<View<int const, 4>, View<int>>);
+static_assert(!classify_overlap_accepts<View<int>, View<long>>);
+
 // ── The unique view ───────────────────────────────────────────────────
 
 // A ViewMut holds a pointer and a count.  It does not copy, its move and its

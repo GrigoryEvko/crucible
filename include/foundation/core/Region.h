@@ -40,6 +40,10 @@
 //                     the position of the element e inside whole, or no
 //                     value when e is no element of whole: the inverse of
 //                     get(position)
+//   classify_overlap(left, right)
+//                     how the runs of two Views share storage: Disjoint,
+//                     InPlace or Shared, for a door that reads one run and
+//                     writes the other on two threads
 //
 // A View<T> converts to a View<T const>, and a View<T, N> converts to a
 // View<T>.  No conversion adds a const or removes it the other way, and no
@@ -955,6 +959,63 @@ template <class Whole, std::size_t WholeExtent>
 template <class Whole, std::size_t WholeExtent>
 void offset_of(View<Whole, WholeExtent>, std::type_identity_t<Whole> const&&) =
     delete("a temporary is no element of a View, so it has no position in one");
+
+// How an input shares storage with an output: the answer of classify_overlap
+// for two runs, and of the plan of the pointwise walk of
+// foundation/core/Pointwise.h for two strided views.
+enum class RunOverlap : std::uint8_t {
+    // No element of the input is an element of the output, or a run is
+    // empty.
+    Disjoint = 0,
+    // The input names the elements of the output at the same indexes.
+    InPlace = 1,
+    // The input can name an element of the output at a different index.
+    Shared = 2,
+};
+
+// How the run of left shares storage with the run of right.  InPlace needs
+// the same first element and the same count.  An empty run shares no byte,
+// so it is Disjoint from each run.  A View has no brand, so two Views
+// prove no difference of their runs (THE ALIAS PROOF of
+// foundation/core/Frame.h), and a door that reads one run while a thread
+// writes the other asks this function one time, before the threads start.
+//
+// At run time the function compares the two address ranges as integers, as
+// offset_of does, so two Views of different objects give Disjoint and no
+// undefined compare of pointers: O(1).  A constant evaluation reads no
+// address as a word.  It compares the first address of each run with the
+// address of each element of the other run: O(left.size() + right.size()).
+template <class Left, std::size_t LeftExtent, class Right, std::size_t RightExtent>
+    requires SameElement<Left, Right>
+[[nodiscard]] constexpr RunOverlap classify_overlap(View<Left, LeftExtent> left,
+                                                    View<Right, RightExtent> right) noexcept {
+    if (left.size() == 0 || right.size() == 0) return RunOverlap::Disjoint;
+    Left* const left_first = first_of_(detail::ViewDoor::key(), left);
+    Right* const right_first = first_of_(detail::ViewDoor::key(), right);
+    if consteval {
+        // Each compared address is an element of its run, so no compare
+        // meets the address one past the end of an object.
+        if (left_first == right_first) return left.size() == right.size() ? RunOverlap::InPlace : RunOverlap::Shared;
+        for (std::size_t position = 1; position < right.size(); ++position) {
+            if (right_first + position == left_first) return RunOverlap::Shared;
+        }
+        for (std::size_t position = 1; position < left.size(); ++position) {
+            if (left_first + position == right_first) return RunOverlap::Shared;
+        }
+        return RunOverlap::Disjoint;
+    } else {
+        std::uintptr_t const left_start = __builtin_bit_cast(std::uintptr_t, left_first);
+        std::uintptr_t const right_start = __builtin_bit_cast(std::uintptr_t, right_first);
+        // The door of a View bounds its bytes by __PTRDIFF_MAX__, and an
+        // object ends below the top of the address space, so no sum
+        // overflows.
+        std::uintptr_t const left_end = left_start + left.size() * sizeof(Left);
+        std::uintptr_t const right_end = right_start + right.size() * sizeof(Right);
+        if (left_end <= right_start || right_end <= left_start) return RunOverlap::Disjoint;
+        if (left_start == right_start && left.size() == right.size()) return RunOverlap::InPlace;
+        return RunOverlap::Shared;
+    }
+}
 
 // ── The doors of a foreign run ─────────────────────────────────────────
 

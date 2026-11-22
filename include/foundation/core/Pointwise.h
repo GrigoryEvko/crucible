@@ -173,16 +173,6 @@ concept LaneOpOf =
 
 namespace detail {
 
-// The relation of an input to the output.
-enum class PointwiseRelation : std::uint8_t {
-    // No element of the input is an element of the output.
-    Disjoint,
-    // The input names the elements of the output at the same indexes.
-    InPlace,
-    // The input can name an element of the output at a different index.
-    Shared,
-};
-
 // The loop of a view on the inner axis of a pointwise walk.
 enum class LaneClass : std::uint8_t {
     Dense,
@@ -252,28 +242,29 @@ template <class Lanes>
 }
 
 // The relation of an input of the elements E to an output of the elements
-// T, for views of equal sizes that hold an element.  The address ranges are
+// T, for views of equal sizes that hold an element, in the answers of
+// classify_overlap of foundation/core/Region.h.  The address ranges are
 // compared as integers, so two views of different objects give no undefined
 // compare of pointers.  The in-place form needs the same element type, the
 // same first element and the same stride on each axis of a size above one.
 // O(rank).
 template <class T, class E, class Lanes>
-[[nodiscard]] PointwiseRelation relation_of_(T const* out_first, Lanes const& out_lanes, E const* in_first,
-                                             Lanes const& in_lanes) noexcept {
+[[nodiscard]] RunOverlap relation_of_(T const* out_first, Lanes const& out_lanes, E const* in_first,
+                                      Lanes const& in_lanes) noexcept {
     std::uintptr_t const out_low = __builtin_bit_cast(std::uintptr_t, out_first);
     std::uintptr_t const out_high = out_low + (span_of_(out_lanes) + 1) * sizeof(T);
     std::uintptr_t const in_low = __builtin_bit_cast(std::uintptr_t, in_first);
     std::uintptr_t const in_high = in_low + (span_of_(in_lanes) + 1) * sizeof(E);
-    if (in_high <= out_low || out_high <= in_low) return PointwiseRelation::Disjoint;
+    if (in_high <= out_low || out_high <= in_low) return RunOverlap::Disjoint;
     if constexpr (std::same_as<T, E>) {
         bool is_same_layout = in_low == out_low;
         for (std::size_t axis = 0; axis < out_lanes.rank(); ++axis) {
             is_same_layout =
                 is_same_layout && (out_lanes.sizes[axis] <= 1 || out_lanes.strides[axis] == in_lanes.strides[axis]);
         }
-        if (is_same_layout) return PointwiseRelation::InPlace;
+        if (is_same_layout) return RunOverlap::InPlace;
     }
-    return PointwiseRelation::Shared;
+    return RunOverlap::Shared;
 }
 
 // True when the axis first must be outside the axis second: the first view,
@@ -375,11 +366,11 @@ plan_pointwise_(std::index_sequence<Is...> /*inputs*/, bool const (&apart)[sizeo
         if constexpr (sizeof...(Es) > 0) {
             T const* const out = strided_first_of_(target);
             auto const relate = [&](bool is_apart, auto const& source) noexcept {
-                PointwiseRelation const relation =
-                    is_apart ? PointwiseRelation::Disjoint
+                RunOverlap const relation =
+                    is_apart ? RunOverlap::Disjoint
                              : relation_of_(out, shape, strided_first_of_(source), strided_lanes_of_(source));
-                planned.is_shared = planned.is_shared || relation == PointwiseRelation::Shared;
-                planned.is_restrict = planned.is_restrict && relation == PointwiseRelation::Disjoint;
+                planned.is_shared = planned.is_shared || relation == RunOverlap::Shared;
+                planned.is_restrict = planned.is_restrict && relation == RunOverlap::Disjoint;
             };
             (relate(apart[Is + 1], sources), ...);
         }

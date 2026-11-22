@@ -566,6 +566,53 @@ consteval bool offset_of_agrees_in_constant_evaluation() {
 }
 static_assert(offset_of_agrees_in_constant_evaluation());
 
+// classify_overlap gives InPlace for one run, Shared for two runs of one owner
+// that share some elements but not all, in each order, and Disjoint for two
+// adjacent runs, for runs of two owners and for an empty run.  Two
+// FixedArrays own the runs.
+void test_classify_overlap() {
+    fixy::FixedArray<Record, 100> first_storage{};
+    fixy::FixedArray<Record, 20> second_storage{};
+    fixy::View<Record const> const records = first_storage.view();
+    fixy::View<Record const> const head = records.window(0, 60).expect("sixty records fit");
+    fixy::View<Record const> const tail = records.window(40, 60).expect("sixty records fit");
+    fixy::View<Record const> const last = records.window(60, 40).expect("forty records fit");
+    fixy::View<Record const> const empty = records.window(30, 0).expect("an empty window fits");
+    fixy::View<Record const> const other = second_storage.view();
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(records, records) == fixy::RunOverlap::InPlace);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(head, tail) == fixy::RunOverlap::Shared);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(tail, head) == fixy::RunOverlap::Shared);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(records, head) == fixy::RunOverlap::Shared);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(head, last) == fixy::RunOverlap::Disjoint);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(last, head) == fixy::RunOverlap::Disjoint);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(records, other) == fixy::RunOverlap::Disjoint);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(records, empty) == fixy::RunOverlap::Disjoint);
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(fixy::View<Record>{}, fixy::View<Record const>{})
+                             == fixy::RunOverlap::Disjoint);
+}
+
+// A constant evaluation reads no address as a word, so classify_overlap
+// compares the first address of each run with the address of each element of
+// the other run there, and it gives the same answers.
+consteval bool classify_overlap_agrees_in_constant_evaluation() {
+    fixy::FixedArray<std::uint32_t, 6> numbers{};
+    fixy::FixedArray<std::uint32_t, 6> others{};
+    fixy::View<std::uint32_t const> const view = numbers.view();
+    fixy::View<std::uint32_t const> const head = view.window(0, 4).expect("four numbers fit");
+    fixy::View<std::uint32_t const> const tail = view.window(2, 4).expect("four numbers fit");
+    fixy::View<std::uint32_t const> const last = view.window(4, 2).expect("two numbers fit");
+    fixy::View<std::uint32_t const> const empty = view.window(3, 0).expect("an empty window fits");
+    fixy::View<std::uint32_t const> const other = others.view();
+    return fixy::classify_overlap(view, view) == fixy::RunOverlap::InPlace
+        && fixy::classify_overlap(head, tail) == fixy::RunOverlap::Shared
+        && fixy::classify_overlap(tail, head) == fixy::RunOverlap::Shared
+        && fixy::classify_overlap(view, head) == fixy::RunOverlap::Shared
+        && fixy::classify_overlap(head, last) == fixy::RunOverlap::Disjoint
+        && fixy::classify_overlap(view, other) == fixy::RunOverlap::Disjoint
+        && fixy::classify_overlap(view, empty) == fixy::RunOverlap::Disjoint;
+}
+static_assert(classify_overlap_agrees_in_constant_evaluation());
+
 // The property: for random windows of two pages, a window is present
 // exactly when it fits, it starts at its offset, and copy then gives
 // equal runs.  A plain loop over the positions is the model.
@@ -614,6 +661,7 @@ int main() {
     test_cursor_position();
     test_cyclic_cursor();
     test_offset_of_an_element();
+    test_classify_overlap();
     test_agrees_with_plain_model();
     return 0;
 }
