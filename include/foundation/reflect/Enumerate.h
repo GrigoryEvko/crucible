@@ -3,7 +3,7 @@
 // bits_to_string renders a flag word as pipe-separated enumerator names.
 //
 // The ScopedEnum concept and the name helpers this builds on live in
-// foundation/reflect/EnumName.h.  The precondition below names
+// foundation/reflect/EnumName.h.  The check below names
 // foundation::decide, and contracts/Decide.h reaches effects/Row.h and
 // so effects/Effect.h.  A header inside that chain cannot include this
 // one, and EnumName.h carries no such dependency.
@@ -15,8 +15,8 @@
 
 #pragma once
 
+#include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
@@ -30,11 +30,12 @@ namespace foundation::reflect {
 // characters the full string would need, excluding the NUL, so a return
 // of cap or more means the output was truncated.  A cap of 0 writes
 // nothing and only reports that count, which is why `out` may be null
-// in that one case.
+// in that one case.  The span guards memory, so its check holds under each
+// contract semantic.
 
 template <ScopedEnum E>
 [[nodiscard]] constexpr size_t bits_to_string(std::underlying_type_t<E> mask, char* out, size_t cap) noexcept {
-    CRUCIBLE_PRE(::foundation::decide::valid_span(cap, out));
+    CRUCIBLE_FATAL_INVARIANT(::foundation::decide::valid_span(cap, out));
     using U = std::underlying_type_t<E>;
     size_t needed = 0;
     bool first = true;

@@ -245,8 +245,9 @@ class bounded_run {
     std::uint32_t pushed_ = 0;
 
 public:
+    // The id guards memory, so its check holds under each contract semantic.
     [[nodiscard]] constexpr Element const& operator[](Id id) const noexcept {
-        CRUCIBLE_PRE(static_cast<std::uint32_t>(id) < count_);
+        CRUCIBLE_FATAL_INVARIANT(static_cast<std::uint32_t>(id) < count_);
         return items_[static_cast<std::uint32_t>(id)];
     }
     // The count of the elements that the run keeps: at most Bound.

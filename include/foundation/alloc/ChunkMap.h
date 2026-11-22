@@ -88,8 +88,8 @@
 // window door foundation/alloc/Window.h builds each record and each map.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Platform.h>
 #include <foundation/alloc/Layout.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
@@ -282,16 +282,18 @@ public:
     // The count of the chunks of the window.
     [[nodiscard]] constexpr std::uint64_t chunk_count() const noexcept { return length_ >> kChunkShift; }
 
-    // The chunk of an address of the window, with or without a tag byte.
+    // The chunk of an address of the window, with or without a tag byte.  The
+    // chunk and the address guard memory, so each check of the two doors
+    // below holds under each contract semantic.
     [[nodiscard]] constexpr ChunkIndex chunk_of(AddressWord address) const noexcept {
-        CRUCIBLE_PRE(is_in_window(address));
+        CRUCIBLE_FATAL_INVARIANT(is_in_window(address));
         std::uint64_t const offset = static_cast<std::uint64_t>(strip_tag(address)) - base_;
         return ChunkIndex{static_cast<std::uint32_t>(offset >> kChunkShift)};
     }
 
     // The address of the first byte of a chunk of the window.
     [[nodiscard]] constexpr AddressWord address_of(ChunkIndex chunk) const noexcept {
-        CRUCIBLE_PRE(chunk.raw() < chunk_count());
+        CRUCIBLE_FATAL_INVARIANT(chunk.raw() < chunk_count());
         return AddressWord{base_ + (std::uint64_t{chunk.raw()} << kChunkShift)};
     }
 

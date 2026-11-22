@@ -1,6 +1,6 @@
 // bits_to_string admits a null buffer only with a capacity of 0.  A null
-// buffer with a capacity of 100 breaks the precondition valid_span, and
-// the constant evaluation stops at the contract.
+// buffer with a capacity of 100 breaks the check valid_span, and the
+// constant evaluation stops at the call of its failure arm.
 #include <foundation/reflect/Enumerate.h>
 
 #include <cstddef>

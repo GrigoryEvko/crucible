@@ -1,7 +1,8 @@
-// ct::eq carries CRUCIBLE_PRE(a.size() == b.size()).  An empty View and
-// a View of two bytes reach the macro's consteval trap, so the static_assert
-// below has a non-constant condition.  Without the precondition the loop
-// runs over no bytes and eq answers true, so the fixture compiles.
+// ct::eq carries CRUCIBLE_FATAL_INVARIANT(a.size() == b.size()).  An empty
+// View and a View of two bytes reach the call of the failure arm, which is
+// no constant expression, so the static_assert below has a non-constant
+// condition.  Without the check the loop runs over no bytes and eq answers
+// true, so the fixture compiles.
 #include <fixy/ConstantTime.h>
 #include <fixy/Core.h>
 

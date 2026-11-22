@@ -203,7 +203,6 @@
 // section on payload rules below states each.
 
 #include <foundation/Platform.h>
-#include <foundation/contracts/Pre.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -307,9 +306,10 @@ struct static_run {
     const T* data = nullptr;
     std::size_t length = 0;
 
-    // The index is checked in each build and in a constant evaluation.
+    // The index is checked in each build, under each contract semantic, and
+    // in a constant evaluation.
     [[nodiscard]] constexpr const T& operator[](std::size_t index) const noexcept {
-        CRUCIBLE_PRE(index < length);
+        CRUCIBLE_FATAL_INVARIANT(index < length);
         return data[index];
     }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return length; }

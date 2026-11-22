@@ -42,12 +42,13 @@ struct AffinityMask {
     [[nodiscard]] constexpr auto operator<=>(AffinityMask const&) const noexcept = default;
 
     // A core index past the mask width would index outside the word
-    // array.  The preconditions on this factory, on contains and on
-    // range fence that.  CRUCIBLE_PRE also stops a constant evaluation,
-    // so every static assertion in the check file of this header is a
-    // real test of the bound.
+    // array.  The checks on this factory, on contains and on range fence
+    // that.  They guard memory, so each one holds under each contract
+    // semantic.  A failed check also stops a constant evaluation, so every
+    // static assertion in the check file of this header is a real test of
+    // the bound.
     [[nodiscard]] static constexpr AffinityMask single(std::uint16_t core) noexcept {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(core, 0, kMaxCore));
+        CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::uint16_t>(core, 0, kMaxCore));
         AffinityMask m{};
         m.words[core / 64] = std::uint64_t{1} << (core % 64);
         CRUCIBLE_POST(m, m.popcount() == 1 && m.contains(core));
@@ -55,7 +56,7 @@ struct AffinityMask {
     }
 
     [[nodiscard]] constexpr bool contains(std::uint16_t core) const noexcept {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(core, 0, kMaxCore));
+        CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::uint16_t>(core, 0, kMaxCore));
         return (words[core / 64] & (std::uint64_t{1} << (core % 64))) != 0;
     }
 
@@ -67,9 +68,12 @@ struct AffinityMask {
         return count;
     }
 
+    // An assumption that first_core <= last_core lets the optimizer write the
+    // word of first_core before the first compare of the loop.  So the order
+    // of the two cores guards memory too.
     [[nodiscard]] static constexpr AffinityMask range(std::uint16_t first_core, std::uint16_t last_core) noexcept {
-        CRUCIBLE_PRE(first_core <= last_core);
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(last_core, 0, kMaxCore));
+        CRUCIBLE_FATAL_INVARIANT(first_core <= last_core);
+        CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::uint16_t>(last_core, 0, kMaxCore));
         AffinityMask m{};
         for (std::uint16_t c = first_core; c <= last_core; ++c) {
             m.words[c / 64] |= std::uint64_t{1} << (c % 64);

@@ -211,20 +211,20 @@ public:
 
     void append(T item) { impl_.peek_mut(key_{}).emplace_back(std::move(item)); }
 
-    // Each access checks its index in each build.  The bounds check of the
-    // standard library is on only in Debug, so it is no check of a Release
-    // build.  OrderedAppendOnly reads through these members, so it gets the
-    // same checks.
+    // Each access checks its index in each build and under each contract
+    // semantic.  The bounds check of the standard library is on only in
+    // Debug, so it is no check of a Release build.  OrderedAppendOnly reads
+    // through these members, so it gets the same checks.
     [[nodiscard]] const T& operator[](std::size_t i) const noexcept {
-        CRUCIBLE_PRE(i < size());
+        CRUCIBLE_FATAL_INVARIANT(i < size());
         return impl_.peek()[i];
     }
     [[nodiscard]] const T& front() const noexcept {
-        CRUCIBLE_PRE(!empty());
+        CRUCIBLE_FATAL_INVARIANT(!empty());
         return impl_.peek().front();
     }
     [[nodiscard]] const T& back() const noexcept {
-        CRUCIBLE_PRE(!empty());
+        CRUCIBLE_FATAL_INVARIANT(!empty());
         return impl_.peek().back();
     }
     [[nodiscard]] std::size_t size() const noexcept { return impl_.peek().size(); }

@@ -497,7 +497,7 @@ foundation_neg_compile_test(neg_happens_before_bit_cast
 foundation_neg_compile_test(neg_happens_before_slot_out_of_range
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .\\{anonymous\\}::clock\\.foundation::algebra::lattices::HappensBeforeLattice<2>::element_type::operator..\\(2\\)."
-  "foundation/algebra/lattices/HappensBefore\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+  "foundation/algebra/lattices/HappensBefore\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_FATAL_INVARIANT.")
 # A receive onto a slot at the largest count cannot count the receive.
 foundation_neg_compile_test(neg_happens_before_merge_overflows
   "non-constant condition for static assertion"
@@ -930,17 +930,17 @@ foundation_test(test_reflect_foundation test_reflect.cpp)
 
 # The value walk of the enumerators calls its callback with a value, so a
 # callback of another arity meets no call.  bits_to_string admits a null
-# buffer only with a capacity of 0, and its precondition stops a constant
+# buffer only with a capacity of 0, and its check stops a constant
 # evaluation that breaks the rule.  The second regex of that fixture names
 # the call and its arguments, and the third names the header that holds the
-# precondition.
+# check.
 foundation_neg_compile_test(neg_reflect_for_each_enumerator_zero_arg_callback
   "foundation/reflect/EnumName\\.h:[0-9]+:[0-9]+: error: no match for call to .\\(main\\(\\)::<lambda\\(\\)>\\) \\(const \\{anonymous\\}::Signal&\\)."
   "candidate expects 0 arguments, 1 provided")
 foundation_neg_compile_test(neg_reflect_bits_to_string_null_buffer_with_capacity
-  "__builtin_trap.*is not a constant expression"
+  "call to non-.constexpr. function .void foundation::detail::fail_invariant"
   "foundation::reflect::bits_to_string<\\{anonymous\\}::Signal>\\(.*, 0, 100\\)"
-  "foundation/reflect/Enumerate\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+  "foundation/reflect/Enumerate\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_FATAL_INVARIANT.")
 
 # The namespace-member relation of foundation/diag/FailClosed.h.
 foundation_test(test_fail_closed)

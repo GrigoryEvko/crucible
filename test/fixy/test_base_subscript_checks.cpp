@@ -87,15 +87,11 @@ void read_mask_lane_below_zero() noexcept {
 
 int main() {
     ::fixy::TestRunnerCtx const test{eff::testing::test()};
-    expect_dies(test, read_append_only_past_end,
-                ::fixy::TextView{"contract violation: i < size()\n  at include/fixy/Mutation.h:"});
-    expect_dies(test, read_front_of_empty_append_only,
-                ::fixy::TextView{"contract violation: !empty()\n  at include/fixy/Mutation.h:"});
-    expect_dies(test, read_back_of_empty_append_only,
-                ::fixy::TextView{"contract violation: !empty()\n  at include/fixy/Mutation.h:"});
-    expect_dies(test, read_ordered_past_end,
-                ::fixy::TextView{"contract violation: i < size()\n  at include/fixy/Mutation.h:"});
-    expect_dies(test, read_static_run_past_end, ::fixy::TextView{"contract violation: index < length"});
+    expect_dies(test, read_append_only_past_end, ::fixy::TextView{"fatal invariant failed: i < size()"});
+    expect_dies(test, read_front_of_empty_append_only, ::fixy::TextView{"fatal invariant failed: !empty()"});
+    expect_dies(test, read_back_of_empty_append_only, ::fixy::TextView{"fatal invariant failed: !empty()"});
+    expect_dies(test, read_ordered_past_end, ::fixy::TextView{"fatal invariant failed: i < size()"});
+    expect_dies(test, read_static_run_past_end, ::fixy::TextView{"fatal invariant failed: index < length"});
     expect_dies(test, read_vector_lane_past_end, ::fixy::TextView{"a read of lane 4 of a vector of 4 lanes"});
     expect_dies(test, read_mask_lane_below_zero, ::fixy::TextView{"a read of lane -1 of a mask of 4 lanes"});
 

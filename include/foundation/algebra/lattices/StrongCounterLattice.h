@@ -151,11 +151,12 @@ namespace detail::count_image {
 // The one image codec of the counter and clock lattices.  A word is eight
 // bytes, little-endian on each host, and an image moves between hosts with
 // no change.  The offset is the byte position of the word, and a word that
-// does not fit inside the image stops the build or the process.
+// does not fit inside the image stops the build or the process.  The offset
+// guards memory, so its check holds under each contract semantic.
 template <std::size_t Size>
 constexpr void write_word(std::array<std::byte, Size>& image, std::size_t offset, std::uint64_t word) noexcept {
     static_assert(Size >= 8, "an image holds at least one word");
-    CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
+    CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
     for (std::size_t i = 0; i < 8; ++i)
         image[offset + i] = static_cast<std::byte>((word >> (8 * i)) & 0xFFu);
 }
@@ -163,7 +164,7 @@ constexpr void write_word(std::array<std::byte, Size>& image, std::size_t offset
 template <std::size_t Size>
 [[nodiscard]] constexpr std::uint64_t read_word(std::array<std::byte, Size> const& image, std::size_t offset) noexcept {
     static_assert(Size >= 8, "an image holds at least one word");
-    CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
+    CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::size_t>(offset, 0, Size - 8));
     std::uint64_t word = 0;
     for (std::size_t i = 0; i < 8; ++i)
         word |= std::uint64_t{std::to_integer<std::uint8_t>(image[offset + i])} << (8 * i);

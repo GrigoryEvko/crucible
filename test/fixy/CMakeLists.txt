@@ -1776,6 +1776,10 @@ fixy_test(test_owned_region test_owned_region.cpp test_owned_region_split.cpp te
 # ends the process in a child process of expect_dies, in the release preset
 # too.
 fixy_test(test_base_subscript_checks)
+# Each check of the base that guards an index, a window or a count ends the
+# process under the ignore semantic, where a CRUCIBLE_PRE is an assumption.
+fixy_test(test_memory_checks_under_ignore)
+crucible_contract_ignore_target(test_memory_checks_under_ignore)
 fixy_test(test_scoped_view)
 fixy_test(test_machine)
 # A machine that a move or a transition emptied refuses each read, each
@@ -2141,11 +2145,11 @@ fixy_test(test_os_temporary_file)
 fixy_test(test_owned_mmap)
 fixy_test(test_constant_time)
 
-# A length mismatch in ct::eq is a caller bug.  The precondition traps at
-# consteval, and the expansion note names the macro inside the header.
+# A length mismatch in ct::eq is a caller bug.  The check stops a constant
+# evaluation, and the expansion note names the macro inside the header.
 fixy_neg_compile_test(neg_ct_eq_length_mismatch_at_consteval
   "non-constant condition for static assertion"
-  "fixy/ConstantTime\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+  "fixy/ConstantTime\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_FATAL_INVARIANT.")
 # Two static extents that differ reach a deleted overload, so the
 # mismatch stops the compile rather than the run.  The second regex is
 # the reason that the deleted overload states.  GCC 16 prints a parameter

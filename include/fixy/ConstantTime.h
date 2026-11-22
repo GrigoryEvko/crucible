@@ -14,7 +14,6 @@
 // and costs cycles.
 
 #include <foundation/Platform.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/core/Region.h>
 
 #include <concepts>
@@ -70,10 +69,13 @@ template <std::unsigned_integral T>
 //
 // A length mismatch is a caller bug and traps.  Every real use of this
 // primitive compares tags of one known length, so a mismatch means
-// corruption or a mis-edit, and returning false would hide it.
+// corruption or a mis-edit, and returning false would hide it.  The check
+// holds under each contract semantic: an assumption of equal lengths lets
+// the optimizer remove the end test of the cursor over b, and a shorter b
+// is then read past its end.
 [[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const> a,
                                 ::foundation::core::View<std::byte const> b) noexcept {
-    CRUCIBLE_PRE(a.size() == b.size());
+    CRUCIBLE_FATAL_INVARIANT(a.size() == b.size());
     std::byte acc{0};
     auto cursor = b.begin();
     for (std::byte const byte : a) {

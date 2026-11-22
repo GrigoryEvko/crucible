@@ -33,8 +33,9 @@
 // refuse that.  A value graded by its clock uses the order dual
 // (DualLattice.h).
 //
-// The preconditions are CRUCIBLE_PRE in the function bodies, so they
-// fire during constant evaluation too.
+// The checks are in the function bodies, so they fire during constant
+// evaluation too.  A check of a slot index is CRUCIBLE_FATAL_INVARIANT,
+// because it guards memory, and the overflow guard is CRUCIBLE_PRE.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
@@ -121,9 +122,10 @@ struct HappensBeforeLattice {
         // causal_merge, so no accessor hands out a mutable slot.
         //
         // The bound is spelled `N - 1` and cannot underflow, because a zero N
-        // is a hard build error above.
+        // is a hard build error above.  The index guards memory, so its check
+        // holds under each contract semantic.
         [[nodiscard]] constexpr std::uint64_t operator[](std::size_t p) const noexcept {
-            CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(p, 0, N - 1));
+            CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::size_t>(p, 0, N - 1));
             return clock_[p];
         }
 
@@ -186,11 +188,12 @@ struct HappensBeforeLattice {
         return leq(a, b) || leq(b, a);
     }
 
-    // Models a local event at process p.  The second precondition is an
+    // Models a local event at process p.  The index guards memory, so its
+    // check holds under each contract semantic.  The precondition is an
     // overflow guard: a slot that wrapped to zero would break monotonicity, so
     // the result would no longer be above its input.
     [[nodiscard]] static constexpr element_type successor_at(element_type v, std::size_t p) noexcept {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(p, 0, N - 1));
+        CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::size_t>(p, 0, N - 1));
         CRUCIBLE_PRE(v.clock_[p] != std::numeric_limits<std::uint64_t>::max());
         v.clock_[p] += 1;
         return v;
@@ -205,7 +208,7 @@ struct HappensBeforeLattice {
     // inner check sees the same value and there is one place to keep correct.
     [[nodiscard]] static constexpr element_type causal_merge(element_type local, element_type received,
                                                              std::size_t me) noexcept {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::size_t>(me, 0, N - 1));
+        CRUCIBLE_FATAL_INVARIANT(::foundation::decide::in_range<std::size_t>(me, 0, N - 1));
         return successor_at(join(local, received), me);
     }
 
