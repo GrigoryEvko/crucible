@@ -381,8 +381,8 @@ test/dag_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a type
 test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/dag_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
-test/fixy/ | c-array-object | 75 | - | -
-test/fixy/ | c-library-call | 976 | - | -
+test/fixy/ | c-array-object | 58 | - | -
+test/fixy/ | c-library-call | 968 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 8 | - | -
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -419,7 +419,7 @@ test/fixy/ | opted-out | 2 | PROBE: the test states a payload rule of the role d
 test/fixy/ | opted-out | 4 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 126 | - | -
+test/fixy/ | raw-pointer-object | 122 | - | -
 test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -455,12 +455,13 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 12 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2064 | - | -
-test/fixy/ | std-object | 664 | - | -
-test/fixy/neg/ | c-array-object | 42 | - | -
+test/fixy/ | std-entity | 2042 | - | -
+test/fixy/ | std-object | 658 | - | -
+test/fixy/neg/ | c-array-object | 25 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 350 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
+test/fixy/neg/ | opted-out | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -500,7 +501,9 @@ test/fixy/neg/ | opted-out | 2 | PROBE: the fixture takes the address of a membe
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
-test/fixy/neg/ | raw-pointer-object | 16 | - | -
+test/fixy/neg/ | raw-pointer-object | 15 | - | -
+test/fixy/neg/ | region | 1 | ABI: the fixture gives the foreign door the address of a foreign entry | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
+test/fixy/neg/ | region | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -541,8 +544,8 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 67 | - | -
-test/fixy/neg/ | std-object | 29 | - | -
+test/fixy/neg/ | std-entity | 57 | - | -
+test/fixy/neg/ | std-object | 24 | - | -
 test/foundation/ | c-array-object | 6 | - | -
 test/foundation/ | c-library-call | 2 | - | -
 test/foundation/ | opted-out | 12 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
@@ -688,7 +691,7 @@ test/layer/checks/crucible/cog/ | std-object | 19 | - | -
 test/layer/checks/crucible/mimic/ | std-entity | 3 | - | -
 test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
-test/layer/checks/fixy/ | c-array-object | 2 | - | -
+test/layer/checks/fixy/ | c-array-object | 1 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 8 | - | -
 test/layer/checks/fixy/ | std-entity | 70 | - | -
 test/layer/checks/fixy/ | std-object | 5 | - | -

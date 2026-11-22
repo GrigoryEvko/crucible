@@ -182,13 +182,13 @@ that the axis does not apply to the row.
 | `mint_cyclic_buffer` | `include/fixy/CyclicBuffer.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_foreign_owned_region` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 15 |
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_owned_region(T0_0*, std::size_t, foundation::permissions::Permission<T0_1, T0_2>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 30 |
-| `mint_owned_region(foundation::effects::Alloc, T0_1&, std::size_t, foundation::permissions::Permission<T0_2, T0_3>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 30 |
+| `mint_owned_region` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 23 |
 | `mint_refined_constant` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -335,7 +335,7 @@ that the axis does not apply to the row.
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 4 |
-| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 19 |
+| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 22 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_with` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_written` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |
@@ -399,7 +399,7 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 241 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 244 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 52 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |

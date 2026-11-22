@@ -12,7 +12,7 @@ reason test/ | the tests drop tokens and handles at the end of a test, consume a
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 2 | - | -
 include/crucible/cntp/ | unconsumed | 54 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
-include/fixy/ | unconsumed | 2 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
+include/fixy/ | unconsumed | 3 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances.  The scope door test of test_shared_region shares a region of its own scope tag, so the constructor of SharedRegion has one more instance that takes the region into its members
 include/fixy/concurrent/ | unconsumed | 9 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
 include/fixy/session/ | borrow-move-out | 2 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines
 include/fixy/session/ | double-consume | 2 | - | -
@@ -23,11 +23,10 @@ test/fixy/ | assign-over-live | 2 | - | the cells of the niche form of test_qtt_
 test/fixy/ | borrow-move-out | 7 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines.  Each message type of a test transport is its own line
 test/fixy/ | discarded-temporary | 3 | - | -
 test/fixy/ | double-consume | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
-test/fixy/ | unconsumed | 183 | - | -
+test/fixy/ | unconsumed | 177 | - | -
 test/foundation/ | borrow-move-out | 2 | - | test_core_hole spends one lent Hole two times on purpose, to show that the second spend ends the process
 test/foundation/ | double-consume | 2 | - | test_core_hole spends one lent Hole two times on purpose, to show that the second spend ends the process
 test/foundation/ | unconsumed | 8 | - | -
-test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
 test/layer/checks/foundation/core/ | unconsumed | 1 | - | -
 test/layer/checks/foundation/permissions/ | unconsumed | 4 | - | -
