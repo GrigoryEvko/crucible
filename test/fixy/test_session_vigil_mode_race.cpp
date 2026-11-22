@@ -76,10 +76,31 @@ inline constexpr std::uint64_t kRounds = (2 * kDirectRounds) + (kSessions * kRou
 // states synchronized (foundation/Transfer.h).
 class[[= ::foundation::transfer::synchronized{}]] Shared {
 public:
-    // The key of the writer of the plain value.  The writer thread makes it,
-    // and the key stays on that thread (THE PROOF OF A DOOR of
+    // The key of the writer of the plain value.  The key stays on the thread
+    // that claimed it (THE PROOF OF A DOOR of foundation/Transfer.h).  Its
+    // constructor is private, so only claim_writer builds one (THE BUILD OF A
+    // TOKEN).
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriterKey final {
+        WriterKey() noexcept {}
+        friend class Shared;
+
+    public:
+        WriterKey(WriterKey const&) = delete("a key names the one writer of the plain value");
+        WriterKey& operator=(WriterKey const&) = delete("a key names the one writer of the plain value");
+        ~WriterKey() = default;
+    };
+
+    // Gives the key to the calling thread.  One atomic exchange gives it to
+    // one thread for the life of the state, and a second claim ends the
+    // process.  A claim door: only the thread that won the exchange writes
+    // the plain value (THE DOORS OF A SYNCHRONIZED CLASS of
     // foundation/Transfer.h).
-    struct[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriterKey final {};
+    [[nodiscard]] WriterKey claim_writer() noexcept {
+        if (is_writer_claimed_.exchange_acq_rel(true)) {
+            ::foundation::core::fatal("a second claim of the writer key of the shared state");
+        }
+        return WriterKey{};
+    }
 
     // The writer calls it before the release store of a mode.
     void write_round(WriterKey& /*key*/, std::uint64_t round) noexcept { written_ = round; }
@@ -91,6 +112,7 @@ public:
     ::foundation::core::Atomic<std::uint64_t> wrong_reads{0};
 
 private:
+    ::foundation::core::Atomic<bool> is_writer_claimed_{false};
     std::uint64_t written_ = 0;
 };
 static_assert(::foundation::transfer::Synchronized<Shared>);
@@ -109,8 +131,8 @@ constexpr auto apply = []<typename Transition>(vm::ModeLease& lease, Transition&
 
 // One round of the publishers of the cell.  The round number counts from
 // one, so the value zero of a reply names no round.
-void publish_one_round(vm::ModeCell& cell, vm::ModeWriter const& writer, Shared& shared, std::uint64_t round) noexcept {
-    Shared::WriterKey key{};
+void publish_one_round(vm::ModeCell& cell, vm::ModeWriter const& writer, Shared& shared, Shared::WriterKey& key,
+                       std::uint64_t round) noexcept {
     shared.write_round(key, round);
     cell.publish_compiled(writer);
     wait_until(shared.read_compiled, round);
@@ -121,36 +143,38 @@ void publish_one_round(vm::ModeCell& cell, vm::ModeWriter const& writer, Shared&
 // The edges of the rounds from `round` up to `last`, on a session at its
 // choice.  It gives back the lease that the session closes.
 template <typename AtChoice>
-[[nodiscard]] vm::ModeLease take_edges(AtChoice at_choice, Shared& shared, std::uint64_t round,
+[[nodiscard]] vm::ModeLease take_edges(AtChoice at_choice, Shared& shared, Shared::WriterKey& key, std::uint64_t round,
                                        std::uint64_t last) noexcept {
     if (round > last) return std::move(at_choice).template select<2>(s::no_label).close();
-    Shared::WriterKey key{};
     shared.write_round(key, round);
     auto compiled = std::move(at_choice).template select<0>(s::no_label).send(vm::ModeRecordingToCompiled{}, apply);
     wait_until(shared.read_compiled, round);
     auto recording = std::move(compiled).template select<1>(s::no_label).send(vm::ModeCompiledToRecording{}, apply);
     wait_until(shared.read_recording, round);
-    return take_edges(std::move(recording), shared, round + 1, last);
+    return take_edges(std::move(recording), shared, key, round + 1, last);
 }
 
 // Lends the writer to kSessions sessions, one after the other, and gives it
 // back.  The recursion is kSessions deep.
 [[nodiscard]] vm::ModeWriter lend_to_sessions(BgCtx const& ctx, vm::ModeCell& cell, vm::ModeWriter writer,
-                                              Shared& shared, std::uint64_t session) noexcept {
+                                              Shared& shared, Shared::WriterKey& key, std::uint64_t session) noexcept {
     if (session == kSessions) return writer;
     const std::uint64_t first = kDirectRounds + (session * kRoundsInASession) + 1;
-    vm::ModeLease lease = take_edges(vm::mint_vigil_mode_bridge(ctx, cell, std::move(writer)), shared, first,
+    vm::ModeLease lease = take_edges(vm::mint_vigil_mode_bridge(ctx, cell, std::move(writer)), shared, key, first,
                                      first + kRoundsInASession - 1);
-    return lend_to_sessions(ctx, cell, std::move(lease).return_writer(), shared, session + 1);
+    return lend_to_sessions(ctx, cell, std::move(lease).return_writer(), shared, key, session + 1);
 }
 
+// The writer thread claims the key of the plain value one time, and each
+// round takes it.
 void write_each_round(BgCtx const& ctx, vm::ModeCell& cell, vm::ModeWriter writer, Shared& shared) noexcept {
+    Shared::WriterKey key = shared.claim_writer();
     for (std::uint64_t round = 1; round <= kDirectRounds; ++round)
-        publish_one_round(cell, writer, shared, round);
-    const vm::ModeWriter returned = lend_to_sessions(ctx, cell, std::move(writer), shared, 0);
+        publish_one_round(cell, writer, shared, key, round);
+    const vm::ModeWriter returned = lend_to_sessions(ctx, cell, std::move(writer), shared, key, 0);
     const std::uint64_t after_sessions = kDirectRounds + (kSessions * kRoundsInASession);
     for (std::uint64_t round = after_sessions + 1; round <= kRounds; ++round)
-        publish_one_round(cell, returned, shared, round);
+        publish_one_round(cell, returned, shared, key, round);
 }
 
 // Waits for the mode of one round, and counts each read of DIVERGED, which

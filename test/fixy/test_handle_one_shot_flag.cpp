@@ -14,6 +14,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/OwnedThread.h>
+#include <fixy/os/ThreadTasks.h>
 
 #include <atomic>
 #include <cstdio>
@@ -107,10 +108,30 @@ public:
     SignalOwner& operator=(SignalOwner&&) = delete("the thread borrows its owner at one address");
     ~SignalOwner() = default;
 
-    // The key of the door that starts the thread.  The thread that holds the
-    // owner makes it, and the key stays on that thread (THE PROOF OF A DOOR
-    // of foundation/Transfer.h).
-    struct[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {};
+    // The key of the door that starts the thread.  The key stays on the thread
+    // that claimed it (THE PROOF OF A DOOR of foundation/Transfer.h).  Its
+    // constructor is private, so only claim_starter builds one (THE BUILD OF
+    // A TOKEN).
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {
+        StarterKey() noexcept {}
+        friend class SignalOwner;
+
+    public:
+        StarterKey(StarterKey const&) = delete("a key names the one starter of the owner");
+        StarterKey& operator=(StarterKey const&) = delete("a key names the one starter of the owner");
+        ~StarterKey() = default;
+    };
+
+    // Gives the key to the calling thread.  One atomic exchange gives it to
+    // one thread for the life of the owner, and a second claim ends the
+    // process.  A claim door: only the thread that won the exchange starts
+    // the thread (THE DOORS OF A SYNCHRONIZED CLASS of foundation/Transfer.h).
+    [[nodiscard]] StarterKey claim_starter() noexcept {
+        if (is_starter_claimed_.exchange_acq_rel(true)) {
+            ::foundation::core::fatal("a second claim of the starter key of one owner");
+        }
+        return StarterKey{};
+    }
 
     // The proof of the OwnerThread of this owner, for the owner that the
     // caller names.  A test names another owner to show the refusal.
@@ -138,6 +159,7 @@ private:
     // The stop hook of the thread, which writes only the flag.
     void request_stop() noexcept { stop.signal(); }
 
+    ::foundation::core::Atomic<bool> is_starter_claimed_{false};
     ::fixy::thread::OwnerThread<SignalOwner> thread_{};
 };
 
@@ -168,9 +190,22 @@ void a_proof_of_an_owner_that_does_not_hold_the_thread_ends_the_process() noexce
 void a_reset_with_a_proof_of_before_the_start_ends_the_process() noexcept {
     SignalOwner owner{};
     ::fixy::thread::QuiescenceProof<SignalOwner> const before_the_start = owner.quiescence_for(owner);
-    SignalOwner::StarterKey key{};
+    SignalOwner::StarterKey key = owner.claim_starter();
     owner.start_waiting_thread(key);
     owner.stop.reset_in_quiescent_context(before_the_start);
+}
+
+// The key of one owner goes to one thread.  A second thread that claims the
+// key while the first thread holds it ends the process, so no two threads
+// start the thread of one owner.
+void a_second_thread_that_claims_the_key_ends_the_process() noexcept {
+    SignalOwner owner{};
+    SignalOwner::StarterKey const key = owner.claim_starter();
+    static_cast<void>(key);
+    auto second_claim = [&owner]() noexcept { static_cast<void>(owner.claim_starter()); };
+    ::fixy::thread::run_joined(::fixy::BgLoadCtx{::foundation::effects::testing::bg()}, ::fixy::thread::ThreadOptions{},
+                               second_claim)
+        .expect("the test starts a second thread");
 }
 
 }  // namespace
@@ -196,6 +231,8 @@ int main() {
         ::fixy::TextView{"a proof of quiescence of an owner that does not hold the OwnerThread"});
     ::fixy::check::expect_dies(test, a_reset_with_a_proof_of_before_the_start_ends_the_process,
                                ::fixy::TextView{"a proof of quiescence while the thread of the owner runs again"});
+    ::fixy::check::expect_dies(test, a_second_thread_that_claims_the_key_ends_the_process,
+                               ::fixy::TextView{"a second claim of the starter key of one owner"});
     if (failures != 0) return EXIT_FAILURE;
     std::printf("test_handle_one_shot_flag: no raise is lost and no raise runs twice\n");
     return EXIT_SUCCESS;

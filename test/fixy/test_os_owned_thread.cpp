@@ -230,10 +230,31 @@ public:
     LoopingOwner& operator=(LoopingOwner&&) = delete("the thread borrows its owner at one address");
     ~LoopingOwner() = default;
 
-    // The key of the doors that start and stop the thread.  The thread that
-    // holds the owner makes it, and the key stays on that thread (THE PROOF
-    // OF A DOOR of foundation/Transfer.h).
-    struct[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {};
+    // The key of the doors that start and stop the thread.  The key stays on
+    // the thread that claimed it (THE PROOF OF A DOOR of foundation/Transfer.h).
+    // Its constructor is private, so only claim_starter builds one (THE BUILD
+    // OF A TOKEN).
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {
+        StarterKey() noexcept {}
+        friend class LoopingOwner;
+
+    public:
+        StarterKey(StarterKey const&) = delete("a key names the one starter of the owner");
+        StarterKey& operator=(StarterKey const&) = delete("a key names the one starter of the owner");
+        ~StarterKey() = default;
+    };
+
+    // Gives the key to the calling thread.  One atomic exchange gives it to
+    // one thread for the life of the owner, and a second claim ends the
+    // process.  A claim door: only the thread that won the exchange starts
+    // and stops the thread (THE DOORS OF A SYNCHRONIZED CLASS of
+    // foundation/Transfer.h).
+    [[nodiscard]] StarterKey claim_starter() noexcept {
+        if (is_starter_claimed_.exchange_acq_rel(true)) {
+            ::foundation::core::fatal("a second claim of the starter key of one owner");
+        }
+        return StarterKey{};
+    }
 
     // Starts the thread with the options, and waits until the body loops.
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, Errno>
@@ -270,6 +291,7 @@ private:
     }
 
     Canary canary_{};
+    Atomic<bool> is_starter_claimed_{false};
     Atomic<bool> should_stop_{false};
     Atomic<bool> has_looped_{false};
     Atomic<std::uint64_t> laps_{0};
@@ -289,7 +311,7 @@ void test_end_of_an_owner_stops_its_thread_first() {
     reset_cells();
     {
         LoopingOwner owner{};
-        LoopingOwner::StarterKey key{};
+        LoopingOwner::StarterKey key = owner.claim_starter();
         owner.start(key, ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
         CRUCIBLE_FATAL_INVARIANT(owner.holds_thread());
     }
@@ -305,7 +327,7 @@ void test_early_stop_empties_the_member() {
     reset_cells();
     {
         LoopingOwner owner{};
-        LoopingOwner::StarterKey key{};
+        LoopingOwner::StarterKey key = owner.claim_starter();
         owner.start(key, ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
         owner.stop(key);
         CRUCIBLE_FATAL_INVARIANT(!owner.holds_thread());
@@ -322,7 +344,7 @@ void test_early_stop_empties_the_member() {
 void test_refused_start_leaves_the_member_empty() {
     reset_cells();
     LoopingOwner owner{};
-    LoopingOwner::StarterKey key{};
+    LoopingOwner::StarterKey key = owner.claim_starter();
     auto const refused = owner.start(key, ThreadOptions{.guard_bytes = 0});
     CRUCIBLE_FATAL_INVARIANT(refused.err().value_or(Errno::eperm) == Errno::einval);
     CRUCIBLE_FATAL_INVARIANT(!owner.holds_thread());
