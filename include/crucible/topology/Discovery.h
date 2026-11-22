@@ -26,7 +26,19 @@ namespace crucible::topology {
 // this process.  A parser takes only this type, so a caller must name the
 // source with mint_tagged before the parser sees a byte.
 using ExternalDiscoveryText = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External>;
-using VendorDiscoveryString = cog::VendorClaim<::fixy::TextView>;
+
+// The largest count of the characters of one vendor text of a discovery fact.
+// The longest text of each source fits.  lldpctl writes an LLDP port id of up
+// to 255 octets after the name of its subtype and a space, and an LLDP system
+// name holds up to 255 octets.  The longest name of pci.ids holds 119
+// characters, and ethtool writes each field in at most 31 characters.  The
+// count is a multiple of 8, so a text holds no padding byte.
+inline constexpr std::size_t vendor_discovery_text_capacity = 272;
+
+// The characters of one vendor text, which a fact owns.  A fact thus holds no
+// view of the text of its tool, and it outlives that text.
+using VendorDiscoveryText = ::fixy::FixedText<vendor_discovery_text_capacity>;
+using VendorDiscoveryString = cog::VendorClaim<VendorDiscoveryText>;
 
 enum class DiscoveryError : std::uint8_t {
     EmptyInput = 0,
@@ -111,7 +123,8 @@ private:
 // facts and 128 edge facts, and with -ftrivial-auto-var-init=zero GCC writes
 // zero to each padding hole of each fact in an automatic snapshot, one store
 // for each hole.  test/test_topology_discovery.cpp makes sure that the facts
-// have no padding byte.
+// have no padding byte.  A node fact owns each of its five vendor texts.  Its
+// one borrow is the view of the GPU peers in nic_caps, which no parser fills.
 struct DiscoveryNodeFact {
     cog::Uuid uuid{};
     cog::CogLevel level = cog::CogLevel::L0_Atomic;
@@ -159,8 +172,21 @@ concept CtxFitsDiscoveryBg =
     return ::fixy::mint_tagged<::fixy::tags::source::External>(text);
 }
 
-[[nodiscard]] constexpr VendorDiscoveryString tag_vendor_discovery_string(::fixy::TextView text) noexcept {
+// The vendor string of a text that the caller owns.
+[[nodiscard]] constexpr VendorDiscoveryString tag_vendor_discovery_string(VendorDiscoveryText const& text) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(text);
+}
+
+// A copy of a text of a tool as a vendor string, or no value when the text
+// holds more than vendor_discovery_text_capacity characters.  A parser refuses
+// the record of such a text, and it cuts no text: the uuid of a node hashes
+// three of its texts, so a cut could give two devices one uuid.  Complexity:
+// one copy of each character.
+[[nodiscard]] constexpr ::fixy::Option<VendorDiscoveryString>
+copy_vendor_discovery_string(::fixy::TextView text) noexcept {
+    VendorDiscoveryText copy{};
+    if (copy.append(text).is_err()) return ::fixy::none;
+    return ::fixy::some(tag_vendor_discovery_string(copy));
 }
 
 [[nodiscard]] constexpr cog::CogKind cog_kind_from_discovery(DiscoveryNodeKind kind) noexcept {
@@ -233,6 +259,15 @@ template <std::size_t MaxNodes = default_discovery_nodes, std::size_t MaxEdges =
 
 // The storage behind a discovered graph.  Only mint_discovery_snapshot builds
 // one, so a snapshot exists only where an initialisation context exists.
+//
+// The snapshot owns each vendor text: each node fact holds a copy.  The
+// vendor and model views of each identity name the texts of the fact at the
+// same index in this snapshot.  So a snapshot never copies and never moves: a
+// copy or a moved snapshot would hold views into its source.  The mint gives
+// the snapshot as a value that the caller names, and no later move exists.
+// HoldsNoBorrow holds for each vendor text of a fact, and not for a snapshot:
+// an identity holds views by its type, its vendor and model views into the
+// snapshot itself, and its parent, children and neighbor views.
 template <std::size_t MaxNodes, std::size_t MaxEdges>
     requires DiscoveryShape<MaxNodes, MaxEdges>
 class DiscoverySnapshot {
@@ -243,6 +278,15 @@ class DiscoverySnapshot {
     constexpr DiscoverySnapshot() noexcept = default;
 
 public:
+    DiscoverySnapshot(DiscoverySnapshot const&) =
+        delete("each identity views the texts of the facts of its snapshot, so a copy would view its source");
+    DiscoverySnapshot& operator=(DiscoverySnapshot const&) =
+        delete("each identity views the texts of the facts of its snapshot, so a copy would view its source");
+    DiscoverySnapshot(DiscoverySnapshot&&) =
+        delete("each identity views the texts of the facts of its snapshot, so a moved snapshot would view its source");
+    DiscoverySnapshot& operator=(DiscoverySnapshot&&) =
+        delete("each identity views the texts of the facts of its snapshot, so a moved snapshot would view its source");
+
     // Each count is at most the capacity of its table, so each window fits.
     [[nodiscard]] constexpr ::fixy::View<cog::CogIdentity const> nodes() const noexcept {
         return nodes_.view().window(0, node_count_).value_or(::fixy::View<cog::CogIdentity const>{});
@@ -274,20 +318,21 @@ public:
         ::fixy::Index<MaxNodes> const slot =
             ::fixy::Index<MaxNodes>::check(node_count_).expect("a snapshot that is not full has a free node slot");
         if (fact.uuid.is_zero()) {
-            const std::uint64_t lo =
-                stable_discovery_hash(fact.bus_info.value(), fact.vendor.value(), fact.model.value());
+            const std::uint64_t lo = stable_discovery_hash(fact.bus_info.value().view(), fact.vendor.value().view(),
+                                                           fact.model.value().view());
             fact.uuid = cog::Uuid{0xD15C0111ull, lo};
         }
         fact.level = fact.level == cog::CogLevel::L0_Atomic ? default_level_for(fact.kind) : fact.level;
         node_facts_.with_element(slot, [&fact](DiscoveryNodeFact& held) noexcept { held = fact; });
-        nodes_.with_element(slot, [&fact](cog::CogIdentity& node) noexcept {
+        DiscoveryNodeFact const& held = node_facts_.at(slot);
+        nodes_.with_element(slot, [&held](cog::CogIdentity& node) noexcept {
             node = cog::CogIdentity{
-                .uuid = fact.uuid,
-                .level = fact.level,
-                .kind = fact.kind,
-                .vendor = fact.vendor,
-                .model = fact.model,
-                .firmware_revision = firmware_claim(fact),
+                .uuid = held.uuid,
+                .level = held.level,
+                .kind = held.kind,
+                .vendor = vendor_view(held.vendor),
+                .model = vendor_view(held.model),
+                .firmware_revision = firmware_claim(held),
                 .bios_revision = {},
             };
         });
@@ -303,13 +348,14 @@ public:
         ::fixy::Index<MaxNodes> const slot =
             ::fixy::Index<MaxNodes>::check(idx).expect("an index below the node count is below the capacity");
         node_facts_.with_element(slot, [&fact](DiscoveryNodeFact& held) noexcept { held = fact; });
-        auto const firmware_revision = firmware_claim(fact);
-        nodes_.with_element(slot, [&fact, firmware_revision](cog::CogIdentity& node) noexcept {
-            node.uuid = fact.uuid;
-            node.level = fact.level;
-            node.kind = fact.kind;
-            node.vendor = fact.vendor;
-            node.model = fact.model;
+        DiscoveryNodeFact const& held = node_facts_.at(slot);
+        auto const firmware_revision = firmware_claim(held);
+        nodes_.with_element(slot, [&held, firmware_revision](cog::CogIdentity& node) noexcept {
+            node.uuid = held.uuid;
+            node.level = held.level;
+            node.kind = held.kind;
+            node.vendor = vendor_view(held.vendor);
+            node.model = vendor_view(held.model);
             node.firmware_revision = firmware_revision;
         });
         return ::fixy::Unit{};
@@ -353,8 +399,18 @@ private:
     // The firmware string is opaque, so the identity carries its hash.
     [[nodiscard]] static constexpr cog::VendorClaim<std::uint64_t>
     firmware_claim(DiscoveryNodeFact const& fact) noexcept {
-        return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(stable_discovery_hash(fact.firmware.value()));
+        return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(stable_discovery_hash(fact.firmware.value().view()));
     }
+
+    // The view of a vendor text of a fact of this snapshot, for an identity of
+    // this snapshot.  The snapshot never moves, so the view lives as long as
+    // the snapshot.
+    [[nodiscard]] static constexpr cog::VendorClaim<::fixy::TextView> vendor_view(VendorDiscoveryString const& text
+                                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept {
+        return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(text.value().view());
+    }
+    static cog::VendorClaim<::fixy::TextView> vendor_view(VendorDiscoveryString const&& text) =
+        delete("a view of a temporary vendor text dangles at the end of the full expression");
 
     ::fixy::FixedArray<DiscoveryNodeFact, MaxNodes> node_facts_{};
     ::fixy::FixedArray<DiscoveryEdgeFact, MaxEdges> edge_facts_{};

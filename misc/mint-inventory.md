@@ -149,7 +149,7 @@ that the axis does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_asymmetric_failure_detector` | `include/crucible/topology/AsymmetricFailure.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_congestion_telemetry_worker` | `include/crucible/topology/CongestionTelemetryWorker.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
-| `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_discovery_snapshot` | `include/crucible/topology/Discovery.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_nic_telemetry_history` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
 | `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |

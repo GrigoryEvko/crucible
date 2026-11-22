@@ -1596,6 +1596,10 @@ crucible_neg_compile_test(neg_topology_graph_test_ctx_refused
 #     tagged as External, never a raw string.
 #   * neg_topology_discovery_zero_nodes — a snapshot needs at least one node
 #     slot and one edge slot.
+#   * neg_topology_discovery_snapshot_copy and
+#     neg_topology_discovery_snapshot_returned — a snapshot never copies or
+#     moves, because each identity views the texts of the facts of its
+#     snapshot.
 crucible_neg_compile_test(neg_topology_discovery_mint_test_ctx
     "no matching function for call to .mint_discovery_snapshot<1, 1>.fixy::TestRunnerCtx&"
     "CtxFitsDiscoveryInit<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test")
@@ -1608,6 +1612,12 @@ crucible_neg_compile_test(neg_topology_discovery_raw_lspci_text
 crucible_neg_compile_test(neg_topology_discovery_zero_nodes
     "no matching function for call to .mint_discovery_snapshot<0, 1>.fixy::ColdInitCtx&"
     "required for the satisfaction of .DiscoveryShape<MaxNodes, MaxEdges>. \\[with MaxNodes = 0; MaxEdges = 1\\]")
+crucible_neg_compile_test(neg_topology_discovery_snapshot_copy
+    "each identity views the texts of the facts of its snapshot, so a copy would view its source"
+    "neg_topology_discovery_snapshot_copy\\.cpp:[0-9]+:[0-9]+: error:")
+crucible_neg_compile_test(neg_topology_discovery_snapshot_returned
+    "each identity views the texts of the facts of its snapshot, so a moved snapshot would view its source"
+    "neg_topology_discovery_snapshot_returned\\.cpp:[0-9]+:[0-9]+: error:")
 
 # ─── topology::Health ─────────────────────────────────────────────────
 #

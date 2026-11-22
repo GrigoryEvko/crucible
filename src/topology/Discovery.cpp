@@ -29,6 +29,37 @@ using ::fixy::TextView;
     return DiscoveryNodeKind::PcieLaneGroup;
 }
 
+// The three texts of one record that name a node.
+struct NodeTexts {
+    TextView vendor{};
+    TextView model{};
+    TextView bus_info{};
+};
+
+// Copies a text of a tool into a vendor string of a fact, or gives false and
+// keeps the field when the text holds more characters than a fact keeps
+// (copy_vendor_discovery_string).
+[[nodiscard]] bool copy_into(TextView source, VendorDiscoveryString& field) noexcept {
+    return copy_vendor_discovery_string(source).match(
+        [&field](VendorDiscoveryString copied) noexcept {
+            field = copied;
+            return true;
+        },
+        []() noexcept { return false; });
+}
+
+// The fact of a node from the texts of one record, or no value when a text
+// holds more characters than a fact keeps.  The caller refuses such a record.
+[[nodiscard]] ::fixy::Option<DiscoveryNodeFact> node_fact_of(cog::CogKind kind, NodeTexts texts) noexcept {
+    DiscoveryNodeFact fact{.kind = kind};
+    bool const is_kept = copy_into(texts.vendor, fact.vendor) && copy_into(texts.model, fact.model)
+                      && copy_into(texts.bus_info, fact.bus_info);
+    if (!is_kept) return ::fixy::none;
+    return ::fixy::some(fact);
+}
+
+// The node of one lspci record, and its edge from node 0.  A record with a
+// text that a fact does not keep counts as seen and not as admitted.
 template <std::size_t MaxNodes, std::size_t MaxEdges>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, DiscoveryError>
 flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, TextView slot, TextView cls, TextView vendor,
@@ -38,24 +69,25 @@ flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, TextView slo
     }
     ++records;
     DiscoveryNodeKind node_kind = node_kind_from_lspci(cls, device);
-    DiscoveryNodeFact fact{
-        .kind = cog_kind_from_discovery(node_kind),
-        .vendor = tag_vendor_discovery_string(vendor),
-        .model = tag_vendor_discovery_string(device),
-        .bus_info = tag_vendor_discovery_string(slot),
-    };
-    fact.level = default_level_for(fact.kind);
-    CRUCIBLE_TRY(added, snapshot.add_node(fact));
-    ++admitted;
-    if (added != 0) {
-        DiscoveryEdgeFact edge{
-            .from_node = 0,
-            .to_node = added,
-            .kind = LinkKind::PciE,
-        };
-        CRUCIBLE_TRY(_, snapshot.add_edge(edge));
-    }
-    return ::fixy::Unit{};
+    using Flushed = ::fixy::Result<::fixy::Unit, DiscoveryError>;
+    return node_fact_of(cog_kind_from_discovery(node_kind),
+                        NodeTexts{.vendor = vendor, .model = device, .bus_info = slot})
+        .match(
+            [&snapshot, &admitted](DiscoveryNodeFact fact) noexcept -> Flushed {
+                fact.level = default_level_for(fact.kind);
+                CRUCIBLE_TRY(added, snapshot.add_node(fact));
+                ++admitted;
+                if (added != 0) {
+                    DiscoveryEdgeFact edge{
+                        .from_node = 0,
+                        .to_node = added,
+                        .kind = LinkKind::PciE,
+                    };
+                    CRUCIBLE_TRY(_, snapshot.add_edge(edge));
+                }
+                return ::fixy::Unit{};
+            },
+            []() noexcept -> Flushed { return ::fixy::Unit{}; });
 }
 
 }  // namespace
@@ -132,17 +164,29 @@ parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapsho
         }
     }
 
+    // Each field is a record.  A field with a text that a fact does not keep
+    // counts as refused, and the fact keeps the text that it held.
     DiscoveryNodeFact fact = *snapshot.node_facts().get(node_index).expect("the node index is below the node count");
-    fact.driver = tag_vendor_discovery_string(driver);
-    fact.firmware = tag_vendor_discovery_string(firmware);
-    fact.bus_info = bus.size() == 0 ? fact.bus_info : tag_vendor_discovery_string(bus);
+    std::uint16_t admitted = records;
+    if (!copy_into(driver, fact.driver)) --admitted;
+    if (!copy_into(firmware, fact.firmware)) --admitted;
+    if (bus.size() != 0 && !copy_into(bus, fact.bus_info)) --admitted;
     CRUCIBLE_TRY(_, snapshot.update_node(node_index, fact));
+    DiscoveryOutcome outcome = DiscoveryOutcome::Complete;
+    DiscoveryError error = DiscoveryError::EmptyInput;
+    if (records == 0) {
+        outcome = DiscoveryOutcome::Failed;
+        error = DiscoveryError::MissingRequiredField;
+    } else if (admitted != records) {
+        outcome = DiscoveryOutcome::Partial;
+        error = DiscoveryError::MalformedRecord;
+    }
     DiscoverySourceStatus status{
         .source = DiscoverySource::EthtoolInfo,
-        .outcome = records == 0 ? DiscoveryOutcome::Failed : DiscoveryOutcome::Complete,
+        .outcome = outcome,
         .records_seen = records,
-        .records_admitted = records,
-        .error = records == 0 ? DiscoveryError::MissingRequiredField : DiscoveryError::EmptyInput,
+        .records_admitted = admitted,
+        .error = error,
     };
     static_cast<void>(snapshot.record(status));
     return status;
@@ -193,26 +237,28 @@ parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snaps
     TextView sys_name{};
     TextView port_id{};
     TextView line_rate{};
-    auto flush = [&]() noexcept -> ::fixy::Result<::fixy::Unit, DiscoveryError> {
+    // A record with a text that a fact does not keep counts as seen and not as
+    // admitted.
+    using Flushed = ::fixy::Result<::fixy::Unit, DiscoveryError>;
+    auto flush = [&]() noexcept -> Flushed {
         if (iface.size() == 0 && sys_name.size() == 0 && port_id.size() == 0) {
             return ::fixy::Unit{};
         }
         ++records;
-        DiscoveryNodeFact peer{
-            .kind = cog::CogKind::NicPort,
-            .vendor = tag_vendor_discovery_string("lldp"),
-            .model = tag_vendor_discovery_string(sys_name),
-            .bus_info = tag_vendor_discovery_string(port_id),
-        };
-        CRUCIBLE_TRY(idx, snapshot.add_node(peer));
-        CRUCIBLE_TRY(_, snapshot.add_edge(DiscoveryEdgeFact{
-                            .from_node = 0,
-                            .to_node = idx,
-                            .kind = LinkKind::Ethernet,
-                            .bandwidth_bytes_per_sec = text::parse_line_rate(line_rate),
-                        }));
-        ++admitted;
-        return ::fixy::Unit{};
+        return node_fact_of(cog::CogKind::NicPort, NodeTexts{.vendor = "lldp", .model = sys_name, .bus_info = port_id})
+            .match(
+                [&](DiscoveryNodeFact peer) noexcept -> Flushed {
+                    CRUCIBLE_TRY(idx, snapshot.add_node(peer));
+                    CRUCIBLE_TRY(_, snapshot.add_edge(DiscoveryEdgeFact{
+                                        .from_node = 0,
+                                        .to_node = idx,
+                                        .kind = LinkKind::Ethernet,
+                                        .bandwidth_bytes_per_sec = text::parse_line_rate(line_rate),
+                                    }));
+                    ++admitted;
+                    return ::fixy::Unit{};
+                },
+                []() noexcept -> Flushed { return ::fixy::Unit{}; });
     };
 
     while (input.size() != 0) {
@@ -235,12 +281,21 @@ parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snaps
     }
     CRUCIBLE_TRY(_, flush());
 
+    DiscoveryOutcome outcome = DiscoveryOutcome::Complete;
+    DiscoveryError error = DiscoveryError::EmptyInput;
+    if (admitted == 0) {
+        outcome = DiscoveryOutcome::Failed;
+        error = DiscoveryError::MissingRequiredField;
+    } else if (admitted != records) {
+        outcome = DiscoveryOutcome::Partial;
+        error = DiscoveryError::MalformedRecord;
+    }
     DiscoverySourceStatus status{
         .source = DiscoverySource::Lldp,
-        .outcome = admitted == 0 ? DiscoveryOutcome::Failed : DiscoveryOutcome::Complete,
+        .outcome = outcome,
         .records_seen = records,
         .records_admitted = admitted,
-        .error = admitted == 0 ? DiscoveryError::MissingRequiredField : DiscoveryError::EmptyInput,
+        .error = error,
     };
     static_cast<void>(snapshot.record(status));
     return status;

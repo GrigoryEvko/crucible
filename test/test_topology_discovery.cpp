@@ -30,6 +30,18 @@ template <class T>
     return *view.get(position).expect("the test reads an element that the view holds");
 }
 
+// The fact of the local port of the cases that read ethtool and LLDP text.
+// The constructor of a vendor text from a literal checks its capacity at
+// compile time.
+[[nodiscard]] static topology::DiscoveryNodeFact local_port_fact() {
+    return topology::DiscoveryNodeFact{
+        .kind = cog::CogKind::NicPort,
+        .vendor = topology::tag_vendor_discovery_string(topology::VendorDiscoveryText{"Mellanox"}),
+        .model = topology::tag_vendor_discovery_string(topology::VendorDiscoveryText{"ConnectX-6"}),
+        .bus_info = topology::tag_vendor_discovery_string(topology::VendorDiscoveryText{"0000:65:00.0"}),
+    };
+}
+
 // The log spelling of the four enums comes from reflection.
 static void test_enum_names_come_from_reflection() {
     using ::fixy::enum_name_text;
@@ -96,22 +108,17 @@ static_assert(topology::text::parse_line_rate(::fixy::TextView{"G"}) == 0);
 static void test_ethtool_features_and_lldp() {
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot(ctx);
-    topology::DiscoveryNodeFact local{
-        .kind = cog::CogKind::NicPort,
-        .vendor = topology::tag_vendor_discovery_string("Mellanox"),
-        .model = topology::tag_vendor_discovery_string("ConnectX-6"),
-        .bus_info = topology::tag_vendor_discovery_string("0000:65:00.0"),
-    };
-    std::uint16_t const local_idx = snapshot.add_node(local).expect("an empty snapshot has room for a node");
+    std::uint16_t const local_idx =
+        snapshot.add_node(local_port_fact()).expect("an empty snapshot has room for a node");
 
     constexpr ::fixy::TextView info = "driver: mlx5_core\n"
                                       "firmware-version: 22.39.1002\n"
                                       "bus-info: 0000:65:00.0\n";
     auto info_status = topology::parse_ethtool_info(topology::tag_external_discovery_text(info), snapshot, local_idx);
     CRUCIBLE_TEST_ASSERT(kTest, info_status.is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         element_at(snapshot.node_facts(), local_idx).driver.value() == ::fixy::TextView{"mlx5_core"});
-    CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.node_facts(), local_idx).firmware.value()
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.node_facts(), local_idx).driver.value().view()
+                                    == ::fixy::TextView{"mlx5_core"});
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.node_facts(), local_idx).firmware.value().view()
                                     == ::fixy::TextView{"22.39.1002"});
     CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.nodes(), local_idx).firmware_revision.value()
                                     == topology::stable_discovery_hash(::fixy::TextView{"22.39.1002"}));
@@ -151,12 +158,7 @@ static void test_ethtool_features_and_lldp() {
 static void test_lldp_record_state_reset() {
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot(ctx);
-    auto local_idx = snapshot.add_node(topology::DiscoveryNodeFact{
-        .kind = cog::CogKind::NicPort,
-        .vendor = topology::tag_vendor_discovery_string("Mellanox"),
-        .model = topology::tag_vendor_discovery_string("ConnectX-6"),
-        .bus_info = topology::tag_vendor_discovery_string("0000:65:00.0"),
-    });
+    auto local_idx = snapshot.add_node(local_port_fact());
     CRUCIBLE_TEST_ASSERT(kTest, local_idx.is_ok());
 
     constexpr ::fixy::TextView lldp = "Interface: eth0\n"
@@ -185,12 +187,7 @@ static void test_lldp_record_state_reset() {
 static void test_lldp_line_rate_past_64_bits() {
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot(ctx);
-    auto local_idx = snapshot.add_node(topology::DiscoveryNodeFact{
-        .kind = cog::CogKind::NicPort,
-        .vendor = topology::tag_vendor_discovery_string("Mellanox"),
-        .model = topology::tag_vendor_discovery_string("ConnectX-6"),
-        .bus_info = topology::tag_vendor_discovery_string("0000:65:00.0"),
-    });
+    auto local_idx = snapshot.add_node(local_port_fact());
     CRUCIBLE_TEST_ASSERT(kTest, local_idx.is_ok());
 
     constexpr ::fixy::TextView lldp = "Interface: eth0\n"
@@ -236,6 +233,166 @@ static void test_graceful_empty_live_discovery() {
     ::fixy::check::pass(kTest, "  test_graceful_empty_live_discovery:   PASSED\n");
 }
 
+// The characters of text in a heap text that the test owns, so a case can end
+// the buffer that a parser read.
+[[nodiscard]] static ::fixy::HeapText heap_text_of(::fixy::TextView text) {
+    ::fixy::GrowText grown = ::fixy::mint_grow_text(text.size());
+    grown.append(::foundation::effects::testing::test().alloc, text).expect("the text fits its maximum");
+    return ::fixy::freeze(std::move(grown));
+}
+
+// Each vendor text of a snapshot stays readable after the end of the buffer
+// that its parser read.  Each of the three parsers reads a heap text that
+// ends before the reads, and each vendor text of a fact and of an identity
+// comes from one of them.
+static void test_vendor_texts_outlive_their_input() {
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(ctx);
+    {
+        ::fixy::HeapText const lspci = heap_text_of("Slot:\t0000:65:00.0\n"
+                                                    "Class:\tEthernet controller\n"
+                                                    "Vendor:\tMellanox Technologies\n"
+                                                    "Device:\tConnectX-6 Dx\n");
+        static_cast<void>(topology::parse_lspci_vmm_tree(topology::tag_external_discovery_text(lspci.view()), snapshot)
+                              .expect("the lspci tree parses"));
+    }
+    {
+        ::fixy::HeapText const info = heap_text_of("driver: mlx5_core\n"
+                                                   "firmware-version: 22.39.1002\n"
+                                                   "bus-info: 0000:65:00.1\n");
+        static_cast<void>(topology::parse_ethtool_info(topology::tag_external_discovery_text(info.view()), snapshot, 0)
+                              .expect("the driver info parses"));
+    }
+    {
+        ::fixy::HeapText const lldp = heap_text_of("Interface: eth0\n"
+                                                   "SysName: tor-a\n"
+                                                   "PortID: ifname swp17\n");
+        static_cast<void>(topology::parse_lldp_neighbors(topology::tag_external_discovery_text(lldp.view()), snapshot)
+                              .expect("the neighbour list parses"));
+    }
+    topology::DiscoveryNodeFact const& local = element_at(snapshot.node_facts(), 0);
+    topology::DiscoveryNodeFact const& peer = element_at(snapshot.node_facts(), 1);
+    CRUCIBLE_TEST_ASSERT(kTest, local.vendor.value().view() == ::fixy::TextView{"Mellanox Technologies"});
+    CRUCIBLE_TEST_ASSERT(kTest, local.model.value().view() == ::fixy::TextView{"ConnectX-6 Dx"});
+    CRUCIBLE_TEST_ASSERT(kTest, local.driver.value().view() == ::fixy::TextView{"mlx5_core"});
+    CRUCIBLE_TEST_ASSERT(kTest, local.firmware.value().view() == ::fixy::TextView{"22.39.1002"});
+    CRUCIBLE_TEST_ASSERT(kTest, local.bus_info.value().view() == ::fixy::TextView{"0000:65:00.1"});
+    CRUCIBLE_TEST_ASSERT(kTest, peer.model.value().view() == ::fixy::TextView{"tor-a"});
+    CRUCIBLE_TEST_ASSERT(kTest, peer.bus_info.value().view() == ::fixy::TextView{"ifname swp17"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         element_at(snapshot.nodes(), 0).vendor.value() == ::fixy::TextView{"Mellanox Technologies"});
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.nodes(), 0).model.value() == ::fixy::TextView{"ConnectX-6 Dx"});
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.nodes(), 1).model.value() == ::fixy::TextView{"tor-a"});
+    ::fixy::check::pass(kTest, "  test_vendor_texts_outlive_their_input: PASSED\n");
+}
+
+// True when the view names the characters of the vendor text of a fact: the
+// same first character and the same count.  The text is not empty.
+[[nodiscard]] static bool names_text_of(cog::VendorClaim<::fixy::TextView> const& view,
+                                        topology::VendorDiscoveryString const& text) {
+    ::fixy::TextView const named = view.value();
+    ::fixy::TextView const held = text.value().view();
+    return named.size() == held.size() && held.size() != 0
+        && ::fixy::address_of(::fixy::to(*named.begin())) == ::fixy::address_of(::fixy::to(*held.begin()));
+}
+
+// Each vendor and model view of each identity names the text of the fact at
+// the same index of the snapshot, so it lies in the storage of that snapshot
+// and in no text of a tool.  An update of a node points the views at the new
+// texts of its fact.
+static void test_identity_texts_name_the_facts_of_their_snapshot() {
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(ctx);
+    constexpr ::fixy::TextView lspci = "Slot:\t0000:00:00.0\n"
+                                       "Class:\tPCI bridge\n"
+                                       "Vendor:\tIntel Corporation\n"
+                                       "Device:\tRoot Port\n"
+                                       "\n"
+                                       "Slot:\t0000:65:00.0\n"
+                                       "Class:\tEthernet controller\n"
+                                       "Vendor:\tMellanox Technologies\n"
+                                       "Device:\tConnectX-6 Dx\n";
+    static_cast<void>(topology::parse_lspci_vmm_tree(topology::tag_external_discovery_text(lspci), snapshot)
+                          .expect("the lspci tree parses"));
+    constexpr ::fixy::TextView info = "driver: mlx5_core\n"
+                                      "firmware-version: 22.39.1002\n";
+    static_cast<void>(topology::parse_ethtool_info(topology::tag_external_discovery_text(info), snapshot, 1)
+                          .expect("the driver info parses"));
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.node_count() == 2);
+    for (std::size_t position = 0; position < snapshot.node_count(); ++position) {
+        cog::CogIdentity const& identity = element_at(snapshot.nodes(), position);
+        topology::DiscoveryNodeFact const& fact = element_at(snapshot.node_facts(), position);
+        CRUCIBLE_TEST_ASSERT(kTest, names_text_of(identity.vendor, fact.vendor));
+        CRUCIBLE_TEST_ASSERT(kTest, names_text_of(identity.model, fact.model));
+    }
+    ::fixy::check::pass(kTest, "  test_identity_texts_name_the_facts_of_their_snapshot: PASSED\n");
+}
+
+// A text of vendor_discovery_text_capacity characters fits a fact, and one
+// more character refuses its record: the parse goes on, the record counts as
+// seen and not as admitted, and the status is Partial.  A refused first
+// record of lspci leaves node 0 to the next record.  A refused field of
+// ethtool keeps the text that the fact held.
+static void test_text_past_its_capacity_refuses_its_record() {
+    eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
+    auto snapshot = topology::mint_discovery_snapshot(ctx);
+    ::fixy::GrowText lspci = ::fixy::mint_grow_text(2 * topology::vendor_discovery_text_capacity + 256);
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    lspci.append(alloc, ::fixy::TextView{"Slot:\t0000:00:00.0\nDevice:\t"}).expect("the text fits its maximum");
+    for (std::size_t count = 0; count <= topology::vendor_discovery_text_capacity; ++count) {
+        lspci.append(alloc, 'x').expect("the text fits its maximum");
+    }
+    lspci.append(alloc, ::fixy::TextView{"\n\nSlot:\t0000:65:00.0\nDevice:\t"}).expect("the text fits its maximum");
+    for (std::size_t count = 0; count < topology::vendor_discovery_text_capacity; ++count) {
+        lspci.append(alloc, 'y').expect("the text fits its maximum");
+    }
+    lspci.append(alloc, ::fixy::TextView{"\n"}).expect("the text fits its maximum");
+    ::fixy::HeapText const lspci_text = ::fixy::freeze(std::move(lspci));
+    auto const lspci_status =
+        topology::parse_lspci_vmm_tree(topology::tag_external_discovery_text(lspci_text.view()), snapshot)
+            .expect("the lspci tree parses");
+    CRUCIBLE_TEST_ASSERT(kTest, lspci_status.records_seen == 2 && lspci_status.records_admitted == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, lspci_status.outcome == topology::DiscoveryOutcome::Partial);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.node_count() == 1 && snapshot.edge_count() == 0);
+    topology::DiscoveryNodeFact const& node = element_at(snapshot.node_facts(), 0);
+    CRUCIBLE_TEST_ASSERT(kTest, node.bus_info.value().view() == ::fixy::TextView{"0000:65:00.0"});
+    CRUCIBLE_TEST_ASSERT(kTest, node.model.value().size() == topology::vendor_discovery_text_capacity);
+
+    ::fixy::GrowText info = ::fixy::mint_grow_text(topology::vendor_discovery_text_capacity + 64);
+    info.append(alloc, ::fixy::TextView{"driver: mlx5_core\nfirmware-version: "}).expect("the text fits its maximum");
+    for (std::size_t count = 0; count <= topology::vendor_discovery_text_capacity; ++count) {
+        info.append(alloc, '9').expect("the text fits its maximum");
+    }
+    info.append(alloc, ::fixy::TextView{"\n"}).expect("the text fits its maximum");
+    ::fixy::HeapText const info_text = ::fixy::freeze(std::move(info));
+    auto const info_status =
+        topology::parse_ethtool_info(topology::tag_external_discovery_text(info_text.view()), snapshot, 0)
+            .expect("the driver info parses");
+    CRUCIBLE_TEST_ASSERT(kTest, info_status.records_seen == 2 && info_status.records_admitted == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, info_status.outcome == topology::DiscoveryOutcome::Partial);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         element_at(snapshot.node_facts(), 0).driver.value().view() == ::fixy::TextView{"mlx5_core"});
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.node_facts(), 0).firmware.value().size() == 0);
+
+    ::fixy::GrowText lldp = ::fixy::mint_grow_text(topology::vendor_discovery_text_capacity + 128);
+    lldp.append(alloc, ::fixy::TextView{"Interface: eth0\nSysName: tor-a\nPortID: "})
+        .expect("the text fits its maximum");
+    for (std::size_t count = 0; count <= topology::vendor_discovery_text_capacity; ++count) {
+        lldp.append(alloc, 'p').expect("the text fits its maximum");
+    }
+    lldp.append(alloc, ::fixy::TextView{"\n\nInterface: eth1\nSysName: tor-b\nPortID: swp18\n"})
+        .expect("the text fits its maximum");
+    ::fixy::HeapText const lldp_text = ::fixy::freeze(std::move(lldp));
+    auto const lldp_status =
+        topology::parse_lldp_neighbors(topology::tag_external_discovery_text(lldp_text.view()), snapshot)
+            .expect("the neighbour list parses");
+    CRUCIBLE_TEST_ASSERT(kTest, lldp_status.records_seen == 2 && lldp_status.records_admitted == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, lldp_status.outcome == topology::DiscoveryOutcome::Partial);
+    CRUCIBLE_TEST_ASSERT(kTest, snapshot.node_count() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(snapshot.node_facts(), 1).model.value().view() == ::fixy::TextView{"tor-b"});
+    ::fixy::check::pass(kTest, "  test_text_past_its_capacity_refuses_its_record: PASSED\n");
+}
+
 static void test_static_gates() {
     static_assert(topology::CtxFitsDiscoveryInit<eff::ColdInitCtx>);
     static_assert(!topology::CtxFitsDiscoveryInit<eff::BgDrainCtx>);
@@ -270,6 +427,9 @@ int main() {
     test_lldp_record_state_reset();
     test_lldp_line_rate_past_64_bits();
     test_graceful_empty_live_discovery();
+    test_vendor_texts_outlive_their_input();
+    test_identity_texts_name_the_facts_of_their_snapshot();
+    test_text_past_its_capacity_refuses_its_record();
     test_static_gates();
     test_snapshot_elements_have_no_padding_byte();
     ::fixy::check::pass(kTest, "test_topology_discovery: all PASSED\n");
