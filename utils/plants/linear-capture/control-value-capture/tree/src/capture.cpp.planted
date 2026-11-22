@@ -1,6 +1,7 @@
 // The captures that the rule linear-capture admits: a move of a linear object
-// into the closure, a capture by reference of a value that is not linear, and
-// the capture of this.
+// into the closure, a capture by reference of a value that is not linear, the
+// capture of this, and a capture by reference of a linear object whose class
+// has a door at the end of its scope.
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 
@@ -12,6 +13,22 @@ struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_ov
     constexpr Token& operator=(Token&&) noexcept { return *this; }
     Token(const Token&) = delete;
 };
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
+         = ::foundation::lifetime::no_start_over_bytes{}]] ScopedToken {
+    constexpr ScopedToken() noexcept = default;
+    constexpr ScopedToken(ScopedToken&&) noexcept = default;
+    constexpr ScopedToken& operator=(ScopedToken&&) noexcept { return *this; }
+    ScopedToken(const ScopedToken&) = delete;
+};
+
+void lend(ScopedToken& token) noexcept;
+
+void lends_scoped() {
+    ScopedToken scoped;
+    auto lent = [&scoped] { lend(scoped); };
+    lent();
+}
 
 void take(Token&& token) noexcept;
 

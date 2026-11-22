@@ -212,7 +212,11 @@
 // THE CAPTURES
 //     A lambda initializes a capture by reference with the address of the
 //     object.  The closure hides each later consume, so the object gives no
-//     finding, and the rule linear-capture reports the capture.
+//     finding, and the rule linear-capture reports the capture.  A class with a
+//     door at the end of its scope, such as a loan key, owes no consume: the
+//     end of the scope of the object ends it, and so does the end of each
+//     object that a move through the capture makes.  So a capture by reference
+//     of such an object is no finding.
 //
 // THE SELF-MOVES
 //     A move assignment whose target and source are one object is the kind
@@ -258,8 +262,9 @@
 //                           with a linear argument (library-holder).  Such a
 //                           class is no aggregate, and it is linear by its parts
 //                           or it has a destructor that is not trivial
-//       linear-capture      a capture by reference of a linear object
-//       drop-door           an assignment over a linear object that is no
+//       linear-capture      a capture by reference of a linear object whose
+//                           class has no door at the end of its scope
+//       drop-door          an assignment over a linear object that is no
 //                           tracked object of must-consume, and a destructor
 //                           call or a clobber of such an object.  A door, a
 //                           destructor and a transfer function read none
@@ -3155,11 +3160,20 @@ bool is_frame_object(tree node) {
 }
 
 // True when FIELD of the class CLOSURE is a capture by reference of a linear
-// object.
+// object whose class has no door at the end of its scope.  The end of the scope
+// of the object, or of each object that a move through the capture makes,
+// is the door of such a class, so the closure hides no consume (THE CAPTURES).
 bool is_linear_reference_capture(tree closure, tree field) {
-    return closure != NULL_TREE && LAMBDA_TYPE_P(TYPE_MAIN_VARIANT(closure)) && field != NULL_TREE
-        && TREE_CODE(field) == FIELD_DECL && TYPE_REF_P(TREE_TYPE(field))
-        && is_linear_type(TREE_TYPE(TREE_TYPE(field)));
+    if (closure == NULL_TREE || !LAMBDA_TYPE_P(TYPE_MAIN_VARIANT(closure)) || field == NULL_TREE
+        || TREE_CODE(field) != FIELD_DECL || !TYPE_REF_P(TREE_TYPE(field))) {
+        return false;
+    }
+    tree object = TREE_TYPE(TREE_TYPE(field));
+    if (!is_linear_type(object)) {
+        return false;
+    }
+    tree main = TYPE_MAIN_VARIANT(object);
+    return !CLASS_TYPE_P(main) || !has_scope_door(main);
 }
 
 // One capture by reference of a linear object, the field FIELD of the closure
