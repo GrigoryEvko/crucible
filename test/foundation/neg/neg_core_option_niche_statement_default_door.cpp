@@ -13,7 +13,7 @@ class SlotNumber {
 public:
     constexpr SlotNumber() noexcept = default;
 
-    static constexpr bool is_niche_empty_never_built = true;
+    static constexpr ::foundation::core::niche_statement is_niche_empty_never_built{};
     [[nodiscard]] static constexpr SlotNumber niche_empty(::foundation::core::niche_key<SlotNumber> const&) noexcept {
         return SlotNumber{};
     }

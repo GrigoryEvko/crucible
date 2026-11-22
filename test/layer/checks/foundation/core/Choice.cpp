@@ -35,7 +35,9 @@ struct Owner {
 };
 
 // A slot number whose niche states that no door builds the empty value.  Its
-// one door builds a slot from a byte, so no slot holds the empty value.
+// one door builds a slot from a byte, so no slot holds the empty value, and
+// the two walks of the check pass.  This file is outside the base, so the
+// payload gate refuses the statement all the same.
 class TrustedSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit TrustedSlot(std::uint32_t raw) noexcept : raw_{raw} {}
@@ -84,7 +86,7 @@ struct MisstatedSlot {
 
 template <>
 struct niche<detail::choice_checks::TrustedSlot> {
-    static constexpr bool is_empty_never_built = true;
+    static constexpr niche_statement is_empty_never_built{};
     [[nodiscard]] static constexpr detail::choice_checks::TrustedSlot
     empty(niche_key<detail::choice_checks::TrustedSlot> const&) noexcept {
         return detail::choice_checks::TrustedSlot{0xFFFFFFFFu};
@@ -97,7 +99,7 @@ struct niche<detail::choice_checks::TrustedSlot> {
 
 template <>
 struct niche<detail::choice_checks::AggregateStatedSlot> {
-    static constexpr bool is_empty_never_built = true;
+    static constexpr niche_statement is_empty_never_built{};
     [[nodiscard]] static constexpr detail::choice_checks::AggregateStatedSlot
     empty(niche_key<detail::choice_checks::AggregateStatedSlot> const&) noexcept {
         return detail::choice_checks::AggregateStatedSlot{0xFFFFFFFFu};
@@ -110,7 +112,7 @@ struct niche<detail::choice_checks::AggregateStatedSlot> {
 
 template <>
 struct niche<detail::choice_checks::PointerStatedSlot> {
-    static constexpr bool is_empty_never_built = true;
+    static constexpr niche_statement is_empty_never_built{};
     [[nodiscard]] static constexpr detail::choice_checks::PointerStatedSlot
     empty(niche_key<detail::choice_checks::PointerStatedSlot> const&) noexcept {
         return detail::choice_checks::PointerStatedSlot{nullptr};
@@ -981,15 +983,15 @@ static_assert(
 // temporary have none.  A write through the RefMut bypasses the test of
 // Option::some.  So a niche payload that an aggregate or a door can build as
 // its empty value stops the build at the static assertion of the door, and a
-// niche that states that no door builds the empty value takes the door.  The
-// body reads the niche, so this check states only the constraint.
+// niche that states that no door builds the empty value takes the door, as
+// the check file of foundation/core/Ref.h shows for a Ref.  The body reads
+// the niche, so this check states only the constraint.
 template <class O>
 concept OptionWritesInPlace = requires(O& option) { option.with_mut([](auto) noexcept {}, [] noexcept {}); };
 template <class O>
 concept OptionWritesTemporary =
     requires(O option) { static_cast<O&&>(option).with_mut([](auto) noexcept {}, [] noexcept {}); };
 static_assert(OptionWritesInPlace<Option<Owner>> && OptionWritesInPlace<Option<std::uint64_t>>);
-static_assert(OptionWritesInPlace<Option<TrustedSlot>>);
 static_assert(!OptionWritesInPlace<Option<Token>> && !OptionWritesInPlace<Option<Owner> const>);
 static_assert(!OptionWritesTemporary<Option<Owner>>);
 
@@ -1166,9 +1168,7 @@ static_assert(Option<Ticket>{} == Option<Ticket>{} && Option<Ticket>::some(Ticke
 // is_niche_empty_never_built, which niche<T> reads.
 static_assert(NicheRead<TrustedSlot>::is_empty_never_built());
 static_assert(!NicheRead<SlotNumber>::is_empty_never_built() && !NicheRead<Ticket>::is_empty_never_built());
-static_assert(ChoicePayload<TrustedSlot> && !ChoicePayload<MisstatedSlot>);
-static_assert(sizeof(Option<TrustedSlot>) == sizeof(TrustedSlot));
-static_assert(Option<TrustedSlot>::some(TrustedSlot::of_byte(3)).is_some() && Option<TrustedSlot>{}.is_none());
+static_assert(!ChoicePayload<MisstatedSlot>);
 
 // A slot number of the member protocol that states the fact.  Its one door
 // builds a slot from a byte.
@@ -1177,7 +1177,7 @@ class TrustedMemberSlot {
     constexpr explicit TrustedMemberSlot(std::uint32_t raw) noexcept : raw_{raw} {}
 
 public:
-    static constexpr bool is_niche_empty_never_built = true;
+    static constexpr niche_statement is_niche_empty_never_built{};
     [[nodiscard]] static constexpr TrustedMemberSlot of_byte(std::uint8_t byte) noexcept {
         return TrustedMemberSlot{byte};
     }
@@ -1190,16 +1190,148 @@ public:
 };
 
 static_assert(NicheRead<TrustedMemberSlot>::is_empty_never_built() && !NicheRead<MemberSlot>::is_empty_never_built());
-static_assert(ChoicePayload<TrustedMemberSlot> && sizeof(Option<TrustedMemberSlot>) == sizeof(TrustedMemberSlot));
 
-// The payload gate checks a statement against the constructors of the type
-// (THE CHECK OF THE STATEMENT), so a false statement does not compile.  An
-// aggregate builds the empty value from its member, and a constructor from a
-// pointer with no key builds the empty value from the null pointer.
+// The payload gate holds the three checks of THE CHECK OF THE STATEMENT, so
+// a false statement does not compile.  An aggregate builds the empty value
+// from its member, and a constructor from a pointer with no key builds the
+// empty value from the null pointer.  The two trusted slots pass the two
+// walks, but this file is outside the base, so the gate refuses them too.
 static_assert(!ChoicePayload<AggregateStatedSlot> && !ChoicePayload<PointerStatedSlot>);
 static_assert(BuildsNoEmptyValue<TrustedSlot> && BuildsNoEmptyValue<TrustedMemberSlot>);
-static_assert(!vouches_each_raw_parameter<PairStatedSlot>() && !BuildsNoEmptyValue<PairStatedSlot>);
-static_assert(vouches_each_raw_parameter<KeyedPairSlot>() && BuildsNoEmptyValue<KeyedPairSlot>);
+static_assert(WritesNoEmptyValue<TrustedSlot> && WritesNoEmptyValue<TrustedMemberSlot>);
+static_assert(!StatedInBase<TrustedSlot> && !StatedInBase<TrustedMemberSlot>);
+static_assert(!ChoicePayload<TrustedSlot> && !ChoicePayload<TrustedMemberSlot>);
+
+// The walk of the constructors (1 of THE CHECK OF THE STATEMENT).  A raw
+// value is a scalar, or a class that holds one at some depth, also through a
+// reference member such as the one of HoldsReference above.  An empty tag and
+// a key carry none.  A key has no public constructor, so a public class that
+// only refuses its copy vouches for nothing.
+struct RawWord {
+    std::uint32_t value = 0;
+};
+struct EmptyTag {};
+class LocalKey {
+    constexpr LocalKey() noexcept {}
+    constexpr LocalKey(LocalKey const&) noexcept {}
+
+public:
+    LocalKey& operator=(LocalKey const&) = delete("a key lives for one construction");
+};
+struct OpenVoucher {
+    constexpr OpenVoucher() noexcept = default;
+    OpenVoucher(OpenVoucher const&) = delete("a voucher does not copy");
+};
+static_assert(carries_raw_value(^^RawWord) && carries_raw_value(^^HoldsReference) && carries_raw_value(^^RawWord[2]));
+static_assert(!carries_raw_value(^^EmptyTag) && !carries_raw_value(^^niche_key<KeyedPairSlot> const&));
+static_assert(is_voucher_type(^^niche_key<KeyedPairSlot>) && is_voucher_type(^^LocalKey));
+static_assert(!is_voucher_type(^^OpenVoucher) && !is_voucher_type(^^RawWord));
+
+// Constructors of the walk: a plain class around the raw word, a voucher that
+// each caller builds, two raw values, and a raw value beside a key.  An empty
+// tag alone is no raw value.
+class WrappedRawSlot {
+    std::uint32_t raw_ = 0;
+
+public:
+    constexpr explicit WrappedRawSlot(RawWord word) noexcept : raw_{word.value} {}
+};
+class OpenVoucherSlot {
+    std::uint32_t raw_ = 0;
+
+public:
+    constexpr OpenVoucherSlot(std::uint32_t raw, OpenVoucher const& /*voucher*/) noexcept : raw_{raw} {}
+};
+class TagSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    constexpr explicit TagSlot(EmptyTag /*tag*/) noexcept {}
+};
+static_assert(!vouches_each_raw_parameter(^^WrappedRawSlot) && !BuildsNoEmptyValue<WrappedRawSlot>);
+static_assert(!vouches_each_raw_parameter(^^OpenVoucherSlot) && !BuildsNoEmptyValue<OpenVoucherSlot>);
+static_assert(!vouches_each_raw_parameter(^^PairStatedSlot) && !BuildsNoEmptyValue<PairStatedSlot>);
+static_assert(vouches_each_raw_parameter(^^KeyedPairSlot) && BuildsNoEmptyValue<KeyedPairSlot>);
+static_assert(vouches_each_raw_parameter(^^TagSlot) && BuildsNoEmptyValue<TagSlot>);
+
+// The walk of the members (2 of THE CHECK OF THE STATEMENT).  Each class
+// below has one member that can write a value in place: a member function
+// that is not const, a member function template, a public data member, a
+// mutable member, a static member function with a parameter that can write,
+// and a base class.  A const member function and a deleted function write
+// nothing.
+class MutatorSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    constexpr void set_word(std::uint32_t raw) noexcept { raw_ = raw; }
+};
+class MemberTemplateSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    template <std::uint32_t Raw>
+    [[nodiscard]] constexpr std::uint32_t with_word() const noexcept {
+        return raw_ + Raw;
+    }
+};
+class PublicFieldSlot {
+    std::uint32_t hidden_ = 1;
+
+public:
+    std::uint32_t word = 1;
+    [[nodiscard]] constexpr std::uint32_t hidden() const noexcept { return hidden_; }
+};
+class MutableSlot {
+    mutable std::uint32_t raw_ = 1;
+
+public:
+    constexpr void clear() const noexcept { raw_ = 0; }
+};
+class StaticWriterSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    static constexpr void clear(StaticWriterSlot& slot) noexcept { slot.raw_ = 0; }
+};
+class BasedSlot : EmptyTag {
+    std::uint32_t raw_ = 1;
+
+public:
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
+};
+class ReaderSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
+    [[nodiscard]] static constexpr std::uint32_t raw_of(ReaderSlot const& slot) noexcept { return slot.raw_; }
+    void clear() = delete("a reader writes nothing");
+};
+static_assert(!WritesNoEmptyValue<MutatorSlot> && !WritesNoEmptyValue<MemberTemplateSlot>);
+static_assert(!WritesNoEmptyValue<PublicFieldSlot> && !WritesNoEmptyValue<MutableSlot>);
+static_assert(!WritesNoEmptyValue<StaticWriterSlot> && !WritesNoEmptyValue<BasedSlot>);
+static_assert(WritesNoEmptyValue<ReaderSlot>);
+
+// The place of the statement (3 of THE CHECK OF THE STATEMENT).  A header of
+// the two layers below the include root of the anchor holds a statement, and
+// a path that leaves the layers through a segment that starts with a dot
+// holds none.  An anchor with a different path admits no file.  The unary
+// plus gives the pointer of a literal, which the Side holds.  The mark of
+// this file stands outside the base, and its copy bit for bit is refused.
+constexpr niche_statement check_statement{};
+static_assert(!check_statement.is_in_base() && !std::is_trivially_copyable_v<niche_statement>);
+static_assert(!is_base_statement(^^check_statement) && !is_base_statement(std::meta::info{}));
+constexpr auto check_anchor = side_as<side::ChoiceHeader>(+"/tree/include/foundation/core/Choice.h");
+static_assert(is_layer_header(check_anchor, "/tree/include/foundation/core/Ref.h"));
+static_assert(is_layer_header(check_anchor, "/tree/include/fixy/Core.h"));
+static_assert(!is_layer_header(check_anchor, "/tree/include/crucible/Vigil.h"));
+static_assert(!is_layer_header(check_anchor, "/tree/test/foundation/neg/fixture.cpp"));
+static_assert(!is_layer_header(check_anchor, "/elsewhere/include/foundation/core/Ref.h"));
+static_assert(!is_layer_header(check_anchor, "/tree/include/foundation/../../test/forged.h"));
+static_assert(!is_layer_header(check_anchor, "/tree/include/fixy/./Core.h"));
+static_assert(!is_layer_header(check_anchor, "/tree"));
+static_assert(!is_layer_header(side_as<side::ChoiceHeader>(+"/tree/include/Choice.h"), "/tree/include/fixy/Core.h"));
 
 // A sum compares only with a sum of its own type.  The implicit
 // constructors make no compare with none, a payload, an Err or a sum of a

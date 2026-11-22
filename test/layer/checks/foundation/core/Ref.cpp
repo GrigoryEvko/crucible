@@ -121,12 +121,23 @@ static_assert(sizeof(Option<Ref<int, CheckBrand>>) == sizeof(void*));
 static_assert(sizeof(Option<Ref<Abstract, CheckBrand>>) == sizeof(void*));
 
 // The niche of a Ref states that no door builds the null pointer, and the
-// constructors of Ref hold the statement (THE CHECK OF THE STATEMENT of
-// foundation/core/Choice.h): the constructor from a reference takes the key,
-// and the widening takes a Ref.
+// statement passes the three checks of THE CHECK OF THE STATEMENT of
+// foundation/core/Choice.h: the constructor from a reference takes the key,
+// and the widening is a constructor template.  The members of Ref read the
+// object and write no Ref, and the statement stands in this header.
 static_assert(detail::BuildsNoEmptyValue<Ref<int, CheckBrand>>
               && detail::BuildsNoEmptyValue<Ref<int const, CheckBrand>>);
 static_assert(detail::BuildsNoEmptyValue<Ref<Abstract, CheckBrand>>);
+static_assert(detail::WritesNoEmptyValue<Ref<int, CheckBrand>> && detail::StatedInBase<Ref<int, CheckBrand>>);
+static_assert(niche<Ref<int, CheckBrand>>::is_empty_never_built.is_in_base());
+static_assert(detail::CheckedStatement<Ref<Abstract, CheckBrand>>
+              && detail::CheckedStatement<Ref<OverAligned const, CheckBrand>>);
+
+// The statement gives an Option of a Ref the frame door that writes the Ref
+// in place.
+template <class O>
+concept WritesRefInPlace = requires(O& option) { option.with_mut([](auto) noexcept {}, [] noexcept {}); };
+static_assert(WritesRefInPlace<Option<Ref<int, CheckBrand>>>);
 
 // A Ref copies as a pointer copies, and the seal makes it not trivially
 // copyable, so std::bit_cast builds no Ref from the bytes of an address.

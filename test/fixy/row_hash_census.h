@@ -953,6 +953,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::niche, kMetafunction},
     {^^::foundation::core::niche_key,
      "the proof that the storage of an Option reads a niche: it lives for one call, and holds nothing"},
+    {^^::foundation::core::niche_statement,
+     "the mark of a niche statement: a static member of a niche or of a payload, and never a value in a signature"},
     {^^::foundation::core::OptionCursor,
      "the position of a loop over an Option: it lives inside the loop, and it is never a value in a signature"},
     {^^::foundation::core::OwnerStateMark,

@@ -148,13 +148,15 @@ public:
 // The empty value of an Option of a RunAddress: the null pointer, which no
 // RunAddress holds.  No door builds the null pointer: each mint gives no
 // value for it, and the seal refuses std::bit_cast.  The payload gate checks
-// the statement against the public constructors: the one constructor from a
-// pointer takes the key of the mints.  So a loop over a mutable Option of a
-// RunAddress gets a cursor that writes the RunAddress, and the storage of a
-// full Option tests no RunAddress for the null pointer.
+// the statement (THE CHECK OF THE STATEMENT of foundation/core/Choice.h): the
+// one constructor from a pointer takes the key of the mints, no public member
+// writes a RunAddress, and the statement stands in a header of the base.  So
+// a loop over a mutable Option of a RunAddress gets a cursor that writes the
+// RunAddress, and the storage of a full Option tests no RunAddress for the
+// null pointer.
 template <>
 struct niche<RunAddress> {
-    static constexpr bool is_empty_never_built = true;
+    static constexpr niche_statement is_empty_never_built{};
     [[nodiscard]] static constexpr RunAddress empty(niche_key<RunAddress> const& key) noexcept {
         return niche_null_(key);
     }
@@ -208,7 +210,7 @@ public:
 // the null pointer, so no DataAddress holds the empty value.
 template <DeviceIdentity Device>
 struct niche<DataAddress<Device>> {
-    static constexpr bool is_empty_never_built = true;
+    static constexpr niche_statement is_empty_never_built{};
     [[nodiscard]] static constexpr DataAddress<Device> empty(niche_key<DataAddress<Device>> const& /*key*/) noexcept {
         return DataAddress<Device>::empty_();
     }

@@ -774,6 +774,10 @@ witness <foundation/core/Choice.h> private | foundation::core::OptionCursor<int>
 # A niche key comes only from the reader of the niche, so only the storage
 # of an Option reads an empty value, such as a null Ref.
 witness <foundation/core/Choice.h> private | foundation::core::niche_key<int> | foundation::core::niche_key<int>{}
+# The place of a niche statement comes only from the default argument of the
+# constructor of the mark, so no file outside the base names the place of a
+# header of the base, and a class outside the base states no niche fact.
+witness <foundation/core/Choice.h> private | foundation::core::detail::NicheStatementPlace | foundation::core::detail::NicheStatementPlace{nullptr}
 # Each read of the tag or of an alternative of a sum slot takes the key that
 # only SumDoor builds, so no class that a different header defines reads a
 # slot of an Option, a Result or a OneOf.

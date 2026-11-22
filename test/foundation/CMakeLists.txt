@@ -2494,21 +2494,75 @@ foundation_neg_compile_test(neg_core_option_niche_member_statement_alone
 foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
-# The payload gate checks the statement that no door builds the empty value
-# against the constructors of the payload.  A public default constructor and
-# a public constructor from a pointer with no key each build the empty value.
-# The gate is a disjunction, so each fixture takes a concept depth of 3, and
-# its regex names the part of the check that fails.
+# The payload gate holds three checks of the statement that no door builds
+# the empty value (THE CHECK OF THE STATEMENT of foundation/core/Choice.h):
+# the walk of the constructors, the walk of the members, and the place of the
+# statement in the base.  The gate is a disjunction, and CheckedStatement
+# joins the three checks, so each fixture takes a concept depth of 4, and its
+# regex names the part of the check that fails.  A public default
+# constructor, a public constructor from a pointer with no key, a voucher that
+# each caller builds and a plain class around the raw word each build the
+# empty value through a constructor.
 foundation_neg_compile_test(neg_core_option_niche_statement_default_door
   "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = SlotNumber\\]"
   "the expression .!\\(is_default_constructible_v<T>\\) \\[with T = SlotNumber\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_default_door APPEND PROPERTY ENVIRONMENT
-  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_option_niche_statement_pointer_door
   "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = SlotNumber\\]"
   "the expression .!\\(is_constructible_v<T, std::nullptr_t>\\) \\[with T = SlotNumber\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_pointer_door APPEND PROPERTY ENVIRONMENT
-  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_any_voucher
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = VoucherSlot\\]"
+  "the expression .vouches_each_raw_parameter\\(.*\\(\\^\\^ T\\) \\[with T = VoucherSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_any_voucher APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_wrapped_raw
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = WrappedRawSlot\\]"
+  "the expression .vouches_each_raw_parameter\\(.*\\(\\^\\^ T\\) \\[with T = WrappedRawSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_wrapped_raw APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+# A public member function that is not const, and a public member function
+# template, each write the empty value into a value that a door built.
+foundation_neg_compile_test(neg_core_option_niche_statement_mutator
+  "required for the satisfaction of .WritesNoEmptyValue<T>. \\[with T = MutatorSlot\\]"
+  "the expression .writes_no_payload\\(.*\\(\\^\\^ T\\) \\[with T = MutatorSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_mutator APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_member_template
+  "required for the satisfaction of .WritesNoEmptyValue<T>. \\[with T = MemberTemplateSlot\\]"
+  "the expression .writes_no_payload\\(.*\\(\\^\\^ T\\) \\[with T = MemberTemplateSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_member_template APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+# A class outside the base passes the two walks, but a static door over a
+# private constructor and a constructor template each build the empty value,
+# and a reflection sees neither.  So only a type of the base states the fact.
+foundation_neg_compile_test(neg_core_option_niche_statement_static_door
+  "required for the satisfaction of .StatedInBase<T>. \\[with T = StaticDoorSlot\\]"
+  "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = StaticDoorSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_static_door APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_constructor_template
+  "required for the satisfaction of .StatedInBase<T>. \\[with T = TemplateDoorSlot\\]"
+  "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = TemplateDoorSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_constructor_template APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+# A class template outside the base, which the gate forms first, and a niche
+# that takes the statement of the niche of a Ref by inheritance.  The mark of
+# a statement reads the file of its declaration, and the check reads only an
+# own member.  The witness row of NicheStatementPlace holds that a place that
+# a caller names does not compile.
+foundation_neg_compile_test(neg_core_option_niche_statement_class_template
+  "required for the satisfaction of .StatedInBase<T>. \\[with T = TemplateSlot<0>\\]"
+  "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = TemplateSlot<0>\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_class_template APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_inherited
+  "required for the satisfaction of .StatedInBase<T>. \\[with T = InheritedSlot\\]"
+  "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = InheritedSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_inherited APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_niche_ref_forge
   "no matching function for call to .foundation::core::niche<foundation::core::Ref<int, ForgeBrand> >::empty\\(\\)."
   "candidate expects 1 argument, 0 provided")

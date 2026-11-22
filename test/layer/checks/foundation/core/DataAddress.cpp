@@ -56,8 +56,15 @@ static_assert(sizeof(Option<RunAddress>) == sizeof(void*));
 static_assert(sizeof(DataAddress<TwoBytes>) == 16 && alignof(DataAddress<TwoBytes>) == 8);
 static_assert(sizeof(DataAddress<FourBytes>) == 16 && sizeof(DataAddress<Kind>) == 16);
 static_assert(sizeof(Option<DataAddress<TwoBytes>>) == 16 && sizeof(Option<DataAddress<Kind>>) == 16);
-static_assert(niche<RunAddress>::is_empty_never_built && niche<DataAddress<TwoBytes>>::is_empty_never_built);
+static_assert(niche<RunAddress>::is_empty_never_built.is_in_base()
+              && niche<DataAddress<TwoBytes>>::is_empty_never_built.is_in_base());
+
+// A copy of a statement of the base in this file, which is outside the base,
+// states nothing.
+constexpr niche_statement copied_statement{niche<RunAddress>::is_empty_never_built};
+static_assert(!copied_statement.is_in_base());
 static_assert(detail::BuildsNoEmptyValue<RunAddress> && detail::BuildsNoEmptyValue<DataAddress<TwoBytes>>);
+static_assert(detail::CheckedStatement<RunAddress> && detail::CheckedStatement<DataAddress<TwoBytes>>);
 
 // The copy and the end are those of the bytes, so the ABI gives the words in
 // registers.  The seal makes the assignment user-provided, so the types are

@@ -102,6 +102,7 @@
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Frame.h>
 #include <foundation/core/Record.h>
+#include <foundation/core/Side.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <foundation/reflect/TypeList.h>
@@ -121,6 +122,16 @@ struct NoValue final {
 };
 
 inline constexpr NoValue none{};
+
+namespace side {
+
+// The file of this header, which anchors the include root of the base in the
+// test of the path of a header (THE CHECK OF THE STATEMENT).
+struct ChoiceHeader final {};
+
+}  // namespace side
+
+class niche_statement;
 
 namespace detail {
 
@@ -153,7 +164,96 @@ class NicheRead;
 template <class T>
 class ConsumedNiche;
 
+// True when the file is a header of the two layers of the base.  The anchor
+// is the file of this header, and its include root is the anchor with the
+// path foundation/core/Choice.h cut off.  A header of the base is the root,
+// then foundation/ or fixy/, with no path segment that starts with a dot,
+// such as a segment .. that leaves the layers.  So each include root of a
+// build, such as a layer root of the check units, gives one answer, and an
+// anchor with a different path admits no file.  Complexity: linear in the
+// two texts.
+consteval bool is_layer_header(Side<side::ChoiceHeader, char const*> const& anchor, char const* file) {
+    char const* const anchor_text = anchor.value();
+    char const* const own_path = "foundation/core/Choice.h";
+    std::size_t anchor_size = 0;
+    while (anchor_text[anchor_size] != '\0')
+        ++anchor_size;
+    std::size_t own_size = 0;
+    while (own_path[own_size] != '\0')
+        ++own_size;
+    if (anchor_size < own_size) return false;
+    std::size_t const root_size = anchor_size - own_size;
+    for (std::size_t index = 0; index < own_size; ++index) {
+        if (anchor_text[root_size + index] != own_path[index]) return false;
+    }
+    for (std::size_t index = 0; index < root_size; ++index) {
+        if (file[index] != anchor_text[index]) return false;
+    }
+    char const* const inner = file + root_size;
+    constexpr char const* layer_heads[] = {"foundation/", "fixy/"};
+    bool is_in_layer = false;
+    for (char const* const head : layer_heads) {
+        std::size_t same = 0;
+        while (head[same] != '\0' && inner[same] == head[same])
+            ++same;
+        is_in_layer = is_in_layer || head[same] == '\0';
+    }
+    if (!is_in_layer) return false;
+    for (char const* cursor = inner; cursor[0] != '\0'; ++cursor) {
+        if (cursor[0] == '/' && cursor[1] == '.') return false;
+    }
+    return true;
+}
+
+// The place of a niche statement: true when the declaration that makes the
+// statement stands in a header of the base.  Only the default argument of
+// the constructor of niche_statement builds a place, because the two
+// constructors are private, so no caller names a file.  The copy is
+// user-provided, so std::bit_cast and a lifetime start over bytes build no
+// place, for the reasons that niche_key gives.  __builtin_FILE in the body of
+// the constructor gives the file of this header, the anchor, and the build
+// maps each file name in the same way.
+class NicheStatementPlace final {
+    friend class ::foundation::core::niche_statement;
+
+    consteval explicit NicheStatementPlace(char const* file) noexcept
+        : is_in_base_{is_layer_header(side_as<side::ChoiceHeader>(__builtin_FILE()), file)} {}
+    consteval NicheStatementPlace(NicheStatementPlace const& other) noexcept : is_in_base_{other.is_in_base_} {}
+
+    bool is_in_base_ = false;
+
+public:
+    NicheStatementPlace& operator=(NicheStatementPlace const&) = delete("a place is the file of one statement");
+};
+
 }  // namespace detail
+
+// The statement that no door of a payload builds its empty value (THE CHECK
+// OF THE STATEMENT).  The default argument of the constructor reads the file
+// where the statement stands, as Site of foundation/core/Fatal.h reads the
+// place of a call, and the payload gate admits only a statement of a header
+// of the base.  A copy reads the file of the copy too, so a declaration of a
+// different file that copies a statement of the base states nothing, and no
+// function of the base gives one.  The copy is user-provided, so std::bit_cast
+// builds no mark.
+class niche_statement final {
+public:
+    consteval niche_statement(
+        detail::NicheStatementPlace place = detail::NicheStatementPlace{__builtin_FILE()}) noexcept
+        : is_in_base_{place.is_in_base_} {}
+    consteval niche_statement(niche_statement const& other, detail::NicheStatementPlace place =
+                                                                detail::NicheStatementPlace{__builtin_FILE()}) noexcept
+        : is_in_base_{other.is_in_base_ && place.is_in_base_} {}
+
+    niche_statement&
+    operator=(niche_statement const&) = delete("a niche statement stands in the file of its declaration");
+
+    // True when the statement stands in a header of the base.
+    [[nodiscard]] constexpr bool is_in_base() const noexcept { return is_in_base_; }
+
+private:
+    bool is_in_base_ = false;
+};
 
 // The key of the niche protocol.  The empty value of a niche is a value that
 // no valid T holds, such as a Ref that holds the null pointer, so only the
@@ -200,18 +300,21 @@ public:
 // niche carries the open mark: only the file that defines a type can
 // specialize niche for it (the rule specialization-home).  So the author of
 // T writes niche<T>, and the author also writes each door that builds a T.
-// The author can then state that no door of T builds the empty value, in the
-// specialization or in the class of the member protocol:
+// The author of a type of the base can then state that no door of T builds
+// the empty value, in the specialization or in the class of the member
+// protocol:
 //
-//   static constexpr bool is_empty_never_built = true;          in niche<T>
-//   static constexpr bool is_niche_empty_never_built = true;    in T
+//   static constexpr niche_statement is_empty_never_built{};          in niche<T>
+//   static constexpr niche_statement is_niche_empty_never_built{};    in T
 //
-// The payload gate checks the statement against the public constructors of
-// T at compile time (THE CHECK OF THE STATEMENT below).  The statement gives
-// a loop over a mutable Option a cursor that writes the payload, and the
-// storage of a full Option then does not test the payload.  The storage of
-// a full Option tests each payload of each other niche, in each build, and a
-// payload equal to the empty value ends the process.
+// The payload gate checks the statement at compile time (THE CHECK OF THE
+// STATEMENT below): the constructors and the members of T, and the place of
+// the mark of the statement in a header of the base.  So a type outside the base states
+// no such fact.  The statement gives a loop over a mutable Option a cursor
+// that writes the payload, and the storage of a full Option then does not
+// test the payload.  The storage of a full Option tests each payload of each
+// other niche, in each build, and a payload equal to the empty value ends the
+// process.
 template <class T>
 struct[[= detail::UndeclaredNiche{}]]
       [[= ::foundation::open_extension{"a payload type states its empty value beside its own definition"}]] niche {};
@@ -229,20 +332,6 @@ template <class T>
 concept NamesMemberNiche =
     requires { &T::niche_empty; } || requires { &T::is_niche_empty; } || requires { &T::is_niche_empty_never_built; };
 
-// The statement of the member protocol that no door of T builds the empty
-// value, as the member is_empty_never_built of niche<T>.  A class that states
-// nothing gives no member, and NicheRead then reads no statement.  The member
-// keeps the type of the statement, so the payload gate refuses a statement of
-// a type other than bool.
-template <class T>
-struct MemberNicheStatement {};
-
-template <class T>
-    requires requires { T::is_niche_empty_never_built; }
-struct MemberNicheStatement<T> {
-    static constexpr auto is_empty_never_built = T::is_niche_empty_never_built;
-};
-
 // A type whose copy, move and end are those of its bytes, and whose copy
 // assignment does not throw.  The assignment can be user-provided, as the
 // assignment of a type that holds a byte seal is, so std::bit_cast builds
@@ -257,10 +346,10 @@ concept TrivialCopyShape = std::is_trivially_copy_constructible_v<T> && std::is_
 // The niche of a class that gives the members of the protocol.  A class
 // that gives only one of the two members, or a member of the wrong type,
 // declares a niche that is not well formed, and the payload gate refuses it.
-// The base gives the statement of the class, when the class states it.
+// NicheRead reads the statement of the class in the class itself.
 template <class T>
     requires detail::NamesMemberNiche<T>
-struct niche<T> : detail::MemberNicheStatement<T> {
+struct niche<T> {
     [[nodiscard]] static constexpr T empty(niche_key<T> const& key) noexcept
         requires requires(niche_key<T> const& held_key) {
             { T::niche_empty(held_key) } noexcept -> std::same_as<T>;
@@ -329,24 +418,25 @@ public:
     // True when is_empty gives true for the empty value.
     [[nodiscard]] static consteval bool holds_its_empty() noexcept { return is_empty_(empty_()); }
 
-    // True when niche<T> states that no door of T builds the empty value.
-    // The payload gate holds the type of the statement.
+    // True when niche<T>, or T in the member protocol, states that no door of
+    // T builds the empty value.  The payload gate holds the type and the
+    // place of the statement (THE CHECK OF THE STATEMENT).
     [[nodiscard]] static consteval bool is_empty_never_built() noexcept {
-        if constexpr (requires { niche<T>::is_empty_never_built; }) {
-            return niche<T>::is_empty_never_built;
-        } else {
-            return false;
-        }
+        return requires { niche<T>::is_empty_never_built; } || requires { T::is_niche_empty_never_built; };
     }
 
-    // True when niche<T> has no such statement, or when the statement is a
-    // constant of type bool.
+    // True when each statement of T is a niche_statement, and no reference
+    // to one.
     [[nodiscard]] static consteval bool is_statement_well_formed() noexcept {
+        bool is_well_formed = true;
         if constexpr (requires { niche<T>::is_empty_never_built; }) {
-            return std::same_as<decltype(niche<T>::is_empty_never_built), bool const>;
-        } else {
-            return true;
+            is_well_formed = std::same_as<decltype(niche<T>::is_empty_never_built), niche_statement const>;
         }
+        if constexpr (requires { T::is_niche_empty_never_built; }) {
+            is_well_formed =
+                is_well_formed && std::same_as<decltype(T::is_niche_empty_never_built), niche_statement const>;
+        }
+        return is_well_formed;
     }
 
     // True when each byte of the empty value is zero, and false when a
@@ -363,72 +453,254 @@ public:
 
 // THE CHECK OF THE STATEMENT
 //   A payload that states that no door builds its empty value gets no test
-//   of its payload in the storage of a full Option.  Each door of T builds a
-//   T through a constructor of T, so the payload gate reads the constructors:
-//     - T is no aggregate, and it has no public default constructor, so no
-//       code builds a T from its members or from nothing.
-//     - Each public constructor other than copy and move that takes a raw
-//       value (a pointer, std::nullptr_t, an arithmetic type or an
-//       enumeration) also takes a voucher: a key, which is a class with no
-//       public copy constructor, such as RefKey, that only a door of the
-//       author makes, or a payload that states the same fact, such as the
-//       RunAddress of a DataAddress.  A raw value then comes in only through
-//       a door that checks it, or beside a value that is not empty.
-//     - A reflection reads no parameter of a constructor template, so T
-//       builds no value from std::nullptr_t, a pointer, an int or an
-//       unsigned long long at all.
+//   of its payload in the storage of a full Option.  So the payload gate
+//   holds three checks of the statement (CheckedStatement):
+//
+//   1. The constructors build no empty value (BuildsNoEmptyValue).
+//      - T is no aggregate, and it has no public default constructor, so no
+//        code builds a T from its members or from nothing.
+//      - Each public constructor other than copy and move that takes a raw
+//        value also takes a voucher.  A raw value is a pointer,
+//        std::nullptr_t, an arithmetic type, an enumeration, a member
+//        pointer or a union, or a class or an array that holds one at some
+//        depth, so a plain class around a raw word carries the word.  A
+//        class with a part that is not public counts as raw, because the
+//        walk does not read its private state.  A voucher is a key, a class
+//        with no public constructor, such as RefKey, or a payload whose
+//        statement passes the three checks, such as the RunAddress of a
+//        DataAddress.  A raw value then comes in only through a door that
+//        checks it, or beside a value that is not empty.
+//      - A reflection reads no parameter of a constructor template, so T
+//        builds no value from std::nullptr_t, a pointer, an int or an
+//        unsigned long long at all.
+//   2. No public member writes the payload (WritesNoEmptyValue).  The frame
+//      door with_mut gives the payload in place, and a local can change
+//      before some(), so a member that writes a T could write the empty
+//      value.  T has no base class, no public non-static data member, no
+//      mutable member, no public member function that is not const other
+//      than a constructor and a special member, and no public static member
+//      function with a parameter that can write.  GCC 16 reflection gives no
+//      const qualifier of a member function template, so T has no public
+//      member function template other than a constructor template.
+//   3. The statement is of the base (StatedInBase).  The statement is a
+//      niche_statement, an own member of niche<T> or of T, and its mark
+//      stands in a header of include/foundation or include/fixy.  A
+//      reflection reads the members of a class, but it does not see a
+//      friend, or what a static door over a private constructor gives.  So
+//      only a type whose doors a review of the base reads states the fact,
+//      and the author of such a type keeps each friend and each static door
+//      to values that are not empty.  The file of a mark is the file that
+//      holds it, because the tree holds no #line directive and no line
+//      marker (the quarantine plugin and the rule banned refuse each one).
 //   A private constructor, such as the constructor of the empty value, is a
 //   member of the class of the author, as the statement is.
 
-// True when a payload states that no door builds its empty value.
+// True when a payload states that no door builds its empty value, in niche<U>
+// or in U itself.
 template <class U>
-inline constexpr bool states_empty_never_built = requires { requires niche<U>::is_empty_never_built; };
+inline constexpr bool states_empty_never_built =
+    requires { niche<U>::is_empty_never_built; } || requires { U::is_niche_empty_never_built; };
 
-// True when the parameter type, with no reference and no cv, is a raw value.
-consteval bool is_raw_parameter(std::meta::info parameter_type) {
-    std::meta::info const bare = std::meta::remove_cvref(parameter_type);
-    return std::meta::is_pointer_type(bare) || std::meta::is_null_pointer_type(bare)
-        || std::meta::is_arithmetic_type(bare) || std::meta::is_enum_type(bare);
+// True when the statement of the type passes the three checks of THE CHECK
+// OF THE STATEMENT.  The definition is after the three concepts.
+consteval bool is_statement_checked(std::meta::info type);
+
+// True when the member is a niche_statement of a header of the base: a
+// variable of the type niche_statement const, whose mark stands in the base.
+// The null reflection is no such member.
+consteval bool is_base_statement(std::meta::info member) {
+    if (member == std::meta::info{} || !std::meta::is_variable(member)) return false;
+    if (std::meta::type_of(member) != (^^niche_statement const)) return false;
+    return std::meta::extract<niche_statement const&>(member).is_in_base();
 }
 
-// True when the parameter type, with no reference and no cv, vouches for the
-// raw values beside it: a key, or a payload that states the fact.  A key and
-// a stated payload are complete classes, and an incomplete class, such as the
-// target of a Ref, is neither.
-consteval bool is_voucher_parameter(std::meta::info parameter_type) {
-    std::meta::info const bare = std::meta::remove_cvref(parameter_type);
+// True when the statement of the type stands in the base (3 of THE CHECK OF
+// THE STATEMENT).  A specialization of niche states it in its own member,
+// and a class of the member protocol in a member of its own, and each one
+// that the type has is a niche_statement of the base.  A statement that a
+// class or a niche takes from a base class names no own member, so the
+// check refuses it.  A statement is public, because the gate reads it.
+// Complexity: linear in the members of the type and of its niche.
+consteval bool is_stated_in_base(std::meta::info type) {
+    std::meta::info const bare = std::meta::dealias(type);
+    std::meta::access_context const each = std::meta::access_context::unprivileged();
+    std::meta::info const in_class =
+        std::meta::is_class_type(bare)
+            ? ::foundation::reflect::member_named_in(bare, each, "is_niche_empty_never_built")
+            : std::meta::info{};
+    std::meta::info const in_niche =
+        ::foundation::reflect::member_named_in(std::meta::substitute(^^niche, {bare}), each, "is_empty_never_built");
+    bool const has_statement = in_class != std::meta::info{} || in_niche != std::meta::info{};
+    return has_statement && (in_class == std::meta::info{} || is_base_statement(in_class))
+        && (in_niche == std::meta::info{} || is_base_statement(in_niche));
+}
+
+// True when the class has a public constructor that is not deleted.  A
+// constructor template counts.  The walks of THE CHECK OF THE STATEMENT index
+// the lists of a query, as the walks of foundation/core/Owner.h do.
+// Complexity: linear in the members.
+consteval bool has_public_constructor(std::meta::info type) {
+    auto const members = std::meta::members_of(type, std::meta::access_context::unprivileged());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        if (std::meta::is_constructor_template(member)) return true;
+        if (std::meta::is_function(member) && std::meta::is_constructor(member) && !std::meta::is_deleted(member)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when the type, with no reference and no cv, vouches for the raw
+// values beside it: a key, which is a class with no public constructor, so
+// only the doors and the friends of its author build one, or a payload whose
+// statement passes the check.  An incomplete class, such as the target of a
+// Ref, vouches for nothing.
+consteval bool is_voucher_type(std::meta::info type) {
+    std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(type));
     if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
-    return !std::meta::is_copy_constructible_type(bare)
-        || std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {bare}));
+    if (!has_public_constructor(bare)) return true;
+    return std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {bare}))
+        && is_statement_checked(bare);
 }
 
-// True when each public constructor of T other than copy and move that takes
-// a raw value also takes a voucher.  Complexity: linear in the members of T
-// and the parameters of its constructors.
-template <class T>
-consteval bool vouches_each_raw_parameter() {
-    for (std::meta::info const member : std::meta::members_of(^^T, std::meta::access_context::unprivileged())) {
+// True when a value of the type can carry a raw value into a constructor:
+// the type is not a class, or it is a class or an array of classes with a
+// public base or a public member that carries one.  A reference member holds
+// an address, so it carries one too.  A voucher carries none.  An incomplete
+// class, and a class with a base or a member that is not public, carry one,
+// because the walk cannot read them.  The walk ends, because no class holds
+// itself.  Complexity: linear in the subobject declarations that the walk
+// reaches.
+consteval bool carries_raw_value(std::meta::info type) {
+    std::meta::info const bare = std::meta::remove_all_extents(std::meta::remove_cvref(std::meta::dealias(type)));
+    if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return true;
+    if (is_voucher_type(bare)) return false;
+    std::meta::access_context const outside = std::meta::access_context::unprivileged();
+    if (std::meta::has_inaccessible_subobjects(bare, outside)) return true;
+    auto const bases = std::meta::bases_of(bare, outside);
+    for (std::size_t index = 0; index < bases.size(); ++index) {
+        if (carries_raw_value(std::meta::type_of(bases[index]))) return true;
+    }
+    auto const members = std::meta::nonstatic_data_members_of(bare, outside);
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member_type = std::meta::type_of(members[index]);
+        if (std::meta::is_reference_type(member_type) || carries_raw_value(member_type)) return true;
+    }
+    return false;
+}
+
+// True when a parameter of the constructor is a voucher.  Complexity: linear
+// in the parameters, and the walks of their types.
+consteval bool takes_voucher(std::meta::info constructor) {
+    auto const parameters = std::meta::parameters_of(constructor);
+    for (std::size_t index = 0; index < parameters.size(); ++index) {
+        if (is_voucher_type(std::meta::type_of(parameters[index]))) return true;
+    }
+    return false;
+}
+
+// True when a parameter of the constructor carries a raw value.  Complexity:
+// linear in the parameters, and the walks of their types.
+consteval bool takes_raw_value(std::meta::info constructor) {
+    auto const parameters = std::meta::parameters_of(constructor);
+    for (std::size_t index = 0; index < parameters.size(); ++index) {
+        if (carries_raw_value(std::meta::type_of(parameters[index]))) return true;
+    }
+    return false;
+}
+
+// True when each public constructor of the type other than copy and move
+// that takes a raw value also takes a voucher (1 of THE CHECK OF THE
+// STATEMENT).  A constructor with a voucher needs no walk of its raw values,
+// so the walk of the target of a Ref runs for no Ref.  Complexity: linear in
+// the members of the type and the parameters of its constructors, and the
+// walks of their types.
+consteval bool vouches_each_raw_parameter(std::meta::info type) {
+    auto const members = std::meta::members_of(type, std::meta::access_context::unprivileged());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
         bool const is_judged = std::meta::is_function(member) && std::meta::is_constructor(member)
                             && !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member)
                             && !std::meta::is_deleted(member);
-        if (!is_judged) continue;
-        bool is_raw = false;
-        bool is_vouched = false;
-        for (std::meta::info const parameter : std::meta::parameters_of(member)) {
-            is_raw = is_raw || is_raw_parameter(std::meta::type_of(parameter));
-            is_vouched = is_vouched || is_voucher_parameter(std::meta::type_of(parameter));
-        }
-        if (is_raw && !is_vouched) return false;
+        if (is_judged && !takes_voucher(member) && takes_raw_value(member)) return false;
     }
     return true;
 }
 
-// The check of the statement of T (THE CHECK OF THE STATEMENT).
+// True when a parameter of the function is a reference or a pointer to an
+// object that is not const, so a static member function can write a T
+// through it.  Complexity: linear in the parameters.
+consteval bool has_writable_parameter(std::meta::info function) {
+    auto const parameters = std::meta::parameters_of(function);
+    for (std::size_t index = 0; index < parameters.size(); ++index) {
+        std::meta::info const parameter_type = std::meta::type_of(parameters[index]);
+        bool const is_indirect =
+            std::meta::is_reference_type(parameter_type) || std::meta::is_pointer_type(parameter_type);
+        std::meta::info const target = std::meta::is_pointer_type(parameter_type)
+                                         ? std::meta::remove_pointer(parameter_type)
+                                         : std::meta::remove_reference(parameter_type);
+        if (is_indirect && !std::meta::is_const_type(target)) return true;
+    }
+    return false;
+}
+
+// True when no public member of the type writes a value of the type in
+// place (2 of THE CHECK OF THE STATEMENT).  A deleted function writes
+// nothing.  The walk of the fields reads the private fields too, because a
+// const member function writes a mutable field of each access.  Complexity:
+// linear in the members of the type.
+consteval bool writes_no_payload(std::meta::info type) {
+    std::meta::access_context const outside = std::meta::access_context::unprivileged();
+    if (std::meta::bases_of(type, outside).size() != 0 || std::meta::has_inaccessible_bases(type, outside)) {
+        return false;
+    }
+    auto const fields = std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
+    for (std::size_t index = 0; index < fields.size(); ++index) {
+        if (std::meta::is_public(fields[index]) || std::meta::is_mutable_member(fields[index])) return false;
+    }
+    auto const members = std::meta::members_of(type, outside);
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        if (std::meta::is_function_template(member) && !std::meta::is_constructor_template(member)) return false;
+        bool const is_judged = std::meta::is_function(member) && !std::meta::is_constructor(member)
+                            && !std::meta::is_special_member_function(member) && !std::meta::is_deleted(member);
+        if (!is_judged) continue;
+        bool const can_write =
+            std::meta::is_static_member(member) ? has_writable_parameter(member) : !std::meta::is_const(member);
+        if (can_write) return false;
+    }
+    return true;
+}
+
+// The constructor check of the statement of T (1 of THE CHECK OF THE
+// STATEMENT).
 template <class T>
 concept BuildsNoEmptyValue =
     !std::is_aggregate_v<T> && !std::is_default_constructible_v<T> && !std::is_constructible_v<T, std::nullptr_t>
     && !std::is_constructible_v<T, void*> && !std::is_constructible_v<T, int>
-    && !std::is_constructible_v<T, unsigned long long> && vouches_each_raw_parameter<T>();
+    && !std::is_constructible_v<T, unsigned long long> && vouches_each_raw_parameter(^^T);
+
+// The member check of the statement of T (2 of THE CHECK OF THE STATEMENT).
+template <class T>
+concept WritesNoEmptyValue = writes_no_payload(^^T);
+
+// The place of the statement of T (3 of THE CHECK OF THE STATEMENT).
+template <class T>
+concept StatedInBase = is_stated_in_base(^^T);
+
+// The three checks of the statement of T, in the order of THE CHECK OF THE
+// STATEMENT.  The two walks come first, so a refusal names the walk that a
+// class of the base fails.
+template <class T>
+concept CheckedStatement = BuildsNoEmptyValue<T> && WritesNoEmptyValue<T> && StatedInBase<T>;
+
+template <class T>
+inline constexpr bool is_statement_checked_v = CheckedStatement<T>;
+
+consteval bool is_statement_checked(std::meta::info type) {
+    return std::meta::extract<bool>(std::meta::substitute(^^is_statement_checked_v, {type}));
+}
 
 // The second reader of the niche of T: the consume tracker of a Linear of the
 // test builds (fixy/Qtt.h).  A tracked wrapper of a payload with a niche keeps
@@ -459,8 +731,8 @@ public:
 // trivial copy, move and destructor of the protocol, and its two members
 // take the key, have the types of the protocol and do not throw.  Its empty
 // value is a constant, and is_empty gives true for it.  A statement that no
-// door builds the empty value is a constant of type bool, and the
-// constructors of T hold it (THE CHECK OF THE STATEMENT).  A malformed niche
+// door builds the empty value is a constant of type bool, and it passes the
+// three checks of THE CHECK OF THE STATEMENT.  A malformed niche
 // would give the plain or the owning form with no message, so the payload
 // gate refuses it.  This gate is the one gate that reads niche<T>.
 template <class T>
@@ -469,7 +741,7 @@ concept WellFormedNiche =
         { niche<T>::empty(key) } noexcept -> std::same_as<T>;
         { niche<T>::is_empty(key, value) } noexcept -> std::same_as<bool>;
         typename std::bool_constant<detail::NicheRead<T>::holds_its_empty()>;
-    } && detail::NicheRead<T>::holds_its_empty() && detail::NicheRead<T>::is_statement_well_formed() && (!detail::NicheRead<T>::is_empty_never_built() || detail::BuildsNoEmptyValue<T>));
+    } && detail::NicheRead<T>::holds_its_empty() && detail::NicheRead<T>::is_statement_well_formed() && (!detail::NicheRead<T>::is_empty_never_built() || detail::CheckedStatement<T>));
 
 // The payload of an Option: an object type that is not an array, not
 // cv-qualified, not the empty marker itself and not the mark of an error.
@@ -1009,8 +1281,9 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
 
     // True when the slot tests each payload: the niche does not state that
     // no door of T builds the empty value.  The payload gate checks a
-    // statement against the constructors of T (THE CHECK OF THE STATEMENT),
-    // so a payload of a stated niche is never the empty value.
+    // statement against the constructors and the members of T, and only a
+    // type of the base states one (THE CHECK OF THE STATEMENT), so a payload
+    // of a stated niche is never the empty value.
     static constexpr bool is_payload_tested_ = !NicheRead<T>::is_empty_never_built();
 
     // Builds the payload of an empty slot.  The test of the constructor runs
