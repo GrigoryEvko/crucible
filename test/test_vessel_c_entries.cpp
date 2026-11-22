@@ -6,11 +6,16 @@
 // calls the entries through the C header, as a ctypes caller does.
 #include "../vessel/torch/vessel_api.h"
 
+#include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
+#include <crucible/TraceLoader.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/Fs.h>
+#include <fixy/os/Path.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/File.h>
 
 #include <bit>
 #include <cstddef>
@@ -219,6 +224,115 @@ void test_out_pairs(CrucibleHandle handle, RegionPhase phase) {
     }
 }
 
+// The file of the exports of the test, in the working directory of the test.
+constexpr ::fixy::CText kExportFile{"crtrace-c-entries.bin"};
+
+// The hashes of the names of the export case.
+constexpr uint64_t kLongSchema = 0x10E6000000000001ULL;
+constexpr uint64_t kTooLongSchema = 0x10E6000000000002ULL;
+constexpr uint64_t kEmptyStoredSchema = 0x10E6000000000003ULL;
+
+// The bytes that the export writes for the name of kLongSchema: the hash, the
+// length and SCHEMA_NAME_MAX characters n.
+[[nodiscard]] ::fixy::FixedText<crucible::SCHEMA_NAME_MAX + 16> long_name_record() noexcept {
+    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX + 16> record{};
+    const auto hash_bytes = ::fixy::bit_cast<::fixy::FixedArray<std::byte, sizeof(uint64_t)>>(kLongSchema);
+    const auto length_bytes =
+        ::fixy::bit_cast<::fixy::FixedArray<std::byte, sizeof(uint16_t)>>(uint16_t{crucible::SCHEMA_NAME_MAX});
+    for (const std::byte byte : hash_bytes.view())
+        EXPECT(record.append(static_cast<char>(byte)).is_ok(), "the record holds the bytes of the hash");
+    for (const std::byte byte : length_bytes.view())
+        EXPECT(record.append(static_cast<char>(byte)).is_ok(), "the record holds the bytes of the length");
+    for (std::size_t character = 0; character < crucible::SCHEMA_NAME_MAX; ++character)
+        EXPECT(record.append('n').is_ok(), "the record holds the characters of the name");
+    return record;
+}
+
+// True when the file of the exports holds the bytes of record.  A file that
+// does not read holds nothing.
+template <std::size_t Capacity>
+[[nodiscard]] bool export_file_holds(::fixy::FixedText<Capacity> const& record) noexcept {
+    ::fixy::FixedText<4 * crucible::SCHEMA_NAME_MAX> file{};
+    if (::foundation::os::read_file(kExportFile, file).is_err()) return false;
+    return ::fixy::find(file.view(), record.view()).is_some();
+}
+
+// True when the file of the exports exists and reads.
+[[nodiscard]] bool export_file_exists() noexcept {
+    ::fixy::FixedText<4 * crucible::SCHEMA_NAME_MAX> file{};
+    return ::foundation::os::read_file(kExportFile, file).is_ok();
+}
+
+// Removes the file of the exports from the working directory of the test.
+void remove_export_file() noexcept {
+    const auto here = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"."}))
+                          .expect("the working directory passes the path check");
+    const ::fixy::fs::DirectoryHandle directory =
+        ::fixy::fs::open_directory(kTest, here).expect("the working directory opens");
+    EXPECT(::fixy::fs::unlink_at(kTest, directory.ref(), kExportFile).is_ok(), "the file of the exports goes");
+}
+
+// The C entry and the export take a name of SCHEMA_NAME_MAX characters, and
+// the loader reads the file of the export.  The C entry refuses one character
+// more.  An internal name that starts with a zero is stored empty, and the
+// export refuses it, because the loader refuses an empty name: the export
+// gives 0 and writes no file.  The old export wrote the file with the length
+// 0, and the old C entry refused each name past 256 characters.
+void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) {
+    // Each text holds its characters and the zero that ends a C text.
+    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX + 1> longest{};
+    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX + 2> too_long{};
+    for (std::size_t character = 0; character < crucible::SCHEMA_NAME_MAX; ++character)
+        EXPECT(longest.append('n').is_ok() && too_long.append('n').is_ok(), "each text holds the characters");
+    EXPECT(longest.append('\0').is_ok() && too_long.append('n').is_ok() && too_long.append('\0').is_ok(),
+           "each text holds its end");
+    const ::fixy::CText longest_name = ::fixy::mint_c_text(longest.view()).expect("the text ends with its zero");
+    const ::fixy::CText too_long_name = ::fixy::mint_c_text(too_long.view()).expect("the text ends with its zero");
+    EXPECT(crucible_register_schema_name(handle, kLongSchema, ::foundation::core::foreign_c_str(longest_name))
+               == CRUCIBLE_SCHEMA_NAME_REGISTERED,
+           "the C entry takes a name of SCHEMA_NAME_MAX characters");
+    EXPECT(crucible_register_schema_name(handle, kTooLongSchema, ::foundation::core::foreign_c_str(too_long_name))
+               == CRUCIBLE_SCHEMA_NAME_REFUSED,
+           "the C entry refuses a name of one character past SCHEMA_NAME_MAX");
+
+    EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
+           "the export writes the longest name");
+    EXPECT(export_file_holds(long_name_record()), "the file holds the hash, the length and the longest name");
+    const auto path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(kExportFile.view()))
+                          .expect("the file name passes the path check");
+    EXPECT(crucible::load_trace(kTest, path).is_ok(), "the loader reads the file of the export");
+    remove_export_file();
+
+    // The tables are process-wide, so the export of the library reads a name
+    // that this binary registers.  The global table is sealed, so the name
+    // goes to the late table.
+    ::fixy::FixedText<8> leading_zero{};
+    EXPECT(leading_zero.append('\0').is_ok() && leading_zero.append('a').is_ok() && leading_zero.append('b').is_ok(),
+           "the text holds a zero and two letters");
+    EXPECT(leading_zero.size() == 3, "the view of the name holds the zero");
+    constexpr crucible::VigilFgCtx kForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+    EXPECT(crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc,
+                                          crucible::SchemaHash{kEmptyStoredSchema},
+                                          ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(leading_zero.view()))
+               .is_ok(),
+           "the table takes the internal name");
+    const auto stored = crucible::schema_name(crucible::SchemaHash{kEmptyStoredSchema});
+    const bool is_stored_empty = stored.match(
+        [](crucible::SchemaTable::LookupName const& found) noexcept { return found.value().view().size() == 0; },
+        [] noexcept { return false; });
+    EXPECT(is_stored_empty, "the table keeps the internal name as an empty name");
+
+    EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 0,
+           "the export refuses an empty name");
+    EXPECT(!export_file_exists(), "a refused export writes no file");
+
+    // A table with no such name exports again.
+    crucible::late_schema_table().clear(::foundation::effects::testing::test());
+    EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
+           "the export writes a table of valid names");
+    remove_export_file();
+}
+
 // The pairs of a handle with no region, from create to destroy.
 void test_pairs_with_no_region() {
     const CrucibleHandle handle = crucible_create(0);
@@ -251,6 +365,7 @@ void test_pairs_with_a_region() {
     }
     EXPECT(is_compiled, "the loop of the C entries replays a region");
     if (is_compiled) test_out_pairs(handle, RegionPhase::Active);
+    if (is_compiled) test_export_writes_only_names_that_the_loader_takes(handle);
     crucible_destroy(handle);
 }
 

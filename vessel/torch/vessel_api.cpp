@@ -128,6 +128,39 @@ private:
     ::fixy::WriteLease<std::byte>& lease_;
 };
 
+// The reason of a refusal of sanitize_schema_name, for a report.
+[[nodiscard]] ::fixy::TextView schema_name_error_text(crucible::SchemaNameError error) noexcept {
+    switch (error) {
+        case crucible::SchemaNameError::zero_hash:
+            return "the hash is zero";
+        case crucible::SchemaNameError::empty:
+            return "the name is empty";
+        case crucible::SchemaNameError::too_long:
+            return "the name is longer than SCHEMA_NAME_MAX";
+        case crucible::SchemaNameError::holds_zero:
+            return "the name holds a zero";
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+// True when the name of entry passes sanitize_schema_name, the validator that
+// the loader runs on each name of a file.  The export writes the name into a
+// file, so it checks the name as a name from outside.  A refused name gets a
+// report with its hash and the reason.  Complexity: the length of the name.
+[[nodiscard]] bool is_exportable_name(const crucible::SchemaEntry& entry) noexcept {
+    const ::fixy::TextView name = crucible::SchemaTable::name_of(entry).value().view();
+    return crucible::sanitize_schema_name(entry.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(name))
+        .match([](crucible::SchemaTable::SanitizedName) noexcept { return true; },
+               [&entry](crucible::SchemaNameError error) noexcept {
+                   ::fixy::report(::fixy::Sink::Err,
+                                  "crucible_export_crtrace: the schema table holds a name of the schema hash {} that "
+                                  "a trace cannot hold ({}), so the export writes nothing\n",
+                                  entry.hash.raw(), schema_name_error_text(error));
+                   return false;
+               });
+}
+
 }  // namespace
 
 // The C answer for an op that the thunk refused before the Vigil saw it.
@@ -551,6 +584,18 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const auto& table = crucible::global_schema_table();
     const auto& late = crucible::late_schema_table();
     const auto is_in_global = [&table](crucible::SchemaHash hash) noexcept { return table.lookup(hash).is_some(); };
+
+    // Each name of the file passes the validator of the loader before the
+    // first byte, so the export writes no file that the loader refuses.  The
+    // table can hold such a name: an internal name of the hash zero, or an
+    // internal name that starts with a zero, which the table keeps as an
+    // empty name.  Then the export writes nothing.
+    for (const crucible::SchemaEntry& entry : table.entries()) {
+        if (!is_exportable_name(entry)) return 0;
+    }
+    for (const crucible::SchemaEntry& entry : late.entries()) {
+        if (!is_in_global(entry.hash) && !is_exportable_name(entry)) return 0;
+    }
 
     // The count is written before the records, so it has to be the
     // post-dedup count, not the sum of the two sizes.  The size pass counts
