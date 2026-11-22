@@ -312,8 +312,18 @@ if words[0] == "check":
     with open(build / "checks.txt", "a", encoding="utf-8") as handle:
         handle.write(f"{words[2]} {os.environ.get('CRUCIBLE_CHANGE_BASE', '-')}\\n")
     mode = (build / "mode.txt").read_text().strip() if (build / "mode.txt").is_file() else ""
+    if "--target" in words:
+        targets = [words[index + 1] for index, word in enumerate(words) if word == "--target"]
+        with open(build / "targets.txt", "a", encoding="utf-8") as handle:
+            handle.write(f"{words[2]} {' '.join(targets)}\\n")
     if mode == "reconfigure" and words[2] == "reconfigure-noop":
         sys.exit(1)
+    if mode == "vessel-finding" and words[2] == "lifetime-twin":
+        sys.exit(1)
+    if mode == "vessel-skip" and words[2] == "lifetime-twin":
+        sys.exit(77)
+    if "--target" in words:
+        sys.exit(0)
     if mode == "parse-falls":
         shown = ["git", "show", "HEAD:utils/ledgers/door-unit.txt"]
         if "| 1 |" in subprocess.run(shown, capture_output=True, text=True, check=False).stdout:
@@ -2613,6 +2623,72 @@ def vessel_run_cases(expect: testing.Expect) -> None:
         )
 
 
+# The planted registry with one plugin rule with no ledger, which the vessel step checks (the vessel).
+VESSEL_REGISTRY = REGISTRY + (
+    "rule lifetime-twin engine=plugin scope=tracked ledger=none kinds=missing-mark doc=XVI | a borrow | mark it\n"
+)
+
+
+def vessel_check_cases(expect: testing.Expect) -> None:
+    """Hold the check of the vessel build (the vessel).
+
+    The vessel step runs `guard check` of each plugin rule with no ledger over the objects of the vessel targets.  A
+    finding rejects the commit, and so does the exit 77 of a rule that reads no object of the targets.  A counted rule
+    is not a rule of the step.
+    """
+    vessel = gate.VESSEL_CONFIGURATION
+    if vessel is None:
+        expect("this tree gives the preset vessel", False)
+        return
+    with tempfile.TemporaryDirectory(prefix="gate-vessel-check-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root, {rule_registry.REGISTRY_PATH: VESSEL_REGISTRY})
+        (root / gate.TORCH_VENV).mkdir()
+        script = "vessel/torch/crucible_mode.py"
+        moded = commit_change(root, script, "MODE = 1\n", "Change a script of the vessel")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        build = tree / vessel.build
+        expect(
+            "the vessel step checks each plugin rule with no ledger, and no counted rule",
+            gate.vessel_rules(root) == ("lifetime-twin",),
+        )
+
+        def checked(mode: str) -> tuple[gate.Verdict, str]:
+            """Plant each build, the build of the vessel in a mode with its listing, and check the change."""
+            planted = planted_gate(work, root, tree, "clean", OTHER_BUILDS)
+            plant_build(work, tree, vessel.build, mode)
+            (build / "tests.json").write_text(vessel_listing(("vessel_test_mlp",)), encoding="utf-8")
+            (build / "targets.txt").unlink(missing_ok=True)
+            candidate = gate.Candidate(head, moded, (script,))
+            return testing.captured(lambda: replace(planted, vessel=vessel).check(candidate, False))
+
+        clean, printed = checked("clean")
+        read = (build / "targets.txt").read_text(encoding="utf-8") if (build / "targets.txt").is_file() else ""
+        holds = clean.is_accepted and read == f"lifetime-twin {' '.join(gate.VESSEL_TARGETS)}\n"
+        label = (
+            f"a clean vessel build passes the check of lifetime-twin over the vessel targets: {read!r}, "
+            f"{clean.problems}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        found, printed = checked("vessel-finding")
+        holds = not found.is_accepted and any(
+            problem.startswith("vessel: the rule lifetime-twin gives findings, see ") for problem in found.problems
+        )
+        label = f"a finding of lifetime-twin in the vessel build rejects the commit: {found.problems}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        skipped, printed = checked("vessel-skip")
+        holds = not skipped.is_accepted and any(
+            problem.startswith(
+                "vessel: the rule lifetime-twin reads no object of crucible_vessel and crucible_dispatch"
+            )
+            for problem in skipped.problems
+        )
+        label = f"a rule that reads no object of the vessel targets rejects the commit: {skipped.problems}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
 def careful_cases(expect: testing.Expect) -> None:
     """Hold the careful selection: a file that the code of the gate cannot read gives the widest result of its read."""
     with tempfile.TemporaryDirectory(prefix="gate-careful-") as work_text:
@@ -2861,6 +2937,7 @@ def main(argv: list[str]) -> int:
             item_cases,
             vessel_select_cases,
             vessel_run_cases,
+            vessel_check_cases,
             careful_cases,
             lock_cases,
             live_run_cases,

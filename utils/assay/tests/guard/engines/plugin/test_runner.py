@@ -70,7 +70,9 @@ FAKE_NINJA = """\
 import sys
 from pathlib import Path
 build = Path(sys.argv[sys.argv.index("-C") + 1])
-sys.stdout.write((build / ("deps.txt" if "deps" in sys.argv else "inputs.txt")).read_text())
+named = build / f"inputs-{sys.argv[-1]}.txt"
+listed = named if named.is_file() else build / "inputs.txt"
+sys.stdout.write((build / "deps.txt" if "deps" in sys.argv else listed).read_text())
 """
 # The fake ctest prints the planted test list of the directory of --test-dir.
 FAKE_CTEST = """\
@@ -260,14 +262,17 @@ class Scratch:
             encoding="utf-8",
         )
 
-    def run(self, rule: str = RULE) -> tuple[int, list[check_report.Finding], str]:
-        """Run one rule on the planted build, and return the status, the findings and the written text."""
+    def run(
+        self, rule: str = RULE, targets: tuple[str, ...] = runner.ALL_TARGETS
+    ) -> tuple[int, list[check_report.Finding], str]:
+        """Run one rule on the objects of the targets of the planted build, and return the status, the findings and
+        the written text."""
         with (
             check_report.github_actions(False),
             contextlib.redirect_stdout(io.StringIO()) as printed,
             contextlib.redirect_stderr(io.StringIO()) as said,
         ):
-            status = runner.run([RULES[rule]], self.root, self.build, None)[0]
+            status = runner.run([RULES[rule]], self.root, self.build, None, targets)[0]
         found = [item for item in map(check_report.parse_line, printed.getvalue().splitlines()) if item]
         return status, found, printed.getvalue() + said.getvalue()
 
@@ -906,6 +911,20 @@ def problem_cases(expect: testing.Expect, scratch: Scratch) -> None:
     (scratch.build / "b.o").unlink()
     status, _, _ = scratch.run()
     expect("a build that made only some targets does not apply", status == runner.SKIPPED)
+    built = [line for line in (scratch.build / "inputs.txt").read_text(encoding="utf-8").splitlines() if line != "b.o"]
+    (scratch.build / "inputs-made.txt").write_text("".join(f"{line}\n" for line in built), encoding="utf-8")
+    status, _, text = scratch.run(targets=("made",))
+    expect(
+        "a call that names the target that the build made reads the objects of that target, as the vessel step of "
+        "the gate does",
+        status != runner.SKIPPED and "b.o" not in text,
+    )
+    status, _, text = scratch.run(targets=("made", "all"))
+    expect(
+        "a call that names a target that the build did not make does not apply, and the message names the targets",
+        status == runner.SKIPPED and "made and all" in text,
+    )
+    (scratch.build / "inputs-made.txt").unlink()
     scratch.flush()
     (scratch.build / "build-kind.txt").unlink()
     status, _, text = scratch.run(CONTRACT)

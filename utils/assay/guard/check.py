@@ -3,7 +3,7 @@
 usage:
     guard check --rule ID [ARG]...                        a rule with a legacy module
     guard check [--rule ID]... [--engine E]... [--part K/N] [--build-dir DIR] [--warnings-dir DIR] [--root DIR]
-                [--path PATH]...
+                [--path PATH]... [--target TARGET]...
 
 utils/registry.txt (assay.core.registry) gives each rule.  A rule with a
 legacy module runs alone: the command calls the function main of the module
@@ -18,7 +18,10 @@ tsast rule part K of N of its files, and only a tsast rule whose module
 sets READS_PARTS takes it (assay.guard.engines.meta.runner, the parts).
 The plugin rules of one call
 read the sections of the objects of the build one time
-(assay.guard.engines.plugin.runner, the sections).  The elf rules of one call
+(assay.guard.engines.plugin.runner, the sections).  --target names the
+targets whose objects they read, in place of the target all, for a build
+that made only those targets, such as the build of the vessel in the
+landing gate.  Only a plugin rule takes it.  The elf rules of one call
 read each fact of the build one time (assay.guard.engines.elf.runner, the
 build).  A plugin rule or an elf rule with no --build-dir is a usage error.
 The build rules of one call read each input of the build one time
@@ -49,7 +52,7 @@ if TYPE_CHECKING:
     from assay.guard.engines.meta.runner import RuleContext
 
 USAGE = ("usage: guard check --rule ID [ARG]...  |  guard check [--rule ID]... [--engine E]... [--part K/N] "
-         "[--build-dir DIR] [--warnings-dir DIR] [--root DIR] [--path PATH]...")
+         "[--build-dir DIR] [--warnings-dir DIR] [--root DIR] [--path PATH]... [--target TARGET]...")
 # The engines with a runner at this time.
 RUNNERS = (rule_registry.Engine.META, rule_registry.Engine.TSAST, rule_registry.Engine.PLUGIN,
            rule_registry.Engine.ELF, rule_registry.Engine.BUILD)
@@ -158,6 +161,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--warnings-dir", type=Path, default=None)
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
+    parser.add_argument("--target", dest="targets", action="append", default=[], metavar="TARGET")
     options = parser.parse_args(argv)
     chosen = selected(registry, options.rules, options.engines)
     part = runner.parsed_part(options.part) if options.part is not None else None
@@ -171,6 +175,9 @@ def main(argv: list[str]) -> int:
     if not isinstance(chosen, str) and options.paths \
             and any(rule.engine != rule_registry.Engine.BUILD for rule in chosen):
         chosen = "only a rule of the engine build reads the paths of --path"
+    if not isinstance(chosen, str) and options.targets \
+            and any(rule.engine != rule_registry.Engine.PLUGIN for rule in chosen):
+        chosen = "only a rule of the engine plugin reads the objects of the targets of --target"
     if not isinstance(chosen, str) and options.build_dir is None \
             and any(rule.engine in BUILD_ENGINES for rule in chosen):
         chosen = "a rule of the engine plugin or elf reads the objects of a build: give --build-dir DIR"
@@ -191,7 +198,8 @@ def main(argv: list[str]) -> int:
     if plugin_rules:
         from assay.guard.engines.plugin import runner as plugin_runner
 
-        statuses += plugin_runner.run(plugin_rules, root, build_dir, options.warnings_dir)
+        targets = tuple(options.targets) or plugin_runner.ALL_TARGETS
+        statuses += plugin_runner.run(plugin_rules, root, build_dir, options.warnings_dir, targets)
     elf_rules = [rule for rule in chosen if rule.engine == rule_registry.Engine.ELF]
     if elf_rules:
         from assay.guard.engines.elf import runner as elf_runner

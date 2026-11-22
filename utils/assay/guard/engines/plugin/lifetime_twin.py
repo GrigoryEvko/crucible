@@ -24,7 +24,11 @@ Rule
     utils/registry.txt.
 
     The rule has no ledger, and each finding is an error.  Each problem of the
-    census of the runner is an error too.
+    census of the runner is an error too.  No configuration of the landing
+    gate compiles crucible_fallback.cpp and the shards of register.cpp, so the
+    vessel step of the gate checks the rule over the objects of the vessel
+    targets (assay.loop.gate, the vessel).  The plant plant-vessel holds a
+    finding at a path of vessel/torch.
 
 Usage
     guard check --rule lifetime-twin --build-dir DIR [--warnings-dir DIR]

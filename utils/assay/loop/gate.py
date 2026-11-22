@@ -141,7 +141,17 @@ Vessel
          (is_read_by_vessel()).  The vessel reads no other file of
          BUILT_FILES, so its tests on the commit give the result of its tests
          on the commit of the fold
-      4. `ctest --label-regex` of VESSEL_LABEL, with the jobs of the lease.
+      4. `guard check --rule RULE --build-dir BUILD --target TARGET...` of
+         each plugin rule with no ledger (vessel_rules()), over the objects
+         of VESSEL_TARGETS.  A family kind of the plugin, such as the kind
+         missing-mark of lifetime-twin, is no compile error in a mode, so no
+         build of the vessel stops on it, and only this check reads it in
+         crucible_fallback.cpp and in the shards of register.cpp.  A finding
+         is a problem, and so is the exit 77: the build made the targets, so
+         a rule that reads no object of them did not check the vessel.  The
+         plant plant-vessel of utils/plants/lifetime-twin/ holds a finding at
+         a path of vessel/torch
+      5. `ctest --label-regex` of VESSEL_LABEL, with the jobs of the lease.
          Each red test runs one more time apart from the suite, as in step 3
          of the run of a configuration.  A disabled test, and a run in which
          no test runs, are problems too.  The fixtures with the label
@@ -150,7 +160,8 @@ Vessel
     The round after the reduce runs these steps again.  The vessel runs no
     counted rule, no rule reconfigure-noop and no `guard warnings`, and the
     reduce reads no build of it.  The ledgers then hold the counts of the
-    configurations of the gate only.  The run of the base runs the red tests
+    configurations of the gate only.  So a line of a counted rule in a unit
+    that only the vessel compiles counts in no ledger.  The run of the base runs the red tests
     of the vessel, or each vessel test after a problem of a different kind.
     A lease reserves the memory of one job of its configuration for each
     slot: the largest kind of KIND_GB_PER_JOB of the step that holds it
@@ -1296,6 +1307,28 @@ def focused_runs(focus: Sequence[Focus], vessel: Configuration | None = VESSEL_C
         else:
             runs.append(Run(configuration, Mode.CHANGED))
     return tuple(runs)
+
+
+def vessel_rules(tree: Path) -> tuple[str, ...]:
+    """Return each plugin rule of a tree with no ledger, sorted: the rules that the vessel step checks (the vessel).
+
+    Each finding of such a rule is an error, so the vessel build needs no row of a ledger, and the reduce reads no
+    build of the vessel.
+
+    Raises:
+        GateError: If the registry does not read
+
+    Complexity: one read of the registry.
+    """
+    try:
+        registry = rule_registry.load(tree / rule_registry.REGISTRY_PATH)
+    except (OSError, ValueError) as problem:
+        raise GateError(f"the registry of {tree} does not read: {problem}") from None
+    return tuple(
+        rule_id
+        for rule_id, rule in sorted(registry.rules.items())
+        if rule.engine == rule_registry.Engine.PLUGIN and rule.policy == rule_registry.Policy.NONE
+    )
 
 
 def counted_rules(tree: Path) -> tuple[str, ...]:
@@ -2498,19 +2531,35 @@ class Step:
         return written
 
     def checked(
-        self, configuration: Configuration, rules: Sequence[str], share: heavy.Share, is_again: bool = False
+        self,
+        configuration: Configuration,
+        rules: Sequence[str],
+        share: heavy.Share,
+        is_again: bool = False,
+        targets: Sequence[str] = (),
     ) -> list[str]:
         """Run `guard check --build-dir` of each rule on a build at the same time, and give a problem for each exit other
-        than 0 or 77."""
+        than 0 or 77.
+
+        With targets, each rule reads the objects of the targets in place of all (`guard check --target`), and the
+        exit 77 is a problem too: the build made the targets, so a rule that does not apply reads no object of them.
+        """
         build = build_directory(self.gate.tree, configuration)
+        target_words = [word for target in targets for word in ("--target", target)]
+        passed = (ExitCode.OK,) if targets else (ExitCode.OK, ExitCode.SKIPPED)
 
         def check_one(rule: str) -> str | None:
             """Run the check of one rule, and give its problem or None."""
             log = log_name(configuration, f"check-{rule}.log", is_again)
-            command = [*self.gate.master("guard"), "check", "--rule", rule, "--build-dir", str(build)]
+            command = [*self.gate.master("guard"), "check", "--rule", rule, "--build-dir", str(build), *target_words]
             status = self.run_logged(command, log, share, proc.TOOL_S)
-            if status in (ExitCode.OK, ExitCode.SKIPPED):
+            if status in passed:
                 return None
+            if status == ExitCode.SKIPPED:
+                return (
+                    f"{configuration.name}: the rule {rule} reads no object of {' and '.join(targets)}, so the gate "
+                    f"cannot check the build, see {self.gate.logs / log}"
+                )
             return f"{configuration.name}: the rule {rule} gives findings, see {self.gate.logs / log}"
 
         return [problem for problem in self.concurrently(list(rules), check_one) if problem is not None]
@@ -2964,6 +3013,9 @@ class Step:
         if self.run_logged(command, log, share, TEST_RUN_S) != 0:
             targets = " and ".join(VESSEL_TARGETS)
             return [f"{configuration.name}: the build of {targets} gives an error, see {logs / log}"], (), ()
+        checked = self.checked(configuration, vessel_rules(self.gate.tree), share, is_again, VESSEL_TARGETS)
+        if checked:
+            return checked, (), ()
         if is_read_by_vessel(self.candidate.built):
             self.wait_built(configuration)
         share.lease.set_gb_per_job(gb_per_job_of(VESSEL, TEST_KINDS))

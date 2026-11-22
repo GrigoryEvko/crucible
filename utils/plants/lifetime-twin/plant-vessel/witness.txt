@@ -1,0 +1,14 @@
+# A parameter by a const reference that a return borrows, in a unit of
+# vessel/torch, with no marker and no overload that takes an rvalue at its
+# index, is a finding of the kind missing-mark.  The rule reads a path of the
+# vessel as each other path of its scope, and the vessel step of the landing
+# gate reads the finding from the objects of the vessel targets.  In the mode
+# error the finding is an error.
+compile report vessel/torch/borrows.cpp
+flag report -freflection
+exit report pass
+finding report lifetime-twin missing-mark vessel/torch/borrows.cpp:16:48 | planted::operator_names() parameter 1
+compile error vessel/torch/borrows.cpp mode=error findings=report
+flag error -freflection
+exit error fail
+error error vessel/torch/borrows.cpp:16 | quarantine: missing-mark planted::operator_names() parameter 1;

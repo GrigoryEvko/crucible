@@ -60,6 +60,8 @@ SHOWN_NAMES = 5
 # The start of the name of a file of the build directory and of a file of no tree (file_key()).
 BUILD_KEY = "<build>/"
 SYSTEM_KEY = "<system>/"
+# The target of Ninja that holds each target of a build.
+ALL_TARGET = "all"
 
 
 class NotApplicable(Exception):
@@ -118,23 +120,41 @@ def names_text(names: Iterable[str]) -> str:
 
 
 def objects_of_all(build_dir: Path, root: Path, has_objects: bool = True) -> list[tuple[Path, str]]:
-    """Return each object of the target all, with its source as a message shows it.
-
-    A build of a configuration that only parses has no object (`loop syntax`).  For such a build, has_objects is
-    False, and a missing object is no problem.  Complexity: linear in the rows of the compile database and the inputs
-    of all.
+    """Return each object of the target all, with its source as a message shows it (objects_of_targets()).
 
     Raises:
         NotApplicable: If the generator of the build is not Ninja, or an object of all is missing, because the build
             made only some targets
         CensusError: If the compile database or the inputs of all cannot be read
     """
-    try:
-        inputs = {os.path.normpath(os.path.join(build_dir, name)) for name in ninja.inputs(build_dir, "all")}
-    except ninja.NotNinja as problem:
-        raise NotApplicable(str(problem)) from None
-    except ninja.NinjaError as problem:
-        raise CensusError(f"the inputs of the target all cannot be read: {problem}") from None
+    return objects_of_targets(build_dir, root, (ALL_TARGET,), has_objects)
+
+
+def objects_of_targets(
+    build_dir: Path, root: Path, targets: Sequence[str], has_objects: bool = True
+) -> list[tuple[Path, str]]:
+    """Return each object of the targets, with its source as a message shows it.
+
+    The objects of a target are the outputs of the compile database that `ninja -t inputs TARGET` lists, also through
+    the libraries that the target links.  A build that makes only some targets, such as the build of the vessel
+    targets in the landing gate, gives the objects of those targets.  A build of a configuration that only parses has
+    no object (`loop syntax`).  For such a build, has_objects is False, and a missing object is no problem.
+    Complexity: linear in the rows of the compile database and the inputs of the targets.
+
+    Raises:
+        NotApplicable: If the generator of the build is not Ninja, or an object of a target is missing, because the
+            build did not make that target
+        CensusError: If the compile database or the inputs of a target cannot be read
+    """
+    shown_targets = " and ".join(targets)
+    inputs: set[str] = set()
+    for target in targets:
+        try:
+            inputs |= {os.path.normpath(os.path.join(build_dir, name)) for name in ninja.inputs(build_dir, target)}
+        except ninja.NotNinja as problem:
+            raise NotApplicable(str(problem)) from None
+        except ninja.NinjaError as problem:
+            raise CensusError(f"the inputs of the target {target} cannot be read: {problem}") from None
     database = compdb.database_file(build_dir)
     try:
         compiles = compdb.entries(build_dir)
@@ -151,11 +171,11 @@ def objects_of_all(build_dir: Path, root: Path, has_objects: bool = True) -> lis
         if output in inputs:
             objects[output] = shown(os.path.normpath(compile_entry.file), root)
     if not objects:
-        raise CensusError(f"no row of {database} is an input of the target all")
+        raise CensusError(f"no row of {database} is an input of the target {shown_targets}")
     missing = [path for path in objects if has_objects and not os.path.isfile(path)]
     if missing:
         raise NotApplicable(
-            f"{len(missing)} of the {len(objects)} objects of the target all do not exist, so the "
+            f"{len(missing)} of the {len(objects)} objects of the target {shown_targets} do not exist, so the "
             f"build made only some targets: {names_text(shown(path, build_dir) for path in missing)}"
         )
     return [(Path(path), source) for path, source in sorted(objects.items())]

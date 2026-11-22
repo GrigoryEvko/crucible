@@ -1,0 +1,23 @@
+// A unit of the vessel, such as crucible_fallback.cpp, which only the vessel
+// build compiles.  A function returns a borrow of a parameter by a const
+// reference, and no marker and no overload that takes an rvalue guards the
+// parameter.  The kind missing-mark is no compile error in the mode report,
+// so the vessel step of the landing gate reads it from the objects of the
+// vessel targets.
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using List = fc::FixedList<int, 4>;
+
+fc::View<int const> operator_names(List const& list) { return list.view(); }
+
+int count_names() {
+    List const list{};
+    return static_cast<int>(operator_names(list).size());
+}
+
+}  // namespace planted

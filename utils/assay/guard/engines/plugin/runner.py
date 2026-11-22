@@ -20,6 +20,15 @@ Sections
     The stamp file of that directory has the function of the stamp of a
     section.
 
+Targets
+    A call can name targets in place of all (`guard check --target`), for a
+    build that made only those targets, such as the build of the vessel
+    targets in the landing gate (assay.loop.gate, the vessel).  The runner
+    then reads the objects that the targets list, also through the libraries
+    that they link (objects_of_targets of assay.readers.census).  A named
+    target that the build did not make gives SKIPPED, as a build of only some
+    targets does for all.
+
 Problems
     The census gives a problem for each object with a compile that loads the
     plugin and with no section.  It also gives a problem for each section
@@ -88,6 +97,8 @@ STAMP_ARGUMENT = f"{PLUGIN_ARGUMENT}stamp="
 READERS = proc.DEFAULT_JOBS
 # The rule of the region lines of a section (the head comment of utils/tools/quarantine/plugin.h).
 REGION_RULE = "quarantine"
+# The targets whose objects a census reads when the call names none (targets).
+ALL_TARGETS = (build_census.ALL_TARGET,)
 SKIPPED = meta_runner.SKIPPED
 NotApplicable = meta_runner.NotApplicable
 
@@ -197,18 +208,21 @@ def stamp_of(command: str) -> str | None:
     return rest.split(None, 1)[0] if rest and not rest[0].isspace() else ""
 
 
-def plugin_objects(build_dir: Path, root: Path, has_objects: bool = True) -> list[tuple[Path, str, str]]:
-    """Return each object of all with a compile that loads the plugin, with the stamp and the compile command.
+def plugin_objects(
+    build_dir: Path, root: Path, has_objects: bool = True, targets: Sequence[str] = ALL_TARGETS
+) -> list[tuple[Path, str, str]]:
+    """Return each object of the targets with a compile that loads the plugin, with the stamp and the compile command.
 
-    has_objects is False for a build of a configuration that only parses, which has no object.  Complexity: linear
-    in the rows of the compile database and the inputs of all.
+    has_objects is False for a build of a configuration that only parses, which has no object.  The targets are all,
+    or the targets that a build made (targets).  Complexity: linear in the rows of the compile database and the
+    inputs of the targets.
 
     Raises:
-        NotApplicable: If the build made only some targets, or its generator is not Ninja
-        BuildError: If the compile database or the inputs of all cannot be read
+        NotApplicable: If the build did not make a target, or its generator is not Ninja
+        BuildError: If the compile database or the inputs of a target cannot be read
     """
     try:
-        objects = {str(path) for path, _ in build_census.objects_of_all(build_dir, root, has_objects)}
+        objects = {str(path) for path, _ in build_census.objects_of_targets(build_dir, root, targets, has_objects)}
         rows = compdb.entries(build_dir)
     except build_census.NotApplicable as reason:
         raise NotApplicable(str(reason)) from None
@@ -304,15 +318,15 @@ def census_of(items: Sequence[ObjectSection]) -> Census:
     )
 
 
-def read_census(build_dir: Path, root: Path) -> Census:
-    """Read the section of each object of all with a compile that loads the plugin (the sections).
+def read_census(build_dir: Path, root: Path, targets: Sequence[str] = ALL_TARGETS) -> Census:
+    """Read the section of each object of the targets with a compile that loads the plugin (the sections).
 
     Complexity: linear in the sections and the finding lines of the objects.
 
     Raises:
-        NotApplicable: If the build has no build kind or made only some targets.  Also if its generator is not
-            Ninja, or no compile of all loads the plugin
-        BuildError: If the compile database or the inputs of all cannot be read
+        NotApplicable: If the build has no build kind or did not make a target.  Also if its generator is not
+            Ninja, or no compile of the targets loads the plugin
+        BuildError: If the compile database or the inputs of a target cannot be read
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -321,9 +335,9 @@ def read_census(build_dir: Path, root: Path) -> Census:
             f"{build_census.shown(build_dir, root)} has no build-kind.txt, which cmake/BuildLauncher.cmake writes"
         )
     is_parse = build_config.is_parse_build(build_dir)
-    objects = plugin_objects(build_dir, root, has_objects=not is_parse)
+    objects = plugin_objects(build_dir, root, has_objects=not is_parse, targets=targets)
     if not objects:
-        raise NotApplicable("no compile of the target all loads the quarantine plugin")
+        raise NotApplicable(f"no compile of the target {' and '.join(targets)} loads the quarantine plugin")
     reader = read_parsed if is_parse else read_object
     with ThreadPoolExecutor(max_workers=READERS) as pool:
         items = list(pool.map(lambda item: reader(item[0], item[1], build_dir), objects))
@@ -340,13 +354,20 @@ class PluginContext:
     no build directory.
     """
 
-    __slots__ = ("_census", "build_dir", "root")
+    __slots__ = ("_census", "build_dir", "root", "targets")
 
-    def __init__(self, root: Path, build_dir: Path | None = None, census: Census | None = None) -> None:
-        """Keep the root, the build directory, and a planted census."""
+    def __init__(
+        self,
+        root: Path,
+        build_dir: Path | None = None,
+        census: Census | None = None,
+        targets: Sequence[str] = ALL_TARGETS,
+    ) -> None:
+        """Keep the root, the build directory, a planted census, and the targets whose objects the census reads."""
         self.root = root
         self.build_dir = build_dir
         self._census = census
+        self.targets = tuple(targets)
 
     def build_shown(self) -> str:
         """Return the build directory as a message shows it, relative to the root when the root holds it."""
@@ -364,7 +385,7 @@ class PluginContext:
                 raise NotApplicable(
                     "the engine plugin reads the objects of a build, and the call gives no --build-dir DIR"
                 )
-            self._census = read_census(self.build_dir, self.root)
+            self._census = read_census(self.build_dir, self.root, self.targets)
         return self._census
 
     def findings_of(self, rule: rule_registry.Rule) -> list[check_report.Finding]:
@@ -412,10 +433,15 @@ def run_rule(rule: rule_registry.Rule, context: PluginContext, warnings_dir: Pat
 
 
 def run(
-    rules: Sequence[rule_registry.Rule], root: Path, build_dir: Path | None, warnings_dir: Path | None
+    rules: Sequence[rule_registry.Rule],
+    root: Path,
+    build_dir: Path | None,
+    warnings_dir: Path | None,
+    targets: Sequence[str] = ALL_TARGETS,
 ) -> list[int]:
-    """Run the rules on one context, and give the status of each.  The call then reads each section one time."""
-    context = PluginContext(root, build_dir)
+    """Run the rules on one context of the targets, and give the status of each.  The call then reads each section
+    one time."""
+    context = PluginContext(root, build_dir, targets=targets)
     return [run_rule(rule, context, warnings_dir) for rule in rules]
 
 
