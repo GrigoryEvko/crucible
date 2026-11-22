@@ -65,12 +65,17 @@
 //                       the array exists
 //
 //   size(), view(), the loop, get(position), and the iteration verbs, as
-//                       a FixedArray gives them.  No type holds the count of a
-//                       HeapArray, so it has no indices() and no enumerate()
+//                       a FixedArray gives them: each gives const elements.
+//                       No type holds the count of a HeapArray, so it has no
+//                       indices() and no enumerate()
 //   with_element(position, on_some, on_none)
 //                       the element door: on_some gets the element at a
 //                       position below size() in place, and on_none runs for
 //                       each other position (THE ELEMENT DOOR)
+//
+// A write of one element takes with_element, and a write of the run takes
+// the frame door with_mut (THE FRAME DOOR).  So no two Views of one array
+// write the same elements.
 //
 // A HeapArray owns its storage alone.  A move gives the storage to the
 // target and leaves the source empty, and the destructor ends each element
@@ -789,23 +794,20 @@ public:
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
 
-    // The View of the elements.  It borrows this array.  The mint bounds
-    // the count and gives storage for each count above zero, so the View
-    // comes through the door of the base layer, with no check.  An assume of
-    // these two facts on the members gave the loop of the probe
-    // heap_array_sum two checks of view_over_ and a spill to the stack.
-    [[nodiscard]] constexpr View<T> view() & noexcept {
-        return View<T>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
-    }
+    // The View of the const elements.  It borrows this array.  The mint
+    // bounds the count and gives storage for each count above zero, so the
+    // View comes through the door of the base layer, with no check.  An
+    // assume of these two facts on the members gave the loop of the probe
+    // heap_array_sum two checks of view_over_ and a spill to the stack.  A
+    // write takes with_element for one element, or the frame door with_mut
+    // for the run, so no two Views of one array write the same elements.
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
         return View<T const>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
     }
     void view() && = delete("a view of a temporary HeapArray points into storage that the full expression frees");
     void view() const&& = delete("a view of a temporary HeapArray points into storage that the full expression frees");
 
-    // The loop `for (T& element : array)`.
-    [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept { return view().begin(); }
-    [[nodiscard]] constexpr ViewCursor<T> end() & noexcept { return view().end(); }
+    // The loop `for (T const& element : array)`.
     [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept { return view().begin(); }
     [[nodiscard]] constexpr ViewCursor<T const> end() const& noexcept { return view().end(); }
     void begin() && = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
@@ -814,16 +816,10 @@ public:
     begin() const&& = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
     void end() const&& = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
 
-    // The element at position, as an Option of a Ref with the fresh brand
-    // of the call, or no value at or past the count: one compare.  The pack
-    // refuses each explicit argument, and the result type holds the brand in
-    // undeducible_brand_t.
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
-    get(std::size_t position) & noexcept {
-        return detail::element_at_<Fresh>(this->state_.first, this->state_.count, position);
-    }
+    // The element at position, for a read, as an Option of a Ref with the
+    // fresh brand of the call, or no value at or past the count: one compare.
+    // The pack refuses each explicit argument, and the result type holds the
+    // brand in undeducible_brand_t.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
@@ -881,17 +877,11 @@ public:
     void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const&& =
         delete("a frame door of a temporary HeapArray lends an element of storage that the full expression frees");
 
-    // The iteration verbs of the View of the elements.
-    [[nodiscard]] constexpr auto reverse() & noexcept { return view().reverse(); }
+    // The iteration verbs of the View of the const elements.
     [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
     void
     reverse() const&& = delete("a loop over a temporary HeapArray points into storage that the full expression frees");
 
-    template <std::size_t Width>
-        requires ViewExtent<T, Width> && (Width != dynamic_extent)
-    [[nodiscard]] constexpr auto windows() & noexcept {
-        return view().template windows<Width>();
-    }
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width != dynamic_extent)
     [[nodiscard]] constexpr auto windows() const& noexcept {
@@ -901,11 +891,6 @@ public:
     void
     windows() const&& = delete("a loop over a temporary HeapArray points into storage that the full expression frees");
 
-    template <std::size_t Width>
-        requires ViewExtent<T, Width> && (Width != dynamic_extent)
-    [[nodiscard]] constexpr auto chunks() & noexcept {
-        return view().template chunks<Width>();
-    }
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width != dynamic_extent)
     [[nodiscard]] constexpr auto chunks() const& noexcept {

@@ -4386,6 +4386,16 @@ foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
 foundation_neg_compile_test(neg_core_heap_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+# view() of a HeapArray gives a View of the const elements, so two Views of
+# one array write no element.
+foundation_neg_compile_test(neg_core_heap_array_two_mutable_views
+  "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
+  "neg_core_heap_array_two_mutable_views\\.cpp:12:")
+# The frame door takes a HeapArray by move, so a body that opens the door of
+# the same named array gets the deleted twin of a named owner.
+foundation_neg_compile_test(neg_core_heap_array_nested_frame_door
+  "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = .*HeapArray<int>&"
+  "with_mut takes the owner into its frame and gives it back: pass std::move\\(owner\\)")
 # A FixedHeapArray takes the gates of a HeapArray at its mint, and it does not
 # move.  view() gives its const elements, and its member frame door carries the
 # annotation borrow_match.
@@ -4467,9 +4477,6 @@ foundation_neg_compile_test(neg_core_view_first_of_specialized
 foundation_neg_compile_test(neg_core_fixed_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) const &")
-foundation_neg_compile_test(neg_core_heap_array_get_brand_from_target_type
-  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) &")
 foundation_neg_compile_test(neg_core_heap_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) const &")
