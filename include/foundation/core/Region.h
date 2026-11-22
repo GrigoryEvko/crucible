@@ -899,10 +899,11 @@ namespace detail {
 // the door gives held back: alone for a body that gives void, and after the
 // result in a Record for each other body.  held lives in the frame of the
 // door, and run is the run of held.  The body runs before the Record moves
-// held, because a braced list runs its parts in order.
+// held, because a braced list runs its parts in order.  The door gives up
+// held here, so the helper takes it as an rvalue.
 template <class Brand, class Owner, class T, std::size_t Extent, class Body>
 [[nodiscard]] constexpr frame_return_t<body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Owner>
-give_run_back_(Owner& held, View<T, Extent> run, Body&& body) noexcept {
+give_run_back_(Owner&& held, View<T, Extent> run, Body&& body) noexcept {
     using Given = body_result_t<Body&&, ViewMut<T, Brand, Extent>>;
     if constexpr (std::is_void_v<Given>) {
         static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{FrameDoor::key(), run});
@@ -967,7 +968,8 @@ template <class T, class Brand, std::size_t Extent, class Body>
 [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>,
                                                ViewMut<T, Brand, Extent>>
 reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept {
-    return detail::give_run_back_<Brand>(view, detail::run_of_(view), static_cast<Body&&>(body));
+    View<T, Extent> const run = detail::run_of_(view);
+    return detail::give_run_back_<Brand>(std::move(view), run, static_cast<Body&&>(body));
 }
 
 template <class T, class Brand, std::size_t Extent, class Body>

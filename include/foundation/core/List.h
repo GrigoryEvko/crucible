@@ -407,7 +407,7 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     View<typename Owner::element_type> const run = held.view();
-    return detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
+    return detail::give_run_back_<Fresh>(static_cast<Owner&&>(held), run, static_cast<Body&&>(body));
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds

@@ -388,7 +388,7 @@ public:
     [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
-        return detail::give_run_back_<Fresh>(key, View<T, N>{detail::ViewDoor::key(), elements_},
+        return detail::give_run_back_<Fresh>(std::move(key), View<T, N>{detail::ViewDoor::key(), elements_},
                                              static_cast<Body&&>(body));
     }
 
@@ -1318,7 +1318,7 @@ with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     View<typename Owner::element_type, detail::frame_extent_v<Owner>> const run =
         frame_run_(detail::FrameDoor::key(), held);
-    return detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
+    return detail::give_run_back_<Fresh>(static_cast<Owner&&>(held), run, static_cast<Body&&>(body));
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds

@@ -238,7 +238,7 @@ public:
     [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, producer_end&>,
                                                                        ProducerKey<Brand>>
     with_producer(ProducerKey<Brand>&& key, Body&& body) & noexcept {
-        return give_key_back_(key, producer_, static_cast<Body&&>(body));
+        return give_key_back_(std::move(key), producer_, static_cast<Body&&>(body));
     }
     template <class Body>
         requires SpscEndBody<Body, producer_end, producer_brand>
@@ -252,7 +252,7 @@ public:
     [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, consumer_end&>,
                                                                        ConsumerKey<Brand>>
     with_consumer(ConsumerKey<Brand>&& key, Body&& body) & noexcept {
-        return give_key_back_(key, consumer_, static_cast<Body&&>(body));
+        return give_key_back_(std::move(key), consumer_, static_cast<Body&&>(body));
     }
     template <class Body>
         requires SpscEndBody<Body, consumer_end, consumer_brand>
@@ -352,9 +352,10 @@ private:
         : owner_{std::move(owner)}, producer_{SpscEndKey<Owner>{}, ref}, consumer_{SpscEndKey<Owner>{}, ref} {}
 
     // Runs body on the end, and gives the key back: alone for a body that
-    // gives void, and after the result in a Record for each other body.
+    // gives void, and after the result in a Record for each other body.  The
+    // door gives up its key here, so the helper takes it as an rvalue.
     template <class End, class Key, class Body>
-    [[nodiscard]] static constexpr auto give_key_back_(Key& key, End& end, Body&& body) noexcept
+    [[nodiscard]] static constexpr auto give_key_back_(Key&& key, End& end, Body&& body) noexcept
         -> ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, End&>, Key> {
         using Given = std::invoke_result_t<Body&&, End&>;
         if constexpr (std::is_void_v<Given>) {

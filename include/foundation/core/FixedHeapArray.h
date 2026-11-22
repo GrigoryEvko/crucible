@@ -229,7 +229,7 @@ public:
     [[nodiscard]] CRUCIBLE_INLINE constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
-        return detail::give_run_back_<Fresh>(key, View<T, N>{detail::ViewDoor::key(), first_()},
+        return detail::give_run_back_<Fresh>(std::move(key), View<T, N>{detail::ViewDoor::key(), first_()},
                                              static_cast<Body&&>(body));
     }
 

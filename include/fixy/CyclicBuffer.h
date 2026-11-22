@@ -132,9 +132,10 @@ private:
     }
 
     // Runs body on the element, and gives the key back: alone for a body that
-    // gives void, and after the result in a Record for each other body.
+    // gives void, and after the result in a Record for each other body.  The
+    // door gives up its key here, so the helper takes it as an rvalue.
     template <class Body>
-    [[nodiscard]] static constexpr auto give_key_back_(key_type& key, T& element, Body&& body) noexcept
+    [[nodiscard]] static constexpr auto give_key_back_(key_type&& key, T& element, Body&& body) noexcept
         -> ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, T&>, key_type> {
         using Given = std::invoke_result_t<Body&&, T&>;
         if constexpr (std::is_void_v<Given>) {
@@ -231,7 +232,7 @@ public:
         requires is_keyed_ && ::foundation::core::KeyedElementBody<Body, T, KeyBrand>
     [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, T&>, key_type>
     with_claim(key_type&& key, Body&& body) & noexcept {
-        return give_key_back_(key, slot_at_(claim_slot_()), static_cast<Body&&>(body));
+        return give_key_back_(std::move(key), slot_at_(claim_slot_()), static_cast<Body&&>(body));
     }
     template <class Body>
         requires is_keyed_ && ::foundation::core::KeyedElementBody<Body, T, KeyBrand>
@@ -243,7 +244,7 @@ public:
         requires is_keyed_ && CyclicFreshBody<Body, T, KeyBrand>
     [[nodiscard]] ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, T&>, key_type>
     with_fresh_claim(key_type&& key, Body&& body) & noexcept {
-        return give_key_back_(key, fresh_slot_(), static_cast<Body&&>(body));
+        return give_key_back_(std::move(key), fresh_slot_(), static_cast<Body&&>(body));
     }
     template <class Body>
         requires is_keyed_ && CyclicFreshBody<Body, T, KeyBrand>
@@ -255,7 +256,7 @@ public:
         requires is_keyed_ && ::foundation::core::KeyedElementBody<Body, T, KeyBrand>
     [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<std::invoke_result_t<Body&&, T&>, key_type>
     with_slot(key_type&& key, Index<N> slot, Body&& body) & noexcept {
-        return give_key_back_(key, slot_at_(slot), static_cast<Body&&>(body));
+        return give_key_back_(std::move(key), slot_at_(slot), static_cast<Body&&>(body));
     }
     template <class Body>
         requires is_keyed_ && ::foundation::core::KeyedElementBody<Body, T, KeyBrand>
