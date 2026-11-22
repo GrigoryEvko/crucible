@@ -239,11 +239,20 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // advance_sole_writer_by_proof) releases and get() acquires, which is the
     // edge that makes the slot writes visible across the pair.  The producer
     // reads its own position from own_head_ (THE TWO PUBLISHES).
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> head =
-        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
+    //
+    // The type of each counter names its writer (THE WRITER OF A COUNTER of
+    // fixy/Mutation.h).  The ring is the owner of each proof, so only the
+    // doors of the ring publish a counter.
+    struct HeadWriter final {};
+    struct TailWriter final {};
+    using head_writer = ::fixy::SoleWriterProof<TraceRing, HeadWriter>;
+    using tail_writer = ::fixy::SoleWriterProof<TraceRing, TailWriter>;
 
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
-        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, head_writer> head =
+        ::fixy::mint_atomic_monotonic<uint64_t, head_writer>(0);
+
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail =
+        ::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(0);
 
     // The consumer is the only party that reads or writes this, so drains
     // track their position here and publish to tail only once the copies are
@@ -364,19 +373,19 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                                              ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        head.advance_sole_writer_from(prove_checked_producer_(), h, h + 1, own_head_);
+        head.advance_sole_writer_from(prove_head_writer_(), h, h + 1, own_head_);
     }
 
     // The commit of the producer of the Vigils, which holds the proof of the
     // record path.  The type proves the one writer, so the publish loads
     // nothing from the head (THE TWO PUBLISHES).  A token that names an old
     // head fails the step check of the publish in each build.
-    [[gnu::hot]] CRUCIBLE_INLINE void commit_proven(RecordProof const& proof, Reservation reserved, const Entry& e,
+    [[gnu::hot]] CRUCIBLE_INLINE void commit_proven(RecordProof const& /*proof*/, Reservation reserved, const Entry& e,
                                                     MetaIndex meta_start, ScopeHash scope_hash,
                                                     CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        head.advance_sole_writer_by_proof(proof, own_head_, h + 1);
+        head.advance_sole_writer_by_proof(prove_head_writer_(), own_head_, h + 1);
     }
 
     // The append of a pure caller.  The gate reads the row of the context of
@@ -487,7 +496,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t next_tail = t + count;
         consumer_tail_ = next_tail;
         // t is the consumer's own copy of its last store to tail.
-        tail.advance_sole_writer_from(prove_checked_consumer_(), t, next_tail);
+        tail.advance_sole_writer_from(prove_tail_writer_(), t, next_tail);
         CRUCIBLE_POST(count, count <= out.size());
         // The count came from a 32-bit difference, so it fits the result.
         return static_cast<uint32_t>(count);
@@ -570,7 +579,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t next_tail = t + count;
         consumer_tail_ = next_tail;
         // t is the consumer's own copy of its last store to tail.
-        tail.advance_sole_writer_from(prove_checked_consumer_(), t, next_tail);
+        tail.advance_sole_writer_from(prove_tail_writer_(), t, next_tail);
         CRUCIBLE_POST(count, count <= out_entries.size());
         return static_cast<uint32_t>(count);
     }
@@ -607,25 +616,14 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     }
 
 private:
-    // The roles of the proofs of the checked publishes: the producer writes
-    // the head, and the consumer writes the tail.
-    struct CheckedProducer final {};
-    struct CheckedConsumer final {};
+    // The proofs of the writers of the two counters.  Each door of a side
+    // makes the proof of its side: the proven commit after the record proof
+    // of its caller, and each checked publish, which still compares the
+    // counter with the copy of the writer, so a second writer ends the
+    // process at the next publish of the first one.
+    [[nodiscard]] static constexpr head_writer prove_head_writer_() noexcept { return {}; }
 
-    // The proofs of the one writer of each counter for the checked
-    // publishes.  The ring is the owner of each, and only a checked publish
-    // makes one.  The publish still compares the counter with the copy of
-    // the writer, so a second writer ends the process at the next publish of
-    // the first one.
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<TraceRing, CheckedProducer>
-    prove_checked_producer_() noexcept {
-        return {};
-    }
-
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<TraceRing, CheckedConsumer>
-    prove_checked_consumer_() noexcept {
-        return {};
-    }
+    [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
 
     // Writes the entry and its four parallel slots into the reserved slot,
     // and warms the slot of the next append.  Gives the head of the

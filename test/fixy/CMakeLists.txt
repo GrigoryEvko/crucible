@@ -365,19 +365,24 @@ fixy_neg_compile_test(neg_mutation_atomic_monotonic_user_copy
   "..[a-z]+.::Stamp. is not trivially copyable")
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_peek_shared
   "a counter of many writers has no thread that reads its own last store"
-  "fixy::AtomicMonotonic<T, Writers, Cmp>::peek_relaxed\\(\\) const")
+  "fixy::AtomicMonotonic<T, Writer, Cmp>::peek_relaxed\\(\\) const")
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_sole_step_shared
   "a counter of many writers has no one writer"
-  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(const foundation::SoleWriterProof<Owner, Role>&, T, T\\)")
+  "fixy::AtomicMonotonic<T, Writer, Cmp>::advance_sole_writer_from\\(const foundation::SoleWriterProof<Owner, Role>&, T, T\\)")
 # The checked publish that steps a copy belongs to the one writer too.
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_copy_step_shared
   "a counter of many writers has no one writer for a copy to follow"
-  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(const foundation::SoleWriterProof<Owner, Role>&, T, T, fixy::Monotonic<T, Cmp>&\\)")
+  "fixy::AtomicMonotonic<T, Writer, Cmp>::advance_sole_writer_from\\(const foundation::SoleWriterProof<Owner, Role>&, T, T, fixy::Monotonic<T, Cmp>&\\)")
 # The publish of the one writer takes the proof of that writer, so two bodies
 # that borrow one counter and hold no proof have no overload.
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_sole_step_without_proof
   "no matching function for call to"
   "::advance_sole_writer_from\\(const uint64_t&, long unsigned int\\)")
+# The type of the counter names the proof of its writer, so the proof of
+# another owner does not advance it.
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_foreign_proof
+  "no matching function for call to"
+  "::advance_sole_writer_from\\(foundation::SoleWriterProof<OtherOwner, OtherOwner::Role>, int, int\\)")
 # The step of a copy from a named value is private to that publish.
 fixy_neg_compile_test(neg_mutation_monotonic_checked_step_outside
   "is private within this context"

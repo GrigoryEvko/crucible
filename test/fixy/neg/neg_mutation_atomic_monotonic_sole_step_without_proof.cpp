@@ -17,8 +17,13 @@
 
 #include <cstdint>
 
+struct CounterOwner {
+    struct Role {};
+};
+
 int main() {
-    auto counter = ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+    auto counter =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::SoleWriterProof<CounterOwner, CounterOwner::Role>>(0);
     auto first = [&counter]() noexcept {
         std::uint64_t const current = counter.get();
         counter.advance_sole_writer_from(current, current + 1);

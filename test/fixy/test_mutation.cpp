@@ -96,8 +96,8 @@ static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 // AtomicMonotonic owns a cache line.
 static_assert(alignof(AtomicMonotonic<std::uint64_t>) >= 64);
 static_assert(sizeof(AtomicMonotonic<std::uint64_t>) >= 64);
-static_assert(std::is_same_v<MaxObserved<std::uint32_t>,
-                             AtomicMonotonic<std::uint32_t, ::fixy::CounterWriters::many, std::less<std::uint32_t>>>);
+static_assert(
+    std::is_same_v<MaxObserved<std::uint32_t>, AtomicMonotonic<std::uint32_t, void, std::less<std::uint32_t>>>);
 
 // Only the cell of one writer reads its own value with relaxed order.  A
 // cell of many writers has no such read, and its writers seed a
@@ -106,7 +106,7 @@ template <class Cell>
 concept HasPeekRelaxed = requires(Cell const& cell) { cell.peek_relaxed(); };
 template <class Cell>
 concept HasLoadRelaxed = requires(Cell const& cell) { cell.load_relaxed(); };
-static_assert(HasPeekRelaxed<AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole>>);
+static_assert(HasPeekRelaxed<AtomicMonotonic<std::uint64_t, ProofOwner::Proof>>);
 static_assert(!HasPeekRelaxed<AtomicMonotonic<std::uint64_t>>);
 static_assert(HasLoadRelaxed<AtomicMonotonic<std::uint64_t>>);
 
@@ -491,9 +491,8 @@ int check_atomic_monotonic() {
     // Under std::greater the whole direction inverts: advancing walks the
     // value down, and a larger value counts as backwards.
     {
-        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>> floor =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>>(
-                100ULL);
+        AtomicMonotonic<std::uint64_t, void, std::greater<std::uint64_t>> floor =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, void, std::greater<std::uint64_t>>(100ULL);
         if (floor.get() != 100ULL) return 100;
         if (!floor.try_advance(50ULL)) return 101;
         if (floor.get() != 50ULL) return 102;
@@ -535,8 +534,8 @@ int check_atomic_monotonic() {
     // and publish the successor with a release store. get() is the acquire
     // load a reader on another thread would use.
     {
-        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> spsc_head =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+        AtomicMonotonic<std::uint64_t, ProofOwner::Proof> spsc_head =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ProofOwner::Proof>(0);
         const std::uint64_t h0 = spsc_head.peek_relaxed();
         if (h0 != 0ULL) return 122;
         spsc_head.advance(h0 + 1);
@@ -576,8 +575,8 @@ int check_atomic_monotonic() {
     // writer of a counter publishes with a release store and no locked
     // instruction.
     {
-        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> counter =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+        AtomicMonotonic<std::uint64_t, ProofOwner::Proof> counter =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ProofOwner::Proof>(0);
 
         if (counter.get() != 0ULL) return 132;
         if (counter.peek_relaxed() != 0ULL) return 133;
@@ -596,8 +595,8 @@ int check_atomic_monotonic() {
     // The checked publish of a writer that keeps a copy of the counter steps
     // the counter and the copy to the same value.
     {
-        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> counter =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+        AtomicMonotonic<std::uint64_t, ProofOwner::Proof> counter =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ProofOwner::Proof>(0);
         Monotonic<std::uint64_t> copy = ::fixy::mint_monotonic<std::uint64_t>(0);
 
         counter.advance_sole_writer_from(ProofOwner::proof(), 0ULL, 7ULL, copy);
@@ -673,8 +672,8 @@ int check_atomic_monotonic() {
     // bottom store and its load of top. The fence sits on the counter type so
     // that it reads next to the two calls it separates.
     {
-        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> bottom =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+        AtomicMonotonic<std::uint64_t, ProofOwner::Proof> bottom =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ProofOwner::Proof>(0);
         AtomicMonotonic<std::uint64_t> top = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 
         // One thread only. No race is exercised here, just the API shape.
@@ -687,9 +686,8 @@ int check_atomic_monotonic() {
 
     // Compare-exchange follows the same inverted direction under greater.
     {
-        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>> ttl =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>>(
-                1000ULL);
+        AtomicMonotonic<std::uint64_t, void, std::greater<std::uint64_t>> ttl =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, void, std::greater<std::uint64_t>>(1000ULL);
 
         std::uint64_t observed = 1000ULL;
         bool ok = ttl.compare_exchange_advance_acq_rel(observed, 999ULL);
@@ -861,14 +859,14 @@ int check_contracts_abort() {
     // still, and a step that wraps past the end of the carrier.  A held
     // value that is not the stored one is refused where the Debug check is
     // armed, and every test binary arms it.
-    AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> sole =
-        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(10);
+    AtomicMonotonic<std::uint64_t, ProofOwner::Proof> sole =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, ProofOwner::Proof>(10);
     expect_dies(
         test, [&sole] noexcept { sole.advance_sole_writer_from(ProofOwner::proof(), 10, 9); }, kSoleWriterStepBack);
     expect_dies(
         test, [&sole] noexcept { sole.advance_sole_writer_from(ProofOwner::proof(), 10, 10); }, kSoleWriterStepBack);
-    AtomicMonotonic<std::uint8_t, ::fixy::CounterWriters::sole> at_top =
-        ::fixy::mint_atomic_monotonic<std::uint8_t, ::fixy::CounterWriters::sole>(std::uint8_t{255});
+    AtomicMonotonic<std::uint8_t, ProofOwner::Proof> at_top =
+        ::fixy::mint_atomic_monotonic<std::uint8_t, ProofOwner::Proof>(std::uint8_t{255});
     expect_dies(
         test,
         [&at_top] noexcept {
@@ -917,9 +915,8 @@ int check_contracts_abort() {
     if (near_top.get() != 250) return 187;
     if (near_top.bump_by(std::uint8_t{5}) != 250 || near_top.get() != 255) return 188;
     expect_dies(test, [&near_top] noexcept { (void)near_top.bump(); }, kBumpOverflow);
-    AtomicMonotonic<std::uint8_t, ::fixy::CounterWriters::many, std::greater<std::uint8_t>> near_floor =
-        ::fixy::mint_atomic_monotonic<std::uint8_t, ::fixy::CounterWriters::many, std::greater<std::uint8_t>>(
-            std::uint8_t{3});
+    AtomicMonotonic<std::uint8_t, void, std::greater<std::uint8_t>> near_floor =
+        ::fixy::mint_atomic_monotonic<std::uint8_t, void, std::greater<std::uint8_t>>(std::uint8_t{3});
     expect_dies(
         test, [&near_floor] noexcept { (void)near_floor.bump_by(std::uint8_t{4}); },
         ::fixy::TextView{

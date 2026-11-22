@@ -53,7 +53,7 @@ static_assert(Bumps<Monotonic<uint32_t>>);
 static_assert(!Bumps<Monotonic<uint32_t, ByLowBit>>);
 static_assert(Bumps<BoundedMonotonic<uint32_t, 8U>>);
 static_assert(!Bumps<BoundedMonotonic<uint32_t, 8U, ByLowBit>>);
-static_assert(!Bumps<AtomicMonotonic<uint32_t, CounterWriters::many, ByLowBit>>);
+static_assert(!Bumps<AtomicMonotonic<uint32_t, void, ByLowBit>>);
 }  // namespace detail::mutation_checks
 
 static_assert(sizeof(WriteOnceNonNull<int*>) == sizeof(int*));

@@ -45,7 +45,8 @@ constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::
 // (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).
 struct PublishOwner final {
     struct Role final {};
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<PublishOwner, Role> proof() noexcept { return {}; }
+    using Proof = ::fixy::SoleWriterProof<PublishOwner, Role>;
+    [[nodiscard]] static constexpr Proof proof() noexcept { return {}; }
 };
 
 }  // namespace
@@ -246,12 +247,13 @@ int main() {
                 bench::do_not_optimize(h);
             });
         }(),
+        // Only the log makes the proof of its head, so the row publishes a
+        // counter of the same type with a writer of its own.
         [&] {
-            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
-            auto const log = ::fixy::to(*log_box);
-            uint32_t v = 0;
+            auto counter = ::fixy::mint_atomic_monotonic<uint64_t, PublishOwner::Proof>(0);
+            uint64_t v = 0;
             return bench::run("head.advance_sole_writer_from (release)", [&] {
-                log->head.advance_sole_writer_from(PublishOwner::proof(), v, v + 1);
+                counter.advance_sole_writer_from(PublishOwner::proof(), v, v + 1);
                 ++v;
                 bench::mark_changed(v);
             });

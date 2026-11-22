@@ -237,13 +237,14 @@ private:
         return ::foundation::core::Option<T>::some(item);
     }
 
-    // The proof of the one writer of the tail, the consumer.  The ring is its
-    // owner, and only a pop makes one.  The publish still compares the tail
-    // with the value that the pop read, so a second consumer ends the
-    // process at the next publish of the first one.
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MpscRing, MpscConsumerRole> prove_consumer_() noexcept {
-        return {};
-    }
+    // The writer of the tail, the consumer (THE WRITER OF A COUNTER of
+    // fixy/Mutation.h).  The ring is the owner of the proof, and only a pop
+    // makes one.  The publish still compares the tail with the value that the
+    // pop read, so a second consumer ends the process at the next publish of
+    // the first one.
+    using tail_writer_ = ::fixy::SoleWriterProof<MpscRing, MpscConsumerRole>;
+
+    [[nodiscard]] static constexpr tail_writer_ prove_consumer_() noexcept { return {}; }
 
     // The producers write head_, and they read no line of the consumer.  The
     // consumer is the one writer of tail_, which only a snapshot reads apart
@@ -253,8 +254,8 @@ private:
 
     SequenceCells<T, Capacity, Spacing> cells_{};
     ::fixy::AtomicMonotonic<std::uint64_t> head_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
-    ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
-        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+    ::fixy::AtomicMonotonic<std::uint64_t, tail_writer_> tail_ =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, tail_writer_>(0);
 };
 
 }  // namespace fixy::concurrent

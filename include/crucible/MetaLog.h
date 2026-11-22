@@ -53,6 +53,15 @@ struct CRUCIBLE_OWNER MetaLog {
     static constexpr uint32_t CAPACITY = 1 << 20;
     static constexpr uint32_t MASK = CAPACITY - 1;
 
+    // The writers of the two counters (THE WRITER OF A COUNTER of
+    // fixy/Mutation.h): the producer writes head, and the consumer writes
+    // tail.  The log is the owner of each proof, so only the doors of the log
+    // publish a counter.
+    struct HeadWriter final {};
+    struct TailWriter final {};
+    using head_writer = ::fixy::SoleWriterProof<MetaLog, HeadWriter>;
+    using tail_writer = ::fixy::SoleWriterProof<MetaLog, TailWriter>;
+
     // AtomicMonotonic carries its own alignas(64) and is 64 bytes wide, so
     // head fills bytes 0 through 63 by itself. An append therefore touches
     // two of the producer's lines, not one: head's, and the line after it
@@ -76,8 +85,8 @@ struct CRUCIBLE_OWNER MetaLog {
     // count in hours.  The slot of a record is its count masked by MASK.
     // The producer is the one writer of head, and the consumer is the one
     // writer of tail.
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> head =
-        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, head_writer> head =
+        ::fixy::mint_atomic_monotonic<uint64_t, head_writer>(0);
     // The producer's private view of the consumer's counter, refreshed only
     // when it claims the buffer is full. A stale value can only under-report
     // free space, so acting on it is safe. The type enforces the direction,
@@ -98,8 +107,8 @@ private:
     ::fixy::FixedHeapArray<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes> records_;
 
 public:
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
-        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail =
+        ::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(0);
 
     // The caller gives the allocation capability of its context for the
     // buffer of the records.
@@ -173,7 +182,7 @@ public:
                 // This release publishes the copy of fill_run_ to the consumer,
                 // and the copy of the head steps from the checked value.
                 const uint64_t h = start.raw();
-                head.advance_sole_writer_from(prove_checked_producer_(), h, h + metas.size(), own_head_);
+                head.advance_sole_writer_from(prove_head_writer_(), h, h + metas.size(), own_head_);
                 return start;
             },
             [] noexcept { return MetaIndex::none(); });
@@ -182,12 +191,12 @@ public:
     // The append of the producer of the Vigils, which holds the proof of the
     // record path.  The type proves the one writer, so the publish loads
     // nothing from the head.
-    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_proven(RecordProof const& proof,
+    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_proven(RecordProof const& /*proof*/,
                                                               ::fixy::View<const TensorMeta> metas)
         CRUCIBLE_NO_THREAD_SAFETY {
         return fill_run_(metas).match(
             [&](MetaIndex start) noexcept {
-                head.advance_sole_writer_by_proof(proof, own_head_, start.raw() + metas.size());
+                head.advance_sole_writer_by_proof(prove_head_writer_(), own_head_, start.raw() + metas.size());
                 return start;
             },
             [] noexcept { return MetaIndex::none(); });
@@ -245,7 +254,7 @@ public:
     // The consumer is the one writer of tail, so its relaxed load reads its
     // own last store.  The callers give only the new tail.
     void advance_tail(uint64_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
-        tail.advance_sole_writer_from(prove_checked_consumer_(), tail.peek_relaxed(), new_tail);
+        tail.advance_sole_writer_from(prove_tail_writer_(), tail.peek_relaxed(), new_tail);
     }
 
     // The two counters are read at different instants while both threads run,
@@ -285,25 +294,14 @@ public:
     }
 
 private:
-    // The roles of the proofs of the checked publishes: the producer writes
-    // the head, and the consumer writes the tail.
-    struct CheckedProducer final {};
-    struct CheckedConsumer final {};
+    // The proofs of the writers of the two counters.  Each door of a side
+    // makes the proof of its side: the proven append after the record proof
+    // of its caller, and each checked publish, which still compares the
+    // counter with the value of the writer, so a second writer ends the
+    // process at the next publish of the first one.
+    [[nodiscard]] static constexpr head_writer prove_head_writer_() noexcept { return {}; }
 
-    // The proofs of the one writer of each counter for the checked
-    // publishes.  The log is the owner of each, and only a checked publish
-    // makes one.  The publish still compares the counter with the value of
-    // the writer, so a second writer ends the process at the next publish of
-    // the first one.
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MetaLog, CheckedProducer>
-    prove_checked_producer_() noexcept {
-        return {};
-    }
-
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MetaLog, CheckedConsumer>
-    prove_checked_consumer_() noexcept {
-        return {};
-    }
+    [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
 
     // Writes the run of records at the head, and gives the index of its first
     // record, or no value if the buffer is full or the run is empty.  The two

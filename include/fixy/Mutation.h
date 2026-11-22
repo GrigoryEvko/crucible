@@ -35,20 +35,13 @@ class WriteOnce;
 template <typename Ptr>
 class WriteOnceNonNull;
 
-// The type of an AtomicMonotonic states how many threads write the counter.
-// The writer of a counter of one writer reads its own value with relaxed order
-// (peek_relaxed).  A counter of many writers has no such read, because a
-// writer there reads values that a different thread stored.  The type states
-// the count and proves no thread: the embedder that names
-// CounterWriters::sole states who the one writer is.
-enum class CounterWriters : std::uint8_t {
-    many = 0,
-    sole = 1,
-};
-
+// The type of an AtomicMonotonic names the writer of the counter (THE WRITER
+// OF A COUNTER, at AtomicMonotonic).  void names a counter that each thread
+// can advance.  A SoleWriterProof<Owner, Role> names a counter of one writer.
+//
 // Monotonic names AtomicMonotonic as a friend, for the checked publish that
 // steps the copy of the counter (advance_sole_writer_from with a copy).
-template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
+template <typename T, typename Writer = void, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
 class AtomicMonotonic;
 
@@ -413,7 +406,7 @@ private:
         requires MonotoneCarrier<U, C>
     friend constexpr Monotonic<U, C> mint_monotonic(U initial) noexcept(std::is_nothrow_move_constructible_v<U>);
 
-    template <typename U, CounterWriters W, typename C>
+    template <typename U, typename W, typename C>
         requires std::is_trivially_copyable_v<U>
     friend class AtomicMonotonic;
 
@@ -842,32 +835,62 @@ template <typename Ptr>
 // invalidates the reader's line, so an embedder that shares that line
 // with unrelated state pays for it on every step. Placing the
 // alignment here makes an embedder that forgets it safe anyway, at a
-// cost of one cache line per counter.  The type states how many threads write
-// the counter (CounterWriters).
+// cost of one cache line per counter.
 //
 // The counter is a cell of its value: its one atomic is private, each step of
 // it is atomic, and a value that one thread stores, another thread loads.  So
 // the class states payload_cell{} (foundation/Transfer.h), and it holds each
 // transfer property, the shared write included, exactly when T is Sendable.
-
-// The gate of the reads and the writes of the one writer of a counter:
-// peek_relaxed and advance_sole_writer_from.  Each of the two members asks
-// for this one concept, so a stronger gate changes one place.
-template <CounterWriters Writers>
-concept SoleWriterCounter = Writers == CounterWriters::sole;
+//
+// THE WRITER OF A COUNTER
+//   The second type argument names the writer.  void names a counter that
+//   each thread can advance, with a compare-and-swap.  A SoleWriterProof<
+//   Owner, Role> names a counter of one writer, the holder of that proof
+//   (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).  The
+//   publishes of the one writer take exactly that proof type, and only Owner
+//   makes it, so a proof of another owner or another role has no overload.
+//   The writer of a counter of one writer reads its own value with relaxed
+//   order (peek_relaxed).  A counter of many writers has no such read,
+//   because a writer there reads values that a different thread stored.
 
 // The proof of the one writer of a counter (THE PROOF OF THE ONE WRITER of
-// foundation/SoleWriterProof.h).  advance_sole_writer_by_proof takes it.
+// foundation/SoleWriterProof.h).
 using ::foundation::SoleWriterProof;
 
-template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]] constexpr AtomicMonotonic<T, Writers, Cmp> mint_atomic_monotonic(T initial) noexcept;
+// True when the writer of a counter is the proof of one writer (THE WRITER OF
+// A COUNTER).
+template <typename Writer>
+inline constexpr bool names_sole_writer_v = false;
+template <class Owner, class Role>
+inline constexpr bool names_sole_writer_v<SoleWriterProof<Owner, Role>> = true;
 
-template <typename T, CounterWriters Writers, typename Cmp>
+// The gate of the reads and the writes of the one writer of a counter:
+// peek_relaxed, advance_sole_writer_from and advance_sole_writer_by_proof.
+// Each of the members asks for this one concept, so a stronger gate changes
+// one place.
+template <typename Writer>
+concept SoleWriterCounter = names_sole_writer_v<Writer>;
+
+template <typename T, typename Writer = void, typename Cmp = std::less<T>>
+    requires std::is_trivially_copyable_v<T>
+[[nodiscard]] constexpr AtomicMonotonic<T, Writer, Cmp> mint_atomic_monotonic(T initial) noexcept;
+
+template <typename T, typename Writer, typename Cmp>
     requires std::is_trivially_copyable_v<T>
 class [[nodiscard]][[= ::foundation::transfer::payload_cell{}]] alignas(64) AtomicMonotonic
-    : ::foundation::Pinned<AtomicMonotonic<T, Writers, Cmp>> {
+    : ::foundation::Pinned<AtomicMonotonic<T, Writer, Cmp>> {
+    static_assert(std::is_void_v<Writer> || SoleWriterCounter<Writer>,
+                  "AtomicMonotonic<T, Writer, Cmp>: the writer is void, for a counter that each thread can advance, "
+                  "or SoleWriterProof<Owner, Role>, for a counter of one writer (THE WRITER OF A COUNTER)");
+
+    // The proof type of the publishes of the one writer: the writer itself.  A
+    // counter of many writers names a class that no code can make, so its
+    // declarations stay well formed, and their gate removes them.
+    struct no_sole_writer_ final {
+        no_sole_writer_() = delete("a counter of many writers has no proof of one writer");
+    };
+    using sole_writer_proof_ = std::conditional_t<SoleWriterCounter<Writer>, Writer, no_sole_writer_>;
+
     std::atomic<T> value_;
 
     static constexpr bool kIsLess = AscendingOrder<T, Cmp>;
@@ -876,7 +899,7 @@ class [[nodiscard]][[= ::foundation::transfer::payload_cell{}]] alignas(64) Atom
 
     constexpr explicit AtomicMonotonic(T initial) noexcept : value_{initial} {}
 
-    template <typename U, CounterWriters W, typename C>
+    template <typename U, typename W, typename C>
         requires std::is_trivially_copyable_v<U>
     friend constexpr AtomicMonotonic<U, W, C> mint_atomic_monotonic(U initial) noexcept;
 
@@ -885,7 +908,7 @@ public:
     using comparator_type = Cmp;
     using row_discipline = ::fixy::row_discipline::atomic_monotonic<Cmp>;
     using row_payload = T;
-    static constexpr CounterWriters writers = Writers;
+    using writer_type = Writer;
 
     // The value, with acquire order: the read of each thread.  It pairs with
     // the release half of each write.  A read that takes an order as an
@@ -901,12 +924,12 @@ public:
     // thread needs get(), whose acquire pairs with the release half of
     // advance and bump.
     [[nodiscard]] T peek_relaxed() const noexcept
-        requires SoleWriterCounter<Writers>
+        requires SoleWriterCounter<Writer>
     {
         return value_.load(std::memory_order_relaxed);
     }
     T peek_relaxed() const noexcept
-        requires(!SoleWriterCounter<Writers>)
+        requires(!SoleWriterCounter<Writer>)
     = delete("AtomicMonotonic::peek_relaxed: a counter of many writers has no thread that reads its own last store. "
              "Read it with get(), or seed a compare-exchange with load_relaxed()");
 
@@ -960,9 +983,9 @@ public:
     }
 
     // For the one thread that writes this counter, such as the producer
-    // of a single-producer ring.  The proof names that writer (THE PROOF OF
-    // THE ONE WRITER of foundation/SoleWriterProof.h), so a thread that holds
-    // no proof has no overload.  current is the value that the counter
+    // of a single-producer ring.  The proof is the writer that the type of
+    // the counter names (THE WRITER OF A COUNTER), so a thread that holds no
+    // such proof has no overload.  current is the value that the counter
     // holds, from that thread's own load or its own copy of its last store.
     // The precondition compares two values in registers, so it folds to one
     // compare where the step is visibly forward, and a step that wraps past
@@ -975,9 +998,8 @@ public:
     // the check and the store here, another writer can pass the new value.
     // A counter of many writers has no such write, so the member asks for
     // the gate of the one writer, as peek_relaxed does.
-    template <class Owner, class Role>
-    void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& /*proof*/, T current, T new_value) noexcept
-        requires SoleWriterCounter<Writers>
+    void advance_sole_writer_from(sole_writer_proof_ const& /*proof*/, T current, T new_value) noexcept
+        requires SoleWriterCounter<Writer>
     {
         CRUCIBLE_PRE(Cmp{}(current, new_value));
         // Equal under the order, which asks of T no operator==.  The relaxed
@@ -988,10 +1010,10 @@ public:
     }
     template <class Owner, class Role>
     void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& /*proof*/, T current, T new_value) noexcept
-        requires(!SoleWriterCounter<Writers>)
+        requires(!SoleWriterCounter<Writer>)
     = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer, and a second "
-             "writer can pass the new value between the check and the store.  Use advance, or name "
-             "CounterWriters::sole for a counter of one writer");
+             "writer can pass the new value between the check and the store.  Use advance, or name the proof of "
+             "the one writer as the writer of a counter of one writer");
 
     // The checked publish of the one writer that keeps a copy of the counter
     // on a line of its own, such as the producer of a ring.  own is that
@@ -1001,10 +1023,9 @@ public:
     // current too.  Then own steps from current, so the step check compares
     // two values in registers, and the call loads own no second time after
     // the store of the counter.
-    template <class Owner, class Role>
-    void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& proof, T current, T new_value,
+    void advance_sole_writer_from(sole_writer_proof_ const& proof, T current, T new_value,
                                   Monotonic<T, Cmp>& own) noexcept
-        requires SoleWriterCounter<Writers>
+        requires SoleWriterCounter<Writer>
     {
         advance_sole_writer_from(proof, current, new_value);
         own.advance_from_checked_(current, new_value);
@@ -1012,13 +1033,13 @@ public:
     template <class Owner, class Role>
     void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& /*proof*/, T current, T new_value,
                                   Monotonic<T, Cmp>& own) noexcept
-        requires(!SoleWriterCounter<Writers>)
+        requires(!SoleWriterCounter<Writer>)
     = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer for a copy to "
-             "follow.  Use advance, or name CounterWriters::sole for a counter of one writer");
+             "follow.  Use advance, or name the proof of the one writer as the writer of a counter of one writer");
 
-    // The publish of the one writer that holds a proof of its role (THE
-    // PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).  own is the
-    // copy of the counter that the
+    // The publish of the one writer that holds the proof that the type of the
+    // counter names (THE WRITER OF A COUNTER).  own is the copy of the
+    // counter that the
     // writer keeps on a line of its own, and it holds the value of the
     // counter.  The step check compares own and new_value in registers, in
     // each build and under each contract semantic.  Then own steps from the
@@ -1027,10 +1048,8 @@ public:
     // The store is a plain release, and the call
     // loads nothing from the counter, so a reader that polls the line of the
     // counter costs the writer no transfer of that line.
-    template <class Owner, class Role>
-    void advance_sole_writer_by_proof(SoleWriterProof<Owner, Role> const& /*proof*/, Monotonic<T, Cmp>& own,
-                                      T new_value) noexcept
-        requires SoleWriterCounter<Writers>
+    void advance_sole_writer_by_proof(sole_writer_proof_ const& /*proof*/, Monotonic<T, Cmp>& own, T new_value) noexcept
+        requires SoleWriterCounter<Writer>
     {
         T const current = own.get();
         CRUCIBLE_FATAL_INVARIANT(Cmp{}(current, new_value));
@@ -1040,9 +1059,9 @@ public:
     template <class Owner, class Role>
     void advance_sole_writer_by_proof(SoleWriterProof<Owner, Role> const& /*proof*/, Monotonic<T, Cmp>& own,
                                       T new_value) noexcept
-        requires(!SoleWriterCounter<Writers>)
+        requires(!SoleWriterCounter<Writer>)
     = delete("AtomicMonotonic::advance_sole_writer_by_proof: a counter of many writers has no one writer for a proof "
-             "to name.  Use advance, or name CounterWriters::sole for a counter of one writer");
+             "to name.  Use advance, or name the proof of the one writer as the writer of a counter of one writer");
 
     // delta is a magnitude, not a signed step. Cmp fixes the direction:
     // std::less adds and std::greater subtracts. A negative delta would
@@ -1143,13 +1162,13 @@ public:
     static void fence_seq_cst() noexcept { std::atomic_thread_fence(std::memory_order_seq_cst); }
 };
 
-template <typename T, CounterWriters Writers, typename Cmp>
+template <typename T, typename Writer, typename Cmp>
     requires std::is_trivially_copyable_v<T>
-[[nodiscard]] constexpr AtomicMonotonic<T, Writers, Cmp> mint_atomic_monotonic(T initial) noexcept {
-    return AtomicMonotonic<T, Writers, Cmp>{initial};
+[[nodiscard]] constexpr AtomicMonotonic<T, Writer, Cmp> mint_atomic_monotonic(T initial) noexcept {
+    return AtomicMonotonic<T, Writer, Cmp>{initial};
 }
 
 template <typename T>
-using MaxObserved = AtomicMonotonic<T, CounterWriters::many, std::less<T>>;
+using MaxObserved = AtomicMonotonic<T, void, std::less<T>>;
 
 }  // namespace fixy

@@ -55,7 +55,8 @@ void test_poisoned_effect_mask_ends_the_process(TestRunnerCtx const& test) {
 }
 
 void test_stale_current_of_a_sole_writer_ends_the_process(TestRunnerCtx const& test) {
-    auto counter = ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(5);
+    auto counter =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::SoleWriterProof<CounterOwner, CounterOwner::Role>>(5);
     std::uint64_t const stale = opaque(std::uint64_t{4});
     expect_dies(
         test, [&counter, stale] noexcept { counter.advance_sole_writer_from(CounterOwner::proof(), stale, 6); },

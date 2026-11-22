@@ -130,13 +130,13 @@ public:
             if (free_after_tail_load_() == 0) return false;
         }
         buffer_[h & MASK] = item;
-        head_.advance_sole_writer_from(prove_checked_producer_(), h, h + 1);
+        head_.advance_sole_writer_from(prove_head_writer_(), h, h + 1);
         own_head_.advance(h + 1);
         return true;
     }
 
     // The push of the one producer that the proof names (THE PROVEN FORM).
-    [[nodiscard]] CRUCIBLE_HOT bool try_push_proven(producer_proof const& proof, const T& item) noexcept
+    [[nodiscard]] CRUCIBLE_HOT bool try_push_proven(producer_proof const& /*proof*/, const T& item) noexcept
         requires(!std::is_void_v<Owner>)
     {
         const std::uint64_t h = own_head_.get();
@@ -144,7 +144,7 @@ public:
             if (free_after_tail_load_() == 0) return false;
         }
         buffer_[h & MASK] = item;
-        head_.advance_sole_writer_by_proof(proof, own_head_, h + 1);
+        head_.advance_sole_writer_by_proof(prove_head_writer_(), own_head_, h + 1);
         return true;
     }
 
@@ -159,13 +159,13 @@ public:
             if (items_after_head_load_() == 0) return ::foundation::core::none;
         }
         const T result = buffer_[t & MASK];
-        tail_.advance_sole_writer_from(prove_checked_consumer_(), t, t + 1);
+        tail_.advance_sole_writer_from(prove_tail_writer_(), t, t + 1);
         own_tail_.advance(t + 1);
         return ::foundation::core::Option<T>::some(result);
     }
 
     // The pop of the one consumer that the proof names (THE PROVEN FORM).
-    [[nodiscard]] CRUCIBLE_HOT ::foundation::core::Option<T> try_pop_proven(consumer_proof const& proof) noexcept
+    [[nodiscard]] CRUCIBLE_HOT ::foundation::core::Option<T> try_pop_proven(consumer_proof const& /*proof*/) noexcept
         requires(!std::is_void_v<Owner>)
     {
         const std::uint64_t t = own_tail_.get();
@@ -173,7 +173,7 @@ public:
             if (items_after_head_load_() == 0) return ::foundation::core::none;
         }
         const T result = buffer_[t & MASK];
-        tail_.advance_sole_writer_by_proof(proof, own_tail_, t + 1);
+        tail_.advance_sole_writer_by_proof(prove_tail_writer_(), own_tail_, t + 1);
         return ::foundation::core::Option<T>::some(result);
     }
 
@@ -197,7 +197,7 @@ public:
         own_tail_.advance(t + 1);
         const std::uint64_t deferred = deferred_pops_ + 1;
         if (deferred >= Interval) [[unlikely]] {
-            tail_.advance_sole_writer_from(prove_checked_consumer_(), t + 1 - deferred, t + 1);
+            tail_.advance_sole_writer_from(prove_tail_writer_(), t + 1 - deferred, t + 1);
             deferred_pops_ = 0;
         } else {
             deferred_pops_ = deferred;
@@ -211,7 +211,7 @@ public:
     void publish_tail() noexcept {
         if (deferred_pops_ == 0) return;
         const std::uint64_t t = own_tail_.get();
-        tail_.advance_sole_writer_from(prove_checked_consumer_(), t - deferred_pops_, t);
+        tail_.advance_sole_writer_from(prove_tail_writer_(), t - deferred_pops_, t);
         deferred_pops_ = 0;
     }
 
@@ -247,7 +247,7 @@ public:
             std::memcpy(buffer_.data(), source + first, second * sizeof(T));
         }
 
-        head_.advance_sole_writer_from(prove_checked_producer_(), h, h + count);
+        head_.advance_sole_writer_from(prove_head_writer_(), h, h + count);
         own_head_.advance(h + count);
         return count;
     }
@@ -278,7 +278,7 @@ public:
             std::memcpy(target + first, buffer_.data(), second * sizeof(T));
         }
 
-        tail_.advance_sole_writer_from(prove_checked_consumer_(), t, t + count);
+        tail_.advance_sole_writer_from(prove_tail_writer_(), t, t + count);
         own_tail_.advance(t + count);
         return count;
     }
@@ -314,20 +314,19 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    // The proofs of the one writer of each side for the checked calls.  The
-    // ring is the owner of each, and only a checked call makes one.  A
-    // checked publish still compares the published index with the copy of
+    // The writers of the two published indexes (THE WRITER OF A COUNTER of
+    // fixy/Mutation.h).  The ring is the owner of each proof, so only the ring
+    // publishes an index.  Each call of a side makes the proof of that side:
+    // a proven call after its Owner gave the proof of the side, and a checked
+    // call, whose publish still compares the published index with the copy of
     // its side, so a second writer of one side ends the process at the next
     // publish of the first writer.
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<SpscRing, SpscProducerRole>
-    prove_checked_producer_() noexcept {
-        return {};
-    }
+    using head_writer_ = ::fixy::SoleWriterProof<SpscRing, SpscProducerRole>;
+    using tail_writer_ = ::fixy::SoleWriterProof<SpscRing, SpscConsumerRole>;
 
-    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<SpscRing, SpscConsumerRole>
-    prove_checked_consumer_() noexcept {
-        return {};
-    }
+    [[nodiscard]] static constexpr head_writer_ prove_head_writer_() noexcept { return {}; }
+
+    [[nodiscard]] static constexpr tail_writer_ prove_tail_writer_() noexcept { return {}; }
 
     // The free slots of the ring after a fresh acquire load of the tail into
     // the cached tail: the path of a push whose cache says that the ring has
@@ -366,13 +365,13 @@ private:
     // INDEX).  Only their side reads and writes them, so the other core
     // never pulls that line.
 
-    ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> head_ =
-        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+    ::fixy::AtomicMonotonic<std::uint64_t, head_writer_> head_ =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, head_writer_>(0);
     // The producer is the one reader and the one writer of the two.
     alignas(64)::fixy::Monotonic<std::uint64_t> own_head_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     ::fixy::Monotonic<std::uint64_t> cached_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
-    ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
-        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+    ::fixy::AtomicMonotonic<std::uint64_t, tail_writer_> tail_ =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, tail_writer_>(0);
     // The consumer is the one reader and the one writer of the three.  The
     // count of the deferred pops is the copy of the tail minus the published
     // tail (THE DEFERRED TAIL), and it is zero after each pop of another form.

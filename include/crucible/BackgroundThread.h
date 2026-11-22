@@ -863,8 +863,11 @@ public:
         }
 
         ::fixy::HeapArray<RegionLink> slots_;
-        ::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> total_ =
-            ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
+        // The publish stage is the one writer of the count (THE WRITER OF A
+        // COUNTER of fixy/Mutation.h), so push reads it with relaxed order.
+        struct TotalWriter final {};
+        ::fixy::AtomicMonotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>> total_ =
+            ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>>(0);
     };
 
     // The queue, for a read.  Only the publish stage pushes.
@@ -1033,9 +1036,12 @@ private:
     // producer writes it, and the detect stage reads it at each reset that it
     // applies.
     ::fixy::Atomic<NumericsHash> requested_numerics_{compute_numerics_hash(NumericsPolicy{}, EagerNumerics{})};
-    // The detect stage is the one writer of the two below.
-    ::fixy::AtomicMonotonic<StreamPoint, ::fixy::CounterWriters::sole> applied_reset_ =
-        ::fixy::mint_atomic_monotonic<StreamPoint, ::fixy::CounterWriters::sole>(StreamPoint{});
+    // The detect stage is the one writer of the two below (THE WRITER OF A
+    // COUNTER of fixy/Mutation.h).
+    struct AppliedResetWriter final {};
+    ::fixy::AtomicMonotonic<StreamPoint, ::fixy::SoleWriterProof<BackgroundThread, AppliedResetWriter>> applied_reset_ =
+        ::fixy::mint_atomic_monotonic<StreamPoint, ::fixy::SoleWriterProof<BackgroundThread, AppliedResetWriter>>(
+            StreamPoint{});
     // The count of ops that the detect stage read.
     uint64_t stream_ops_ = 0;
 
