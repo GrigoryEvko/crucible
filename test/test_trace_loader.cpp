@@ -816,6 +816,49 @@ static void test_names_that_the_validator_refuses_are_refused() {
     ::fixy::check::pass(kTest, "  test_names_the_validator_refuses: PASSED\n");
 }
 
+// Appends one name of one character to a name table.
+static void append_short_name(TraceImage& image, uint64_t hash) {
+    append_le<uint64_t>(image, hash);
+    append_le<uint16_t>(image, 1);
+    append_text(image, "n");
+}
+
+// The refusal of the check of image, or no value.
+static ::fixy::Option<TraceLoadError> check_error(TraceImage const& image) {
+    return CheckedTraceImage::check(image.view()).err();
+}
+
+// The check of a repeated hash reads the whole table, and the first refusal
+// in the order of the file still decides the error.  A repeated hash before a
+// corrupt name gives NameRepeated, and a corrupt name before a repeated hash
+// gives NameCorrupt.  In a table of TRACE_NAMES_MAX names in no order, the
+// last name repeats the hash of the first one, and the check finds it.
+static void test_first_refusal_of_the_table_decides() {
+    auto repeat_first = make_zero_op_header();
+    append_le<uint32_t>(repeat_first, 3);
+    append_short_name(repeat_first, 0x3E9ULL);
+    append_short_name(repeat_first, 0x3E9ULL);
+    append_short_name(repeat_first, 0);
+    CRUCIBLE_TEST_ASSERT(kTest, check_error(repeat_first) == ::fixy::some(TraceLoadError::NameRepeated));
+
+    auto corrupt_first = make_zero_op_header();
+    append_le<uint32_t>(corrupt_first, 3);
+    append_short_name(corrupt_first, 0x3E9ULL);
+    append_short_name(corrupt_first, 0);
+    append_short_name(corrupt_first, 0x3E9ULL);
+    CRUCIBLE_TEST_ASSERT(kTest, check_error(corrupt_first) == ::fixy::some(TraceLoadError::NameCorrupt));
+
+    auto repeat_last = make_zero_op_header();
+    append_le<uint32_t>(repeat_last, TRACE_NAMES_MAX);
+    constexpr uint64_t kSpread = 0x9E3779B97F4A7C15ULL;
+    for (uint64_t index = 1; index < TRACE_NAMES_MAX; ++index) {
+        append_short_name(repeat_last, kSpread * index);
+    }
+    append_short_name(repeat_last, kSpread);
+    CRUCIBLE_TEST_ASSERT(kTest, check_error(repeat_last) == ::fixy::some(TraceLoadError::NameRepeated));
+    ::fixy::check::pass(kTest, "  test_first_refusal_decides:     PASSED\n");
+}
+
 // An image as the writer of the export writes it: two ops, with one input
 // and one output each, four metadata records, and a name table of two
 // names.  The sections end at the offsets of CutSections.
@@ -1241,6 +1284,7 @@ int main() {
     test_schema_name_table_corrupt_zero_len();
     test_schema_name_table_corrupt_oversize_len();
     test_names_that_the_validator_refuses_are_refused();
+    test_first_refusal_of_the_table_decides();
     test_each_cut_of_a_written_file_is_refused();
     test_cut_files_at_the_section_boundaries_are_refused();
     test_trailing_byte_and_count_past_the_bound_are_refused();

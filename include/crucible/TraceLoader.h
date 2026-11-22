@@ -63,6 +63,7 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
 #include <fixy/Refined.h>
+#include <foundation/core/Sort.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
 
@@ -561,21 +562,46 @@ take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
 }
 
 // The refusal of one name of the table, or no value.  The name passes
-// sanitize_schema_name, the one validator of a schema name from outside, and
-// its hash is not a hash of earlier, the names before it.  Complexity: the
-// length of the name and the count of earlier.
-[[nodiscard]] inline ::fixy::Option<TraceLoadError> check_trace_name_(TraceName const& name,
-                                                                      ::fixy::View<SchemaHash const> earlier) noexcept {
+// sanitize_schema_name, the one validator of a schema name from outside.  The
+// test of a repeated hash reads the whole table (has_repeated_hash_).
+// Complexity: the length of the name.
+[[nodiscard]] inline ::fixy::Option<TraceLoadError> check_trace_name_(TraceName const& name) noexcept {
     const ::fixy::FixedText<SCHEMA_NAME_MAX> text = trace_name_text_(name);
-    const ::fixy::Option<TraceLoadError> refusal =
-        sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
-            .match([](SchemaTable::SanitizedName) noexcept { return ::fixy::Option<TraceLoadError>{}; },
-                   [](SchemaNameError error) noexcept { return ::fixy::some(trace_name_error_(error)); });
-    if (refusal.is_some()) return refusal;
-    for (const SchemaHash held : earlier) {
-        if (held == name.hash) return ::fixy::some(TraceLoadError::NameRepeated);
+    return sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
+        .match([](SchemaTable::SanitizedName) noexcept { return ::fixy::Option<TraceLoadError>{}; },
+               [](SchemaNameError error) noexcept { return ::fixy::some(trace_name_error_(error)); });
+}
+
+// The hashes of the names of a table, as the keys of the radix sort of the
+// base.
+using TraceNameHashes = ::fixy::FixedList<uint64_t, TRACE_NAMES_MAX>;
+
+// True when two of the hashes are equal.  The stable sort of the base orders
+// the hashes by the radix sort of their eight bytes, and a scan compares each
+// hash with the next one.  The order of the result of the sort is a function
+// of the hashes alone, so the answer has no freedom.  Complexity: O(n) for n
+// hashes, with at most eight passes of the sort, where the old test of each
+// name against each name before it made n * (n - 1) / 2 compares.
+[[nodiscard]] inline bool has_repeated_hash_(TraceNameHashes hashes) noexcept {
+    TraceNameHashes scratch{};
+    for (std::size_t index = 0; index < hashes.size(); ++index) {
+        const bool is_held = scratch.append(uint64_t{0}).is_ok();
+        CRUCIBLE_FATAL_INVARIANT(is_held);
     }
-    return ::fixy::none;
+    hashes = ::fixy::with_mut(std::move(hashes), [&scratch](auto run) noexcept {
+        scratch = ::fixy::with_mut(std::move(scratch), [&run](auto room) noexcept {
+            const bool is_sorted = ::foundation::core::sort_stably(std::move(run), std::move(room)).is_ok();
+            CRUCIBLE_FATAL_INVARIANT(is_sorted);
+        });
+    });
+    uint64_t previous = 0;
+    bool is_first = true;
+    for (const uint64_t hash : hashes) {
+        if (!is_first && hash == previous) return true;
+        previous = hash;
+        is_first = false;
+    }
+    return false;
 }
 
 // The report of a refusal of the name table, with the offset in the image of
@@ -708,8 +734,8 @@ public:
     // those of the table (TraceLoadError).  It gives a Result of a
     // CheckedTraceImage or of the TraceLoadError, with a deduced return type,
     // as CheckedTraceHeader::check.  Complexity: linear in the bytes of the
-    // names, and quadratic in the count of the names for the test of a
-    // repeated hash.  The count is at most TRACE_NAMES_MAX.
+    // names, and linear in the count of the names for the test of a repeated
+    // hash (has_repeated_hash_).  The count is at most TRACE_NAMES_MAX.
     [[nodiscard]] static auto check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image) noexcept;
 
     // Checks a whole image: its header, then the rest.  An image shorter than
@@ -769,26 +795,28 @@ inline auto CheckedTraceImage::check(CheckedTraceHeader const& header, ::fixy::V
     checked.num_names_ = ::fixy::mint_refined<kTraceNumNamesBound>(raw_num_names).value();
     checked.names_ = table.window(detail::kTraceNameCountBytes, table.size() - detail::kTraceNameCountBytes)
                          .expect("the count is the start of the table");
-    // The hashes of the names that passed, for the test of a repeated hash.
-    // The test reads them through a const reference.
-    ::fixy::FixedList<SchemaHash, TRACE_NAMES_MAX> hashes{};
-    const ::fixy::FixedList<SchemaHash, TRACE_NAMES_MAX>& earlier = hashes;
+    // The hashes of the names that passed, up to the first refusal of a name.
+    // Each of them comes before that refusal in the file, so a repeated hash
+    // among them is the first refusal in the order of the file.
+    detail::TraceNameHashes hashes{};
     ::fixy::View<std::byte const> rest = checked.names_;
-    for (uint32_t index = 0; index < checked.num_names_; ++index) {
-        ::fixy::Option<TraceLoadError> refusal = detail::take_trace_name_(rest).match(
-            [&hashes, &earlier](detail::TraceName name) noexcept {
-                ::fixy::Option<TraceLoadError> refused = detail::check_trace_name_(name, earlier.view());
+    ::fixy::Option<TraceLoadError> refusal = ::fixy::none;
+    for (uint32_t index = 0; index < checked.num_names_ && refusal.is_none(); ++index) {
+        refusal = detail::take_trace_name_(rest).match(
+            [&hashes](detail::TraceName name) noexcept {
+                ::fixy::Option<TraceLoadError> refused = detail::check_trace_name_(name);
                 if (refused.is_some()) return refused;
-                const bool is_held = hashes.append(name.hash).is_ok();
+                const bool is_held = hashes.append(name.hash.raw()).is_ok();
                 CRUCIBLE_FATAL_INVARIANT(is_held);
                 return refused;
             },
             [](TraceLoadError error) noexcept { return ::fixy::some(error); });
-        if (refusal.is_some()) {
-            const TraceLoadError error = std::move(refusal).value_or(TraceLoadError::NameTableTruncated);
-            detail::report_name_table_(error, table_at);
-            return Checked{::fixy::err(error)};
-        }
+    }
+    if (detail::has_repeated_hash_(std::move(hashes))) refusal = ::fixy::some(TraceLoadError::NameRepeated);
+    if (refusal.is_some()) {
+        const TraceLoadError error = std::move(refusal).value_or(TraceLoadError::NameTableTruncated);
+        detail::report_name_table_(error, table_at);
+        return Checked{::fixy::err(error)};
     }
     if (rest.size() != 0) {
         detail::report_name_table_(TraceLoadError::TrailingBytes, table_at);
