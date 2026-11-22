@@ -92,18 +92,17 @@ static_assert(sizeof(CrucibleBoundScalar) == 16);
 
 namespace {
 
-// The bytes of the file of an export, written in order from the first byte.
-// Each put moves the place past its bytes.  The size pass of the export
-// counts each byte of the file, so each window fits, and the last put fills
-// the image.
+// The bytes of the file of an export, written in order from the first byte
+// through the write lease of the image.  Each put writes the next bytes.  The
+// size pass of the export counts each byte of the file, so each put fits, and
+// the last put fills the image.  The mint of the image ends the process when
+// a put does not fit or a byte has no write.
 class ExportCursor {
 public:
-    explicit ExportCursor(::fixy::View<std::byte> image) noexcept : image_{image} {}
+    explicit ExportCursor(::fixy::WriteLease<std::byte>& lease) noexcept : lease_{lease} {}
 
     // The bytes of a record.
-    void put(::fixy::View<std::byte const> bytes) noexcept {
-        ::fixy::copy(next_(bytes.size()), bytes).expect("a window of the count of the bytes has that count");
-    }
+    void put(::fixy::View<std::byte const> bytes) noexcept { lease_.put_run(bytes); }
 
     // The bytes of an encoded record, which the call can take as a temporary.
     template <std::size_t Count>
@@ -120,25 +119,13 @@ public:
 
     // The characters of a text, one byte each.
     void put_text(::fixy::TextView text) noexcept {
-        auto slot = next_(text.size()).begin();
         for (const char character : text) {
-            *slot = static_cast<std::byte>(static_cast<unsigned char>(character));
-            ++slot;
+            lease_.put(static_cast<std::byte>(static_cast<unsigned char>(character)));
         }
     }
 
-    [[nodiscard]] bool is_full() const noexcept { return place_ == image_.size(); }
-
 private:
-    [[nodiscard]] ::fixy::View<std::byte> next_(std::size_t count) noexcept {
-        const ::fixy::View<std::byte> window =
-            image_.window(place_, count).expect("the size pass counted each byte of the file");
-        place_ += count;
-        return window;
-    }
-
-    ::fixy::View<std::byte> image_;
-    std::size_t place_ = 0;
+    ::fixy::WriteLease<std::byte>& lease_;
 };
 
 }  // namespace
@@ -582,11 +569,11 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const size_t file_bytes = crucible::TRACE_HEADER_BYTES + size_t{num_ops} * sizeof(crucible::TraceOpRecord)
                             + size_t{total_metas} * crucible::TRACE_META_BYTES + sizeof(uint32_t) + name_bytes;
 
-    // The cursor writes the image through the frame door of the buffer, and
-    // the body reads only its lent run.
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(io.cap().alloc, file_bytes, std::byte{0});
-    image = ::fixy::with_mut(std::move(image), [&](auto run) noexcept {
-        ExportCursor cursor{run.view()};
+    // The cursor writes each byte of the image one time, in order, through the
+    // write lease of a new buffer.  The mint ends the process when the writer
+    // leaves a byte with no write, so the image is full when the mint returns.
+    const auto write_image = [&](::fixy::WriteLease<std::byte>& lease) noexcept {
+        ExportCursor cursor{lease};
 
         // Header: "CRTR" + version + num_ops + num_metas = 16B.
         cursor.put(crucible::encode_trace_header(num_ops, total_metas));
@@ -644,8 +631,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
             write_entry(entry);
         for (const crucible::SchemaEntry& entry : late.entries())
             if (!is_in_global(entry.hash)) write_entry(entry);
-        CRUCIBLE_FATAL_INVARIANT(cursor.is_full());
-    });
+    };
+    const ::fixy::HeapArray<std::byte> image =
+        ::fixy::mint_heap_array_written<std::byte>(io.cap().alloc, file_bytes, write_image);
 
     // The door writes a temporary file beside the target, syncs it, renames
     // it onto the target and syncs the directory (THE DURABLE REPLACE of
