@@ -35,6 +35,13 @@ template <class T>
     return value;
 }
 
+// The owner of the counter of the test, which makes the proof of its one
+// writer (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).
+struct CounterOwner final {
+    struct Role final {};
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<CounterOwner, Role> proof() noexcept { return {}; }
+};
+
 // The clean mask and the advance from the stored value are the controls, in
 // the test process.
 void test_poisoned_effect_mask_ends_the_process(TestRunnerCtx const& test) {
@@ -51,10 +58,10 @@ void test_stale_current_of_a_sole_writer_ends_the_process(TestRunnerCtx const& t
     auto counter = ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(5);
     std::uint64_t const stale = opaque(std::uint64_t{4});
     expect_dies(
-        test, [&counter, stale] noexcept { counter.advance_sole_writer_from(stale, 6); },
+        test, [&counter, stale] noexcept { counter.advance_sole_writer_from(CounterOwner::proof(), stale, 6); },
         ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
     std::uint64_t const stored = opaque(std::uint64_t{5});
-    counter.advance_sole_writer_from(stored, 6);
+    counter.advance_sole_writer_from(CounterOwner::proof(), stored, 6);
     CRUCIBLE_FATAL_INVARIANT(counter.get() == 6);
 }
 

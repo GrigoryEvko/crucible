@@ -62,6 +62,10 @@ struct mpsc_ring;
 
 namespace fixy::concurrent {
 
+// The role of the proof of the one writer of the tail of a ring, the
+// consumer.
+struct MpscConsumerRole final {};
+
 template <RingValue T, std::size_t Capacity, CellSpacing Spacing = CellSpacing::line>
 class MpscRing : public ::foundation::Pinned<MpscRing<T, Capacity, Spacing>> {
 public:
@@ -192,7 +196,7 @@ public:
             ++R;
         }
         if (R == 0) return 0;
-        tail_.advance_sole_writer_from(pos0, pos0 + R);
+        tail_.advance_sole_writer_from(prove_consumer_(), pos0, pos0 + R);
         return R;
     }
 
@@ -229,8 +233,16 @@ private:
         }
         const T item = cells_.value_of(ticket);
         cells_.free(ticket);
-        tail_.advance_sole_writer_from(pos, pos + 1);
+        tail_.advance_sole_writer_from(prove_consumer_(), pos, pos + 1);
         return ::foundation::core::Option<T>::some(item);
+    }
+
+    // The proof of the one writer of the tail, the consumer.  The ring is its
+    // owner, and only a pop makes one.  The publish still compares the tail
+    // with the value that the pop read, so a second consumer ends the
+    // process at the next publish of the first one.
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MpscRing, MpscConsumerRole> prove_consumer_() noexcept {
+        return {};
     }
 
     // The producers write head_, and they read no line of the consumer.  The

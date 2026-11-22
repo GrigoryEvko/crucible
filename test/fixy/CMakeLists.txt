@@ -368,11 +368,16 @@ fixy_neg_compile_test(neg_mutation_atomic_monotonic_peek_shared
   "fixy::AtomicMonotonic<T, Writers, Cmp>::peek_relaxed\\(\\) const")
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_sole_step_shared
   "a counter of many writers has no one writer"
-  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(T, T\\)")
+  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(const foundation::SoleWriterProof<Owner, Role>&, T, T\\)")
 # The checked publish that steps a copy belongs to the one writer too.
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_copy_step_shared
   "a counter of many writers has no one writer for a copy to follow"
-  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(T, T, fixy::Monotonic<T, Cmp>&\\)")
+  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(const foundation::SoleWriterProof<Owner, Role>&, T, T, fixy::Monotonic<T, Cmp>&\\)")
+# The publish of the one writer takes the proof of that writer, so two bodies
+# that borrow one counter and hold no proof have no overload.
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_sole_step_without_proof
+  "no matching function for call to"
+  "::advance_sole_writer_from\\(const uint64_t&, long unsigned int\\)")
 # The step of a copy from a named value is private to that publish.
 fixy_neg_compile_test(neg_mutation_monotonic_checked_step_outside
   "is private within this context"

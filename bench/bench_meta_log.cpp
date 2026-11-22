@@ -41,6 +41,13 @@ constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::
 ::fixy::FixedArray<std::byte, 64> g_storage_2d{};
 ::fixy::FixedArray<std::byte, 64> g_storage_4d{};
 
+// The owner of the one writer of the row of the publish, which makes its proof
+// (THE PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).
+struct PublishOwner final {
+    struct Role final {};
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<PublishOwner, Role> proof() noexcept { return {}; }
+};
+
 }  // namespace
 
 // Realistic 2D float tensor (linear / matmul input).
@@ -244,7 +251,7 @@ int main() {
             auto const log = ::fixy::to(*log_box);
             uint32_t v = 0;
             return bench::run("head.advance_sole_writer_from (release)", [&] {
-                log->head.advance_sole_writer_from(v, v + 1);
+                log->head.advance_sole_writer_from(PublishOwner::proof(), v, v + 1);
                 ++v;
                 bench::mark_changed(v);
             });

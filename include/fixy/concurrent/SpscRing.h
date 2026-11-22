@@ -130,7 +130,7 @@ public:
             if (free_after_tail_load_() == 0) return false;
         }
         buffer_[h & MASK] = item;
-        head_.advance_sole_writer_from(h, h + 1);
+        head_.advance_sole_writer_from(prove_checked_producer_(), h, h + 1);
         own_head_.advance(h + 1);
         return true;
     }
@@ -159,7 +159,7 @@ public:
             if (items_after_head_load_() == 0) return ::foundation::core::none;
         }
         const T result = buffer_[t & MASK];
-        tail_.advance_sole_writer_from(t, t + 1);
+        tail_.advance_sole_writer_from(prove_checked_consumer_(), t, t + 1);
         own_tail_.advance(t + 1);
         return ::foundation::core::Option<T>::some(result);
     }
@@ -197,7 +197,7 @@ public:
         own_tail_.advance(t + 1);
         const std::uint64_t deferred = deferred_pops_ + 1;
         if (deferred >= Interval) [[unlikely]] {
-            tail_.advance_sole_writer_from(t + 1 - deferred, t + 1);
+            tail_.advance_sole_writer_from(prove_checked_consumer_(), t + 1 - deferred, t + 1);
             deferred_pops_ = 0;
         } else {
             deferred_pops_ = deferred;
@@ -211,7 +211,7 @@ public:
     void publish_tail() noexcept {
         if (deferred_pops_ == 0) return;
         const std::uint64_t t = own_tail_.get();
-        tail_.advance_sole_writer_from(t - deferred_pops_, t);
+        tail_.advance_sole_writer_from(prove_checked_consumer_(), t - deferred_pops_, t);
         deferred_pops_ = 0;
     }
 
@@ -247,7 +247,7 @@ public:
             std::memcpy(buffer_.data(), source + first, second * sizeof(T));
         }
 
-        head_.advance_sole_writer_from(h, h + count);
+        head_.advance_sole_writer_from(prove_checked_producer_(), h, h + count);
         own_head_.advance(h + count);
         return count;
     }
@@ -278,7 +278,7 @@ public:
             std::memcpy(target + first, buffer_.data(), second * sizeof(T));
         }
 
-        tail_.advance_sole_writer_from(t, t + count);
+        tail_.advance_sole_writer_from(prove_checked_consumer_(), t, t + count);
         own_tail_.advance(t + count);
         return count;
     }
@@ -314,6 +314,21 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
+    // The proofs of the one writer of each side for the checked calls.  The
+    // ring is the owner of each, and only a checked call makes one.  A
+    // checked publish still compares the published index with the copy of
+    // its side, so a second writer of one side ends the process at the next
+    // publish of the first writer.
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<SpscRing, SpscProducerRole>
+    prove_checked_producer_() noexcept {
+        return {};
+    }
+
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<SpscRing, SpscConsumerRole>
+    prove_checked_consumer_() noexcept {
+        return {};
+    }
+
     // The free slots of the ring after a fresh acquire load of the tail into
     // the cached tail: the path of a push whose cache says that the ring has
     // too little room.  Only the producer calls it.  It is cold and out of

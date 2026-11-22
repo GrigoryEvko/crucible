@@ -364,7 +364,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                                              ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        head.advance_sole_writer_from(h, h + 1, own_head_);
+        head.advance_sole_writer_from(prove_checked_producer_(), h, h + 1, own_head_);
     }
 
     // The commit of the producer of the Vigils, which holds the proof of the
@@ -487,7 +487,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t next_tail = t + count;
         consumer_tail_ = next_tail;
         // t is the consumer's own copy of its last store to tail.
-        tail.advance_sole_writer_from(t, next_tail);
+        tail.advance_sole_writer_from(prove_checked_consumer_(), t, next_tail);
         CRUCIBLE_POST(count, count <= out.size());
         // The count came from a 32-bit difference, so it fits the result.
         return static_cast<uint32_t>(count);
@@ -570,7 +570,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const uint64_t next_tail = t + count;
         consumer_tail_ = next_tail;
         // t is the consumer's own copy of its last store to tail.
-        tail.advance_sole_writer_from(t, next_tail);
+        tail.advance_sole_writer_from(prove_checked_consumer_(), t, next_tail);
         CRUCIBLE_POST(count, count <= out_entries.size());
         return static_cast<uint32_t>(count);
     }
@@ -607,6 +607,26 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     }
 
 private:
+    // The roles of the proofs of the checked publishes: the producer writes
+    // the head, and the consumer writes the tail.
+    struct CheckedProducer final {};
+    struct CheckedConsumer final {};
+
+    // The proofs of the one writer of each counter for the checked
+    // publishes.  The ring is the owner of each, and only a checked publish
+    // makes one.  The publish still compares the counter with the copy of
+    // the writer, so a second writer ends the process at the next publish of
+    // the first one.
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<TraceRing, CheckedProducer>
+    prove_checked_producer_() noexcept {
+        return {};
+    }
+
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<TraceRing, CheckedConsumer>
+    prove_checked_consumer_() noexcept {
+        return {};
+    }
+
     // Writes the entry and its four parallel slots into the reserved slot,
     // and warms the slot of the next append.  Gives the head of the
     // reservation, which each commit publishes.  The two commits share this

@@ -960,7 +960,9 @@ public:
     }
 
     // For the one thread that writes this counter, such as the producer
-    // of a single-producer ring.  current is the value that the counter
+    // of a single-producer ring.  The proof names that writer (THE PROOF OF
+    // THE ONE WRITER of foundation/SoleWriterProof.h), so a thread that holds
+    // no proof has no overload.  current is the value that the counter
     // holds, from that thread's own load or its own copy of its last store.
     // The precondition compares two values in registers, so it folds to one
     // compare where the step is visibly forward, and a step that wraps past
@@ -973,7 +975,8 @@ public:
     // the check and the store here, another writer can pass the new value.
     // A counter of many writers has no such write, so the member asks for
     // the gate of the one writer, as peek_relaxed does.
-    void advance_sole_writer_from(T current, T new_value) noexcept
+    template <class Owner, class Role>
+    void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& /*proof*/, T current, T new_value) noexcept
         requires SoleWriterCounter<Writers>
     {
         CRUCIBLE_PRE(Cmp{}(current, new_value));
@@ -983,7 +986,8 @@ public:
         CRUCIBLE_FATAL_INVARIANT(!Cmp{}(current, stored) && !Cmp{}(stored, current));
         value_.store(new_value, std::memory_order_release);
     }
-    void advance_sole_writer_from(T current, T new_value) noexcept
+    template <class Owner, class Role>
+    void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& /*proof*/, T current, T new_value) noexcept
         requires(!SoleWriterCounter<Writers>)
     = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer, and a second "
              "writer can pass the new value between the check and the store.  Use advance, or name "
@@ -997,13 +1001,17 @@ public:
     // current too.  Then own steps from current, so the step check compares
     // two values in registers, and the call loads own no second time after
     // the store of the counter.
-    void advance_sole_writer_from(T current, T new_value, Monotonic<T, Cmp>& own) noexcept
+    template <class Owner, class Role>
+    void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& proof, T current, T new_value,
+                                  Monotonic<T, Cmp>& own) noexcept
         requires SoleWriterCounter<Writers>
     {
-        advance_sole_writer_from(current, new_value);
+        advance_sole_writer_from(proof, current, new_value);
         own.advance_from_checked_(current, new_value);
     }
-    void advance_sole_writer_from(T current, T new_value, Monotonic<T, Cmp>& own) noexcept
+    template <class Owner, class Role>
+    void advance_sole_writer_from(SoleWriterProof<Owner, Role> const& /*proof*/, T current, T new_value,
+                                  Monotonic<T, Cmp>& own) noexcept
         requires(!SoleWriterCounter<Writers>)
     = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer for a copy to "
              "follow.  Use advance, or name CounterWriters::sole for a counter of one writer");

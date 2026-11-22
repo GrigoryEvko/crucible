@@ -583,13 +583,13 @@ int check_atomic_monotonic() {
         if (counter.peek_relaxed() != 0ULL) return 133;
         if (counter.load_relaxed() != 0ULL) return 134;
 
-        counter.advance_sole_writer_from(0ULL, 7ULL);
+        counter.advance_sole_writer_from(ProofOwner::proof(), 0ULL, 7ULL);
         if (counter.get() != 7ULL) return 135;
 
-        counter.advance_sole_writer_from(7ULL, 42ULL);
+        counter.advance_sole_writer_from(ProofOwner::proof(), 7ULL, 42ULL);
         if (counter.get() != 42ULL) return 136;
 
-        counter.advance_sole_writer_from(42ULL, 43ULL);
+        counter.advance_sole_writer_from(ProofOwner::proof(), 42ULL, 43ULL);
         if (counter.get() != 43ULL) return 193;
     }
 
@@ -600,10 +600,10 @@ int check_atomic_monotonic() {
             ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
         Monotonic<std::uint64_t> copy = ::fixy::mint_monotonic<std::uint64_t>(0);
 
-        counter.advance_sole_writer_from(0ULL, 7ULL, copy);
+        counter.advance_sole_writer_from(ProofOwner::proof(), 0ULL, 7ULL, copy);
         if (counter.get() != 7ULL || copy.get() != 7ULL) return 211;
 
-        counter.advance_sole_writer_from(7ULL, 42ULL, copy);
+        counter.advance_sole_writer_from(ProofOwner::proof(), 7ULL, 42ULL, copy);
         if (counter.get() != 42ULL || copy.get() != 42ULL) return 212;
     }
 
@@ -678,7 +678,7 @@ int check_atomic_monotonic() {
         AtomicMonotonic<std::uint64_t> top = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 
         // One thread only. No race is exercised here, just the API shape.
-        bottom.advance_sole_writer_from(0ULL, 5ULL);
+        bottom.advance_sole_writer_from(ProofOwner::proof(), 0ULL, 5ULL);
         AtomicMonotonic<std::uint64_t>::fence_seq_cst();
         const auto t = top.load_relaxed();
         if (t != 0ULL) return 147;
@@ -863,15 +863,20 @@ int check_contracts_abort() {
     // armed, and every test binary arms it.
     AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> sole =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(10);
-    expect_dies(test, [&sole] noexcept { sole.advance_sole_writer_from(10, 9); }, kSoleWriterStepBack);
-    expect_dies(test, [&sole] noexcept { sole.advance_sole_writer_from(10, 10); }, kSoleWriterStepBack);
+    expect_dies(
+        test, [&sole] noexcept { sole.advance_sole_writer_from(ProofOwner::proof(), 10, 9); }, kSoleWriterStepBack);
+    expect_dies(
+        test, [&sole] noexcept { sole.advance_sole_writer_from(ProofOwner::proof(), 10, 10); }, kSoleWriterStepBack);
     AtomicMonotonic<std::uint8_t, ::fixy::CounterWriters::sole> at_top =
         ::fixy::mint_atomic_monotonic<std::uint8_t, ::fixy::CounterWriters::sole>(std::uint8_t{255});
     expect_dies(
-        test, [&at_top] noexcept { at_top.advance_sole_writer_from(std::uint8_t{255}, std::uint8_t{0}); },
+        test,
+        [&at_top] noexcept {
+            at_top.advance_sole_writer_from(ProofOwner::proof(), std::uint8_t{255}, std::uint8_t{0});
+        },
         kSoleWriterStepBack);
     expect_dies(
-        test, [&sole] noexcept { sole.advance_sole_writer_from(7, 11); },
+        test, [&sole] noexcept { sole.advance_sole_writer_from(ProofOwner::proof(), 7, 11); },
         ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
     if (sole.get() != 10 || at_top.get() != 255) return 198;
 
@@ -879,9 +884,10 @@ int check_contracts_abort() {
     // the counter or the copy.
     Monotonic<std::uint64_t> sole_copy = ::fixy::mint_monotonic<std::uint64_t>(10);
     expect_dies(
-        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_from(10, 9, sole_copy); }, kSoleWriterStepBack);
+        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_from(ProofOwner::proof(), 10, 9, sole_copy); },
+        kSoleWriterStepBack);
     expect_dies(
-        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_from(7, 11, sole_copy); },
+        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_from(ProofOwner::proof(), 7, 11, sole_copy); },
         ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
     if (sole.get() != 10 || sole_copy.get() != 10) return 213;
 

@@ -1669,6 +1669,8 @@ inline constexpr StatedZero kZeros[] = {
      "the role of the proof of the one producer of an SPSC ring: a tag that names a side, and it is never a value"},
     {^^::fixy::concurrent::SpscConsumerRole,
      "the role of the proof of the one consumer of an SPSC ring: a tag that names a side, and it is never a value"},
+    {^^::fixy::concurrent::MpscConsumerRole,
+     "the role of the proof of the one consumer of an MPSC ring: a tag that names a side, and it is never a value"},
     {^^::foundation::SoleWriterProof, kPasskey},
     {^^::fixy::spin::UnwitnessedSpinLock, kDescriptor},
     {^^::fixy::spin::UnwitnessedBlockingLock, kDescriptor},

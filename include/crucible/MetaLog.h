@@ -173,7 +173,7 @@ public:
                 // This release publishes the copy of fill_run_ to the consumer,
                 // and the copy of the head steps from the checked value.
                 const uint64_t h = start.raw();
-                head.advance_sole_writer_from(h, h + metas.size(), own_head_);
+                head.advance_sole_writer_from(prove_checked_producer_(), h, h + metas.size(), own_head_);
                 return start;
             },
             [] noexcept { return MetaIndex::none(); });
@@ -245,7 +245,7 @@ public:
     // The consumer is the one writer of tail, so its relaxed load reads its
     // own last store.  The callers give only the new tail.
     void advance_tail(uint64_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
-        tail.advance_sole_writer_from(tail.peek_relaxed(), new_tail);
+        tail.advance_sole_writer_from(prove_checked_consumer_(), tail.peek_relaxed(), new_tail);
     }
 
     // The two counters are read at different instants while both threads run,
@@ -285,6 +285,26 @@ public:
     }
 
 private:
+    // The roles of the proofs of the checked publishes: the producer writes
+    // the head, and the consumer writes the tail.
+    struct CheckedProducer final {};
+    struct CheckedConsumer final {};
+
+    // The proofs of the one writer of each counter for the checked
+    // publishes.  The log is the owner of each, and only a checked publish
+    // makes one.  The publish still compares the counter with the value of
+    // the writer, so a second writer ends the process at the next publish of
+    // the first one.
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MetaLog, CheckedProducer>
+    prove_checked_producer_() noexcept {
+        return {};
+    }
+
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MetaLog, CheckedConsumer>
+    prove_checked_consumer_() noexcept {
+        return {};
+    }
+
     // Writes the run of records at the head, and gives the index of its first
     // record, or no value if the buffer is full or the run is empty.  The two
     // appends share this body and then publish the head past the run.  An
