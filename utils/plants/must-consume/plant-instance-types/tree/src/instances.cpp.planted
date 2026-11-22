@@ -1,0 +1,60 @@
+// One template drops its rvalue parameter, and its instances drop different
+// linear types at one line.  The entity of a line of must-consume names the
+// type of its object, so each type gives its own line, and the ledger of this
+// tree, which admits one line, refuses the new types.  Two instances whose
+// types differ only in a fresh brand give one line, because each brand of the
+// type is the word brand.
+#include <foundation/Brand.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Cheap {
+    int handle = 0;
+    constexpr explicit Cheap(int value) noexcept : handle{value} {}
+    constexpr Cheap(Cheap&&) noexcept = default;
+    constexpr Cheap& operator=(Cheap&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Cheap(const Cheap&) = delete;
+};
+
+struct [[= ::foundation::linear::linear{}]] Precious {
+    int handle = 0;
+    constexpr explicit Precious(int value) noexcept : handle{value} {}
+    constexpr Precious(Precious&&) noexcept = default;
+    constexpr Precious& operator=(Precious&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Precious(const Precious&) = delete;
+};
+
+template <class Brand>
+struct [[= ::foundation::linear::linear{}]] Keyed {
+    int handle = 0;
+    constexpr explicit Keyed(int value) noexcept : handle{value} {}
+    constexpr Keyed(Keyed&&) noexcept = default;
+    constexpr Keyed& operator=(Keyed&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Keyed(const Keyed&) = delete;
+};
+
+// A template that only reads its parameter, so each instance drops it.
+template <class Value>
+void inspect(Value&& value) noexcept {
+    static_cast<void>(value.handle);
+}
+
+void admitted_instance() noexcept { inspect(Cheap{1}); }
+
+void new_instance() noexcept { inspect(Precious{2}); }
+
+void first_brand() noexcept { inspect(Keyed<CRUCIBLE_FRESH_BRAND>{3}); }
+
+void second_brand() noexcept { inspect(Keyed<CRUCIBLE_FRESH_BRAND>{4}); }
+
+}  // namespace planted

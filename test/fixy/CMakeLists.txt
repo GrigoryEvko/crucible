@@ -7264,7 +7264,7 @@ fixy_neg_compile_test(neg_core_option_reads_the_linear_marker
 # refuses the expect() of the source at compile time.
 fixy_neg_compile_test(neg_core_option_expect_after_move
   "a door that needs a full linear sum runs on a sum that each path shows empty"
-  "read_twice: source expect")
+  "read_twice: source \\(foundation::core::Option<.*HoldsLinear>\\) expect")
 fixy_neg_compile_test(neg_core_option_linear_cursor_moves_out
   "neg_core_option_linear_cursor_moves_out\\.cpp:14:[0-9]+: error: use of deleted function .void foundation::core::Option<T>::begin\\(\\) const &"
   "a loop over an owning Option counts no lend of its payload")

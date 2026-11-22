@@ -11,11 +11,11 @@ compile known src/known.cpp must-consume=on errors=known
 flag known -freflection
 exit known fail
 judge known
-finding known must-consume option-known-full src/known.cpp:28:14 | planted::fills_a_full: held fill
-finding known must-consume option-known-full src/known.cpp:35:14 | planted::fills_twice: held fill
-finding known must-consume option-known-full src/known.cpp:42:32 | planted::ends_a_full: held expect_none
-finding known must-consume option-known-empty src/known.cpp:47:32 | planted::expects_an_empty: held expect
-finding known must-consume option-known-empty src/known.cpp:54:32 | planted::expects_after_take: held expect
-finding known must-consume option-known-empty src/known.cpp:59:36 | planted::reads_the_test: held expect
-finding known must-consume option-known-full src/known.cpp:61:36 | planted::reads_the_test: held expect_none
-finding known must-consume option-known-full src/known.cpp:67:18 | planted::fills_after_a_test: held fill
+finding known must-consume option-known-full src/known.cpp:28:14 | planted::fills_a_full: held (foundation::core::Option<planted::Token>) fill
+finding known must-consume option-known-full src/known.cpp:35:14 | planted::fills_twice: held (foundation::core::Option<planted::Token>) fill
+finding known must-consume option-known-full src/known.cpp:42:32 | planted::ends_a_full: held (foundation::core::Option<planted::Token>) expect_none
+finding known must-consume option-known-empty src/known.cpp:47:32 | planted::expects_an_empty: held (foundation::core::Option<planted::Token>) expect
+finding known must-consume option-known-empty src/known.cpp:54:32 | planted::expects_after_take: held (foundation::core::Option<planted::Token>) expect
+finding known must-consume option-known-empty src/known.cpp:59:36 | planted::reads_the_test: held (foundation::core::Option<planted::Token>) expect
+finding known must-consume option-known-full src/known.cpp:61:36 | planted::reads_the_test: held (foundation::core::Option<planted::Token>) expect_none
+finding known must-consume option-known-full src/known.cpp:67:18 | planted::fills_after_a_test: held (foundation::core::Option<planted::Token>) fill

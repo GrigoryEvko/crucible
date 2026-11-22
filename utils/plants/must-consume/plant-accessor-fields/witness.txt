@@ -6,4 +6,4 @@ compile accessors src/accessors.cpp must-consume=on
 flag accessors -freflection
 exit accessors pass
 judge accessors
-finding accessors must-consume unconsumed src/accessors.cpp:41:21 | planted::one_moved: pair
+finding accessors must-consume unconsumed src/accessors.cpp:41:21 | planted::one_moved: pair (planted::Pair)

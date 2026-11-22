@@ -8,6 +8,6 @@ compile bases src/bases.cpp must-consume=on
 flag bases -freflection
 exit bases pass
 judge bases
-finding bases must-consume unconsumed src/bases.cpp:48:20 | planted::one_cell: pair
-finding bases must-consume unconsumed src/bases.cpp:66:25 | planted::base_moved: wrapped
-finding bases must-consume unconsumed src/bases.cpp:68:27 | planted::base_queried: wrapped
+finding bases must-consume unconsumed src/bases.cpp:48:20 | planted::one_cell: pair (planted::Pair)
+finding bases must-consume unconsumed src/bases.cpp:66:25 | planted::base_moved: wrapped (planted::Wrapped)
+finding bases must-consume unconsumed src/bases.cpp:68:27 | planted::base_queried: wrapped (planted::Wrapped)

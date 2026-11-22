@@ -8,7 +8,7 @@ compile sums src/sums.cpp must-consume=on errors=sums
 flag sums -freflection
 exit sums fail
 judge sums
-finding sums must-consume option-unconsumed src/sums.cpp:37:10 | planted::drops_option: held
-finding sums must-consume option-unconsumed src/sums.cpp:42:13 | planted::drops_result: refused
-finding sums must-consume option-unconsumed src/sums.cpp:47:12 | planted::drops_one_of: either
+finding sums must-consume option-unconsumed src/sums.cpp:37:10 | planted::drops_option: held (foundation::core::Option<planted::Token>)
+finding sums must-consume option-unconsumed src/sums.cpp:42:13 | planted::drops_result: refused (foundation::core::Result<int, planted::Token>)
+finding sums must-consume option-unconsumed src/sums.cpp:47:12 | planted::drops_one_of: either (foundation::core::OneOf<planted::Token, planted::Code>)
 text sums | an Option, a Result or a OneOf of a linear payload gives the payload out only through a consumer

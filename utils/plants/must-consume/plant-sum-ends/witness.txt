@@ -16,24 +16,24 @@ compile ends src/ends.cpp must-consume=on errors=ends
 flag ends -freflection
 exit ends fail
 judge ends
-finding ends must-consume option-unconsumed src/ends.cpp:34:34 | planted::ends_full: held
-finding ends must-consume option-unconsumed src/ends.cpp:37:19 | planted::ends_after_fill: held
-finding ends must-consume option-unconsumed src/ends.cpp:42:19 | planted::borrowed_by_reference: held
-finding ends must-consume option-unconsumed src/ends.cpp:47:19 | planted::captured_by_reference: held
-finding ends must-consume option-unconsumed src/ends.cpp:53:19 | planted::consumed_on_one_path: held
-finding ends must-consume option-unconsumed src/ends.cpp:58:19 | planted::tested_full_only: held
-finding ends must-consume option-unconsumed src/ends.cpp:63:19 | planted::asserted_full: held
-finding ends must-consume option-unconsumed src/ends.cpp:69:30 | planted::ends_result: refused
-finding ends must-consume option-discarded src/ends.cpp:71:58 | planted::discards_a_test: temporary
-finding ends must-consume option-discarded src/ends.cpp:73:72 | planted::discards_a_take: temporary
-finding ends must-consume option-discarded src/ends.cpp:75:32 | planted::reads_a_temporary: temporary
-finding ends must-consume option-discarded src/ends.cpp:77:60 | planted::discards_a_result: temporary
+finding ends must-consume option-unconsumed src/ends.cpp:34:34 | planted::ends_full: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:37:19 | planted::ends_after_fill: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:42:19 | planted::borrowed_by_reference: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:47:19 | planted::captured_by_reference: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:53:19 | planted::consumed_on_one_path: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:58:19 | planted::tested_full_only: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:63:19 | planted::asserted_full: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:69:30 | planted::ends_result: refused (foundation::core::Result<int, planted::Token>)
+finding ends must-consume option-discarded src/ends.cpp:71:58 | planted::discards_a_test: temporary (foundation::core::Option<planted::Token>)
+finding ends must-consume option-discarded src/ends.cpp:73:72 | planted::discards_a_take: temporary (foundation::core::Option<planted::Token>)
+finding ends must-consume option-discarded src/ends.cpp:75:32 | planted::reads_a_temporary: temporary (foundation::core::Option<planted::Token>)
+finding ends must-consume option-discarded src/ends.cpp:77:60 | planted::discards_a_result: temporary (foundation::core::Result<int, planted::Token>)
 finding ends quarantine region src/ends.cpp:80:1 | PROBE: the test drops a full Option
-finding ends quarantine opted-out src/ends.cpp:81:19 | option-unconsumed planted::dropped_in_a_probe: held
-finding ends must-consume option-unconsumed src/ends.cpp:93:19 | planted::captured_then_tested: held
-finding ends must-consume option-unconsumed src/ends.cpp:102:19 | planted::addressed_then_tested: held
-finding ends must-consume option-unconsumed src/ends.cpp:111:19 | planted::captured_then_taken: held
-finding ends must-consume option-unconsumed src/ends.cpp:119:19 | planted::held_by_a_member: held
+finding ends quarantine opted-out src/ends.cpp:81:19 | option-unconsumed planted::dropped_in_a_probe: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:93:19 | planted::captured_then_tested: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:102:19 | planted::addressed_then_tested: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:111:19 | planted::captured_then_taken: held (foundation::core::Option<planted::Token>)
+finding ends must-consume option-unconsumed src/ends.cpp:119:19 | planted::held_by_a_member: held (foundation::core::Option<planted::Token>)
 finding ends quarantine raw-pointer-object src/ends.cpp:103:26 | address
 text ends | an Option, a Result or a OneOf of a linear payload gives the payload out only through a consumer
 text ends | give the temporary to a consumer, such as expect, the rvalue match, a combinator, or 'expect_none(reason)' for an empty Option

@@ -5,5 +5,5 @@ compile partial src/partial.cpp must-consume=on
 flag partial -freflection
 exit partial pass
 judge partial
-finding partial must-consume unconsumed src/partial.cpp:23:21 | planted::one_field: pair
-finding partial must-consume double-consume src/partial.cpp:27:14 | planted::field_then_whole: pair
+finding partial must-consume unconsumed src/partial.cpp:23:21 | planted::one_field: pair (planted::Pair)
+finding partial must-consume double-consume src/partial.cpp:27:14 | planted::field_then_whole: pair (planted::Pair)

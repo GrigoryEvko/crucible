@@ -6,4 +6,4 @@ compile twice src/twice.cpp must-consume=on
 flag twice -freflection
 exit twice pass
 judge twice
-finding twice must-consume double-consume src/twice.cpp:20:9 | planted::moved_twice: first
+finding twice must-consume double-consume src/twice.cpp:20:9 | planted::moved_twice: first (planted::Token)

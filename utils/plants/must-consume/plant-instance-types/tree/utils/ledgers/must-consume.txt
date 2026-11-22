@@ -1,0 +1,4 @@
+# The ledger of the plant.  It admits the drop of the first instance only.
+format 1
+rule must-consume
+src/ | unconsumed | 1 | - | the first instance of inspect drops a Cheap

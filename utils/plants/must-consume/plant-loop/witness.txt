@@ -7,6 +7,6 @@ compile loop src/loop.cpp must-consume=on
 flag loop -freflection
 exit loop pass
 judge loop
-finding loop must-consume unconsumed-on-path src/loop.cpp:21:11 | planted::outer_local: token
-finding loop must-consume double-consume src/loop.cpp:23:13 | planted::outer_local: token
-finding loop must-consume unconsumed src/loop.cpp:29:15 | planted::continue_path: turn
+finding loop must-consume unconsumed-on-path src/loop.cpp:21:11 | planted::outer_local: token (planted::Token)
+finding loop must-consume double-consume src/loop.cpp:23:13 | planted::outer_local: token (planted::Token)
+finding loop must-consume unconsumed src/loop.cpp:29:15 | planted::continue_path: turn (planted::Token)

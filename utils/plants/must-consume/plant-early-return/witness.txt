@@ -5,4 +5,4 @@ compile early src/early_return.cpp must-consume=on
 flag early -freflection
 exit early pass
 judge early
-finding early must-consume unconsumed src/early_return.cpp:18:11 | planted::early_return: token
+finding early must-consume unconsumed src/early_return.cpp:18:11 | planted::early_return: token (planted::Token)

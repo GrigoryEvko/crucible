@@ -1,0 +1,14 @@
+# The entity of a line of must-consume names the type of its object, so the
+# instances of one template that drop different linear types at one line give
+# one line for each type: planted::Cheap, planted::Precious and
+# planted::Keyed<brand>.  The ledger of the tree admits one line, so the module
+# refuses the two new types.  The two instances of Keyed with two fresh brands
+# give one line, because each brand of the type is the word brand.
+
+compile instances src/instances.cpp must-consume=on
+flag instances -freflection
+exit instances pass
+judge instances
+finding instances must-consume unconsumed src/instances.cpp:48:22 | planted::inspect: value (planted::Cheap)
+finding instances must-consume unconsumed src/instances.cpp:48:22 | planted::inspect: value (planted::Precious)
+finding instances must-consume unconsumed src/instances.cpp:48:22 | planted::inspect: value (planted::Keyed<brand >)

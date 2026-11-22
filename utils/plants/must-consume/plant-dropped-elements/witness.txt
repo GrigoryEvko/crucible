@@ -7,6 +7,6 @@ compile dropped src/dropped.cpp must-consume=on
 flag dropped -freflection
 exit dropped pass
 judge dropped
-finding dropped must-consume unconsumed src/dropped.cpp:48:11 | planted::one_moved: second
-finding dropped must-consume unconsumed-on-path src/dropped.cpp:54:11 | planted::branches: first
-finding dropped must-consume unconsumed-on-path src/dropped.cpp:55:11 | planted::branches: second
+finding dropped must-consume unconsumed src/dropped.cpp:48:11 | planted::one_moved: second (planted::Token)
+finding dropped must-consume unconsumed-on-path src/dropped.cpp:54:11 | planted::branches: first (planted::Token)
+finding dropped must-consume unconsumed-on-path src/dropped.cpp:55:11 | planted::branches: second (planted::Token)

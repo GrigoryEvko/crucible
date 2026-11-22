@@ -10,4 +10,4 @@ compile assign src/assign.cpp must-consume=on
 flag assign -freflection
 exit assign pass
 judge assign
-finding assign must-consume assign-over-live src/assign.cpp:23:40 | planted::over_a_live_value: held
+finding assign must-consume assign-over-live src/assign.cpp:23:40 | planted::over_a_live_value: held (planted::Trivial)

@@ -10,14 +10,14 @@ compile self src/self.cpp must-consume=on errors=self
 flag self -freflection
 exit self fail
 judge self
-finding self must-consume self-move src/self.cpp:31:38 | planted::the_same_local: held
-finding self must-consume self-move src/self.cpp:38:38 | planted::through_a_reference: held
-finding self must-consume self-move src/self.cpp:45:77 | planted::Holder::move_into_itself: member
-finding self must-consume self-move src/self.cpp:48:83 | planted::behind_a_reference: held
-finding self must-consume self-move src/self.cpp:50:83 | planted::behind_a_pointer: held
+finding self must-consume self-move src/self.cpp:31:38 | planted::the_same_local: held (planted::Handle)
+finding self must-consume self-move src/self.cpp:38:38 | planted::through_a_reference: held (planted::Handle)
+finding self must-consume self-move src/self.cpp:45:77 | planted::Holder::move_into_itself: member (planted::Handle)
+finding self must-consume self-move src/self.cpp:48:83 | planted::behind_a_reference: held (planted::Handle)
+finding self must-consume self-move src/self.cpp:50:83 | planted::behind_a_pointer: held (planted::Handle)
 finding self quarantine raw-pointer-object src/self.cpp:50:31 | held
-finding self must-consume self-move src/self.cpp:54:10 | planted::a_trivial_local: held
-finding self must-consume self-move src/self.cpp:70:40 | planted::a_class_that_is_not_linear: held
+finding self must-consume self-move src/self.cpp:54:10 | planted::a_trivial_local: held (planted::Trivial)
+finding self must-consume self-move src/self.cpp:70:40 | planted::a_class_that_is_not_linear: held (planted::MoveOnly)
 error self src/self.cpp:31 | a move assignment moves an object into itself, so the move keeps nothing that the target owes: planted::the_same_local: held
 error self src/self.cpp:38 | a move assignment moves an object into itself, so the move keeps nothing that the target owes: planted::through_a_reference: held
 error self src/self.cpp:45 | a move assignment moves an object into itself, so the move keeps nothing that the target owes: planted::Holder::move_into_itself: member

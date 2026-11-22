@@ -13,12 +13,12 @@
 compile summaries src/summaries.cpp must-consume=on errors=summaries
 flag summaries -freflection
 exit summaries fail
-finding summaries must-consume option-unconsumed src/summaries.cpp:38:19 | planted::alias_fills_after_the_consume: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:48:19 | planted::callee_keeps_the_reference: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:64:19 | planted::filling_closure_passed_after_the_consume: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:73:19 | planted::kept_reference_fills_after_the_consume: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:86:19 | planted::member_reference_fills_after_the_consume: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:94:19 | planted::returned_reference_fills_after_the_consume: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:104:19 | planted::outer_reference_fills_after_the_consume: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:113:19 | planted::kept_result_fills_after_a_test: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:124:19 | planted::member_of_the_result_fills_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:38:19 | planted::alias_fills_after_the_consume: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:48:19 | planted::callee_keeps_the_reference: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:64:19 | planted::filling_closure_passed_after_the_consume: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:73:19 | planted::kept_reference_fills_after_the_consume: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:86:19 | planted::member_reference_fills_after_the_consume: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:94:19 | planted::returned_reference_fills_after_the_consume: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:104:19 | planted::outer_reference_fills_after_the_consume: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:113:19 | planted::kept_result_fills_after_a_test: held (foundation::core::Option<planted::Token>)
+finding summaries must-consume option-unconsumed src/summaries.cpp:124:19 | planted::member_of_the_result_fills_after_the_consume: held (foundation::core::Option<planted::Token>)

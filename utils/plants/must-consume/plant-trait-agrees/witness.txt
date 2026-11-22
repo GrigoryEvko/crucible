@@ -10,11 +10,11 @@ compile trait src/trait.cpp must-consume=on
 flag trait -freflection
 exit trait pass
 judge trait
-finding trait must-consume unconsumed src/trait.cpp:49:11 | planted::drops: token
-finding trait must-consume unconsumed src/trait.cpp:50:17 | planted::drops: marked
-finding trait must-consume unconsumed src/trait.cpp:51:12 | planted::drops: holder
-finding trait must-consume unconsumed include/fixy/Carriers.h:32:15 | planted::carriers: either
-finding trait must-consume unconsumed include/fixy/Carriers.h:33:22 | planted::carriers: optional
-finding trait must-consume unconsumed include/fixy/Carriers.h:34:27 | planted::carriers: expected
-finding trait must-consume unconsumed include/fixy/Carriers.h:35:23 | planted::carriers: pair
-finding trait must-consume unconsumed include/fixy/Carriers.h:36:24 | planted::carriers: tuple
+finding trait must-consume unconsumed src/trait.cpp:49:11 | planted::drops: token (planted::Token)
+finding trait must-consume unconsumed src/trait.cpp:50:17 | planted::drops: marked (planted::Maybe<true>)
+finding trait must-consume unconsumed src/trait.cpp:51:12 | planted::drops: holder (planted::Holder)
+finding trait must-consume unconsumed include/fixy/Carriers.h:32:15 | planted::carriers: either (planted::Either<planted::Token>)
+finding trait must-consume unconsumed include/fixy/Carriers.h:33:22 | planted::carriers: optional (std::optional<planted::Token>)
+finding trait must-consume unconsumed include/fixy/Carriers.h:34:27 | planted::carriers: expected (std::expected<planted::Token, int>)
+finding trait must-consume unconsumed include/fixy/Carriers.h:35:23 | planted::carriers: pair (std::pair<planted::Token, int>)
+finding trait must-consume unconsumed include/fixy/Carriers.h:36:24 | planted::carriers: tuple (std::tuple<planted::Token, int>)

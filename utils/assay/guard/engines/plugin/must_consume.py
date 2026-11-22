@@ -27,8 +27,11 @@ THE RULE
     unconsumed-on-path and discarded-temporary.
     The plugin reads a body of a base file in the sentinel unit of the file,
     and an instance of a template in each unit that makes it.  The entity of a
-    line is FUNCTION: OBJECT, with no template argument, so each instance of
-    one template gives the same line.
+    line is FUNCTION: OBJECT (TYPE): FUNCTION has no template argument, and
+    TYPE is the type of the object with its template arguments and with each
+    fresh brand written as the word brand.  So an instance of one template
+    that ends a different type at one line gives its own line, and the ledger
+    counts it.
 
 THE SUMS
     A linear sum, an Option, a Result or a OneOf of a linear alternative,

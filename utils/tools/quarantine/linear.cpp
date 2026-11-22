@@ -134,9 +134,15 @@
 //                          sum that each path shows empty (THE SUMS)
 //     borrow-move-out      a consume of a lent object that a path keeps to
 //                          an exit (THE LENT PARAMETERS)
-//     The entity is FUNCTION: OBJECT.  FUNCTION has no template argument, so
-//     each instance of one template gives the same line, and the key of a
-//     ledger row holds no line of an exit.
+//     The entity is FUNCTION: OBJECT (TYPE), and FUNCTION: temporary (TYPE)
+//     for a temporary.  FUNCTION has no template argument.  TYPE is the type
+//     of the object or the temporary with its template arguments, and each
+//     fresh brand in it is the word "brand" (linear_type_text).  So each
+//     instance of one template that ends one type at one line gives one line,
+//     an instance that ends a different type gives its own line, and the
+//     ledger counts each type.  The key of a ledger row holds no line of an
+//     exit.  The entity of unanalyzed is FUNCTION, and the entity of door is
+//     the function of its row.
 //
 // THE FIELDS
 //     An object of a class that is linear by its parts gets one slot for each
@@ -1153,6 +1159,38 @@ bool is_transfer_function(tree function) {
 }
 
 tree capture_field_of(tree node, tree closure);
+void collect_brands(tree type, std::vector<tree>& out, int depth);
+
+// THE KINDS: the text of the linear type of an object or a temporary in the
+// entity of a line.  type_text of library.cpp gives one text for one type in
+// each unit, with each template argument.  A fresh brand names one call site,
+// so each brand of collect_brands becomes the word "brand".  Two instances of
+// one template that end two payloads at one line then give two lines, and two
+// brands of one payload give one line.  Complexity: linear in the nodes of the
+// type, and in the length of its text for each brand.
+std::string linear_type_text(tree type) {
+    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
+        return "(type)";
+    }
+    if (TYPE_REF_P(type)) {
+        type = TREE_TYPE(type);
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    std::string text = type_text(type);
+    const std::string word = "brand";
+    std::vector<tree> brands;
+    collect_brands(type, brands, 0);
+    for (tree brand : brands) {
+        std::string spelled = type_text(brand);
+        if (spelled.empty() || spelled == word) {
+            continue;
+        }
+        for (std::size_t at = text.find(spelled); at != std::string::npos; at = text.find(spelled, at + word.size())) {
+            text.replace(at, spelled.size(), word);
+        }
+    }
+    return text;
+}
 
 class Analysis {
 public:
@@ -1963,8 +2001,10 @@ private:
         return target_place == source_place || cp_tree_equal(target_place, source_place);
     }
 
-    // FUNCTION: OBJECT for a self-move of TARGET.  The object is the field of
-    // a member, the variable of an element or of a local, or "object".
+    // FUNCTION: OBJECT (TYPE) for a self-move of TARGET.  The object is the
+    // field of a member, the variable of an element or of a local, or
+    // "object".  TARGET is the object of the assignment, or its address for a
+    // call of operator=.
     std::string self_move_entity(tree target) const {
         tree place = self_move_place(target);
         while (place != NULL_TREE && TREE_CODE(place) == ARRAY_REF) {
@@ -1972,10 +2012,17 @@ private:
         }
         tree named = place != NULL_TREE && TREE_CODE(place) == COMPONENT_REF ? TREE_OPERAND(place, 1) : place;
         std::string name = named != NULL_TREE && DECL_P(named) ? simple_name(named) : std::string{"object"};
-        return function_text(function_) + ": " + name;
+        tree object_type = target != NULL_TREE ? TREE_TYPE(target) : NULL_TREE;
+        if (object_type != NULL_TREE && POINTER_TYPE_P(object_type)) {
+            object_type = TREE_TYPE(object_type);
+        }
+        return function_text(function_) + ": " + name + " (" + linear_type_text(object_type) + ")";
     }
 
-    std::string entity_of(tree decl) const { return function_text(function_) + ": " + simple_name(decl); }
+    // FUNCTION: OBJECT (TYPE) of the tracked object DECL (THE KINDS).
+    std::string entity_of(tree decl) const {
+        return function_text(function_) + ": " + simple_name(decl) + " (" + linear_type_text(TREE_TYPE(decl)) + ")";
+    }
 
     void add_pending(Kind kind, location_t location, const std::string& entity) {
         pending_.push_back(PendingFinding{kind, location, entity});
@@ -3116,7 +3163,7 @@ private:
             return;
         }
         Kind kind = is_linear_sum(type) ? Kind::linear_option_discarded : Kind::linear_discarded_temporary;
-        add_pending(kind, location, function_text(function_) + ": temporary");
+        add_pending(kind, location, function_text(function_) + ": temporary (" + linear_type_text(type) + ")");
     }
 
     void check_discarded(tree node) {

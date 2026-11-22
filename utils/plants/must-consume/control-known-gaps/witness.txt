@@ -13,7 +13,7 @@
 compile gaps src/gaps.cpp must-consume=on
 flag gaps -freflection
 exit gaps pass
-finding gaps must-consume unconsumed src/gaps.cpp:24:33 | planted::extended_temporary: parent
+finding gaps must-consume unconsumed src/gaps.cpp:24:33 | planted::extended_temporary: parent (planted::Token)
 finding gaps quarantine raw-pointer-object src/gaps.cpp:37:18 | place
 finding gaps quarantine c-array-object src/gaps.cpp:42:41 | row
 
