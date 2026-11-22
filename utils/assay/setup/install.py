@@ -76,8 +76,28 @@ THE TOOLS
     snmalloc     The source of snmalloc of Microsoft (the pin snmalloc): the
                  allocator that the reference rows of bench_alloc_scaling
                  measure.  --print-bin prints the directory src of the source.
+    aflplusplus  The AFL++ tools of the nightly fuzz campaigns (the pin
+                 aflplusplus), built from their source for the patched GCC
+                 (THE BUILT TOOL).  --print-bin prints the bin directory,
+                 which `loop fuzz` reads (assay.loop.fuzz).
     No tool comes from PATH, because a program of PATH is an input that no pin
-    holds.
+    holds.  The build of aflplusplus runs make and the shell of the host, as
+    the build of the patched GCC does.
+
+THE BUILT TOOL
+    The GCC plugin of AFL++ loads only into the GCC whose plugin headers built
+    it: it refuses a GCC with a different version, date or configuration.  So
+    the install builds AFL++ with the patched GCC of the toolchain file
+    (toolchain_compilers() of assay.setup.gcc), with no LLVM mode and no
+    Python mode.  It runs `make all` and then `make install` into the staging
+    directory, with AFL_CC and AFL_CXX of that GCC, so the own test of the
+    build compiles with it.  The output of `g++-16p -v` names that GCC
+    (compiler_identity()).  Its SHA-256 goes into the name of the directory
+    and into the stamp, so a new build of the patched GCC needs a new install,
+    and the old directory stays until THE BOUND removes it.  The check
+    compiles a probe unit with afl-g++-fast and that GCC, which fails when
+    the plugin and the GCC disagree.  afl-cc finds the plugin in ../lib/afl
+    beside its own program, so the directory works at each path.
 
 THE SOURCES OF THE BENCH
     fluxsort, x86-simd-sort, rapidhash, rigtorp-spscqueue, rigtorp-mpmcqueue,
@@ -163,6 +183,7 @@ from pathlib import Path, PurePosixPath
 from assay.core import cache
 from assay.core import pins as pin_table
 from assay.core import proc
+from assay.setup import gcc as patched_gcc
 
 OK = 0
 NOT_PINNED = 2
@@ -394,7 +415,9 @@ class Tool:
     moves the download into a directory to publish.  `program` gives what
     --print-bin prints.  A tool with `exports_bin` gives its bin directory to
     GITHUB_PATH.  `requires` names the pins of the packages of a tool of
-    via=pip, other than its own pin (THE PIP TOOLS).
+    via=pip, other than its own pin (THE PIP TOOLS).  `identity` gives the
+    text that names the toolchain of a built tool, or is None (THE BUILT
+    TOOL).
     """
 
     name: str
@@ -408,6 +431,7 @@ class Tool:
     program: Callable[[Path], Path]
     exports_bin: bool
     requires: tuple[str, ...] = ()
+    identity: Callable[[], str] | None = None
 
     def slug(self, pin: pin_table.Pin) -> str:
         """Return the word of the platform of a pin in the name of a directory."""
@@ -453,11 +477,15 @@ def tool_digest(tool: Tool, pin: pin_table.Pin, table: Pins) -> str:
     """Return the SHA-256 that names the directory of a tool (THE DIRECTORIES).
 
     It is the digest of the pin.  For a tool with more pins, it is the
-    SHA-256 of the name and the digest of each of its pins.
+    SHA-256 of the name and the digest of each of its pins.  For a built tool,
+    it is the SHA-256 of the digest of the pin and the identity of its
+    toolchain (THE BUILT TOOL).
 
     Raises:
-        InstallError: If the table has no pin of a package of the tool
+        InstallError: If the table has no pin of a package of the tool, or the toolchain of a built tool is absent
     """
+    if tool.identity is not None:
+        return hashlib.sha256(f"{pin.digest}\n{tool.identity()}".encode()).hexdigest()
     if not tool.requires:
         return pin.digest
     lines = "".join(f"{item.name} {item.digest}\n" for item in required_pins(tool.name, tool.requires, pin, table))
@@ -881,6 +909,118 @@ def verify_source(files: tuple[str, ...], directory: Path, pin: pin_table.Pin, t
         raise InstallError(f"{directory} holds no {', '.join(missing)}.", NOT_PINNED)
 
 
+# The built tool of the fuzz campaigns (THE BUILT TOOL).
+
+# The programs of the AFL++ install that `loop fuzz` runs, and the plugin of the GCC mode.
+AFL_PROGRAMS = ("afl-fuzz", "afl-cmin", "afl-showmap", "afl-gcc-fast", "afl-g++-fast")
+AFL_PLUGIN = Path("lib/afl/afl-gcc-pass.so")
+# The words of make for each step of the build: no Python mode, no Nyx mode, no LLVM mode, and an install root with no
+# prefix, so `make install` with DESTDIR puts bin and lib/afl at the top of the staging output.
+AFL_MAKE_WORDS = ("NO_PYTHON=1", "NO_NYX=1", "LLVM_CONFIG=/nonexistent", "PREFIX=")
+# The time limit of one step of the build, and the bytes of the end of its output that an error gives.
+AFL_BUILD_TIMEOUT_S = proc.TOOL_S
+AFL_OUTPUT_TAIL = 4000
+# The unit that afl-g++-fast compiles in the check of an install.
+AFL_PROBE = "int main() { return 0; }\n"
+
+
+def afl_environment() -> dict[str, str]:
+    """Return the environment of this process, with the patched GCC as the compilers of the AFL++ tools."""
+    c_compiler, cxx_compiler = patched_gcc.toolchain_compilers()
+    return proc.environment({"AFL_CC": str(c_compiler), "AFL_CXX": str(cxx_compiler), "AFL_QUIET": "1"})
+
+
+def compiler_identity() -> str:
+    """Return the output of `g++-16p -v` of the patched GCC of the toolchain file, which names that GCC.
+
+    THE BUILT TOOL gives its use.
+
+    Raises:
+        InstallError: With the status UNSUPPORTED when the compiler is absent or `-v` fails
+    """
+    _, cxx_compiler = patched_gcc.toolchain_compilers()
+    if not is_executable(cxx_compiler):
+        raise InstallError(f"the patched g++ {cxx_compiler} of the toolchain file is absent, and AFL++ builds with it.  "
+                           f"Build it with `python3 utils/bin/setup gcc PREFIX`, or set CRUCIBLE_CXX.", UNSUPPORTED)
+    status, output = run_program([str(cxx_compiler), "-v"], with_errors=True)
+    if status != 0:
+        raise InstallError(f"{cxx_compiler} -v fails:\n{output}", UNSUPPORTED)
+    return output
+
+
+def afl_build(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
+    """Unpack the source of AFL++, build it with the patched GCC, install it into staging/out, and return staging/out.
+
+    THE BUILT TOOL gives the steps.  Complexity: one build of AFL++.
+
+    Raises:
+        InstallError: With the status UNSUPPORTED when make cannot start, and NOT_PINNED when a step fails
+    """
+    top = unpack_source(download_path, staging, pin)
+    c_compiler, cxx_compiler = patched_gcc.toolchain_compilers()
+    compilers = (f"CC={c_compiler}", f"CXX={cxx_compiler}")
+    out = staging / "out"
+    steps = (["make", "-C", str(top), f"-j{proc.DEFAULT_JOBS}", "all"], ["make", "-C", str(top), "install",
+                                                                         f"DESTDIR={out}"])
+    for words in steps:
+        status, output = run_program([*words, *compilers, *AFL_MAKE_WORDS], afl_environment(), with_errors=True,
+                                     timeout_s=AFL_BUILD_TIMEOUT_S)
+        if status == 127:
+            raise InstallError(f"`{' '.join(words)}` cannot start: {output}", UNSUPPORTED)
+        if status != 0:
+            raise InstallError(f"`{' '.join(words)}` fails, and nothing was installed:\n{output[-AFL_OUTPUT_TAIL:]}",
+                               NOT_PINNED)
+    return out
+
+
+def verify_afl(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that a directory holds the AFL++ of the pin, whose afl-g++-fast compiles with the patched GCC.
+
+    Raises:
+        InstallError: If a program or the plugin is missing, afl-fuzz gives a different version, or the probe unit
+            does not compile
+    """
+    missing = [name for name in AFL_PROGRAMS if not is_executable(directory / "bin" / name)]
+    if missing or not (directory / AFL_PLUGIN).is_file():
+        raise InstallError(f"{directory} holds no {', '.join([*missing, str(AFL_PLUGIN)])}.", NOT_PINNED)
+    _, output = run_program([str(directory / "bin" / "afl-fuzz"), "-h"], with_errors=True)
+    if f"afl-fuzz++{pin.version}" not in output:
+        raise InstallError(f"{directory}/bin/afl-fuzz names no version {pin.version}:\n{output[:400]}", NOT_PINNED)
+    with tempfile.TemporaryDirectory(prefix="setup-afl-") as scratch:
+        probe = Path(scratch) / "probe.cpp"
+        probe.write_text(AFL_PROBE, encoding="utf-8")
+        command = [str(directory / "bin" / "afl-g++-fast"), str(probe), "-o", str(Path(scratch) / "probe")]
+        status, output = run_program(command, afl_environment(), with_errors=True)
+    if status != 0:
+        raise InstallError(f"the afl-g++-fast of {directory} does not compile a probe with the patched GCC:\n{output}",
+                           NOT_PINNED)
+
+
+def afl_stamp(pin: pin_table.Pin, slug: str, table: Pins) -> str:
+    """Return the stamp of AFL++: the version, the SHA-256 of the pin and the SHA-256 of the identity of the GCC.
+
+    Raises:
+        InstallError: If the patched GCC is absent (compiler_identity())
+    """
+    return f"{pin.version} {pin.digest}\n{hashlib.sha256(compiler_identity().encode()).hexdigest()}\n"
+
+
+def afl_stamp_matches(directory: Path, pin: pin_table.Pin, slug: str, table: Pins) -> str | None:
+    """Return why the stamp of AFL++ does not name the pin and the patched GCC of this time, or None.
+
+    Raises:
+        InstallError: If the patched GCC is absent (compiler_identity())
+    """
+    try:
+        found = (directory / STAMP).read_text(encoding="utf-8")
+    except OSError:
+        found = ""
+    wanted = afl_stamp(pin, slug, table)
+    if found != wanted:
+        return f"the stamp reads {found!r}, the pin and the patched GCC say {wanted!r}."
+    return None
+
+
 TOOLS: dict[str, Tool] = {
     "tree-sitter": Tool(
         "tree-sitter", "tree-sitter-kit", "tree-sitter-cpp-fork-",
@@ -938,6 +1078,9 @@ TOOLS: dict[str, Tool] = {
     "snmalloc": Tool(
         "snmalloc", "snmalloc", "snmalloc-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["snmalloc"]),
         unpack_source, version_stamp, version_stamp_matches, lambda directory: directory / "src", False),
+    "aflplusplus": Tool(
+        "aflplusplus", "aflplusplus", "aflplusplus-", {"": "build"}, verify_afl, afl_build, afl_stamp,
+        afl_stamp_matches, lambda directory: directory / "bin", False, identity=compiler_identity),
 }
 
 

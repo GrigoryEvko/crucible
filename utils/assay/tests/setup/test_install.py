@@ -19,6 +19,7 @@ import time
 import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
@@ -231,8 +232,8 @@ def check_cases(expect: Expect, work: Path) -> None:
            "and clang-format resolve darwin-aarch64",
            all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform in ("linux-x86_64", "")
                for name in install.TOOLS)
-           and all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform == "linux-x86_64"
-                   for name in install.TOOLS if name not in install.SOURCE_FILES)
+           and all(install.pin_of(tool, table, "linux-x86_64").platform == "linux-x86_64"
+                   for tool in install.TOOLS.values() if "" not in tool.slugs)
            and all(install.pin_of(install.TOOLS[name], table, "darwin-aarch64").platform == "darwin-aarch64"
                    for name in ("tree-sitter", "clang-format")))
     expect("a platform with no pin is rejected with the status 4",
@@ -564,6 +565,47 @@ def pip_cases(expect: Expect, work: Path) -> None:
            and sorted(child.name for child in other_root.iterdir()) == [])
 
 
+def planted_compiler(path: Path, identity: str) -> Path:
+    """Write a planted g++ whose `-v` writes the identity to the standard error, and return it."""
+    path.write_text(f"#!{sys.executable} -I\nimport sys\nsys.stderr.write({identity!r})\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def built_cases(expect: Expect, work: Path) -> None:
+    """Check the built tool AFL++: its pin, its directory and stamp from the patched GCC, and its check (THE BUILT TOOL)."""
+    tool = install.TOOLS["aflplusplus"]
+    pin = install.pin_of(tool, pin_table.load())
+    expect("the pin of AFL++ is the archive of one commit of AFL++, which serves each host, with its SHA-256",
+           pin.platform == "" and len(pin.digest) == 64
+           and pin.source.startswith("https://github.com/AFLplusplus/AFLplusplus/archive/"))
+    first = replace(tool, identity=lambda: "gcc one\n")
+    second = replace(tool, identity=lambda: "gcc two\n")
+    table = pin_table.load()
+    expect("a new build of the patched GCC gives AFL++ a new directory, and one GCC gives one directory",
+           install.directory_of(first, pin, work, table) != install.directory_of(second, pin, work, table)
+           and install.directory_of(first, pin, work, table) == install.directory_of(first, pin, work, table))
+    with environment(CRUCIBLE_CXX=str(work / "absent" / "g++-16p")):
+        expect("with no patched GCC, the identity of AFL++ is refused with the status UNSUPPORTED",
+               refused(install.compiler_identity, install.UNSUPPORTED))
+    compiler = planted_compiler(work / "g++-16p", "gcc version 16.2.1 (planted one)\n")
+    stamped = work / "stamped"
+    stamped.mkdir()
+    with environment(CRUCIBLE_CXX=str(compiler)):
+        identity = install.compiler_identity()
+        (stamped / install.STAMP).write_text(install.afl_stamp(pin, "build", table), encoding="utf-8")
+        is_matched = install.afl_stamp_matches(stamped, pin, "build", table) is None
+    planted_compiler(compiler, "gcc version 16.2.1 (planted two)\n")
+    with environment(CRUCIBLE_CXX=str(compiler)):
+        problem = install.afl_stamp_matches(stamped, pin, "build", table)
+    expect("the identity of the GCC is the output of -v, and the stamp of AFL++ names the pin and that GCC",
+           identity == "gcc version 16.2.1 (planted one)\n" and is_matched)
+    expect("a stamp of an earlier build of the patched GCC does not match, so the install builds AFL++ again",
+           problem is not None and "patched GCC" in problem)
+    expect("the check of AFL++ refuses a directory with no programs and no plugin",
+           refused(lambda: install.verify_afl(work / "empty", pin, table), install.NOT_PINNED))
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -583,7 +625,8 @@ def main(argv: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="test-install-") as scratch:
         work = Path(scratch)
         for group, cases in (("directories", directory_cases), ("checks", check_cases), ("wheels", wheel_cases),
-                             ("tarballs", tarball_cases), ("sources", source_cases), ("pip", pip_cases)):
+                             ("tarballs", tarball_cases), ("sources", source_cases), ("pip", pip_cases),
+                             ("built", built_cases)):
             (work / group).mkdir()
             cases(expect, work / group)
     if failures:
