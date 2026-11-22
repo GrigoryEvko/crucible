@@ -25,10 +25,12 @@ static_assert(!CtxFitsSharedRead<int, io_tag, probe_brand, Fg>, "a foreground co
 static_assert(!CtxFitsSharedRead<int, probe_tag, probe_brand, int>, "a context is a context, not any type");
 static_assert(!CtxFitsSharedRead<void, probe_tag, probe_brand, Fg>, "a region of void has no elements to read");
 
-// The read is a span and nothing else.  It lends its elements only to a
-// body, and it lives only where its mint made it.
+// The read is a View and nothing else: the 16 bytes of the span that it held
+// before.  It lends its elements only to a body, and it lives only where its
+// mint made it.
 using Read = SharedRead<int, probe_tag>;
-static_assert(sizeof(Read) == sizeof(std::span<int const>));
+static_assert(sizeof(Read) == sizeof(::foundation::core::View<int const>) && sizeof(Read) == 16);
+static_assert(alignof(Read) == alignof(::foundation::core::View<int const>) && alignof(Read) == alignof(int*));
 static_assert(!std::is_default_constructible_v<Read>, "a read nobody minted proves nothing");
 static_assert(!std::is_copy_constructible_v<Read> && !std::is_copy_assignable_v<Read>,
               "a copy of a read could outlive the share of its guard");

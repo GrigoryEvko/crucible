@@ -78,7 +78,6 @@
 
 #include <cstddef>
 #include <optional>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -156,9 +155,18 @@ class SharedRegion : public ::foundation::Pinned<SharedRegion<T, Tag, Brand>> {
                                                        "type: the brand of the region that was surrendered, or "
                                                        "DefaultBrand.");
 
-    T* base_ = nullptr;
-    std::size_t count_ = 0;
+    // The run of the region that the door consumed.  The region made it
+    // through the key of an owner on the core, so the shared region holds the
+    // proof of its run and mints no View of its own.
+    ::foundation::core::View<T> run_{};
     ::foundation::permissions::SharedPermissionPool<Tag, Brand> pool_;
+
+    // The run of a region that the door consumes.  The region gives its base
+    // and its count up, so it covers no byte afterwards.
+    [[nodiscard]] static constexpr ::foundation::core::View<T> take_run_(OwnedRegion<T, Tag, Brand>& region) noexcept {
+        auto const taken = region.take_state_();
+        return ::foundation::core::View<T>{OwnedRegion<T, Tag, Brand>::run_key_(), taken.base, taken.count};
+    }
 
     template <typename U, typename UTag, typename UBrand, typename Ctx>
         requires CtxFitsSharedRead<U, UTag, UBrand, Ctx>
@@ -181,9 +189,7 @@ public:
     // roster: a constructor that consumes its own evidence guards
     // nothing a private one would guard better.
     constexpr explicit SharedRegion(OwnedRegion<T, Tag, Brand>&& region) noexcept
-        : base_{std::exchange(region.base_, nullptr)},
-          count_{std::exchange(region.count_, 0)},
-          pool_{std::move(region.perm_)} {}
+        : run_{take_run_(region)}, pool_{std::move(region.perm_)} {}
 
     // A caller who offers the region without surrendering it means to go
     // on reading it exclusively, and the rvalue reference alone answers
@@ -196,8 +202,8 @@ public:
     // The extent is not the data.  A reader that has no share can still
     // ask how large the region is, which is what a scheduler does before
     // it decides whether to take one.
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
-    [[nodiscard]] constexpr bool empty() const noexcept { return count_ == 0; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return run_.size(); }
+    [[nodiscard]] constexpr bool empty() const noexcept { return run_.size() == 0; }
 
     // Both forward to the pool, which already weighs the tag's row
     // against the context.  They are here so a caller holds one object
@@ -217,8 +223,9 @@ public:
         using Upgraded = ::foundation::core::Option<OwnedRegion<T, Tag, Brand>>;
         auto exclusive = pool_.try_upgrade(ctx);
         if (exclusive.is_none()) return Upgraded{::foundation::core::none};
-        return Upgraded::some(OwnedRegion<T, Tag, Brand>{
-            base_, count_, std::move(exclusive).expect("the test above found the exclusive").leave_pool()});
+        return Upgraded::some(
+            OwnedRegion<T, Tag, Brand>{first_of_(::foundation::core::detail::BaseLayerRead{}, run_), run_.size(),
+                                       std::move(exclusive).expect("the test above found the exclusive").leave_pool()});
     }
 
     [[nodiscard]] std::uint64_t outstanding() const noexcept { return pool_.outstanding(); }
@@ -227,7 +234,7 @@ public:
 template <typename T, typename Tag, typename Brand>
 SharedRegion(OwnedRegion<T, Tag, Brand>&&) -> SharedRegion<T, Tag, Brand>;
 
-// A read the three axes agreed on.  It is a span and nothing else: the
+// A read the three axes agreed on.  It is a View and nothing else: the
 // share it stands on is the guard's, and the instance it names is in
 // its own type.
 //
@@ -245,20 +252,13 @@ class [[nodiscard]] SharedRead {
     static_assert(::foundation::brand::IsBrand<Brand>, "SharedRead<T, Tag, Brand>: Brand must be an empty class "
                                                        "type: the brand of the region read, or DefaultBrand.");
 
-    std::span<T const> span_{};
-    // No byte route builds a read, so a read names only a region that its
-    // mint paired with a live share.
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    // The run of the shared region, which holds the View that its region
+    // made, so the read mints no View of its own.  The seal of the View
+    // refuses each byte route, so no byte route builds a read, and a read
+    // names only a region that its mint paired with a live share.
+    ::foundation::core::View<T const> run_{};
 
-    constexpr SharedRead(detail::shared_read_mint_t, std::span<T const> span) noexcept : span_{span} {}
-
-    // The View of the elements.  The mint made the span from the base and the
-    // count of the region, which the mint of the region checked, so the View
-    // takes the door of the base layer with no check.
-    [[nodiscard]] constexpr ::foundation::core::View<T const> run_() const noexcept {
-        return ::foundation::core::View<T const>{::foundation::core::detail::ViewDoor::key(), span_.data(),
-                                                 span_.size()};
-    }
+    constexpr SharedRead(detail::shared_read_mint_t, ::foundation::core::View<T const> run) noexcept : run_{run} {}
 
     template <typename U, typename UTag, typename UBrand, typename Ctx>
         requires CtxFitsSharedRead<U, UTag, UBrand, Ctx>
@@ -285,8 +285,8 @@ public:
                                                  "the guard");
     ~SharedRead() = default;
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return span_.size(); }
-    [[nodiscard]] constexpr bool empty() const noexcept { return span_.empty(); }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return run_.size(); }
+    [[nodiscard]] constexpr bool empty() const noexcept { return run_.size() == 0; }
 
     // The read door of the run: body gets the View of the const elements for
     // the time of the call, and the door gives the result of body, which
@@ -296,7 +296,7 @@ public:
               && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body, ::foundation::core::View<T const>>>
     constexpr std::invoke_result_t<Body, ::foundation::core::View<T const>> with_view(Body&& body) const
         noexcept(std::is_nothrow_invocable_v<Body, ::foundation::core::View<T const>>) {
-        return static_cast<Body&&>(body)(run_());
+        return static_cast<Body&&>(body)(run_);
     }
 
     // A body whose result holds a borrow binds to this overload, so the
@@ -319,10 +319,10 @@ public:
               && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<OnNone>>
     constexpr std::invoke_result_t<OnNone> with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const
         noexcept(std::is_nothrow_invocable_v<OnSome, T const&> && std::is_nothrow_invocable_v<OnNone>) {
-        if (position >= span_.size()) {
+        if (position >= run_.size()) {
             return static_cast<OnNone&&>(on_none)();
         }
-        return static_cast<OnSome&&>(on_some)(span_[position]);
+        return static_cast<OnSome&&>(on_some)(first_of_(::foundation::core::detail::BaseLayerRead{}, run_)[position]);
     }
 };
 
@@ -335,9 +335,9 @@ mint_shared_read(Ctx const& /*ctx*/,
     // The context is read by the constraint on the declaration.  The
     // guard is read once, here: two regions minted at one site share a
     // brand, so the type cannot tell their guards apart, and one pointer
-    // comparison can.  After the mint the read runs at the speed of a span.
+    // comparison can.  After the mint the read runs at the speed of a View.
     CRUCIBLE_FATAL_INVARIANT(guard.is_share_of(region.pool_));
-    return SharedRead<T, Tag, Brand>{detail::shared_read_mint_t{}, std::span<T const>{region.base_, region.count_}};
+    return SharedRead<T, Tag, Brand>{detail::shared_read_mint_t{}, ::foundation::core::View<T const>{region.run_}};
 }
 
 }  // namespace fixy

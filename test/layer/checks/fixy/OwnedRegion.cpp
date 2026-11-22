@@ -10,6 +10,14 @@ namespace fixy {
 
 static_assert(sizeof(OwnedRegion<int, detail::owned_region_test_tag>) == sizeof(int*) + sizeof(std::size_t),
               "OwnedRegion<T, Tag> must be exactly (T*, size_t); Permission EBO-collapses");
+static_assert(alignof(OwnedRegion<int, detail::owned_region_test_tag>) == alignof(int*));
+
+// The core of foundation/core/Owner.h holds the run of a region: the state is
+// the two words, in the order base and count, and the owner adds no byte.
+static_assert(sizeof(detail::owner::RegionRunState<int>) == sizeof(OwnedRegion<int, detail::owned_region_test_tag>));
+static_assert(offsetof(detail::owner::RegionRunState<int>, base) == 0
+              && offsetof(detail::owner::RegionRunState<int>, count) == sizeof(int*));
+static_assert(::foundation::core::OwnerState<detail::owner::RegionRunState<int>>);
 
 static_assert(!std::is_copy_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);
 static_assert(std::is_move_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);

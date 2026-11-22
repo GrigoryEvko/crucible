@@ -37,6 +37,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
@@ -283,20 +284,43 @@ template <typename T, typename Allocator, typename Tag, typename Brand>
 mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, std::size_t count,
                   ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept;
 
+namespace detail::owner {
+
+// The run of a region: its first element and its count.  The region owns no
+// storage, so the release gives nothing back, and the emptied state covers
+// no byte.  The core of foundation/core/Owner.h moves the two, so a region
+// that moves out covers no byte.
+template <typename T>
+struct RegionRunState {
+    using owner_state_mark = ::foundation::core::OwnerStateMark;
+
+    T* base = nullptr;
+    std::size_t count = 0;
+
+    [[nodiscard]] static constexpr RegionRunState emptied(RegionRunState const& /*state*/) noexcept { return {}; }
+    static constexpr void release(RegionRunState const& /*state*/) noexcept {}
+};
+
+}  // namespace detail::owner
+
 // A region is linear (foundation/Linear.h).  Its doors are the split,
-// recombine, the shared door of fixy/SharedRegion.h and release().
+// recombine, the shared door of fixy/SharedRegion.h and release().  The core
+// of foundation/core/Owner.h holds its run, so each View of the region comes
+// through the key of an owner on the core.
 template <typename T, typename Tag, typename Brand>
-class [[nodiscard]][[= ::foundation::linear::linear{}]] OwnedRegion {
+class [[nodiscard]][[= ::foundation::linear::linear{}]] OwnedRegion
+    : public ::foundation::core::OwnerCore<detail::owner::RegionRunState<T>> {
     static_assert(::foundation::brand::IsBrand<Brand>, "OwnedRegion<T, Tag, Brand>: Brand must be an empty class "
                                                        "type: the brand of the permission the region was built "
                                                        "from, or DefaultBrand.");
 
-    T* base_ = nullptr;
-    std::size_t count_ = 0;
+    using State = detail::owner::RegionRunState<T>;
+    using Core = ::foundation::core::OwnerCore<State>;
+
     [[no_unique_address]] ::foundation::permissions::Permission<Tag, Brand> perm_;
 
     constexpr OwnedRegion(T* base, std::size_t count, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept
-        : base_{base}, count_{count}, perm_{std::move(p)} {}
+        : Core{State{base, count}}, perm_{std::move(p)} {}
 
     // split_into builds sub-regions whose tag differs from its own.
     template <typename U, typename UTag, typename UBrand>
@@ -335,10 +359,7 @@ public:
     // tuple therefore covers no byte of the whole that recombine rebuilds,
     // and recombine aborts on the tuple.  The use-after-move guard sees a
     // moved name, but not a moved tuple element.
-    constexpr OwnedRegion(OwnedRegion&& other) noexcept
-        : base_{std::exchange(other.base_, nullptr)},
-          count_{std::exchange(other.count_, 0)},
-          perm_{std::move(other.perm_)} {}
+    constexpr OwnedRegion(OwnedRegion&&) noexcept = default;
     // An assignment would write over the Permission of the target, and the
     // move assignment of a Permission does nothing, so the token of the old
     // region would leave through no door.  A Permission records no state, so
@@ -376,14 +397,15 @@ public:
     // and it covers no byte after the call.  The storage stays with its
     // owner, as for wrap().
     [[nodiscard]] constexpr ::foundation::permissions::Permission<Tag, Brand> release() && noexcept {
-        base_ = nullptr;
-        count_ = 0;
+        this->reset_();
         return std::move(perm_);
     }
 
-    [[nodiscard]] constexpr std::span<T const> cspan() const noexcept { return std::span<T const>{base_, count_}; }
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
-    [[nodiscard]] constexpr bool empty() const noexcept { return count_ == 0; }
+    [[nodiscard]] constexpr std::span<T const> cspan() const noexcept {
+        return std::span<T const>{this->state_.base, this->state_.count};
+    }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return this->state_.count == 0; }
 
     // The run of the elements for a frame door: a View that writes them.  The
     // key of a frame keeps each caller outside the base out, so only a frame
@@ -391,11 +413,20 @@ public:
     // and the runner of mint_parallel_for (fixy/concurrent/Spawn.h), which
     // lends each body the run of its shard.  The mint over a pointer checked
     // the base and the count, and a split and a recombine keep the two inside
-    // that run, so the View takes the door of the base layer with no check.
+    // that run, so the View takes the key of an owner on the core with no
+    // check.
     [[nodiscard]] friend constexpr ::foundation::core::View<T>
     frame_run_(::foundation::core::detail::FrameKey const& /*key*/, OwnedRegion& region) noexcept {
-        return ::foundation::core::View<T>{::foundation::core::detail::ViewDoor::key(), region.base_, region.count_};
+        return ::foundation::core::View<T>{OwnedRegion::run_key_(), region.state_.base, region.state_.count};
     }
+
+    // The borrow of the const elements.  It reaches the run through this
+    // friendship, and it makes the View through the key of an owner on the
+    // core.
+    template <typename U, typename UTag, typename UBrand>
+        requires ::foundation::brand::IsBrand<UBrand>
+    friend constexpr ::foundation::core::View<U const> mint_borrowed(OwnedRegion<U, UTag, UBrand> const& region
+                                                                     CRUCIBLE_LIFETIMEBOUND) noexcept;
 
     // The split is mint_split, declared above.  It reaches the private
     // partition through this friendship, so the only way to a shard is
@@ -426,8 +457,9 @@ public:
         [[maybe_unused]] Disjoint<Tag, Brand, SplitName, sizeof...(Is)> spent{std::move(witness)};
         // Each shard gives up its base and its count here, so no shard in
         // the consumed tuple keeps its bytes beside the rebuilt whole.
-        std::array<T*, sizeof...(Is)> const bases{std::exchange(std::get<Is>(shards).base_, nullptr)...};
-        std::array<std::size_t, sizeof...(Is)> const counts{std::exchange(std::get<Is>(shards).count_, 0)...};
+        std::array<State, sizeof...(Is)> const taken{std::get<Is>(shards).take_state_()...};
+        std::array<T*, sizeof...(Is)> const bases{taken[Is].base...};
+        std::array<std::size_t, sizeof...(Is)> const counts{taken[Is].count...};
         // Shard 0 starts at offset 0, so its base is the whole's base.
         // Each shard must start where the one before it ends.  Two regions
         // split at one site share a brand, so their shards and receipts are
@@ -461,10 +493,15 @@ template <typename T, typename Tag, typename Brand>
 [[nodiscard]] constexpr OwnedRegion<T, Tag, Brand>
 mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
     // The base and the count come from the caller, so the mint checks the two
-    // once, here: view_over_ ends the process on a count past the largest
-    // count of a View, and on a null base with a count.  Each frame door and
-    // each borrow of the region then makes its View with no check.
-    static_cast<void>(::foundation::core::detail::view_over_(base, count));
+    // once, here: it ends the process on a count past the largest count of a
+    // View, and on a null base with a count.  Each frame door and each borrow
+    // of the region then makes its View with no check.
+    if (count > ::foundation::core::max_view_count(sizeof(T))) [[unlikely]] {
+        ::foundation::core::fatal("mint_owned_region got a count past the largest count of a View");
+    }
+    if (base == nullptr && count != 0) [[unlikely]] {
+        ::foundation::core::fatal("mint_owned_region got a null pointer with a count");
+    }
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }
 
@@ -488,14 +525,13 @@ mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, st
 // refuse a temporary region, whose storage may be gone at the end of the
 // statement.  A write takes the frame door with_mut below, so no two Views
 // of one region write the same elements.  The mint over a pointer checked
-// the base and the count, so the View takes the door of the base layer.
+// the base and the count, so the View takes the key of an owner on the core.
 template <typename T, typename Tag, typename Brand>
     requires ::foundation::brand::IsBrand<Brand>
 [[nodiscard]] constexpr ::foundation::core::View<T const> mint_borrowed(OwnedRegion<T, Tag, Brand> const& region
                                                                         CRUCIBLE_LIFETIMEBOUND) noexcept {
-    std::span<T const> const elements = region.cspan();
-    return ::foundation::core::View<T const>{::foundation::core::detail::ViewDoor::key(), elements.data(),
-                                             elements.size()};
+    return ::foundation::core::View<T const>{OwnedRegion<T, Tag, Brand>::run_key_(), region.state_.base,
+                                             region.state_.count};
 }
 
 template <typename T, typename Tag, typename Brand>
@@ -580,8 +616,9 @@ auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) &&
     // The split takes the base and the count out of the region it
     // consumes, so that region is empty and no longer covers the bytes
     // that the shards cover.
-    T* const base = std::exchange(base_, nullptr);
-    const std::size_t total = std::exchange(count_, 0);
+    State const taken = this->take_state_();
+    T* const base = taken.base;
+    std::size_t const total = taken.count;
 
     // The binding pack holds one token for each shard, in the order of Is.
     auto [... sub_perms] =
