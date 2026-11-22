@@ -32,7 +32,8 @@
 //     with_mut(std::move(owner), body)   HeapArray and MaskedArray
 //                       (foundation/core/Array.h), FixedList (List.h) and
 //                       GrowList (Grow.h)
-//     array.with_mut(body)   a FixedArray, in place (Array.h)
+//     array.with_mut(body)   a FixedArray, in place (Array.h), and a
+//                       FixedHeapArray, in place (FixedHeapArray.h)
 //     sum.with_mut(arms...)   Option and Result (Choice.h) and OneOf (OneOf.h)
 //     array.with_element(index, body)   the element at an Index<N> of a
 //                       FixedArray, given to the body in place (Array.h),

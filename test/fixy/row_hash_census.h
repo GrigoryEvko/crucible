@@ -1106,6 +1106,8 @@ inline constexpr StatedZero kZeros[] = {
      "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::HeapArray,
      "an array of elements on the heap: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::FixedHeapArray,
+     "an array of exactly N elements on the heap: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::WriteLease,
      "the write-only lease of the fresh elements of one mint: it lives in the frame of the mint, and it is never a "
      "value in a kernel signature"},

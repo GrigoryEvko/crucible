@@ -3859,6 +3859,7 @@ foundation_neg_compile_test(neg_core_lower_bound_float_key
 # allocation capability, an element that copies and an alignment that is a
 # power of two.  It does not copy, and a view of a temporary is refused.
 foundation_test(test_core_heap_array)
+foundation_test(test_core_fixed_heap_array)
 
 # A MaskedArray holds a power-of-two count of elements from their default
 # constructor, so a pinned element passes.  A key at or past the count reads
@@ -4310,6 +4311,24 @@ foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
 # The element door of a HeapArray carries the annotation borrow_match, so the
 # rule borrow-match refuses a second door of the same array in its arm.
 foundation_neg_compile_test(neg_core_heap_array_nested_element_door
+  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
+  "the payload that the arm borrows can end while the arm holds its reference")
+# A FixedHeapArray takes the gates of a HeapArray at its mint, and it does not
+# move.  view() gives its const elements, and its member frame door carries the
+# annotation borrow_match.
+foundation_neg_compile_test(neg_core_fixed_heap_array_without_allocation_marker
+  "no matching function for call to .mint_fixed_heap_array<int, 4>\\(foundation::effects::cap::IO, int\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_fixed_heap_array_alignment_not_power
+  "no matching function for call to .mint_fixed_heap_array<int, 4, 12>\\(foundation::core::Alloc, int\\)."
+  "the expression .\\(Align & Align - 1\\) == 0 \\[with Align = 12\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_fixed_heap_array_moved
+  "use of deleted function .foundation::core::FixedHeapArray<T, N, Align>::FixedHeapArray\\(foundation::core::FixedHeapArray<T, N, Align>&&\\)"
+  "a FixedHeapArray holds its storage from its mint to its end, so no door tests a null pointer")
+foundation_neg_compile_test(neg_core_fixed_heap_array_two_mutable_views
+  "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
+  "neg_core_fixed_heap_array_two_mutable_views\\.cpp:12:")
+foundation_neg_compile_test(neg_core_fixed_heap_array_nested_frame_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
 foundation_neg_compile_test(neg_core_heap_array_mint_forged_body

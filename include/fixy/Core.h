@@ -30,6 +30,7 @@
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
 #include <foundation/core/DataAddress.h>
+#include <foundation/core/FixedHeapArray.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Frame.h>
@@ -209,6 +210,7 @@ using ::foundation::core::find;
 using ::foundation::core::find_if;
 using ::foundation::core::find_lower_bound_by_key;
 using ::foundation::core::FixedArray;
+using ::foundation::core::FixedHeapArray;
 using ::foundation::core::FixedList;
 using ::foundation::core::ForeignElement;
 using ::foundation::core::Full;
@@ -224,6 +226,7 @@ using ::foundation::core::MaskedArray;
 using ::foundation::core::mint_branded_scope;
 using ::foundation::core::mint_foreign_view;
 using ::foundation::core::offset_of;
+using ::foundation::core::mint_fixed_heap_array;
 using ::foundation::core::mint_heap_array;
 using ::foundation::core::mint_heap_array_copy;
 using ::foundation::core::mint_heap_array_with;
