@@ -307,14 +307,15 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_aligned_bytes` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 5 |
+| `mint_aligned_bytes_zeroed` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 8 |
+| `mint_keyed_bytes` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 3 |
 
 ## include/foundation/alloc/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_alignment` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_layout` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 5 |
+| `mint_layout` | `include/foundation/alloc/Layout.h` | Y | Y | Y | · | token | · | HS14: 8 |
 
 ## include/foundation/core/
 
@@ -326,6 +327,7 @@ that the axis does not apply to the row.
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 25 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_fixed_array` | `include/foundation/core/Array.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 5 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_foreign_text` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 2 |
@@ -409,4 +411,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 82 | 46 | 27 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 168 | 63 | 101 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 170 | 63 | 103 | 4 | 0 | 3 |
