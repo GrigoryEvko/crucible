@@ -14,6 +14,7 @@ Request
       --budget-reason ITEM=TEXT The gate raises the crossed row of ITEM with this reason (the budget reason)
       --lower RULE ITEM        The gate lowers the row of ITEM of RULE to the largest measure of its builds (the lower)
       --lower-reason TEXT       The reason of the cut, which each lowered row of the request gets (the lower)
+      --right-of-way            The batch takes the right of way before its first composition (the right of way)
       --check                   Run the gate on the commit, and do not land it
       --here                    With --check: run this copy of the module (the driver)
       --dry-run                 Print the diff of the commit, and change nothing
@@ -102,8 +103,8 @@ Series
     of BRANCH that HEAD does not hold, from the oldest, each with its own
     message, as one request (series_request()).  The author of each commit
     is the configured identity.  A series takes no -m, no patch, no edit and
-    no own path.  --all-configurations, --jobs, --check, --dry-run and
-    --tree apply to the whole series.
+    no own path.  --all-configurations, --jobs, --right-of-way, --check,
+    --dry-run and --tree apply to the whole series.
       * The request holds the patch of each commit against its first parent,
         and the message of the commit.  The process writes the request
         into the file NUMBER.series of the queue.  An earlier copy of this
@@ -204,7 +205,9 @@ Lanes
     Two lanes race only at the compare-and-swap.  The lane that loses
     composes its requests again on the new commit of the branch, and its gate
     runs again (the compare-and-swap).  A batch that loses many times takes
-    the right of way, and the other lanes wait for it (the right of way).
+    the right of way, and the other lanes wait for it (the right of way).  A
+    batch with a request of --right-of-way takes it before its first
+    composition.
     the reduce and the built files of a lane fold only into the commit of
     that lane.
 
@@ -480,11 +483,23 @@ Right of way
     A long run of the gate, such as a run of --all-configurations, can lose
     each swap: a short landing of a different lane moves the branch while it
     runs.  Thus, after RIGHT_AFTER refused swaps, the batch takes the right
-    of way before its next composition.  It holds a lock of flock(2) on the
-    file NUMBER.right of the queue, with the number of its first request,
-    until the batch ends.  The kernel frees the lock of a holder that ends.
-    The file of a holder that a signal ended stays until the sweep of the
-    queue removes it (removed_dead_holders()).
+    of way before its next composition.  A batch with a request of
+    --right-of-way takes the right of way before its first composition, and
+    not after refused swaps.  It holds a lock of flock(2) on the file
+    NUMBER.right of the queue, with the number of its first request, until
+    the batch ends.  The kernel frees the lock of a holder that ends.  The
+    file of a holder that a signal ended stays until the sweep of the queue
+    removes it (removed_dead_holders()).
+
+    Only the one big-scope series of the coordinator gives --right-of-way,
+    because it must land before each other change.  No other landing gives
+    the option.  The request file holds it (encoded_request()).  The option
+    does not move a request ahead in the queue: a holder takes the requests
+    in the sequence of their numbers, and the batch takes the right of way
+    when its first round starts.  When the cut of a batch defers the request
+    of the option, the batch keeps its right of way until it ends, and the
+    next batch of that request takes the right of way again.  --check,
+    --dry-run and --tree land nothing, so they refuse the option.
 
     A right of way goes first when a different batch holds it.  For a batch
     that holds a right of way, only a right of way with a smaller number goes
@@ -716,9 +731,9 @@ Driver
 Usage
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
               [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... [--lower RULE ITEM]...
-              [--lower-reason TEXT] [--check [--here] | --dry-run | --tree] -- [PATH]...
+              [--lower-reason TEXT] [--right-of-way] [--check [--here] | --dry-run | --tree] -- [PATH]...
     loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]...
-              [--lower RULE ITEM]... [--lower-reason TEXT] [--check [--here] | --dry-run | --tree] --
+              [--lower RULE ITEM]... [--lower-reason TEXT] [--right-of-way] [--check [--here] | --dry-run | --tree] --
 
     Exit 0 when the request landed, when the gate accepts the commit of
     --check, or when --dry-run or --tree printed.  Exit 1 when the gate
@@ -762,8 +777,9 @@ from assay.loop.derive import witness_fixtures
 # refused swap tests only the inputs that changed, so it is short, and a long landing needs many tries before it wins.
 ATTEMPTS = 32
 PAUSE_RANGE_S = (0.1, 0.9)
-# The refused swaps before a batch takes the right of way, and the longest wait of a swap for a right of way of a
-# different batch (the right of way).  A run of --all-configurations takes approximately 12 minutes.
+# The refused swaps before a batch with no request of --right-of-way takes the right of way, and the longest wait of a
+# swap for a right of way of a different batch (the right of way).  A run of --all-configurations takes approximately
+# 12 minutes.
 RIGHT_AFTER = 2
 RIGHT_WAIT_S = 1800.0
 # The two steps of a batch before which it waits for a right of way that goes first (the right of way).
@@ -794,7 +810,8 @@ FLAG_TREE = "--tree"
 FLAG_CHECK = "--check"
 FLAG_HERE = "--here"
 FLAG_EVERY = "--all-configurations"
-FLAGS = (FLAG_DRY_RUN, FLAG_TREE, FLAG_CHECK, FLAG_HERE, FLAG_EVERY)
+FLAG_RIGHT = "--right-of-way"
+FLAGS = (FLAG_DRY_RUN, FLAG_TREE, FLAG_CHECK, FLAG_HERE, FLAG_EVERY, FLAG_RIGHT)
 END_OF_OPTIONS = "--"
 HELP_WORDS = (["-h"], ["--help"])
 USAGE = (
@@ -802,10 +819,12 @@ USAGE = (
     "[--block FILE AFTER BLOCK]...\n"
     "                 [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... "
     "[--lower RULE ITEM]... [--lower-reason TEXT]\n"
-    "                 [--check [--here] | --dry-run | --tree] -- [PATH]...\n"
+    "                 [--right-of-way] [--check [--here] | --dry-run | --tree] -- [PATH]...\n"
     "       loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... "
     "[--lower RULE ITEM]...\n"
-    "                 [--lower-reason TEXT] [--check [--here] | --dry-run | --tree] --"
+    "                 [--lower-reason TEXT] [--right-of-way] [--check [--here] | --dry-run | --tree] --\n"
+    "--right-of-way is only for the one big-scope series of the coordinator: its batch takes the right of way before "
+    "its first composition"
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
@@ -980,7 +999,11 @@ class Request:
 
 @dataclass(frozen=True, slots=True)
 class Options:
-    """The words of the command line that are not part of the request."""
+    """The words of the command line that are not part of the request.
+
+    `is_right_of_way` tells that the batch of the request takes the right of way before its first composition (the
+    right of way).  It is the last field, because some callers give the fields in their sequence.
+    """
 
     is_dry_run: bool
     is_tree_only: bool
@@ -993,6 +1016,7 @@ class Options:
     lowers: tuple[tuple[str, str], ...] = ()
     lower_reason: str = ""
     budget_rows: tuple[tuple[str, str], ...] = ()
+    is_right_of_way: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1288,7 +1312,8 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
     """Return the options of the flags and of the options with values, and refuse a combination that does not apply.
 
     A series takes its messages and its changes from its commits, so it takes no -m, no patch, no edit and no own path
-    (the series).  --dry-run and --tree run no gate, so they take no --budget-reason and no --lower.
+    (the series).  --dry-run and --tree run no gate, so they take no --budget-reason and no --lower.  --check,
+    --dry-run and --tree land nothing, so they take no --right-of-way (the right of way).
 
     Raises:
         LandError: If the options do not apply together
@@ -1312,6 +1337,11 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
         raise LandError(f"--jobs takes a number above 0, not {jobs_text!r}")
     if sum(flags[flag] for flag in (FLAG_CHECK, FLAG_DRY_RUN, FLAG_TREE)) > 1:
         raise LandError("give one of --check, --dry-run and --tree")
+    if flags[FLAG_RIGHT] and (flags[FLAG_CHECK] or flags[FLAG_DRY_RUN] or flags[FLAG_TREE]):
+        raise LandError(
+            "--right-of-way applies to a landing, so give it no --check, no --dry-run and no --tree.  Only the one "
+            "big-scope series of the coordinator gives it"
+        )
     if flags[FLAG_HERE] and not flags[FLAG_CHECK]:
         raise LandError("--here applies only to --check.  A landing runs the copy of the main work tree")
     if len(series_values) > 1:
@@ -1341,6 +1371,7 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
         lowers,
         lower_reason,
         budget_rows,
+        flags[FLAG_RIGHT],
     )
 
 
@@ -3217,22 +3248,30 @@ class BatchLanding:
     def landed_pending(self, pending: list[Queued]) -> None:
         """Run the rounds of land() until the swap, a refusal of each request, or ATTEMPTS refused swaps.
 
-        After RIGHT_AFTER refused swaps, the batch takes its right of way before its next round.  Before each round and
-        before each swap, it waits for the batches that go first (the right of way, the stack).  A round composes on the
-        top of the stack, or on the branch.  A move of the branch from the base of a round on the branch counts as a
-        refused swap.  A round on the stack whose base leaves the stack counts in STACK_ATTEMPTS.  The caller frees the
-        right of way and the entry.
+        A batch with a request of --right-of-way takes its right of way before its first round.  Each other batch takes
+        it after RIGHT_AFTER refused swaps, before its next round.  Before each round and before each swap, the batch
+        waits for the batches that go first (the right of way, the stack).  A round composes on the top of the stack,
+        or on the branch.  A move of the branch from the base of a round on the branch counts as a refused swap.  A
+        round on the stack whose base leaves the stack counts in STACK_ATTEMPTS.  The caller frees the right of way and
+        the entry.
         """
         swaps_refused = 0
         restacks = 0
         is_on_branch = False
         while pending:
             right = self.right
-            if right is not None and not self.is_check and swaps_refused >= RIGHT_AFTER and not right.is_taken:
+            is_asked = any(item.options.is_right_of_way for item in pending)
+            is_due = is_asked or swaps_refused >= RIGHT_AFTER
+            if right is not None and not self.is_check and is_due and not right.is_taken:
                 right.take()
+                cause = (
+                    "a request of the batch gives --right-of-way"
+                    if is_asked
+                    else f"the branch moved {swaps_refused} times"
+                )
                 check_report.write_line(
-                    f"loop land: the branch moved {swaps_refused} times, and the batch takes the right of way: the "
-                    "other lanes wait before their run and their swap until this batch ends"
+                    f"loop land: {cause}, and the batch takes the right of way: the other lanes wait before their run "
+                    "and their swap until this batch ends"
                 )
             stack = self.stack
             if stack is not None:
@@ -3647,6 +3686,7 @@ def encoded_request(queued: Queued, patch_names: Sequence[str], part_names: Sequ
         "budget_rows": [{"item": item, "text": text} for item, text in queued.options.budget_rows],
         "lowers": [{"rule": rule, "item": item} for rule, item in queued.options.lowers],
         "lower_reason": queued.options.lower_reason,
+        "right_of_way": queued.options.is_right_of_way,
         "claims": True,
     }
     return (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
@@ -3715,6 +3755,9 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
     lower_reason = record.get("lower_reason", "")
     if not isinstance(lower_reason, str):
         raise TypeError("the field lower_reason is not a text")
+    is_right_of_way = record.get("right_of_way", False)
+    if not isinstance(is_right_of_way, bool):
+        raise TypeError("the field right_of_way is not a truth value")
     if jobs < 1:
         raise ValueError(f"the field jobs is {jobs}, and a request takes a number above 0")
     parts = tuple(
@@ -3737,6 +3780,7 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         lowers=lowers,
         lower_reason=lower_reason,
         budget_rows=budget_rows,
+        is_right_of_way=is_right_of_way,
     )
     is_claiming = record.get("claims") is True
     return Queued(number, Path(root), request, options, branch, common, token, head, is_claiming, entry_time)

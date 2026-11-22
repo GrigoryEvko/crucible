@@ -43,6 +43,12 @@ Each number must occur one time only.  A holder must write the verdicts of
 the journals of a holder that ended after its swap.  A journal that git
 cannot judge must give a refusal.
 
+A batch with --right-of-way must hold the right of way from its first
+composition, and a later batch must wait before its run.  Two such batches
+must land in the sequence of their numbers.  A batch with no such word must
+take the right of way only after RIGHT_AFTER refused swaps.  The sweep must
+remove the file of a holder with the option that ended in its gate.
+
 The process cases start landings as planted processes, and they land one
 batch of three.  They hold a holder that ends in the gate, and a landing
 that gets an interrupt.  They also hold a holder of the warm tree of an
@@ -106,8 +112,9 @@ SECOND_ENTRY = "2027-01-15T08:01:01Z"
 CHILD_S = 60.0
 WAIT_S = 30.0
 # A planted landing process.  It reads its part from the JSON of its first argument, and its request holds the own
-# file and the patch of the part.  Its planted gate writes a line to the log, and then it ends the process, waits for
-# a file, or accepts the commit.  Its holder lands only when the part lets it, and only when a named file is there.
+# file and the patch of the part, with --right-of-way when the part gives it.  Its planted gate writes a line to the
+# log, and then it ends the process, waits for a file, or accepts the commit.  Its holder lands only when the part lets
+# it, and only when a named file is there.
 CHILD = """\
 import json
 import os
@@ -148,6 +155,8 @@ own = (part["own"],) if part["own"] else ()
 patches = (pathlib.Path(part["patch"]),) if part["patch"] else ()
 request = land.Request((part["subject"],), patches, (), own)
 options = land.Options(False, False)
+if part.get("right_of_way"):
+    options = land.Options(False, False, is_right_of_way=True)
 sys.exit(land.landing(work, root, request, options, holder, lambda _seconds: time.sleep(0.02)))
 """
 
@@ -2040,13 +2049,20 @@ def short_landing(root: Path, text: str) -> None:
 
 
 def right_batch(
-    root: Path, queue: Path, number: int, check: land.Check, pause: heavy.Pause
+    root: Path,
+    queue: Path,
+    number: int,
+    check: land.Check,
+    pause: heavy.Pause,
+    chosen: land.Options | None = None,
 ) -> tuple[dict[int, land.Decision], str]:
     """Land one request with the number through a planted gate, with a right of way in the queue (the right of way).
 
-    The function returns each verdict and the printed text.
+    `chosen` gives the options of the request, and None the options of a landing.  The function returns each verdict
+    and the printed text.
     """
-    batch = [land.Queued(number, root, own_requests(root, (f"right {number}\n",))[0], options())]
+    chosen_options = chosen if chosen is not None else options()
+    batch = [land.Queued(number, root, own_requests(root, (f"right {number}\n",))[0], chosen_options)]
     decisions: dict[int, land.Decision] = {}
 
     def decide(queued: land.Queued, decision: land.Decision) -> None:
@@ -2276,6 +2292,237 @@ def right_cases(expect: testing.Expect) -> None:
             and git.parent(root, "HEAD") == holder_landed[0]
             and taken == [-1],
         )
+
+
+def right_options(is_right_of_way: bool) -> land.Options:
+    """Return the options of a landing, with or with no --right-of-way (the right of way)."""
+    return replace(options(), is_right_of_way=is_right_of_way)
+
+
+def right_word_cases(expect: testing.Expect) -> None:
+    """Hold the words and the request file of --right-of-way: a landing and a series take it, a run that lands nothing
+    refuses it, and the request file keeps it."""
+    with tempfile.TemporaryDirectory(prefix="land-right-words-") as scratch_text:
+        scratch = Path(scratch_text)
+        _request, series = land.parse(["--series", "wt/a", "--right-of-way", "--"], scratch)
+        _request, message = land.parse(["--right-of-way", "-m", "s", "--patch", "p", "--"], scratch)
+        _request, plain = land.parse(["--series", "wt/a", "--"], scratch)
+        expect(
+            "--right-of-way applies to a series and to a landing of -m, and a request with no such word has no right "
+            "of way",
+            series.is_right_of_way and message.is_right_of_way and not plain.is_right_of_way,
+        )
+        refusals: dict[str, bool] = {}
+        for flag in (land.FLAG_CHECK, land.FLAG_DRY_RUN, land.FLAG_TREE):
+            try:
+                land.parse(["--right-of-way", flag, "-m", "s", "--patch", "p", "--"], scratch)
+                refusals[flag] = False
+            except land.LandError as problem:
+                refusals[flag] = "--right-of-way applies to a landing" in str(problem)
+        expect(
+            f"--check, --dry-run and --tree land nothing, so the parse refuses --right-of-way with each: {refusals}",
+            all(refusals.values()),
+        )
+        queue = scratch / "queue"
+        queue.mkdir()
+        request = request_of(("Add r1",), own=("r1.txt",))
+        found: dict[str, bool] = {}
+        for name, is_asked in (("with", True), ("with no", False)):
+            queued = land.Queued(7, scratch, request, right_options(is_asked), token="planted")
+            found[name] = land.decoded_request(queue, 7, land.encoded_request(queued, [])).options.is_right_of_way
+        queued = land.Queued(7, scratch, request, right_options(True), token="planted")
+        record = json.loads(land.encoded_request(queued, []))
+        del record["right_of_way"]
+        earlier = land.decoded_request(queue, 7, json.dumps(record).encode())
+        found["of an earlier copy"] = earlier.options.is_right_of_way
+        record["right_of_way"] = "yes"
+        try:
+            land.decoded_request(queue, 7, json.dumps(record).encode())
+            is_text_refused = False
+        except TypeError:
+            is_text_refused = True
+        expect(
+            f"the request file keeps --right-of-way, a request file of an earlier copy has no right of way, and a "
+            f"field that is not a truth value does not read: {found}",
+            found == {"with": True, "with no": False, "of an earlier copy": False} and is_text_refused,
+        )
+
+
+def branch_mover(root: Path, right_file: Path, held_on_run: list[bool], label: str) -> Callable[[], None]:
+    """Return a hook of a planted gate that keeps if the right of way is held on each run, and moves the branch on each
+    run with no right of way, as the short landings of the other lanes do (the right of way)."""
+
+    def move_unless_right() -> None:
+        is_right = heavy.is_held(right_file)
+        held_on_run.append(is_right)
+        if not is_right:
+            short_landing(root, f"{label} {len(held_on_run)}\n")
+
+    return move_unless_right
+
+
+def right_option_cases(expect: testing.Expect) -> None:
+    """Hold --right-of-way: the batch holds the right of way from its first composition, a later batch waits before
+    its run, two holders land in the sequence of their numbers, and a batch with no such word takes the right of way
+    only after RIGHT_AFTER refused swaps."""
+    with tempfile.TemporaryDirectory(prefix="land-right-option-") as work_text:
+        work = Path(work_text)
+        root, queue = work / "repo", work / "queue"
+        queue.mkdir()
+        planted_repository(root)
+        found: dict[bool, tuple[int, list[bool], bool]] = {}
+        for number, is_asked in ((1, False), (2, True)):
+            held_on_run: list[bool] = []
+            hook = branch_mover(root, land.queue_file(queue, number, land.RIGHT_SUFFIX), held_on_run, f"moved {number}")
+            decisions, printed = right_batch(root, queue, number, passing([], hook), no_pause, right_options(is_asked))
+            found[is_asked] = (int(decisions[number].status), held_on_run, "gives --right-of-way" in printed)
+        expect(
+            f"a batch with --right-of-way holds the right of way on its first run and lands on it.  A batch with no "
+            f"such word takes it only after RIGHT_AFTER refused swaps, as before: {found}",
+            found[True] == (0, [True], True) and found[False] == (0, [False] * land.RIGHT_AFTER + [True], False),
+        )
+        later_cases(expect, root, queue)
+        holder_order_cases(expect, root, queue)
+
+
+def later_cases(expect: testing.Expect, root: Path, queue: Path) -> None:
+    """Hold a batch with --right-of-way that waits for a smaller number before its first composition, and a later batch
+    with no such word that starts during that wait: the later batch waits before its run for the two."""
+    head = git.head(root)
+    requests = own_requests(root, ("held from the first composition\n", "waits before its run\n"))
+    smaller = [other_right(queue, 11)]
+    holder_file = land.queue_file(queue, 13, land.RIGHT_SUFFIX)
+    holder_waits = threading.Event()
+    holder_runs: list[tuple[gate.Candidate, bool]] = []
+    later_runs: list[tuple[gate.Candidate, bool]] = []
+    state: dict[str, bool] = {}
+    decisions: dict[int, land.Decision] = {}
+
+    def decide(queued: land.Queued, decision: land.Decision) -> None:
+        decisions[queued.number] = decision
+
+    def holder_pause(_seconds: float) -> None:
+        """Tell that the batch with the option waits, and pause a short real time."""
+        holder_waits.set()
+        time.sleep(0.01)
+
+    def later_pause(_seconds: float) -> None:
+        """Free the right of way of the smaller number on the first pause, and pause a short real time."""
+        if smaller:
+            os.close(smaller.pop())
+        time.sleep(0.01)
+
+    def run_holder() -> None:
+        """Land the batch with the option as the holder of a lane does, with a right of way and a stack."""
+        batch = [land.Queued(13, root, requests[0], right_options(True))]
+        right = land.RightOfWay(queue, 13, holder_pause)
+        stack = land.Stack(queue, 13)
+        land.BatchLanding(batch, passing(holder_runs), decide, holder_pause, right=right, stack=stack).land(batch)
+
+    def run_both() -> None:
+        """Start the holder, then land the later batch in this thread while the holder waits."""
+        thread = threading.Thread(target=run_holder)
+        thread.start()
+        holder_waits.wait(THREAD_BOUND_S)
+        state["held before the first composition"] = heavy.is_held(holder_file) and not holder_runs
+        batch = [land.Queued(15, root, requests[1], right_options(False))]
+        right = land.RightOfWay(queue, 15, later_pause)
+        stack = land.Stack(queue, 15)
+        land.BatchLanding(batch, passing(later_runs), decide, later_pause, right=right, stack=stack).land(batch)
+        thread.join(THREAD_BOUND_S)
+
+    _, printed = testing.captured(run_both)
+    for descriptor in smaller:
+        os.close(descriptor)
+    holder_commit = holder_runs[0][0].commit if holder_runs else ""
+    expect(
+        f"a batch with --right-of-way holds the right of way before its first composition, while it waits for a "
+        f"smaller number.  A later batch waits before its run for the two, and the two land in turn with one run each: "
+        f"{state} {len(holder_runs)} {len(later_runs)}",
+        state.get("held before the first composition", False)
+        and all(decisions.get(number, land.refused(ExitCode.USAGE, "none")).status == 0 for number in (13, 15))
+        and "waits before its run for the right of way of 00000011 00000013\n" in printed
+        and len(holder_runs) == 1
+        and len(later_runs) == 1
+        and later_runs[0][0].head == holder_commit
+        and subjects_since(root, head) == ["Add r1", "Add r2"]
+        and not holder_file.exists(),
+    )
+
+
+def holder_order_cases(expect: testing.Expect, root: Path, queue: Path) -> None:
+    """Hold two batches with --right-of-way: the larger number waits before its run for the smaller, and the smaller
+    waits for nothing, also when its run started first."""
+    head = git.head(root)
+    requests = own_requests(root, ("the smaller number\n", "the larger number\n"))
+    smaller_file = land.queue_file(queue, 21, land.RIGHT_SUFFIX)
+    larger_file = land.queue_file(queue, 27, land.RIGHT_SUFFIX)
+    smaller_started = threading.Event()
+    release = threading.Event()
+    smaller_runs: list[tuple[gate.Candidate, bool]] = []
+    larger_runs: list[tuple[gate.Candidate, bool]] = []
+    state: dict[str, bool] = {}
+    decisions: dict[int, land.Decision] = {}
+    threads: list[threading.Thread] = []
+
+    def decide(queued: land.Queued, decision: land.Decision) -> None:
+        decisions[queued.number] = decision
+
+    def blocked(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        """Keep the run of the smaller number, tell that it started, and accept it after the release."""
+        smaller_runs.append((candidate, is_retry))
+        smaller_started.set()
+        release.wait(THREAD_BOUND_S)
+        return gate.Verdict(("debug",), (), 1.0)
+
+    def short_pause(_seconds: float) -> None:
+        """Pause a short real time, so the other thread goes on."""
+        time.sleep(0.01)
+
+    def larger_pause(_seconds: float) -> None:
+        """On the first pause, keep if the two hold their right of way, release the smaller number, and wait for it."""
+        if not release.is_set():
+            state["two held"] = heavy.is_held(smaller_file) and heavy.is_held(larger_file)
+            release.set()
+            for thread in threads:
+                thread.join(THREAD_BOUND_S)
+        time.sleep(0.01)
+
+    def run_smaller() -> None:
+        """Land the batch of the smaller number as the holder of a lane does, with a right of way and a stack."""
+        batch = [land.Queued(21, root, requests[0], right_options(True))]
+        right = land.RightOfWay(queue, 21, short_pause)
+        stack = land.Stack(queue, 21)
+        land.BatchLanding(batch, blocked, decide, short_pause, right=right, stack=stack).land(batch)
+
+    def run_both() -> None:
+        """Start the smaller number, then land the larger number in this thread while the run of the smaller waits."""
+        threads.append(threading.Thread(target=run_smaller))
+        threads[0].start()
+        smaller_started.wait(THREAD_BOUND_S)
+        batch = [land.Queued(27, root, requests[1], right_options(True))]
+        right = land.RightOfWay(queue, 27, larger_pause)
+        stack = land.Stack(queue, 27)
+        land.BatchLanding(batch, passing(larger_runs), decide, larger_pause, right=right, stack=stack).land(batch)
+        release.set()
+        threads[0].join(THREAD_BOUND_S)
+
+    _, printed = testing.captured(run_both)
+    smaller_commit = smaller_runs[0][0].commit if smaller_runs else ""
+    expect(
+        f"two batches with --right-of-way keep the sequence of their numbers: the larger waits before its run for the "
+        f"smaller, the smaller waits for nothing, and the two land in turn with one run each: {state}",
+        state.get("two held", False)
+        and all(decisions.get(number, land.refused(ExitCode.USAGE, "none")).status == 0 for number in (21, 27))
+        and "waits before its run for the right of way of 00000021\n" in printed
+        and "for the right of way of 00000027" not in printed
+        and len(smaller_runs) == 1
+        and len(larger_runs) == 1
+        and larger_runs[0][0].head == smaller_commit
+        and subjects_since(root, head) == ["Add r1", "Add r2"]
+        and not smaller_file.exists()
+        and not larger_file.exists(),
+    )
 
 
 def side_commit(root: Path, parent: str, name: str, text: str) -> str:
@@ -3883,7 +4130,7 @@ class Part:
 
     An empty `own` or `patch` gives the request no own file or no patch.  `holds` lets its holder land, and
     `holds_after` names a file that must be there first.  `ends` makes its gate end the process.  `go` names a file
-    that its gate waits for, after it writes that name with .started.
+    that its gate waits for, after it writes that name with .started.  `right_of_way` gives the request --right-of-way.
     """
 
     subject: str
@@ -3893,6 +4140,7 @@ class Part:
     go: str = ""
     holds_after: str = ""
     patch: str = ""
+    right_of_way: bool = False
 
 
 def started(work: Path, root: Path, log: Path, parts: Sequence[Part], before: int = 0) -> list[proc.Running]:
@@ -3980,6 +4228,39 @@ def process_cases(expect: testing.Expect) -> None:
         )
         interrupt_cases(expect, base, lanes)
         revert_process_cases(expect, base, lanes)
+        dead_right_cases(expect, base, lanes)
+
+
+def dead_right_cases(expect: testing.Expect, base: Path, lanes: contextlib.ExitStack) -> None:
+    """Hold a holder with --right-of-way that ends in its gate: the kernel frees its lock, a later batch does not wait
+    for its file, and the sweep removes the file (the right of way).
+
+    No second holder starts, because it removes each file of a request with no lock before the sweep sees it.
+    """
+    work, root, log = base / "work-dead-right", base / "repo-dead-right", base / "dead-right.log"
+    only_first_lane(work, lanes)
+    planted_repository(root)
+    (root / "r1.txt").write_text("1\n", encoding="utf-8")
+    runs = started(work, root, log, [Part("Add r1", "r1.txt", ends=True, right_of_way=True)])
+    exit_code = runs[0].wait().exit
+    queue = land.queue_of(work, root)
+    rights = paths.listing(queue, f"*{land.RIGHT_SUFFIX}")
+    names = [path.name for path in rights]
+    is_left = len(rights) == 1 and not heavy.is_held(rights[0])
+    number = land.number_of(rights[0]) if rights else None
+    later = land.RightOfWay(queue, (number or 0) + 1, no_pause).first()
+    moment = rights[0].stat().st_mtime + land.DEAD_HOLDER_AGE_S if rights else 0.0
+    removed = land.removed_dead_holders(queue, moment)
+    expect(
+        f"a holder with --right-of-way that ends in its gate leaves its file with no lock.  A later batch does not "
+        f"wait for it, and the sweep removes it: exit {exit_code}, files {names}, removed {removed}",
+        exit_code == 9
+        and log_lines(log) == ["Add r1"]
+        and is_left
+        and later == []
+        and all(name in removed for name in names)
+        and not any(path.exists() for path in rights),
+    )
 
 
 def interrupt_cases(expect: testing.Expect, base: Path, lanes: contextlib.ExitStack) -> None:
@@ -4100,6 +4381,8 @@ def main(argv: list[str]) -> int:
             gone_watch_cases,
             dead_holder_cases,
             right_cases,
+            right_word_cases,
+            right_option_cases,
             stack_cases,
             lost_run_cases,
             newer_entry_cases,
