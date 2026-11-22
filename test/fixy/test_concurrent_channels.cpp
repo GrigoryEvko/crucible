@@ -239,22 +239,20 @@ template <class Channel>
         []() noexcept { return false; });
 }
 
-// The one scoped-access verb of a merge channel.  The producer root out of the
-// pool and the consumer token combine into the whole, and the body reaches the
-// ring.  The whole splits again, the root goes back to the pool, and the
-// consumer pops what the body pushed.
+// The one scoped-access verb of a merge channel.  The lease of the producer
+// root out of the pool and the consumer token open the access, and the body
+// reaches the ring.  The access gives the two back, the lease goes back to
+// the pool, and the consumer pops what the body pushed.
 [[nodiscard]] int mpsc_recombined_access() {
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
     Mpsc channel{std::move(producer_root)};
     auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
-    auto whole = perm::mint_permission_combine<Mpsc::whole_tag>(std::move(root), std::move(consumer_perm));
-    auto returned = channel.with_recombined_access(
-        std::move(whole), [](Mpsc::ring_type& ring) noexcept { static_cast<void>(ring.try_push(41)); });
-    auto [root_again, consumer_again] =
-        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(returned));
-    channel.deposit_producer_root(std::move(root_again));
-    auto consumer = channel.consumer(std::move(consumer_again));
+    auto returned =
+        channel.with_recombined_access(std::move(root), std::move(consumer_perm),
+                                       [](Mpsc::ring_type& ring) noexcept { static_cast<void>(ring.try_push(41)); });
+    channel.deposit_producer_root(std::move(returned.root));
+    auto consumer = channel.consumer(std::move(returned.consumer));
     const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
     int const popped = consumer.try_pop(merge).value_or(-1);
     ::foundation::linear::drop(std::move(consumer));

@@ -40,4 +40,15 @@ void shared_permission_pool_outlived_abort_() noexcept {
     os::abort_process();
 }
 
+// The cold path of a deposit of a lease that came out of another pool of
+// the same type.  It is in a source file, and no includer of
+// SharedPermission.h compiles the report.
+void shared_permission_pool_foreign_lease_abort_() noexcept {
+    core::report(core::Sink::Err,
+                 "crucible: fatal contract violation: a SharedPermissionPool took the lease of another pool.  Two "
+                 "pools of one call site have one type, so only the identity of the pool tells their leases apart.  "
+                 "Give each lease back to the pool that gave it.\n");
+    os::abort_process();
+}
+
 }  // namespace foundation::permissions

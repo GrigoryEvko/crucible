@@ -186,8 +186,8 @@ void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
 }
 
 // While the producer root is out of the pool, the door lends no producer, and
-// the root with the consumer token gives the ring to a recombined access.  The
-// deposit of the root opens the door again.
+// the lease of the root with the consumer token gives the ring to a recombined
+// access.  The deposit of the lease opens the door again.
 void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
     auto root = perm::mint_permission_root<RootTag>();
     using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
@@ -196,16 +196,14 @@ void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
     Lanes channel{std::move(producer_root)};
     auto withdrawn = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
     CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && channel.producer(kFirst).is_none());
-    auto whole = perm::mint_permission_combine<Lanes::whole_tag>(std::move(withdrawn), std::move(consumer_perm));
     auto back = channel.with_recombined_access(
-        std::move(whole), [](Lanes::ring_type& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
-    auto [returned_root, returned_consumer] =
-        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(back));
-    channel.deposit_producer_root(std::move(returned_root));
+        std::move(withdrawn), std::move(consumer_perm),
+        [](Lanes::ring_type& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
+    channel.deposit_producer_root(std::move(back.root));
     CRUCIBLE_TEST_ASSERT(test, !channel.is_exclusive_active());
 
     // The item of the recombined access waits in the second lane for the turn.
-    Lanes::ConsumerHandle consumer = channel.consumer(std::move(returned_consumer));
+    Lanes::ConsumerHandle consumer = channel.consumer(std::move(back.consumer));
     {
         Lanes::ProducerHandle first = lend(channel, kFirst);
         Lanes::ProducerHandle second = lend(channel, kSecond);

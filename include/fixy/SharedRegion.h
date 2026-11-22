@@ -218,7 +218,7 @@ public:
         auto exclusive = pool_.try_upgrade(ctx);
         if (exclusive.is_none()) return Upgraded{::foundation::core::none};
         return Upgraded::some(OwnedRegion<T, Tag, Brand>{
-            base_, count_, std::move(exclusive).expect("the test above found the exclusive")});
+            base_, count_, std::move(exclusive).expect("the test above found the exclusive").leave_pool()});
     }
 
     [[nodiscard]] std::uint64_t outstanding() const noexcept { return pool_.outstanding(); }

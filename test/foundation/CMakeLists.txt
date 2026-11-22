@@ -1871,6 +1871,11 @@ foundation_neg_compile_test(neg_share_pool_lend_without_ctx_pure_tag
 foundation_neg_compile_test(neg_share_pool_upgrade_without_ctx_pure_tag
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::Pure, .*>::try_upgrade\\(\\)."
   "candidate expects 1 argument, 0 provided")
+# The deposit takes only a lease of the pool, so a second root of one call
+# site has no door into the pool.
+foundation_neg_compile_test(neg_share_pool_deposit_of_a_second_root
+  "cannot convert .foundation::permissions::Permission<.anonymous.::Region, .*>. to"
+  "foundation::permissions::ExclusiveLease<.anonymous.::Region, .*>&&")
 # with_shared_read lends from an lvalue pool only, in its value form and
 # in its void form.
 foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool

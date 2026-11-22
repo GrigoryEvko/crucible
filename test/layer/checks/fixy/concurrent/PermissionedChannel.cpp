@@ -99,17 +99,26 @@ static_assert(is_consumer_handle_v<Lanes::ConsumerHandle> && !is_merge_consumer_
 static_assert(std::is_same_v<producer_handle_value_t<Merge::ProducerHandle>, int>
               && std::is_same_v<consumer_handle_value_t<Wire::ConsumerHandle>, int>);
 
-// The one scoped-access verb takes the whole and gives the ring to its body
-// in each form.  Only a merge has a pool, so only a merge has the doors of its
-// producer root.
+// The one scoped-access verb gives the ring to its body in each form.  A wire
+// takes the whole.  A merge and a lanes channel take the lease of the
+// producer root out of their pool and the consumer token, because a whole
+// would hold no identity of the pool.  Only the pooled forms have a pool, so
+// only they have the doors of the producer root.
 template <typename Channel>
 concept GivesRecombinedAccess = requires(
     Channel& channel, ::foundation::permissions::Permission<typename Channel::whole_tag, WitnessBrand>&& whole) {
     channel.with_recombined_access(std::move(whole), [](typename Channel::ring_type&) noexcept {});
 };
 template <typename Channel>
+concept GivesLeasedAccess = requires(
+    Channel& channel, typename Channel::producer_lease&& root,
+    ::foundation::permissions::Permission<typename Channel::consumer_tag, WitnessBrand>&& consumer) {
+    channel.with_recombined_access(std::move(root), std::move(consumer), [](typename Channel::ring_type&) noexcept {});
+};
+template <typename Channel>
 concept HasRootDoors = requires(Channel& channel) { channel.try_withdraw_producer_root(); };
-static_assert(GivesRecombinedAccess<Wire> && GivesRecombinedAccess<Merge> && GivesRecombinedAccess<Lanes>);
+static_assert(GivesRecombinedAccess<Wire> && !GivesRecombinedAccess<Merge> && !GivesRecombinedAccess<Lanes>);
+static_assert(!GivesLeasedAccess<Wire> && GivesLeasedAccess<Merge> && GivesLeasedAccess<Lanes>);
 static_assert(HasRootDoors<Merge> && HasRootDoors<Lanes> && !HasRootDoors<Wire>);
 
 // The producer door of a lanes channel takes the lane, and the other forms

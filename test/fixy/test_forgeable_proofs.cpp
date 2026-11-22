@@ -166,6 +166,7 @@ inline constexpr std::meta::info template_witnesses[] = {
     ^^fp::LentPermission<Region>,
     ^^fp::SharedPermissionGuard<Region, ::foundation::brand::DefaultBrand>,
     ^^fp::SharedPermissionPool<Region, ::foundation::brand::DefaultBrand>,
+    ^^fp::ExclusiveLease<Region, RegionBrand>,
     ^^fp::FederationAdmission<Region>,
     ^^fp::scope_mint_key<::foundation::heap::heap_tag::Owner>,
     ^^fe::Capability<fe::Effect::Alloc, fe::Bg>,

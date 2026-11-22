@@ -53,6 +53,8 @@ template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedPermissionGuard;
 template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class SharedPermissionPool;
+template <typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
+class ExclusiveLease;
 
 template <typename T>
 concept IsSharedPermission = ::foundation::reflect::IsInstanceOf<T, ^^SharedPermission>;
@@ -233,6 +235,71 @@ public:
     }
 };
 
+// THE LEASE.  The exclusive of a pool while it is out of the pool.
+// try_upgrade gives it, and deposit_exclusive takes only it, so a token that
+// did not come out of the pool, such as the root of a second run of the call
+// site of the first root, has no door into the pool.  The lease keeps the
+// identity of its pool as a word, and the deposit compares the word with its
+// own address, so a lease of one pool does not go into another pool of the
+// same type.  Two pools of one call site have one type, and only a run-time
+// identity tells them apart (fact 2 of foundation/Brand.h).  The word names
+// the pool only to compare it, and no code reads the pool through it.
+//
+// A lease is linear, as the token in it is: each path gives it back to its
+// pool, or takes the token out for good (leave_pool).  A pool whose lease
+// left for good lends no share again.  A lease moves to another thread as
+// its token does, and it is not Shareable, for the reason of the token.
+template <typename Tag, typename Brand>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::authority{}]]
+                   [[= ::foundation::transfer::not_shareable{}]] ExclusiveLease {
+    [[no_unique_address]] Permission<Tag, Brand> exclusive_;
+    __UINTPTR_TYPE__ pool_word_ = 0;
+
+    // The word of the address of a pool.  The compare reads two addresses as
+    // words, as holds_part of fixy/os/OwnedThread.h does, so a pool of
+    // another object gives false with no compare of pointers of two objects.
+    [[nodiscard]] static __UINTPTR_TYPE__ word_of_(SharedPermissionPool<Tag, Brand> const& pool) noexcept {
+        return __builtin_bit_cast(__UINTPTR_TYPE__, static_cast<void const*>(__builtin_addressof(pool)));
+    }
+
+    ExclusiveLease(Permission<Tag, Brand>&& exclusive, SharedPermissionPool<Tag, Brand> const& pool) noexcept
+        : exclusive_{std::move(exclusive)}, pool_word_{word_of_(pool)} {}
+    friend class SharedPermissionPool<Tag, Brand>;
+
+public:
+    using tag_type = Tag;
+    using brand_type = Brand;
+
+    ExclusiveLease(ExclusiveLease const&) = delete("a lease is the one exclusive of its pool, and a copy is a second");
+    ExclusiveLease&
+    operator=(ExclusiveLease const&) = delete("a lease is the one exclusive of its pool, and a copy is a second");
+    ExclusiveLease(ExclusiveLease&&) noexcept = default;
+    ExclusiveLease& operator=(ExclusiveLease&&) = delete("an assignment over a live lease would end it with no door");
+    ~ExclusiveLease() = default;
+
+    // True when the lease came out of that one pool.
+    [[nodiscard]] bool is_lease_of(SharedPermissionPool<Tag, Brand> const& pool) const noexcept {
+        return pool_word_ == word_of_(pool);
+    }
+
+    // The exclusive token, lent for the call of a door that reads the proof,
+    // such as advise_release_aware of fixy/os/Mmap.h.  The lease keeps the
+    // token, and no door consumes a token through a reference to const.  The
+    // deleted twin refuses a reference into a temporary lease, which would
+    // outlive the lease.
+    [[nodiscard]] Permission<Tag, Brand> const& peek() const& noexcept { return exclusive_; }
+    Permission<Tag, Brand> const& peek() const&& = delete("a reference into a temporary lease outlives the lease");
+
+    // The token leaves its pool for good, such as when the region of the
+    // pool becomes an owned region.  The pool then holds its exclusive-out
+    // state to its end, so it lends no share again.
+    [[nodiscard]] Permission<Tag, Brand> leave_pool() && noexcept { return std::move(exclusive_); }
+};
+
+// A deposit took a lease of another pool.  The body is in
+// src/foundation/SharedPermission.cpp.
+[[noreturn]] CRUCIBLE_COLD void shared_permission_pool_foreign_lease_abort_() noexcept;
+
 // A lend found the share count at its maximum.  The body is in
 // src/foundation/SharedPermission.cpp: it prints the text of the catalog
 // tag SharedPermissionPoolSaturated, and only that file reads the tag.
@@ -282,7 +349,7 @@ public:
     }
 
     template <typename Tag, typename Brand>
-    [[nodiscard]] static ::foundation::core::Option<Permission<Tag, Brand>>
+    [[nodiscard]] static ::foundation::core::Option<ExclusiveLease<Tag, Brand>>
     try_upgrade(SharedPermissionPool<Tag, Brand>& pool) noexcept {
         static_assert(permission_row_empty(^^Tag), "the internal door of the channels upgrades only a pool of a tag "
                                                    "whose permission row is empty.  A tag with effects uses "
@@ -327,31 +394,42 @@ public:
     // the count and the upgraded-out flag into one word makes the test
     // and the claim a single compare-exchange: a lend that was about to
     // succeed retries and then fails on the flag, and a lend that
-    // already incremented makes this compare-exchange fail.
+    // already incremented makes this compare-exchange fail.  The exclusive
+    // comes out as the lease of this pool (THE LEASE).
     template <typename Ctx>
         requires PoolCtx<Tag, Ctx>
-    [[nodiscard]] ::foundation::core::Option<Permission<Tag, Brand>> try_upgrade(Ctx const&) noexcept {
+    [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>> try_upgrade(Ctx const&) noexcept {
         return try_upgrade_raw_();
     }
 
-    // The holder of the exclusive gives it back.  While the exclusive is
-    // out, the state is the exclusive-out bit alone: a lend fails on the
-    // bit, and no guard lives, because the upgrade found a count of zero.
-    // So no other thread writes the state or the parked permission here.
+    // The holder of the lease gives the exclusive back (THE LEASE).  While
+    // the exclusive is out, the state is the exclusive-out bit alone: a lend
+    // fails on the bit, and no guard lives, because the upgrade found a count
+    // of zero.  So no other thread writes the state or the parked permission
+    // here.
     //
-    // A deposit into a pool that lends would store zero over live shares.
-    // The two checks below end the process in each build, also in a unit
-    // with the ignore semantic, where a precondition is only an assumption.
-    // The first check comes before the write of the parked permission, so a
-    // refused deposit writes nothing.  The bit is set only with a count of
-    // zero, so the bit alone tells that the exclusive is out.  The
-    // compare-exchange clears the bit only from the state of the bit alone.
+    // The deposit takes only a lease, so a token of a second root of one call
+    // site has no door here.  Two roots of one site share a brand, so only the
+    // identity word of the pool tells a lease of this pool from a lease of
+    // another pool of the same type.  A lease of another pool cannot occur in
+    // correct code, so its deposit ends the process.  A deposit into a pool
+    // that lends would store zero over live shares.  The checks below end the
+    // process in each build, also in a unit with the ignore semantic, where a
+    // precondition is only an assumption.  They come before the write of the
+    // parked permission, so a refused deposit writes nothing.  The bit is set
+    // only with a count of zero, so the bit alone tells that the exclusive is
+    // out.  The compare-exchange clears the bit only from the state of the bit
+    // alone.
     //
     // No postcondition: an upgrade on another thread can take the parked
     // permission before a witness reads it.
-    void deposit_exclusive(Permission<Tag, Brand>&& exc) noexcept {
+    void deposit_exclusive(ExclusiveLease<Tag, Brand>&& lease) noexcept {
+        if (!lease.is_lease_of(*this)) [[unlikely]] {
+            shared_permission_pool_foreign_lease_abort_();
+        }
         CRUCIBLE_FATAL_INVARIANT(is_exclusive_out());
-        parked_ = std::move(exc);
+        // The token leaves the lease here, and the pool parks it again.
+        parked_ = std::move(lease).leave_pool();
         // Release, so a later lend sees the freshly parked permission.
         std::uint64_t expected = EXCLUSIVE_OUT_BIT;
         const bool is_bit_cleared = state_.compare_exchange_strong(expected, 0, std::memory_order_release);
@@ -386,8 +464,13 @@ private:
         }
     }
 
-    [[nodiscard]] ::foundation::core::Option<Permission<Tag, Brand>> try_upgrade_raw_() noexcept {
-        using Upgraded = ::foundation::core::Option<Permission<Tag, Brand>>;
+    // The claim door of the pool: it makes the exclusive token of the pool
+    // with one compare-exchange.  The write of the parked permission after
+    // the compare-exchange happens only on the thread that won it, and no
+    // other thread writes the parked permission until that thread deposits
+    // the lease.
+    [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>> try_upgrade_raw_() noexcept {
+        using Upgraded = ::foundation::core::Option<ExclusiveLease<Tag, Brand>>;
         std::uint64_t expected = 0;
         if (!state_.compare_exchange_strong(expected, EXCLUSIVE_OUT_BIT, std::memory_order_acq_rel,
                                             std::memory_order_acquire)) {
@@ -398,7 +481,7 @@ private:
         // clear to set, so the dereference here cannot be empty.
         Permission<Tag, Brand> exc = std::move(*parked_);
         parked_.reset();
-        return Upgraded::some(std::move(exc));
+        return Upgraded::some(ExclusiveLease<Tag, Brand>{std::move(exc), *this});
     }
 
     friend class SharedPermissionGuard<Tag, Brand>;
@@ -543,11 +626,12 @@ bool with_shared_read(Args&&... args) noexcept(detail::shared_read_nothrow_v<Arg
     return detail::with_shared_read_(std::forward<Args>(args)...);
 }
 
-// The row-hash identities of the guard and the pool.  The identity of the
-// exclusive token is in foundation/permissions/Permission.h.
+// The row-hash identities of the guard, the pool and the lease.  The identity
+// of the exclusive token is in foundation/permissions/Permission.h.
 namespace row_discipline {
 struct shared_guard;
 struct shared_pool;
+struct exclusive_lease;
 }  // namespace row_discipline
 
 }  // namespace foundation::permissions
@@ -582,6 +666,13 @@ template <typename Tag, typename Brand>
 struct row_hash_contribution<::foundation::permissions::SharedPermissionPool<Tag, Brand>> {
     static constexpr std::uint64_t value =
         discipline_row_hash_v<::foundation::permissions::row_discipline::shared_pool,
+                              ::foundation::permissions::detail::row_payload_of_tag_t<Tag>>;
+};
+
+template <typename Tag, typename Brand>
+struct row_hash_contribution<::foundation::permissions::ExclusiveLease<Tag, Brand>> {
+    static constexpr std::uint64_t value =
+        discipline_row_hash_v<::foundation::permissions::row_discipline::exclusive_lease,
                               ::foundation::permissions::detail::row_payload_of_tag_t<Tag>>;
 };
 

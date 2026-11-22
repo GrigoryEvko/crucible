@@ -99,6 +99,7 @@ fixy/concurrent/PermissionedChannel.cpp | 0.8 | ::foundation::permissions::permi
 fixy/concurrent/Pipeline.cpp | 1.2 | unknown
 fixy/concurrent/Spawn.cpp | 0.5 | unknown
 fixy/concurrent/Stage.cpp | 1.1 | unknown
+fixy/handle/OneShotFlag.cpp | unmeasured | unknown
 fixy/handle/Published.cpp | 0.1 | unknown
 fixy/os/Fs.cpp | 0.1 | unknown
 fixy/os/Io.cpp | 0.1 | unknown

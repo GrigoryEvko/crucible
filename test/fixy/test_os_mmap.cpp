@@ -372,7 +372,8 @@ template <class Brand>
     }
     exclusive.match(
         [&](auto const& held) noexcept {
-            if (auto discarded = fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, held);
+            if (auto discarded =
+                    fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, held.peek());
                 discarded.is_err()) {
                 std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (errno %d)\n",
                              foundation::os::error_number_of(discarded));

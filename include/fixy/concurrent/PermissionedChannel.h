@@ -357,6 +357,10 @@ public:
     using whole_tag = channel_tag::Whole<Form, UserTag>;
     using producer_tag = channel_tag::Producer<Form, UserTag>;
     using consumer_tag = channel_tag::Consumer<Form, UserTag>;
+    // The producer root of a merge or a lanes channel while it is out of the
+    // pool of the channel (THE LEASE of foundation/permissions/
+    // SharedPermission.h).
+    using producer_lease = ::foundation::permissions::ExclusiveLease<producer_tag, Brand>;
     using ring_type = typename parts::ring_type;
     // The lane of a producer handle of the lanes form.
     using lane_index = LaneIndex<detail::lane_count_of_v<Lanes...>>;
@@ -712,37 +716,25 @@ public:
         return ConsumerHandle{*this, std::move(perm)};
     }
 
-    // Scoped exclusive access to the ring, the one scoped-access verb of each
-    // form.  The whole permission of this brand is the type-level proof that
-    // no handle of its root is alive: the producer token of a wire, or the
-    // producer root that try_withdraw_producer_root took out of the pool of a
-    // merge or a lanes channel, combined with the consumer token.  A second
-    // root of the same call site has the same brand, so the body also holds
-    // the claim of each role: a live handle ends the process here, and no
-    // handle can start and no root can come back to the pool while the body
-    // runs.  A pooled form also checks that its own root is out of its pool,
-    // so no producer handle of this channel lives.  The body gets the ring: it
-    // can fill it before the first session or drain what the last one left.
-    // The whole permission comes back so the caller can split it again for the
-    // next session.
+    // Scoped exclusive access to the ring of a wire, the one scoped-access
+    // verb of each form.  The whole permission of this brand is the
+    // type-level proof that no handle of its root is alive: the producer token
+    // of the wire combined with the consumer token.  A second root of the same
+    // call site has the same brand, so the body also holds the claim of each
+    // role: a live handle ends the process here, and no handle can start while
+    // the body runs.  The body gets the ring: it can fill it before the first
+    // session or drain what the last one left.  The whole permission comes
+    // back so the caller can split it again for the next session.  A merge or
+    // a lanes channel takes the lease of its producer root in place of the
+    // whole, below.
     template <typename Body>
         requires std::is_invocable_v<Body, ring_type&>
     [[nodiscard]] ::foundation::permissions::Permission<whole_tag, Brand>
     with_recombined_access(::foundation::permissions::Permission<whole_tag, Brand>&& whole,
-                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ring_type&>) {
-        if constexpr (Form == ChannelForm::wire) {
-            producer_claim_.take("recombined access to a wire channel while its producer handle lives.");
-        } else {
-            producer_claim_.take(pooled_text_({
-                .merge = "recombined access to a merge channel while a drain or a deposit of its producer root runs.",
-                .lanes = "recombined access to a lanes channel while a drain or a deposit of its producer root runs.",
-            }));
-            if (!producer_pool_.is_exclusive_out()) [[unlikely]] {
-                ::foundation::core::fatal("recombined access to a {} channel whose producer root is in its pool. "
-                                          "Withdraw the root first.",
-                                          pooled_text_({.merge = "merge", .lanes = "lanes"}));
-            }
-        }
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ring_type&>)
+        requires(Form == ChannelForm::wire)
+    {
+        producer_claim_.take("recombined access to a wire channel while its producer handle lives.");
         consumer_claim_.take("recombined access to a channel while its consumer handle lives.");
         std::forward<Body>(body)(ring_);
         consumer_claim_.release();
@@ -750,26 +742,71 @@ public:
         return std::move(whole);
     }
 
+    // The two tokens of the recombined access of a merge or a lanes channel:
+    // the lease of the producer root and the consumer token.  The access
+    // gives both back, so the caller deposits the lease and opens the
+    // consumer again.
+    struct RecombinedParts final {
+        producer_lease root;
+        [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> consumer;
+    };
+
+    // The recombined access of a merge or a lanes channel.  The lease is the
+    // producer root out of the pool of this channel, so no producer handle of
+    // the channel lives, and the consumer token proves that no consumer handle
+    // lives.  The two do not combine into a whole: the whole would hold no
+    // identity of the pool, so a whole of a second root of one call site
+    // could stand in for it.  The body also holds the claim of each role, as
+    // the wire form does.  A lease of another channel of the same type ends
+    // the process: only the identity of the pool tells two such channels
+    // apart.
+    template <typename Body>
+        requires std::is_invocable_v<Body, ring_type&>
+    [[nodiscard]] RecombinedParts
+    with_recombined_access(producer_lease&& root, ::foundation::permissions::Permission<consumer_tag, Brand>&& consumer,
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ring_type&>)
+        requires(is_pooled)
+    {
+        producer_claim_.take(pooled_text_({
+            .merge = "recombined access to a merge channel while a drain or a deposit of its producer root runs.",
+            .lanes = "recombined access to a lanes channel while a drain or a deposit of its producer root runs.",
+        }));
+        if (!root.is_lease_of(producer_pool_)) [[unlikely]] {
+            ::foundation::core::fatal("recombined access to a {} channel with the producer root of another channel "
+                                      "of its type.  Give the root of this channel.",
+                                      pooled_text_({.merge = "merge", .lanes = "lanes"}));
+        }
+        consumer_claim_.take("recombined access to a channel while its consumer handle lives.");
+        std::forward<Body>(body)(ring_);
+        consumer_claim_.release();
+        producer_claim_.release();
+        return RecombinedParts{.root = std::move(root), .consumer = std::move(consumer)};
+    }
+
     // Takes the producer root of a merge or a lanes channel out of its pool
-    // when no producer handle lives, or gives no value while one lives.  While
-    // the root is out, the pool lends no share, so no push lands: a live
-    // consumer can drain the ring to empty with no push at the same time.  The
-    // root and the consumer token combine into the whole of
-    // with_recombined_access.  deposit_producer_root gives the root back, and
-    // the pool lends again.
-    [[nodiscard]] ::foundation::core::Option<::foundation::permissions::Permission<producer_tag, Brand>>
-    try_withdraw_producer_root() noexcept
+    // when no producer handle lives, or gives no value while one lives.  The
+    // root comes out as the lease of the pool of this channel.  While the
+    // root is out, the pool lends no share, so no push lands: a live consumer
+    // can drain the ring to empty with no push at the same time.  The lease
+    // and the consumer token open with_recombined_access.
+    // deposit_producer_root gives the lease back, and the pool lends again.
+    //
+    // A claim door: its result is the exclusive token of the pool, which one
+    // compare-exchange of the pool makes.  The write of the parked root after
+    // that compare-exchange happens only on the thread that won it, until that
+    // thread deposits the lease.
+    [[nodiscard]] ::foundation::core::Option<producer_lease> try_withdraw_producer_root() noexcept
         requires(is_pooled)
     {
         return ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_pool_);
     }
 
-    // Gives the producer root back to the pool of a merge or a lanes channel.
-    // The call takes the claim of the producer side, so a deposit while a
-    // recombined access or a drain runs ends the process.  A deposit while the
-    // root is in the pool ends the process too
-    // (SharedPermissionPool::deposit_exclusive).
-    void deposit_producer_root(::foundation::permissions::Permission<producer_tag, Brand>&& root) noexcept
+    // Gives the lease of the producer root back to the pool of a merge or a
+    // lanes channel.  The call takes the claim of the producer side, so a
+    // deposit while a recombined access or a drain runs ends the process.  A
+    // lease of another pool, and a deposit while the root is in the pool,
+    // end the process too (SharedPermissionPool::deposit_exclusive).
+    void deposit_producer_root(producer_lease&& root) noexcept
         requires(is_pooled)
     {
         producer_claim_.take(pooled_text_({

@@ -106,27 +106,40 @@ void second_mpsc_consumer() {
 }
 
 // A recombined access of a merge channel needs the root of this channel out of
-// its pool.  The whole of a second root of the same site proves nothing about
-// the producers of this channel.
-void merge_recombined_access_with_its_root_in_the_pool() {
+// its pool.  A second channel of the same site has the same type, so the
+// lease of its root fits the door by its type, but it proves nothing about
+// the producers of this channel.  A second root of the same site is no lease
+// at all, and the door does not compile with it.
+void merge_recombined_access_with_the_root_of_another_channel() {
     auto [producer_root, consumer_perm] = mpsc_halves();
-    ::foundation::linear::drop(std::move(consumer_perm));
+    auto [other_root, other_consumer] = mpsc_halves();
+    ::foundation::linear::drop(std::move(other_consumer));
     Mpsc channel{std::move(producer_root)};
-    ::foundation::linear::drop(channel.with_recombined_access(mpsc_root(), [](Mpsc::ring_type&) noexcept {}));
+    Mpsc other{std::move(other_root)};
+    auto lease = other.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto parts =
+        channel.with_recombined_access(std::move(lease), std::move(consumer_perm), [](Mpsc::ring_type&) noexcept {});
+    ::foundation::linear::drop(std::move(parts.root));
+    ::foundation::linear::drop(std::move(parts.consumer));
 }
 
-// The deposit of a second root of the same site during a recombined access
-// would let the pool lend a producer while the body owns the ring.
+// The deposit of the lease of another channel of the same site during a
+// recombined access would let the pool lend a producer while the body owns
+// the ring.  The claim of the producer side refuses it first.
 void deposit_during_a_recombined_access() {
     auto [producer_root, consumer_perm] = mpsc_halves();
+    auto [other_root, other_consumer] = mpsc_halves();
+    ::foundation::linear::drop(std::move(other_consumer));
     Mpsc channel{std::move(producer_root)};
-    auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
-    auto whole = perm::mint_permission_combine<Mpsc::whole_tag>(std::move(root), std::move(consumer_perm));
-    ::foundation::linear::drop(channel.with_recombined_access(std::move(whole), [&channel](Mpsc::ring_type&) noexcept {
-        auto [second_root, second_consumer] = mpsc_halves();
-        ::foundation::linear::drop(std::move(second_consumer));
-        channel.deposit_producer_root(std::move(second_root));
-    }));
+    Mpsc other{std::move(other_root)};
+    auto lease = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto parts = channel.with_recombined_access(
+        std::move(lease), std::move(consumer_perm), [&channel, &other](Mpsc::ring_type&) noexcept {
+            channel.deposit_producer_root(
+                other.try_withdraw_producer_root().expect("the root comes out with no producer out"));
+        });
+    ::foundation::linear::drop(std::move(parts.root));
+    ::foundation::linear::drop(std::move(parts.consumer));
 }
 
 void second_swmr_writer() {
@@ -185,8 +198,8 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(test, second_mpsc_consumer,
                                ::fixy::TextView{"two live consumer handles of one channel"});
     ::fixy::check::expect_dies(
-        test, merge_recombined_access_with_its_root_in_the_pool,
-        ::fixy::TextView{"recombined access to a merge channel whose producer root is in its pool"});
+        test, merge_recombined_access_with_the_root_of_another_channel,
+        ::fixy::TextView{"recombined access to a merge channel with the producer root of another channel"});
     ::fixy::check::expect_dies(
         test, deposit_during_a_recombined_access,
         ::fixy::TextView{

@@ -43,6 +43,9 @@ test/fixy/neg/neg_witness_numapolicyplacement_direct_construction.cpp | erased-b
 test/fixy/neg/neg_witness_ownedmmap_direct_construction.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_witness_ownedregion_direct_construction.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/neg/neg_witness_ownedregion_direct_construction.cpp | erased-brand | 1 | foundation::permissions::Permission | -
+test/fixy/neg/neg_witness_permissions_exclusivelease_direct_construction.cpp | erased-brand | 1 | foundation::permissions::ExclusiveLease | the generated witness fixture of ExclusiveLease names the erased brand, as each witness fixture of a permission class does
+test/fixy/neg/neg_witness_permissions_exclusivelease_direct_construction.cpp | erased-brand | 1 | foundation::permissions::Permission | the generated witness fixture of ExclusiveLease names the erased brand, as each witness fixture of a permission class does
+test/fixy/neg/neg_witness_permissions_exclusivelease_direct_construction.cpp | erased-brand | 1 | foundation::permissions::SharedPermissionPool | the generated witness fixture of ExclusiveLease names the erased brand, as each witness fixture of a permission class does
 test/fixy/neg/neg_witness_permissions_lentpermission_direct_construction.cpp | erased-brand | 1 | foundation::permissions::LentPermission | -
 test/fixy/neg/neg_witness_permissions_lentpermission_direct_construction.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_witness_permissions_permission_direct_construction.cpp | erased-brand | 1 | foundation::permissions::Permission | -

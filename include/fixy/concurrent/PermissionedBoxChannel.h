@@ -359,18 +359,20 @@ public:
     }
 
     // The two doors of the producer root of a merge, as the inner channel gives
-    // them.  While the root is out, the pool lends no share, so no Box lands.
-    // The Box channel gives no recombined access, because a body with the ring
-    // of the words could pop a word and lose it, and a lost word leaks its
-    // object.
-    [[nodiscard]] ::foundation::core::Option<::foundation::permissions::Permission<producer_tag, Brand>>
+    // them: the root leaves as the lease of the pool of the inner channel, and
+    // only that lease comes back.  While the root is out, the pool lends no
+    // share, so no Box lands.  The Box channel gives no recombined access,
+    // because a body with the ring of the words could pop a word and lose it,
+    // and a lost word leaks its object.  The withdraw is a claim door of the
+    // inner channel.
+    [[nodiscard]] ::foundation::core::Option<typename cell_channel::producer_lease>
     try_withdraw_producer_root() noexcept
         requires(Form == ChannelForm::merge)
     {
         return cells_.try_withdraw_producer_root();
     }
 
-    void deposit_producer_root(::foundation::permissions::Permission<producer_tag, Brand>&& root) noexcept
+    void deposit_producer_root(typename cell_channel::producer_lease&& root) noexcept
         requires(Form == ChannelForm::merge)
     {
         cells_.deposit_producer_root(std::move(root));

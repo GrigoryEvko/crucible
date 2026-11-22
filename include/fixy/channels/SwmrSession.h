@@ -253,23 +253,31 @@ public:
         return ::fixy::some(ReaderHandle{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
     }
 
+    // The reader root while it is out of the pool (THE LEASE of
+    // foundation/permissions/SharedPermission.h).
+    using reader_lease = ::foundation::permissions::ExclusiveLease<reader_tag, reader_brand>;
+
     // Takes the reader root out of the pool when no reader handle lives, or
-    // gives no value while one lives.  While the root is out, the pool lends no
-    // share, so no reader loads: the writer can reset the value with no read at
-    // the same time.  deposit_reader_root gives the root back, and the pool
-    // lends again.  These are the doors of the producer root of a merge channel
-    // of fixy/concurrent/PermissionedChannel.h, for the pooled side of this
+    // gives no value while one lives.  The root comes out as the lease of the
+    // pool of this session.  While the root is out, the pool lends no share,
+    // so no reader loads: the writer can reset the value with no read at the
+    // same time.  deposit_reader_root gives the lease back, and the pool lends
+    // again.  These are the doors of the producer root of a merge channel of
+    // fixy/concurrent/PermissionedChannel.h, for the pooled side of this
     // session.
-    [[nodiscard]] ::fixy::Option<::foundation::permissions::Permission<reader_tag, reader_brand>>
-    try_withdraw_reader_root() noexcept {
+    //
+    // A claim door: its result is the exclusive token of the pool, which one
+    // compare-exchange of the pool makes.  The write of the parked root after
+    // that compare-exchange happens only on the thread that won it, until that
+    // thread deposits the lease.
+    [[nodiscard]] ::fixy::Option<reader_lease> try_withdraw_reader_root() noexcept {
         return ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(reader_pool_);
     }
 
-    // Gives the reader root back to the pool.  A deposit while the root is in
-    // the pool ends the process (SharedPermissionPool::deposit_exclusive).
-    void deposit_reader_root(::foundation::permissions::Permission<reader_tag, reader_brand>&& root) noexcept {
-        reader_pool_.deposit_exclusive(std::move(root));
-    }
+    // Gives the lease of the reader root back to the pool.  A lease of another
+    // pool, and a deposit while the root is in the pool, end the process
+    // (SharedPermissionPool::deposit_exclusive).
+    void deposit_reader_root(reader_lease&& root) noexcept { reader_pool_.deposit_exclusive(std::move(root)); }
 
     [[nodiscard]] std::uint64_t outstanding_readers() const noexcept { return reader_pool_.outstanding(); }
 

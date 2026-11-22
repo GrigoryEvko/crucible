@@ -97,9 +97,9 @@ void test_try_upgrade_succeeds_when_idle(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{std::move(exc)};
 
     auto recovered = pool.try_upgrade(test);
-    // The upgrade gives the Option of the base.
+    // The upgrade gives the Option of the base, of the lease of the pool.
     static_assert(std::is_same_v<decltype(recovered),
-                                 ::foundation::core::Option<Permission<ConfigRegion, decltype(pool)::brand_type>>>);
+                                 ::foundation::core::Option<ExclusiveLease<ConfigRegion, decltype(pool)::brand_type>>>);
     CRUCIBLE_TEST_ASSERT(test, recovered.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.is_exclusive_out());
 

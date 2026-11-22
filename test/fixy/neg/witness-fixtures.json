@@ -957,6 +957,11 @@
       "constructor": "\\brow_cell\\("
     },
     {
+      "name": "neg_witness_permissions_exclusivelease_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bExclusiveLease\\("
+    },
+    {
       "name": "neg_witness_permissions_federation_admission_key_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bfederation_admission_key\\("
@@ -1579,6 +1584,10 @@
     },
     {
       "type": "foundation::permissions::SharedPermissionGuard<foundation::permissions::tag::HugePageTag>",
+      "header": "foundation/permissions/SharedPermission.h"
+    },
+    {
+      "type": "foundation::permissions::ExclusiveLease<foundation::permissions::tag::HugePageTag>",
       "header": "foundation/permissions/SharedPermission.h"
     },
     {

@@ -215,10 +215,10 @@ include/fixy/fp/ | base-std-object | 4 | - | -
 include/fixy/fp/ | replace-pending:<array> | 1 | - | -
 include/fixy/fp/ | replace-pending:<bit> | 2 | - | -
 include/fixy/fp/ | replace-pending:<cmath> | 2 | - | -
-include/fixy/handle/ | base-std-entity | 15 | - | -
-include/fixy/handle/ | base-std-object | 6 | - | -
+include/fixy/handle/ | base-std-entity | 10 | - | -
+include/fixy/handle/ | base-std-object | 5 | - | -
 include/fixy/handle/ | replace-pending:<array> | 1 | - | -
-include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
+include/fixy/handle/ | replace-pending:<atomic> | 3 | - | -
 include/fixy/os/ | base-std-entity | 64 | - | -
 include/fixy/os/ | base-std-object | 31 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -250,9 +250,8 @@ include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
-include/foundation/ | base-std-entity | 20 | - | -
-include/foundation/ | base-std-object | 4 | - | -
-include/foundation/ | replace-pending:<atomic> | 1 | - | -
+include/foundation/ | base-std-entity | 17 | - | -
+include/foundation/ | base-std-object | 3 | - | -
 include/foundation/ | replace-pending:<bit> | 2 | - | -
 include/foundation/ | replace-pending:<cstring> | 1 | - | -
 include/foundation/ | replace-pending:<string_view> | 1 | - | -
@@ -714,7 +713,6 @@ test/layer/checks/fixy/session/ | std-object | 1 | - | -
 test/layer/checks/foundation/ | opted-out | 3 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
 test/layer/checks/foundation/ | raw-pointer-object | 1 | - | -
 test/layer/checks/foundation/ | region | 1 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
-test/layer/checks/foundation/ | std-entity | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 28 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-object | 3 | - | -
