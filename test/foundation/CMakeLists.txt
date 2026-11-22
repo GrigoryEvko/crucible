@@ -1926,6 +1926,11 @@ foundation_neg_compile_test(neg_synchronized_nested_constructor
   "failed: .anonymous.::Counter"
   "Counter::Handle::Handle\\(.anonymous.::Counter&\\)"
   "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_nested_deep_borrow
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle::bump\\(\\)"
+  "Counter::levels_")
 foundation_neg_compile_test(neg_synchronized_nested_part_reference
   "and a door of a nested class of it can write the class"
   "failed: .anonymous.::Counter"

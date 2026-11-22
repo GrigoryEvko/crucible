@@ -298,6 +298,19 @@ public:
         void hit() noexcept { static_cast<void>(hits_.fetch_add_acq_rel(1)); }
     };
 
+    // A nested reader holds a reference to a class that states
+    // synchronized{}, whose own check reads its doors, so the borrow writes
+    // no plain part and its door needs no proof.
+    class KeyedReader {
+        KeyedCount& keyed_;
+
+        explicit KeyedReader(KeyedCount& keyed) noexcept : keyed_{keyed} {}
+        friend class CountsHits;
+
+    public:
+        [[nodiscard]] int read() const noexcept { return keyed_.read(); }
+    };
+
     CountsHits() = default;
     CountsHits(CountsHits const&) = delete("a count of two threads does not copy");
     CountsHits& operator=(CountsHits const&) = delete("a count of two threads does not copy");

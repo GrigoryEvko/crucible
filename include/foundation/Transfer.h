@@ -1060,9 +1060,9 @@ struct DoorFinding {
 // True when an object of the type can write the owner (THE NESTED CLASSES):
 // the type is the owner, a reference or a pointer to the owner that is not
 // const, or a class whose base, member or type argument reaches it, read by
-// the walk of foundation/reflect/TypeComponents.h.  A walk deeper than
-// closed_walk_depth levels counts as a reach, so the check fails closed.
-// Complexity: linear in the parts of the type, to closed_walk_depth levels.
+// the walk of foundation/reflect/TypeComponents.h.  A walk deeper than depth
+// levels counts as a reach, so the check fails closed.  Complexity: linear in
+// the parts of the type, to depth levels.
 [[nodiscard]] consteval bool can_write_owner(std::meta::info type, std::meta::info owner, int depth) {
     namespace refl = ::foundation::reflect;
     if (depth <= 0) return true;
@@ -1089,42 +1089,13 @@ struct DoorFinding {
     return arguments.begin()->type == owner || can_write_owner(arguments.begin()->type, owner, depth - 1);
 }
 
-// True when the type names the owner in a part, a base or a type argument,
-// at each depth, so a walk of a property of the type can come back to the
-// check of the owner.  The walk reads each class one time, so the argument
-// of a base such as Pinned, which names the class again, ends the path.  A
-// walk deeper than closed_walk_depth levels counts as a mention.
-// Complexity: linear in the components of the types that the walk reaches,
-// times the scan of the visited list.
-[[nodiscard]] consteval bool mentions_owner_walk(std::meta::info type, std::meta::info owner,
-                                                 ::foundation::reflect::TypeNodeList& visited, int depth) {
-    namespace refl = ::foundation::reflect;
-    if (depth <= 0) return true;
-    std::meta::info target = std::meta::dealias(type);
-    if (std::meta::is_reference_type(target)) target = std::meta::remove_reference(target);
-    if (std::meta::is_pointer_type(target)) target = std::meta::remove_pointer(target);
-    const std::meta::info bare = refl::bare_type(target);
-    if (bare == owner) return true;
-    if (!is_class_or_union(bare)) return false;
-    for (const refl::TypeNode& seen : visited) {
-        if (seen.type == bare) return false;
-    }
-    visited.push_back(refl::TypeNode{bare, true});
-    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
-        if (mentions_owner_walk(part.type, owner, visited, depth - 1)) return true;
-    }
-    for (const refl::TypeNode& part : refl::argument_components_of(refl::TypeNode{bare, true})) {
-        if (!part.is_value_argument && mentions_owner_walk(part.type, owner, visited, depth - 1)) return true;
-    }
-    return false;
-}
+// The depth of the walks of a nested class and of the parameters of its doors
+// (can_write_owner and holds_plain_borrow).  A walk deeper than it counts as a
+// write of the owner, so the check fails closed.  The walks reach the cells of
+// the ring of a channel, such as the value of a cell, at about six levels.
+inline constexpr int nested_walk_depth = 12;
 
-[[nodiscard]] consteval bool mentions_owner(std::meta::info type, std::meta::info owner) {
-    ::foundation::reflect::TypeNodeList visited;
-    return mentions_owner_walk(type, owner, visited, closed_walk_depth);
-}
-
-consteval bool can_write_plain_through(std::meta::info bare, std::meta::info owner, int depth);
+consteval bool can_write_plain_through(std::meta::info type, std::meta::info owner, int depth);
 
 // True when an object of the type holds a borrow that is not const, through a
 // reference, a pointer or a class that refers to an object, of a part that
@@ -1163,20 +1134,28 @@ consteval bool can_write_plain_through(std::meta::info bare, std::meta::info own
                        : holds_plain_borrow(arguments.begin()->type, owner, depth - 1);
 }
 
-// True when a borrow that is not const of an object of the bare type can
-// write a part that two threads cannot write.  A type that names no owner is
-// read by the walk of the shared write.  A type that names the owner is read
-// part by part, so the walk does not come back to the check of the owner,
-// and a part that the walk cannot read counts as plain.
-consteval bool can_write_plain_through(std::meta::info bare, std::meta::info owner, int depth) {
+// True when a borrow that is not const of an object of the type can write a
+// part that two threads cannot write.  The walk reads the parts of the type
+// one by one, and each part of a borrowed object is borrowed too.  A scalar
+// and a pointer are plain.  The walk trusts a class that states synchronized{}
+// or payload_cell{}: the walk of the shared write checks the statement where
+// it reads that class.  It runs no walk of a property, so it does not come
+// back to the check of the owner.  A part that it cannot read counts as plain.
+// Complexity: linear in the parts of the type, to nested_walk_depth levels.
+consteval bool can_write_plain_through(std::meta::info type, std::meta::info owner, int depth) {
     namespace refl = ::foundation::reflect;
     if (depth <= 0) return true;
+    std::meta::info target = std::meta::dealias(type);
+    if (std::meta::is_reference_type(target)) target = std::meta::remove_reference(target);
+    if (std::meta::is_const_type(target)) return false;
+    if (std::meta::is_array_type(target)) {
+        return can_write_plain_through(std::meta::remove_all_extents(target), owner, depth);
+    }
+    const std::meta::info bare = refl::bare_type(target);
     if (bare == owner || std::meta::is_function_type(bare)) return false;
-    if (std::meta::is_void_type(bare)) return true;
-    if (!mentions_owner(bare, owner)) return !is_shared_writable(bare);
-    if (!is_class_or_union(bare) || !refl::members_readable_without_instantiation(bare)) return true;
-    // Each part of a borrowed object is borrowed too, whether the object
-    // holds it by value or by reference.
+    if (!is_class_or_union(bare)) return true;
+    if (states(bare, ^^synchronized) || states(bare, ^^payload_cell)) return false;
+    if (!std::meta::is_complete_type(bare)) return true;
     for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
         if (!part.was_const && can_write_plain_through(part.type, owner, depth - 1)) return true;
     }
@@ -1244,7 +1223,7 @@ consteval bool can_write_plain_through(std::meta::info bare, std::meta::info own
     static_cast<void>(
         refl::find_parameter(function, [owner, &does_reach_owner, &has_proof, &open_token](std::meta::info parameter) {
             const refl::TypeNode part = refl::node_reached_indirectly(std::meta::type_of(parameter));
-            if (!part.was_const && (part.type == owner || can_write_owner(part.type, owner, closed_walk_depth))) {
+            if (!part.was_const && (part.type == owner || can_write_owner(part.type, owner, nested_walk_depth))) {
                 does_reach_owner = true;
             }
             if (is_proof_parameter(part, owner)) has_proof = true;
@@ -1307,8 +1286,8 @@ consteval void check_nested_doors(std::meta::info scope, std::meta::info owner, 
             // no door of it, also no template door that a probe body cannot
             // fill.
             if (!is_proof_holder(nested, owner)) {
-                const bool does_class_reach = can_write_owner(nested, owner, closed_walk_depth)
-                                           || holds_plain_borrow(nested, owner, closed_walk_depth);
+                const bool does_class_reach = can_write_owner(nested, owner, nested_walk_depth)
+                                           || holds_plain_borrow(nested, owner, nested_walk_depth);
                 DoorFinding finding{};
                 const std::meta::info door =
                     refl::find_member(nested, std::meta::access_context::unchecked(),
