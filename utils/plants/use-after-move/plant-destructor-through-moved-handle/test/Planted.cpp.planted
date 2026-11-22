@@ -1,0 +1,6 @@
+// A plant of use-after-move: std::move(p) spends p, and p->~Token() reads the spent p to end the object that it held.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} ~Token(); };
+void keep(Token*&&);
+
+void must_catch_destructor_through_moved_handle(Token* p) { keep(std::move(p)); p->~Token(); }

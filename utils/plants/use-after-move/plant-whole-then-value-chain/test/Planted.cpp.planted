@@ -1,0 +1,8 @@
+// A plant of use-after-move: std::move(o) spends o, and o.value().size() reads the spent object through a chain.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size() const; };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+
+int must_catch_whole_then_value_chain(Opt o) { take(std::move(o)); return o.value().size(); }

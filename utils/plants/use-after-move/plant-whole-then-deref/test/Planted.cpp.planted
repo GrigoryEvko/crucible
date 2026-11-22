@@ -1,0 +1,9 @@
+// A plant of use-after-move: std::move(o) spends o and the object that o holds, and *o reads that object.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+void read(Token const&);
+
+void must_catch_whole_then_deref(Opt o) { take(std::move(o)); read(*o); }

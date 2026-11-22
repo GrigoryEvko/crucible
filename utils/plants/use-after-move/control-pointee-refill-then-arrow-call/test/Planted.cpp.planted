@@ -1,0 +1,14 @@
+// A control of use-after-move: the move spends only *o, the assignment to *o makes it live again, and o->size() and
+// o->clear() read a live object.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); int size() const; void clear(); };
+using Opt = std::optional<Token>;
+void take(Token&&);
+
+int must_accept_pointee_refill_then_arrow_call(Opt o) {
+    take(std::move(*o));
+    *o = Token{};
+    o->clear();
+    return o->size();
+}

@@ -1,0 +1,8 @@
+// A plant of use-after-move: std::move(o) spends o, and (*o).size() calls a member of the object that o held.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size() const; };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+
+int must_catch_whole_then_deref_call(Opt o) { take(std::move(o)); return (*o).size(); }

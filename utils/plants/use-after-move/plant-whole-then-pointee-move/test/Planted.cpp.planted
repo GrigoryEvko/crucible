@@ -1,0 +1,9 @@
+// A plant of use-after-move: std::move(o) spends o, and std::move(*o) moves the object that o held a second time.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+void take(Token&&);
+
+void must_catch_whole_then_pointee_move(Opt o) { take(std::move(o)); take(std::move(*o)); }

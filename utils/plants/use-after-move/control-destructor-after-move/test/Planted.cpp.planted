@@ -1,0 +1,11 @@
+// A control of use-after-move: p->~Token() and r.~Token() end a moved-from object, which is legal and no use.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} ~Token(); };
+void take(Token&&);
+
+void must_accept_destructor_after_move(Token* p, Token& r) {
+    take(std::move(*p));
+    p->~Token();
+    take(std::move(r));
+    r.~Token();
+}

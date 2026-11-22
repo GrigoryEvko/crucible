@@ -1,0 +1,10 @@
+// A plant of use-after-move: std::move(h.o) spends the member h.o, and *h.o reads the object that the member held.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+struct Holder { Opt o; };
+void take(Opt&&);
+void read(Token const&);
+
+void must_catch_member_then_deref(Holder h) { take(std::move(h.o)); read(*h.o); }

@@ -1,0 +1,8 @@
+// A plant of use-after-move: std::move(o) spends o, and o->clear() reads the spent o to clear the object that it held.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} void clear(); };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+
+void must_catch_refill_call_moved_handle(Opt o) { take(std::move(o)); o->clear(); }

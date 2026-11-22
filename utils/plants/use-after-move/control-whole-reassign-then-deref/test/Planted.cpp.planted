@@ -1,0 +1,16 @@
+// A control of use-after-move: the assignment to o gives o a new object, so o.value(), *o and o->size() read a live one.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size() const; };
+using Opt = std::optional<Token>;
+Opt make();
+void take(Opt&&);
+void read(Token const&);
+
+int must_accept_whole_reassign_then_deref(Opt o) {
+    take(std::move(o));
+    o = make();
+    read(o.value());
+    read(*o);
+    return o->size();
+}

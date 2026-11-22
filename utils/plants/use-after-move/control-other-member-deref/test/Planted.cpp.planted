@@ -1,0 +1,10 @@
+// A control of use-after-move: the move spends the member h.a, and *h.b reads the object of a different member.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+struct Holder { Opt a; Opt b; };
+void take(Opt&&);
+void read(Token const&);
+
+void must_accept_other_member_deref(Holder h) { take(std::move(h.a)); read(*h.b); }

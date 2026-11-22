@@ -1,0 +1,9 @@
+// A control of use-after-move: emplace gives o a new object after the move, so o.value() reads a live object.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+void read(Token const&);
+
+void must_accept_whole_refill_then_value(Opt o) { take(std::move(o)); o.emplace(); read(o.value()); }

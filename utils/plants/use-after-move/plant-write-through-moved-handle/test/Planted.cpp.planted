@@ -1,0 +1,8 @@
+// A plant of use-after-move: std::move(o) spends o, and *o = Token{} reads the spent o to write the object that it held.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} Token& operator=(Token&&); };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+
+void must_catch_write_through_moved_handle(Opt o) { take(std::move(o)); *o = Token{}; }

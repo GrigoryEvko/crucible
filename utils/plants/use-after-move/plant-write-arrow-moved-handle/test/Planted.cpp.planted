@@ -1,0 +1,8 @@
+// A plant of use-after-move: std::move(o) spends o, and o->size = 1 reads the spent o to write a member of its object.
+#include <optional>
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} int size = 0; };
+using Opt = std::optional<Token>;
+void take(Opt&&);
+
+void must_catch_write_arrow_moved_handle(Opt o) { take(std::move(o)); o->size = 1; }

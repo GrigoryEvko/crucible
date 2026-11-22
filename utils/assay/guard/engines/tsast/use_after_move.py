@@ -48,7 +48,13 @@ THE WALK
 
 THE KEYS
     A key is a name, a member path (a.b, a->b) or the object that a pointer
-    holds (*p).  A move of a spends a and each member path below it.  A use
+    holds (*p).  A move of a spends each key that starts at a: a, a.b, a->b,
+    *a and *a.b, because each access to such a key reads a.  So a.value(),
+    a.f(), (*a).f() and a->f() after the move of a are uses after move.  A
+    member call through `->`, p->f(), runs on the key *p.  An assignment to
+    *p or to p->m, and a refill p->reset(), read p.  A destructor call
+    x.~T() or p->~T() ends a moved-from object, which is legal, so it is no
+    use of x or *p, and the call through `->` reads only p.  A use
     of a.c after a move of a.b is not a use after move.  Parentheses do not
     change a key, and this->m and (*this).m are the key m.  A subscript by an
     integer literal is part of the key, and a[0] and a[1] are two keys.  A
@@ -542,12 +548,26 @@ def extends(spent: Place, key: Place) -> bool:
     return spent.name == key.name and spent.is_pointee == key.is_pointee and spent.steps[: len(key.steps)] == key.steps
 
 
+def handle_of(key: Place) -> Place | None:
+    """Return the key that an access to a key reads to reach its object, or None for a plain member path.
+
+    *p reads p, and a.b->c.d reads a.b, the path before the last `->`.
+    """
+    if key.is_pointee:
+        return replace(key, is_pointee=False, is_base=False)
+    arrows = [index for index, step in enumerate(key.steps) if step.access == ARROW]
+    return Place(key.name, steps=key.steps[: arrows[-1]]) if arrows else None
+
+
 def spent_prefix(state: dict[Place, int], key: Place) -> Place | None:
     """Return the spent key that a key names or goes into, or None.
 
     A move through a pointer, std::move(*p), spends the key *p.  Then *p, a
     member of *p and p->m go into it, and p does not.  A use of all of p
-    names the key p#base of a base assignment.
+    names the key p#base of a base assignment.  A move of p spends each key
+    that starts at p, so *p goes into a spent p, and *p.a goes into a spent p
+    or p.a, because the dereference reads the path.  Complexity: linear in the
+    spent keys.
     """
     for spent in state:
         if reaches(spent, key):
@@ -564,6 +584,14 @@ def spent_prefix(state: dict[Place, int], key: Place) -> Place | None:
         ):
             return spent
         if spent.is_base and not key.is_base and spent == replace(key, is_base=True):
+            return spent
+    if not key.is_pointee:
+        return None
+    path = replace(key, is_pointee=False)
+    for spent in state:
+        if spent.is_pointee:
+            continue
+        if reaches(spent, path) or (spent.is_base and spent == replace(path, is_base=True)):
             return spent
     return None
 
@@ -1690,7 +1718,11 @@ class Walk:
             self.expr(argument, state, pending)
 
     def receiver(self, callee: tsast.Node) -> Place | None:
-        """Return the path of the object of a member call: obj of obj.f() and *p of (*p).f(), when it is plain."""
+        """Return the path of the object of a member call, when it is plain.
+
+        It is obj of obj.f(), *p of (*p).f() and *p of p->f(), because the
+        call through `->` runs on the object that p holds.
+        """
         argument = callee.child_by_field("argument")
         if argument is None:
             return None
@@ -1698,7 +1730,10 @@ class Walk:
         if operand is not None:
             path = self.plain_path(operand)
             return None if path is None else path.pointee()
-        return self.plain_path(argument)
+        path = self.plain_path(argument)
+        if path is None or path.is_pointee or operator(callee) != ARROW:
+            return path
+        return path.pointee()
 
     def call(self, node: tsast.Node, state: dict[Place, int], pending: list[Place]) -> None:
         """Walk a call: a move spends its argument, and the other shapes of THE KEYS change their keys."""
@@ -1724,6 +1759,13 @@ class Walk:
             return
         if function is not None and function.type == "field_expression":
             receiver = self.receiver(function)
+            field = function.child_by_field("field")
+            if receiver is not None and field is not None and field.type == "destructor_name":
+                # x.~T() and p->~T() end a moved-from object, which is legal.  The call through `->` reads p.
+                handle = handle_of(receiver)
+                if handle is not None:
+                    self.use(function, state, handle)
+                return
             if receiver is not None:
                 if self.member_call(function, receiver, arguments, state, pending):
                     return
@@ -1795,9 +1837,16 @@ class Walk:
         state: dict[Place, int],
         pending: list[Place],
     ) -> bool:
-        """Walk REFILL_METHODS, a swap, at() and value() on a plain receiver, and return True for one of them."""
+        """Walk REFILL_METHODS, a swap, at() and value() on a plain receiver, and return True for one of them.
+
+        A refill of the object that p holds, p->reset() or (*p).reset(),
+        reads p, so a spent p gives a use after move.
+        """
         name = leaf_name(function)
         if name in REFILL_METHODS:
+            handle = handle_of(receiver)
+            if handle is not None:
+                self.use(function, state, handle)
             pending.append(self.canon(receiver))
             if arguments is not None:
                 self.expr(arguments, state, pending)
@@ -1822,7 +1871,9 @@ class Walk:
 
         An assignment through a[i] fills one element, which can be a
         different element than the spent one.  It makes no key live.  A
-        compound assignment reads its left side.
+        compound assignment reads its left side.  An assignment to *p or to
+        p->m reads p to reach its object, so a spent p gives a use after
+        move (handle_of).
         """
         left = node.child_by_field("left")
         right = node.child_by_field("right")
@@ -1838,7 +1889,11 @@ class Walk:
             path = self.plain_path(operand) if operand is not None else self.plain_path(left)
             argument = left.child_by_field("argument")
             if path is not None:
-                pending.append(self.canon(path.pointee() if operand is not None else path))
+                target = path.pointee() if operand is not None else path
+                handle = handle_of(target)
+                if handle is not None:
+                    self.use(left, state, handle)
+                pending.append(self.canon(target))
             elif left.type == "subscript_expression" and argument is not None and self.plain_path(argument) is not None:
                 indices = left.child_by_field("indices")
                 if indices is not None:
