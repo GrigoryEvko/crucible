@@ -1,5 +1,5 @@
 // A context of the hot path owns no Block, so the producer handle of a channel
-// refuses it a wait policy that parks (THE POLICY of
+// refuses it a wait policy that parks (the policy of
 // fixy/concurrent/EventCount.h).  The foreground asks the push that waits for
 // SpinThenPark, so a push into a full channel would sleep in the kernel on the
 // hot path.

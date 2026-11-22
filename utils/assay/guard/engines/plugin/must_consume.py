@@ -30,14 +30,14 @@ Rule
       closure-move-out      a call of a closure whose call operator moves a
                             linear capture out, outside the once door
                             call_once of include/foundation/Linear.h, so a
-                            second call gives a second value (linear.cpp, THE
-                            CLOSURES THAT MOVE A CAPTURE)
+                            second call gives a second value (linear.cpp, the
+                            closures that move a capture)
       capture-unconsumed    a closure that the once door owns, whose call
                             operator leaves a linear capture by value live on
                             a path, so the end of the closure drops it.  The
-                            line is at the lambda (linear.cpp, THE CLOSURES
-                            THAT A CALL OWNS)
-    A linear sum gives the kinds of THE SUMS in place of unconsumed,
+                            line is at the lambda (linear.cpp, the closures
+                            that a call owns)
+    A linear sum gives the kinds of the sums in place of unconsumed,
     unconsumed-on-path and discarded-temporary.
     The plugin reads a body of a base file in the sentinel unit of the file,
     and an instance of a template in each unit that makes it.  The entity of a

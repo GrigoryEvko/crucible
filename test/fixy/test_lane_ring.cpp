@@ -176,7 +176,7 @@ void walk_drain(::fixy::TestRunnerCtx const& test) noexcept {
 }
 
 // A ring of two lanes of 16 cells, which publishes the tail of a lane at each
-// four deferred pops (THE ROOM of the header).
+// four deferred pops (the room of the header).
 using Wide = cc::LaneRing<Item, 16, cc::LaneCount{2}, LanesOwner>;
 static_assert(Wide::tail_interval == 4);
 static_assert(Small::tail_interval == 1);

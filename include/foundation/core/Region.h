@@ -335,7 +335,7 @@ template <class T, class Brand, std::size_t Extent>
 
 }  // namespace detail
 
-// THE DOORS OF THE OWNERS ABOVE THIS HEADER
+// Doors of the owners above this header
 // An owner in a header above this one can hold an invariant that no type
 // proves and that OwnerCore of foundation/core/Owner.h does not fit.  Such an
 // owner reaches the raw constructors of a View through one plain door class.
@@ -808,7 +808,7 @@ CRUCIBLE_INLINE Record<View<First>, View<Second>> for_each_chunk_pair_(View<Firs
     return {View<First>{first_at + whole, rest}, View<Second>{second_at + whole, rest}};
 }
 
-// The root stage of the walk of a View (THE STAGES of foundation/core/Walk.h):
+// The root stage of the walk of a View (the stages of foundation/core/Walk.h):
 // the counted loop over the elements, by reference.  A View of a fixed
 // extent keeps the count in the type of the stage, and a limit or a skip
 // gives a stage of a dynamic extent.

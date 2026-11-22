@@ -413,14 +413,14 @@
 //                           lent parameters of linear.cpp)
 //     closure-move-out      a call of a closure whose call operator moves a
 //                           linear capture out, outside a once door, so a
-//                           second call gives a second value (THE CLOSURES THAT
-//                           MOVE A CAPTURE of linear.cpp)
+//                           second call gives a second value (the closures that
+//                           move a capture of linear.cpp)
 //     capture-unconsumed    a closure that a call owns, as the once door owns
 //                           it, and whose call operator leaves a linear
 //                           capture by value live on a path, so the end of
-//                           the closure drops it (THE CLOSURES THAT A CALL
-//                           OWNS of linear.cpp)
-//     The other rules of the family linear (linear.cpp, THE SHAPES):
+//                           the closure drops it (the closures that a call
+//                           owns of linear.cpp)
+//     The other rules of the family linear (linear.cpp, the shapes):
 //     pinned-holder         linear-containment: a class that cannot move,
 //                           holds a linear part and has no door at the end of
 //                           its scope

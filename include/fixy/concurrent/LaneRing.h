@@ -53,7 +53,7 @@
 //   receive publishes a tail.  The publish decides only when a producer sees
 //   room, so the order does not change.
 //
-// THE OWNER
+// Owner
 //   Owner, such as the lanes channel of fixy/concurrent/PermissionedChannel.h,
 //   mints the proofs of the ring (the writers).  Each thread can read the end
 //   of a lane and the end of the stream, so the producer door of a channel
@@ -310,7 +310,7 @@ public:
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return channel_capacity; }
 
-    // The end word of LANE, with acquire order (THE OWNER).  The producer door
+    // The end word of LANE, with acquire order (the owner).  The producer door
     // of a channel reads it after it takes the claim of the lane, so the read
     // comes after the end of the last producer of the lane.
     [[nodiscard]] LaneEnd end_of_lane(lane_index lane) const noexcept { return lanes_.at(lane).end->load_acquire(); }
@@ -450,7 +450,7 @@ private:
 
     // The consumer is the one reader and the one writer of the turn: the lanes
     // of the turn in the order of their index, their count with the position
-    // of the next pop, and whether a lane can hold deferred pops (THE ROOM).
+    // of the next pop, and whether a lane can hold deferred pops (the room).
     // The proof of the consumer admits each write of them.  They start on a
     // line of their own, so a push never reads them.
     alignas(64)::foundation::core::CyclicIndex<lane_count> turn_{};

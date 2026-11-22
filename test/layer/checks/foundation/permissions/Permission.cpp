@@ -467,8 +467,8 @@ consteval bool are_tokens_sendable_and_not_shareable() {
 static_assert(are_tokens_sendable_and_not_shareable<::foundation::brand::DefaultBrand>());
 
 // A token is closed: its public constructor takes the key of the mints, which
-// only a mint builds, so no thread builds a token past a mint (THE BUILD OF A
-// TOKEN of foundation/Transfer.h).  So a token of an own tag proves a door of
+// only a mint builds, so no thread builds a token past a mint (the build of a
+// token of foundation/Transfer.h).  So a token of an own tag proves a door of
 // a class that states synchronized{}, and so does the lease of a pool, whose
 // constructor is private.  The guard of a share proves no such door, because
 // many holders hold a share at one time (the share): the fixtures

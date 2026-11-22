@@ -1111,7 +1111,7 @@ private:
         return Form == ChannelForm::lanes ? texts.lanes : texts.merge;
     }
 
-    // The proofs of the two sides of the ring of a wire (THE PROVEN FORM of
+    // The proofs of the two sides of the ring of a wire (the proven form of
     // fixy/concurrent/SpscRing.h), and the proof of the consumer of the ring
     // of a merge or of the lanes (the writers of fixy/concurrent/MpscRing.h
     // and of fixy/concurrent/LaneRing.h).  The ring names this channel as its

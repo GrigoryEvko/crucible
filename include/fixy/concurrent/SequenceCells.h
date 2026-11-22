@@ -25,7 +25,7 @@
 //   synchronized{} (foundation/Transfer.h): the turn words are atomic, and
 //   each door that writes a value takes a ticket.
 //
-// THE TURN WORD
+// Turn word
 //   The word of a cell reads 2 * r while the cell is free for the writer of
 //   round r, and 2 * r + 1 while it holds the value of round r.  A writer
 //   writes the value and then stores 2 * r + 1 with release order.  A reader

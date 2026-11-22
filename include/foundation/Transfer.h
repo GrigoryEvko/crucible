@@ -1016,8 +1016,8 @@ enum class MakerSet : unsigned char {
     return has_token_shape(bare) && is_tied_to(bare, owner) && !is_closed_token(bare);
 }
 
-// True when the node of a parameter is a proof of the owner (THE PROOF OF A
-// DOOR).  A reference to const of a token counts only when the token is not
+// True when the node of a parameter is a proof of the owner (the proof of a
+// door).  A reference to const of a token counts only when the token is not
 // Shareable, and a share counts never (the share).
 [[nodiscard]] consteval bool is_proof_parameter(::foundation::reflect::TypeNode parameter, std::meta::info owner) {
     if (!is_proof_type(parameter.type, owner) || states(parameter.type, ^^shares)) return false;

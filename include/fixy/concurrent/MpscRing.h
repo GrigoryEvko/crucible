@@ -267,7 +267,7 @@ private:
         return typename cells_type::ReadTicket{ticket};
     }
 
-    // The writer of the tail, the consumer (THE WRITER OF A COUNTER of
+    // The writer of the tail, the consumer (the writer of a counter of
     // fixy/Mutation.h).  The ring is the owner of the proof, and only a pop
     // makes one.  The publish still compares the tail with the value that the
     // pop read, so a second consumer ends the process at the next publish of

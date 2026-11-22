@@ -135,11 +135,11 @@
 //     borrow-move-out      a consume of a lent object that a path keeps to
 //                          an exit (the lent parameters)
 //     closure-move-out     a call of a closure that moves a linear capture
-//                          out, outside a once door (THE CLOSURES THAT MOVE A
-//                          CAPTURE)
+//                          out, outside a once door (the closures that move a
+//                          capture)
 //     capture-unconsumed   a closure that a call owns and whose call operator
 //                          leaves a linear capture by value live on a path
-//                          (THE CLOSURES THAT A CALL OWNS)
+//                          (the closures that a call owns)
 //     The entity is FUNCTION: OBJECT (TYPE), and FUNCTION: temporary (TYPE)
 //     for a temporary.  FUNCTION has no template argument.  TYPE is the type
 //     of the object or the temporary with its template arguments, and each
@@ -149,10 +149,10 @@
 //     ledger counts each type.  The key of a ledger row holds no line of an
 //     exit.  The entity of unanalyzed is FUNCTION, and the entity of door is
 //     the function of its row.  The TYPE of closure-move-out is the type of
-//     the closure (THE CLOSURES THAT MOVE A CAPTURE).  The entity of
+//     the closure (the closures that move a capture).  The entity of
 //     capture-unconsumed is FUNCTION: closure (TYPE), with the function that
-//     holds the lambda and the type of the closure (THE CLOSURES THAT A CALL
-//     OWNS).
+//     holds the lambda and the type of the closure (the closures that a call
+//     owns).
 //
 // Fields
 //     An object of a class that is linear by its parts gets one slot for each
@@ -371,7 +371,7 @@
 //     plugin.cpp): a directory of the enforce mode error with no count row of
 //     the kind refuses it at compile time.
 //
-// THE CLOSURES THAT A CALL OWNS
+// Closures that a call owns
 //     The once door call_once of include/foundation/Linear.h moves a closure
 //     into its frame, calls it one time and ends it.  Such a closure owns its
 //     captures by value, as a function owns its parameters by value.  So a
@@ -395,7 +395,7 @@
 //     captures the rule must-consume reads, as it reads the parameters of a
 //     function, retires these lines, and C++ cannot state such a type today.
 //
-// THE SELF-MOVES
+// Self-moves
 //     A move assignment whose target and source are one object is the kind
 //     self-move, at the assignment: an operator= that takes an rvalue
 //     reference to a class, of each class, and an assignment of a linear class
@@ -826,7 +826,7 @@ std::unordered_map<unsigned, std::vector<unsigned>> waiting_kept_facts;
 // linear capture out, by its DECL_UID.
 std::unordered_set<unsigned> closure_moves_out;
 
-// THE CLOSURES THAT A CALL OWNS: each call operator whose body leaves a
+// Closures that a call owns: each call operator whose body leaves a
 // linear capture by value live on a path, and each call operator that the
 // summary walk read, by its DECL_UID.
 std::unordered_set<unsigned> closure_leaves_capture;
@@ -1015,7 +1015,7 @@ bool is_linear_capture(tree field) {
 }
 
 // True when FIELD is a capture by value of a linear value, which the closure
-// owns (THE CLOSURES THAT A CALL OWNS).
+// owns (the closures that a call owns).
 bool is_owned_linear_capture(tree field) {
     tree type = field != NULL_TREE && TREE_CODE(field) == FIELD_DECL ? TREE_TYPE(field) : NULL_TREE;
     return type != NULL_TREE && !TYPE_REF_P(type) && is_linear_type(type);
@@ -1239,9 +1239,9 @@ struct Slot {
     // a call operator, which the call borrows from the closure.  Its end
     // gives no finding.  LEAVES_PAYLOAD tells that a path to an exit can
     // leave a payload in a sum, and LEAVES_MOVED_OUT that a path to an exit
-    // can leave the capture consumed (THE CLOSURES THAT MOVE A CAPTURE).
+    // can leave the capture consumed (the closures that move a capture).
     // LEAVES_LIVE tells that a path to an exit can leave the capture or one
-    // of its fields live (THE CLOSURES THAT A CALL OWNS).
+    // of its fields live (the closures that a call owns).
     bool is_capture_borrow = false;
     bool leaves_payload = false;
     bool leaves_moved_out = false;
@@ -1476,7 +1476,7 @@ public:
                });
     }
 
-    // THE CLOSURES THAT A CALL OWNS: the capture fields of a call operator
+    // Closures that a call owns: the capture fields of a call operator
     // that each path to an exit ends: it consumes them, or leaves an empty
     // sum.  A walk with a goto gives none.
     [[nodiscard]] std::vector<unsigned> ended_capture_fields() const {
@@ -3052,7 +3052,7 @@ private:
         if (callee == NULL_TREE || !carries_linear_annotation(callee, linear_names.once_door)) {
             return;
         }
-        // THE CLOSURES THAT A CALL OWNS: the once door ends each closure that
+        // Closures that a call owns: the once door ends each closure that
         // it takes.
         for (int index = 0; index < count; ++index) {
             report_owned_closure(TREE_TYPE(argument_at(call, index)));
@@ -3070,7 +3070,7 @@ private:
         }
     }
 
-    // THE CLOSURES THAT A CALL OWNS: the kind capture-unconsumed at the place
+    // Closures that a call owns: the kind capture-unconsumed at the place
     // of the lambda of CLOSURE_TYPE, or of the type that the reference
     // CLOSURE_TYPE names, when its call operator leaves a linear capture by
     // value live on a path.  Each other type gives nothing.
@@ -3332,7 +3332,7 @@ private:
             return;
         }
         if (decl == NULL_TREE) {
-            // THE CLOSURES THAT A CALL OWNS: a temporary closure whose call
+            // Closures that a call owns: a temporary closure whose call
             // operator ends each linear capture on each path drops nothing at
             // the end of its full expression.
             bool const ends_each_capture = callee != NULL_TREE && LAMBDA_FUNCTION_P(callee)
@@ -3673,7 +3673,7 @@ void note_closure_summary(tree function) {
     if (walk.moves_capture_out() || (captures_moving_closure && walk.is_unanalyzed())) {
         closure_moves_out.insert(DECL_UID(function));
     }
-    // THE CLOSURES THAT A CALL OWNS: a linear capture by value that a path
+    // Closures that a call owns: a linear capture by value that a path
     // leaves live, or that the body never names, drops with the closure.
     closure_summarized.insert(DECL_UID(function));
     std::vector<unsigned> const ended = walk.ended_capture_fields();
