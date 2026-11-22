@@ -240,12 +240,39 @@ int check_peek_mut_and_swap() {
     return 0;
 }
 
+// An Option of a Linear of a Ref.  A Ref states a niche, and a tracked Linear
+// of a test build keeps its consume state in that niche.  The niche has one
+// user: the Option keeps its own flag, so an empty Option and a consumed
+// Linear never read one value.  Each step gives the same result in a test
+// build and in a Release build.  A wrong state ends the process, so no path
+// leaves the cell with a full Option.
+int check_option_of_a_linear_ref() {
+    int target = 5;
+    auto lent = ::fixy::to(target);
+    using Lent = decltype(lent);
+    using Held = Linear<Lent>;
+    static_assert(sizeof(::fixy::Option<Held>) > sizeof(Held),
+                  "an Option of a Linear keeps its own flag, so it never reads the niche that the tracker writes");
+
+    ::fixy::Option<Held> held{};
+    if (!held.is_none()) ::fixy::fatal("a new Option of a Linear of a Ref is empty");
+    held.fill(::fixy::mint_linear<Lent>(lent));
+    if (held.is_none()) ::fixy::fatal("a filled Option of a Linear of a Ref is full");
+    ::fixy::Option<Held> taken = held.take();
+    if (!held.is_none()) ::fixy::fatal("take leaves the Option of a Linear of a Ref empty");
+    if (taken.is_none()) ::fixy::fatal("take gives the Linear of a Ref in a full Option");
+    Held consumed = std::move(taken).expect("the taken Option holds the Linear");
+    Lent const out = std::move(consumed).consume();
+    return *out == 5 ? 0 : 50;
+}
+
 }  // namespace
 
 int main() {
     if (int rc = check_peek_mut_and_swap(); rc != 0) return rc;
     if (int rc = check_drop_branches(); rc != 0) return rc;
     if (int rc = check_consume_and_move(); rc != 0) return rc;
+    if (int rc = check_option_of_a_linear_ref(); rc != 0) return rc;
 
     return 0;
 }
