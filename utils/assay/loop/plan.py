@@ -49,10 +49,11 @@ THE SAMPLED ITEMS
     evidence` adds the evidence of each run to its key.  Each class of
     TARGETS of assay.loop.evidence.targets gives a nightly target and a
     release target to its items, and the step evidence runs them.  A
-    boundary harness is a sampled item with no class.  The build host has no
-    AFL++, and utils/pins.txt has no pin of it.  No runner of `loop evidence`
-    can then add the CPU seconds of a campaign to the key of a harness.  The
-    step fuzz runs a campaign of each harness on a host with AFL++.
+    boundary harness is a sampled item with no class: no runner of `loop
+    evidence` adds the CPU seconds of a campaign to the key of a harness.
+    The step fuzz runs a campaign of each harness with the AFL++ of the pin
+    aflplusplus, and the kept state of `loop fuzz` gives each campaign the
+    corpus of the earlier ones (THE KEPT CORPUS of assay.loop.fuzz).
 
     An item is not sampled when one run gives the full evidence for its
     inputs.  The step gauge judges the medians of the runs of one call, the

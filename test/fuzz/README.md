@@ -87,24 +87,17 @@ reasons:
   gives no comparison feedback, and the magic numbers and hashes in these
   formats need that feedback.
 
-To build AFL++ 5.03c with the plugin, as a user-local install:
+utils/pins.txt pins AFL++, and one command builds it with the GCC plugin
+for the patched GCC of the toolchain file:
 
 ```sh
-git clone https://github.com/AFLplusplus/AFLplusplus ~/.local/src/AFLplusplus
-cd ~/.local/src/AFLplusplus
-make PREFIX=$HOME/.local afl-fuzz afl-showmap afl-tmin afl-analyze
-make -f GNUmakefile.gcc_plugin PREFIX=$HOME/.local \
-     CC=$HOME/.local/gcc16-patched-p8/usr/bin/gcc-16p \
-     CXX=$HOME/.local/gcc16-patched-p8/usr/bin/g++-16p
+python3 utils/bin/setup install aflplusplus
 ```
 
-The top makefile builds the `afl-cc` driver only when LLVM is installed.
-Without LLVM, compile `src/afl-cc.c` by hand with each `LLVM_*` macro set
-to an empty string or to zero, and with `AFL_PATH` set to
-`$HOME/.local/lib/afl`.  Copy `afl-compiler-rt.o`, `afl-gcc-rt.o`,
-`dynamic_list.txt` and the three `afl-gcc-*-pass.so` files into that
-directory, and link `afl-gcc-fast` and `afl-g++-fast` to `afl-cc`.  The
-cmplog pass gives the comparison feedback.
+The GCC plugin loads only into the GCC that built it, so a new build of the
+patched GCC needs this command again (THE BUILT TOOL of
+`utils/assay/setup/install.py`).  The cmplog pass gives the comparison
+feedback.
 
 Then `loop fuzz` (`utils/assay/loop/fuzz.py`) builds the instrumented
 binaries in a directory you name, writes the seeds, and starts one
@@ -115,8 +108,12 @@ python3 utils/bin/loop fuzz BUILD_DIR OUT_DIR HARNESS CORES SECONDS
 python3 utils/bin/loop fuzz /tmp/afl-build /tmp/afl-out region 0-15 3600
 ```
 
-The command keeps the campaign off the cores that the host reserves.  After
-a campaign, minimize each file in `OUT_DIR/*/crashes` with `afl-tmin`, find
-the root cause, and fix it at the boundary.  Then add the input to the
+The command keeps the campaign off the cores that the host reserves.  A
+campaign that saves a crash or a hang fails, and its report gives the
+command that replays the first input.  The next campaign moves each saved
+input into `~/.cache/crucible-work/fuzz-campaigns/HARNESS/findings`, and it
+gives the queue to the corpus beside it (THE KEPT CORPUS of
+`utils/assay/loop/fuzz.py`).  Minimize each saved input with `afl-tmin`,
+find the root cause, and fix it at the boundary.  Then add the input to the
 seeds of the harness, as a literal or as a patch to an image that a writer
 built, in the commit that fixes the boundary.

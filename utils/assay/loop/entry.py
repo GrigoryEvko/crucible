@@ -63,8 +63,9 @@ THE BUDGET
 
 THE CAMPAIGN
     A campaign uses afl-fuzz in the directory of the AFL++ tools of
-    assay.loop.fuzz.  With no afl-fuzz, the job of each harness is blocked,
-    and the report gives the reason.  Else the job runs `loop fuzz BUILD OUT
+    assay.loop.fuzz: AFL_BIN, else the install of the pin aflplusplus.  With
+    no afl-fuzz, the job of each harness is blocked, and the report gives the
+    reason and the command of the install.  Else the job runs `loop fuzz BUILD OUT
     HARNESS CPUS SECONDS`.  BUILD is CAMPAIGN_BUILD in the tree, and OUT is a
     directory of the harness in it.
 
@@ -155,6 +156,7 @@ from assay.loop.evidence import targets as evidence_targets
 from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_reader
 from assay.readers import python as python_reader
+from assay.setup import install as setup_install
 from assay.setup import pins as cmake_pin
 
 # The wall time of a run of each tier when the call gives none, in seconds (THE BUDGET).
@@ -660,10 +662,16 @@ class Runner:
     def campaign(self, job: Job, prefix: Path, deadline: float) -> Outcome:
         """Run one campaign of AFL++ on a harness, or give the reason why it cannot run (THE CAMPAIGN)."""
         self.campaigns_left = max(1, self.campaigns_left)
-        tool = fuzz.afl_directory() / "afl-fuzz"
+        try:
+            tool = fuzz.afl_directory() / "afl-fuzz"
+        except setup_install.InstallError as problem:
+            self.campaigns_left -= 1
+            return Outcome(job, State.BLOCKED, str(problem))
         if not tool.is_file():
             self.campaigns_left -= 1
-            return Outcome(job, State.BLOCKED, f"the host has no {tool}.  Install AFL++, or set AFL_BIN")
+            return Outcome(
+                job, State.BLOCKED, f"the host has no {tool}.  Run: python3 utils/bin/setup install {fuzz.AFL_TOOL}"
+            )
         try:
             reserved = fuzz.reserved_cpus()
         except bench.BenchError as problem:
