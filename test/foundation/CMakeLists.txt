@@ -2563,6 +2563,11 @@ foundation_neg_compile_test(neg_core_option_niche_statement_inherited
   "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = InheritedSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_inherited APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_using
+  "required for the satisfaction of .StatedInBase<T>. \\[with T = UsingSlot\\]"
+  "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = UsingSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_using APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 # A word protocol states that only the empty value of the niche gives the
 # empty word (THE WORD OF A STATED PAYLOAD of foundation/core/Atomic.h).  The
 # gate refuses the statement for a value whose niche states nothing, and a

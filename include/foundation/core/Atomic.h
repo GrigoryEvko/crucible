@@ -228,12 +228,13 @@ enum class WordStatement : unsigned char {
 // word.  The function is no template, so no unit can specialize what it
 // reads.  Complexity: linear in the members of the protocol and the niche.
 consteval WordStatement word_statement_of(std::meta::info type) {
-    std::meta::info const statement =
-        ::foundation::reflect::member_named_in(std::meta::substitute(^^atomic_word, {type}),
-                                               std::meta::access_context::unprivileged(), "is_empty_word_of_niche");
+    std::meta::info const protocol = std::meta::substitute(^^atomic_word, {type});
+    std::meta::info const statement = ::foundation::reflect::member_named_in(
+        protocol, std::meta::access_context::unprivileged(), "is_empty_word_of_niche");
     if (statement == std::meta::info{}) return WordStatement::absent;
     bool const is_niche_stated = std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {type}));
-    return is_niche_stated && is_base_statement(statement) ? WordStatement::holds : WordStatement::refused;
+    bool const is_own = std::meta::parent_of(statement) == protocol;
+    return is_niche_stated && is_own && is_base_statement(statement) ? WordStatement::holds : WordStatement::refused;
 }
 
 // The members of a word protocol.  empty_word is a constant of the word

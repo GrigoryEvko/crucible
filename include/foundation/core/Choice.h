@@ -206,18 +206,21 @@ consteval bool is_layer_header(Side<side::ChoiceHeader, char const*> const& anch
 }
 
 // The place of a niche statement: true when the declaration that makes the
-// statement stands in a header of the base.  Only the default argument of
-// the constructor of niche_statement builds a place, because the two
-// constructors are private, so no caller names a file.  The copy is
-// user-provided, so std::bit_cast and a lifetime start over bytes build no
-// place, for the reasons that niche_key gives.  __builtin_FILE in the body of
-// the constructor gives the file of this header, the anchor, and the build
-// maps each file name in the same way.
+// statement stands in a header of the base, at the scope of a class or of a
+// namespace.  A mark that the body of a function makes or copies, such as
+// the element of a container of the base, reads the name of its function,
+// so it is no statement.  Only the default argument of the constructor of
+// niche_statement builds a place, because the two constructors are private,
+// so no caller names a file.  The copy is user-provided, so std::bit_cast and
+// a lifetime start over bytes build no place, for the reasons that niche_key
+// gives.  __builtin_FILE in the body of the constructor gives the file of
+// this header, the anchor, and the build maps each file name in the same way.
 class NicheStatementPlace final {
     friend class ::foundation::core::niche_statement;
 
-    consteval explicit NicheStatementPlace(char const* file) noexcept
-        : is_in_base_{is_layer_header(side_as<side::ChoiceHeader>(__builtin_FILE()), file)} {}
+    consteval explicit NicheStatementPlace(Site const& site) noexcept
+        : is_in_base_{is_layer_header(side_as<side::ChoiceHeader>(__builtin_FILE()), site_file_(site))
+                      && site_function_(site)[0] == '\0'} {}
     consteval NicheStatementPlace(NicheStatementPlace const& other) noexcept : is_in_base_{other.is_in_base_} {}
 
     bool is_in_base_ = false;
@@ -229,20 +232,21 @@ public:
 }  // namespace detail
 
 // The statement that no door of a payload builds its empty value (THE CHECK
-// OF THE STATEMENT).  The default argument of the constructor reads the file
-// where the statement stands, as Site of foundation/core/Fatal.h reads the
-// place of a call, and the payload gate admits only a statement of a header
-// of the base.  A copy reads the file of the copy too, so a declaration of a
-// different file that copies a statement of the base states nothing, and no
-// function of the base gives one.  The copy is user-provided, so std::bit_cast
-// builds no mark.
+// OF THE STATEMENT).  The default argument of the constructor reads the Site
+// where the statement stands, and the payload gate admits only a statement
+// of a header of the base at the scope of a class or of a namespace.  A copy
+// reads the Site of the copy too, so a declaration of a different file that
+// copies a statement of the base states nothing, and so does a mark that the
+// body of a function of the base makes or copies.  The copy is user-provided,
+// so std::bit_cast builds no mark.
 class niche_statement final {
 public:
-    consteval niche_statement(
-        detail::NicheStatementPlace place = detail::NicheStatementPlace{__builtin_FILE()}) noexcept
+    consteval niche_statement(detail::NicheStatementPlace place = detail::NicheStatementPlace{Site{
+                                  __builtin_FILE(), __builtin_LINE(), __builtin_FUNCTION()}}) noexcept
         : is_in_base_{place.is_in_base_} {}
-    consteval niche_statement(niche_statement const& other, detail::NicheStatementPlace place =
-                                                                detail::NicheStatementPlace{__builtin_FILE()}) noexcept
+    consteval niche_statement(niche_statement const& other,
+                              detail::NicheStatementPlace place = detail::NicheStatementPlace{Site{
+                                  __builtin_FILE(), __builtin_LINE(), __builtin_FUNCTION()}}) noexcept
         : is_in_base_{other.is_in_base_ && place.is_in_base_} {}
 
     niche_statement&
@@ -523,16 +527,19 @@ consteval bool is_base_statement(std::meta::info member) {
 // Complexity: linear in the members of the type and of its niche.
 consteval bool is_stated_in_base(std::meta::info type) {
     std::meta::info const bare = std::meta::dealias(type);
+    std::meta::info const niche_type = std::meta::substitute(^^niche, {bare});
     std::meta::access_context const each = std::meta::access_context::unprivileged();
     std::meta::info const in_class =
         std::meta::is_class_type(bare)
             ? ::foundation::reflect::member_named_in(bare, each, "is_niche_empty_never_built")
             : std::meta::info{};
-    std::meta::info const in_niche =
-        ::foundation::reflect::member_named_in(std::meta::substitute(^^niche, {bare}), each, "is_empty_never_built");
+    std::meta::info const in_niche = ::foundation::reflect::member_named_in(niche_type, each, "is_empty_never_built");
     bool const has_statement = in_class != std::meta::info{} || in_niche != std::meta::info{};
-    return has_statement && (in_class == std::meta::info{} || is_base_statement(in_class))
-        && (in_niche == std::meta::info{} || is_base_statement(in_niche));
+    bool const is_class_statement_held =
+        in_class == std::meta::info{} || (std::meta::parent_of(in_class) == bare && is_base_statement(in_class));
+    bool const is_niche_statement_held =
+        in_niche == std::meta::info{} || (std::meta::parent_of(in_niche) == niche_type && is_base_statement(in_niche));
+    return has_statement && is_class_statement_held && is_niche_statement_held;
 }
 
 // True when the class has a public constructor that is not deleted.  A

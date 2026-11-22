@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::detail::NicheStatementPlace{nullptr};
+    [[maybe_unused]] auto forged = foundation::core::detail::NicheStatementPlace{foundation::core::Site{}};
     return 0;
 }
