@@ -216,9 +216,9 @@ struct hidden_payload {
     using type = typename T::value_type;
 };
 
-template <class T, std::size_t N>
-struct hidden_payload<::foundation::core::FixedArray<T, N>> {
-    using type = typename ::foundation::core::FixedArray<T, N>::element_type;
+template <class T, std::size_t N, class KeyBrand>
+struct hidden_payload<::foundation::core::FixedArray<T, N, KeyBrand>> {
+    using type = typename ::foundation::core::FixedArray<T, N, KeyBrand>::element_type;
 };
 
 template <class T, std::size_t Align>
