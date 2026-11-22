@@ -1038,19 +1038,31 @@ template <BoxPayload T, class Authority>
 //   body that reads the object costs what operator-> costs, and a body that
 //   writes it adds one store of the pointer of the Box: the move back.
 
-// The body of the frame door of a Box of T: it takes the object as T& with
-// no throw, and it gives void or a value that holds no borrow and fits a
-// Record, so the value leaves the frame with the Box.
+// A callable that takes the object of a Box of T as T& with no throw, and
+// that gives void or a value that holds no borrow and fits a Record, so the
+// value leaves the frame with the Box.
 template <class Body, class T>
-concept BoxFrameBody = std::is_nothrow_invocable_v<Body&&, T&>
-                    && (std::is_void_v<detail::body_result_t<Body&&, T&>>
-                        || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
-                            && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>));
+concept BoxFrameCallable = std::is_nothrow_invocable_v<Body&&, T&>
+                        && (std::is_void_v<detail::body_result_t<Body&&, T&>>
+                            || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
+                                && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>));
+
+// The body of the frame door of a Box of T: a callable of BoxFrameCallable
+// that holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h).
+template <class Body, class T>
+concept BoxFrameBody = BoxFrameCallable<Body, T> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 // A body whose result does not leave the frame: the refused twin of the door
 // binds to it.
 template <class Body, class T>
-concept RefusedBoxFrameBody = std::is_nothrow_invocable_v<Body&&, T&> && (!BoxFrameBody<Body, T>);
+concept RefusedBoxFrameBody = std::is_nothrow_invocable_v<Body&&, T&> && (!BoxFrameCallable<Body, T>)
+                           && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a door of a Box of T that takes Object, T& or T const&, and that
+// holds a linear value by value: the linear twin of each door binds to it.
+template <class Body, class Object>
+concept LinearBoxBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, Object>;
 
 // The type that the frame door of a Box of T gives back for a body.
 template <class Body, class T>
@@ -1082,6 +1094,10 @@ template <BoxPayload T, class Body>
     requires DroppableBoxPayload<T> && RefusedBoxFrameBody<Body, T>
 void with_mut(Box<T>&& box, Body&& body) =
     delete("the result of a frame door leaves the frame, so it holds no reference and no address: give a plain value");
+
+template <BoxPayload T, class Body>
+    requires DroppableBoxPayload<T> && LinearBoxBody<Body, T&>
+void with_mut(Box<T>&& box, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A linear object leaves a Box only through consume.  A body could move it
 // out through the reference and leave the Box full of a moved-from value,
@@ -1118,12 +1134,17 @@ void with_mut(Owner&& box, Body&& body) = delete(
 //   foundation/core/Frame.h).  A body cannot move a linear payload out of a
 //   const reference, so the door takes a Box of each payload.
 
-// The body of the read frame of a Box of T: it takes the object as T const&
-// with no throw, and it gives void or a value that holds no borrow.
+// A callable that takes the object of a Box of T as T const& with no throw,
+// and that gives void or a value that holds no borrow.
 template <class Body, class T>
-concept BoxReadBody = std::is_nothrow_invocable_v<Body&&, T const&>
-                   && (std::is_void_v<detail::body_result_t<Body&&, T const&>>
-                       || HoldsNoBorrow<detail::body_result_t<Body&&, T const&>>);
+concept BoxReadCallable = std::is_nothrow_invocable_v<Body&&, T const&>
+                       && (std::is_void_v<detail::body_result_t<Body&&, T const&>>
+                           || HoldsNoBorrow<detail::body_result_t<Body&&, T const&>>);
+
+// The body of the read frame of a Box of T: a callable of BoxReadCallable
+// that holds no linear value by value.
+template <class Body, class T>
+concept BoxReadBody = BoxReadCallable<Body, T> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 // The read frame of a Box (THE READ FRAME OF A BOX).  The result holds no
 // borrow, so the deduced type of a value is the result of the body.
@@ -1137,10 +1158,15 @@ template <BoxPayload T, class Body>
 // A body whose result holds a borrow binds to this overload, so the refusal
 // gives its reason.
 template <BoxPayload T, class Body>
-    requires CompleteBoxPayload<T> && std::is_nothrow_invocable_v<Body&&, T const&> && (!BoxReadBody<Body, T>)
+    requires CompleteBoxPayload<T> && std::is_nothrow_invocable_v<Body&&, T const&> && (!BoxReadCallable<Body, T>)
+              && ::foundation::linear::HoldsNoLinearValue<Body>
 void with_view(Box<T> const& box, Body&& body) =
     delete("the result of the read frame of a Box holds no reference and no address, because a later move or end of "
            "the Box ends the object: give a plain value");
+
+template <BoxPayload T, class Body>
+    requires CompleteBoxPayload<T> && LinearBoxBody<Body, T const&>
+void with_view(Box<T> const& box, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // Size bytes of heap storage at the alignment Align, with no object in it.
 // The annotation no_start_over_bytes refuses a Hole to the checked lifetime

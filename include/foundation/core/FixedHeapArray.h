@@ -192,10 +192,14 @@ public:
     // Complexity: O(1), and the cost of body.
     template <class Body>
         requires(!is_keyed_) && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(first_()[index.raw()]);
     }
+    template <class Body>
+        requires(!is_keyed_) && LinearElementBody<Body, T>
+    void with_element(Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
         requires is_keyed_ && std::is_invocable_v<Body, T&>
     void with_element(Index<N> index, Body&& body) & = delete(
@@ -203,10 +207,14 @@ public:
         "index, body)");
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<detail::body_result_t<Body, T const&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
         return static_cast<Body&&>(body)(first_()[index.raw()]);
     }
+    template <class Body>
+        requires LinearElementBody<Body, T const>
+    void with_element(Index<N> index, Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
     void with_element(Index<N> index, Body&& body) && =
         delete("a frame door of a temporary FixedHeapArray lends an element that the full expression frees");
@@ -234,6 +242,9 @@ public:
     void with_mut(Body&& body) & = delete(
         "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
         "the frame: give a plain value");
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && (!is_keyed_) && LinearFrameBody<Body, T, Fresh, N>
+    void with_mut(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A keyed array opens a frame only with its key, so a body with no key
     // binds to this overload, and the refusal gives its reason.
@@ -281,6 +292,12 @@ public:
     void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(
         "a body of a keyed frame reaches a LoanKey of the brand of its owner, so code in the body could open a second "
         "frame of the owner: capture only what the body reads, and keep the key with the caller");
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedLinearFrameBody<Body, T, KeyBrand, Fresh, N>
+    void with_mut(LoanKey<KeyBrand>&& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedLinearFrameBody<Body, T, KeyBrand, Fresh, N>
+    void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // THE KEYED ARRAY: the element door with the key, as the keyed element
     // door of a FixedArray.  Complexity: O(1), and the cost of body.
@@ -312,6 +329,12 @@ public:
     void with_element(LoanKey<KeyBrand>& key, Index<N> index, Body&& body) & = delete(
         "a body of a keyed element door reaches a LoanKey of the brand of its owner, so code in the body could give a "
         "second reference to the element: capture only what the body reads, and keep the key with the caller");
+    template <class Body>
+        requires is_keyed_ && KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_element(LoanKey<KeyBrand>&& key, Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_element(LoanKey<KeyBrand>& key, Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     template <class Body>
     void with_mut(Body&& body) const& = delete("a const FixedHeapArray lends no writer of its elements: read them "

@@ -52,11 +52,18 @@
 
 namespace fixy {
 
-// The body of a door of a ring of Unkeyed: it takes the element, and its
-// result holds no borrow.
+// The body of a door of a ring of Unkeyed: it takes the element, its result
+// holds no borrow, and it holds no linear value by value.
 template <class Body, class Element>
 concept CyclicBody =
-    std::is_invocable_v<Body&&, Element&> && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Element&>>;
+    std::is_invocable_v<Body&&, Element&> && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Element&>>
+    && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a door of a ring of Unkeyed whose result holds no borrow and that
+// holds a linear value by value: the linear twin of the door binds to it.
+template <class Body, class Element>
+concept CyclicLinearBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, Element&>
+                        && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Element&>>;
 
 // A body of a door of a ring whose result holds a borrow: the refused twin of
 // the door binds to it.
@@ -308,6 +315,39 @@ public:
     void with_slot(key_type& key, Index<N> slot, Body&& body) & = delete(
         "a body of a keyed door of a CyclicBuffer reaches its LoanKey, so code in the body could open a second door "
         "that writes a slot: capture only what the body reads, and keep the key with the caller");
+
+    // A body that holds a linear value by value binds to these overloads, so
+    // the refusal gives its reason.
+    template <class Body>
+        requires CyclicLinearBody<Body, T const>
+    void with_slot(Index<N> slot, Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires(!is_keyed_) && CyclicLinearBody<Body, T>
+    void with_claim(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires(!is_keyed_) && CyclicLinearBody<Body, T>
+    void with_fresh_claim(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires(!is_keyed_) && CyclicLinearBody<Body, T>
+    void with_slot(Index<N> slot, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_claim(key_type&& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_claim(key_type& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_fresh_claim(key_type&& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_fresh_claim(key_type& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_slot(key_type&& key, Index<N> slot, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_slot(key_type& key, Index<N> slot, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A body whose result holds a borrow binds to these overloads, so the
     // refusal gives its reason.

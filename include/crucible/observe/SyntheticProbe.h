@@ -307,7 +307,7 @@ public:
         }
         for (PeerIndex const index : peers_.indices()) {
             if (!peers_.at(index).active) {
-                peers_.with_element(index, [peer, kinds](PeerSlot& slot) noexcept {
+                peers_.with_element(index, [&peer, kinds](PeerSlot& slot) noexcept {
                     slot.peer = peer;
                     slot.enabled_kinds = kinds;
                     slot.active = true;

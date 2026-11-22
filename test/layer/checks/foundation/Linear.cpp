@@ -204,4 +204,27 @@ static_assert(std::is_invocable_v<decltype(once_with_probe), TakesKey&&, lc::Onc
 static_assert(!std::is_invocable_v<decltype(once_with_probe), TakesKey&&, lc::OnceContext&>);
 static_assert(!std::is_invocable_v<decltype(once_with_probe), TakesKey&, lc::OnceKey&>);
 
+// The gate of the bodies of the element doors and the frame doors.  A
+// closure that holds a token by value holds a linear value, also through a
+// struct that holds one.  A capture by const reference and a parameter hold
+// none.
+using HoldsTokenBody = decltype([held = lc::Token{}](int& count) noexcept {
+    static_cast<void>(held);
+    ++count;
+});
+using HoldsHolderBody = decltype([held = lc::HoldsToken{}](int& count) noexcept { count += held.count; });
+using TakesTokenBody = decltype([](lc::Token& token) noexcept { static_cast<void>(token); });
+static_assert(!HoldsNoLinearValue<HoldsTokenBody>);
+static_assert(!HoldsNoLinearValue<HoldsHolderBody&&>);
+static_assert(HoldsNoLinearValue<TakesTokenBody>);
+static_assert([] consteval {
+    lc::Token token{};
+    lc::Token const& reader = token;
+    auto const borrows = [&reader](int& count) noexcept {
+        static_cast<void>(reader);
+        ++count;
+    };
+    return HoldsNoLinearValue<decltype(borrows)>;
+}());
+
 }  // namespace foundation::linear

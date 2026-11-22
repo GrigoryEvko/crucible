@@ -4699,6 +4699,15 @@ foundation_neg_compile_test(neg_core_keyed_heap_array_without_key
 foundation_neg_compile_test(neg_core_keyed_heap_array_reaches_key
   "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_mut\\(foundation::core::LoanKey<(KeyBrand|Fresh)>&&, Body&&\\) &"
   "a body of a keyed frame reaches a LoanKey of the brand of its owner")
+# The body of an element door or a frame door holds no linear value by value:
+# a by-move capture of a linear end, and a by-value capture of a struct that
+# holds one, each bind to the linear twin of the door.
+foundation_neg_compile_test(neg_core_element_door_linear_capture
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_element\\(foundation::core::Index<[A-Za-z]+>, Body&&\\) &"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_frame_door_linear_holder_capture
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "the body holds a linear value by value, and the door calls it with no consume")
 # Ref, Box, View, ViewMut and RefMut refuse a LoanKey of each brand as their
 # element, so no body keeps a borrow of a key past the frame that lent it.
 foreach(loan_key_borrow ref box view view_mut ref_mut)

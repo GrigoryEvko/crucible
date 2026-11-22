@@ -307,6 +307,7 @@ public:
     // elements.
     template <class Body>
         requires std::is_invocable_v<Body, View<T>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T>>
         with_view(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, View<T>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
@@ -314,11 +315,23 @@ public:
     }
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
         return static_cast<Body&&>(body)(View<T const>{this->run_key_(), first_(), this->state_.count});
     }
+
+    // A body that holds a linear value by value binds to these overloads, so
+    // the refusal gives its reason.
+    template <class Body>
+        requires std::is_invocable_v<Body, View<T>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_view(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_view(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A body whose result holds a borrow binds to these overloads, so the
     // refusal gives its reason.
@@ -390,6 +403,11 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
 void with_mut(Owner&& owner, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ::foundation::reflect::IsInstanceOf<Owner, ^^SmallList>
+             && LinearFrameBody<Body, typename Owner::element_type, Fresh>
+void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A named list stays with the caller while the body runs, so the body could
 // append to it through a capture and move the elements of the ViewMut.  This

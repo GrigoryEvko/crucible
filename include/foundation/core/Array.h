@@ -238,18 +238,38 @@ concept KeyedFrameBody =
     FrameBody<Body, T, Fresh, Extent> && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>;
 
 // A body of a keyed frame door that reaches a key of the brand of its owner:
-// the refused twin of each keyed door binds to it.
+// the refused twin of each keyed door binds to it, also when the body holds
+// the key by value.
 template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
-concept KeyReachingFrameBody = FrameBody<Body, T, Fresh, Extent> && !ReachesNoLoanKey<Body, Brand>;
+concept KeyReachingFrameBody = FrameCallable<Body, T, Fresh, Extent> && !ReachesNoLoanKey<Body, Brand>;
+
+// A body of a keyed frame door that reaches no key of the brand of its owner
+// and holds a linear value by value: the linear twin of each keyed door binds
+// to it.
+template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
+concept KeyedLinearFrameBody = LinearFrameBody<Body, T, Fresh, Extent> && ReachesNoLoanKey<Body, Brand>;
+
+// A body of an element door that takes the element as Element& and holds a
+// linear value by value: the linear twin of each element door binds to it.
+template <class Body, class Element>
+concept LinearElementBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, Element&>;
 
 // The body of a keyed element door: it takes the element with no throw, its
-// result holds no borrow and fits a Record, and it reaches no key of the brand.
+// result holds no borrow and fits a Record, it reaches no key of the brand,
+// and it holds no linear value by value.
 template <class Body, class T, class Brand>
-concept KeyedElementBody = std::is_nothrow_invocable_v<Body&&, T&>
-                        && (std::is_void_v<detail::body_result_t<Body&&, T&>>
-                            || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
-                                && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>))
-                        && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>;
+concept KeyedElementBody =
+    std::is_nothrow_invocable_v<Body&&, T&>
+    && (std::is_void_v<detail::body_result_t<Body&&, T&>>
+        || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
+            && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>))
+    && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a keyed element door that reaches no key of the brand and holds
+// a linear value by value: the linear twin of each keyed element door binds
+// to it.
+template <class Body, class T, class Brand>
+concept KeyedLinearElementBody = LinearElementBody<Body, T> && ReachesNoLoanKey<Body, Brand>;
 
 template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand = Unkeyed>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
@@ -322,10 +342,14 @@ public:
     // Complexity: O(1), and the cost of body.
     template <class Body>
         requires(!is_keyed_) && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
     }
+    template <class Body>
+        requires(!is_keyed_) && LinearElementBody<Body, T>
+    void with_element(Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
         requires is_keyed_ && std::is_invocable_v<Body, T&>
     void with_element(Index<N> index, Body&& body) & = delete(
@@ -333,10 +357,14 @@ public:
         "body)");
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<detail::body_result_t<Body, T const&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
     }
+    template <class Body>
+        requires LinearElementBody<Body, T const>
+    void with_element(Index<N> index, Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
     void with_element(Index<N> index, Body&& body) && =
         delete("a frame door of a temporary FixedArray lends an element that the full expression ends");
@@ -366,6 +394,9 @@ public:
     void with_mut(Body&& body) & = delete(
         "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
         "the frame: give a plain value");
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && (!is_keyed_) && LinearFrameBody<Body, T, Fresh, N>
+    void with_mut(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A keyed array opens a frame only with its key, so a body with no key
     // binds to this overload, and the refusal gives its reason.
@@ -415,6 +446,12 @@ public:
     void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(
         "a body of a keyed frame reaches a LoanKey of the brand of its owner, so code in the body could open a second "
         "frame of the owner: capture only what the body reads, and keep the key with the caller");
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedLinearFrameBody<Body, T, KeyBrand, Fresh, N>
+    void with_mut(LoanKey<KeyBrand>&& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedLinearFrameBody<Body, T, KeyBrand, Fresh, N>
+    void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // THE KEYED ELEMENT DOOR: body gets the element at a proven index in
     // place, as T&, and the key comes back as with the keyed frame door: alone
@@ -451,6 +488,12 @@ public:
     void with_element(LoanKey<KeyBrand>& key, Index<N> index, Body&& body) & = delete(
         "a body of a keyed element door reaches a LoanKey of the brand of its owner, so code in the body could give a "
         "second reference to the element: capture only what the body reads, and keep the key with the caller");
+    template <class Body>
+        requires is_keyed_ && KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_element(LoanKey<KeyBrand>&& key, Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires is_keyed_ && KeyedLinearElementBody<Body, T, KeyBrand>
+    void with_element(LoanKey<KeyBrand>& key, Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A const array lends no writer, so each body binds to this overload,
     // and the refusal gives its reason.
@@ -992,7 +1035,8 @@ public:
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
-              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
@@ -1005,7 +1049,8 @@ public:
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
-              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
@@ -1015,6 +1060,18 @@ public:
         }
         return static_cast<OnSome&&>(on_some)(static_cast<T const*>(this->state_.first)[position]);
     }
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
+                  && (!::foundation::linear::HoldsNoLinearValue<OnSome>
+                      || !::foundation::linear::HoldsNoLinearValue<OnNone>)
+    void with_element(std::size_t position, OnSome&& on_some,
+                      OnNone&& on_none) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+                  && (!::foundation::linear::HoldsNoLinearValue<OnSome>
+                      || !::foundation::linear::HoldsNoLinearValue<OnNone>)
+    void with_element(std::size_t position, OnSome&& on_some,
+                      OnNone&& on_none) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class OnSome, class OnNone>
     void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) && =
         delete("a frame door of a temporary HeapArray lends an element of storage that the full expression frees");
@@ -1252,16 +1309,24 @@ public:
     // Complexity: O(1), and the cost of body.
     template <class Body>
         requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<std::invoke_result_t<Body, T&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T&>
         with_masked(std::uint64_t key, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(held_()[key & this->state_.mask]);
     }
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<std::invoke_result_t<Body, T const&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T const&>
         with_masked(std::uint64_t key, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
         return static_cast<Body&&>(body)(static_cast<T const*>(held_())[key & this->state_.mask]);
     }
+    template <class Body>
+        requires LinearElementBody<Body, T>
+    void with_masked(std::uint64_t key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires LinearElementBody<Body, T const>
+    void with_masked(std::uint64_t key, Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
     void with_masked(std::uint64_t key, Body&& body) && =
         delete("a frame door of a temporary MaskedArray lends an element of storage that the full expression frees");
@@ -1331,6 +1396,11 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
 void with_mut(Owner&& owner, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ArrayFrameOwner<Owner>
+             && LinearFrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
+void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A named array stays with the caller while the body runs, so the body could
 // read or write it beside the ViewMut through a capture.  This twin refuses

@@ -598,6 +598,10 @@ template <class... Refused, class T, class Tag, class Brand, class Body,
 void with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");
+template <class... Refused, class T, class Tag, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ::foundation::core::LinearFrameBody<Body, T, Fresh>
+void with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A named region stays with the caller while the body runs, so the body could
 // write it beside the ViewMut through a capture.  These twins refuse a named

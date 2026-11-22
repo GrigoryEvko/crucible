@@ -453,6 +453,11 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
 void with_mut(Owner&& owner, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+             && LinearFrameBody<Body, typename Owner::element_type, Fresh>
+void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A named list stays with the caller while the body runs, so the body could
 // read or write it beside the ViewMut through a capture.  This twin refuses

@@ -321,9 +321,18 @@ template <typename Ctx, typename Tag, typename Brand, typename Body>
     requires ::foundation::effects::IsExecCtx<Ctx> && CtxAdmitsPermission<Tag, Ctx>
           && detail::PermissionForkBody<Body, Tag, Brand, Ctx>
           && detail::LentValue<detail::lent_result_t<Body, Tag, Brand, Ctx>>
+          && ::foundation::linear::HoldsNoLinearValue<Body>
 [[nodiscard]] constexpr auto with_write_view(Ctx const& ctx, Permission<Tag, Brand>&& token, Body&& body) noexcept {
     return detail::write_view_door::lend(ctx, std::move(token), body);
 }
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+template <typename Ctx, typename Tag, typename Brand, typename Body>
+    requires ::foundation::effects::IsExecCtx<Ctx> && CtxAdmitsPermission<Tag, Ctx>
+              && detail::PermissionForkBody<Body, Tag, Brand, Ctx> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+void with_write_view(Ctx const& ctx, Permission<Tag, Brand>&& token,
+                     Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A named token stays with the caller while the body runs, so the body
 // could move it or end it through a capture.  The deleted twin refuses a

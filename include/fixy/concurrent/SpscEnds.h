@@ -175,23 +175,32 @@ private:
 };
 
 // The body of a frame door of one end: it takes the end with no throw, its
-// result holds no borrow and fits a Record, and it reaches no key of the side
-// (THE GATE of foundation/core/Frame.h).
+// result holds no borrow and fits a Record, it reaches no key of the side
+// (THE GATE of foundation/core/Frame.h), and it holds no linear value by
+// value (HoldsNoLinearValue of foundation/Linear.h).
 template <class Body, class End, class KeyBrand>
-concept SpscEndBody = std::is_nothrow_invocable_v<Body&&, End&>
-                   && (std::is_void_v<std::invoke_result_t<Body&&, End&>>
-                       || (::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, End&>>
-                           && ::foundation::core::RecordElement<std::remove_cv_t<std::invoke_result_t<Body&&, End&>>>))
-                   && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand>;
+concept SpscEndBody =
+    std::is_nothrow_invocable_v<Body&&, End&>
+    && (std::is_void_v<std::invoke_result_t<Body&&, End&>>
+        || (::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, End&>>
+            && ::foundation::core::RecordElement<std::remove_cv_t<std::invoke_result_t<Body&&, End&>>>))
+    && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 // The body of the frame door of the two ends of a split: it takes the two
-// ends with no throw, its result holds no borrow, and it reaches no key of
-// either side.
+// ends with no throw, its result holds no borrow, it reaches no key of either
+// side, and it holds no linear value by value.
 template <class Body, class Producer, class Consumer, class ProducerBrand, class ConsumerBrand>
-concept SpscEndsBody = std::is_nothrow_invocable_v<Body&&, Producer&, Consumer&>
-                    && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Producer&, Consumer&>>
-                    && ::foundation::core::ReachesNoLoanKey<Body, ProducerBrand>
-                    && ::foundation::core::ReachesNoLoanKey<Body, ConsumerBrand>;
+concept SpscEndsBody =
+    std::is_nothrow_invocable_v<Body&&, Producer&, Consumer&>
+    && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Producer&, Consumer&>>
+    && ::foundation::core::ReachesNoLoanKey<Body, ProducerBrand>
+    && ::foundation::core::ReachesNoLoanKey<Body, ConsumerBrand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a frame door of one end that reaches no key of the side and
+// holds a linear value by value: the linear twin of the door binds to it.
+template <class Body, class End, class KeyBrand>
+concept SpscLinearEndBody = (!::foundation::linear::HoldsNoLinearValue<Body>)
+                         && std::is_invocable_v<Body&&, End&> && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand>;
 
 // A body of a frame door of one end that reaches the key of the side: the
 // refused twin of the door binds to it.
@@ -279,10 +288,34 @@ public:
     template <class Body>
         requires std::is_nothrow_invocable_v<Body&&, Owner const&>
               && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Owner const&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     constexpr auto with_owner(Body&& body) const& noexcept {
         Owner const& owner = *producer_.owner_;
         return static_cast<Body&&>(body)(owner);
     }
+
+    // A body that holds a linear value by value binds to these overloads, so
+    // the refusal gives its reason.
+    template <class Body>
+        requires SpscLinearEndBody<Body, producer_end, producer_brand>
+    void with_producer(ProducerKey<Brand>&& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires SpscLinearEndBody<Body, producer_end, producer_brand>
+    void with_producer(ProducerKey<Brand>& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires SpscLinearEndBody<Body, consumer_end, consumer_brand>
+    void with_consumer(ConsumerKey<Brand>&& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires SpscLinearEndBody<Body, consumer_end, consumer_brand>
+    void with_consumer(ConsumerKey<Brand>& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires std::is_invocable_v<Body&&, producer_end&, consumer_end&>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_ends(ProducerKey<Brand>& producer_key, ConsumerKey<Brand>& consumer_key,
+                   Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires std::is_invocable_v<Body&&, Owner const&> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_owner(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A door with no key binds to these overloads, so the refusal gives its
     // reason.

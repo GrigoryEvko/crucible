@@ -192,10 +192,18 @@ using frame_result_t = std::invoke_result_t<Body&&, ProofRef<Proof, Brand>>;
 template <class Given>
 using frame_value_t = std::conditional_t<std::is_void_v<Given>, ::foundation::core::Unit, std::remove_cv_t<Given>>;
 
-// A body of a frame: it takes the borrow of the proof, and it does not
-// throw.
+// A body of a frame: it takes the borrow of the proof, it does not throw,
+// and it holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h).
 template <class Body, class Proof, class Brand>
-concept SchedFrameBody = std::is_nothrow_invocable_v<Body&&, ProofRef<Proof, Brand>>;
+concept SchedFrameBody =
+    std::is_nothrow_invocable_v<Body&&, ProofRef<Proof, Brand>> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a frame that holds a linear value by value: the linear twin of
+// each frame mint binds to it.
+template <class Body, class Proof, class Brand>
+concept SchedLinearFrameBody =
+    (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, ProofRef<Proof, Brand>>;
 
 // A body whose result leaves the frame: void, or a value that holds no
 // borrow, names no brand of the frame, and a Result holds.
@@ -348,6 +356,21 @@ template <int Nice, class... Refused, eff::IsExecCtx Ctx, class Body,
 void mint_priority(Ctx const&, Body&& body) = delete(
     "the result of a scheduling frame leaves the frame, so it holds no reference and no address, and it names no "
     "brand of the frame: the proof ends with the frame, so give a plain value");
+
+// A body that holds a linear value by value binds to these overloads, so the
+// refusal gives its reason.
+template <SchedulerPolicy_v Policy, std::uint8_t RtPriority = 0, std::uint64_t RuntimeNs = 0,
+          std::uint64_t DeadlineNs = 0, std::uint64_t PeriodNs = 0, class... Refused, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires CtxFitsSchedPolicyMint<Ctx, Policy> && (sizeof...(Refused) == 0)
+              && detail::SchedLinearFrameBody<Body, PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>
+void mint_scheduler_policy(Ctx const&, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+template <int Nice, class... Refused, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires CtxFitsPriorityMint<Ctx, Nice> && (sizeof...(Refused) == 0)
+              && detail::SchedLinearFrameBody<Body, SchedPriority<Nice>, Fresh>
+void mint_priority(Ctx const&, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // The door to the two scheduling proofs.  No object of it exists.  It is
 // the authority of the key that the constructor of SchedClass and of

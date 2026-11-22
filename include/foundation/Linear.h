@@ -206,6 +206,25 @@ inline constexpr bool is_linear_v = is_linear_type(^^T);
 template <class T>
 concept LinearValue = !std::is_reference_v<T> && !std::is_const_v<T> && is_linear_type(^^T);
 
+// The body of an element door or a frame door holds no linear value by
+// value.  The door calls the body, and a call is no consume, so a linear
+// capture would end with the body after the call, where no rule reads it.
+// The caller keeps the linear value as a local, and the body borrows it with
+// a capture by reference or takes it as a parameter.  Each such door has a
+// deleted twin that refuses a body that holds one.  A class with a trivial
+// copy constructor holds no linear value, because the copy of a linear value
+// is deleted, so the test reads that trait first and walks the members only
+// for each other class.
+template <class Body>
+concept HoldsNoLinearValue =
+    std::is_trivially_copy_constructible_v<std::remove_cvref_t<Body>> || !is_linear_type(^^std::remove_cvref_t<Body>);
+
+// The reason of the deleted twin of each element door and frame door, for a
+// body that holds a linear value (HoldsNoLinearValue).
+#define CRUCIBLE_LINEAR_BODY_REFUSAL                                                                                \
+    "the body holds a linear value by value, and the door calls it with no consume: keep the linear value a local " \
+    "of the caller, and let the body capture it by reference or take it as a parameter"
+
 // True when the class states its own end: it carries the annotation linear,
 // it is no sum, and no type argument of its template is linear.  A class
 // that is linear only by the values that it holds, such as a class with a

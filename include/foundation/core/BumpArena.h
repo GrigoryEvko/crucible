@@ -86,9 +86,11 @@ template <class T, class Marker>
 concept CanFillArenaArray = ViewElement<T> && !std::is_const_v<T> && std::is_trivially_destructible_v<T>
                          && std::is_nothrow_copy_constructible_v<T> && AllocationCapability<Marker>;
 
-// The body of an epoch: a call with no argument and no throw.
+// The body of an epoch: a call with no argument and no throw, of a callable
+// that holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h).
 template <class Body>
-concept EpochBody = std::is_nothrow_invocable_v<Body&&>;
+concept EpochBody = std::is_nothrow_invocable_v<Body&&> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 namespace detail {
 
@@ -254,6 +256,12 @@ public:
         "the result of an epoch holds no borrow, because the end of the epoch ends each byte that the arena gave out "
         "during the body: give a value with no reference and no address, or write a value that owns its storage to "
         "a variable that the body captures");
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason.
+    template <class Body>
+        requires std::is_invocable_v<Body&&> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_epoch(Body&&) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     template <class Body>
     void with_epoch(Body&&) && = delete("a temporary arena gives back its blocks at the end of the statement");

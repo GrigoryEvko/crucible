@@ -294,6 +294,7 @@ public:
     template <class Body>
         requires std::is_invocable_v<Body, ::foundation::core::View<T const>>
               && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body, ::foundation::core::View<T const>>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     constexpr std::invoke_result_t<Body, ::foundation::core::View<T const>> with_view(Body&& body) const
         noexcept(std::is_nothrow_invocable_v<Body, ::foundation::core::View<T const>>) {
         return static_cast<Body&&>(body)(run_);
@@ -308,6 +309,20 @@ public:
                                                "would outlive the share of the guard.  Give a value with no "
                                                "reference and no address");
 
+    // A body that holds a linear value by value binds to these overloads, so
+    // the refusal gives its reason.
+    template <class Body>
+        requires std::is_invocable_v<Body, ::foundation::core::View<T const>>
+                  && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body, ::foundation::core::View<T const>>>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_view(Body&& body) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+                  && (!::foundation::linear::HoldsNoLinearValue<OnSome>
+                      || !::foundation::linear::HoldsNoLinearValue<OnNone>)
+    void with_element(std::size_t position, OnSome&& on_some,
+                      OnNone&& on_none) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // The read door of one element: on_some gets the element at position for
     // the time of the call, and at or past size() on_none runs.  The two arms
     // give the same type, which holds no borrow.  No type holds the count of
@@ -317,6 +332,7 @@ public:
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
               && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<OnNone>>
+              && ::foundation::linear::HoldsNoLinearValue<OnSome> && ::foundation::linear::HoldsNoLinearValue<OnNone>
     constexpr std::invoke_result_t<OnNone> with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const
         noexcept(std::is_nothrow_invocable_v<OnSome, T const&> && std::is_nothrow_invocable_v<OnNone>) {
         if (position >= run_.size()) {

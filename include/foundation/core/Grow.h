@@ -473,11 +473,19 @@ public:
     // elements.
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
         return static_cast<Body&&>(body)(View<T const>{this->run_key_(), first_(), this->state_.count});
     }
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason.
+    template <class Body>
+        requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_view(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The lend of the elements to the frame door with_mut (THE LEND COUNT):
     // body gets the View of the elements, and the list lends its storage
@@ -512,7 +520,8 @@ public:
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
-              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
@@ -526,7 +535,8 @@ public:
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
-              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
@@ -537,6 +547,18 @@ public:
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
         return static_cast<OnSome&&>(on_some)(static_cast<T const*>(first_())[position]);
     }
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
+                  && (!::foundation::linear::HoldsNoLinearValue<OnSome>
+                      || !::foundation::linear::HoldsNoLinearValue<OnNone>)
+    void with_element(std::size_t position, OnSome&& on_some,
+                      OnNone&& on_none) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+                  && (!::foundation::linear::HoldsNoLinearValue<OnSome>
+                      || !::foundation::linear::HoldsNoLinearValue<OnNone>)
+    void with_element(std::size_t position, OnSome&& on_some,
+                      OnNone&& on_none) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class OnSome, class OnNone>
     void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) && =
         delete("a frame door of a temporary GrowList lends storage that the full expression frees");
@@ -597,6 +619,11 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
 void with_mut(Owner&& owner, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
+             && LinearFrameBody<Body, typename Owner::element_type, Fresh>
+void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A named list stays with the caller while the body runs, so the body could
 // append to it through a capture and move the storage of the ViewMut.  This
@@ -763,11 +790,16 @@ public:
     // returns.  The result of body holds no borrow.
     template <class Body>
         requires std::is_invocable_v<Body, TextView> && HoldsNoBorrow<std::invoke_result_t<Body, TextView>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, TextView>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, TextView>) {
         [[maybe_unused]] detail::OwnerLend const lend{state_.lend_count};
         return static_cast<Body&&>(body)(detail::text_over_(state_.first, state_.size));
     }
+    template <class Body>
+        requires std::is_invocable_v<Body, TextView> && HoldsNoBorrow<std::invoke_result_t<Body, TextView>>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_view(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A body whose result holds a borrow binds to this overload, so the
     // refusal gives its reason.

@@ -625,6 +625,7 @@ template <class T, class... Refused, std::size_t N, class Body,
          && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
          && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
          && core::FrameResult<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>
+         && ::foundation::linear::HoldsNoLinearValue<Body>
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
     WindowRefusal>
@@ -827,6 +828,7 @@ template <class T, class... Refused, std::size_t N, class Body,
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
          && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
          && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
+         && ::foundation::linear::HoldsNoLinearValue<Body>
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
 with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {
@@ -854,6 +856,12 @@ void with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const
 template <class T, class... Refused, std::size_t N, class Body>
 void with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) =
     delete("a ViewMut of a temporary block points into bytes that the full expression gives back: name the block");
+
+// A body that holds a linear value by value binds to this overload, for the
+// windows of a list and of a static count, so the refusal gives its reason.
+template <class T, class... Refused, class Windows, class Body>
+    requires(!::foundation::linear::HoldsNoLinearValue<Body>)
+void with_mut_windows(AlignedBytes& block, Windows const& windows, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── The keyed block ────────────────────────────────────────────────────────
 
@@ -925,15 +933,15 @@ namespace detail {
 // The body of a keyed frame of the windows of the form of a list: the body
 // of the door of a block, which reaches no key of the brand (THE GATE).
 template <class Body, class T, class Brand, class Fresh, std::size_t N>
-concept KeyedListedWindowBody =
-    std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
-    && core::FrameResult<listed_body_result_t<Body, T, Fresh, N>, Fresh> && core::ReachesNoLoanKey<Body, Brand>;
+concept KeyedListedWindowBody = std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
+                             && core::FrameResult<listed_body_result_t<Body, T, Fresh, N>, Fresh>
+                             && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 // The body of a keyed frame of a static count of windows.
 template <class Body, class T, class Brand, class Fresh, std::size_t N>
 concept KeyedFixedWindowBody = WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
                             && core::FrameResult<window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
-                            && core::ReachesNoLoanKey<Body, Brand>;
+                            && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 // The element of the windows of a keyed frame.
 template <class T, std::size_t N>
@@ -1025,5 +1033,14 @@ void with_mut_windows(KeyedBytes<Brand>& block, Key&& key, core::FixedArray<Byte
                       Body&& body) =
     delete("a body of a keyed frame reaches a LoanKey of the brand of its block, so code in the body could open a "
            "second frame of the windows: capture only what the body reads, and keep the key with the caller");
+
+// A body of a keyed frame of windows that reaches no key of the brand and
+// holds a linear value by value binds to this overload, so the refusal gives
+// its reason.
+template <class T, class... Refused, class Brand, class Key, class Windows, class Body>
+    requires std::is_same_v<std::remove_cvref_t<Key>, core::LoanKey<Brand>> && core::ReachesNoLoanKey<Body, Brand>
+              && (!::foundation::linear::HoldsNoLinearValue<Body>)
+void with_mut_windows(KeyedBytes<Brand>& block, Key&& key, Windows const& windows,
+                      Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation

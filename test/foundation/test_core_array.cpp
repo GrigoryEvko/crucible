@@ -4,6 +4,7 @@
 
 #include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/List.h>
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -36,6 +37,19 @@ struct NoDefault {
     int value;
     explicit NoDefault(int from) noexcept : value{from} {}
     [[nodiscard]] friend bool operator==(NoDefault, NoDefault) noexcept = default;
+};
+
+// A linear end, for the bodies of the element door and the frame door.
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] LinearEnd {
+    int handle = 0;
+    constexpr explicit LinearEnd(int value) noexcept : handle{value} {}
+    constexpr LinearEnd(LinearEnd&&) noexcept = default;
+    constexpr LinearEnd& operator=(LinearEnd&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    LinearEnd(LinearEnd const&) = delete("a linear end of the test does not copy");
+    LinearEnd& operator=(LinearEnd const&) = delete("a linear end of the test does not copy");
 };
 
 // The check of an index is a value exactly when the number is below the
@@ -148,6 +162,28 @@ void test_fixed_array_element_door_writes_in_place() {
     std::uint64_t const third = read.with_element(index<2>(), [](std::uint64_t const& word) noexcept { return word; });
     CRUCIBLE_TEST_ASSERT(kTest, steps == 1 && third == 20);
     CRUCIBLE_TEST_ASSERT(kTest, (words == FixedArray<std::uint64_t, 4>{2, 2, 20, 8}));
+}
+
+// A body of the element door and of the frame door reads a linear local of
+// the caller through a capture by const reference, and a body of the frame
+// door of a list of linear ends takes the ends as its parameter.  The linear
+// values stay with the caller, and the caller ends them after the doors.
+void test_doors_take_a_body_that_borrows_a_linear_value() {
+    LinearEnd end{5};
+    LinearEnd const& reader = end;
+    FixedArray<int, 2> counts{};
+    counts.with_element(index<0>(), [&reader](int& count) noexcept { count = reader.handle; });
+    int const size =
+        counts.with_mut([&reader](auto run) noexcept { return static_cast<int>(run.size()) + reader.handle; });
+    ::foundation::core::FixedList<LinearEnd, 1> ends;
+    static_cast<void>(ends.append(LinearEnd{2}).expect("the list has room"));
+    auto [first, back] = with_mut(std::move(ends), [](auto run) noexcept { return run.size() == 1 ? 1 : 0; });
+    CRUCIBLE_TEST_ASSERT(kTest, size == 7 && first == 1 && counts.at(index<0>()) == 5);
+    LinearEnd taken = back.take_last().expect("the list holds one end");
+    CRUCIBLE_TEST_ASSERT(kTest, taken.handle == 2);
+    ::foundation::linear::drop(std::move(taken));
+    std::move(back).expect_empty("the test took the end out of the list");
+    ::foundation::linear::drop(std::move(end));
 }
 
 void test_fixed_array_view_fill_and_copy() {
@@ -275,6 +311,7 @@ int main() {
     test_large_fixed_array_value_initializes();
     test_fixed_array_reads_at_proven_indexes();
     test_fixed_array_element_door_writes_in_place();
+    test_doors_take_a_body_that_borrows_a_linear_value();
     test_fixed_array_view_fill_and_copy();
     test_get_reads_below_the_count();
     test_fixed_array_of_a_type_with_no_default();

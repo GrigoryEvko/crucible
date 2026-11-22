@@ -247,6 +247,7 @@ struct read_view_door {
 template <typename Source, typename Body>
     requires ReadViewSource<Source> && ReadViewNeedsNoCtx<typename Source::tag_type>
           && ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>
+          && ::foundation::linear::HoldsNoLinearValue<Body>
 [[nodiscard]] constexpr auto with_read_view(Source&& source,
                                             Body&& body) noexcept(detail::read_view_door_nothrow_v<Source, Body>) {
     return detail::read_view_door::lend(std::move(source), std::forward<Body>(body));
@@ -264,6 +265,14 @@ template <typename Source, typename Body>
 constexpr void with_read_view(Source&&, Body&&) =
     delete("with_read_view lends its source to the body and hands the source back.  Pass the source with "
            "std::move, and keep the source that the call returns");
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+template <typename Source, typename Body>
+    requires ReadViewSource<Source> && ReadViewNeedsNoCtx<typename Source::tag_type>
+              && ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>
+              && (!::foundation::linear::HoldsNoLinearValue<Body>)
+constexpr void with_read_view(Source&&, Body&&) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── The view ─────────────────────────────────────────────────────────
 

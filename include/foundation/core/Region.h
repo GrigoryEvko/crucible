@@ -1208,19 +1208,30 @@ give_run_back_(Owner&& held, View<T, Extent> run, Body&& body) noexcept {
 
 }  // namespace detail
 
-// The body of a frame door of an owner whose elements are T: it takes the
-// ViewMut of the brand of the frame with no throw, and its result leaves the
-// frame (FrameResult of Choice.h).  Extent is the extent of the run of the
-// owner.
+// A callable that takes the ViewMut of the brand of the frame with no throw,
+// and whose result leaves the frame (FrameResult of Choice.h).
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
-concept FrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
-                 && FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
+concept FrameCallable = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
+                     && FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
+
+// The body of a frame door of an owner whose elements are T: a frame
+// callable that holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h).  Extent is the extent of the run of the owner.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept FrameBody = FrameCallable<Body, T, Brand, Extent> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 // A body whose result does not leave the frame: the refused twin of each
 // door binds to it.
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
 concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
-                        && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>);
+                        && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>)
+                        && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a frame door that holds a linear value by value: the linear
+// twin of each door binds to it.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept LinearFrameBody =
+    (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, ViewMut<T, Brand, Extent>>;
 
 // ── The reborrow ───────────────────────────────────────────────────────
 //
@@ -1269,6 +1280,10 @@ template <class T, class Brand, std::size_t Extent, class Body>
     requires RefusedFrameBody<Body, T, Brand, Extent>
 void reborrow(ViewMut<T, Brand, Extent>&&, Body&&) = delete(
     "the result of a reborrow leaves the frame: give a value with no reference, no address and no brand of the frame");
+
+template <class T, class Brand, std::size_t Extent, class Body>
+    requires LinearFrameBody<Body, T, Brand, Extent>
+void reborrow(ViewMut<T, Brand, Extent>&&, Body&&) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // A named ViewMut stays with the caller, so the ViewMut of the body would be
 // a second writer of its run.  A const ViewMut writes nothing.
