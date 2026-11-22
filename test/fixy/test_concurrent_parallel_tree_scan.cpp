@@ -104,6 +104,76 @@ void check_nan_scans(View<float const> all) noexcept {
     }
 }
 
+// The count of a run of two grains and one element, so two shards of the
+// scan each get the elements of one grain or more.
+constexpr std::size_t kTwoGrains = 2 * ::fixy::concurrent::parallel_tree_grain + 1;
+
+// THE INPUT OF A SCAN: a View of the run of out, shifted by one element,
+// shares elements with out at a shift.  With no test of the overlap, shard 0
+// reads in[16383], which is the element out[16384] that shard 1 writes.  So
+// the scan ends the process before a shard starts.
+void scan_shifted_input() {
+    tree::BgCtx const ctx{tree::eff::testing::bg()};
+    HeapArray<float> run = ::foundation::core::mint_heap_array(tree::test_alloc(), kTwoGrains, 0.0f);
+    run = ::foundation::core::with_mut(std::move(run), [&ctx](auto out) noexcept {
+        View<float const> const whole{out.view()};
+        View<float const> const in = whole.window(1, kTwoGrains - 1).expect("the input fits the run");
+        auto [head, tail] = ::foundation::core::split_at(std::move(out), kTwoGrains - 1).expect("the cut fits the run");
+        static_cast<void>(tail);
+        ::fixy::concurrent::scan_sums_in_parallel<spawn::BodyCoupling::WaitOnEachOther, 2>(
+            ctx, tree::test_alloc(), ::foundation::core::ScanKind::Inclusive, in, std::move(head));
+    });
+}
+
+// The control: the input can be the run of out, because each shard then reads
+// only the elements that it writes.  The scan in place gives the bits of the
+// scan of one thread into a run of its own.
+[[nodiscard]] bool scan_in_place_matches() {
+    tree::BgCtx const ctx{tree::eff::testing::bg()};
+    HeapArray<float> run = tree::draw_floats(kTwoGrains, 0x9A4A0008u);
+    HeapArray<float> single = ::foundation::core::mint_heap_array(tree::test_alloc(), kTwoGrains, 0.0f);
+    View<float const> const drawn{run.view()};
+    single = ::foundation::core::with_mut(std::move(single), [drawn](auto out) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::scan_inclusive_sums(drawn, std::move(out)).is_ok());
+    });
+    run = ::foundation::core::with_mut(std::move(run), [&ctx](auto out) noexcept {
+        View<float const> const in{out.view()};
+        ::fixy::concurrent::scan_sums_in_parallel<spawn::BodyCoupling::WaitOnEachOther, 2>(
+            ctx, tree::test_alloc(), ::foundation::core::ScanKind::Inclusive, in, std::move(out));
+    });
+    return tree::same_runs(View<float const>{run.view()}, View<float const>{single.view()});
+}
+
+// The type route: an input that is a ViewMut of another frame proves by its
+// brand that it shares no element with out (THE ALIAS PROOF of
+// foundation/core/Frame.h), so the scan makes no test of the overlap.  The
+// result has the bits of the scan of one thread.
+[[nodiscard]] bool scan_branded_input_matches() {
+    tree::BgCtx const ctx{tree::eff::testing::bg()};
+    HeapArray<float> source = tree::draw_floats(kTwoGrains, 0x9A4A0009u);
+    HeapArray<float> parallel = ::foundation::core::mint_heap_array(tree::test_alloc(), kTwoGrains, 0.0f);
+    HeapArray<float> single = ::foundation::core::mint_heap_array(tree::test_alloc(), kTwoGrains, 0.0f);
+    View<float const> const drawn{source.view()};
+    single = ::foundation::core::with_mut(std::move(single), [drawn](auto out) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::scan_inclusive_sums(drawn, std::move(out)).is_ok());
+    });
+    source = ::foundation::core::with_mut(std::move(source), [&ctx, &parallel](auto input) noexcept {
+        parallel = ::foundation::core::with_mut(std::move(parallel), [&ctx, &input](auto out) noexcept {
+            static_assert(::foundation::core::DisjointInput<decltype(input), typename decltype(out)::brand_type>);
+            ::fixy::concurrent::scan_sums_in_parallel<spawn::BodyCoupling::WaitOnEachOther, 2>(
+                ctx, tree::test_alloc(), ::foundation::core::ScanKind::Inclusive, input, std::move(out));
+        });
+    });
+    return tree::same_runs(View<float const>{parallel.view()}, View<float const>{single.view()});
+}
+
+void test_input_of_a_scan() {
+    constexpr ::fixy::TextView kRefusal{"a parallel scan got an input that shares elements with its output at a shift"};
+    ::fixy::check::expect_dies(kTest, scan_shifted_input, kRefusal);
+    CRUCIBLE_TEST_ASSERT(kTest, scan_in_place_matches());
+    CRUCIBLE_TEST_ASSERT(kTest, scan_branded_input_matches());
+}
+
 void test_nan_scans_are_canonical() {
     HeapArray<float> run = tree::draw_floats(tree::kLongest, 0x9A4A0006u);
     run = ::fixy::with_mut(std::move(run), [](auto elements) noexcept {
@@ -120,6 +190,7 @@ void test_nan_scans_are_canonical() {
 }  // namespace
 
 int main() {
+    test_input_of_a_scan();
     test_scans_on_each_thread_count();
     test_nan_scans_are_canonical();
     ::fixy::check::pass(kTest, "test_concurrent_parallel_tree_scan: all tests passed\n");

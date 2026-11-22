@@ -69,9 +69,33 @@ void test_segments_on_each_thread_count() {
     check_segments<spawn::BodyCoupling::Independent, 8>(all, stream);
 }
 
+// The sums are the first two elements of a run of four, and the elements are
+// the whole run.  With no test of the overlap, shard 0 reads the elements 0
+// and 1 for segment 0, and shard 1 writes the sum of segment 1 into element 1.
+// So the segmented sum ends the process before a shard starts.
+void sum_segments_into_elements() {
+    tree::BgCtx const ctx{tree::eff::testing::bg()};
+    HeapArray<std::size_t> const offsets = ::foundation::core::mint_heap_array_with<std::size_t>(
+        tree::test_alloc(), 3, [](std::size_t index) noexcept { return 2 * index; });
+    HeapArray<float> run = ::foundation::core::mint_heap_array(tree::test_alloc(), 4, 1.0f);
+    run = ::foundation::core::with_mut(std::move(run), [&ctx, &offsets](auto out) noexcept {
+        View<float const> const elements{out.view()};
+        auto [sums, rest] = ::foundation::core::split_at(std::move(out), 2).expect("the cut fits the run");
+        static_cast<void>(rest);
+        ::fixy::concurrent::sum_segments_by_tree_in_parallel<spawn::BodyCoupling::WaitOnEachOther, 2>(
+            ctx, elements, View<std::size_t const>{offsets.view()}, std::move(sums));
+    });
+}
+
+void test_elements_apart_from_sums() {
+    constexpr ::fixy::TextView kRefusal{"a parallel segmented sum got elements that share storage with its sums"};
+    ::fixy::check::expect_dies(kTest, sum_segments_into_elements, kRefusal);
+}
+
 }  // namespace
 
 int main() {
+    test_elements_apart_from_sums();
     test_segments_on_each_thread_count();
     ::fixy::check::pass(kTest, "test_concurrent_parallel_tree_segments: all tests passed\n");
     return 0;
