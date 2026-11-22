@@ -549,21 +549,22 @@ struct ExtractionResult {
     // The input tensors past MAX_INLINE_METAS, which the overflow digest of
     // entry_slots.h folds.
     InputOverflow overflow;
-    // False when an enumeration of a tensor names no crucible enumerator
-    // (fill_meta).  The fallback then records nothing.
-    bool is_each_enumeration_named = true;
+    // False when fill_meta refuses a tensor: its rank or an extent is past the
+    // bound of a meta, or an enumeration names no crucible enumerator.  The
+    // fallback then records nothing.
+    bool is_each_tensor_described = true;
 
     // One defined input tensor: a meta of the slots while they have room, and
     // a fold of the overflow digest after that.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction takes one tensor of PyTorch")
     void add_input(const at::Tensor& tensor, MetaSlots metas) {
         if (counts.inputs < MAX_INLINE_METAS) {
-            if (!fill_meta(inline_slot(metas, counts.inputs), tensor)) is_each_enumeration_named = false;
+            if (!fill_meta(inline_slot(metas, counts.inputs), tensor)) is_each_tensor_described = false;
             counts.inputs++;
             return;
         }
         crucible::TensorMeta meta{};
-        if (!fill_meta(meta, tensor)) is_each_enumeration_named = false;
+        if (!fill_meta(meta, tensor)) is_each_tensor_described = false;
         overflow.fold(meta);
     }
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -650,7 +651,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
             if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_enumeration_named = false;
+                if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_tensor_described = false;
                 counts.outputs++;
             }
         } else if (iv.isTensorList()) {
@@ -658,7 +659,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
             for (const auto ref : iv.toTensorList()) {
                 const at::Tensor t = ref;
                 if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                    if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_enumeration_named = false;
+                    if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_tensor_described = false;
                     counts.outputs++;
                 }
             }
@@ -721,10 +722,9 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     // -- Extract output tensor metadata -------------------------------
     extract_outputs(stack, schema.returns().size(), metas, extracted);
 
-    // A tensor whose element type, device or layout names no crucible
-    // enumerator has no meta, so the operation stays out of the ring.  It
-    // already ran eagerly above.
-    if (!extracted.is_each_enumeration_named) [[unlikely]]
+    // A tensor that fill_meta refuses has no meta, so the operation stays out
+    // of the ring.  It already ran eagerly above.
+    if (!extracted.is_each_tensor_described) [[unlikely]]
         return;
 
     // -- Build TraceRing::Entry ---------------------------------------

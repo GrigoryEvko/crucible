@@ -115,13 +115,29 @@ struct MetaCount {
 // the boxed fallback: a trace whose entries were filled by two spellings of
 // this would have a content hash that depends on which path recorded it.
 //
-// The result is false when the element type, the device or the layout of the
-// tensor names no crucible enumerator.  Each such field then holds its
-// default, and the caller records nothing for the operation.
+// The result is false when the meta cannot describe the tensor:
+//
+//   - the rank is more than kMaxTensorNDim, or a size or a stride below the
+//     rank is more than kMaxTensorDimExtent.  The meta is then the zero meta
+//   - the element type, the device or the layout names no crucible
+//     enumerator.  Each such field then holds its default.
+//
+// The caller then records nothing for the operation, and the operation runs
+// eagerly.  The rank and the extents come from PyTorch, so this function is
+// the boundary check of the record path for them.  It holds the claims of
+// decode_tensor_meta of crucible/TensorMeta.h for the rank and the extents.
+// Each test is one compare, once for each tensor or each dimension.
 //
 // The function reads the tensor through the API of PyTorch, so it is in an
 // ABI region.
 // =====================================================================
+
+// The answer of fill_meta for a tensor that a meta cannot describe: the zero
+// meta, and false.
+[[nodiscard]] CRUCIBLE_COLD inline bool refuse_tensor_meta(crucible::TensorMeta& meta) noexcept {
+    meta = {};
+    return false;
+}
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of PyTorch")
 [[nodiscard]] inline bool fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
@@ -134,31 +150,45 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
     // spelled 8, because every other reader of that array derives its bound
     // from the same constant and a literal here could drift from it. The
     // unboxed path does not check ndim at run time, so the assert below makes
-    // this ceiling pass the rank check of the trust ladder.
+    // the rank check of the trust ladder accept each rank that this function
+    // keeps, and refuse the first rank that it refuses.
     constexpr uint8_t kNDimCeiling = ::crucible::kMaxTensorNDim;
     static_assert(
         [] {
-            crucible::TensorMeta ceiling{};
-            ceiling.ndim = kNDimCeiling;
-            const ::fixy::FixedArray<crucible::TensorMeta, 1> ceiling_records{ceiling};
-            return crucible::vessel::metas_are_well_formed(ceiling_records.view());
+            const auto is_rank_well_formed = [](uint8_t rank) {
+                crucible::TensorMeta ceiling{};
+                ceiling.ndim = rank;
+                const ::fixy::FixedArray<crucible::TensorMeta, 1> ceiling_records{ceiling};
+                return crucible::vessel::metas_are_well_formed(ceiling_records.view());
+            };
+            return is_rank_well_formed(kNDimCeiling) && !is_rank_well_formed(static_cast<uint8_t>(kNDimCeiling + 1));
         }(),
-        "fill_meta clamps the rank to a value the trust ladder rejects, and the unboxed path relies on the clamp");
-    // The clamp has two sides, so the rank is a lane count from 0 to 8 for
-    // each value of dim(), and each lane index below it is below 8.
-    const auto ndim = static_cast<uint8_t>(
-        ::fixy::clamp(tensor.dim(), ::fixy::bounds<int64_t{0}, static_cast<int64_t>(kNDimCeiling)>()));
+        "fill_meta refuses each rank above the rank bound of the trust ladder, and the unboxed path relies on it");
+    // The test has two sides, so the rank is a lane count from 0 to 8, and
+    // each lane index below it is below 8.
+    const int64_t rank = tensor.dim();
+    if (rank < 0 || rank > int64_t{kNDimCeiling}) [[unlikely]]
+        return refuse_tensor_meta(meta);
+    const auto ndim = static_cast<uint8_t>(rank);
     meta.ndim = ndim;
 
     const auto sizes = tensor.sizes();
-    for (uint8_t d = 0; d < ndim; d++)
-        meta.sizes[d] = ::crucible::tensor_dim(sizes[d]);
+    for (uint8_t d = 0; d < ndim; d++) {
+        const int64_t size = sizes[d];
+        if (size > ::crucible::kMaxTensorDimExtent) [[unlikely]]
+            return refuse_tensor_meta(meta);
+        meta.sizes[d] = ::crucible::tensor_dim(size);
+    }
 
     const bool strided = (tensor.layout() == c10::Layout::Strided);
     if (strided) {
         const auto strides = tensor.strides();
-        for (uint8_t d = 0; d < ndim; d++)
-            meta.strides[d] = ::crucible::tensor_dim(strides[d]);
+        for (uint8_t d = 0; d < ndim; d++) {
+            const int64_t stride = strides[d];
+            if (stride > ::crucible::kMaxTensorDimExtent) [[unlikely]]
+                return refuse_tensor_meta(meta);
+            meta.strides[d] = ::crucible::tensor_dim(stride);
+        }
         // The storage address crosses the ATen boundary here, so it enters as
         // source::External: hashed and compared as an opaque cookie, never
         // dereferenced, until some later validator retags it.
@@ -882,9 +912,10 @@ struct Recording {
     MetaCount counts{};
     ScalarArgs<MayOverflow> scalars{};
     [[no_unique_address]] typename input_overflow_of<MayOverflow>::type overflow{};
-    // False when an enumeration of a recorded tensor names no crucible
+    // False when fill_meta refuses a recorded tensor: its rank or an extent
+    // is past the bound of a meta, or an enumeration names no crucible
     // enumerator.  append_trace_entry then records nothing.
-    bool is_each_enumeration_named = true;
+    bool is_each_tensor_described = true;
 
     // The three helpers below are always inline, so the optimizer sees each
     // read of the counts, and each check of an index or a window folds.
@@ -936,7 +967,7 @@ struct Recording {
         if (tensor.defined() && counts.inputs < Capacity) {
             if (!with_slot(counts.inputs,
                            [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
-                is_each_enumeration_named = false;
+                is_each_tensor_described = false;
             }
             counts.inputs++;
         } else if constexpr (MayOverflow) {
@@ -944,14 +975,13 @@ struct Recording {
         }
     }
 
-    // An input past Capacity, which the overflow digest folds.  Its
-    // enumerations must name crucible enumerators, as those of an inline
-    // input must.
+    // An input past Capacity, which the overflow digest folds.  fill_meta
+    // must describe it, as it must describe an inline input.
     [[gnu::noinline]] void add_overflow_input(const at::Tensor& tensor)
         requires MayOverflow
     {
         crucible::TensorMeta meta{};
-        if (!fill_meta(meta, tensor)) is_each_enumeration_named = false;
+        if (!fill_meta(meta, tensor)) is_each_tensor_described = false;
         overflow.fold(meta);
     }
 
@@ -961,7 +991,7 @@ struct Recording {
         if (tensor.defined() && counts.total() < Capacity) {
             if (!with_slot(counts.total(),
                            [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
-                is_each_enumeration_named = false;
+                is_each_tensor_described = false;
             }
             counts.outputs++;
         }
@@ -1271,11 +1301,10 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, S
                                           crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                           crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    // A tensor whose element type, device or layout names no crucible
-    // enumerator has no meta, so the operation stays out of the ring, as an
-    // operation that the trust ladder refuses.  This is the enumerator part of
-    // the ladder on this path.
-    if (!recording.is_each_enumeration_named) [[unlikely]]
+    // A tensor that fill_meta refuses has no meta, so the operation stays out
+    // of the ring, as an operation that the trust ladder refuses.  This is the
+    // rank part and the enumerator part of the ladder on this path.
+    if (!recording.is_each_tensor_described) [[unlikely]]
         return;
 
     crucible::TraceRing::Entry entry{};
@@ -1298,8 +1327,9 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, S
 
     // The trust ladder, discharged at compile time. Every bound it checks has
     // a compile-time ceiling on this path, and RecordKernel asserts that
-    // entry_is_well_formed accepts the entry built at that ceiling. The rank
-    // clamp in fill_meta asserts the same for metas_are_well_formed. The
+    // entry_is_well_formed accepts the entry built at that ceiling. fill_meta
+    // refuses each rank above the ceiling of metas_are_well_formed, and it
+    // asserts that the ladder accepts each rank that it keeps. The
     // enumerators of each meta came through the decoders, and the check at
     // the start of this function refused each other meta. The runtime walk
     // could therefore reject nothing here. The boxed fallback and the C ABI
