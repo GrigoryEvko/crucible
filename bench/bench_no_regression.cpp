@@ -333,6 +333,14 @@ void run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::View<
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+namespace {
+
+// The count of the workers of the forced arm.
+struct ForcedWorkersTag final {};
+using ForcedWorkers = ::fixy::Id<ForcedWorkersTag, std::size_t>;
+
+}  // namespace
+
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the forced arm is the naive baseline of one std::jthread for each worker")
 namespace {
 
@@ -341,8 +349,9 @@ namespace {
 // 1, as the threads of the rule arm take them.  With no claim each worker
 // keeps the affinity of the process.  ROWS is the run of the rows of the
 // product in the frame of measure_once.
-void run_forced_parallel(WorkloadInputs const& inputs, std::size_t forced_workers, ::fixy::View<ProductRow> rows,
-                         Sink& sink, bench::CpuTally& tally, bench::Cores const& cores) {
+void run_forced_parallel(WorkloadInputs const& inputs, ForcedWorkers workers, ::fixy::View<ProductRow> rows, Sink& sink,
+                         bench::CpuTally& tally, bench::Cores const& cores) {
+    const std::size_t forced_workers = workers.raw();
     ProductRow* const product = ::foundation::core::foreign_first(rows);
     const std::size_t worker_cores = cores.count() >= 2 ? cores.count() - 1 : 0;
     std::vector<std::jthread> threads(forced_workers);
@@ -501,7 +510,7 @@ namespace {
     bench::CpuTally tally{};
     WorkloadInputs const& inputs = w.inputs;
     fc::WorkBudget const budget = w.budget;
-    std::size_t const forced_workers = w.forced_workers;
+    ForcedWorkers const workers{w.forced_workers};
     bench::Report report{};
     // One frame of the rows of the product holds the whole measure, outside
     // its timed region.  The threads of an arm write the rows at the same
@@ -510,7 +519,7 @@ namespace {
     // each arm orders their writes before the next sample and the end of the
     // frame.
     w.product = ::fixy::with_mut(std::move(w.product), [&run, &report, &tally, &pieces, &cores, &inputs, budget,
-                                                        forced_workers, samples, strategy](auto rows) noexcept {
+                                                        workers, samples, strategy](auto rows) noexcept {
         ::fixy::View<ProductRow> const product = rows.view();
         report = run.samples(samples)
                      .warmup(::fixy::max(std::size_t{2}, samples / 6))
@@ -527,7 +536,7 @@ namespace {
                                  run_rule(inputs, budget, product, sink, pieces, tally, cores);
                                  break;
                              case Strategy::ForcedParallel:
-                                 run_forced_parallel(inputs, forced_workers, product, sink, tally, cores);
+                                 run_forced_parallel(inputs, workers, product, sink, tally, cores);
                                  break;
                              default:
                                  break;

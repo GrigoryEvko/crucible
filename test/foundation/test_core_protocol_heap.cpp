@@ -87,10 +87,13 @@ constexpr Budget kWideBudget{std::size_t{1} << 20};
     return freeze(std::move(grown));
 }
 
+// The offset of a byte in an image.
+using ByteOffset = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
+
 // Writes byte at an offset of an image.
-void put_byte(Bytes& image, std::size_t offset, std::byte byte) noexcept {
+void put_byte(Bytes& image, ByteOffset offset, std::byte byte) noexcept {
     image.with_element(
-        offset, [byte](std::byte& held) noexcept { held = byte; },
+        offset.raw(), [byte](std::byte& held) noexcept { held = byte; },
         [] noexcept { ::foundation::core::fatal("the offset is inside the image"); });
 }
 
@@ -282,17 +285,17 @@ void test_heap_decode_refuses_each_fault() {
     CRUCIBLE_FATAL_INVARIANT((fault_of(longer_read.view()) == DecodeFault{DecodeRefusal::trailing_byte, 39}));
 
     Bytes huge_count = image_of(sample_message());
-    put_byte(huge_count, 9, std::byte{0x01});
+    put_byte(huge_count, ByteOffset{9}, std::byte{0x01});
     Bytes const& huge_read = huge_count;
     CRUCIBLE_FATAL_INVARIANT((fault_of(huge_read.view()) == DecodeFault{DecodeRefusal::image_end, 4}));
 
     Bytes bad_kind = image_of(sample_message());
-    put_byte(bad_kind, 38, std::byte{3});
+    put_byte(bad_kind, ByteOffset{38}, std::byte{3});
     Bytes const& kind_read = bad_kind;
     CRUCIBLE_FATAL_INVARIANT((fault_of(kind_read.view()) == DecodeFault{DecodeRefusal::enumerator, 38}));
 
     Bytes bad_flag = image_of(sample_message());
-    put_byte(bad_flag, 37, std::byte{2});
+    put_byte(bad_flag, ByteOffset{37}, std::byte{2});
     Bytes const& flag_read = bad_flag;
     CRUCIBLE_FATAL_INVARIANT((fault_of(flag_read.view()) == DecodeFault{DecodeRefusal::bool_byte, 37}));
 }
@@ -615,14 +618,14 @@ void test_heap_decode_charges_the_rounded_storage() {
 // one byte when the budget holds them.
 void test_heap_decode_refuses_a_hostile_count() {
     Bytes hostile = mint_heap_array_zeroed<std::byte>(test_alloc(), 8 + (std::size_t{1} << 23));
-    put_byte(hostile, 2, std::byte{0x80});
+    put_byte(hostile, ByteOffset{2}, std::byte{0x80});
     Bytes const& read = hostile;
     CRUCIBLE_FATAL_INVARIANT((fault_with<CachedList>(Budget{std::size_t{1} << 30}, read.view())
                               == DecodeFault{DecodeRefusal::allocation_budget, 0}));
 
     Bytes single = mint_heap_array_zeroed<std::byte>(test_alloc(), 9);
-    put_byte(single, 0, std::byte{1});
-    put_byte(single, 8, std::byte{0x5A});
+    put_byte(single, ByteOffset{0}, std::byte{1});
+    put_byte(single, ByteOffset{8}, std::byte{0x5A});
     Bytes const& single_read = single;
     Budget const storage{sizeof(Cached)};
     bool const is_taken =

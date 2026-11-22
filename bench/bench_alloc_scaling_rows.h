@@ -2124,8 +2124,8 @@ struct RoundWorkload {
     // so no two threads write one element, and the join of the round orders
     // its writes before the next round.
     template <class Body>
-    static void with_bank_of(Shared& shared, std::uint64_t bank, std::uint32_t slot, Body&& body) noexcept {
-        shared.banks.with_element(bank * shared.threads.raw() + slot, static_cast<Body&&>(body),
+    static void with_bank_of(Shared& shared, ::fixy::Index<2> bank, bench::ThreadSlot slot, Body&& body) noexcept {
+        shared.banks.with_element(bank.raw() * shared.threads.raw() + slot.raw(), static_cast<Body&&>(body),
                                   [] noexcept { ::fixy::fatal("a bank holds each slot"); });
     }
 
@@ -2143,7 +2143,9 @@ struct RoundWorkload {
         Blocks local{};
         if constexpr (Kind == RowKind::mstress) {
             std::uint32_t const from = static_cast<std::uint32_t>((slot.raw() + shared.round) % shared.threads.raw());
-            with_bank_of(shared, (shared.round + 1) % 2, from, [&tally](Blocks& taken) noexcept {
+            const ::fixy::Index<2> taken_bank =
+                ::fixy::Index<2>::check((shared.round + 1) % 2).expect("a round modulo two is below two");
+            with_bank_of(shared, taken_bank, bench::ThreadSlot{from}, [&tally](Blocks& taken) noexcept {
                 taken.with_mut([&tally](auto run) noexcept {
                     for (::fixy::Option<Block>& held : run) {
                         if (held.is_some())
@@ -2162,7 +2164,9 @@ struct RoundWorkload {
                 });
         }
         if constexpr (Kind == RowKind::mstress) {
-            with_bank_of(shared, shared.round % 2, slot.raw(), [&local](Blocks& given) noexcept {
+            const ::fixy::Index<2> given_bank =
+                ::fixy::Index<2>::check(shared.round % 2).expect("a round modulo two is below two");
+            with_bank_of(shared, given_bank, slot, [&local](Blocks& given) noexcept {
                 given.with_mut([&local](auto given_run) noexcept {
                     local.with_mut([&given_run](auto local_run) noexcept {
                         for (::fixy::Index<kSlots> const position : ::fixy::IndexRange<kSlots>{})

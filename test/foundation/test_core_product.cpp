@@ -358,7 +358,8 @@ void test_the_hard_cases_are_inside_the_bound() {
             right.values = with_mut(std::move(right.values), [&](auto right_run) noexcept {
                 auto const term_at = [](auto& run, ::crucible::test::MatrixPlace const& place, std::size_t row,
                                         std::size_t column) noexcept -> T& {
-                    return *run.get(::crucible::test::position_in(place, row, column))
+                    return *run.get(::crucible::test::position_in(place, ::crucible::test::MatrixRow{row},
+                                                                  ::crucible::test::MatrixColumn{column}))
                                 .expect("a test reads an element at or past the count of its View");
                 };
                 for (std::size_t inner = 0; inner < depth; ++inner) {

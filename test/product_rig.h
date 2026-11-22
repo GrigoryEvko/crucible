@@ -87,9 +87,15 @@ struct MatrixPlace {
     return place;
 }
 
+// The row and the column of an element of a matrix.
+struct MatrixRowTag final {};
+struct MatrixColumnTag final {};
+using MatrixRow = ::fixy::Id<MatrixRowTag, std::size_t>;
+using MatrixColumn = ::fixy::Id<MatrixColumnTag, std::size_t>;
+
 // The position of the element (row, column) in the array of the place.
-[[nodiscard]] inline std::size_t position_in(MatrixPlace const& place, std::size_t row, std::size_t column) noexcept {
-    return place.offset + row * place.row_stride + column * place.column_stride;
+[[nodiscard]] inline std::size_t position_in(MatrixPlace const& place, MatrixRow row, MatrixColumn column) noexcept {
+    return place.offset + row.raw() * place.row_stride + column.raw() * place.column_stride;
 }
 
 // A matrix of T in an array of its own.
@@ -100,7 +106,7 @@ struct Matrix {
     ::fixy::HeapArray<T> values;
 
     [[nodiscard]] std::size_t position(std::size_t row, std::size_t column) const noexcept {
-        return position_in(place, row, column);
+        return position_in(place, MatrixRow{row}, MatrixColumn{column});
     }
     [[nodiscard]] T at(std::size_t row, std::size_t column) const noexcept {
         return *values.view()
@@ -130,7 +136,7 @@ void edit_matrix(Matrix<T>& matrix, Edit const& edit) noexcept {
         for (std::size_t row = 0; row < shape.rows; ++row) {
             for (std::size_t column = 0; column < shape.columns; ++column) {
                 edit(row, column,
-                     *run.get(position_in(place, row, column))
+                     *run.get(position_in(place, MatrixRow{row}, MatrixColumn{column}))
                           .expect("a test reads an element at or past the count of its View"));
             }
         }
