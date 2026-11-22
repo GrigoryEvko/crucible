@@ -9,7 +9,8 @@ make sure that a linked work tree of a planted repository finds the lock of
 the main work tree.  They also make sure that the lock is exclusive while a
 step holds it.  A session of the gate must let a step of the gate go first.
 A different step must wait for the session, also when it gets the lock after
-the session starts.
+the session starts.  The check of a thread that waits for a lock must see
+the thread in each read while other processes take and free many locks.
 
 The cases of the pool use a planted pool.  A lease must keep its cap, take
 only free slots, grow while its job uses each slot, and give idle slots
@@ -23,6 +24,7 @@ must start and grow only into the room below the runnable limit of its pool.
 import contextlib
 import fcntl
 import os
+import platform
 import signal
 import sys
 import tempfile
@@ -35,8 +37,29 @@ from typing import IO
 from assay.core import git, jobserver, paths, proc, testing
 from assay.loop import heavy
 
-# The table of the locks of the kernel (has_waiter()).
-LOCKS_FILE = Path("/proc/locks")
+# The threads and the open descriptors of this process (has_waiter()).  The file `syscall` of a thread gives the number
+# and the arguments of the system call in which the thread waits.
+TASKS_DIRECTORY = Path("/proc/self/task")
+DESCRIPTORS_DIRECTORY = Path("/proc/self/fd")
+# The number of the system call flock(2) on each machine of the platform (has_waiter()).
+FLOCK_CALLS = {"x86_64": 73, "aarch64": 32}
+# The processes of churn_cases() that take and free locks, the files of each one, and the reads of the case.  With
+# these counts, a check that reads /proc/locks missed the waiter in 110 to 158 of 1000 reads, in each of 12 runs.
+CHURN_PROCESSES = 4
+CHURN_FILES = 100
+CHURN_READS = 1000
+# A process that opens its files, marks that it is ready, and then takes and frees the lock of each file.  It stops
+# when the case stops it, or when its parent ends and a different process becomes its parent.
+CHURNER = """import fcntl, os, pathlib, sys
+directory = pathlib.Path(sys.argv[1])
+handles = [open(directory / f"{sys.argv[2]}-{index}", "a") for index in range(int(sys.argv[3]))]
+(directory / f"{sys.argv[2]}.ready").touch()
+while os.getppid() == int(sys.argv[4]):
+    for handle in handles:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+    for handle in handles:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+"""
 # The available memory of a lease of a case, which holds each job.
 MUCH_MEMORY_GB = 1e6
 # The most time that a step of the case of the fair share waits for a state of the pool.  It is only the guard against
@@ -222,19 +245,80 @@ def wait_for_lock(condition: Callable[[], bool]) -> bool:
 
 
 def has_waiter(path: Path) -> bool:
-    """Tell if a request of flock(2) on a file waits in the kernel, from the blocked rows of /proc/locks.
+    """Tell if a thread of this process waits in flock(2) on a file, from the system call of each thread.
 
-    A blocked request is a row with the second word "->".  Its seventh word names the device and the inode of the
-    file.  A step that waits in the kernel cannot enter its block until the holder frees the lock.  The check then
-    proves a wait with no sleep.  Complexity: O(rows of /proc/locks).
+    The file `syscall` of a thread that blocks in a system call gives the number of the call and its arguments.  The
+    first argument of flock(2) is the descriptor, and the second one is the operation.  A thread waits on the file when
+    it is in flock(2) with no LOCK_NB, and its descriptor names the device and the inode of the file.  The case holds a
+    lock that conflicts, so the thread cannot leave the call, and the answer stays True until the case frees the lock.
+    The check then proves a wait with no sleep.
+
+    The check does not read /proc/locks.  The kernel gives that table in pieces of one page, and a different process can
+    take or free a lock between two pieces.  The read then can miss the row of a waiter (churn_cases()).
+    Complexity: O(threads of this process).
     """
-    inode = f":{path.stat().st_ino}"
-    with open(LOCKS_FILE, encoding="ascii") as rows:
-        for row in rows:
-            words = row.split()
-            if len(words) > 6 and words[1] == "->" and words[6].endswith(inode):
-                return True
+    target = path.stat()
+    number = str(FLOCK_CALLS[platform.machine()])
+    for task in TASKS_DIRECTORY.iterdir():
+        try:
+            words = (task / "syscall").read_text(encoding="ascii").split()
+        except FileNotFoundError, ProcessLookupError:
+            continue
+        if len(words) < 3 or words[0] != number or int(words[2], 16) & fcntl.LOCK_NB:
+            continue
+        try:
+            found = (DESCRIPTORS_DIRECTORY / str(int(words[1], 16))).stat()
+        except FileNotFoundError:
+            continue
+        if (found.st_dev, found.st_ino) == (target.st_dev, target.st_ino):
+            return True
     return False
+
+
+def churn_cases(expect: testing.Expect) -> None:
+    """Hold has_waiter() while other processes take and free many locks: each read sees the waiter.
+
+    The case holds an exclusive lock of a file, and a thread waits for the same lock.  CHURN_PROCESSES processes take
+    and free the locks of CHURN_FILES files each, so the table of the locks of the kernel spans many pages and changes
+    between two pieces of a read.  A parallel run of the suite gives the same churn.
+    """
+    with tempfile.TemporaryDirectory(prefix="heavy-churn-") as work_text:
+        work = Path(work_text)
+        target = work / "target.lock"
+        names = [f"churn{index}" for index in range(CHURN_PROCESSES)]
+        churners: list[proc.Running] = []
+        try:
+            for name in names:
+                words = [str(work), name, str(CHURN_FILES), str(os.getpid())]
+                command = proc.Command([sys.executable, "-S", "-B", "-c", CHURNER, *words], timeout_s=proc.QUICK_S)
+                churners.append(proc.start(command))
+            with open(target, "a", encoding="ascii") as holder, open(target, "a", encoding="ascii") as waiter_file:
+                # The kernel keeps a list of the locks of each CPU, and /proc/locks gives the lists in the sequence of
+                # the CPUs.  The lock of the holder goes into the list of the last CPU that this thread can use.  Each
+                # lock that a churner frees then moves the row of the holder, and a read of /proc/locks can miss it.
+                allowed = os.sched_getaffinity(0)
+                os.sched_setaffinity(0, {max(allowed)})
+                try:
+                    fcntl.flock(holder, fcntl.LOCK_EX)
+                finally:
+                    os.sched_setaffinity(0, allowed)
+                waiter = threading.Thread(target=fcntl.flock, args=(waiter_file, fcntl.LOCK_EX), daemon=True)
+                waiter.start()
+                is_waiting = wait_for_lock(lambda: has_waiter(target))
+                is_churning = testing.wait_until(lambda: all((work / f"{name}.ready").is_file() for name in names))
+                seen = sum(has_waiter(target) for _ in range(CHURN_READS))
+                fcntl.flock(holder, fcntl.LOCK_UN)
+                waiter.join(10.0)
+                is_free_after = not has_waiter(target)
+        finally:
+            for churner in churners:
+                churner.stop()
+    expect(
+        f"a thread that waits for a lock shows in each of {CHURN_READS} reads while {CHURN_PROCESSES} processes take "
+        f"and free {CHURN_FILES} locks each, and it is gone after the lock is free: waiting {is_waiting}, churning "
+        f"{is_churning}, seen in {seen} reads, gone {is_free_after}",
+        is_waiting and is_churning and seen == CHURN_READS and is_free_after,
+    )
 
 
 def gate_cases(expect: testing.Expect) -> None:
@@ -932,6 +1016,7 @@ def main(argv: list[str]) -> int:
             step_cases,
             lock_cases,
             gate_cases,
+            churn_cases,
             exit_cases,
             lease_cases,
             kill_cases,
