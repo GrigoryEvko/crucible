@@ -322,6 +322,16 @@
       "constructor": "\\bEnumerateCursor\\("
     },
     {
+      "name": "neg_witness_core_detail_enumeratestage_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bEnumerateStage\\("
+    },
+    {
+      "name": "neg_witness_core_detail_filterstage_cursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCursor\\("
+    },
+    {
       "name": "neg_witness_core_detail_framekey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bFrameKey\\("
@@ -337,6 +347,16 @@
       "constructor": "\\bHoleKey\\("
     },
     {
+      "name": "neg_witness_core_detail_limitstage_cursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCursor\\("
+    },
+    {
+      "name": "neg_witness_core_detail_mapstage_cursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCursor\\("
+    },
+    {
       "name": "neg_witness_core_detail_refkey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bRefKey\\("
@@ -350,6 +370,11 @@
       "name": "neg_witness_core_detail_runaddresskey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bRunAddressKey\\("
+    },
+    {
+      "name": "neg_witness_core_detail_stagekey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStageKey\\("
     },
     {
       "name": "neg_witness_core_detail_stridedindexcursor_direct_construction",
@@ -385,6 +410,16 @@
       "name": "neg_witness_core_detail_windowcursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bWindowCursor\\("
+    },
+    {
+      "name": "neg_witness_core_detail_zipstage_cursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCursor\\("
+    },
+    {
+      "name": "neg_witness_core_detail_zipstage_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bZipStage\\("
     },
     {
       "name": "neg_witness_core_fixedheaparray_direct_construction",
@@ -1960,6 +1995,34 @@
     },
     {
       "type": "foundation::core::detail::EnumerateCursor<int, 4, forge::brand>",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::detail::EnumerateStage<int, 4, forge::brand, 4>",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::detail::StageKey",
+      "header": "foundation/core/Walk.h"
+    },
+    {
+      "type": "foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 4>, foundation::core::detail::ViewStage<int, 4>, forge::brand>",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 4>, foundation::core::detail::ViewStage<int, 4>, forge::brand>::Cursor",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::detail::MapStage<foundation::core::detail::ViewStage<int, 4>, int (*)(int&)>::Cursor",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::detail::FilterStage<foundation::core::detail::ViewStage<int, 4>, bool (*)(int const&)>::Cursor",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::detail::LimitStage<foundation::core::detail::FilterStage<foundation::core::detail::ViewStage<int, 4>, bool (*)(int const&)>>::Cursor",
       "header": "foundation/core/Region.h"
     },
     {

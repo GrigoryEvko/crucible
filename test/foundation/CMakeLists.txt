@@ -4621,25 +4621,25 @@ foundation_neg_compile_test(neg_core_walk_enumerate_stage_extent_forged
   "no matching function for call to .foundation::core::detail::EnumerateStage<const int, 4, .*, 18446744073709551615>::EnumerateStage"
   "count_forged")
 foundation_neg_compile_test(neg_core_walk_view_stage_at_forged
-  "ViewStage<T, Extent>::at_\\(std::size_t\\) const.*is private within this context"
+  "foundation::core::detail::StageKey::StageKey\\(\\). is private within this context"
   "read_past")
 foundation_neg_compile_test(neg_core_walk_reverse_stage_at_forged
-  "ReverseStage<Element>::at_\\(std::size_t\\) const.*is private within this context"
+  "foundation::core::detail::StageKey::StageKey\\(\\). is private within this context"
   "read_past")
 foundation_neg_compile_test(neg_core_walk_window_stage_at_forged
-  "WindowStage<Element, Width>::at_\\(std::size_t\\) const.*is private within this context"
+  "foundation::core::detail::StageKey::StageKey\\(\\). is private within this context"
   "read_past")
 foundation_neg_compile_test(neg_core_walk_chunk_stage_at_forged
-  "ChunkStage<Element, Width>::at_\\(std::size_t\\) const.*is private within this context"
+  "foundation::core::detail::StageKey::StageKey\\(\\). is private within this context"
   "read_past")
 foundation_neg_compile_test(neg_core_walk_enumerate_stage_at_forged
-  "EnumerateStage<Element, Count, Brand, Extent>::at_\\(std::size_t\\) const.*is private within this context"
+  "foundation::core::detail::StageKey::StageKey\\(\\). is private within this context"
   "read_past")
 foundation_neg_compile_test(neg_core_walk_map_stage_at_forged
-  "MapStage<Inner, Fn>::at_\\(std::size_t\\) const.*is private within this context"
+  "foundation::core::detail::StageKey::StageKey\\(\\). is private within this context"
   "read_past")
 foundation_neg_compile_test(neg_core_walk_zip_stage_at_forged
-  "ZipStage<First, Second, Brand>::at_\\(std::size_t\\) const.*is private within this context"
+  "foundation::core::detail::StageKey::StageKey\\(\\). is private within this context"
   "read_past")
 foundation_neg_compile_test(neg_core_walk_zip_stage_counts_forged
   "ZipStage<First, Second, Brand>::ZipStage\\(First, Second\\).*is private within this context"

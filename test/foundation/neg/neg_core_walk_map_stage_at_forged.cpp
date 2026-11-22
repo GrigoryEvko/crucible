@@ -1,9 +1,9 @@
 // The type of the stage of a map is a part of the type of its walk, so a
 // caller deduces it, and the stage has a public constructor from an inner
-// stage and a function.  at_(position) of a map gives the position to the
-// inner stage with no bound of its own, so a position past the View would
-// read past it.  at_ is private: only a map and a zip call it, at a position
-// below size_() that they prove.
+// stage and a function.  at_(key, position) of a map gives the position to
+// the inner stage with no bound of its own, so a position past the View
+// would read past it.  Only a map and a zip build the key, and each proves
+// the position below size_().
 
 #include <foundation/core/Array.h>
 
@@ -27,7 +27,7 @@ using Root = decltype(stage_of(values.view().walk()));
 using Stage = decltype(stage_of(values.view().walk().map(Twice{})));
 
 [[nodiscard]] static int read_past(std::size_t position) noexcept {
-    return Stage{Root{values.view()}, Twice{}}.at_(position);
+    return Stage{Root{values.view()}, Twice{}}.at_(fc::detail::StageKey{}, position);
 }
 
 int main() { return read_past(std::size_t{100}); }

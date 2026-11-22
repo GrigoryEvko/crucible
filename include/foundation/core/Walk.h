@@ -98,10 +98,10 @@
 //   A stage type is a part of the type of its walk, so a caller can deduce
 //   it.  Thus each public constructor of a stage takes parts whose types
 //   prove the invariant of the stage: a View, an inner stage, a function or a
-//   count that only limits.  at_(position) reads no bound of its own, because
-//   its caller proves the position below size_().  So at_ is private, and
-//   only the map and the zip stages, which a friend line of each stage names,
-//   call it.  A zip reads its two stages at one position, so only a walk
+//   count that only limits.  at_(key, position) reads no bound of its own,
+//   because its caller proves the position below size_().  So at_ takes the
+//   key StageKey, which only the map and the zip stages build.  A zip reads
+//   its two stages at one position, so only a walk
 //   builds a zip: zip proves the two counts equal in the type, and try_zip
 //   compares them.  A cursor of an adapter holds the address of its stage,
 //   so only its stage builds it.
@@ -172,6 +172,29 @@ concept CursorStage = requires(Stage const& stage) {
     stage.end_();
 };
 
+template <class Inner, class Fn>
+class MapStage;
+template <class First, class Second, class Brand>
+class ZipStage;
+
+// The key of at_(key, position) of each stage (THE STAGES).  at_ reads no
+// bound of its own, so only the map and the zip stages, which prove the
+// position below size_(), build the key.  The friends are in this header,
+// and the root stages of foundation/core/Region.h take the key with no
+// friend line of their own.
+class [[nodiscard]] StageKey final {
+    template <class Inner, class Fn>
+    friend class MapStage;
+    template <class First, class Second, class Brand>
+    friend class ZipStage;
+
+    constexpr StageKey() noexcept {}
+    constexpr StageKey(StageKey const&) noexcept {}
+
+public:
+    StageKey& operator=(StageKey const&) = delete("a key of a stage lives for one read");
+};
+
 // The elements of Inner through fn.  An exact Inner gives an exact stage.
 template <class Inner, class Fn>
 class MapStage final {
@@ -180,27 +203,20 @@ class MapStage final {
 
     using InnerElement = typename Inner::element_reference;
 
-    template <class OtherInner, class OtherFn>
-    friend class MapStage;
-    template <class First, class Second, class Brand>
-    friend class ZipStage;
-
 public:
     using element_reference = std::invoke_result_t<Fn const&, InnerElement>;
     static constexpr bool is_exact = Inner::is_exact;
     static constexpr std::size_t extent = Inner::extent;
     static constexpr bool cursor_borrows_stage = true;
 
-private:
     // The element at position through fn, which the caller proves below
     // size_() (THE STAGES).
-    [[nodiscard]] constexpr element_reference at_(std::size_t position) const noexcept
+    [[nodiscard]] constexpr element_reference at_(StageKey const& key, std::size_t position) const noexcept
         requires Inner::is_exact
     {
-        return fn_(inner_.at_(position));
+        return fn_(inner_.at_(key, position));
     }
 
-public:
     constexpr MapStage(Inner inner, Fn fn) noexcept : inner_{static_cast<Inner&&>(inner)}, fn_{static_cast<Fn&&>(fn)} {}
 
     template <class Sink>
@@ -492,8 +508,16 @@ class ZipStage final {
     friend class ::foundation::core::Walk;
     template <class OtherFirst, class OtherSecond, class OtherBrand>
     friend class ZipStage;
-    template <class Inner, class Fn>
-    friend class MapStage;
+
+    // The pair of the stages first and second, which the caller proves of
+    // one count: zip and try_zip of a walk, and a limit or a skip of a zip.
+    constexpr ZipStage(First first, Second second) noexcept
+        : first_{static_cast<First&&>(first)}, second_{static_cast<Second&&>(second)} {}
+
+    // The pair at position below size_(), for the loops and the cursor.
+    [[nodiscard]] constexpr Record<FirstPart, SecondPart> pair_(std::size_t position) const noexcept {
+        return at_(StageKey{}, position);
+    }
 
 public:
     using element_reference = Record<FirstPart, SecondPart>;
@@ -501,20 +525,13 @@ public:
     static constexpr std::size_t extent = First::extent != dynamic_extent ? First::extent : Second::extent;
     static constexpr bool cursor_borrows_stage = true;
 
-private:
-    // The pair of the stages first and second, which the caller proves of
-    // one count: zip and try_zip of a walk, and a limit or a skip of a zip.
-    constexpr ZipStage(First first, Second second) noexcept
-        : first_{static_cast<First&&>(first)}, second_{static_cast<Second&&>(second)} {}
-
     // The pair at position, which the caller proves below size_() (THE
     // STAGES).
-    [[nodiscard]] constexpr element_reference at_(std::size_t position) const noexcept {
-        return element_reference{part_<FirstElement>(first_.at_(position)),
-                                 part_<SecondElement>(second_.at_(position))};
+    [[nodiscard]] constexpr element_reference at_(StageKey const& key, std::size_t position) const noexcept {
+        return element_reference{part_<FirstElement>(first_.at_(key, position)),
+                                 part_<SecondElement>(second_.at_(key, position))};
     }
 
-public:
     [[nodiscard]] constexpr std::size_t size_() const noexcept {
         if constexpr (extent != dynamic_extent) {
             return extent;
@@ -527,7 +544,7 @@ public:
     [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
         std::size_t const count = size_();
         for (std::size_t position = 0; position < count; ++position) {
-            sink(at_(position));
+            sink(pair_(position));
         }
     }
 
@@ -535,7 +552,7 @@ public:
     [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
         std::size_t const count = size_();
         for (std::size_t position = 0; position < count; ++position) {
-            if (sink(at_(position)) == Flow::stop) return Flow::stop;
+            if (sink(pair_(position)) == Flow::stop) return Flow::stop;
         }
         return Flow::go;
     }
@@ -574,7 +591,7 @@ public:
             if (at_ == end_) [[unlikely]] {
                 fatal("a read through the end cursor of a zip walk");
             }
-            return stage_->at_(at_);
+            return stage_->pair_(at_);
         }
 
         constexpr Cursor& operator++() noexcept {

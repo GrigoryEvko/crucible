@@ -57,16 +57,13 @@ static_assert(Index<8>{Index<4>{index<3>()}}.raw() == 3);
 static_assert(Index<4>{index<1>()} == Index<4>{index<1>()});
 static_assert(Index<4>{index<1>()} < Index<4>{index<2>()});
 
-// mask gives the low bits of a word for a count that is a power of two, and
-// a count of another value has no mask.
+// mask gives the low bits of a word for a count that is a power of two.  The
+// fixture neg_core_index_mask_not_power_of_two refuses a count of another
+// value.
 static_assert(Index<64>::mask(0).raw() == 0 && Index<64>::mask(63).raw() == 63);
 static_assert(Index<64>::mask(64).raw() == 0 && Index<64>::mask(4096 + 5).raw() == 5);
 static_assert(Index<1>::mask(~std::size_t{0}).raw() == 0);
 static_assert(Index<0x100000000ull>::mask(0x1FFFFFFFFull).raw() == 0xFFFFFFFFull);
-template <std::size_t Count>
-concept HasMask = requires { Index<Count>::mask(std::size_t{0}); };
-static_assert(HasMask<1> && HasMask<2> && HasMask<64> && HasMask<0x100000000ull>);
-static_assert(!HasMask<3> && !HasMask<6> && !HasMask<100>);
 
 // The loop of an IndexRange gives each index in order.
 [[nodiscard]] consteval std::size_t sum_of_indices() noexcept {
