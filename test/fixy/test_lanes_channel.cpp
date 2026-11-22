@@ -91,7 +91,7 @@ void drain_while_a_producer_lives() {
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
     [[maybe_unused]] auto held = lend(channel, kFirst);
-    Lanes::DrainClaim claim{channel};
+    Lanes::DrainClaim claim = channel.claim_drain();
     channel.drain(claim, [](int) noexcept {});
 }
 
@@ -166,7 +166,7 @@ void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
     CRUCIBLE_TEST_ASSERT(test, channel.is_closed());
     ::fixy::FixedList<int, 4> drained{};
     {
-        Lanes::DrainClaim claim{channel};
+        Lanes::DrainClaim claim = channel.claim_drain();
         channel.drain(claim, [&drained](int item) noexcept {
             static_cast<void>(drained.append(item).expect("the drain gives at most four items"));
         });

@@ -263,7 +263,7 @@ void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
                 perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
             Channel channel{std::move(producer_root)};
             auto consumer = channel.consumer(std::move(consumer_perm));
-            Channel::DrainClaim claim{channel};
+            Channel::DrainClaim claim = channel.claim_drain();
             channel.drain(claim, [](std::uint64_t) noexcept {});
             ::foundation::linear::drop(std::move(consumer));
         },

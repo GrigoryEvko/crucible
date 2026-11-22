@@ -822,11 +822,14 @@ public:
     // the process there, and no handle starts while the claim lives.  Its end
     // gives the two claims back.  The claim belongs to the thread that took
     // it, and no two threads read it, so it states thread_bound{} and
-    // not_shareable{}.  A holder of the channel with no token, such as the end
-    // of a Box channel, takes one.
+    // not_shareable{}.  The constructor is private, and the claim door
+    // claim_drain is its one caller, so no thread builds a claim past the two
+    // claims (THE BUILD OF A TOKEN of foundation/Transfer.h).  A holder of the
+    // channel with no token, such as the end of a Box channel, takes one.
     class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]]
         DrainClaim {
-    public:
+        friend class PermissionedChannel;
+
         explicit DrainClaim(PermissionedChannel& channel) noexcept : channel_{__builtin_addressof(channel)} {
             if constexpr (Form == ChannelForm::wire) {
                 channel_->producer_claim_.take("a drain of a wire channel while its producer handle lives.");
@@ -843,6 +846,7 @@ public:
             }
         }
 
+    public:
         DrainClaim(DrainClaim const&) = delete("a drain claim holds the claims of one channel, and a copy is a second");
         DrainClaim& operator=(DrainClaim const&) = delete("a drain claim holds the claims of one channel");
         DrainClaim(DrainClaim&&) = delete("a drain claim gives its claims back at its one end");
@@ -862,6 +866,14 @@ public:
     private:
         PermissionedChannel* channel_ = nullptr;
     };
+
+    // Takes the claim of each role of this channel for a drain.  A live handle
+    // of a role, a recombined access, a deposit or a second drain claim ends
+    // the process here.  A claim door: its result is the claim, which the two
+    // atomic exchanges of the claims make, and only the thread that holds the
+    // claim drains until the claim ends (THE DOORS OF A SYNCHRONIZED CLASS of
+    // foundation/Transfer.h).
+    [[nodiscard]] DrainClaim claim_drain() noexcept { return DrainClaim{*this}; }
 
     // Gives each item that the ring still holds to drop, the oldest first.
     // The claim holds the claims of the two roles, and a pooled form also
@@ -1062,6 +1074,14 @@ namespace detail::channel_witness {
 struct WitnessTag {};
 struct WitnessBrand {};
 }  // namespace detail::channel_witness
+
+// The tag and the brand that the witness row of the drain claim names.  No
+// code builds a channel of them.  They are outside a detail namespace, so the
+// witness fixture of the row uses no detail name.
+namespace drain_claim_witness {
+struct WitnessTag {};
+struct WitnessBrand {};
+}  // namespace drain_claim_witness
 
 }  // namespace fixy::concurrent
 

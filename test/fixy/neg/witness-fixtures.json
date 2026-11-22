@@ -177,6 +177,11 @@
       "constructor": "\\bConsumerHandle\\("
     },
     {
+      "name": "neg_witness_concurrent_permissionedchannel_drainclaim_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bDrainClaim\\("
+    },
+    {
       "name": "neg_witness_concurrent_permissionedchannel_producerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bProducerHandle\\("
@@ -1676,6 +1681,10 @@
     },
     {
       "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ConsumerHandle",
+      "header": "fixy/concurrent/PermissionedChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::drain_claim_witness::WitnessTag, fixy::concurrent::drain_claim_witness::WitnessBrand>::DrainClaim",
       "header": "fixy/concurrent/PermissionedChannel.h"
     },
     {
