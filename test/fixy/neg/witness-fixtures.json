@@ -342,6 +342,11 @@
       "constructor": "\\bIndexKey\\("
     },
     {
+      "name": "neg_witness_core_detail_loankeytoken_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bLoanKeyToken\\("
+    },
+    {
       "name": "neg_witness_core_detail_refkey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bRefKey\\("
@@ -440,6 +445,11 @@
       "name": "neg_witness_core_indexcursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bIndexCursor\\("
+    },
+    {
+      "name": "neg_witness_core_loankey_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bLoanKey\\("
     },
     {
       "name": "neg_witness_core_maskedarray_direct_construction",
@@ -780,6 +790,11 @@
       "name": "neg_witness_io_iouringring_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bIoUringRing\\("
+    },
+    {
+      "name": "neg_witness_keyedbytes_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bKeyedBytes\\("
     },
     {
       "name": "neg_witness_machine_direct_construction",
@@ -1794,6 +1809,10 @@
       "header": "foundation/AlignedBytes.h"
     },
     {
+      "type": "foundation::KeyedBytes<forge::brand>",
+      "header": "foundation/AlignedBytes.h"
+    },
+    {
       "type": "foundation::BindingKey<int>",
       "header": "foundation/ChannelBinding.h"
     },
@@ -1823,6 +1842,14 @@
     },
     {
       "type": "foundation::core::detail::FrameKey",
+      "header": "foundation/core/Frame.h"
+    },
+    {
+      "type": "foundation::core::LoanKey<forge::brand>",
+      "header": "foundation/core/Frame.h"
+    },
+    {
+      "type": "foundation::core::detail::LoanKeyToken",
       "header": "foundation/core/Frame.h"
     },
     {

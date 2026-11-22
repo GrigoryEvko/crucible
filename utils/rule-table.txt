@@ -833,6 +833,9 @@ witness <foundation/core/DataAddress.h> no-match | foundation::core::DataAddress
 witness <foundation/AlignedBytes.h> no-match | foundation::AlignedBytes | foundation::AlignedBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/AlignedBytes.h> no-match | foundation::UnwrittenBytes | foundation::UnwrittenBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/AlignedBytes.h> private | foundation::detail::AlignedBytesKey | foundation::detail::AlignedBytesKey{}
+# A keyed block comes only from mint_keyed_bytes, with its key, so no caller
+# makes a keyed block with no key.
+witness <foundation/AlignedBytes.h> no-match | foundation::KeyedBytes<forge::brand> | foundation::KeyedBytes<forge::brand>{forge::rvalue<foundation::AlignedBytes>()}
 # The key of a binding to a channel: only the channel builds one, for the
 # handles that it makes (foundation/ChannelBinding.h).
 witness <foundation/ChannelBinding.h> private | foundation::BindingKey<int> | foundation::BindingKey<int>{}
@@ -849,6 +852,11 @@ witness <foundation/core/Region.h> no-match | foundation::core::ViewMut<int, for
 witness <foundation/core/Region.h> no-match | foundation::core::ViewMutChunks<int, forge::brand> | foundation::core::ViewMutChunks<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Frame.h> no-match | foundation::core::RefMut<int, forge::brand> | foundation::core::RefMut<int, forge::brand>{forge::lvalue<int>()}
 witness <foundation/core/Frame.h> private | foundation::core::detail::FrameKey | foundation::core::detail::FrameKey{}
+# A loan key comes only from a mint of a keyed owner or from a root door, so
+# no caller makes a key of a brand that it names.  The constructor takes the
+# token that only LoanKeyDoor builds (THE LOAN KEY of foundation/core/Frame.h).
+witness <foundation/core/Frame.h> no-match | foundation::core::LoanKey<forge::brand> | foundation::core::LoanKey<forge::brand>{}
+witness <foundation/core/Frame.h> private | foundation::core::detail::LoanKeyToken | foundation::core::detail::LoanKeyToken{}
 # A cursor of a View or of a TextView takes the key that only
 # ViewCursorDoor builds, so each cursor comes from the run that it walks.
 witness <foundation/core/Cursor.h> no-match | foundation::core::ViewCursor<int> | foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}
