@@ -53,6 +53,17 @@ concept CanRead = requires(Ctx const& ctx, Guard const& guard, Region const& reg
     ::fixy::mint_shared_read(ctx, guard, region);
 };
 
+// The value that no cell of these tests holds.
+constexpr std::uint64_t kNoCell = ~std::uint64_t{0};
+
+// The element of a read at position through its element door, or kNoCell
+// at or past the count of the read.
+template <typename Read>
+[[nodiscard]] std::uint64_t read_at(Read const& read, std::size_t position) noexcept {
+    return read.with_element(
+        position, [](std::uint64_t const& value) noexcept { return value; }, []() noexcept { return kNoCell; });
+}
+
 void test_a_read_sees_the_region(TestRunnerCtx const& test) {
     static std::uint64_t storage[6] = {10, 11, 12, 13, 14, 15};
     BgCtx ctx{eff::testing::bg()};
@@ -66,20 +77,21 @@ void test_a_read_sees_the_region(TestRunnerCtx const& test) {
 
     auto read = ::fixy::mint_shared_read(ctx, guard, shared);
     CRUCIBLE_TEST_ASSERT(test, read.size() == 6);
-    CRUCIBLE_TEST_ASSERT(test, read[0] == 10);
-    CRUCIBLE_TEST_ASSERT(test, read[5] == 15);
+    CRUCIBLE_TEST_ASSERT(test, read_at(read, 0) == 10);
+    CRUCIBLE_TEST_ASSERT(test, read_at(read, 5) == 15);
 
-    std::uint64_t sum = 0;
-    for (std::uint64_t value : read)
-        sum += value;
+    std::uint64_t const sum = read.with_view([](::fixy::View<std::uint64_t const> run) noexcept {
+        std::uint64_t total = 0;
+        for (std::uint64_t value : run)
+            total += value;
+        return total;
+    });
     CRUCIBLE_TEST_ASSERT(test, sum == 75);
 
-    // The subscript checks its index in each build, the release build too,
-    // so a read past the end ends the process.  The read runs in a child
-    // through expect_dies of the Check family.
-    ::fixy::check::expect_dies(
-        test, [&read] noexcept { (void)read[read.size()]; },
-        ::fixy::TextView{"foundation: contract violation: index < size()"});
+    // The element door compares the position with the count, so a read at
+    // or past the end runs on_none, and no arm reads past the elements.
+    CRUCIBLE_TEST_ASSERT(test, read_at(read, read.size()) == kNoCell);
+    CRUCIBLE_TEST_ASSERT(test, read_at(read, read.size() + 1) == kNoCell);
 
     // The read names the instance it was taken against, and the share
     // it stands on is the guard's.
@@ -135,8 +147,16 @@ void test_two_readers_hold_one_region(TestRunnerCtx const& test) {
     auto read_a = ::fixy::mint_shared_read(ctx, first, shared);
     auto read_b = ::fixy::mint_shared_read(ctx, second, shared);
     CRUCIBLE_TEST_ASSERT(test, read_a.size() == 3 && read_b.size() == 3);
-    CRUCIBLE_TEST_ASSERT(test, read_a[1] == 8 && read_b[1] == 8);
-    CRUCIBLE_TEST_ASSERT(test, read_a.cspan().data() == read_b.cspan().data());
+    CRUCIBLE_TEST_ASSERT(test, read_at(read_a, 1) == 8 && read_at(read_b, 1) == 8);
+    // The two reads lend one run: the run of each lies inside the other at
+    // the position zero.
+    const bool is_one_run = read_a.with_view([&read_b](::fixy::View<std::uint64_t const> run_a) noexcept {
+        return read_b.with_view([run_a](::fixy::View<std::uint64_t const> run_b) noexcept {
+            return ::foundation::core::offset_of(run_a, run_b) == ::foundation::core::Option<std::size_t>::some(0uz)
+                && run_a.size() == run_b.size();
+        });
+    });
+    CRUCIBLE_TEST_ASSERT(test, is_one_run);
 }
 
 // The composition, as a type question.  Two regions of one tag minted at
@@ -168,7 +188,7 @@ void test_a_share_of_another_region_does_not_read_this_one(TestRunnerCtx const& 
     // to, which is what makes the refusal the composition's and not one
     // axis's.
     auto read = ::fixy::mint_shared_read(ctx, guard_a, shared_a);
-    CRUCIBLE_TEST_ASSERT(test, read[1] == 2);
+    CRUCIBLE_TEST_ASSERT(test, read_at(read, 1) == 2);
 }
 
 // The effect axis, in the same shape.  A context that does not admit the
@@ -229,7 +249,7 @@ void test_a_share_of_a_region_of_the_same_site_aborts(TestRunnerCtx const& test)
 
     auto guard_a = shared_a.lend(ctx).expect("an idle region lends a share");
     auto read = ::fixy::mint_shared_read(ctx, guard_a, shared_a);
-    CRUCIBLE_TEST_ASSERT(test, read[0] == 7);
+    CRUCIBLE_TEST_ASSERT(test, read_at(read, 0) == 7);
     // The read of the other region runs in a child through expect_dies of the
     // Check family.
     ::fixy::check::expect_dies(

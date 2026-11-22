@@ -38,14 +38,17 @@
 //
 // What this does not catch, stated rather than implied.
 //
-//   A read handle that outlives the share.  The handle is a span and a
-//   value, and copying it is ordinary.  The guard parameter carries the
+//   A read handle that a function returns past its share.  The handle does
+//   not copy and does not move, and it lends its elements only to a body
+//   whose result holds no borrow.  So a handle kept in a longer-lived name
+//   after the scope of the guard ends does not compile, and no View of its
+//   elements outlives a call of its doors.  The guard parameter carries the
 //   lifetime annotation and its rvalue twin refuses a guard that dies at
-//   the end of the statement, but a handle assigned to a longer-lived
-//   name and read after the guard's scope ends is well typed here.  That
-//   is the flow-sensitive half, the same half fixy/OwnedRegion.h names
-//   for a spent receipt: a borrow checker reasons from one program point
-//   to another, and a template argument does not.
+//   the end of the statement.  But a function can still return the read
+//   that its mint gives, with no copy, while the guard is a local of that
+//   function.  That is the flow-sensitive half, the same half
+//   fixy/OwnedRegion.h names for a spent receipt: a borrow checker reasons
+//   from one program point to another, and a template argument does not.
 //
 //   Nothing about two regions a compiler cannot tell apart, at compile
 //   time.  A brand names a mint SITE, not a mint CALL, per fact 2 of
@@ -227,6 +230,16 @@ SharedRegion(OwnedRegion<T, Tag, Brand>&&) -> SharedRegion<T, Tag, Brand>;
 // A read the three axes agreed on.  It is a span and nothing else: the
 // share it stands on is the guard's, and the instance it names is in
 // its own type.
+//
+// The read lends its elements only to a body, for the time of the call, and
+// the result of the body holds no borrow (HoldsNoBorrow of
+// foundation/core/Choice.h).  So no View and no reference of an element
+// outlives the call.  The read itself does not copy and does not move, so
+// it lives only where its mint made it, beside a guard that is alive at the
+// mint.  A read kept in a longer-lived name, such as an Option outside the
+// scope of the guard, does not compile.  What stays open is the return of
+// a read from a function whose guard is a local of that function: the
+// class of a returned borrow of a local, which no template argument sees.
 template <typename T, typename Tag, typename Brand>
 class [[nodiscard]] SharedRead {
     static_assert(::foundation::brand::IsBrand<Brand>, "SharedRead<T, Tag, Brand>: Brand must be an empty class "
@@ -239,6 +252,14 @@ class [[nodiscard]] SharedRead {
 
     constexpr SharedRead(detail::shared_read_mint_t, std::span<T const> span) noexcept : span_{span} {}
 
+    // The View of the elements.  The mint made the span from the base and the
+    // count of the region, which the mint of the region checked, so the View
+    // takes the door of the base layer with no check.
+    [[nodiscard]] constexpr ::foundation::core::View<T const> run_() const noexcept {
+        return ::foundation::core::View<T const>{::foundation::core::detail::ViewDoor::key(), span_.data(),
+                                                 span_.size()};
+    }
+
     template <typename U, typename UTag, typename UBrand, typename Ctx>
         requires CtxFitsSharedRead<U, UTag, UBrand, Ctx>
     friend constexpr SharedRead<U, UTag, UBrand>
@@ -249,23 +270,60 @@ public:
     using element_type = T const;
     using tag_type = Tag;
     using brand_type = Brand;
-    using span_type = std::span<T const>;
     using row_discipline = ::fixy::row_discipline::shared_read;
     using row_payload = T;
 
     SharedRead() = delete;
+    SharedRead(SharedRead const&) = delete(
+        "a read stands on the share of its guard: a copy could outlive the guard, and "
+        "read the region after the pool gives the exclusive back");
+    SharedRead& operator=(SharedRead const&) = delete("a read stands on the share of its guard: a copy could outlive "
+                                                      "the guard");
+    SharedRead(SharedRead&&) = delete("a read stands on the share of its guard: a move could carry it past the guard, "
+                                      "and read the region after the pool gives the exclusive back");
+    SharedRead& operator=(SharedRead&&) = delete("a read stands on the share of its guard: a move could carry it past "
+                                                 "the guard");
+    ~SharedRead() = default;
 
-    [[nodiscard]] constexpr span_type cspan() const noexcept { return span_; }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return span_.size(); }
     [[nodiscard]] constexpr bool empty() const noexcept { return span_.empty(); }
-    // The index is checked in each build.  The bounds check of the standard
-    // library is on only in Debug.
-    [[nodiscard]] constexpr T const& operator[](std::size_t index) const noexcept {
-        CRUCIBLE_PRE(index < size());
-        return span_[index];
+
+    // The read door of the run: body gets the View of the const elements for
+    // the time of the call, and the door gives the result of body, which
+    // holds no borrow.  Complexity: O(1), and the cost of body.
+    template <class Body>
+        requires std::is_invocable_v<Body, ::foundation::core::View<T const>>
+              && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body, ::foundation::core::View<T const>>>
+    constexpr std::invoke_result_t<Body, ::foundation::core::View<T const>> with_view(Body&& body) const
+        noexcept(std::is_nothrow_invocable_v<Body, ::foundation::core::View<T const>>) {
+        return static_cast<Body&&>(body)(run_());
     }
-    [[nodiscard]] constexpr T const* begin() const noexcept { return span_.data(); }
-    [[nodiscard]] constexpr T const* end() const noexcept { return span_.data() + span_.size(); }
+
+    // A body whose result holds a borrow binds to this overload, so the
+    // refusal gives its reason.
+    template <class Body>
+        requires std::is_invocable_v<Body, ::foundation::core::View<T const>>
+                  && (!::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body, ::foundation::core::View<T const>>>)
+    void with_view(Body&& body) const = delete("the result of a read door holds no borrow: a borrow of an element "
+                                               "would outlive the share of the guard.  Give a value with no "
+                                               "reference and no address");
+
+    // The read door of one element: on_some gets the element at position for
+    // the time of the call, and at or past size() on_none runs.  The two arms
+    // give the same type, which holds no borrow.  No type holds the count of
+    // a read, so the position is a count, as for with_element of a HeapArray.
+    // Complexity: one compare, and the cost of the arm.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
+              && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<OnNone>>
+    constexpr std::invoke_result_t<OnNone> with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const
+        noexcept(std::is_nothrow_invocable_v<OnSome, T const&> && std::is_nothrow_invocable_v<OnNone>) {
+        if (position >= span_.size()) {
+            return static_cast<OnNone&&>(on_none)();
+        }
+        return static_cast<OnSome&&>(on_some)(span_[position]);
+    }
 };
 
 template <typename T, typename Tag, typename Brand, typename Ctx>

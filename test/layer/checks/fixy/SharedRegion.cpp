@@ -25,11 +25,15 @@ static_assert(!CtxFitsSharedRead<int, io_tag, probe_brand, Fg>, "a foreground co
 static_assert(!CtxFitsSharedRead<int, probe_tag, probe_brand, int>, "a context is a context, not any type");
 static_assert(!CtxFitsSharedRead<void, probe_tag, probe_brand, Fg>, "a region of void has no elements to read");
 
-// The read is a span and nothing else, and it has no door of its own.
+// The read is a span and nothing else.  It lends its elements only to a
+// body, and it lives only where its mint made it.
 using Read = SharedRead<int, probe_tag>;
 static_assert(sizeof(Read) == sizeof(std::span<int const>));
 static_assert(!std::is_default_constructible_v<Read>, "a read nobody minted proves nothing");
-static_assert(std::is_copy_constructible_v<Read>, "a read is a value, and the header says what that costs");
+static_assert(!std::is_copy_constructible_v<Read> && !std::is_copy_assignable_v<Read>,
+              "a copy of a read could outlive the share of its guard");
+static_assert(!std::is_move_constructible_v<Read> && !std::is_move_assignable_v<Read>,
+              "a move of a read could carry it past the share of its guard");
 static_assert(!std::is_trivially_copyable_v<Read> && !::foundation::lifetime::ImplicitLifetimeThroughout<Read>,
               "std::bit_cast and std::start_lifetime_as must not build a read that no share stands behind");
 static_assert(std::is_same_v<Read::brand_type, Erased>);

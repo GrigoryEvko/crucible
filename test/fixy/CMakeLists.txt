@@ -7506,6 +7506,17 @@ fixy_neg_compile_test(neg_shared_read_from_a_temporary_region
   "mint_shared_read\\(const Ctx&, const foundation::permissions::SharedPermissionGuard<Tag, Brand>&, const SharedRegion<T, Tag, Brand>&&"
   "the region is destroyed at the end of the full expression")
 
+# A read does not copy and does not move, so no Option keeps it past the
+# scope of its guard.
+fixy_neg_compile_test(neg_shared_read_kept_past_its_guard
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "SharedRead<int, \\{anonymous\\}::Cache")
+# The result of a read door holds no borrow, so no View of the elements
+# outlives the call.
+fixy_neg_compile_test(neg_shared_read_view_leaves_its_door
+  "use of deleted function .void fixy::SharedRead<T, Tag, Brand>::with_view\\(Body&&\\) const"
+  "the result of a read door holds no borrow")
+
 # mint_borrowed gives a View of the const elements of a region, so two
 # borrows of one region write no element.
 fixy_neg_compile_test(neg_owned_region_two_mutable_views
