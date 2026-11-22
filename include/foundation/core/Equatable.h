@@ -65,6 +65,7 @@
 // The gates are concepts over consteval functions that are not templates,
 // so no unit can specialize a template and change what a gate admits.
 
+#include <foundation/Platform.h>
 #include <foundation/core/Number.h>
 
 #include <compare>
@@ -225,14 +226,20 @@ template <Float F>
 // The direct base at Index and the member at Index of an object, the private
 // ones too.
 template <std::size_t Index, class T>
-[[nodiscard]] constexpr auto const& base_at_(T const& object) noexcept {
+[[nodiscard]] constexpr auto const& base_at_(T const& object CRUCIBLE_LIFETIMEBOUND) noexcept {
     return object.[:std::meta::bases_of(^^T, std::meta::access_context::unchecked())[Index]:];
 }
+template <std::size_t Index, class T>
+void base_at_(T const&&) = delete("the reference names a part of the object, and a temporary ends with the full "
+                                  "expression");
 
 template <std::size_t Index, class T>
-[[nodiscard]] constexpr auto const& member_at_(T const& object) noexcept {
+[[nodiscard]] constexpr auto const& member_at_(T const& object CRUCIBLE_LIFETIMEBOUND) noexcept {
     return object.[:std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[Index]:];
 }
+template <std::size_t Index, class T>
+void member_at_(T const&&) = delete("the reference names a part of the object, and a temporary ends with the full "
+                                    "expression");
 
 }  // namespace detail
 
@@ -275,13 +282,16 @@ template <class T, std::size_t... Bases, std::size_t... Members>
 // The part at Part of an object: a base below the count of bases, and a
 // member after them.
 template <std::size_t Part, class T>
-[[nodiscard]] constexpr auto const& part_at_(T const& object) noexcept {
+[[nodiscard]] constexpr auto const& part_at_(T const& object CRUCIBLE_LIFETIMEBOUND) noexcept {
     if constexpr (Part < base_count(^^T)) {
         return detail::base_at_<Part>(object);
     } else {
         return detail::member_at_<Part - base_count(^^T)>(object);
     }
 }
+template <std::size_t Part, class T>
+void part_at_(T const&&) = delete("the reference names a part of the object, and a temporary ends with the full "
+                                  "expression");
 
 // The order of the parts from Part to Count: the order of the first part
 // that differs, and the order of the last part when each other part is

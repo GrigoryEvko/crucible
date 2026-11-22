@@ -67,9 +67,12 @@ struct Input final {
     return bytes;
 }
 
-[[nodiscard]] fc::View<std::byte const> prefix(Input const& input, std::size_t size) noexcept {
+[[nodiscard]] fc::View<std::byte const> prefix(Input const& input CRUCIBLE_LIFETIMEBOUND, std::size_t size) noexcept {
     return fc::View<std::byte const>{input.bytes.view()}.window(0, size).expect("each size is inside the input");
 }
+template <class... Rest>
+void prefix(Input const&&, Rest&&...) = delete("the View borrows the input, and a temporary ends with the full "
+                                               "expression");
 
 #if defined(CRUCIBLE_BENCH_BLAKE3)
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the bytes of a row go to the door of the pinned official BLAKE3")

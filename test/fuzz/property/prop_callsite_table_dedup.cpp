@@ -133,9 +133,11 @@ struct Batch {
 
 // The record at position of a batch.  Each position that the test reads
 // is below the count, which is at most kRecords.
-[[nodiscard]] Record const& record_at(Batch const& batch, unsigned position) noexcept {
+[[nodiscard]] Record const& record_at(Batch const& batch CRUCIBLE_LIFETIMEBOUND, unsigned position) noexcept {
     return batch.recs.at(::fixy::Index<kRecords>::check(position).expect("a position of a batch is below kRecords"));
 }
+void record_at(Batch const&&, unsigned) =
+    delete("the reference names a record of the batch, and a temporary ends with the full expression");
 
 }  // namespace
 

@@ -1065,9 +1065,12 @@ struct RowControl {
 
 [[nodiscard]] inline Phase read_phase(RowControl const& control) noexcept { return control.phase.phase.load_acquire(); }
 
-[[nodiscard]] inline ThreadLine const& line_of(RowControl const& control, bench::ThreadSlot slot) noexcept {
+[[nodiscard]] inline ThreadLine const& line_of(RowControl const& control CRUCIBLE_LIFETIMEBOUND,
+                                               bench::ThreadSlot slot) noexcept {
     return *control.lines.get(slot.raw()).expect("a slot of a row is below kMaxThreads");
 }
+void line_of(RowControl const&&, bench::ThreadSlot) =
+    delete("the reference names a line of the control, and a temporary ends with the full expression");
 
 // One push into a Mailbox that waits while the Mailbox is full, and that
 // stops when the row stops.  The result holds the item that no push took.

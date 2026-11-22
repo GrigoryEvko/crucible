@@ -77,9 +77,12 @@ static_assert(std::is_same_v<decltype(bench::Percentiles{}.cv), double>, "Percen
 
 // The values of a fixed array as a View of the samples.
 template <std::size_t Count>
-[[nodiscard]] ::fixy::View<const double> view_of(::fixy::FixedArray<double, Count> const& values) {
+[[nodiscard]] ::fixy::View<const double> view_of(::fixy::FixedArray<double, Count> const& values
+                                                 CRUCIBLE_LIFETIMEBOUND) {
     return ::fixy::View<const double>{values.view()};
 }
+template <class Whole>
+void view_of(Whole const&&) = delete("the View borrows the values, and a temporary ends with the full expression");
 
 // The percentiles of the values, through a copy in a run of samples, the type
 // that Percentiles::compute sorts.

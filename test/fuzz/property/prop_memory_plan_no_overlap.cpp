@@ -91,9 +91,12 @@ struct SlotSet {
 
 // The spec at position of a set.  Each position that the test reads is
 // below the count, which is at most kMaxSlots.
-[[nodiscard]] SlotSpec const& spec_at(SlotSet const& set, uint32_t position) noexcept {
+[[nodiscard]] SlotSpec const& spec_at(SlotSet const& set CRUCIBLE_LIFETIMEBOUND, uint32_t position) noexcept {
     return set.specs.at(::fixy::Index<kMaxSlots>::check(position).expect("a position of a set is below kMaxSlots"));
 }
+template <class... Rest>
+void spec_at(SlotSet const&&, Rest&&...) =
+    delete("the reference names a spec of the set, and a temporary ends with the full expression");
 
 // Materialize a SlotSet into a fresh TensorSlot array and return the
 // maximum death_op (the upper bound of the no-overlap sweep).

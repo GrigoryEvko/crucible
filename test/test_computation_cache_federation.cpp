@@ -55,9 +55,13 @@ template <class... Values>
 // The first count bytes of a buffer: the bytes of an entry that a
 // serialize wrote.
 template <std::size_t N>
-[[nodiscard]] static ::fixy::View<std::byte const> prefix(Bytes<N> const& buf, std::size_t count) {
+[[nodiscard]] static ::fixy::View<std::byte const> prefix(Bytes<N> const& buf CRUCIBLE_LIFETIMEBOUND,
+                                                          std::size_t count) {
     return ::fixy::View<std::byte const>{buf.view()}.window(0, count).expect("the count is inside the buffer");
 }
+template <class Whole, class... Rest>
+void prefix(Whole const&&, Rest&&...) = delete("the View borrows the buffer, and a temporary ends with the full "
+                                               "expression");
 
 // The key of a federation of the tests: the bytes first, first + 1, and so
 // on.

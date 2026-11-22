@@ -84,9 +84,11 @@ constinit SpinRecord spin_record_at_load{};
     return word.load_acquire() == expected;
 }
 
-[[nodiscard]] void const* address_of(core::Atomic<std::uint32_t> const& word) noexcept {
+[[nodiscard]] void const* address_of(core::Atomic<std::uint32_t> const& word CRUCIBLE_LIFETIMEBOUND) noexcept {
     return static_cast<void const*>(&word);
 }
+void address_of(core::Atomic<std::uint32_t> const&&) =
+    delete("the address names the word, and a temporary word ends with the full expression");
 
 #if defined(__x86_64__)
 

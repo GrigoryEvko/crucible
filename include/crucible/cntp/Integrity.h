@@ -219,13 +219,17 @@ template <std::size_t Byte>
 }
 
 template <ByteContiguousPayload Payload>
-[[nodiscard]] constexpr ::fixy::View<std::byte const> payload_bytes(Payload const& payload) noexcept {
+[[nodiscard]] constexpr ::fixy::View<std::byte const> payload_bytes(Payload const& payload
+                                                                    CRUCIBLE_LIFETIMEBOUND) noexcept {
     if constexpr (requires { payload.view(); }) {
         return payload.view();
     } else {
         return payload;
     }
 }
+template <ByteContiguousPayload Payload>
+void payload_bytes(Payload const&&) =
+    delete("the View borrows the payload, and a temporary payload ends with the full expression");
 
 }  // namespace detail
 

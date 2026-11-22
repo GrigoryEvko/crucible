@@ -438,9 +438,12 @@ struct RowState : RowControl {
 
 [[nodiscard]] Phase read_phase(RowControl const& control) noexcept { return control.phase.phase.load_acquire(); }
 
-[[nodiscard]] ThreadLine const& line_of(RowControl const& control, bench::ThreadSlot slot) noexcept {
+[[nodiscard]] ThreadLine const& line_of(RowControl const& control CRUCIBLE_LIFETIMEBOUND,
+                                        bench::ThreadSlot slot) noexcept {
     return *control.lines.get(slot.raw()).expect("a slot of a row is below kMaxThreads");
 }
+void line_of(RowControl const&&, bench::ThreadSlot) =
+    delete("the reference names a line of the control, and a temporary ends with the full expression");
 
 // One push that waits while its ring is full, and that stops when the row
 // stops, so no producer waits for a consumer that ended.

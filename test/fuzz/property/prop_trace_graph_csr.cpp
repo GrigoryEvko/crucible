@@ -64,9 +64,12 @@ struct GraphSpec {
 
 // The edge spec at position e of a spec.  Each position that the test
 // reads is below the edge count, which is at most kMaxEdges.
-[[nodiscard]] const EdgeSpec& edge_spec_at(const GraphSpec& spec, uint32_t e) noexcept {
+[[nodiscard]] const EdgeSpec& edge_spec_at(const GraphSpec& spec CRUCIBLE_LIFETIMEBOUND, uint32_t e) noexcept {
     return spec.edges.at(::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"));
 }
+template <class... Rest>
+void edge_spec_at(const GraphSpec&&, Rest&&...) =
+    delete("the reference names an edge of the spec, and a temporary ends with the full expression");
 
 // The count at op v of a per-op count array.  Each op is below kMaxOps.
 [[nodiscard]] uint32_t count_at(const ::fixy::FixedArray<uint32_t, kMaxOps>& counts, uint32_t v) noexcept {

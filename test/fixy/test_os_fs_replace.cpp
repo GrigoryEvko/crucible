@@ -61,9 +61,10 @@ constexpr ::fixy::TextView kCrashText{"the write of the temporary file stops aft
 }
 
 // The first half of the bytes.
-[[nodiscard]] fixy::View<std::byte const> half_of(Contents const& bytes) {
+[[nodiscard]] fixy::View<std::byte const> half_of(Contents const& bytes CRUCIBLE_LIFETIMEBOUND) {
     return bytes.view().window(0, bytes.size() / 2).expect("a half of the bytes is in the bytes");
 }
+void half_of(Contents const&&) = delete("the View borrows the bytes, and a temporary ends with the full expression");
 
 // The bytes of the file name under dir, or no value when it does not open.
 template <::fixy::os::RightSet Rights>

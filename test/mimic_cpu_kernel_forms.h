@@ -122,7 +122,7 @@ void run_scale_product_of_difference(KernelCtx const& ctx, Matrix<float>& out, S
 }
 
 // The view of a row of N elements broadcast to the sizes [rows, N].
-[[nodiscard]] inline ::fixy::StridedView<float const, 2> broadcast_row(Matrix<float> const& row,
+[[nodiscard]] inline ::fixy::StridedView<float const, 2> broadcast_row(Matrix<float> const& row CRUCIBLE_LIFETIMEBOUND,
                                                                        std::size_t rows) noexcept {
     ::fixy::FixedArray<std::size_t, 1> const sizes{row.shape.columns};
     ::fixy::FixedArray<std::size_t, 1> const strides{row.place.column_stride};
@@ -133,6 +133,9 @@ void run_scale_product_of_difference(KernelCtx const& ctx, Matrix<float>& out, S
         .broadcast_to(target.view())
         .expect("a row broadcasts to the rows");
 }
+template <class Whole, class... Rest>
+void broadcast_row(Whole const&&, Rest&&...) = delete("the view borrows the row, and a temporary ends with the full "
+                                                      "expression");
 
 template <class Value>
 [[nodiscard]] std::uint64_t fold_matrix(std::uint64_t digest, Matrix<Value> const& matrix) noexcept {

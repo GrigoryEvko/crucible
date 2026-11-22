@@ -218,10 +218,13 @@ decode_tcp_sample(::fixy::View<std::byte const> info, ::fixy::View<std::byte con
 // kernel writes at most the size of the buffer, so a larger count does not
 // occur, and it gives no bytes.
 template <std::size_t Size>
-[[nodiscard]] constexpr ::fixy::View<std::byte const> written_bytes(::fixy::FixedArray<std::byte, Size> const& buffer,
-                                                                    std::size_t count) noexcept {
+[[nodiscard]] constexpr ::fixy::View<std::byte const>
+written_bytes(::fixy::FixedArray<std::byte, Size> const& buffer CRUCIBLE_LIFETIMEBOUND, std::size_t count) noexcept {
     return ::fixy::View<std::byte const>{buffer.view()}.window(0, count).value_or(::fixy::View<std::byte const>{});
 }
+template <class Buffer, class... Rest>
+void written_bytes(Buffer const&&, Rest&&...) =
+    delete("the View borrows the buffer, and a temporary buffer ends with the full expression");
 
 // The running aggregate of the samples of one NIC: the sums, the worst mode
 // and the two histograms of the percentiles.  The two histograms hold some

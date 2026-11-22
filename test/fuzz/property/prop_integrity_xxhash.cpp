@@ -100,9 +100,10 @@ struct Spec {
 }
 
 // The populated prefix of the bytes of a spec.
-[[nodiscard]] ::fixy::View<std::byte const> prefix_of(const Spec& spec) noexcept {
+[[nodiscard]] ::fixy::View<std::byte const> prefix_of(const Spec& spec CRUCIBLE_LIFETIMEBOUND) noexcept {
     return spec.bytes.view().window(0, spec.len).expect("the length is at most kMaxLen");
 }
+void prefix_of(const Spec&&) = delete("the View borrows the spec, and a temporary ends with the full expression");
 
 // One-shot raw hash over the populated prefix.
 [[nodiscard]] std::uint64_t one_shot_raw(const Spec& spec) noexcept {

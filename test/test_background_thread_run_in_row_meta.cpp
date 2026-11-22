@@ -78,9 +78,13 @@ struct Work {
 
     // The first count elements of one array of the work.
     template <class T>
-    [[nodiscard]] ::fixy::View<const T> first_ops(::fixy::FixedArray<T, CAPACITY> const& column) const {
+    [[nodiscard]] ::fixy::View<const T> first_ops(::fixy::FixedArray<T, CAPACITY> const& column
+                                                  CRUCIBLE_LIFETIMEBOUND) const {
         return column.view().window(0, count).expect("a work holds at most CAPACITY ops");
     }
+    template <class T>
+    void first_ops(::fixy::FixedArray<T, CAPACITY> const&&) const =
+        delete("the View borrows the column, and a temporary ends with the full expression");
 
     // An op with one output tensor, whose metadata goes to the log.  Returns
     // the end of that metadata in the log.

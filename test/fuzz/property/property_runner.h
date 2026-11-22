@@ -199,9 +199,12 @@ private:
 // merges no two calls of one function on two results.
 
 template <class T>
-[[gnu::noipa, nodiscard]] T const& read_at_run_time(T const& value) noexcept {
+[[gnu::noipa, nodiscard]] T const& read_at_run_time(T const& value CRUCIBLE_LIFETIMEBOUND) noexcept {
     return value;
 }
+template <class T>
+void read_at_run_time(T const&&) = delete("the reference names the value, and a temporary ends with the full "
+                                          "expression");
 
 // ─── Configuration ─────────────────────────────────────────────────
 

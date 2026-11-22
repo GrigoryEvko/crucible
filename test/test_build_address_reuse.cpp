@@ -141,9 +141,13 @@ struct Work {
     }
 
     template <class T>
-    [[nodiscard]] ::fixy::View<const T> first_ops(::fixy::FixedArray<T, CAPACITY> const& column) const {
+    [[nodiscard]] ::fixy::View<const T> first_ops(::fixy::FixedArray<T, CAPACITY> const& column
+                                                  CRUCIBLE_LIFETIMEBOUND) const {
         return column.view().window(0, count).expect("a work holds at most CAPACITY ops");
     }
+    template <class T>
+    void first_ops(::fixy::FixedArray<T, CAPACITY> const&&) const =
+        delete("the View borrows the column, and a temporary ends with the full expression");
 
     [[nodiscard]] BackgroundThread::BuiltRegion build(BackgroundThread& bt) const {
         ::fixy::BumpArena scratch{size_t{1} << 16};

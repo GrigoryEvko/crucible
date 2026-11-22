@@ -68,6 +68,16 @@ struct ProductLattice<L1, L2> {
         else
             return e.second;
     }
+    // A temporary element ends with the full expression, so its part comes
+    // back as a copy and not as a reference.
+    template <std::size_t I>
+        requires(I < 2)
+    [[nodiscard]] static constexpr auto get(element_type const&& e) noexcept {
+        if constexpr (I == 0)
+            return e.first;
+        else
+            return e.second;
+    }
 
     [[nodiscard]] static constexpr element_type bottom() noexcept
         requires BoundedBelowLattice<L1> && BoundedBelowLattice<L2>
@@ -174,6 +184,13 @@ struct ProductLattice<Ls...> {
     template <std::size_t I>
         requires(I < sizeof...(Ls))
     [[nodiscard]] static constexpr auto const& get(element_type const& e) noexcept {
+        return static_cast<detail::ProductSlot<I, Ls...[I]> const&>(e).value;
+    }
+    // A temporary element ends with the full expression, so its part comes
+    // back as a copy and not as a reference.
+    template <std::size_t I>
+        requires(I < sizeof...(Ls))
+    [[nodiscard]] static constexpr auto get(element_type const&& e) noexcept {
         return static_cast<detail::ProductSlot<I, Ls...[I]> const&>(e).value;
     }
 

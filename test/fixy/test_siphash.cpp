@@ -84,10 +84,13 @@ inline constexpr fc::FixedArray<std::uint64_t, kVectorCount> kReferenceTags{
     return ::foundation::core::equal(left, right);
 }
 
-[[nodiscard]] constexpr fc::View<std::byte const> prefix(fc::FixedArray<std::byte, kVectorCount> const& message,
-                                                         std::size_t length) noexcept {
+[[nodiscard]] constexpr fc::View<std::byte const>
+prefix(fc::FixedArray<std::byte, kVectorCount> const& message CRUCIBLE_LIFETIMEBOUND, std::size_t length) noexcept {
     return fc::View<std::byte const>{message.view()}.window(0, length).expect("the length is inside the message");
 }
+template <class Whole, class... Rest>
+void prefix(Whole const&&, Rest&&...) = delete("the View borrows the message, and a temporary ends with the full "
+                                               "expression");
 
 [[nodiscard]] constexpr SipTag tag_of(std::size_t length) noexcept {
     fc::FixedArray<std::byte, kVectorCount> const message = reference_message();

@@ -405,13 +405,16 @@ CRUCIBLE_HOT void mul_xor(::fixy::View<std::byte> dst, ::fixy::View<std::byte co
 }  // namespace CRUCIBLE_SIMD_TARGET
 
 template <ByteContiguousBuffer Buffer>
-[[nodiscard]] constexpr ::fixy::View<std::byte const> bytes(Buffer const& buffer) noexcept {
+[[nodiscard]] constexpr ::fixy::View<std::byte const> bytes(Buffer const& buffer CRUCIBLE_LIFETIMEBOUND) noexcept {
     if constexpr (requires { buffer.view(); }) {
         return buffer.view();
     } else {
         return buffer;
     }
 }
+template <ByteContiguousBuffer Buffer>
+void bytes(Buffer const&&) =
+    delete("the View borrows the buffer, and a temporary buffer ends with the full expression");
 
 // Gives body the View of the bytes of buffer that writes them, for the time of
 // the call, and gives the result of body.  An owner with a member frame door

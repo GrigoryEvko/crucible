@@ -675,14 +675,20 @@ constexpr void put_count_(std::byte* first, std::size_t count) noexcept {
 // The first element of a bounded list, or no element of an empty list.  The
 // caller reads only the elements below the count.
 template <class T, std::size_t N>
-[[nodiscard]] constexpr T const* list_first_(FixedList<T, N> const& list) noexcept {
+[[nodiscard]] constexpr T const* list_first_(FixedList<T, N> const& list CRUCIBLE_LIFETIMEBOUND) noexcept {
     return first_of_(detail::BaseLayerRead{}, list.view());
 }
+template <class T, std::size_t N>
+void list_first_(FixedList<T, N> const&&) =
+    delete("the address names an element of the list, and a temporary list ends with the full expression");
 
 template <std::size_t N>
-[[nodiscard]] constexpr char const* list_first_(FixedText<N> const& text) noexcept {
+[[nodiscard]] constexpr char const* list_first_(FixedText<N> const& text CRUCIBLE_LIFETIMEBOUND) noexcept {
     return detail::text_first_(text.view());
 }
+template <std::size_t N>
+void list_first_(FixedText<N> const&&) =
+    delete("the address names a character of the text, and a temporary text ends with the full expression");
 
 // The image of a bounded list: its count, the image of each element, and
 // zero bytes in each other room (THE BOUNDED LISTS).  The loop runs over the

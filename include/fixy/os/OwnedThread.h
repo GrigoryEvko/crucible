@@ -498,7 +498,9 @@ public:
     // call while the OwnerThread holds a thread ends the process, and so does
     // an owner that does not hold this OwnerThread.  The definition follows
     // the door.
-    [[nodiscard]] QuiescenceProof<Owner> quiescence(Owner const& owner) const noexcept;
+    [[nodiscard]] QuiescenceProof<Owner> quiescence(Owner const& owner CRUCIBLE_LIFETIMEBOUND) const noexcept;
+    void quiescence(Owner const&&) const =
+        delete("the proof borrows the owner, and a temporary owner ends with the full expression");
 
 private:
     friend struct detail::owner_thread_door;
@@ -528,7 +530,7 @@ struct owner_thread_door {
     // The proof of the owner of the slot.  The OwnerThread calls it while it
     // holds no thread, and the slot lies inside the owner.
     template <typename Owner>
-    [[nodiscard]] static QuiescenceProof<Owner> prove_quiescence(Owner const& owner,
+    [[nodiscard]] static QuiescenceProof<Owner> prove_quiescence(Owner const& owner CRUCIBLE_LIFETIMEBOUND,
                                                                  OwnerThread<Owner> const& slot) noexcept {
         // The proof does not move, so the check reads a proof of its own,
         // and the return builds the proof in the place of the caller.
@@ -538,6 +540,9 @@ struct owner_thread_door {
         }
         return QuiescenceProof<Owner>{owner, slot};
     }
+    template <typename Owner>
+    static void prove_quiescence(Owner const&&, OwnerThread<Owner> const&) =
+        delete("the proof borrows the owner, and a temporary owner ends with the full expression");
 };
 
 }  // namespace detail
@@ -548,7 +553,7 @@ bool QuiescenceProof<Owner>::is_quiescent() const noexcept {
 }
 
 template <typename Owner>
-QuiescenceProof<Owner> OwnerThread<Owner>::quiescence(Owner const& owner) const noexcept {
+QuiescenceProof<Owner> OwnerThread<Owner>::quiescence(Owner const& owner CRUCIBLE_LIFETIMEBOUND) const noexcept {
     if (thread_.holds_thread()) [[unlikely]] {
         ::foundation::core::fatal("OwnerThread: a proof of quiescence while the thread of the owner runs.  Call "
                                   "stop_and_join first");

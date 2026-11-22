@@ -176,9 +176,12 @@ void check_ci_stable(const CI_t& a, const CI_t& b) {
 
 // The values of a fixed array as a View of the samples.
 template <std::size_t Count>
-[[nodiscard]] ::fixy::View<const double> view_of(::fixy::FixedArray<double, Count> const& values) {
+[[nodiscard]] ::fixy::View<const double> view_of(::fixy::FixedArray<double, Count> const& values
+                                                 CRUCIBLE_LIFETIMEBOUND) {
     return ::fixy::View<const double>{values.view()};
 }
+template <class Whole>
+void view_of(Whole const&&) = delete("the View borrows the values, and a temporary ends with the full expression");
 
 void test_percentile_interp() {
     // An empty input gives zero.

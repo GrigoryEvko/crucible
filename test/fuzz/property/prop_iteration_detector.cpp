@@ -61,9 +61,12 @@ using Stream = ::fixy::FixedArray<T, kMaxLen>;
 // The element at position of a stream.  Each position that the test reads
 // is below the length of the stream, which is at most kMaxLen.
 template <class T>
-[[nodiscard]] T const& at_position(Stream<T> const& stream, uint32_t position) noexcept {
+[[nodiscard]] T const& at_position(Stream<T> const& stream CRUCIBLE_LIFETIMEBOUND, uint32_t position) noexcept {
     return stream.at(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"));
 }
+template <class Whole, class... Rest>
+void at_position(Whole const&&, Rest&&...) =
+    delete("the reference names an element of the stream, and a temporary ends with the full expression");
 
 // Writes value at position of a stream.  Each position that the test writes
 // is below the length of the stream, which is at most kMaxLen.

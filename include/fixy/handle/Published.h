@@ -90,8 +90,12 @@ private:
 // time.  The caller calls it after the last write of the object.
 template <class Proof, class T>
     requires CanPublish<Proof, T>
-[[nodiscard]] constexpr Published<T> mint_published(Proof const& /*proof*/, T const& object) noexcept {
+[[nodiscard]] constexpr Published<T> mint_published(Proof const& /*proof*/,
+                                                    T const& object CRUCIBLE_LIFETIMEBOUND) noexcept {
     return Published<T>{published_key{}, ::foundation::core::erase_brand(::foundation::core::to(object))};
 }
+template <class Proof, class T>
+void mint_published(Proof const&, T const&&) =
+    delete("a Published borrows its object, and a temporary object ends with the full expression");
 
 }  // namespace fixy::handle

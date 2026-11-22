@@ -136,9 +136,12 @@ struct Schedule {
 // The slot at position of a mirror or a payload.  The mirror masks its
 // cursor with MIRROR_CAPACITY - 1, and a payload index stays below
 // MIRROR_CAPACITY, so each position is below the capacity.
-[[nodiscard]] const MirrorSlot& slot_at(const Mirror& slots, uint32_t position) noexcept {
+[[nodiscard]] const MirrorSlot& slot_at(const Mirror& slots CRUCIBLE_LIFETIMEBOUND, uint32_t position) noexcept {
     return slots.at(::fixy::Index<MIRROR_CAPACITY>::check(position).expect("a slot position is below the capacity"));
 }
+template <class... Rest>
+void slot_at(const Mirror&&, Rest&&...) =
+    delete("the reference names a slot of the mirror, and a temporary ends with the full expression");
 
 }  // namespace
 

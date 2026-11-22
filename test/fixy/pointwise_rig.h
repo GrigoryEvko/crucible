@@ -93,12 +93,14 @@ inline void set_lane(Lanes& lanes, std::size_t axis, std::size_t value) noexcept
     return span + 1;
 }
 
-[[nodiscard]] inline ::fixy::View<std::size_t const> sizes_of(Layout const& layout) noexcept {
+[[nodiscard]] inline ::fixy::View<std::size_t const> sizes_of(Layout const& layout CRUCIBLE_LIFETIMEBOUND) noexcept {
     return layout.sizes.view().window(0, layout.rank).expect("the rank is at most the lane count");
 }
-[[nodiscard]] inline ::fixy::View<std::size_t const> strides_of(Layout const& layout) noexcept {
+void sizes_of(Layout const&&) = delete("the View borrows the layout, and a temporary ends with the full expression");
+[[nodiscard]] inline ::fixy::View<std::size_t const> strides_of(Layout const& layout CRUCIBLE_LIFETIMEBOUND) noexcept {
     return layout.strides.view().window(0, layout.rank).expect("the rank is at most the lane count");
 }
+void strides_of(Layout const&&) = delete("the View borrows the layout, and a temporary ends with the full expression");
 
 // A shape of at most kMaxCount elements.  The sizes come near the lane
 // counts 8 and 16, and one shape in sixteen has no element.

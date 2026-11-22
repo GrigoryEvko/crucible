@@ -137,16 +137,20 @@ struct Layout {
     }
 }
 
-[[nodiscard]] ::fixy::View<std::size_t const> sizes_of(Layout const& layout) noexcept {
+[[nodiscard]] ::fixy::View<std::size_t const> sizes_of(Layout const& layout CRUCIBLE_LIFETIMEBOUND) noexcept {
     return layout.sizes.view().window(0, layout.rank).expect("the rank is at most the lane count");
 }
-[[nodiscard]] ::fixy::View<std::size_t const> strides_of(Layout const& layout) noexcept {
+void sizes_of(Layout const&&) = delete("the View borrows the layout, and a temporary ends with the full expression");
+[[nodiscard]] ::fixy::View<std::size_t const> strides_of(Layout const& layout CRUCIBLE_LIFETIMEBOUND) noexcept {
     return layout.strides.view().window(0, layout.rank).expect("the rank is at most the lane count");
 }
+void strides_of(Layout const&&) = delete("the View borrows the layout, and a temporary ends with the full expression");
 
-[[nodiscard]] ::fixy::Option<SharedView> view_of(Run const& run, Layout const& layout) noexcept {
+[[nodiscard]] ::fixy::Option<SharedView> view_of(Run const& run CRUCIBLE_LIFETIMEBOUND, Layout const& layout) noexcept {
     return ::fixy::mint_strided_view(run.view(), sizes_of(layout), strides_of(layout), layout.offset);
 }
+void view_of(Run const&&, Layout const&) = delete("the view borrows the run, and a temporary ends with the full "
+                                                  "expression");
 
 // The sequence of a walk over one view.
 [[nodiscard]] Sequence walk_sequence(SharedView view) noexcept {

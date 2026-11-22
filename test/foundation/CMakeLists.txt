@@ -4376,6 +4376,11 @@ foundation_neg_compile_test(neg_core_return_view_of_local_list_mut
 foundation_neg_compile_test(neg_core_return_ref_of_parameter
   "neg_core_return_ref_of_parameter\\.cpp:14:[0-9]+: error: this function gives back a borrow of the parameter list"
   "and that object ends with the frame of the function")
+# A parameter by a const reference that the result borrows carries the mark
+# CRUCIBLE_LIFETIMEBOUND, and its deleted twin refuses a temporary argument.
+foundation_neg_compile_test(neg_core_borrow_of_temporary
+  "neg_core_borrow_of_temporary\\.cpp:26:[0-9]+: error: use of deleted function"
+  "the View borrows the list, and a temporary list ends with the full expression")
 # get_mut gives a RefMut, which does not copy, and a const ViewMut gives none.
 foundation_neg_compile_test(neg_core_view_mut_get_mut_copied
   "neg_core_view_mut_get_mut_copied\\.cpp:16:[0-9]+: error: use of deleted function .foundation::core::RefMut<T, Brand>::RefMut\\(const foundation::core::RefMut<T, Brand>&\\)"

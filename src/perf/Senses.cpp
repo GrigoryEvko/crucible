@@ -9,12 +9,16 @@ namespace {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
 // A borrow of the facade that option holds, or none when it holds none.
 template <class Facade>
-[[nodiscard]] ::fixy::Option<::fixy::Ref<Facade const>> borrow_of(::fixy::Option<Facade> const& option) noexcept {
+[[nodiscard]] ::fixy::Option<::fixy::Ref<Facade const>> borrow_of(::fixy::Option<Facade> const& option
+                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept {
     using Borrow = ::fixy::Option<::fixy::Ref<Facade const>>;
     return option.match(
         [](Facade const& facade) noexcept { return Borrow::some(::fixy::erase_brand(::fixy::to(facade))); },
         [] noexcept { return Borrow{::fixy::none}; });
 }
+template <class Facade>
+void borrow_of(::fixy::Option<Facade> const&&) =
+    delete("the Ref borrows the facade, and a temporary Option ends with the full expression");
 #endif
 
 }  // namespace

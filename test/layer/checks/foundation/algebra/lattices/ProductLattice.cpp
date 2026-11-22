@@ -55,6 +55,10 @@ static_assert(P_u8u8::get<0>(P_u8u8::bottom()) == 0);
 static_assert(P_u8u8::get<1>(P_u8u8::bottom()) == 0);
 static_assert(P_u8u8::get<0>(P_u8u8::top()) == 255);
 static_assert(P_u8u8::get<1>(P_u8u8::top()) == 255);
+// A part of a temporary element comes back as a copy, and a part of a named
+// element as a reference into it.
+static_assert(!std::is_reference_v<decltype(P_u8u8::get<0>(P_u8u8::bottom()))>);
+static_assert(std::is_reference_v<decltype(P_u8u8::get<0>(std::declval<P_u8u8::element_type const&>()))>);
 
 [[nodiscard]] consteval bool binary_get_matches_first_second() noexcept {
     P_u8u8::element_type e{17, 42};

@@ -93,6 +93,13 @@ template <class T, std::size_t N>
     return array.at(slot_index(array, position));
 }
 
+// A temporary array ends with the full expression, so its slot comes back as
+// a copy and not as a reference.
+template <class T, std::size_t N>
+[[nodiscard]] constexpr T slot_at(core::FixedArray<T, N> const&& array, std::size_t position) noexcept {
+    return array.at(slot_index(array, position));
+}
+
 // The uses of each node: one for each step that reads it and one for each
 // output.  The last node counts the outputs of the empty value.
 template <std::size_t Leaves, std::size_t Steps, std::size_t Outputs>
