@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// foundation::core::detail::NicheStatementPlace in utils/rule-table.txt.  Edit the row, not this file.
+// foundation::core::NicheStatementPlace in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// foundation::core::detail::NicheStatementPlace attests to a fact that it cannot see.  The expression below is
+// foundation::core::NicheStatementPlace attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::detail::NicheStatementPlace{foundation::core::Site{}};
+    [[maybe_unused]] auto forged = foundation::core::NicheStatementPlace{foundation::core::Site{}};
     return 0;
 }

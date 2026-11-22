@@ -213,14 +213,24 @@ consteval bool is_layer_header(Side<side::ChoiceHeader, char const*> const& anch
 // niche_statement builds a place, because the two constructors are private,
 // so no caller names a file.  The copy is user-provided, so std::bit_cast and
 // a lifetime start over bytes build no place, for the reasons that niche_key
+}  // namespace detail
+
+// The place of a niche statement: true when the declaration that makes the
+// statement stands in a header of the base, at the scope of a class or of a
+// namespace.  A mark that the body of a function makes or copies, such as
+// the element of a container of the base, reads the name of its function,
+// so it is no statement.  Only the default argument of the constructor of
+// niche_statement builds a place, because the two constructors are private,
+// so no caller names a file.  The copy is user-provided, so std::bit_cast and
+// a lifetime start over bytes build no place, for the reasons that niche_key
 // gives.  __builtin_FILE in the body of the constructor gives the file of
 // this header, the anchor, and the build maps each file name in the same way.
 class NicheStatementPlace final {
     friend class ::foundation::core::niche_statement;
 
     consteval explicit NicheStatementPlace(Site const& site) noexcept
-        : is_in_base_{is_layer_header(side_as<side::ChoiceHeader>(__builtin_FILE()), site_file_(site))
-                      && site_function_(site)[0] == '\0'} {}
+        : is_in_base_{detail::is_layer_header(side_as<side::ChoiceHeader>(__builtin_FILE()), detail::site_file_(site))
+                      && detail::site_function_(site)[0] == '\0'} {}
     consteval NicheStatementPlace(NicheStatementPlace const& other) noexcept : is_in_base_{other.is_in_base_} {}
 
     bool is_in_base_ = false;
@@ -228,8 +238,6 @@ class NicheStatementPlace final {
 public:
     NicheStatementPlace& operator=(NicheStatementPlace const&) = delete("a place is the file of one statement");
 };
-
-}  // namespace detail
 
 // The statement that no door of a payload builds its empty value (THE CHECK
 // OF THE STATEMENT).  The default argument of the constructor reads the Site
@@ -241,12 +249,12 @@ public:
 // so std::bit_cast builds no mark.
 class niche_statement final {
 public:
-    consteval niche_statement(detail::NicheStatementPlace place = detail::NicheStatementPlace{Site{
-                                  __builtin_FILE(), __builtin_LINE(), __builtin_FUNCTION()}}) noexcept
+    consteval niche_statement(NicheStatementPlace place = NicheStatementPlace{Site{__builtin_FILE(), __builtin_LINE(),
+                                                                                   __builtin_FUNCTION()}}) noexcept
         : is_in_base_{place.is_in_base_} {}
     consteval niche_statement(niche_statement const& other,
-                              detail::NicheStatementPlace place = detail::NicheStatementPlace{Site{
-                                  __builtin_FILE(), __builtin_LINE(), __builtin_FUNCTION()}}) noexcept
+                              NicheStatementPlace place = NicheStatementPlace{Site{__builtin_FILE(), __builtin_LINE(),
+                                                                                   __builtin_FUNCTION()}}) noexcept
         : is_in_base_{other.is_in_base_ && place.is_in_base_} {}
 
     niche_statement&
