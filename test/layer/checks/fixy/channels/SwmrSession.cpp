@@ -22,6 +22,10 @@ using WriterHandle = SmallSession::WriterHandle;
 using ReaderHandle = SmallSession::ReaderHandle;
 
 static_assert(SwmrSessionSurface<SmallSession>);
+// The session states synchronized{}, so the check of foundation/Transfer.h
+// reads each door of it and of its handles.  The writer handle holds the
+// writer token by value, and a reader handle binds a const session.
+static_assert(::foundation::transfer::Synchronized<SmallSession>);
 static_assert(!SwmrSessionSurface<int>, "an int is not a channel");
 
 // The session takes the writer permission of its own brand, and no other.

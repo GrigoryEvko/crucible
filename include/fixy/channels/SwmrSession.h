@@ -192,14 +192,17 @@ public:
 
     class ReaderHandle {
         // The move clears the binding, so a moved-from reader cannot load
-        // while the share lives in the handle it moved to.
-        ::foundation::ChannelBinding<SwmrSession> session_;
+        // while the share lives in the handle it moved to.  The binding is to
+        // a const session, so a reader reads the snapshot and writes no part
+        // of the session: the guard gives its share back to the pool through
+        // the count of the pool, which two threads can write.
+        ::foundation::ChannelBinding<SwmrSession const> session_;
         ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand> guard_;
 
         constexpr ReaderHandle(
-            SwmrSession& session,
+            SwmrSession const& session,
             ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand>&& guard) noexcept
-            : session_{session, ::foundation::BindingKey<SwmrSession>{}}, guard_{std::move(guard)} {}
+            : session_{session, ::foundation::BindingKey<SwmrSession const>{}}, guard_{std::move(guard)} {}
 
         friend class SwmrSession;
 
