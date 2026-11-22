@@ -67,8 +67,9 @@ THE KEPT CORPUS
       * Each input of the queue of each instance goes into the corpus of
         the kept state, with the digits of its SHA-256 as its name, so the
         name of an input never changes.  afl-cmin then keeps the inputs that
-        give the coverage of the corpus (minimized()).  A failure of
-        afl-cmin keeps each input and fails the campaign.
+        give the coverage of the corpus (minimized()).  The corpus holds each
+        input before afl-cmin starts, so an afl-cmin that cannot start, runs
+        past its limit or fails loses no input, and the campaign fails.
       * OUT_DIR/afl goes.
     The seeds of a campaign are the seeds that the harness writes and each
     input of the corpus.  The kept state of a harness is the directory
@@ -119,12 +120,13 @@ AFL_TOOL = "aflplusplus"
 # The entry of the CMake cache that names the compiler of an instrumented build (configure_and_build()).
 COMPILER_ENTRY = "CMAKE_CXX_COMPILER"
 # The directory of the kept state of the campaigns in the work root, the two directories of the state of a harness, the
-# directory of a new corpus that afl-cmin writes, the prefix of a seed from the corpus, and the digits of the SHA-256
-# in the name of a kept input (THE KEPT CORPUS).
+# directory of a new corpus that afl-cmin writes and the directory of the corpus during the swap (minimized()), the
+# prefix of a seed from the corpus, and the digits of the SHA-256 in the name of a kept input (THE KEPT CORPUS).
 KEPT_ROOT = "fuzz-campaigns"
 CORPUS = "corpus"
 FINDINGS = "findings"
 NEXT_CORPUS = ".corpus-next"
+EARLIER_CORPUS = ".corpus-earlier"
 KEPT_SEED_PREFIX = "kept-"
 CONTENT_DIGITS = 32
 # The time after SECONDS that an instance gets before SIGINT stops it, and the time after a SIGINT of
@@ -334,10 +336,11 @@ def harvested(out_dir: Path, kept: Path, staging: Path) -> tuple[Path, ...]:
 def minimized(kept: Path, staging: Path, afl_bin: Path, binary: Path, cpus: int) -> int:
     """Give the corpus of the kept state the inputs of staging, minimize it with afl-cmin, and return its inputs.
 
-    The corpus and staging go into one input directory of afl-cmin, and the new corpus replaces the corpus.  Each
-    input has the digits of its SHA-256 as its name, so an input of the corpus and the same input of a queue give one
-    file, and afl-cmin keeps the name.  A staging with no input changes nothing (THE KEPT CORPUS).  Complexity: one
-    run of afl-cmin on the inputs.
+    Each input of staging goes into the corpus first, so the corpus holds each input before afl-cmin starts, also
+    when afl-cmin cannot start, runs past its limit or fails.  Each input has the digits of its SHA-256 as its name,
+    so an input of the corpus and the same input of a queue give one file, and afl-cmin keeps the name.  The output
+    of afl-cmin replaces the corpus only after a run with the status 0.  A staging with no input changes nothing
+    (THE KEPT CORPUS).  Complexity: one run of afl-cmin on the inputs.
 
     Args:
         kept: The kept state of the harness
@@ -347,29 +350,31 @@ def minimized(kept: Path, staging: Path, afl_bin: Path, binary: Path, cpus: int)
         cpus: The parallel runs of afl-cmin
 
     Raises:
-        proc.ToolFailed: If afl-cmin fails.  The corpus then holds each input of staging, so no input is lost
+        proc.ToolFailed: If afl-cmin does not give a corpus.  The corpus then holds each input of staging
     """
-    corpus = kept / CORPUS
+    corpus, following, earlier = kept / CORPUS, kept / NEXT_CORPUS, kept / EARLIER_CORPUS
+    # A step that a kill stopped between the two renames of the swap below left the corpus as EARLIER_CORPUS.
+    if earlier.is_dir() and not corpus.exists():
+        earlier.rename(corpus)
+    shutil.rmtree(earlier, ignore_errors=True)
     corpus.mkdir(parents=True, exist_ok=True)
     if not any(staging.iterdir()):
         return sum(1 for _ in corpus.iterdir())
-    for path in corpus.iterdir():
-        shutil.copyfile(path, staging / path.name)
-    following = kept / NEXT_CORPUS
+    for path in staging.iterdir():
+        shutil.copyfile(path, corpus / path.name)
     shutil.rmtree(following, ignore_errors=True)
     environment = dict(_afl_environment(), AFL_PATH=str(afl_bin), **SANITIZER_OPTIONS)
     limits = ("-m", "none", "-t", "2000", "-T", str(max(1, cpus)))
-    command = [str(afl_bin / "afl-cmin"), "-i", str(staging), "-o", str(following), *limits, "--", str(binary)]
+    command = [str(afl_bin / "afl-cmin"), "-i", str(corpus), "-o", str(following), *limits, "--", str(binary)]
     completed = proc.run(proc.Command(command, timeout_s=proc.TOOL_S, env=environment, stderr=proc.Output.MERGE))
     if completed.exit != 0 or not following.is_dir():
-        for path in staging.iterdir():
-            shutil.copyfile(path, corpus / path.name)
         shutil.rmtree(following, ignore_errors=True)
         tail = " ".join(line.strip() for line in completed.out.strip().splitlines()[-3:])
         message = f"afl-cmin of {binary.name} exits with {completed.exit}, and {corpus} keeps each input: {tail}"
         raise proc.ToolFailed(message, completed.command, completed)
-    shutil.rmtree(corpus)
+    corpus.rename(earlier)
     following.rename(corpus)
+    shutil.rmtree(earlier)
     return sum(1 for _ in corpus.iterdir())
 
 
@@ -964,6 +969,16 @@ def self_test() -> int:
         names = sorted(path.name for path in (kept / CORPUS).iterdir())
         expect(f"a failure of afl-cmin fails the campaign, and the corpus keeps each input: {names}",
                is_refused and names == ["main-id:000000", "older"] and not (kept / NEXT_CORPUS).exists())
+        (failed_bin / "afl-cmin").unlink()
+        (staging / "main-id:000001").write_bytes(b"queued again")
+        try:
+            minimized(kept, staging, failed_bin, Path(work) / "fuzz_planted", 1)
+            is_refused = False
+        except proc.ToolFailed:
+            is_refused = True
+        names = sorted(path.name for path in (kept / CORPUS).iterdir())
+        expect(f"an afl-cmin that cannot start fails the campaign, and the corpus keeps each input: {names}",
+               is_refused and names == ["main-id:000000", "main-id:000001", "older"])
 
     if failures:
         print(f"loop fuzz --self-test: FAILED, {len(failures)} case(s) did not hold")
