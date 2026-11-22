@@ -78,6 +78,42 @@ static_assert(sizeof(ConsumerEnd<CountLog>) == sizeof(EndRef) + sizeof(CountLog:
 static_assert(ProducerEnd<CountLog>::side == SpscSide::producer && ConsumerEnd<CountLog>::side == SpscSide::consumer);
 static_assert(std::is_same_v<ConsumerEnd<CountLog>::state_type, CountLog::consumer_state>);
 
+// The places of the ends of an owner and of the states of its two ends: each
+// end takes the next place.  A test reads them around the end of a split.
+int g_end_place = 0;
+int g_owner_end_place = 0;
+int g_producer_end_place = 0;
+int g_consumer_end_place = 0;
+
+// An owner whose end and whose two states record their places.
+class OrderLog final {
+public:
+    struct producer_state {
+        ~producer_state() { g_producer_end_place = ++g_end_place; }
+    };
+    struct consumer_state {
+        ~consumer_state() { g_consumer_end_place = ++g_end_place; }
+    };
+
+    OrderLog() noexcept = default;
+    OrderLog(OrderLog const&) = delete("a log is pinned to its two ends");
+    OrderLog(OrderLog&&) = delete("a log is pinned to its two ends");
+    ~OrderLog() { g_owner_end_place = ++g_end_place; }
+};
+
+// THE SPLIT holds the Box first, so its two ends end before the owner that
+// their Ref names: the consumer end, then the producer end, then the owner.
+// The order is in the type of the split, and no holder can change it.
+int check_the_ends_end_before_the_owner() {
+    {
+        [[maybe_unused]] auto minted =
+            ::fixy::concurrent::mint_spsc_split<OrderLog>(::foundation::effects::testing::test().alloc);
+    }
+    if (g_consumer_end_place != 1 || g_producer_end_place != 2) return 1;
+    if (g_owner_end_place != 3) return 2;
+    return 0;
+}
+
 // Reads each item that the log holds, through the consumer end.
 [[nodiscard]] std::uint64_t read_all(ConsumerEnd<CountLog>& end) noexcept {
     std::uint64_t count = 0;
@@ -138,5 +174,6 @@ int check_split() {
 
 int main() {
     if (int rc = check_split(); rc != 0) return rc;
+    if (int rc = check_the_ends_end_before_the_owner(); rc != 0) return 10 + rc;
     return 0;
 }

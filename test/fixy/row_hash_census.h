@@ -461,7 +461,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::core::side, "the roles of the arguments of a call: empty tags that a Side names at compile "
                                  "time, and none of them is a value"},
     {^^::fixy::concurrent::spsc_ends_witness,
-     "the owner that the witness row of the ends of an SPSC owner names: no code builds one, and it is no carrier"},
+     "the owner and the brand that the witness rows of the split of an SPSC owner name: no code builds one, and they "
+     "are no carriers"},
     // The element ops are in the target namespace of their header, whose name
     // follows the target (THE TARGET NAMESPACE of foundation/Platform.h).
     {std::meta::parent_of(^^::foundation::core::elementwise::Sum),

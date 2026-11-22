@@ -418,9 +418,10 @@ mint_spsc_split(Marker allocation, Args&&... args) noexcept {
 
 namespace spsc_ends_witness {
 
-// An owner with two empty states, which the witness row of SpscEnd in
-// utils/rule-table.txt names.  No code builds one.  It is outside a detail
-// namespace, so the witness fixture of the row uses no detail name.
+// An owner with two empty states and a brand, which the witness rows of
+// SpscEnd, SpscEndKey and SpscSplit in utils/rule-table.txt name.  No code
+// builds one.  They are outside a detail namespace, so the witness fixtures
+// of the rows use no detail name.
 struct WitnessOwner final {
     struct producer_state {};
     struct consumer_state {};
@@ -428,6 +429,7 @@ struct WitnessOwner final {
     WitnessOwner(WitnessOwner const&) = delete("the witness owner is pinned, as each owner of a split is");
     WitnessOwner(WitnessOwner&&) = delete("the witness owner is pinned, as each owner of a split is");
 };
+struct WitnessBrand final {};
 
 }  // namespace spsc_ends_witness
 

@@ -202,6 +202,16 @@
       "constructor": "\\bSpscEnd\\("
     },
     {
+      "name": "neg_witness_concurrent_spscendkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSpscEndKey\\("
+    },
+    {
+      "name": "neg_witness_concurrent_spscsplit_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSpscSplit\\("
+    },
+    {
       "name": "neg_witness_concurrent_stage_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bStage\\("
@@ -2321,6 +2331,14 @@
     {
       "type": "fixy::perf::PerfEventDoor",
       "header": "fixy/os/PerfEvent.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscEndKey<fixy::concurrent::spsc_ends_witness::WitnessOwner>",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>",
+      "header": "fixy/concurrent/SpscEnds.h"
     },
     {
       "type": "fixy::concurrent::SpscEnd<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::SpscSide::producer>",
