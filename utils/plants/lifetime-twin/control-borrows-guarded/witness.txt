@@ -1,0 +1,9 @@
+# No function gives a line of the kind missing-mark: a marked parameter with
+# its deleted twin, a parameter with a live rvalue overload, a deleted twin
+# with no marker, a parameter whose type holds a borrow, a copy into the
+# result, a parameter that a temporary cannot bind, a closure, a hidden friend
+# with a friend twin, a deduced T&, and a result by an rvalue reference.  The
+# unit compiles in the mode error.
+compile error src/guarded.cpp mode=error
+flag error -freflection
+exit error pass

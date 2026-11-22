@@ -420,6 +420,11 @@ public:
                 }
                 return;
             }
+            case PARM_DECL:
+                if (reads_reference_parameters_ && TREE_CODE(TREE_TYPE(expression)) == REFERENCE_TYPE) {
+                    out.push_back(expression);
+                }
+                return;
             case VAR_DECL:
             case RESULT_DECL: {
                 // The front end gives a named return value the RESULT_DECL of
@@ -474,7 +479,8 @@ public:
                 return;
             }
             case PARM_DECL:
-                if (ends_with_frame(object)) {
+                if (ends_with_frame(object)
+                    || (reads_reference_parameters_ && TREE_CODE(TREE_TYPE(object)) == REFERENCE_TYPE)) {
                     out.push_back(object);
                 }
                 return;
@@ -485,9 +491,16 @@ public:
             case ARRAY_REF:
                 add_object(TREE_OPERAND(object, 0), out, depth + 1);
                 return;
-            case INDIRECT_REF:
+            case INDIRECT_REF: {
+                tree operand = strip_conversions(TREE_OPERAND(object, 0));
+                if (reads_reference_parameters_ && operand != NULL_TREE && TREE_CODE(operand) == PARM_DECL
+                    && TREE_CODE(TREE_TYPE(operand)) == REFERENCE_TYPE) {
+                    out.push_back(operand);
+                    return;
+                }
                 add_origins(TREE_OPERAND(object, 0), out, depth + 1);
                 return;
+            }
             case CALL_EXPR:
             case AGGR_INIT_EXPR: {
                 tree named = standard_reference_object(object);
@@ -587,7 +600,11 @@ public:
         std::vector<tree> found;
         add_origins(expression, found, depth);
         for (tree origin : found) {
-            if (origin != NULL_TREE && could_name(result, TREE_TYPE(origin), Lend::part)) {
+            tree type = origin != NULL_TREE ? TREE_TYPE(origin) : NULL_TREE;
+            if (type != NULL_TREE && TREE_CODE(type) == REFERENCE_TYPE) {
+                type = TREE_TYPE(type);
+            }
+            if (origin != NULL_TREE && could_name(result, type, Lend::part)) {
                 out.push_back(origin);
             }
         }
@@ -694,6 +711,13 @@ private:
         }
     }
 
+public:
+    // True when the walk gives each parameter by reference that an origin
+    // names too, for THE BORROWED PARAMETERS, and not only the objects that
+    // end with the frame.
+    bool reads_reference_parameters_ = false;
+
+private:
     tree function_;
     bool is_grown_ = false;
     std::unordered_map<unsigned, std::vector<tree>> local_origins_;
@@ -737,6 +761,85 @@ tree check_return(tree* node, int*, void* data) {
     return NULL_TREE;
 }
 
+// The data of the walk of the returns for THE BORROWED PARAMETERS.
+struct ParameterWalk {
+    OriginWalk* origins = nullptr;
+    std::vector<tree>* found = nullptr;
+};
+
+// The callback of cp_walk_tree that adds the origins of each return.
+tree add_return_origins(tree* node, int*, void* data) {
+    ParameterWalk& walk = *static_cast<ParameterWalk*>(data);
+    if (TREE_CODE(*node) == RETURN_EXPR && TREE_OPERAND(*node, 0) != NULL_TREE) {
+        walk.origins->add_origins(TREE_OPERAND(*node, 0), *walk.found, 0);
+    }
+    return NULL_TREE;
+}
+
+// True for a function that no overload set holds: an artificial function, and
+// the call operator and the static thunk of a closure.
+bool is_closure_function(tree function) {
+    tree owner = DECL_CONTEXT(function);
+    return DECL_ARTIFICIAL(function) || (owner != NULL_TREE && TYPE_P(owner) && LAMBDA_TYPE_P(owner));
+}
+
+// True when the parameter at INDEX of the pattern of the instance FUNCTION is
+// a reference to a template parameter that is not const: T& of to(T&), or the
+// forwarding T&&.  A temporary that is not const deduces no const lvalue
+// reference there, and a const object deduces the const reference of the
+// instance.  False for a function that is no instance.
+bool is_deduced_lvalue_parameter(tree function, int index) {
+    if (DECL_LANG_SPECIFIC(function) == nullptr || !DECL_TEMPLATE_INFO(function)
+        || !DECL_TEMPLATE_INSTANTIATION(function)) {
+        return false;
+    }
+    tree pattern = DECL_TEMPLATE_RESULT(most_general_template(DECL_TI_TEMPLATE(function)));
+    if (pattern == NULL_TREE || TREE_CODE(pattern) != FUNCTION_DECL) {
+        return false;
+    }
+    tree parameter = FUNCTION_FIRST_USER_PARM(pattern);
+    for (int position = 0; parameter != NULL_TREE && position < index; ++position) {
+        parameter = DECL_CHAIN(parameter);
+    }
+    tree type = parameter != NULL_TREE ? TREE_TYPE(parameter) : NULL_TREE;
+    return type != NULL_TREE && TREE_CODE(type) == REFERENCE_TYPE && TREE_CODE(TREE_TYPE(type)) == TEMPLATE_TYPE_PARM
+        && !TYPE_READONLY(TREE_TYPE(type));
+}
+
+// Gives each parameter by a const reference that an origin of a return names
+// to the kind missing-mark (THE BORROWED PARAMETERS).  An assignment gives
+// back its object by its convention, and an rvalue reference in the result
+// forwards the parameter on, as get of an rvalue Record does, so the rule
+// reads neither.  A parameter whose type holds a borrow lends the objects of
+// its borrows, and an empty class holds nothing to borrow.
+void note_borrowed_parameters(tree function, tree body) {
+    tree result = TREE_TYPE(DECL_RESULT(function));
+    if (DECL_ASSIGNMENT_OPERATOR_P(function) || is_closure_function(function)
+        || (TREE_CODE(result) == REFERENCE_TYPE && TYPE_REF_IS_RVALUE(result))) {
+        return;
+    }
+    OriginWalk origins{function};
+    origins.reads_reference_parameters_ = true;
+    origins.record_locals(body);
+    std::vector<tree> found;
+    ParameterWalk walk{&origins, &found};
+    cp_walk_tree_without_duplicates(&body, add_return_origins, &walk);
+    int index = 0;
+    for (tree parameter = FUNCTION_FIRST_USER_PARM(function); parameter != NULL_TREE;
+         parameter = DECL_CHAIN(parameter), ++index) {
+        tree type = TREE_TYPE(parameter);
+        if (TREE_CODE(type) != REFERENCE_TYPE || TYPE_REF_IS_RVALUE(type) || !TYPE_READONLY(TREE_TYPE(type))) {
+            continue;
+        }
+        tree referred = TREE_TYPE(type);
+        bool const is_value = !holds_borrow(referred, 0) && !(CLASS_TYPE_P(referred) && is_empty_class(referred));
+        if (is_value && std::find(found.begin(), found.end(), parameter) != found.end()
+            && !is_deduced_lvalue_parameter(function, index)) {
+            note_borrowed_parameter(function, parameter, index);
+        }
+    }
+}
+
 void on_pre_genericize(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
@@ -754,6 +857,7 @@ void on_pre_genericize(void* gcc_data, void*) {
     origins.record_locals(body);
     ReturnWalk walk{&origins, function};
     cp_walk_tree_without_duplicates(&body, check_return, &walk);
+    note_borrowed_parameters(function, body);
 }
 
 void on_collection(void*, void*) { borrow_classes.clear(); }

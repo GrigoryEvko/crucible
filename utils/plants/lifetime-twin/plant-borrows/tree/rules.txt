@@ -1,0 +1,8 @@
+# The rule table of the plant plant-borrows of the rule lifetime-twin.  The
+# unit of src/ is quarantined.  The headers of the repository are outside the
+# root of the plant, so the table admits the names of the base that the
+# planted code uses.
+
+admit foundation::core | the owners and the View whose borrows the planted code returns
+
+quarantine src/

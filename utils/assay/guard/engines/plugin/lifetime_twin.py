@@ -15,6 +15,10 @@ THE RULE
                      or ends with a pack.  At index I it takes an rvalue
                      reference to the type of the parameter, or to a
                      template parameter
+      missing-mark   a parameter by a const reference that a return of its
+                     function borrows through a door of the base, with no
+                     marker and no overload that takes an rvalue at its index
+                     (declaration.cpp, THE BORROWED PARAMETERS)
     A marker on a declaration that is no parameter is a compile error in
     each build.  The rule reads the lines in the scope of its row of
     utils/registry.txt.
@@ -35,11 +39,14 @@ RULE = "lifetime-twin"
 ACTIONS = {
     "missing-twin": "claims a lifetime bound, and no deleted overload refuses a temporary there.  Declare the "
     "overload with an rvalue reference at that index and `= delete`, beside the function",
+    "missing-mark": "is a parameter by a const reference that a return borrows, so a temporary argument ends before "
+    "the result.  Mark the parameter with CRUCIBLE_LIFETIMEBOUND and declare its deleted twin, or return a value "
+    "that owns its storage",
 }
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:
-    """Give one error for each marked parameter with no deleted overload, and each problem of the census.
+    """Give one error for each finding of the two kinds, and each problem of the census.
 
     Raises:
         NotApplicable: If the rule does not apply to the build

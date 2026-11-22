@@ -1,0 +1,27 @@
+# A parameter by a const reference that a return borrows through a door of
+# the base, with no marker and no overload that takes an rvalue at its index,
+# is a finding of the kind missing-mark: a View of a list, both parameters of
+# a reference to the smaller int, a member, the instance of a template, a
+# function whose deleted twin takes an lvalue, and a function whose deleted
+# twin takes a pack of const references.  In the mode error each finding is
+# an error.
+compile report src/borrows.cpp
+flag report -freflection
+exit report pass
+finding report lifetime-twin missing-mark src/borrows.cpp:15:41 | planted::view_of() parameter 1
+finding report lifetime-twin missing-mark src/borrows.cpp:17:31 | planted::smaller() parameter 1
+finding report lifetime-twin missing-mark src/borrows.cpp:17:48 | planted::smaller() parameter 2
+finding report lifetime-twin missing-mark src/borrows.cpp:20:44 | planted::Table::row_of() parameter 1
+finding report lifetime-twin missing-mark src/borrows.cpp:24:62 | planted::generic_view_of() parameter 1
+finding report lifetime-twin missing-mark src/borrows.cpp:28:45 | planted::lvalue_twin() parameter 1
+finding report lifetime-twin missing-mark src/borrows.cpp:31:45 | planted::packed_twin() parameter 1
+compile error src/borrows.cpp mode=error findings=report
+flag error -freflection
+exit error fail
+error error src/borrows.cpp:15 | quarantine: missing-mark planted::view_of() parameter 1;
+error error src/borrows.cpp:17 | quarantine: missing-mark planted::smaller() parameter 1;
+error error src/borrows.cpp:17 | quarantine: missing-mark planted::smaller() parameter 2;
+error error src/borrows.cpp:20 | quarantine: missing-mark planted::Table::row_of() parameter 1;
+error error src/borrows.cpp:24 | quarantine: missing-mark planted::generic_view_of() parameter 1;
+error error src/borrows.cpp:28 | quarantine: missing-mark planted::lvalue_twin() parameter 1;
+error error src/borrows.cpp:31 | quarantine: missing-mark planted::packed_twin() parameter 1;

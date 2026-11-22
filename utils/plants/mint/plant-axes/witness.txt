@@ -3,7 +3,10 @@
 # the base header fixy/Mints.h because the argument sentinel names it, and it
 # reads the quarantined unit in each compile.  In the mode error each finding
 # is an error, and a record is none.  With no sentinel, the unit reads only
-# the quarantined unit.
+# the quarantined unit.  The result of mint_view holds the address of its
+# parameter by a const reference, so the kind missing-mark of the rule
+# lifetime-twin gives a line there too, in each compile, because the kind
+# reads a base file in each unit.
 compile report mints.cpp
 flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Mints.h
 exit report pass
@@ -13,6 +16,7 @@ finding report mint mint include/fixy/Mints.h:65:25 | plant::Holder::mint_in_tem
 finding report mint mint-not-noexcept include/fixy/Mints.h:65:25 | plant::Holder::mint_in_template() const
 finding report mint mint include/fixy/Mints.h:59:29 | plant::Carrier::mint_member_view() const \| name=mint_member_view static=0 shape=member template=0 nodiscard=1 constexpr=0 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=Carrier owner=plant::Carrier
 finding report mint mint include/fixy/Mints.h:54:33 | plant::mint_view(const T0_0&) \| name=mint_view static=0 shape=token template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
+finding report lifetime-twin missing-mark include/fixy/Mints.h:54:52 | plant::mint_view() parameter 1
 finding report mint mint include/fixy/Mints.h:45:31 | plant::mint_plain_ctx(const plant::Ctx&) \| name=mint_plain_ctx static=0 shape=ctx template=0 nodiscard=1 constexpr=1 noexcept=1 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding report mint mint-unfit-context include/fixy/Mints.h:45:31 | plant::mint_plain_ctx(const plant::Ctx&)
 finding report mint mint include/fixy/Mints.h:42:31 | plant::mint_scoped_ctx_name(const T0_1&) \| name=mint_scoped_ctx_name static=0 shape=ctx template=1 nodiscard=1 constexpr=1 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-
@@ -35,6 +39,7 @@ flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Mints.h
 exit error fail
 error error mints.cpp:6 | quarantine: mint-not-noexcept quarantined::mint_quarantined(plant::Thing);
 error error include/fixy/Mints.h:65 | quarantine: mint-not-noexcept plant::Holder::mint_in_template() const;
+error error include/fixy/Mints.h:54 | quarantine: missing-mark plant::mint_view() parameter 1;
 error error include/fixy/Mints.h:45 | quarantine: mint-unfit-context plant::mint_plain_ctx(const plant::Ctx&);
 error error include/fixy/Mints.h:42 | quarantine: mint-unfit-context plant::mint_scoped_ctx_name(const T0_1&);
 error error include/fixy/Mints.h:34 | quarantine: mint-unfit-context plant::mint_surface_only(const T0_1&);
@@ -48,3 +53,4 @@ compile alone mints.cpp
 exit alone pass
 finding alone mint mint mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing) \| name=mint_quarantined static=0 shape=token template=0 nodiscard=1 constexpr=0 noexcept=0 constrained=0 gated=0 projection=0 defined=1 class=- owner=-
 finding alone mint mint-not-noexcept mints.cpp:6:35 | quarantined::mint_quarantined(plant::Thing)
+finding alone lifetime-twin missing-mark include/fixy/Mints.h:54:52 | plant::mint_view() parameter 1

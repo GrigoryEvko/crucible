@@ -1,0 +1,42 @@
+// Each function returns a borrow of a parameter by a const reference, and no
+// marker and no overload that takes an rvalue guards the parameter: a View of
+// a list, a reference to one of two ints, a member that borrows its argument,
+// the instance of a template, a function whose twin takes an lvalue, and a
+// function whose twin takes a pack of const references.
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using List = fc::FixedList<int, 4>;
+
+fc::View<int const> view_of(List const& list) { return list.view(); }
+
+int const& smaller(int const& left, int const& right) { return left < right ? left : right; }
+
+struct Table {
+    fc::View<int const> row_of(List const& list) const { return list.view(); }
+};
+
+template <class T>
+fc::View<T const> generic_view_of(fc::FixedList<T, 4> const& list) {
+    return list.view();
+}
+
+fc::View<int const> lvalue_twin(List const& list) { return list.view(); }
+fc::View<int const> lvalue_twin(List& list) = delete("an lvalue twin takes no temporary");
+
+fc::View<int const> packed_twin(List const& list) { return list.view(); }
+template <class... Rest>
+void packed_twin(Rest const&...) = delete("a pack of const references takes no temporary first");
+
+int read_all() {
+    List const list{};
+    return static_cast<int>(view_of(list).size() + Table{}.row_of(list).size() + generic_view_of(list).size()
+                            + lvalue_twin(list).size() + packed_twin(list).size())
+         + smaller(1, 2);
+}
+
+}  // namespace planted

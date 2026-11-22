@@ -234,6 +234,33 @@
 //     pattern of each template.  The entity is the function_signature of F
 //     and the number of the parameter.
 //
+// THE BORROWED PARAMETERS (the rule lifetime-twin, the kind missing-mark)
+//     A temporary binds a parameter by a const reference, and it ends with the
+//     full expression of the call.  A result that borrows such a parameter
+//     then names an ended object.  The walk of the returns of escape.cpp
+//     gives each parameter by a const reference that an origin of a return
+//     names: the borrow comes from a door of the base, as list.view() does.
+//     Such a parameter needs the mark CRUCIBLE_LIFETIMEBOUND, and then the
+//     kind missing-twin asks for the deleted twin that refuses a temporary.
+//     An overload of the function that takes an rvalue at the same index
+//     takes the temporary already, as the deleted twin of to() and the
+//     rvalue get of a Record do, so such a parameter needs no mark.  The
+//     overloads are the overload set of the scope of the function, and the
+//     friends of the class of a hidden friend.  The rule reads an instance
+//     of a template too, because the borrow of a deduced result shows only
+//     there.  A claim keeps one place, the place of the parameter in its
+//     pattern, and the entity is the qualified name of the function and the
+//     number of the parameter.
+//     A deduced T& of a template, as the parameter of to(T&), binds no
+//     temporary that is not const, so its const instance is no claim.  The
+//     rule does not read a closure, whose call operator has no overload set,
+//     a borrow that a function of the tree outside the base makes, or a
+//     parameter by an rvalue reference.
+//     A View and a Ref with a lifetime parameter, as a borrow of Rust has,
+//     would tie the result to the argument in the type, and the type check
+//     would refuse a temporary.  C++ has no such parameter, so this kind
+//     holds the fact until a type of the base can.
+//
 // THE RULE witness-roster (CLAUDE.md section XXI)
 //     A class of a base file with a door shape attests to a fact that it
 //     cannot see, and a witness row of the rule table names it.  A class with
@@ -2974,6 +3001,153 @@ void report_lifetime_claims() {
     }
 }
 
+// ── The borrowed parameters ─────────────────────────────────────────────
+
+// One parameter by a const reference that a return of its function borrows,
+// with no mark (THE BORROWED PARAMETERS).  The function can be an instance of
+// a template, and the place is the place of the parameter in its pattern.
+struct BorrowClaim {
+    tree function = NULL_TREE;
+    tree pattern = NULL_TREE;  // the pattern of an instance, or the function itself
+    int index = 0;
+    tree core_type = NULL_TREE;  // the type of the parameter, with no reference
+    Place place;
+    std::string entity;
+};
+
+std::unordered_map<location_t, BorrowClaim> borrow_claims;
+
+// The class template of TYPE, as its most general template, or null.
+tree class_template_of(tree type) {
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type) || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree pattern = CLASSTYPE_TI_TEMPLATE(type);
+    return pattern != NULL_TREE && TREE_CODE(pattern) == TEMPLATE_DECL ? most_general_template(pattern) : pattern;
+}
+
+// True when CANDIDATE takes an rvalue at the index of CLAIM, so a temporary
+// argument there selects CANDIDATE and not the function of the claim: an
+// rvalue reference to the type of the parameter, to a specialization of its
+// class template, or to a template parameter.  The overload can be deleted,
+// as the twin of a marked parameter is, or it can give a value of its own, as
+// get of an rvalue Record does.
+bool takes_temporary(tree candidate, const BorrowClaim& claim) {
+    tree function = STRIP_TEMPLATE(candidate);
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || function == claim.function
+        || function == claim.pattern) {
+        return false;
+    }
+    int index = 0;
+    for (tree type = FUNCTION_FIRST_USER_PARMTYPE(function); type != NULL_TREE && type != void_list_node;
+         type = TREE_CHAIN(type), ++index) {
+        tree parameter = TREE_VALUE(type);
+        bool const is_pack = TREE_CODE(parameter) == TYPE_PACK_EXPANSION;
+        if (is_pack) {
+            // A pack covers the index of the claim and each later index, and
+            // its pattern decides, as Rest&&... of a twin does.
+            parameter = PACK_EXPANSION_PATTERN(parameter);
+        } else if (index != claim.index) {
+            continue;
+        }
+        if (TREE_CODE(parameter) != REFERENCE_TYPE || !TYPE_REF_IS_RVALUE(parameter)) {
+            return false;
+        }
+        tree referred = TREE_TYPE(parameter);
+        if (TREE_CODE(referred) == TEMPLATE_TYPE_PARM
+            || same_type_ignoring_top_level_qualifiers_p(referred, claim.core_type)) {
+            return true;
+        }
+        tree pattern = class_template_of(claim.core_type);
+        return pattern != NULL_TREE && class_template_of(referred) == pattern;
+    }
+    return false;
+}
+
+// True when an overload of the function of CLAIM takes a temporary at its
+// index: an overload of the scope of the function, or a friend of the class
+// that declares a hidden friend.  Complexity: O(overloads).
+bool has_temporary_overload(const BorrowClaim& claim) {
+    for (ovl_iterator candidate(overload_set(claim.function), true); candidate; ++candidate) {
+        if (takes_temporary(*candidate, claim)) {
+            return true;
+        }
+    }
+    tree owner = DECL_FRIEND_CONTEXT(claim.function);
+    if (owner == NULL_TREE || !CLASS_TYPE_P(owner)) {
+        return false;
+    }
+    for (tree entry = DECL_FRIENDLIST(TYPE_MAIN_DECL(owner)); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        if (TREE_PURPOSE(entry) != DECL_NAME(claim.function)) {
+            continue;
+        }
+        for (tree friend_decl = TREE_VALUE(entry); friend_decl != NULL_TREE; friend_decl = TREE_CHAIN(friend_decl)) {
+            if (takes_temporary(TREE_VALUE(friend_decl), claim)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// True when the parameter carries the mark of CRUCIBLE_LIFETIMEBOUND: its own
+// attribute, which a definition takes from an earlier declaration, or the
+// noted place of a marked parameter.
+bool is_marked_parameter(tree parameter) {
+    return lookup_attribute("quarantine", "lifetimebound", DECL_ATTRIBUTES(parameter)) != NULL_TREE
+        || lifetime_bound_parameters.count(DECL_SOURCE_LOCATION(parameter)) != 0;
+}
+
+// Notes the claim of one borrowed parameter, one time for each place.  The
+// place is the place of a base or a quarantined file in each unit, and not
+// only in the sentinel unit of a base header, because the borrow of a template
+// shows only in an instance, and the sentinel unit may make none.  The module
+// of the rule keeps one line for each entity.
+void note_borrow_claim(tree function, tree parameter, int index) {
+    location_t location = DECL_SOURCE_LOCATION(parameter);
+    if (is_marked_parameter(parameter) || borrow_claims.count(location) != 0) {
+        return;
+    }
+    BorrowClaim claim;
+    claim.place = place_of(location, Scope::quarantine);
+    if (claim.place.file != nullptr) {
+        claim.function = function;
+        claim.pattern = function;
+        if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_TEMPLATE_INFO(function)
+            && DECL_TEMPLATE_INSTANTIATION(function)) {
+            claim.pattern = DECL_TEMPLATE_RESULT(most_general_template(DECL_TI_TEMPLATE(function)));
+        }
+        claim.index = index;
+        claim.core_type = TREE_TYPE(TREE_TYPE(parameter));
+        claim.entity = qualified_name(function) + "() parameter " + std::to_string(index + 1);
+    }
+    borrow_claims.emplace(location, claim);
+}
+
+// One finding for each claim with no overload that takes a temporary, in the
+// sequence of the places.  Complexity: O(claims times overloads).
+void report_borrow_claims() {
+    std::vector<const BorrowClaim*> claims;
+    for (const auto& entry : borrow_claims) {
+        if (entry.second.function != NULL_TREE) {
+            claims.push_back(&entry.second);
+        }
+    }
+    std::sort(claims.begin(), claims.end(), [](const BorrowClaim* left, const BorrowClaim* right) {
+        if (left->place.file != right->place.file) {
+            return left->place.file->relative < right->place.file->relative;
+        }
+        return left->place.line != right->place.line ? left->place.line < right->place.line
+                                                     : left->place.column < right->place.column;
+    });
+    for (const BorrowClaim* claim : claims) {
+        if (!has_temporary_overload(*claim)) {
+            record_property(Kind::missing_mark, claim->place, claim->entity);
+        }
+    }
+}
+
 // The handler of quarantine::lifetimebound: it notes the place of a parameter,
 // and it refuses each other declaration.
 tree handle_lifetime_bound(tree* node, tree, tree, int, bool* no_add_attrs) {
@@ -3808,6 +3982,10 @@ void on_pre_genericize_property(void* gcc_data, void*) {
 
 }  // namespace
 
+void note_borrowed_parameter(tree function, tree parameter, int index) {
+    note_borrow_claim(function, parameter, index);
+}
+
 // One walk of every namespace that a system header does not own, for the
 // contract rule and for the quarantine rule, and one walk for the family
 // declaration property (THE WALK).
@@ -3818,6 +3996,7 @@ void walk_declarations() {
     properties.namespace_decl(global_namespace);
     report_stubs(properties.stubs);
     report_lifetime_claims();
+    report_borrow_claims();
 }
 
 // The error of one finding of the kind thread-bound-static or loan-key-static

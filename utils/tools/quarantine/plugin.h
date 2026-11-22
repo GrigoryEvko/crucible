@@ -264,6 +264,10 @@
 //     The rule lifetime-twin:
 //     missing-twin          a parameter that CRUCIBLE_LIFETIMEBOUND marks, with
 //                           no deleted overload that refuses a temporary there
+//     missing-mark          a parameter by a const reference that a return
+//                           borrows, with no mark and no overload that takes a
+//                           temporary there (declaration.cpp, THE BORROWED
+//                           PARAMETERS)
 //     The rule view-escape (escape.cpp, THE FINDING, in each mode):
 //     escaped-borrow        a return of a borrow of a local, of a parameter by
 //                           value or of a temporary
@@ -1045,6 +1049,7 @@ enum class Kind : std::uint8_t {
     thread_bound_static,
     loan_key_static,
     missing_twin,
+    missing_mark,
     escaped_borrow,
     unrostered_witness,
     route_union,
@@ -1372,6 +1377,8 @@ inline const char* kind_name(Kind kind) {
             return "loan-key-static";
         case Kind::missing_twin:
             return "missing-twin";
+        case Kind::missing_mark:
+            return "missing-mark";
         case Kind::escaped_borrow:
             return "escaped-borrow";
         case Kind::unrostered_witness:
@@ -1617,6 +1624,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::loan_key_static:
             return Rule::process_wide_state;
         case Kind::missing_twin:
+        case Kind::missing_mark:
             return Rule::lifetime_twin;
         case Kind::escaped_borrow:
             return Rule::view_escape;
@@ -1925,6 +1933,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"process-wide-state", "thread-bound-static"},
     {"process-wide-state", "loan-key-static"},
     {"lifetime-twin", "missing-twin"},
+    {"lifetime-twin", "missing-mark"},
     {"view-escape", "escaped-borrow"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
@@ -3004,6 +3013,11 @@ void report_borrow_match(const Finding& finding);
 // region opts out.
 void register_view_escape(const char* plugin_name);
 void report_view_escape(const Finding& finding);
+
+// declaration.cpp: the walk of the returns of escape.cpp gives each parameter
+// by a const reference that a return borrows, and the end of the parse judges
+// it (THE BORROWED PARAMETERS of declaration.cpp).
+void note_borrowed_parameter(tree function, tree parameter, int index);
 
 // home.cpp: the family home, where a definition or a specialization stands.
 // The place helpers of THE PLACE and THE SITES of home.cpp, which the family
