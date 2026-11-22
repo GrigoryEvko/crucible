@@ -740,8 +740,10 @@ void test_result_linear_error() {
                                   });
         CRUCIBLE_FATAL_INVARIANT(moved_handle == 63 && live_tokens == 2);
         // The Result of a linear error is linear, so the const match leaves it
-        // to a consumer.  The drop door ends it.
-        ::foundation::linear::drop(static_cast<Result<int, CountedToken>&&>(refused));
+        // to a consumer, here the rvalue err().
+        CountedToken kept = static_cast<Result<int, CountedToken>&&>(refused).err().expect("refused holds an error");
+        CRUCIBLE_FATAL_INVARIANT(kept.handle() == 61);
+        ::foundation::linear::drop(static_cast<CountedToken&&>(kept));
     }
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
@@ -1255,6 +1257,36 @@ void test_full_linear_end_aborts() {
     }
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0 && live_tokens == 0);
 }
+
+// The end of a Result whose active alternative is linear and that no consumer
+// took ends the process in a test build, where the rule must-consume does not
+// see the end: in the body of the drop door.  A consumer, and the move of the
+// Result for its source, leave nothing owed, and a Result whose active
+// alternative is droppable owes nothing.  A Release build keeps no mark, so
+// the cells that end the process run only in a test build.
+void test_owed_alternative_end_aborts() {
+    [[maybe_unused]] constexpr ::foundation::core::TextView kOwedEnd{
+        "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"};
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            ::foundation::linear::drop(Result<CountedToken, Refusal>{CountedToken{91}});
+        },
+        kOwedEnd);
+    expect_dies(
+        test_context(), [] noexcept { ::foundation::linear::drop(refuse_with(92)); }, kOwedEnd);
+#endif
+    {
+        Result<CountedToken, Refusal> first{CountedToken{93}};
+        Result<CountedToken, Refusal> second = static_cast<Result<CountedToken, Refusal>&&>(first);
+        CountedToken taken = static_cast<Result<CountedToken, Refusal>&&>(second).expect("second holds a token");
+        CRUCIBLE_FATAL_INVARIANT(taken.handle() == 93);
+        ::foundation::linear::drop(static_cast<CountedToken&&>(taken));
+    }
+    ::foundation::linear::drop(Result<int, CountedToken>{94});
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+}
 }  // namespace
 
 int main() {
@@ -1303,5 +1335,6 @@ int main() {
     test_named_option_doors_abort();
     test_expect_none();
     test_full_linear_end_aborts();
+    test_owed_alternative_end_aborts();
     return 0;
 }

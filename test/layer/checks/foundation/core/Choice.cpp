@@ -1054,7 +1054,7 @@ static_assert(refused_with(6).match([](int) noexcept { return 0; }, [](Token tok
     Result<int, Token> const& reader = refused;
     int const handle =
         reader.match([](int const&) noexcept { return 0; }, [](Token const& token) noexcept { return token.handle; });
-    ::foundation::linear::drop(static_cast<Result<int, Token>&&>(refused));
+    ::foundation::linear::drop(static_cast<Result<int, Token>&&>(refused).err().expect("refused holds an error"));
     return handle;
 }
 static_assert(read_refusal() == 7);

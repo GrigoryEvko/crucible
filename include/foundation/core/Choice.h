@@ -1181,6 +1181,46 @@ struct NoPayload final {};
     fatal("an Option of a linear payload ended with its payload: consume it with take, or end it with a named door");
 }
 
+[[noreturn]] CRUCIBLE_COLD inline void report_owed_alternative_end_() noexcept {
+    fatal("a Result or a OneOf ended with a linear alternative that no consumer took: give it to expect, the rvalue "
+          "match or a combinator");
+}
+
+// THE END OF A LINEAR ALTERNATIVE
+//   A Result and a OneOf have no empty state, so a consumer leaves the
+//   moved-from alternative in place, and the end of the sum ends it.  A test
+//   build (CRUCIBLE_QTT_TRACK_CONSUME, as the consume tracker of fixy/Qtt.h
+//   reads it) keeps one mark beside an owning sum with a linear alternative.
+//   A consumer sets the mark, and so does the move of the sum, for its
+//   source.  The end of a sum whose active alternative is linear and whose
+//   mark is clear ends the process.  The rule must-consume refuses such an
+//   end at compile time where it sees it, so the mark is a test oracle of
+//   the rule.  A Release build and a sum with no linear alternative keep an
+//   empty mark, so their layout and their code do not change.
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+inline constexpr bool tracks_alternative_ends_ = CRUCIBLE_QTT_TRACK_CONSUME != 0;
+#else
+inline constexpr bool tracks_alternative_ends_ = false;
+#endif
+
+template <bool IsTracked>
+struct EndMark {
+    constexpr void spend() noexcept {}
+    constexpr void require_spent(bool /*is_linear_alternative*/) const noexcept {}
+};
+
+template <>
+struct EndMark<true> {
+    bool is_spent_ = false;
+
+    constexpr void spend() noexcept { is_spent_ = true; }
+    constexpr void require_spent(bool is_linear_alternative) const noexcept {
+        if (is_linear_alternative && !is_spent_) [[unlikely]] {
+            report_owed_alternative_end_();
+        }
+    }
+};
+
 constexpr void add_lend_(unsigned char& lend_count) noexcept {
     if consteval {
         if (lend_count == 255) report_lend_overflow_();
@@ -2123,6 +2163,9 @@ public:
     // the stack.
     [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return cells_.tag_; }
     [[nodiscard]] constexpr NoLend lend_(SumKey /*key*/) const noexcept { return NoLend{}; }
+    // A plain sum holds no linear alternative (THE END OF A LINEAR
+    // ALTERNATIVE).
+    constexpr void spend_(SumKey /*key*/) noexcept {}
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
         return detail::alternative_of_<Index>(cells_.storage_).value_;
@@ -2172,9 +2215,21 @@ public:
 // counts its lends (THE LEND COUNT), and a moved slot starts with none.
 template <class... Ts>
 class[[= ::foundation::core::closed_tag{}]] SumSlotOf<false, Ts...> {
+    static constexpr bool tracks_end_ = tracks_alternative_ends_ && (!DroppablePayload<Ts> || ...);
+
+    // True when the alternative at INDEX is linear.  Complexity: linear in
+    // the alternatives, at compile time for a constant index.
+    [[nodiscard]] static constexpr bool is_linear_at_(std::size_t index) noexcept {
+        std::size_t position = 0;
+        bool is_linear = false;
+        ((is_linear = is_linear || (position == index && !DroppablePayload<Ts>), ++position), ...);
+        return is_linear;
+    }
+
     Alternatives<Ts...> storage_;
     unsigned char tag_;
     mutable unsigned char lend_count_ = 0;
+    [[no_unique_address]] EndMark<tracks_end_> end_mark_{};
 
 public:
     // The tag and the alternative at Index, with the key that only SumDoor
@@ -2182,6 +2237,8 @@ public:
     // the stack.
     [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return tag_; }
     [[nodiscard]] constexpr Lend lend_(SumKey /*key*/) const noexcept { return Lend{lend_count_}; }
+    // A consumer takes the sum (THE END OF A LINEAR ALTERNATIVE).
+    constexpr void spend_(SumKey /*key*/) noexcept { end_mark_.spend(); }
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
         return detail::alternative_of_<Index>(storage_);
@@ -2196,8 +2253,11 @@ public:
         std::is_nothrow_constructible_v<Alternatives<Ts...>, AlternativeAt<Index>, U&&>)
         : storage_(at, static_cast<U&&>(value)), tag_{static_cast<unsigned char>(Index)} {}
 
+    // The source keeps its moved-from alternative, which owes nothing.
     constexpr SumSlotOf(SumSlotOf&& other) noexcept
-        : storage_(MoveActive{}, other.tag_, other.storage_), tag_{other.tag_} {}
+        : storage_(MoveActive{}, other.tag_, other.storage_), tag_{other.tag_} {
+        other.end_mark_.spend();
+    }
 
     // The source moves to a local first, because it can live inside the
     // alternative that this slot holds, and the end of that alternative
@@ -2225,6 +2285,9 @@ public:
 
     constexpr ~SumSlotOf() {
         detail::refuse_lent_write_(lend_count_);
+        if constexpr (tracks_end_) {
+            end_mark_.require_spent(is_linear_at_(tag_));
+        }
         storage_.destroy_(tag_);
     }
 };
@@ -2476,6 +2539,17 @@ class ResultSlot {
     [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(SumDoor::key()); }
     [[nodiscard]] constexpr E const& error_() const noexcept { return sum_.template alternative_<0>(SumDoor::key()); }
+    // The value and the error for a consumer, which takes the Result.  The
+    // end of the slot then reads no linear alternative as owed (THE END OF
+    // A LINEAR ALTERNATIVE).
+    [[nodiscard]] constexpr T&& take_value_() noexcept {
+        sum_.spend_(SumDoor::key());
+        return static_cast<T&&>(value_());
+    }
+    [[nodiscard]] constexpr E&& take_error_() noexcept {
+        sum_.spend_(SumDoor::key());
+        return static_cast<E&&>(error_());
+    }
 
 public:
     template <std::size_t Index, class U>
@@ -2534,7 +2608,7 @@ public:
         requires DroppablePayload<E>
     {
         if (!slot_.holds_()) return Option<T>{none};
-        return Option<T>::some(static_cast<T&&>(slot_.value_()));
+        return Option<T>::some(slot_.take_value_());
     }
 
     // The error as an Option, which is empty for a value.  A copy of the
@@ -2553,7 +2627,7 @@ public:
         requires(!DroppablePayload<E> && DroppablePayload<T>)
     {
         if (slot_.holds_()) return Option<E>{none};
-        return Option<E>::some(static_cast<E&&>(slot_.error_()));
+        return Option<E>::some(slot_.take_error_());
     }
 
     // The value, or fallback for an error.  The call drops the fallback or
@@ -2562,7 +2636,7 @@ public:
         requires(DroppablePayload<T> && DroppablePayload<E>)
     {
         if (!slot_.holds_()) return fallback;
-        return static_cast<T&&>(slot_.value_());
+        return slot_.take_value_();
     }
 
     // The fatal unwrap at a boundary.  The reason tells why the operation
@@ -2573,7 +2647,7 @@ public:
         requires(!std::same_as<T, Unit>)
     {
         slot_.expect_value_(why);
-        return static_cast<T&&>(slot_.value_());
+        return slot_.take_value_();
     }
 
     constexpr void expect(Fmt<> why) && noexcept
@@ -2599,8 +2673,8 @@ public:
     [[nodiscard]] constexpr Result<std::invoke_result_t<Fn, T&&>, E>
     map(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
         using Mapped = Result<std::invoke_result_t<Fn, T&&>, E>;
-        if (!slot_.holds_()) return Mapped{Err<E>{static_cast<E&&>(slot_.error_())}};
-        return Mapped{static_cast<Fn&&>(fn)(static_cast<T&&>(slot_.value_()))};
+        if (!slot_.holds_()) return Mapped{Err<E>{slot_.take_error_()}};
+        return Mapped{static_cast<Fn&&>(fn)(slot_.take_value_())};
     }
 
     // An fn of map that takes its value by reference binds to this overload,
@@ -2620,8 +2694,8 @@ public:
     map_err(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, E&&>) {
         using Failed = std::invoke_result_t<Fn, E&&>;
         using Mapped = Result<T, Failed>;
-        if (!slot_.holds_()) return Mapped{Err<Failed>{static_cast<Fn&&>(fn)(static_cast<E&&>(slot_.error_()))}};
-        return Mapped{static_cast<T&&>(slot_.value_())};
+        if (!slot_.holds_()) return Mapped{Err<Failed>{static_cast<Fn&&>(fn)(slot_.take_error_())}};
+        return Mapped{slot_.take_value_()};
     }
 
     // An fn of map_err that takes its error by reference binds to this
@@ -2640,8 +2714,8 @@ public:
               && std::is_nothrow_constructible_v<std::invoke_result_t<Fn, T&&>, Err<E>>
     [[nodiscard]] constexpr std::invoke_result_t<Fn, T&&>
     and_then(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
-        if (!slot_.holds_()) return Err<E>{static_cast<E&&>(slot_.error_())};
-        return static_cast<Fn&&>(fn)(static_cast<T&&>(slot_.value_()));
+        if (!slot_.holds_()) return Err<E>{slot_.take_error_()};
+        return static_cast<Fn&&>(fn)(slot_.take_value_());
     }
 
     // An fn of and_then that takes its value by reference binds to this
@@ -2662,8 +2736,8 @@ public:
     [[nodiscard]] constexpr std::invoke_result_t<Fn, E&&>
     or_else(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, E&&>) {
         using Recovered = std::invoke_result_t<Fn, E&&>;
-        if (!slot_.holds_()) return static_cast<Fn&&>(fn)(static_cast<E&&>(slot_.error_()));
-        return Recovered{static_cast<T&&>(slot_.value_())};
+        if (!slot_.holds_()) return static_cast<Fn&&>(fn)(slot_.take_error_());
+        return Recovered{slot_.take_value_()};
     }
 
     // An fn of or_else that takes its error by reference binds to this
@@ -2711,8 +2785,8 @@ public:
     constexpr std::invoke_result_t<OnErr, E>
     match(OnOk&& on_ok,
           OnErr&& on_err) && noexcept(std::is_nothrow_invocable_v<OnOk, T&&> && std::is_nothrow_invocable_v<OnErr, E>) {
-        if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(static_cast<E&&>(slot_.error_()));
-        return static_cast<OnOk&&>(on_ok)(static_cast<T&&>(slot_.value_()));
+        if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.take_error_());
+        return static_cast<OnOk&&>(on_ok)(slot_.take_value_());
     }
 
     // An arm of the rvalue match that takes its part by reference binds to

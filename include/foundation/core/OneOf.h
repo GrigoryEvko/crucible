@@ -99,6 +99,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result moved_from_(Arms&&... arms) && {
         if (index_() == Index) {
+            slot_.spend_(detail::SumDoor::key());
             return static_cast<Arms...[Index]&&>(arms...[Index])(static_cast<Ts...[Index]&&>(alternative_<Index>()));
         }
         if constexpr (Index + 1 == sizeof...(Ts)) {
@@ -198,6 +199,7 @@ public:
         if (index_() != index) [[unlikely]] {
             fatal(why);
         }
+        slot_.spend_(detail::SumDoor::key());
         return static_cast<T&&>(alternative_<index>());
     }
 

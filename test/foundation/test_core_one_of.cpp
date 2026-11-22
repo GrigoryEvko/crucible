@@ -293,6 +293,32 @@ void test_linear_alternative() {
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
 
+// The end of a OneOf whose active alternative is linear and that no consumer
+// took ends the process in a test build, where the rule must-consume does not
+// see the end: in the body of the drop door.  expect and the move of the OneOf
+// for its source leave nothing owed, and a droppable active alternative owes
+// nothing.  A Release build keeps no mark, so the cell that ends the process
+// runs only in a test build.
+void test_owed_linear_alternative_end_aborts([[maybe_unused]] TestRunnerCtx const& test) {
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+    expect_dies(
+        test,
+        [] noexcept { ::foundation::linear::drop(OneOf<CountedToken, Refusal>{CountedToken{52}}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"});
+#endif
+    {
+        OneOf<CountedToken, Refusal> first{CountedToken{53}};
+        OneOf<CountedToken, Refusal> second = static_cast<OneOf<CountedToken, Refusal>&&>(first);
+        CountedToken taken =
+            static_cast<OneOf<CountedToken, Refusal>&&>(second).expect<CountedToken>("second holds a token");
+        CRUCIBLE_FATAL_INVARIANT(taken.handle() == 53);
+        ::foundation::linear::drop(static_cast<CountedToken&&>(taken));
+    }
+    ::foundation::linear::drop(OneOf<CountedToken, Refusal>{Refusal::closed});
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+}
+
 // For each trial, a model of a tag and a value agrees with the OneOf: one
 // is<T> holds, the match and expect<T> give the value, and a copy holds the
 // same alternative.
@@ -356,6 +382,7 @@ int main() {
     test_owning_alternative();
     test_lent_alternative_write_aborts(test);
     test_linear_alternative();
+    test_owed_linear_alternative_end_aborts(test);
     test_agrees_with_model();
     return 0;
 }
