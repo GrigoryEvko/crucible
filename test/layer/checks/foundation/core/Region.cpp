@@ -447,15 +447,15 @@ static_assert(std::is_same_v<decltype(write_each(std::declval<ViewMut<int, Uniqu
 
 // The family list of plan section 11.4, with the names of the headers of
 // the family that are on main: element_type and extent of a View, capacity
-// of an owner, raw and check of an Index, rest of the chunks, and is_at_end
-// and remaining of a cursor that a holder keeps between two calls.  The
-// niche of a View, of a TextView and of an Index is the protocol of the
+// of an owner, raw, check and mask of an Index, rest of the chunks, and
+// is_at_end and remaining of a cursor that a holder keeps between two calls.
+// The niche of a View, of a TextView and of an Index is the protocol of the
 // Choice family, and its check reads it.
 inline constexpr TextView region_names{
     "View ViewMut Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText HeapText FixedArray "
     "FixedList HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent "
-    "element_type brand_type extent capacity window split_at indices index parallel check raw rest take take_first "
-    "take_last clear with_view with_element with_mut append_self freeze is_at_end remaining"};
+    "element_type brand_type extent capacity window split_at indices index parallel check mask raw rest "
+    "take take_first take_last clear with_view with_element with_mut append_self freeze is_at_end remaining"};
 
 // The brand that the check of a branded type names.  A program gets each
 // brand from mint_branded_scope.

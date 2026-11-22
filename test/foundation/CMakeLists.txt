@@ -3889,6 +3889,12 @@ foundation_neg_compile_test(neg_core_index_zero_count
 foundation_neg_compile_test(neg_core_index_narrowing
   "could not convert .wide. from .Index<8>. to .Index<4>."
   "In function .foundation::core::Index<4> narrow\\(foundation::core::Index<8>\\).")
+foundation_neg_compile_test(neg_core_index_mask_not_power_of_two
+  "no matching function for call to .foundation::core::Index<6>::mask\\(std::size_t&\\)."
+  "mask.std::size_t. requires .Count & Count - 1. == 0 .with long unsigned int Count = 6")
+foundation_neg_compile_test(neg_core_index_door_key_forged
+  ".foundation::core::detail::IndexDoor. has not been declared"
+  "forged")
 foundation_neg_compile_test(neg_core_index_static_past_count
   "could not convert .foundation::core::index<4>\\(\\). from .foundation::core::StaticIndex<4>. to .foundation::core::Index<4>."
   "In function .foundation::core::Index<4> past_the_end\\(\\).")

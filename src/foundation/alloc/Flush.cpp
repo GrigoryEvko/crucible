@@ -178,10 +178,12 @@ void HeapState::give_back_run_(SizeClass size_class, AddressWord* first, core::E
         // The word of the lead block is open first.  An offset in a slab lies
         // below the 64 KiB of a unit or the 2 MiB of a chunk of a medium slab,
         // so its slot is below 4096 and its word below 64 also before the
-        // check of the slot.  Each word index below holds by the same bound.
+        // check of the slot.  mask() of such a word gives the word itself, and
+        // each word of a slot below holds by the same bound.
         std::uint64_t const lead_in_slab = static_cast<std::uint64_t>(lead) - slab_address;
-        auto open = static_cast<std::uint32_t>(detail::slot_product(facts, core::ByteCount{lead_in_slab}).slot() >> 6);
-        auto bits = static_cast<std::uint64_t>(meta.bitmap_word(BitmapWordIndex{core::detail::IndexDoor::key(), open}));
+        BitmapWordIndex open =
+            BitmapWordIndex::mask(detail::slot_product(facts, core::ByteCount{lead_in_slab}).slot() >> 6);
+        auto bits = static_cast<std::uint64_t>(meta.bitmap_word(open));
         std::size_t kept = 0;
         for (std::size_t index = 0; index < remaining; ++index) {
             AddressWord const block = first[index];
@@ -205,13 +207,12 @@ void HeapState::give_back_run_(SizeClass size_class, AddressWord* first, core::E
             std::uint64_t const slot = product.slot();
             // A word holds 64 slots, so the word changes at most one time in
             // 64 blocks of a run in the order of their slots.
-            auto const word = static_cast<std::uint32_t>(slot >> 6);
-            if (word != open) [[unlikely]] {
-                meta.set_bitmap_word(BitmapWordIndex{core::detail::IndexDoor::key(), open}, SlotBits{bits});
-                summary |= std::uint64_t{1} << open;
-                open = word;
-                bits =
-                    static_cast<std::uint64_t>(meta.bitmap_word(BitmapWordIndex{core::detail::IndexDoor::key(), open}));
+            std::uint64_t const word = slot >> 6;
+            if (word != open.raw()) [[unlikely]] {
+                meta.set_bitmap_word(open, SlotBits{bits});
+                summary |= std::uint64_t{1} << open.raw();
+                open = BitmapWordIndex::mask(word);
+                bits = static_cast<std::uint64_t>(meta.bitmap_word(open));
             }
             std::uint64_t const position = slot & 63;
             if (((bits >> position) & 1) != 0) [[unlikely]] {
@@ -221,8 +222,8 @@ void HeapState::give_back_run_(SizeClass size_class, AddressWord* first, core::E
         }
         std::size_t const given = remaining - kept;
         // Each word that the pass wrote holds a bit that the pass set.
-        meta.set_bitmap_word(BitmapWordIndex{core::detail::IndexDoor::key(), open}, SlotBits{bits});
-        summary |= std::uint64_t{1} << open;
+        meta.set_bitmap_word(open, SlotBits{bits});
+        summary |= std::uint64_t{1} << open.raw();
         meta.set_summary(SummaryBits{summary});
         std::uint16_t const free_before = meta.free_count().raw();
         auto const free_after = static_cast<std::uint16_t>(free_before + given);

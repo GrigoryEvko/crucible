@@ -1383,10 +1383,9 @@ public:
 // below its count.  The position is a full word, also when the Index holds
 // a 32-bit word, so the loop needs one loop variable: the position and the
 // offset of the element at the same time.  The read makes the Index through
-// the door of Index.h, because the compare before it proves the position
-// below Count.  Index<Count>::check there gave the loop of the probe
-// view_enumerate_sum one more instruction on each target.  Each Ref has the
-// brand of the call of enumerate() that made the walk.
+// its check after the compare with the end.  The constructor holds the end
+// at most Count, so the optimizer knows the answer of the check and removes
+// it.  Each Ref has the brand of the call of enumerate() that made the walk.
 template <class Element, std::size_t Count, class Brand>
 class EnumerateCursor {
     Element* first_ = nullptr;
@@ -1398,16 +1397,21 @@ class EnumerateCursor {
     friend class EnumerateStage;
 
     // The cursor at the first element of run, which starts at the position
-    // start of the View.  The loop ends after the last element of run.
+    // start of the View.  The loop ends after the last element of run.  The
+    // stage holds the end of each run at most Count, and the bound in the
+    // code shows that fact to the optimizer.
     constexpr EnumerateCursor(View<Element> run, std::size_t start) noexcept
-        : first_{first_of_(ViewDoor::key(), run) - start}, at_{start}, end_{start + run.size()} {}
+        : first_{first_of_(ViewDoor::key(), run) - start},
+          at_{start},
+          end_{start + run.size() < Count ? start + run.size() : Count} {}
 
 public:
     [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> operator*() const noexcept {
         if (at_ >= end_) [[unlikely]] {
             fatal("a read through the end cursor of an enumerate loop over a View");
         }
-        return {Index<Count>{IndexDoor::key(), at_}, RefDoor::lend<Brand>(first_[at_])};
+        return {Index<Count>::check(at_).expect("the position of an enumerate cursor lies below its count"),
+                RefDoor::lend<Brand>(first_[at_])};
     }
 
     constexpr EnumerateCursor& operator++() noexcept {
@@ -1449,14 +1453,34 @@ class EnumerateStage final {
 
     [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), run_); }
 
-    [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> pair_(std::size_t position) const noexcept {
-        return {Index<Count>{IndexDoor::key(), start_ + position}, RefDoor::lend<Brand>(first_()[position])};
+    // The position of the first element of the run in the View.  The root
+    // stage, of the extent Count, starts at the position 0.
+    [[nodiscard]] constexpr std::size_t start_of_() const noexcept { return Extent == Count ? 0 : start_; }
+
+    // The position after the last element of the run.  The invariant of the
+    // stage holds it at most Count, and the bound in the code shows that fact
+    // to the optimizer, so the check of each Index below it goes away.
+    [[nodiscard]] constexpr std::size_t end_of_() const noexcept {
+        std::size_t const end = start_of_() + run_.size();
+        return end < Count ? end : Count;
+    }
+
+    // The element at the position at of the View with its index.  origin is
+    // the first element of the View, and the caller compares at with
+    // end_of_() first.
+    [[nodiscard]] static constexpr Record<Index<Count>, Ref<Element, Brand>> pair_(Element* origin,
+                                                                                   std::size_t at) noexcept {
+        return {Index<Count>::check(at).expect("an enumerate position lies below the count of its View"),
+                RefDoor::lend<Brand>(origin[at])};
     }
 
     // The element at position with its index, which the caller proves below
-    // size_() (THE STAGES of foundation/core/Walk.h).
+    // size_() (THE STAGES of foundation/core/Walk.h).  A zip compares the
+    // position with its own count, so the check of the Index stays for a run
+    // that starts after the position 0.
     [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> at_(std::size_t position) const noexcept {
-        return pair_(position);
+        std::size_t const start = start_of_();
+        return pair_(first_() - start, start + position);
     }
 
 public:
@@ -1470,19 +1494,25 @@ public:
         requires(Extent == Count)
         : run_{elements} {}
 
+    // The loops run over the positions of the run in the View, so the one
+    // loop variable is the index and the offset of the element.
     template <class Sink>
     [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
-        std::size_t const count = run_.size();
-        for (std::size_t position = 0; position < count; ++position) {
-            sink(pair_(position));
+        std::size_t const start = start_of_();
+        Element* const origin = first_() - start;
+        std::size_t const end = end_of_();
+        for (std::size_t at = start; at < end; ++at) {
+            sink(pair_(origin, at));
         }
     }
 
     template <class Sink>
     [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
-        std::size_t const count = run_.size();
-        for (std::size_t position = 0; position < count; ++position) {
-            if (sink(pair_(position)) == Flow::stop) return Flow::stop;
+        std::size_t const start = start_of_();
+        Element* const origin = first_() - start;
+        std::size_t const end = end_of_();
+        for (std::size_t at = start; at < end; ++at) {
+            if (sink(pair_(origin, at)) == Flow::stop) return Flow::stop;
         }
         return Flow::go;
     }

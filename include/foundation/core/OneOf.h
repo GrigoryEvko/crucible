@@ -175,7 +175,9 @@ public:
         if (tag >= sizeof...(Ts)) [[unlikely]] {
             detail::report_forged_one_of_tag_();
         }
-        return Index<sizeof...(Ts)>{detail::IndexDoor::key(), tag};
+        // The compare above proves the tag below the count, so the optimizer
+        // removes the check of the Index.
+        return Index<sizeof...(Ts)>::check(tag).expect("the tag of a OneOf names an alternative");
     }
 
     // True when the active alternative is T.  The cost is one compare.

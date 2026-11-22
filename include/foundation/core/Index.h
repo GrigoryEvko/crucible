@@ -12,21 +12,21 @@
 //
 // An operation that takes an Index<N>, such as at() of a FixedArray<T, N>,
 // does no check: the type proves the bound, and the check ran one time,
-// where the index was made.  The only roads to an Index are check(), the
-// conversion from a StaticIndex, the conversion from an Index of a smaller
-// N, the loop of an IndexRange, and the door of the base layer.  The
-// constructor from a number is private, and the seal refuses std::bit_cast
-// and a lifetime start over bytes, so no number becomes an Index without its
+// where the index was made.  The only roads to an Index are check(), mask()
+// for a count that is a power of two, the conversion from a StaticIndex, the
+// conversion from an Index of a smaller N, and the loop of an IndexRange.
+// The constructor from a number is private, and the seal refuses
+// std::bit_cast and a lifetime start over bytes, so no number becomes an
+// Index without its check.  This header names no friend that a different
+// header defines, so no class of a different header makes an Index with no
 // check.
 //
-// THE DOOR OF THE BASE LAYER
-//   Index<N>{detail::IndexDoor::key(), word} makes the Index of a word that
-//   the caller proves below N, with no check: a word that a different
-//   invariant already bounds, such as the tag of a slot.  Only
-//   detail::IndexDoor builds the key, and the key and the door are no
-//   templates, so no explicit specialization reaches them.  This header
-//   names no friend that a different header defines.  The rule owners keeps
-//   each use of namespace detail outside the base out.
+// THE CHECK AFTER A COMPARE
+//   A word that a different invariant already bounds, such as a position of
+//   a loop or the tag of a slot, takes check() too.  When the code before it
+//   compares the word with a bound that is at most N, the optimizer knows the
+//   answer of check(), and the Index costs no instruction.  The count of a
+//   power of two takes mask(), one and, with no compare.
 //
 // An Index<N> holds a 32-bit word when N fits in one, else a 64-bit word.
 // The value N is no index, so an Option<Index<N>> has the size of the index.
@@ -81,24 +81,6 @@ namespace detail {
 template <std::size_t Count>
 using IndexWord = std::conditional_t<(Count <= 0xFFFFFFFFull), std::uint32_t, std::size_t>;
 
-// The key of the constructor of an Index from a word that the caller proves
-// below its count.  Only IndexDoor builds it.
-struct IndexDoor;
-
-class [[nodiscard]] IndexKey final {
-    friend struct IndexDoor;
-
-    constexpr IndexKey() noexcept {}
-    constexpr IndexKey(IndexKey const&) noexcept {}
-
-public:
-    IndexKey& operator=(IndexKey const&) = delete("a key of an Index lives for one construction");
-};
-
-struct IndexDoor {
-    [[nodiscard]] static constexpr IndexKey key() noexcept { return IndexKey{}; }
-};
-
 }  // namespace detail
 
 template <std::size_t Count>
@@ -118,11 +100,6 @@ class Index final {
     constexpr explicit Index(Word value) noexcept : value_{value} {}
 
 public:
-    // The Index of word, which the caller proves below Count: the door of
-    // the base layer, with no check.  A word at or past Count breaks the
-    // invariant that raw() states to the optimizer.
-    constexpr Index(detail::IndexKey const&, std::size_t word) noexcept : value_{static_cast<Word>(word)} {}
-
     // The index raw, or no value when raw is not below Count.  One compare.
     // The result is an Option<Index<Count>>.  The return type is deduced, so
     // the Option is named only where this class is complete.
@@ -130,6 +107,14 @@ public:
         using Result = Option<Index>;
         if (raw >= Count) return Result{none};
         return Result::some(Index{static_cast<Word>(raw)});
+    }
+
+    // The index of word modulo Count, a power of two: the low bits of word,
+    // with one and and no compare.  A word below Count gives itself.
+    [[nodiscard]] static constexpr Index mask(std::size_t word) noexcept
+        requires((Count & (Count - 1)) == 0)
+    {
+        return Index{static_cast<Word>(word & (Count - 1))};
     }
 
     // The constant index I, which the type proves below Count.

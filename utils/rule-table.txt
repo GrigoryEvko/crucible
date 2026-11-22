@@ -884,13 +884,12 @@ witness <foundation/core/Atomic.h> no-match | foundation::core::SoleWriter<forge
 # Only the codec of a cell makes the key of from_word, so no caller makes a
 # value that keeps an invariant, such as a Ref, from a word.
 witness <foundation/core/Atomic.h> private | foundation::core::atomic_word_key<int> | foundation::core::atomic_word_key<int>{}
-# An Index comes only from its check, from a constant index below its count,
-# from an index of a smaller count, from the loop of an IndexRange and from
-# the door of the base layer, so no number that a caller holds becomes an
-# index.  The door takes the key that only IndexDoor builds.  A cursor of the
-# loop comes only from its range.
+# An Index comes only from its check, from the mask of a count that is a
+# power of two, from a constant index below its count, from an index of a
+# smaller count and from the loop of an IndexRange, so no number that a
+# caller holds becomes an index.  A cursor of the loop comes only from its
+# range.
 witness <foundation/core/Index.h> private | foundation::core::Index<4> | foundation::core::Index<4>{forge::rvalue<unsigned int>()}
-witness <foundation/core/Index.h> private | foundation::core::detail::IndexKey | foundation::core::detail::IndexKey{}
 witness <foundation/core/Index.h> private | foundation::core::IndexCursor<4> | foundation::core::IndexCursor<4>{forge::rvalue<unsigned int>()}
 # A cursor of an iteration verb comes only from its range, and a range comes
 # only from a View, so no pointer that a caller holds becomes a cursor.

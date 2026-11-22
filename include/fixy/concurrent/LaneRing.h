@@ -184,7 +184,7 @@ public:
     // lane of the turn is empty and open, or NoItem::Closed after the last
     // item of the last lane.  Only the one consumer calls it.
     [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive() noexcept {
-        if (live_count_ != 0) [[likely]] {
+        if (live_count_.raw() != 0) [[likely]] {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_some()) [[likely]] {
                 step_turn_();
@@ -209,7 +209,7 @@ public:
     template <typename Drop>
         requires std::is_nothrow_invocable_v<Drop&, T>
     void drain(Drop&& drop) noexcept {
-        while (live_count_ != 0) {
+        while (live_count_.raw() != 0) {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_some()) {
                 step_turn_();
@@ -259,26 +259,26 @@ private:
         return true;
     }
 
-    // The lane at a position of the turn.  The turn holds only lanes below
-    // lane_count, and each position below live_count_ holds one, so the Index
-    // comes through the door of the base layer with no check.
+    // The lane of the turn.  The type of the turn and the type of each lane of
+    // the turn prove them below lane_count, so the reads have no check.
     [[nodiscard, gnu::always_inline]] detail::LaneOf<T, LaneCapacity>& lane_of_turn_() noexcept {
         return lane_at_(turn_);
     }
 
-    // The lane at a position of the turn below live_count_.  Only the one
-    // consumer calls it, and the producers write only the SPSC ring and the
-    // end of their lanes, which are atomic.  The ring reaches its own lane
-    // through the keyed run of a frame, because a FixedArray gives no other
-    // reference that writes an element.
-    [[nodiscard, gnu::always_inline]] detail::LaneOf<T, LaneCapacity>& lane_at_(std::uint32_t position) noexcept {
-        std::uint32_t const lane = live_.at(position_(position));
-        return frame_run_(::foundation::core::detail::FrameDoor::key(), lanes_)
-            .at(lane_index{::foundation::core::detail::IndexDoor::key(), lane});
+    // The lane at a position of the turn.  Only the one consumer calls it, and
+    // the producers write only the SPSC ring and the end of their lanes, which
+    // are atomic.  The ring reaches its own lane through the keyed run of a
+    // frame, because a FixedArray gives no other reference that writes an
+    // element.
+    [[nodiscard, gnu::always_inline]] detail::LaneOf<T, LaneCapacity>& lane_at_(lane_index position) noexcept {
+        return frame_run_(::foundation::core::detail::FrameDoor::key(), lanes_).at(live_.at(position).lane);
     }
 
-    [[nodiscard, gnu::always_inline]] static lane_index position_(std::uint32_t position) noexcept {
-        return lane_index{::foundation::core::detail::IndexDoor::key(), position};
+    // The Index of a position of the turn.  Each caller compares the position
+    // with live_count_ first, which is at most lane_count, so the optimizer
+    // removes the check.
+    [[nodiscard, gnu::always_inline]] static lane_index position_(std::size_t position) noexcept {
+        return lane_index::check(position).expect("a position of the turn of a lane ring lies below its lanes");
     }
 
     // The deferred pop of the lane of the turn (THE ROOM).
@@ -290,8 +290,12 @@ private:
     // the first.  A pop of an item comes before each step, so the step also
     // records that a lane can hold deferred pops (THE ROOM).
     [[gnu::always_inline]] void step_turn_() noexcept {
-        std::uint32_t const next = turn_ + 1;
-        turn_ = next == live_count_ ? 0 : next;
+        // The position after the last lane of the turn goes back to the first.
+        // Each other position is below the count of the turn, and so below
+        // lane_count: the fallback of its check is never taken.
+        std::size_t const next = turn_.raw() + 1;
+        lane_index const first{::foundation::core::index<0>()};
+        turn_ = lane_index::check(next < live_count_.raw() ? next : 0).value_or(first);
         tails_ = LaneTails::deferred;
     }
 
@@ -299,8 +303,8 @@ private:
     // (THE ROOM).  A lane out of the turn published its tail when it left.
     // Complexity: linear in the lanes of the turn.
     CRUCIBLE_COLD void publish_each_tail_() noexcept {
-        for (std::uint32_t position = 0; position < live_count_; ++position) {
-            lane_at_(position).ring.publish_tail();
+        for (std::size_t position = 0; position < live_count_.raw(); ++position) {
+            lane_at_(position_(position)).ring.publish_tail();
         }
         tails_ = LaneTails::published;
     }
@@ -310,12 +314,12 @@ private:
     // names the next lane.  Complexity: linear in the lanes.
     CRUCIBLE_COLD void leave_turn_() noexcept {
         lane_of_turn_().ring.publish_tail();
-        for (std::uint32_t position = turn_ + 1; position < live_count_; ++position) {
-            std::uint32_t const next = live_.at(position_(position));
-            live_.with_element(position_(position - 1), [next](std::uint32_t& lane) noexcept { lane = next; });
+        for (std::size_t position = turn_.raw() + 1; position < live_count_.raw(); ++position) {
+            TurnLane const next = live_.at(position_(position));
+            live_.with_element(position_(position - 1), [next](TurnLane& lane) noexcept { lane = next; });
         }
-        --live_count_;
-        if (turn_ == live_count_) turn_ = 0;
+        live_count_ = live_count_type::check(live_count_.raw() - 1).expect("a lane leaves a turn that holds it");
+        if (turn_.raw() == live_count_.raw()) turn_ = lane_index{::foundation::core::index<0>()};
     }
 
     // The receive after a pop that found the lane of the turn empty (THE END
@@ -324,7 +328,7 @@ private:
     // acquire read of its end, and an empty ended lane leaves the turn.  Then
     // the next lane of the turn gets its pop.
     [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {
-        while (live_count_ != 0) {
+        while (live_count_.raw() != 0) {
             detail::LaneOf<T, LaneCapacity>& lane = lane_of_turn_();
             if (lane.end->load_acquire() == LaneEnd::open) {
                 if (tails_ == LaneTails::deferred) publish_each_tail_();
@@ -333,7 +337,7 @@ private:
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_none()) {
                 leave_turn_();
-                if (live_count_ == 0) break;
+                if (live_count_.raw() == 0) break;
                 item = pop_lane_of_turn_();
             }
             if (item.is_some()) {
@@ -350,13 +354,20 @@ private:
         for (lane_index const lane : ::foundation::core::IndexRange<lane_count>{}) {
             lanes_.with_element(
                 lane, [](detail::LaneOf<T, LaneCapacity>& held) noexcept { held.end->store_release(LaneEnd::open); });
-            live_.with_element(
-                lane, [lane](std::uint32_t& position) noexcept { position = static_cast<std::uint32_t>(lane.raw()); });
+            live_.with_element(lane, [lane](TurnLane& slot) noexcept { slot.lane = lane; });
         }
-        live_count_ = static_cast<std::uint32_t>(lane_count);
-        turn_ = 0;
+        live_count_ = live_count_type{::foundation::core::index<lane_count>()};
+        turn_ = lane_index{::foundation::core::index<0>()};
         tails_ = LaneTails::published;
     }
+
+    // The count of the lanes of the turn, from 0 to lane_count.
+    using live_count_type = ::foundation::core::Index<lane_count + 1>;
+
+    // A lane of the turn.  The type of its index proves it a lane of the ring.
+    struct TurnLane final {
+        lane_index lane{::foundation::core::index<0>()};
+    };
 
     // The lanes.  Each one holds the lines of its SPSC ring and the line of
     // its end word, so no two lanes share a line.
@@ -366,10 +377,10 @@ private:
     // of the turn in the order of their index, their count, the position of
     // the next pop, and whether a lane can hold deferred pops (THE ROOM).
     // They start on a line of their own, so a push never reads them.
-    alignas(64) std::uint32_t turn_ = 0;
-    std::uint32_t live_count_ = 0;
+    alignas(64) lane_index turn_{::foundation::core::index<0>()};
+    live_count_type live_count_{::foundation::core::index<0>()};
     LaneTails tails_ = LaneTails::published;
-    ::foundation::core::FixedArray<std::uint32_t, lane_count> live_{};
+    ::foundation::core::FixedArray<TurnLane, lane_count> live_{};
 };
 
 }  // namespace fixy::concurrent

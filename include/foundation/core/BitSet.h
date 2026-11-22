@@ -395,15 +395,18 @@ public:
             detail::report_bit_cursor_at_end_();
         }
         // The position comes from a bit of the set, so it is below the count
-        // of the set, and the key of each kind holds it.
+        // of the set, and the key of each kind holds it.  A proven key takes
+        // the check of its Index: the cursor holds the address of the words,
+        // and words that a different object reuses can hold a bit past the
+        // count.
         std::size_t const position = word_ * detail::bits_in_<Word> + static_cast<std::size_t>(countr_zero(bits_));
         if constexpr (std::is_scoped_enum_v<Member>) {
             return static_cast<Member>(position);
         } else if constexpr (requires { typename Member::tag_type; }) {
             using Proven = typename Member::value_type;
-            return Member{Proven{detail::IndexDoor::key(), position}};
+            return Member{Proven::check(position).expect("a bit of a set lies below the count of the set")};
         } else if constexpr (detail::BitKeyKind<Member>::is_proven) {
-            return Member{detail::IndexDoor::key(), position};
+            return Member::check(position).expect("a bit of a set lies below the count of the set");
         } else {
             using IdWord = std::remove_cvref_t<decltype(std::declval<Member const&>().raw())>;
             return Member{detail::position_as_<IdWord>(position)};
@@ -463,10 +466,11 @@ class BitSet final {
     }
 
     // The word of a position below N.  Its word is below the count of the
-    // words, so the door of the base layer makes the Index of the word with
-    // no check.
+    // words.  Each caller reads the position from a proven key or from
+    // position_of_, which compares it with N, so the optimizer removes the
+    // check of the Index.
     [[nodiscard]] static constexpr WordIndex word_of_(std::size_t position) noexcept {
-        return WordIndex{detail::IndexDoor::key(), position / word_bits_};
+        return WordIndex::check(position / word_bits_).expect("a position of a set lies below the count of the set");
     }
 
     // The place of the bit of a position in its word.
