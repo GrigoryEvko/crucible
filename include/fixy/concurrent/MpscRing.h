@@ -128,7 +128,7 @@ public:
         if (N == 0) return 0;
         if (N > Capacity) [[unlikely]]
             return 0;
-        T const* const source = first_of_(::foundation::core::detail::ViewDoor::key(), items);
+        T const* const source = first_of_(::foundation::core::detail::BaseLayerRead{}, items);
         std::uint64_t pos = head_.load_relaxed();
         for (;;) {
             CellTurn const turn = cells_.write_turn(CellTicket{pos + N - 1});
@@ -186,7 +186,7 @@ public:
         if (cap == 0) return 0;
 
         const std::uint64_t pos0 = tail_.peek_relaxed();
-        T* const target = first_of_(::foundation::core::detail::ViewDoor::key(), out);
+        T* const target = first_of_(::foundation::core::detail::BaseLayerRead{}, out);
         std::size_t R = 0;
         while (R < cap) {
             CellTicket const ticket{pos0 + R};

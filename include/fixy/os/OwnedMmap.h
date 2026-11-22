@@ -625,7 +625,7 @@ private:
     template <typename T>
     [[nodiscard]] T* start_at_(std::size_t offset, std::size_t count) const noexcept {
         unsigned char* const bytes = static_cast<unsigned char*>(this->state_.address) + offset;
-        return first_of_(::foundation::core::detail::ViewDoor::key(),
+        return first_of_(::foundation::core::detail::BaseLayerRead{},
                          ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(bytes, count));
     }
 

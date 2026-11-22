@@ -477,7 +477,7 @@ mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, st
     if (count != 0) {
         ::foundation::core::View<T> const run = arena.template alloc_array<T>(alloc_token, count);
         CRUCIBLE_FATAL_INVARIANT(run.size() == count);
-        base = first_of_(::foundation::core::detail::ViewDoor::key(), run);
+        base = first_of_(::foundation::core::detail::BaseLayerRead{}, run);
     }
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }

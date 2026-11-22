@@ -4650,8 +4650,13 @@ foundation_neg_compile_test(neg_core_view_over_forged_body
 # refusal as a template-id that matches no template, in place of a function
 # that is no template, so each pattern takes the two forms.
 foundation_neg_compile_test(neg_core_view_first_of_specialized
-  "int\\* foundation::core::first_of_\\(const detail::ViewKey&, View<int>\\). (should have been declared inside .foundation::core.|does not match any template declaration)"
+  "int\\* foundation::core::first_of_\\(const detail::BaseLayerRead&, View<int>\\). (should have been declared inside .foundation::core.|does not match any template declaration)"
   "(.first_of_. is not a template function|template-id .first_of_<>. for .constexpr int\\* foundation::core::first_of_)")
+# The tag of first_of_ has an explicit constructor, so an empty brace in its
+# place does not compile, and each call names detail::BaseLayerRead.
+foundation_neg_compile_test(neg_core_view_first_of_unnamed_tag
+  "converting to .const foundation::core::detail::BaseLayerRead. from initializer list would use explicit constructor"
+  "constexpr foundation::core::detail::BaseLayerRead::BaseLayerRead\\(\\). declared here")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result

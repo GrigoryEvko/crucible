@@ -218,8 +218,8 @@ template <class T, class Brand, std::size_t Extent, class Combine>
 [[nodiscard]] constexpr Result<Unit, LengthMismatch> scan_inclusive(View<T const> in, ViewMut<T, Brand, Extent> out,
                                                                     Combine combine) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
-    detail::scan_run_<ScanKind::Inclusive>(first_of_(detail::ViewDoor::key(), in),
-                                           first_of_(detail::ViewDoor::key(), out), in.size(),
+    detail::scan_run_<ScanKind::Inclusive>(first_of_(detail::BaseLayerRead{}, in),
+                                           first_of_(detail::BaseLayerRead{}, out), in.size(),
                                            static_cast<T const*>(nullptr), static_cast<T const*>(nullptr), combine);
     return Unit{};
 }
@@ -233,8 +233,8 @@ template <class T, class Brand, std::size_t Extent, class Combine>
 [[nodiscard]] constexpr Result<Unit, LengthMismatch> scan_exclusive(View<T const> in, ViewMut<T, Brand, Extent> out,
                                                                     T const& empty, Combine combine) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
-    detail::scan_run_<ScanKind::Exclusive>(first_of_(detail::ViewDoor::key(), in),
-                                           first_of_(detail::ViewDoor::key(), out), in.size(),
+    detail::scan_run_<ScanKind::Exclusive>(first_of_(detail::BaseLayerRead{}, in),
+                                           first_of_(detail::BaseLayerRead{}, out), in.size(),
                                            static_cast<T const*>(nullptr), &empty, combine);
     return Unit{};
 }
@@ -361,8 +361,8 @@ template <int Lanes, class T, class Brand, std::size_t Extent>
 [[nodiscard]] Result<Unit, LengthMismatch> scan_inclusive_sums_in_lanes(View<T const> in,
                                                                         ViewMut<T, Brand, Extent> out) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
-    detail::sum_scan_lanes_<ScanKind::Inclusive, T, Lanes>(first_of_(detail::ViewDoor::key(), in),
-                                                           first_of_(detail::ViewDoor::key(), out), in.size(),
+    detail::sum_scan_lanes_<ScanKind::Inclusive, T, Lanes>(first_of_(detail::BaseLayerRead{}, in),
+                                                           first_of_(detail::BaseLayerRead{}, out), in.size(),
                                                            static_cast<T const*>(nullptr));
     return Unit{};
 }
@@ -372,8 +372,8 @@ template <int Lanes, class T, class Brand, std::size_t Extent>
 [[nodiscard]] Result<Unit, LengthMismatch> scan_exclusive_sums_in_lanes(View<T const> in,
                                                                         ViewMut<T, Brand, Extent> out) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
-    detail::sum_scan_lanes_<ScanKind::Exclusive, T, Lanes>(first_of_(detail::ViewDoor::key(), in),
-                                                           first_of_(detail::ViewDoor::key(), out), in.size(),
+    detail::sum_scan_lanes_<ScanKind::Exclusive, T, Lanes>(first_of_(detail::BaseLayerRead{}, in),
+                                                           first_of_(detail::BaseLayerRead{}, out), in.size(),
                                                            static_cast<T const*>(nullptr));
     return Unit{};
 }
@@ -419,8 +419,8 @@ constexpr void for_each_scan_grain_(View<T const> in, std::size_t first_grain, V
     if (outputs != elements) [[unlikely]] {
         fatal("a scan of grains got {} outputs for the {} elements of its grains", outputs, elements);
     }
-    T const* const first = first_of_(ViewDoor::key(), in);
-    T const* const carry = first_of_(ViewDoor::key(), carries);
+    T const* const first = first_of_(BaseLayerRead{}, in);
+    T const* const carry = first_of_(BaseLayerRead{}, carries);
     for (std::size_t index = 0; index < carries.size(); ++index) {
         std::size_t const grain = first_grain + index;
         std::size_t const start = grain * Grain;
@@ -457,7 +457,7 @@ template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Com
     requires TreeGrain<Grain> && TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
 constexpr void scan_inclusive_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
                                      ViewMut<T, Brand, Extent> out, Combine combine) noexcept {
-    detail::scan_grains_<ScanKind::Inclusive, Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out),
+    detail::scan_grains_<ScanKind::Inclusive, Grain>(in, first_grain, carries, first_of_(detail::BaseLayerRead{}, out),
                                                      out.size(), static_cast<T const*>(nullptr), combine);
 }
 
@@ -467,7 +467,7 @@ template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Com
     requires TreeGrain<Grain> && TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
 constexpr void scan_exclusive_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
                                      ViewMut<T, Brand, Extent> out, T const& empty, Combine combine) noexcept {
-    detail::scan_grains_<ScanKind::Exclusive, Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out),
+    detail::scan_grains_<ScanKind::Exclusive, Grain>(in, first_grain, carries, first_of_(detail::BaseLayerRead{}, out),
                                                      out.size(), &empty, combine);
 }
 
@@ -481,7 +481,7 @@ template <std::size_t Grain, class T, class Brand, std::size_t Extent>
     requires TreeGrain<Grain> && TreeSumElement<T>
 void scan_inclusive_sum_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
                                ViewMut<T, Brand, Extent> out) noexcept {
-    detail::for_each_scan_grain_<Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out), out.size(),
+    detail::for_each_scan_grain_<Grain>(in, first_grain, carries, first_of_(detail::BaseLayerRead{}, out), out.size(),
                                         [](T const* first, T* part, std::size_t size, T const* carry) noexcept {
                                             detail::sum_scan_lanes_<ScanKind::Inclusive, T, simd::native_lanes<T>>(
                                                 first, part, size, carry);
@@ -492,7 +492,7 @@ template <std::size_t Grain, class T, class Brand, std::size_t Extent>
     requires TreeGrain<Grain> && TreeSumElement<T>
 void scan_exclusive_sum_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
                                ViewMut<T, Brand, Extent> out) noexcept {
-    detail::for_each_scan_grain_<Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out), out.size(),
+    detail::for_each_scan_grain_<Grain>(in, first_grain, carries, first_of_(detail::BaseLayerRead{}, out), out.size(),
                                         [](T const* first, T* part, std::size_t size, T const* carry) noexcept {
                                             detail::sum_scan_lanes_<ScanKind::Exclusive, T, simd::native_lanes<T>>(
                                                 first, part, size, carry);
@@ -601,8 +601,8 @@ write_scan_plan(ScanKind kind, ViewMut<TreeStep, StepBrand, StepExtent> steps,
     }
     if (outputs.size() == 0) return Unit{};
     auto const leaves = static_cast<std::uint32_t>(outputs.size());
-    detail::ScanPlanWriter writer{first_of_(detail::ViewDoor::key(), steps),
-                                  first_of_(detail::ViewDoor::key(), outputs), leaves, 0};
+    detail::ScanPlanWriter writer{first_of_(detail::BaseLayerRead{}, steps),
+                                  first_of_(detail::BaseLayerRead{}, outputs), leaves, 0};
     if (kind == ScanKind::Inclusive) {
         static_cast<void>(detail::plan_scan_node_<ScanKind::Inclusive>(writer, 0, leaves, empty_plan_node, false));
     } else {
@@ -627,11 +627,11 @@ evaluate_scan_plan(View<TreeStep const> steps, View<PlanNode const> outputs, Vie
     if (outputs.size() != count || out.size() != count || scratch.size() != steps.size()) {
         return err(PlanError::CountMismatch);
     }
-    TreeStep const* const step = first_of_(detail::ViewDoor::key(), steps);
-    PlanNode const* const output = first_of_(detail::ViewDoor::key(), outputs);
-    T const* const leaf = first_of_(detail::ViewDoor::key(), leaves);
-    T* const value = first_of_(detail::ViewDoor::key(), scratch);
-    T* const target = first_of_(detail::ViewDoor::key(), out);
+    TreeStep const* const step = first_of_(detail::BaseLayerRead{}, steps);
+    PlanNode const* const output = first_of_(detail::BaseLayerRead{}, outputs);
+    T const* const leaf = first_of_(detail::BaseLayerRead{}, leaves);
+    T* const value = first_of_(detail::BaseLayerRead{}, scratch);
+    T* const target = first_of_(detail::BaseLayerRead{}, out);
     std::size_t const total = count + steps.size();
     for (std::size_t index = 0; index < steps.size(); ++index) {
         auto const left = static_cast<std::size_t>(step[index].left);

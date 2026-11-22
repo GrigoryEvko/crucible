@@ -97,10 +97,10 @@ class [[nodiscard]][[= ::foundation::transfer::by_arguments{}]][[= loan_key_mark
     // The first element.  The mint gives storage of N elements, and the array
     // does not move, so the storage lives until the end of the array.
     [[nodiscard]] constexpr T* first_() noexcept {
-        return first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), storage_));
+        return first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), storage_));
     }
     [[nodiscard]] constexpr T const* first_() const noexcept {
-        return first_of_(detail::ViewDoor::key(), storage_.view());
+        return first_of_(detail::BaseLayerRead{}, storage_.view());
     }
 
 public:

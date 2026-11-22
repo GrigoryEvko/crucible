@@ -779,7 +779,7 @@ public:
             return;
         }
         if (count != 0) {
-            __builtin_memmove(static_cast<void*>(next_), first_of_(detail::ViewDoor::key(), run), count * sizeof(T));
+            __builtin_memmove(static_cast<void*>(next_), first_of_(detail::BaseLayerRead{}, run), count * sizeof(T));
         }
         next_ += count;
         remaining_ -= count;
@@ -1451,7 +1451,7 @@ template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
           && (Extent == ::foundation::core::dynamic_extent || Extent % sizeof(T) == 0)
 [[nodiscard]] CRUCIBLE_INLINE auto start_as_array(::foundation::core::View<Byte, Extent> bytes) noexcept {
     using Element = element_for_storage_t<Byte, T>;
-    Byte* const first = first_of_(::foundation::core::detail::ViewDoor::key(), bytes);
+    Byte* const first = first_of_(::foundation::core::detail::BaseLayerRead{}, bytes);
     if constexpr (Extent == ::foundation::core::dynamic_extent) {
         CRUCIBLE_FATAL_INVARIANT(bytes.size() % sizeof(T) == 0);
         return start_as_array<T>(first, bytes.size() / sizeof(T));
@@ -1459,7 +1459,7 @@ template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
         ::foundation::core::View<Element> const objects = start_as_array<T>(first, Extent / sizeof(T));
         return ::foundation::core::View<Element, Extent / sizeof(T)>{
             ::foundation::core::detail::ViewDoor::key(),
-            first_of_(::foundation::core::detail::ViewDoor::key(), objects)};
+            first_of_(::foundation::core::detail::BaseLayerRead{}, objects)};
     }
 }
 

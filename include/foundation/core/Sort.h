@@ -278,7 +278,7 @@ template <std::size_t N>
 [[nodiscard]] consteval FixedArray<Comparator, sort_network_size<N>> plan_sort_network() noexcept {
     FixedArray<Comparator, sort_network_size<N>> steps{};
     static_cast<void>(
-        detail::write_network_(N, first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), steps))));
+        detail::write_network_(N, first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), steps))));
     return steps;
 }
 
@@ -340,7 +340,7 @@ CRUCIBLE_INLINE constexpr void compare_exchange_(T* elements, Comparator step, L
 template <std::size_t N, class T, class Brand, class Less = Ascending>
     requires NetworkCount<N> && SortElement<T> && StrictOrder<Less, T>
 constexpr void sort_by_network(ViewMut<T, Brand, N> elements, Less less = Less{}) noexcept {
-    T* const first = first_of_(detail::ViewDoor::key(), elements);
+    T* const first = first_of_(detail::BaseLayerRead{}, elements);
     for (Comparator const step : detail::network_of<N>) {
         detail::compare_exchange_(first, step, less);
     }
@@ -452,8 +452,8 @@ constexpr void copy_run_(View<T const> source, View<T> target) noexcept {
             return;
         }
     }
-    T const* const from = first_of_(ViewDoor::key(), source);
-    T* const to = first_of_(ViewDoor::key(), target);
+    T const* const from = first_of_(BaseLayerRead{}, source);
+    T* const to = first_of_(BaseLayerRead{}, target);
     for (std::size_t index = 0; index < source.size(); ++index) {
         to[index] = from[index];
     }
@@ -464,7 +464,7 @@ constexpr void copy_run_(View<T const> source, View<T> target) noexcept {
 // Complexity: one compare and one copy for each element that it passes.
 template <class T, class Less>
 constexpr void insert_last_(View<T> run, Less& less) noexcept {
-    T* const first = first_of_(ViewDoor::key(), run);
+    T* const first = first_of_(BaseLayerRead{}, run);
     std::size_t position = run.size() - 1;
     if (!less(first[position], first[position - 1])) return;
     T const moving = first[position];
@@ -478,7 +478,7 @@ constexpr void insert_last_(View<T> run, Less& less) noexcept {
 // The insertion sort of a run.  Complexity: O(n^2) compares and copies.
 template <class T, class Less>
 constexpr void insert_each_(View<T> run, Less& less) noexcept {
-    T* const first = first_of_(ViewDoor::key(), run);
+    T* const first = first_of_(BaseLayerRead{}, run);
     for (std::size_t count = 2; count <= run.size(); ++count) {
         insert_last_(run_of_(first, SortCount{count}), less);
     }
@@ -491,8 +491,8 @@ constexpr void insert_each_(View<T> run, Less& less) noexcept {
 // lower position first.
 template <class T, class Less>
 CRUCIBLE_INLINE constexpr void sort_four_(View<T const, 4> source, View<T, 4> target, Less& less) noexcept {
-    T const* const from = first_of_(ViewDoor::key(), source);
-    T* const to = first_of_(ViewDoor::key(), target);
+    T const* const from = first_of_(BaseLayerRead{}, source);
+    T* const to = first_of_(BaseLayerRead{}, target);
     std::size_t const first_pair = select_bit_(less(from[1], from[0]));
     std::size_t const second_pair = select_bit_(less(from[3], from[2]));
     std::size_t const low_a = first_pair;
@@ -534,8 +534,8 @@ template <class T, class Less>
 constexpr void merge_halves_(View<T const> source, View<T> target, Less& less) noexcept {
     std::size_t const count = source.size();
     std::size_t const half = count / 2;
-    T const* const from = first_of_(ViewDoor::key(), source);
-    T* const to = first_of_(ViewDoor::key(), target);
+    T const* const from = first_of_(BaseLayerRead{}, source);
+    T* const to = first_of_(BaseLayerRead{}, target);
     std::size_t left = 0;
     std::size_t right = half;
     std::size_t out = 0;
@@ -577,8 +577,8 @@ constexpr void merge_halves_(View<T const> source, View<T> target, Less& less) n
 template <class T, class Less>
 constexpr void merge_two_ends_(View<T const> source, SortCount middle, View<T> target, Less& less) noexcept {
     std::size_t const count = source.size();
-    T const* const from = first_of_(ViewDoor::key(), source);
-    T* const to = first_of_(ViewDoor::key(), target);
+    T const* const from = first_of_(BaseLayerRead{}, source);
+    T* const to = first_of_(BaseLayerRead{}, target);
     std::size_t left = 0;
     std::size_t right = middle.raw();
     std::size_t left_end = middle.raw();
@@ -642,8 +642,8 @@ template <class T, class Less>
 class StableSort final {
 public:
     constexpr StableSort(View<T> elements, Side<side::SortScratch, View<T>> const& scratch, Less& less) noexcept
-        : elements_{first_of_(ViewDoor::key(), elements)},
-          scratch_{first_of_(ViewDoor::key(), scratch.value())},
+        : elements_{first_of_(BaseLayerRead{}, elements)},
+          scratch_{first_of_(BaseLayerRead{}, scratch.value())},
           less_{less} {}
 
     // Sorts a run of the elements.
@@ -658,14 +658,14 @@ public:
 private:
     // The part of the scratch at the offset of a run of the elements.
     [[nodiscard]] constexpr T* scratch_of_(View<T> run) const noexcept {
-        return scratch_ + (first_of_(ViewDoor::key(), run) - elements_);
+        return scratch_ + (first_of_(BaseLayerRead{}, run) - elements_);
     }
 
     // The merge tree of a run (drift::sort of driftsort).
     constexpr void sort_runs_(View<T> run, RunMode mode) noexcept {
         std::size_t const count = run.size();
         if (count < 2) return;
-        T* const first = first_of_(ViewDoor::key(), run);
+        T* const first = first_of_(BaseLayerRead{}, run);
         // The scale of the depths: the ceiling of 2^62 / count.  A split
         // point between [a, b) and [b, c) has the depth of the highest bit
         // in which (a + b) * scale and (b + c) * scale differ.
@@ -679,8 +679,8 @@ private:
         }
         FixedArray<TreeRun, merge_tree_height> runs{};
         FixedArray<std::uint8_t, merge_tree_height> depths{};
-        TreeRun* const run_stack = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), runs));
-        std::uint8_t* const depth_stack = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), depths));
+        TreeRun* const run_stack = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), runs));
+        std::uint8_t* const depth_stack = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), depths));
         std::size_t height = 0;
         std::size_t scan = 0;
         TreeRun previous{};
@@ -720,7 +720,7 @@ private:
     // an unsorted run of good_run elements in the lazy mode.
     [[nodiscard]] constexpr TreeRun create_run_(View<T> rest, SortCount good_run, RunMode mode) noexcept {
         std::size_t const count = rest.size();
-        T* const first = first_of_(ViewDoor::key(), rest);
+        T* const first = first_of_(BaseLayerRead{}, rest);
         if (count >= good_run.raw()) {
             InputRun const found = find_input_run_(View<T const>{rest});
             if (found.count >= good_run.raw()) {
@@ -743,7 +743,7 @@ private:
     [[nodiscard]] constexpr InputRun find_input_run_(View<T const> rest) const noexcept {
         std::size_t const count = rest.size();
         if (count < 2) return InputRun{count, RunOrder::ascending};
-        T const* const first = first_of_(ViewDoor::key(), rest);
+        T const* const first = first_of_(BaseLayerRead{}, rest);
         if (less_(first[1], first[0])) return InputRun{extend_run_<RunOrder::descending>(rest), RunOrder::descending};
         return InputRun{extend_run_<RunOrder::ascending>(rest), RunOrder::ascending};
     }
@@ -757,7 +757,7 @@ private:
     template <RunOrder Order>
     [[nodiscard]] constexpr std::size_t extend_run_(View<T const> rest) const noexcept {
         std::size_t const count = rest.size();
-        T const* const first = first_of_(ViewDoor::key(), rest);
+        T const* const first = first_of_(BaseLayerRead{}, rest);
         // The element at position breaks the run when it is out of the order
         // of Order with the element before it.
         auto const is_break = [&](SortCount position) constexpr noexcept {
@@ -774,7 +774,7 @@ private:
         if (length < scalar_end) return length;
         while (length + run_scan_block <= count) {
             FixedArray<std::uint8_t, run_scan_block> breaks{};
-            std::uint8_t* const is_broken = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), breaks));
+            std::uint8_t* const is_broken = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), breaks));
             std::uint8_t is_any_broken = 0;
             for (std::size_t offset = 0; offset < run_scan_block; ++offset) {
                 is_broken[offset] = static_cast<std::uint8_t>(is_break(SortCount{length + offset}));
@@ -795,7 +795,7 @@ private:
 
     // Reverses the order of the elements of a run.
     static constexpr void reverse_run_(View<T> run) noexcept {
-        T* const first = first_of_(ViewDoor::key(), run);
+        T* const first = first_of_(BaseLayerRead{}, run);
         std::size_t low = 0;
         std::size_t high = run.size();
         while (low + 1 < high) {
@@ -816,7 +816,7 @@ private:
         if (runs.left.state == RunState::unsorted && runs.right.state == RunState::unsorted) {
             return TreeRun{count, RunState::unsorted};
         }
-        T* const first = first_of_(ViewDoor::key(), merged);
+        T* const first = first_of_(BaseLayerRead{}, merged);
         if (runs.left.state == RunState::unsorted) sort_by_partitions_(run_of_(first, SortCount{runs.left.count}));
         if (runs.right.state == RunState::unsorted) {
             sort_by_partitions_(run_of_(first + runs.left.count, SortCount{runs.right.count}));
@@ -830,7 +830,7 @@ private:
     // run to its scratch and merges it back from the two ends.
     constexpr void merge_(View<T> run, SortCount middle) noexcept {
         std::size_t const count = run.size();
-        T* const first = first_of_(ViewDoor::key(), run);
+        T* const first = first_of_(BaseLayerRead{}, run);
         if (middle.raw() == 0 || middle.raw() >= count || !less_(first[middle.raw()], first[middle.raw() - 1])) {
             return;
         }
@@ -863,7 +863,7 @@ private:
                 return;
             }
             --budget_;
-            T* const first = first_of_(ViewDoor::key(), run);
+            T* const first = first_of_(BaseLayerRead{}, run);
             T const pivot = first[choose_pivot_(View<T const>{run})];
             bool is_equal_partition =
                 Option<T>{ancestor}.match([&](T ancestor_pivot) noexcept { return !less_(ancestor_pivot, pivot); },
@@ -893,7 +893,7 @@ private:
     // each sample, recursively (the pseudomedian of driftsort).
     [[nodiscard]] constexpr std::size_t choose_pivot_(View<T const> run) const noexcept {
         std::size_t const eighth = run.size() / 8;
-        T const* const first = first_of_(ViewDoor::key(), run);
+        T const* const first = first_of_(BaseLayerRead{}, run);
         T const* const chosen =
             run.size() < 64 ? median_of_three_(first, first + eighth * 4, first + eighth * 7)
                             : median_of_samples_(first, first + eighth * 4, first + eighth * 7, SortCount{eighth});
@@ -952,7 +952,7 @@ private:
     template <PivotSide Pivot>
     [[nodiscard]] constexpr std::size_t partition_(View<T> run, T const& pivot) noexcept {
         std::size_t const count = run.size();
-        T* const first = first_of_(ViewDoor::key(), run);
+        T* const first = first_of_(BaseLayerRead{}, run);
         T* const scratch = scratch_of_(run);
         std::size_t front = 0;
         std::size_t index = 0;
@@ -961,7 +961,7 @@ private:
         // lanes when less allows it.  The writes then read the bits.
         while (index + partition_block <= count) {
             FixedArray<std::uint8_t, partition_block> lefts{};
-            std::uint8_t* const is_left = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), lefts));
+            std::uint8_t* const is_left = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), lefts));
             T const* const block = first + index;
             for (std::size_t offset = 0; offset < partition_block; ++offset) {
                 if constexpr (Pivot == PivotSide::right) {
@@ -1004,7 +1004,7 @@ private:
     constexpr void sort_small_(View<T> run) noexcept {
         std::size_t const count = run.size();
         if (count < 2) return;
-        T* const first = first_of_(ViewDoor::key(), run);
+        T* const first = first_of_(BaseLayerRead{}, run);
         T* const scratch = scratch_of_(run);
         std::size_t const half = count / 2;
         std::size_t sorted = 1;
@@ -1036,7 +1036,7 @@ private:
     // sorts of four in place, and their merge into the scratch (sort8_stable
     // of driftsort).
     constexpr void sort_eight_(View<T> run) noexcept {
-        T* const first = first_of_(ViewDoor::key(), run);
+        T* const first = first_of_(BaseLayerRead{}, run);
         sort_four_in_place_(View<T, 4>{ViewDoor::key(), first});
         sort_four_in_place_(View<T, 4>{ViewDoor::key(), first + 4});
         merge_halves_(View<T const>{run}, run_of_(scratch_of_(run), SortCount{8}), less_);
@@ -1045,7 +1045,7 @@ private:
     // The stable sort of four elements in place: a copy of the four, then
     // sort_four_ from the copy.
     constexpr void sort_four_in_place_(View<T, 4> run) noexcept {
-        T* const first = first_of_(ViewDoor::key(), run);
+        T* const first = first_of_(BaseLayerRead{}, run);
         FixedArray<T, 4> const held{first[0], first[1], first[2], first[3]};
         sort_four_(View<T const, 4>{held.view()}, run, less_);
     }
@@ -1141,9 +1141,9 @@ constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& 
     constexpr std::size_t buckets = std::size_t{1} << DigitBits;
     constexpr std::size_t digit_mask = buckets - 1;
     std::size_t const count = run.size();
-    T* const elements = first_of_(ViewDoor::key(), run);
+    T* const elements = first_of_(BaseLayerRead{}, run);
     FixedArray<Tally, buckets * passes> counts{};
-    Tally* const tally = first_of_(ViewDoor::key(), frame_run_(FrameDoor::key(), counts));
+    Tally* const tally = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), counts));
     for (std::size_t index = 0; index < count; ++index) {
         auto const key = key_of(elements[index]);
         for (std::size_t pass = 0; pass < passes; ++pass) {
@@ -1152,7 +1152,7 @@ constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& 
     }
     auto const first_key = key_of(elements[0]);
     T* source = elements;
-    T* target = first_of_(ViewDoor::key(), scratch.value());
+    T* target = first_of_(BaseLayerRead{}, scratch.value());
     for (std::size_t pass = 0; pass < passes; ++pass) {
         Tally* const bucket = tally + pass * buckets;
         // A digit that each element shares moves no element.
@@ -1192,7 +1192,7 @@ constexpr void radix_sort_by_count_(View<T> run, Side<side::SortScratch, View<T>
 template <class T>
     requires std::same_as<T, float> || std::same_as<T, double>
 constexpr void encode_radix_keys_(View<T> run) noexcept {
-    T* const first = first_of_(ViewDoor::key(), run);
+    T* const first = first_of_(BaseLayerRead{}, run);
     for (std::size_t index = 0; index < run.size(); ++index) {
         first[index] = __builtin_bit_cast(T, radix_key_(first[index]));
     }
@@ -1207,7 +1207,7 @@ constexpr void decode_radix_keys_(View<T> run) noexcept {
     using Key = radix_key_t<T>;
     using Signed = std::conditional_t<sizeof(T) == 4, std::int32_t, std::int64_t>;
     constexpr Key sign = Key{1} << (8 * sizeof(T) - 1);
-    T* const first = first_of_(ViewDoor::key(), run);
+    T* const first = first_of_(BaseLayerRead{}, run);
     for (std::size_t index = 0; index < run.size(); ++index) {
         Key const key = __builtin_bit_cast(Key, first[index]) ^ sign;
         Key const flip = static_cast<Key>(__builtin_bit_cast(Signed, key) >> (8 * sizeof(T) - 1)) >> 1;
@@ -1245,9 +1245,9 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
                                                                  Less less = Less{}) noexcept {
     std::size_t const count = elements.size();
     if (scratch.size() != count) return err(LengthMismatch{});
-    View<T> const run = detail::run_of_(first_of_(detail::ViewDoor::key(), elements), detail::SortCount{count});
+    View<T> const run = detail::run_of_(first_of_(detail::BaseLayerRead{}, elements), detail::SortCount{count});
     auto const room = side_as<side::SortScratch>(
-        detail::run_of_(first_of_(detail::ViewDoor::key(), scratch), detail::SortCount{count}));
+        detail::run_of_(first_of_(detail::BaseLayerRead{}, scratch), detail::SortCount{count}));
     // The key of the radix sort has at most eight bytes.  A wider integer of a
     // GNU dialect, such as __int128, takes the comparator form.
     if constexpr (std::same_as<Less, Ascending> && sizeof(T) <= 8) {
@@ -1304,7 +1304,7 @@ template <class T, std::size_t Extent, class Less = Ascending>
 [[nodiscard]] constexpr std::size_t find_lower_bound(View<T, Extent> sorted,
                                                      std::type_identity_t<std::remove_const_t<T>> const& value,
                                                      Less less = Less{}) noexcept {
-    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), sorted);
+    std::remove_const_t<T> const* const first = first_of_(detail::BaseLayerRead{}, sorted);
     std::size_t low = 0;
     std::size_t high = sorted.size();
     while (low < high) {
@@ -1327,7 +1327,7 @@ template <class T, std::size_t Extent, class Less = Ascending>
                                                             Less less = Less{}) noexcept {
     std::size_t const position = find_lower_bound(sorted, value, less);
     if (position == sorted.size()) return none;
-    if (less(value, first_of_(detail::ViewDoor::key(), sorted)[position])) return none;
+    if (less(value, first_of_(detail::BaseLayerRead{}, sorted)[position])) return none;
     return Option<std::size_t>::some(position);
 }
 

@@ -332,7 +332,7 @@ public:
         if (other.size() != size()) {
             return Option<BrandedView<U, Brand>>{none};
         }
-        U* const first = count_ == 0 ? nullptr : first_of_(detail::ViewDoor::key(), other);
+        U* const first = count_ == 0 ? nullptr : first_of_(detail::BaseLayerRead{}, other);
         return Option<BrandedView<U, Brand>>::some(detail::BrandedScopeDoor::open<Brand>(first, count_));
     }
 };
@@ -357,7 +357,7 @@ template <class... Refused, class T, std::size_t Extent, class Body,
     if (count > detail::max_branded_count) [[unlikely]] {
         fatal("a branded scope over a View of {} elements, past the count that an index of 4 bytes proves", count);
     }
-    T* const first = count == 0 ? nullptr : first_of_(detail::ViewDoor::key(), view);
+    T* const first = count == 0 ? nullptr : first_of_(detail::BaseLayerRead{}, view);
     return static_cast<Body&&>(body)(detail::BrandedScopeDoor::open<Fresh>(first, count));
 }
 

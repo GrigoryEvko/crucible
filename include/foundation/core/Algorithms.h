@@ -96,8 +96,8 @@ template <class T, std::size_t LeftExtent, class U, std::size_t RightExtent>
     std::size_t const count = left.size();
     if (count != right.size()) return false;
     if (count == 0) return true;
-    Element const* const first = first_of_(detail::ViewDoor::key(), left);
-    Element const* const second = first_of_(detail::ViewDoor::key(), right);
+    Element const* const first = first_of_(detail::BaseLayerRead{}, left);
+    Element const* const second = first_of_(detail::BaseLayerRead{}, right);
     if constexpr (detail::BytewiseEqualElement<Element>) {
         if !consteval {
             return __builtin_memcmp(first, second, count * sizeof(Element)) == 0;
@@ -121,8 +121,8 @@ template <class T, std::size_t LeftExtent, class U, std::size_t RightExtent>
     std::size_t const left_count = left.size();
     std::size_t const right_count = right.size();
     std::size_t const common = left_count < right_count ? left_count : right_count;
-    Element const* const first = first_of_(detail::ViewDoor::key(), left);
-    Element const* const second = first_of_(detail::ViewDoor::key(), right);
+    Element const* const first = first_of_(detail::BaseLayerRead{}, left);
+    Element const* const second = first_of_(detail::BaseLayerRead{}, right);
     if constexpr (detail::BytewiseOrderedElement<Element>) {
         if !consteval {
             if (common != 0) {
@@ -148,7 +148,7 @@ template <class T, std::size_t Extent>
     requires Equatable<std::remove_const_t<T>>
 [[nodiscard]] constexpr Option<std::size_t> find(View<T, Extent> view,
                                                  std::type_identity_t<std::remove_const_t<T>> const& value) noexcept {
-    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
+    std::remove_const_t<T> const* const first = first_of_(detail::BaseLayerRead{}, view);
     for (std::size_t index = 0; index < view.size(); ++index) {
         if (::foundation::core::equal(first[index], value)) return Option<std::size_t>::some(index);
     }
@@ -189,7 +189,7 @@ template <class T, std::size_t Extent>
 template <class T, std::size_t Extent, class Predicate>
     requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
 [[nodiscard]] constexpr Option<std::size_t> find_if(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
+    std::remove_const_t<T> const* const first = first_of_(detail::BaseLayerRead{}, view);
     for (std::size_t index = 0; index < view.size(); ++index) {
         if (predicate(first[index])) return Option<std::size_t>::some(index);
     }
@@ -274,7 +274,7 @@ template <class T, std::size_t Extent, class Key>
 [[nodiscard]] constexpr std::size_t
 find_lower_bound_by_key(View<T, Extent> view, Key key,
                         std::invoke_result_t<Key&, std::remove_const_t<T> const&> probe) noexcept {
-    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
+    std::remove_const_t<T> const* const first = first_of_(detail::BaseLayerRead{}, view);
     std::size_t low = 0;
     std::size_t high = view.size();
     while (low < high) {

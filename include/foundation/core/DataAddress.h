@@ -266,7 +266,7 @@ template <class Byte, std::size_t Extent>
     if (bytes.size() == 0 || offset > bytes.size()) [[unlikely]] {
         return Option<RunAddress>{none};
     }
-    Byte* const first = first_of_(detail::ViewDoor::key(), bytes);
+    Byte* const first = first_of_(detail::BaseLayerRead{}, bytes);
     return Option<RunAddress>::some(RunAddress{static_cast<void*>(first + offset), detail::RunAddressDoor::key()});
 }
 

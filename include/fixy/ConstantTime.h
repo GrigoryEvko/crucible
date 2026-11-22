@@ -132,8 +132,8 @@ template <std::size_t N>
             ++cursor;
         }
     } else {
-        std::byte const* const left = first_of_(::foundation::core::detail::ViewDoor::key(), a);
-        std::byte const* const right = first_of_(::foundation::core::detail::ViewDoor::key(), b);
+        std::byte const* const left = first_of_(::foundation::core::detail::BaseLayerRead{}, a);
+        std::byte const* const right = first_of_(::foundation::core::detail::BaseLayerRead{}, b);
         [&]<std::size_t... W>(std::index_sequence<W...>) {
             ((acc |= detail::word_difference<W, N>(left, right)), ...);
         }(std::make_index_sequence<words>{});

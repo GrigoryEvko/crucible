@@ -676,7 +676,7 @@ constexpr void put_count_(std::byte* first, std::size_t count) noexcept {
 // caller reads only the elements below the count.
 template <class T, std::size_t N>
 [[nodiscard]] constexpr T const* list_first_(FixedList<T, N> const& list) noexcept {
-    return first_of_(detail::ViewDoor::key(), list.view());
+    return first_of_(detail::BaseLayerRead{}, list.view());
 }
 
 template <std::size_t N>
@@ -1189,7 +1189,7 @@ constexpr void hash_array_(HashState& state, Element const* first) noexcept {
         for (std::size_t index = 0; index < Count; ++index) {
             FixedArray<std::byte, step> image{};
             detail::encode_part_(first[index],
-                                 first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image)));
+                                 first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image)));
             for (std::byte const byte : image.view()) {
                 detail::put_byte_(state, position, byte);
             }
@@ -1205,14 +1205,14 @@ constexpr void hash_part_(HashState& state, T const& part) noexcept {
         detail::hash_array_<Offset, std::remove_extent_t<Bare>, std::extent_v<Bare>>(state, part);
     } else if constexpr (is_fixed_array_at(^^Bare)) {
         detail::hash_array_<Offset, typename[:fixed_array_element_at(^^Bare):], fixed_array_count_at(^^Bare)>(
-            state, first_of_(detail::ViewDoor::key(), part.view()));
+            state, first_of_(detail::BaseLayerRead{}, part.view()));
     } else if constexpr (is_sum_at(^^Bare) || is_bounded_list_at(^^Bare)) {
         // The active alternative of a sum and the count of a list are known
         // only at run time, so the fold writes the image of the part on the
         // stack and folds it as an array of bytes at the same offset.
         constexpr std::size_t bytes = image_bytes_at(^^Bare);
         FixedArray<std::byte, bytes> image{};
-        std::byte* const first = first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image));
+        std::byte* const first = first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image));
         detail::encode_part_(part, first);
         detail::hash_array_<Offset, std::byte, bytes>(state, first);
     } else if constexpr (derives_protocol_at(^^Bare)) {
@@ -1250,7 +1250,7 @@ constexpr void hash_run_(HashState& state, T const* first, std::size_t count) no
         for (; index < count; ++index) {
             FixedArray<std::byte, step> image{};
             detail::encode_part_(first[index],
-                                 first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image)));
+                                 first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image)));
             for (std::byte const byte : image.view()) {
                 detail::put_byte_(state, position, byte);
             }
@@ -1552,7 +1552,7 @@ constexpr void fold_fixed_part_(HeapFold& fold, T const& part) noexcept {
     } else {
         constexpr std::size_t bytes = image_bytes_at(^^Bare);
         FixedArray<std::byte, bytes> image{};
-        detail::encode_part_(part, first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), image)));
+        detail::encode_part_(part, first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image)));
         for (std::byte const byte : image.view()) {
             fold.put_byte(byte);
         }
@@ -1613,7 +1613,7 @@ constexpr void fold_heap_part_(HeapFold& fold, T const& part) noexcept {
         fold.put_leaf<heap_count_bytes>(static_cast<std::uint64_t>(part.size()));
         if constexpr (is_block_leaf_<Element>) {
             View<Element const> const run = part.view();
-            detail::fold_leaf_run_(fold, first_of_(detail::ViewDoor::key(), run), run.size());
+            detail::fold_leaf_run_(fold, first_of_(detail::BaseLayerRead{}, run), run.size());
         } else {
             for (auto const& element : part.view()) {
                 detail::fold_fixed_part_(fold, element);
@@ -1842,7 +1842,7 @@ template <Hashable T>
 // over the parts.
 template <Encodable T>
 constexpr void encode(T const& value, View<std::byte, encoded_size_v<T>> out) noexcept {
-    detail::encode_part_(value, first_of_(detail::ViewDoor::key(), out));
+    detail::encode_part_(value, first_of_(detail::BaseLayerRead{}, out));
 }
 
 // The hash of a run of values (THE HASH of a run): the fold of the images of
@@ -1853,7 +1853,7 @@ constexpr void encode(T const& value, View<std::byte, encoded_size_v<T>> out) no
 template <Encodable T>
 [[nodiscard]] constexpr Digest<View<T const>> hash(View<T const> run) noexcept {
     detail::HashState state{};
-    detail::hash_run_(state, first_of_(detail::ViewDoor::key(), run), run.size());
+    detail::hash_run_(state, first_of_(detail::BaseLayerRead{}, run), run.size());
     return Digest<View<T const>>{state.accumulator};
 }
 
@@ -1863,7 +1863,7 @@ template <Decodable T>
 [[nodiscard]] constexpr Result<T, DecodeFault> decode(View<std::byte const, encoded_size_v<T>> bytes) noexcept {
     T value{};
     DecodeFault fault{DecodeRefusal::bool_byte, 0};
-    if (!detail::decode_part_(value, first_of_(detail::ViewDoor::key(), bytes), 0, fault)) {
+    if (!detail::decode_part_(value, first_of_(detail::BaseLayerRead{}, bytes), 0, fault)) {
         return err(fault);
     }
     return value;
@@ -1900,7 +1900,7 @@ constexpr void encode(T const& value, View<std::byte> out) noexcept {
     if (out.size() != needed || needed > detail::max_image_bytes) [[unlikely]] {
         detail::refuse_heap_encode_(out.size(), needed);
     }
-    if (needed != 0) detail::encode_heap_part_(value, first_of_(detail::ViewDoor::key(), out));
+    if (needed != 0) detail::encode_heap_part_(value, first_of_(detail::BaseLayerRead{}, out));
 }
 
 // The hash of the value (THE HEAP PARTS): the fold of its image, and then
@@ -1928,7 +1928,7 @@ template <HeapDecodable T, class Marker>
         return err(detail::fault_at_(DecodeRefusal::image_size, detail::max_image_bytes));
     }
     T value{};
-    detail::HeapCursor cursor{bytes.size() == 0 ? nullptr : first_of_(detail::ViewDoor::key(), bytes), bytes.size(), 0,
+    detail::HeapCursor cursor{bytes.size() == 0 ? nullptr : first_of_(detail::BaseLayerRead{}, bytes), bytes.size(), 0,
                               detail::heap_budget_of_(budget)};
     DecodeFault fault{DecodeRefusal::bool_byte, 0};
     if (!detail::decode_heap_part_(value, allocation, cursor, fault)) return err(fault);

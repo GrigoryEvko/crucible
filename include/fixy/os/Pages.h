@@ -96,7 +96,7 @@ void storage_of(T const&&) = delete("the storage of a temporary object ends at t
 template <class T, std::size_t Extent>
 [[nodiscard]] ::foundation::core::View<std::byte const> storage_of(::foundation::core::View<T, Extent> run) noexcept {
     std::byte const* const first = static_cast<std::byte const*>(
-        static_cast<void const*>(first_of_(::foundation::core::detail::ViewDoor::key(), run)));
+        static_cast<void const*>(first_of_(::foundation::core::detail::BaseLayerRead{}, run)));
     return ::foundation::core::View<std::byte const>{::foundation::core::detail::ViewDoor::key(), first,
                                                      run.size() * sizeof(T)};
 }
@@ -146,7 +146,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsPageCall<Ctx>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 lock_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
-    return detail::mlock_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size());
+    return detail::mlock_sys(first_of_(::foundation::core::detail::BaseLayerRead{}, bytes), bytes.size());
 }
 
 // Locks the pages of bytes in memory when each page faults in, and faults in
@@ -156,7 +156,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsPageCall<Ctx>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 lock_pages_on_fault(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
-    return detail::mlock2_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size(),
+    return detail::mlock2_sys(first_of_(::foundation::core::detail::BaseLayerRead{}, bytes), bytes.size(),
                               ::foundation::os::kLockOnFault);
 }
 
@@ -165,7 +165,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsPageCall<Ctx>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 unlock_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
-    return detail::munlock_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size());
+    return detail::munlock_sys(first_of_(::foundation::core::detail::BaseLayerRead{}, bytes), bytes.size());
 }
 
 // Faults in each page that holds a byte of bytes, as a write does, and
@@ -181,7 +181,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsPageCall<Ctx>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 populate_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
-    return detail::populate_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size());
+    return detail::populate_sys(first_of_(::foundation::core::detail::BaseLayerRead{}, bytes), bytes.size());
 }
 
 // Asks the kernel for huge pages in each whole huge page of bytes
@@ -191,7 +191,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsPageCall<Ctx>
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 advise_huge_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
-    return detail::madvise_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size(),
+    return detail::madvise_sys(first_of_(::foundation::core::detail::BaseLayerRead{}, bytes), bytes.size(),
                                ::foundation::os::kAdviseHugePage);
 }
 
@@ -202,7 +202,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsPageCall<Ctx>
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 collapse_huge_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
-    return detail::madvise_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size(),
+    return detail::madvise_sys(first_of_(::foundation::core::detail::BaseLayerRead{}, bytes), bytes.size(),
                                ::foundation::os::kAdviseCollapse);
 }
 

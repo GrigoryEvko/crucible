@@ -179,7 +179,7 @@ public:
         if (run.size() != count) [[unlikely]] {
             fatal("RunSet::set got a run of {} elements for a slot of the count {}", run.size(), count);
         }
-        static_cast<First_<I>&>(*this).first_ = first_of_(detail::ViewDoor::key(), run);
+        static_cast<First_<I>&>(*this).first_ = first_of_(detail::BaseLayerRead{}, run);
     }
 
     // True when the run at index I holds the count of its slot: the count

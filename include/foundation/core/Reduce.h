@@ -385,7 +385,7 @@ template <class T, std::size_t Extent, class Combine>
                                                                       Combine combine) noexcept {
     using Value = std::remove_const_t<T>;
     if (elements.size() == 0) return none;
-    Value const* const first = first_of_(detail::ViewDoor::key(), elements);
+    Value const* const first = first_of_(detail::BaseLayerRead{}, elements);
     return Option<Value>::some(detail::tree_of_run_<detail::TreeLeaves::Blocked>(first, elements.size(), combine));
 }
 
@@ -399,7 +399,7 @@ template <int Lanes, class T>
 [[nodiscard]] T sum_by_tree_in_lanes(View<T const> elements) noexcept {
     if (elements.size() == 0) return T{};
     return fp::canonicalize_nan(
-        detail::sum_run_by_tree_<T, Lanes>(first_of_(detail::ViewDoor::key(), elements), elements.size()));
+        detail::sum_run_by_tree_<T, Lanes>(first_of_(detail::BaseLayerRead{}, elements), elements.size()));
 }
 
 // The tree sum of the elements, with the lanes of one register of the
@@ -426,7 +426,7 @@ template <class T, int Lanes>
 [[nodiscard]] simd::vec<T, Lanes> tree_runs_vector_(View<T const> const* runs, std::size_t count,
                                                     std::size_t offset) noexcept {
     using V = simd::vec<T, Lanes>;
-    if (count == 1) return simd::load<V>(first_of_(ViewDoor::key(), runs[0]) + offset);
+    if (count == 1) return simd::load<V>(first_of_(BaseLayerRead{}, runs[0]) + offset);
     std::size_t const split = bit_floor(count - 1);
     V const left = tree_runs_vector_<T, Lanes>(runs, split, offset);
     V const right = tree_runs_vector_<T, Lanes>(runs + split, count - split, offset);
@@ -439,7 +439,7 @@ template <class T, int Lanes>
 // each run.  The count is at least 1.
 template <class T>
 [[nodiscard]] T tree_runs_element_(View<T const> const* runs, std::size_t count, std::size_t offset) noexcept {
-    if (count == 1) return first_of_(ViewDoor::key(), runs[0])[offset];
+    if (count == 1) return first_of_(BaseLayerRead{}, runs[0])[offset];
     std::size_t const split = bit_floor(count - 1);
     T const left = tree_runs_element_<T>(runs, split, offset);
     T const right = tree_runs_element_<T>(runs + split, count - split, offset);
@@ -492,10 +492,10 @@ template <class T, class Brand, std::size_t Extent>
                                                        ViewMut<T, Brand, Extent> sums) noexcept {
     constexpr int lanes = simd::native_lanes<T>;
     std::size_t const count = sums.size();
-    T* const out = first_of_(detail::ViewDoor::key(), sums);
+    T* const out = first_of_(detail::BaseLayerRead{}, sums);
     for (View<T const> const run : runs) {
         if (run.size() != count) return err(RunsError::LengthMismatch);
-        if (detail::is_partial_overlap_(first_of_(detail::ViewDoor::key(), run), out, count)) {
+        if (detail::is_partial_overlap_(first_of_(detail::BaseLayerRead{}, run), out, count)) {
             return err(RunsError::PartialOverlap);
         }
     }
@@ -503,7 +503,7 @@ template <class T, class Brand, std::size_t Extent>
         fill(View<T>{sums.view()}, T{});
         return Unit{};
     }
-    View<T const> const* const first_run = first_of_(detail::ViewDoor::key(), runs);
+    View<T const> const* const first_run = first_of_(detail::BaseLayerRead{}, runs);
     std::size_t const whole = count - count % static_cast<std::size_t>(lanes);
     for (std::size_t offset = 0; offset < whole; offset += static_cast<std::size_t>(lanes)) {
         simd::store(simd::canonicalize_nans(detail::tree_runs_vector_<T, lanes>(first_run, runs.size(), offset)),
@@ -537,7 +537,7 @@ enum class SegmentError : std::uint8_t {
 [[nodiscard]] constexpr Result<Unit, SegmentError>
 check_segment_offsets(std::size_t elements, View<std::size_t const> offsets, std::size_t results) noexcept {
     if (offsets.size() != results + 1) return err(SegmentError::CountMismatch);
-    std::size_t const* const offset = first_of_(detail::ViewDoor::key(), offsets);
+    std::size_t const* const offset = first_of_(detail::BaseLayerRead{}, offsets);
     for (std::size_t segment = 0; segment < results; ++segment) {
         if (offset[segment + 1] < offset[segment]) return err(SegmentError::OffsetsOutOfOrder);
     }
@@ -558,8 +558,8 @@ template <class T>
                                                                T* out, std::size_t count) noexcept {
     auto const checked = check_segment_offsets(elements.size(), offsets, count);
     if (checked.is_err()) return checked;
-    T const* const first = first_of_(ViewDoor::key(), elements);
-    std::size_t const* const offset = first_of_(ViewDoor::key(), offsets);
+    T const* const first = first_of_(BaseLayerRead{}, elements);
+    std::size_t const* const offset = first_of_(BaseLayerRead{}, offsets);
     for (std::size_t segment = 0; segment < count; ++segment) {
         std::size_t const size = offset[segment + 1] - offset[segment];
         out[segment] =
@@ -584,7 +584,7 @@ template <class T, class Brand, std::size_t Extent>
     requires TreeSumElement<T>
 [[nodiscard]] Result<Unit, SegmentError> sum_segments_by_tree(View<T const> elements, View<std::size_t const> offsets,
                                                               ViewMut<T, Brand, Extent> sums) noexcept {
-    return detail::sum_segments_by_tree_(elements, offsets, first_of_(detail::ViewDoor::key(), sums), sums.size());
+    return detail::sum_segments_by_tree_(elements, offsets, first_of_(detail::BaseLayerRead{}, sums), sums.size());
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -600,9 +600,9 @@ reduce_segments_by_tree(View<T const> elements, View<std::size_t const> offsets,
                         T const& empty, Combine combine) noexcept {
     auto const checked = check_segment_offsets(elements.size(), offsets, results.size());
     if (checked.is_err()) return checked;
-    T const* const first = first_of_(detail::ViewDoor::key(), elements);
-    std::size_t const* const offset = first_of_(detail::ViewDoor::key(), offsets);
-    T* const out = first_of_(detail::ViewDoor::key(), results);
+    T const* const first = first_of_(detail::BaseLayerRead{}, elements);
+    std::size_t const* const offset = first_of_(detail::BaseLayerRead{}, offsets);
+    T* const out = first_of_(detail::BaseLayerRead{}, results);
     for (std::size_t segment = 0; segment < results.size(); ++segment) {
         std::size_t const count = offset[segment + 1] - offset[segment];
         out[segment] = count == 0
@@ -643,7 +643,7 @@ constexpr void reduce_grains_by_tree_(View<T const> elements, std::size_t first_
                                       Combine& combine) noexcept {
     std::size_t const count = elements.size();
     check_grain_range_<Grain>(count, first_grain, partials);
-    T const* const first = first_of_(ViewDoor::key(), elements);
+    T const* const first = first_of_(BaseLayerRead{}, elements);
     for (std::size_t index = 0; index < partials; ++index) {
         std::size_t const start = (first_grain + index) * Grain;
         std::size_t const size = count - start < Grain ? count - start : Grain;
@@ -659,7 +659,7 @@ template <std::size_t Grain, class T>
 void sum_grains_by_tree_(View<T const> elements, std::size_t first_grain, T* out, std::size_t partials) noexcept {
     std::size_t const count = elements.size();
     check_grain_range_<Grain>(count, first_grain, partials);
-    T const* const first = first_of_(ViewDoor::key(), elements);
+    T const* const first = first_of_(BaseLayerRead{}, elements);
     for (std::size_t index = 0; index < partials; ++index) {
         std::size_t const start = (first_grain + index) * Grain;
         std::size_t const size = count - start < Grain ? count - start : Grain;
@@ -681,7 +681,7 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 template <std::size_t Grain, class T, class Brand, std::size_t Extent>
     requires TreeGrain<Grain> && TreeSumElement<T>
 void sum_grains_by_tree(View<T const> elements, std::size_t first_grain, ViewMut<T, Brand, Extent> partials) noexcept {
-    detail::sum_grains_by_tree_<Grain>(elements, first_grain, first_of_(detail::ViewDoor::key(), partials),
+    detail::sum_grains_by_tree_<Grain>(elements, first_grain, first_of_(detail::BaseLayerRead{}, partials),
                                        partials.size());
 }
 
@@ -695,7 +695,7 @@ template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Com
     requires TreeGrain<Grain> && TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
 constexpr void reduce_grains_by_tree(View<T const> elements, std::size_t first_grain,
                                      ViewMut<T, Brand, Extent> partials, Combine combine) noexcept {
-    detail::reduce_grains_by_tree_<Grain>(elements, first_grain, first_of_(detail::ViewDoor::key(), partials),
+    detail::reduce_grains_by_tree_<Grain>(elements, first_grain, first_of_(detail::BaseLayerRead{}, partials),
                                           partials.size(), combine);
 }
 
@@ -758,7 +758,7 @@ template <class Brand, std::size_t Extent>
     if (steps.size() >= max_plan_leaves) return err(PlanError::TooManyLeaves);
     auto const leaves = static_cast<std::uint32_t>(steps.size() + 1);
     std::uint32_t next = 0;
-    static_cast<void>(detail::write_tree_plan_(first_of_(detail::ViewDoor::key(), steps), leaves, 0, leaves, next));
+    static_cast<void>(detail::write_tree_plan_(first_of_(detail::BaseLayerRead{}, steps), leaves, 0, leaves, next));
     return Unit{};
 }
 
@@ -770,7 +770,7 @@ template <std::size_t Leaves>
     FixedArray<TreeStep, Leaves - 1> steps{};
     std::uint32_t next = 0;
     static_cast<void>(detail::write_tree_plan_(
-        first_of_(detail::ViewDoor::key(), frame_run_(detail::FrameDoor::key(), steps)), Leaves, 0, Leaves, next));
+        first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), steps)), Leaves, 0, Leaves, next));
     return steps;
 }
 
@@ -785,9 +785,9 @@ template <class T, class Brand, std::size_t Extent, class Combine>
                                                                 Combine combine) noexcept {
     std::size_t const count = steps.size();
     if (leaves.size() != count + 1 || scratch.size() != count) return err(PlanError::CountMismatch);
-    TreeStep const* const step = first_of_(detail::ViewDoor::key(), steps);
-    T const* const leaf = first_of_(detail::ViewDoor::key(), leaves);
-    T* const value = first_of_(detail::ViewDoor::key(), scratch);
+    TreeStep const* const step = first_of_(detail::BaseLayerRead{}, steps);
+    T const* const leaf = first_of_(detail::BaseLayerRead{}, leaves);
+    T* const value = first_of_(detail::BaseLayerRead{}, scratch);
     std::size_t const leaf_count = count + 1;
     for (std::size_t index = 0; index < count; ++index) {
         auto const left = static_cast<std::size_t>(step[index].left);

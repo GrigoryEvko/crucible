@@ -384,7 +384,7 @@ class BitCursor final {
     // The cursor at the first key of the words, or at their end.
     constexpr explicit BitCursor(View<Word const> words) noexcept : word_count_{words.size()} {
         if (word_count_ != 0) {
-            words_ = first_of_(detail::ViewDoor::key(), words);
+            words_ = first_of_(detail::BaseLayerRead{}, words);
             bits_ = words_[0];
             skip_empty_words_();
         }

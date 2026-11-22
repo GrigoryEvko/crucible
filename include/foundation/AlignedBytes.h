@@ -388,7 +388,7 @@ public:
         State given = take_state_();
         core::View<std::uint8_t> const run = written_run_(given);
         core::WriteLease<std::uint8_t> lease{core::detail::HeapArrayDoor::key(),
-                                             first_of_(core::detail::ViewDoor::key(), run), given.bytes};
+                                             first_of_(core::detail::BaseLayerRead{}, run), given.bytes};
         writer(lease);
         if (lease.remaining() != 0 || lease.refused() != 0) [[unlikely]] {
             detail::refuse_written_bytes_(given.bytes, lease.remaining(), lease.refused());
@@ -506,7 +506,7 @@ lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& 
     using Given = listed_body_result_t<Body, T, Fresh, N>;
     core::View<std::uint8_t> const bytes = block.view();
     core::View<ByteWindow const> const asked = windows.view();
-    std::uint8_t* const block_first = first_of_(core::detail::ViewDoor::key(), bytes);
+    std::uint8_t* const block_first = first_of_(core::detail::BaseLayerRead{}, bytes);
     for (ByteWindow const& window : asked) {
         if (bytes.window(window.start().raw(), window.length().raw()).is_none()) [[unlikely]] {
             return core::err(WindowRefusal::outside_block);
@@ -616,7 +616,7 @@ namespace detail {
 template <class T>
 [[nodiscard]] CRUCIBLE_INLINE bool is_window_refused_(core::View<std::uint8_t> bytes, ByteWindow const& window,
                                                       WindowRefusal& refusal) noexcept {
-    std::uint8_t* const block_first = first_of_(core::detail::ViewDoor::key(), bytes);
+    std::uint8_t* const block_first = first_of_(core::detail::BaseLayerRead{}, bytes);
     std::size_t const start = window.start().raw();
     // The two compares of the bound of a window, with no Option of a View.
     if (start > bytes.size() || window.length().raw() > bytes.size() - start) [[unlikely]] {
@@ -684,7 +684,7 @@ public:
         if (is_window_refused_<T>(bytes, window, refusal)) [[unlikely]] {
             return true;
         }
-        tested = TestedWindow{first_of_(core::detail::ViewDoor::key(), bytes) + window.start().raw(),
+        tested = TestedWindow{first_of_(core::detail::BaseLayerRead{}, bytes) + window.start().raw(),
                               window.length().raw() / sizeof(T)};
         return false;
     }

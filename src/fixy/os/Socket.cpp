@@ -180,7 +180,7 @@ core::Result<TimestampedReceive, os::Errno> receive_with_timestamps_(int socket,
     MessageHeader message{
         .vectors = os::Word{static_cast<void const*>(&vector)}.bits(),
         .vector_count = 1,
-        .control = os::Word{static_cast<void const*>(first_of_(core::detail::ViewDoor::key(), control.view()))}.bits(),
+        .control = os::Word{static_cast<void const*>(first_of_(core::detail::BaseLayerRead{}, control.view()))}.bits(),
         .control_length = control.size(),
     };
     long word = 0;

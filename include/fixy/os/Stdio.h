@@ -115,7 +115,7 @@ public:
         requires ::fixy::fs::CtxAdmitsFs<Ctx>
     [[nodiscard]] LineResult next_line(Ctx const&) & noexcept {
         return next_line_with_([](::foundation::core::View<char> room) noexcept {
-            return detail::read_standard_input_(first_of_(::foundation::core::detail::ViewDoor::key(), room),
+            return detail::read_standard_input_(first_of_(::foundation::core::detail::BaseLayerRead{}, room),
                                                 room.size());
         });
     }

@@ -991,7 +991,7 @@ template <std::size_t Batch>
 // runs its chunks in the lanes, the last chunk with them, and its root is the
 // parent of the top of the tree.
 [[nodiscard]] Hash256 compute_keyed_hash_(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept {
-    std::byte const* const first = first_of_(ViewDoor::key(), message);
+    std::byte const* const first = first_of_(BaseLayerRead{}, message);
     std::size_t const count = message.size();
     std::uint32_t key_words[8] = {};
     for (auto const index : IndexRange<8>{}) {

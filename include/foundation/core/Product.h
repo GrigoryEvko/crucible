@@ -477,7 +477,7 @@ template <int Lanes, class T>
     if (left.size() != right.size()) return err(LengthMismatch{});
     if (left.size() == 0) return T{};
     return fp::canonicalize_nan(detail::product_run_by_tree_<T, Lanes>(
-        first_of_(detail::ViewDoor::key(), left), first_of_(detail::ViewDoor::key(), right), left.size()));
+        first_of_(detail::BaseLayerRead{}, left), first_of_(detail::BaseLayerRead{}, right), left.size()));
 }
 
 // The tree sum of the products with the lanes of one register of the target.

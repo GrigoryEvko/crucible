@@ -74,7 +74,7 @@ public:
     // The key of 32 bytes, in the byte order of the reference: each 4 bytes
     // are one little-endian word.
     constexpr explicit KeyedHashKeyBytes(View<std::byte const, 32> bytes) noexcept {
-        std::byte const* const first = first_of_(detail::ViewDoor::key(), bytes);
+        std::byte const* const first = first_of_(detail::BaseLayerRead{}, bytes);
         for (std::size_t index = 0; index < 32; ++index) {
             words_[index / 4] |= static_cast<std::uint32_t>(static_cast<std::uint8_t>(first[index]))
                               << (8 * (index % 4));
@@ -314,7 +314,7 @@ constexpr void blake3_parent_block_(std::uint32_t const (&left)[8], std::uint32_
     if !consteval {
         return detail::compute_keyed_hash_(key, message);
     }
-    std::byte const* const first = first_of_(detail::ViewDoor::key(), message);
+    std::byte const* const first = first_of_(detail::BaseLayerRead{}, message);
     std::size_t const count = message.size();
     std::uint32_t words[8] = {};
     for (auto const index : IndexRange<8>{}) {

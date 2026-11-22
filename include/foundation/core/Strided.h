@@ -866,7 +866,7 @@ mint_strided_view(View<T, RunExtent> run, View<S, SizesExtent> sizes, View<D, St
     }
     std::size_t count = 0;
     if (!detail::take_word_(detail::checked_count_(lanes), count)) return Minted{none};
-    T* const first = first_of_(detail::ViewDoor::key(), run);
+    T* const first = first_of_(detail::BaseLayerRead{}, run);
     if (count == 0) return Minted::some(StridedView<T, rank>{first, lanes});
     std::size_t span = 0;
     std::size_t last = 0;

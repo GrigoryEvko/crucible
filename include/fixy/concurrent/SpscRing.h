@@ -241,7 +241,7 @@ public:
         const std::size_t first = room_to_end < count ? room_to_end : count;
         const std::size_t second = count - first;
 
-        T const* const source = first_of_(::foundation::core::detail::ViewDoor::key(), items);
+        T const* const source = first_of_(::foundation::core::detail::BaseLayerRead{}, items);
         std::memcpy(buffer_.data() + start_pos, source, first * sizeof(T));
         if (second > 0) [[unlikely]] {
             std::memcpy(buffer_.data(), source + first, second * sizeof(T));
@@ -272,7 +272,7 @@ public:
         const std::size_t first = room_to_end < count ? room_to_end : count;
         const std::size_t second = count - first;
 
-        T* const target = first_of_(::foundation::core::detail::ViewDoor::key(), out);
+        T* const target = first_of_(::foundation::core::detail::BaseLayerRead{}, out);
         std::memcpy(target, buffer_.data() + start_pos, first * sizeof(T));
         if (second > 0) [[unlikely]] {
             std::memcpy(target + first, buffer_.data(), second * sizeof(T));

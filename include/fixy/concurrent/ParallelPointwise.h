@@ -166,13 +166,13 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
         ::foundation::linear::drop(launch(
             budget,
             ::fixy::mint_owned_region(
-                first_of_(core::detail::ViewDoor::key(), frame_run_(core::detail::FrameDoor::key(), parts)), Shards,
+                first_of_(core::detail::BaseLayerRead{}, frame_run_(core::detail::FrameDoor::key(), parts)), Shards,
                 ::foundation::permissions::mint_permission_root<detail::ParallelPointwiseShards>()),
             [&ruled, &apart, ... reads = detail::read_only_(core::detail::plain_view_of_(inputs)), first_axis,
              positions](auto shard, auto place) noexcept {
                 std::size_t const index = place.index().raw();
                 CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
-                core::Option<Rows> own = std::move(*first_of_(core::detail::ViewDoor::key(), shard));
+                core::Option<Rows> own = std::move(*first_of_(core::detail::BaseLayerRead{}, shard));
                 if (own.is_none()) return;
                 std::size_t const first = ::fixy::detail::shard_start(positions, Shards, index);
                 std::size_t const count = ::fixy::detail::shard_start(positions, Shards, index + 1) - first;

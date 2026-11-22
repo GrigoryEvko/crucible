@@ -191,16 +191,14 @@ struct ViewCount<dynamic_extent> {
     [[nodiscard]] constexpr std::size_t value() const noexcept { return count; }
 };
 
-// The key of the doors of the base layer to the parts of a View: the
-// constructors from raw parts, which check nothing, and first_of_, which
-// gives the pointer of a View.  An owner that proves its run, such as a
-// FixedArray, a FixedList or a HeapArray, makes its View through the key, so
-// its View has no compare, also with -fno-delete-null-pointer-checks.
-// view_over_ checks raw parts of a run and then uses the same key.  ViewDoor
-// is the one friend of the key, and only ViewDoor builds it.  The key, the
-// door and first_of_ are no templates, so no explicit specialization of a
-// template reaches the parts of a View.  The rule owners keeps each caller
-// outside the base out of detail.
+// The key of the constructors of a View from raw parts, which check nothing.
+// An owner that proves its run, such as a FixedArray, a FixedList or a
+// HeapArray, makes its View through the key, so its View has no compare, also
+// with -fno-delete-null-pointer-checks.  view_over_ checks raw parts of a run
+// and then uses the same key.  ViewDoor is the one friend of the key, and only
+// ViewDoor builds it.  The key and the door are no templates, so no explicit
+// specialization of a template reaches the constructors.  The rule owners
+// keeps each caller outside the base out of detail.
 struct ViewDoor;
 
 class [[nodiscard]] ViewKey final {
@@ -215,6 +213,20 @@ public:
 
 struct ViewDoor {
     [[nodiscard]] static constexpr ViewKey key() noexcept { return ViewKey{}; }
+};
+
+// The tag of first_of_, the read of the pointer of the first element of a
+// View or a ViewMut by the base layer.  The raw loops, the kernels and the
+// system doors of the base read the pointer of a View that they hold.  The
+// read makes no View, so each unit of the base builds the tag.  The tag is in
+// namespace detail, and its constructor is explicit, so a caller outside the
+// base names detail to call first_of_, and the rule owners keeps it out.
+// first_of_ is a friend that is no template, so no explicit specialization
+// reaches it.  first_of_ takes a const reference to a temporary tag: GCC 16
+// then gives the code of the former key, and a tag by value or a reference
+// to a named tag gave a sort loop four more instructions.
+struct BaseLayerRead final {
+    explicit BaseLayerRead() = default;
 };
 
 // The body of each get of the Region family: the element at position of the
@@ -306,9 +318,9 @@ public:
     // The pointer of the first element, for the owners and the free
     // operations of the base layer, such as copy() and fill().  It is a
     // friend that is no template, so no explicit specialization reaches it,
-    // and the key keeps each caller outside the base out.  Argument-dependent
-    // lookup finds it: first_of_(detail::ViewDoor::key(), view).
-    [[nodiscard]] friend constexpr T* first_of_(detail::ViewKey const& /*key*/, View view) noexcept {
+    // and the tag keeps each caller outside the base out.  Argument-dependent
+    // lookup finds it: first_of_(detail::BaseLayerRead{}, view).
+    [[nodiscard]] friend constexpr T* first_of_(detail::BaseLayerRead const& /*tag*/, View view) noexcept {
         return view.first_;
     }
 
@@ -524,7 +536,7 @@ public:
 
     template <class Sink>
     [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
-        T* const first = first_of_(ViewDoor::key(), elements_);
+        T* const first = first_of_(BaseLayerRead{}, elements_);
         std::size_t const count = elements_.size();
         for (std::size_t position = 0; position < count; ++position) {
             sink(first[position]);
@@ -535,7 +547,7 @@ public:
     // View: one compare of the pointer with the end, and no count to keep.
     template <class Sink>
     [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
-        T* const first = first_of_(ViewDoor::key(), elements_);
+        T* const first = first_of_(BaseLayerRead{}, elements_);
         T* const end = first + elements_.size();
         for (T* at = first; at != end; ++at) {
             if (sink(*at) == Flow::stop) return Flow::stop;
@@ -548,14 +560,14 @@ public:
     // The element at position, which the caller proves below size_() (THE
     // STAGES of foundation/core/Walk.h).
     [[nodiscard]] constexpr T& at_(StageKey const& /*key*/, std::size_t position) const noexcept {
-        return first_of_(ViewDoor::key(), elements_)[position];
+        return first_of_(BaseLayerRead{}, elements_)[position];
     }
 
     // The first count elements, or each element when count is larger.
     [[nodiscard]] constexpr ViewStage<T, dynamic_extent> limited_(std::size_t count) && noexcept {
         std::size_t const size = elements_.size();
         return ViewStage<T, dynamic_extent>{
-            View<T>{ViewDoor::key(), first_of_(ViewDoor::key(), elements_), count < size ? count : size}};
+            View<T>{ViewDoor::key(), first_of_(BaseLayerRead{}, elements_), count < size ? count : size}};
     }
 
     // The elements after the first count, or none when count is larger.
@@ -563,7 +575,7 @@ public:
         std::size_t const size = elements_.size();
         std::size_t const dropped = count < size ? count : size;
         return ViewStage<T, dynamic_extent>{
-            View<T>{ViewDoor::key(), first_of_(ViewDoor::key(), elements_) + dropped, size - dropped}};
+            View<T>{ViewDoor::key(), first_of_(BaseLayerRead{}, elements_) + dropped, size - dropped}};
     }
 
     // The cursor of `for (x : walk)`: the cursor of the View.
@@ -642,7 +654,7 @@ public:
 // runs do not overlap (THE ALIAS PROOF of Frame.h).
 //
 // The class states refers_unique (foundation/Transfer.h).  A ViewMut moves to
-// another thread when its element can move.  The key door first_of_ gives the
+// another thread when its element can move.  The read first_of_ gives the
 // first element for writing from a const reference too, so two threads share
 // a const reference of a ViewMut only when they can write its element.
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent = dynamic_extent>
@@ -665,7 +677,7 @@ public:
     // FrameDoor builds.  The owner gave the View, so the View bounds the
     // count and holds a pointer that is not null for each count above zero.
     constexpr ViewMut(detail::FrameKey const& /*key*/, View<T, Extent> run) noexcept
-        : first_{first_of_(detail::ViewDoor::key(), run)} {
+        : first_{first_of_(detail::BaseLayerRead{}, run)} {
         if constexpr (Extent == dynamic_extent) count_.count = run.size();
     }
 
@@ -683,9 +695,9 @@ public:
     ~ViewMut() = default;
 
     // The pointer of the first element, for the free operations of the base
-    // layer, such as copy() and write_each().  The key keeps each caller
+    // layer, such as copy() and write_each().  The tag keeps each caller
     // outside the base out, as for first_of_ of a View.
-    [[nodiscard]] friend constexpr T* first_of_(detail::ViewKey const& /*key*/, ViewMut const& view) noexcept {
+    [[nodiscard]] friend constexpr T* first_of_(detail::BaseLayerRead const& /*tag*/, ViewMut const& view) noexcept {
         return view.first_;
     }
 
@@ -762,7 +774,7 @@ public:
     // The chunks of width elements of run, with the key that only FrameDoor
     // builds.  The width is above zero.
     constexpr ViewMutChunks(detail::FrameKey const& /*key*/, View<T> run, std::size_t width) noexcept
-        : next_{first_of_(detail::ViewDoor::key(), run)}, rest_{run.size()}, width_{width} {}
+        : next_{first_of_(detail::BaseLayerRead{}, run)}, rest_{run.size()}, width_{width} {}
 
     ViewMutChunks(ViewMutChunks const&) = delete("a copy of the range would give each part a second time");
     ViewMutChunks& operator=(ViewMutChunks const&) = delete("a copy of the range would give each part a second time");
@@ -797,7 +809,7 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     if (offset > count) [[unlikely]] {
         return Option<Parts>{none};
     }
-    T* const first = first_of_(detail::ViewDoor::key(), whole);
+    T* const first = first_of_(detail::BaseLayerRead{}, whole);
     return Option<Parts>::some(Parts{
         ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first, offset}},
         ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first + offset, count - offset}}});
@@ -811,7 +823,7 @@ template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::
     requires(Extent != dynamic_extent && Offset > 0 && Offset < Extent)
 [[nodiscard]] constexpr Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>
 split_at(ViewMut<T, Brand, Extent>&& whole) noexcept {
-    T* const first = first_of_(detail::ViewDoor::key(), whole);
+    T* const first = first_of_(detail::BaseLayerRead{}, whole);
     return Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>{
         ViewMut<T, Brand, Offset>{detail::FrameDoor::key(), View<T, Offset>{detail::ViewDoor::key(), first}},
         ViewMut<T, Brand, Extent - Offset>{detail::FrameDoor::key(),
@@ -916,8 +928,8 @@ template <class Whole, std::size_t WholeExtent, class Part, std::size_t PartExte
     requires SameElement<Whole, Part>
 [[nodiscard]] constexpr Option<std::size_t> offset_of(View<Whole, WholeExtent> whole,
                                                       View<Part, PartExtent> part) noexcept {
-    Whole* const whole_first = first_of_(detail::ViewDoor::key(), whole);
-    Part* const part_first = first_of_(detail::ViewDoor::key(), part);
+    Whole* const whole_first = first_of_(detail::BaseLayerRead{}, whole);
+    Part* const part_first = first_of_(detail::BaseLayerRead{}, part);
     if consteval {
         // A part with an element starts at an element of whole, and only an
         // empty part can start at the end of whole.  The count of whole is
@@ -990,8 +1002,8 @@ template <class Left, std::size_t LeftExtent, class Right, std::size_t RightExte
 [[nodiscard]] constexpr RunOverlap classify_overlap(View<Left, LeftExtent> left,
                                                     View<Right, RightExtent> right) noexcept {
     if (left.size() == 0 || right.size() == 0) return RunOverlap::Disjoint;
-    Left* const left_first = first_of_(detail::ViewDoor::key(), left);
-    Right* const right_first = first_of_(detail::ViewDoor::key(), right);
+    Left* const left_first = first_of_(detail::BaseLayerRead{}, left);
+    Right* const right_first = first_of_(detail::BaseLayerRead{}, right);
     if consteval {
         // Each compared address is an element of its run, so no compare
         // meets the address one past the end of an object.
@@ -1076,7 +1088,7 @@ template <class T>
 // An empty view gives its address, which no reader reads.
 template <class T, std::size_t Extent>
 [[nodiscard]] constexpr T* foreign_first(View<T, Extent> view) noexcept {
-    return first_of_(detail::ViewDoor::key(), view);
+    return first_of_(detail::BaseLayerRead{}, view);
 }
 
 namespace detail {
@@ -1129,7 +1141,7 @@ template <class Element>
 class ReverseStage final {
     View<Element> elements_;
 
-    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), elements_); }
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(BaseLayerRead{}, elements_); }
 
 public:
     using element_reference = Element&;
@@ -1229,7 +1241,7 @@ template <class Element, std::size_t Width>
 class WindowStage final {
     View<Element> elements_;
 
-    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), elements_); }
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(BaseLayerRead{}, elements_); }
 
     [[nodiscard]] constexpr std::size_t runs_() const noexcept {
         std::size_t const size = elements_.size();
@@ -1347,7 +1359,7 @@ class ChunkStage final {
     View<Element> elements_;
     std::size_t runs_ = 0;
 
-    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), elements_); }
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(BaseLayerRead{}, elements_); }
 
     constexpr ChunkStage(View<Element> elements, std::size_t runs) noexcept : elements_{elements}, runs_{runs} {}
 
@@ -1442,7 +1454,7 @@ class EnumerateCursor {
     // stage holds the end of each run at most Count, and the bound in the
     // code shows that fact to the optimizer.
     constexpr EnumerateCursor(View<Element> run, std::size_t start) noexcept
-        : first_{first_of_(ViewDoor::key(), run) - start},
+        : first_{first_of_(BaseLayerRead{}, run) - start},
           at_{start},
           end_{start + run.size() < Count ? start + run.size() : Count} {}
 
@@ -1488,7 +1500,7 @@ class EnumerateStage final {
     // caller proves start + run.size() at most Count.
     constexpr EnumerateStage(View<Element, Extent> run, std::size_t start) noexcept : run_{run}, start_{start} {}
 
-    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), run_); }
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(BaseLayerRead{}, run_); }
 
     // The position of the first element of the run in the View.  The root
     // stage, of the extent Count, starts at the position 0.
@@ -1716,8 +1728,8 @@ template <class T, std::size_t Extent>
     requires RegionCopyElement<T> && (Extent != dynamic_extent)
 void copy(View<T, Extent> dst, std::type_identity_t<View<T const, Extent>> src) noexcept {
     constexpr std::size_t bytes = Extent * sizeof(T);
-    void* const target = first_of_(detail::ViewDoor::key(), dst);
-    void const* const source = first_of_(detail::ViewDoor::key(), src);
+    void* const target = first_of_(detail::BaseLayerRead{}, dst);
+    void const* const source = first_of_(detail::BaseLayerRead{}, src);
     if constexpr (bytes <= detail::small_copy_bytes) {
         detail::copy_small_<bytes>(static_cast<unsigned char*>(target), static_cast<unsigned char const*>(source));
     } else {
@@ -1735,7 +1747,7 @@ template <class T>
     requires RegionCopyElement<T>
 [[nodiscard]] Result<Unit, LengthMismatch> copy(View<T> dst, std::type_identity_t<View<T const>> src) noexcept {
     if (dst.size() != src.size()) return err(LengthMismatch{});
-    __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
+    __builtin_memmove(first_of_(detail::BaseLayerRead{}, dst), first_of_(detail::BaseLayerRead{}, src),
                       dst.size() * sizeof(T));
     return Unit{};
 }
@@ -1824,8 +1836,8 @@ template <class T, class Brand, std::size_t Extent, class SourceBrand, std::size
 [[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand, Extent> dst,
                                                 ViewMut<T, SourceBrand, SourceExtent> const& src) noexcept {
     if (dst.size() != src.size()) return err(LengthMismatch{});
-    void* const target = first_of_(detail::ViewDoor::key(), dst);
-    void const* const source = first_of_(detail::ViewDoor::key(), src);
+    void* const target = first_of_(detail::BaseLayerRead{}, dst);
+    void const* const source = first_of_(detail::BaseLayerRead{}, src);
     if constexpr (std::is_same_v<Brand, SourceBrand>) {
         __builtin_memmove(target, source, dst.size() * sizeof(T));
     } else {
@@ -1841,7 +1853,7 @@ template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand, Extent> dst,
                                                 std::type_identity_t<View<T const>> src) noexcept {
     if (dst.size() != src.size()) return err(LengthMismatch{});
-    __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
+    __builtin_memmove(first_of_(detail::BaseLayerRead{}, dst), first_of_(detail::BaseLayerRead{}, src),
                       dst.size() * sizeof(T));
     return Unit{};
 }
@@ -1860,11 +1872,11 @@ template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
                                                       Inputs const&... inputs) noexcept {
     std::size_t const count = out.size();
     if (((inputs.size() != count) || ...)) return err(LengthMismatch{});
-    T* const target = first_of_(detail::ViewDoor::key(), out);
+    T* const target = first_of_(detail::BaseLayerRead{}, out);
     if constexpr (RestrictKernel<T, Brand, Inputs...>) {
-        detail::write_each_disjoint_(target, count, op, first_of_(detail::ViewDoor::key(), inputs)...);
+        detail::write_each_disjoint_(target, count, op, first_of_(detail::BaseLayerRead{}, inputs)...);
     } else {
-        detail::write_each_aliased_(target, count, op, first_of_(detail::ViewDoor::key(), inputs)...);
+        detail::write_each_aliased_(target, count, op, first_of_(detail::BaseLayerRead{}, inputs)...);
     }
     return Unit{};
 }
@@ -1894,7 +1906,7 @@ constexpr void fill(View<T, Extent> dst, std::type_identity_t<T> const& value) n
     if constexpr (detail::ByteFillElement<T>) {
         if !consteval {
             std::uint8_t const byte = decode<std::uint8_t>(value).expect("decode gives a byte for each value");
-            __builtin_memset(static_cast<void*>(first_of_(detail::ViewDoor::key(), dst)), byte, dst.size());
+            __builtin_memset(static_cast<void*>(first_of_(detail::BaseLayerRead{}, dst)), byte, dst.size());
             return;
         }
     }
@@ -1916,7 +1928,7 @@ template <class T, std::size_t Extent>
 byte_view(View<T, Extent> run) noexcept {
     using Byte = std::conditional_t<std::is_const_v<T>, std::byte const, std::byte>;
     using Untyped = std::conditional_t<std::is_const_v<T>, void const*, void*>;
-    Byte* const first = static_cast<Byte*>(static_cast<Untyped>(first_of_(detail::ViewDoor::key(), run)));
+    Byte* const first = static_cast<Byte*>(static_cast<Untyped>(first_of_(detail::BaseLayerRead{}, run)));
     if constexpr (Extent == dynamic_extent) {
         return View<Byte>{detail::ViewDoor::key(), first, run.size()};
     } else {

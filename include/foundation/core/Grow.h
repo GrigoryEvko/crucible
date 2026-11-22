@@ -702,7 +702,7 @@ public:
     template <class Marker>
         requires AllocationCapability<Marker>
     [[nodiscard]] Result<Unit, Full<char>> append(Marker /*allocation*/, View<char const> characters) & noexcept {
-        return put_(first_of_(detail::ViewDoor::key(), characters), characters.size());
+        return put_(first_of_(detail::BaseLayerRead{}, characters), characters.size());
     }
 
     // Puts the count characters of this text from offset after the last

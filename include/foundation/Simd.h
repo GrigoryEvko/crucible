@@ -323,7 +323,7 @@ template <typename V, typename Byte, std::size_t Bytes>
     requires RegisterBytes<V, Byte, Bytes>
 [[nodiscard]] CRUCIBLE_INLINE V load(core::View<Byte, Bytes> bytes) noexcept {
     typename V::raw_type raw{};
-    __builtin_memcpy(&raw, first_of_(core::detail::ViewDoor::key(), bytes), sizeof(raw));
+    __builtin_memcpy(&raw, first_of_(core::detail::BaseLayerRead{}, bytes), sizeof(raw));
     return V{raw};
 }
 
@@ -345,7 +345,7 @@ template <typename V, typename Lane, std::size_t Lanes>
     requires RegisterLanes<V, Lane, Lanes>
 [[nodiscard]] CRUCIBLE_INLINE V load(core::View<Lane, Lanes> lanes) noexcept {
     typename V::raw_type raw{};
-    __builtin_memcpy(&raw, first_of_(core::detail::ViewDoor::key(), lanes), sizeof(raw));
+    __builtin_memcpy(&raw, first_of_(core::detail::BaseLayerRead{}, lanes), sizeof(raw));
     return V{raw};
 }
 
@@ -369,7 +369,7 @@ template <typename V, typename Byte, std::size_t Bytes>
     requires RegisterBytes<V, Byte, Bytes> && (!std::is_const_v<Byte>)
 CRUCIBLE_INLINE void store(V value, core::View<Byte, Bytes> bytes) noexcept {
     const typename V::raw_type raw = value.raw();
-    __builtin_memcpy(first_of_(core::detail::ViewDoor::key(), bytes), &raw, sizeof(raw));
+    __builtin_memcpy(first_of_(core::detail::BaseLayerRead{}, bytes), &raw, sizeof(raw));
 }
 
 // A View of the lanes of one register of V that a store can write: the lanes
@@ -385,7 +385,7 @@ template <typename V, typename Lane, std::size_t Lanes>
     requires WritableRegisterLanes<V, Lane, Lanes>
 CRUCIBLE_INLINE void store(V value, core::View<Lane, Lanes> lanes) noexcept {
     const typename V::raw_type raw = value.raw();
-    __builtin_memcpy(first_of_(core::detail::ViewDoor::key(), lanes), &raw, sizeof(raw));
+    __builtin_memcpy(first_of_(core::detail::BaseLayerRead{}, lanes), &raw, sizeof(raw));
 }
 
 namespace detail {
@@ -479,7 +479,7 @@ CRUCIBLE_INLINE void store_prefix(V value, typename V::value_type* ptr, std::siz
 template <typename V, typename Lane>
     requires std::is_same_v<std::remove_const_t<Lane>, typename V::value_type>
 [[nodiscard]] CRUCIBLE_INLINE V load_prefix(core::View<Lane> lanes) noexcept {
-    return load_prefix<V>(first_of_(core::detail::ViewDoor::key(), lanes), lanes.size());
+    return load_prefix<V>(first_of_(core::detail::BaseLayerRead{}, lanes), lanes.size());
 }
 
 // The prefix store into the lanes of a View: the first lanes.size() lanes of
@@ -487,7 +487,7 @@ template <typename V, typename Lane>
 template <typename V, typename Lane>
     requires std::is_same_v<Lane, typename V::value_type>
 CRUCIBLE_INLINE void store_prefix(V value, core::View<Lane> lanes) noexcept {
-    store_prefix(value, first_of_(core::detail::ViewDoor::key(), lanes), lanes.size());
+    store_prefix(value, first_of_(core::detail::BaseLayerRead{}, lanes), lanes.size());
 }
 
 // The bits of one register as a vector of a different lane type, the view
@@ -673,8 +673,8 @@ for_each_register_run(core::View<First> first, core::View<Second> second, Body b
     if (first.size() != second.size()) [[unlikely]] {
         core::fatal("the register runs of two Views of {} and {} elements", first.size(), second.size());
     }
-    First* const first_at = first_of_(core::detail::ViewDoor::key(), first);
-    Second* const second_at = first_of_(core::detail::ViewDoor::key(), second);
+    First* const first_at = first_of_(core::detail::BaseLayerRead{}, first);
+    Second* const second_at = first_of_(core::detail::BaseLayerRead{}, second);
     // The loop counts whole runs, so the optimizer and -Warray-bounds read
     // each offset as below the count of the runs.
     std::size_t const runs = first.size() / width;

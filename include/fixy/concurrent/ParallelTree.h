@@ -145,7 +145,7 @@ concept CtxFitsParallelTree = eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx,
 // Reduce.h and Scan.h, which write a run from its first element.
 template <typename Run>
 [[nodiscard]] auto first_of_run_(Run const& run) noexcept {
-    return first_of_(::foundation::core::detail::ViewDoor::key(), run);
+    return first_of_(::foundation::core::detail::BaseLayerRead{}, run);
 }
 
 // An input of a scan or of a segmented sum (THE INPUT OF A SCAN): a View, or a
@@ -314,7 +314,7 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, In cons
     ::foundation::core::View<T const> const all_carries = ::fixy::mint_borrowed(scanned);
     ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
         ctx, budget,
-        ::fixy::mint_owned_region(first_of_(::foundation::core::detail::ViewDoor::key(),
+        ::fixy::mint_owned_region(first_of_(::foundation::core::detail::BaseLayerRead{},
                                             frame_run_(::foundation::core::detail::FrameDoor::key(), parts)),
                                   Shards, ::foundation::permissions::mint_permission_root<detail::ParallelScanParts>()),
         [in, all_carries, kind, grains](auto shard, auto place) noexcept {
@@ -357,7 +357,7 @@ struct ParallelTreeSlots {
 // no other access.
 template <typename T>
 [[nodiscard]] T* first_slot_of_(::foundation::core::HeapArray<T>& storage) noexcept {
-    return first_of_(::foundation::core::detail::ViewDoor::key(),
+    return first_of_(::foundation::core::detail::BaseLayerRead{},
                      frame_run_(::foundation::core::detail::FrameDoor::key(), storage));
 }
 

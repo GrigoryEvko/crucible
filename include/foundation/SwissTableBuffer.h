@@ -114,7 +114,7 @@ public:
         // lifetime through the checked start, and the state keeps the first
         // slot of its View.
         ctrl_type* ctrl = static_cast<ctrl_type*>(raw);
-        slot_type* slots = first_of_(core::detail::ViewDoor::key(),
+        slot_type* slots = first_of_(core::detail::BaseLayerRead{},
                                      lifetime::start_as_array<slot_type>(static_cast<char*>(raw) + capacity, capacity));
 
         return SwissTableBuffer{raw, ctrl, slots, capacity, rounded};
