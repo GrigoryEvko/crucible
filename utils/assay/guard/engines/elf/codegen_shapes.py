@@ -578,6 +578,12 @@ PROBES: tuple[Probe, ...] = (
         "two brands keep the restrict loop",
     ),
     Probe(
+        "keyed_heap_array_frame_copy",
+        "a copy into a keyed FixedHeapArray through its keyed frame door with a borrow of the key is the load of the "
+        "pointer and the copy of the raw form: a key is empty, and the door lends the run in place",
+        calls=("memmove",),
+    ),
+    Probe(
         "window_loan_open",
         "the open and the end of a loan of a WindowStack are the window test and the step of the top of the raw "
         "stack, with the assumption on the top kept, and the check of the end folds.  At -O3 the two sides are the "

@@ -446,6 +446,19 @@ struct ShapeTwice final {
     });
 }
 
+// The brand of the keyed heap array of the probe.
+struct ShapeHeapBrand final {};
+
+// A copy of a run into a keyed FixedHeapArray through its keyed frame door in
+// the borrow form, as the metadata log writes its ring.  The array holds a
+// pointer and a count, so the code loads the pointer and copies the run.  A
+// key is an empty class, so as an argument by value it takes no register.
+[[gnu::used]] void keyed_heap_array_frame_copy(
+    ::foundation::core::FixedHeapArray<std::uint64_t, 64, alignof(std::uint64_t), ShapeHeapBrand>& target,
+    ::foundation::core::LoanKey<ShapeHeapBrand> key, fixy::View<std::uint64_t const, 64> words) noexcept {
+    target.with_mut(key, [words](auto run) noexcept { fixy::copy(run.view(), words); });
+}
+
 // The open of a loan of count elements, a write of its first element, and
 // its end, as the record of one op opens its frame of records.
 [[gnu::used]] std::uint64_t window_loan_open(::foundation::core::WindowStack<std::uint64_t, 64>& stack,
@@ -1920,6 +1933,18 @@ struct RawShapeBatch final {
     for (std::size_t position = 0; position != 64; ++position) {
         target[position] = source[position] * 2;
     }
+}
+
+// The pointer and the count of a heap array of words.
+struct RawHeapWords final {
+    std::uint64_t* first;
+    std::size_t count;
+};
+
+// The copy into a keyed heap array before the key: the load of the pointer
+// and one copy.
+[[gnu::used]] void keyed_heap_array_frame_copy_raw(RawHeapWords& target, std::uint64_t const* words) noexcept {
+    std::memmove(target.first, words, 64 * sizeof(std::uint64_t));
 }
 
 // The stack and the frame of the records of an op before the window stack:

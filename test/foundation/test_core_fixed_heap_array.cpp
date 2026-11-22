@@ -78,6 +78,34 @@ void test_doors_write_in_place() {
     CRUCIBLE_FATAL_INVARIANT(words.at(index<0>()) == 10 && words.at(index<3>()) == 13);
 }
 
+// A keyed array opens its frames with the key of its brand: by move, and by a
+// borrow of the key.  The key comes from the mint of a keyed FixedArray, which
+// gives a key of the brand of its call site, and the heap array takes that
+// brand.  The writes are in place, and the key comes back from each door.
+void test_keyed_doors() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    auto [paired, key] = ::foundation::core::mint_fixed_array<int, 1>();
+    using Brand = typename decltype(key)::brand_type;
+    FixedHeapArray<std::uint64_t, 4, alignof(std::uint64_t), Brand> words =
+        mint_fixed_heap_array<std::uint64_t, 4, alignof(std::uint64_t), Brand>(alloc, std::uint64_t{1});
+    key = words.with_mut(std::move(key), [](auto run) noexcept {
+        for (std::uint64_t& word : run) {
+            word = 5;
+        }
+    });
+    key = words.with_element(std::move(key), index<1>(), [](std::uint64_t& word) noexcept { word = 6; });
+    std::uint64_t const second = words.with_element(key, index<1>(), [](std::uint64_t& word) noexcept { return word; });
+    std::uint64_t const total = words.with_mut(key, [](auto run) noexcept {
+        std::uint64_t sum = 0;
+        for (std::uint64_t const& word : run) {
+            sum += word;
+        }
+        return sum;
+    });
+    CRUCIBLE_FATAL_INVARIANT(second == 6 && total == 21);
+    CRUCIBLE_FATAL_INVARIANT(words.at(index<0>()) == 5 && paired.at(index<0>()) == 0);
+}
+
 // The storage of the array has the alignment Align.
 void test_alignment() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
@@ -122,6 +150,7 @@ void test_large_ring() {
 int main() {
     test_fill_and_reads();
     test_doors_write_in_place();
+    test_keyed_doors();
     test_alignment();
     test_destruction_counts();
     test_large_ring();

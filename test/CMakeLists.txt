@@ -4456,7 +4456,7 @@ crucible_neg_compile_test(neg_metalog_consumer_reference_read
 # code outside the log assigns the ring, which would free its storage.
 crucible_neg_compile_test(neg_meta_log_buffer_assignment
     "crucible::MetaLog::records_. is private within this context"
-    "use of deleted function .foundation::core::FixedHeapArray<T, N, Align>& foundation::core::FixedHeapArray<T, N, Align>::operator=\\(foundation::core::FixedHeapArray<T, N, Align>&&\\)")
+    "use of deleted function .foundation::core::FixedHeapArray<T, N, Align, KeyBrand>& foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::operator=\\(foundation::core::FixedHeapArray<T, N, Align, KeyBrand>&&\\)")
 
 # HS14 for the two MetaLog session mints.  Each gate is one concept, and
 # each fixture fails one clause of it: the context, the handle passed as

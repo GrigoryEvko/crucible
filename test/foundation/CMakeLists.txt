@@ -4506,7 +4506,7 @@ foundation_neg_compile_test(neg_core_fixed_heap_array_alignment_not_power
   "no matching function for call to .mint_fixed_heap_array<int, 4, 12>\\(foundation::core::Alloc, int\\)."
   "the expression .\\(Align & Align - 1\\) == 0 \\[with Align = 12\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_fixed_heap_array_moved
-  "use of deleted function .foundation::core::FixedHeapArray<T, N, Align>::FixedHeapArray\\(foundation::core::FixedHeapArray<T, N, Align>&&\\)"
+  "use of deleted function .foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::FixedHeapArray\\(foundation::core::FixedHeapArray<T, N, Align, KeyBrand>&&\\)"
   "a FixedHeapArray holds its storage from its mint to its end, so no door tests a null pointer")
 foundation_neg_compile_test(neg_core_fixed_heap_array_two_mutable_views
   "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
@@ -4514,6 +4514,14 @@ foundation_neg_compile_test(neg_core_fixed_heap_array_two_mutable_views
 foundation_neg_compile_test(neg_core_fixed_heap_array_nested_frame_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+# A keyed FixedHeapArray opens a frame only with the LoanKey of its brand, and
+# its gate refuses a body that reaches the key.
+foundation_neg_compile_test(neg_core_keyed_heap_array_without_key
+  "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a keyed FixedHeapArray opens a frame only with its LoanKey")
+foundation_neg_compile_test(neg_core_keyed_heap_array_reaches_key
+  "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_mut\\(foundation::core::LoanKey<(KeyBrand|Fresh)>&&, Body&&\\) &"
+  "a body of a keyed frame reaches a LoanKey of the brand of its owner")
 foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
   "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
   "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")
