@@ -1,0 +1,27 @@
+# A move out of a parameter that the caller lends, a reference that is not
+# const, is the finding borrow-move-out at the first consume, when a path
+# keeps the parameter consumed to an exit: a return of the parameter, two
+# commits of one draft (with the double consume of the second commit), a move
+# through a local reference, a move on one path, a move of one field, the
+# consumer of a lent Option, a lent loan key, the body of an element door, a
+# forwarding reference that the call deduces as a lent reference, and the
+# alias through two names of the self-move rule, which also drops the live
+# value of its lent target (assign-over-live).  The rule is in report mode,
+# so the module judges each line against the empty ledger of the plant.
+
+compile borrows src/borrows.cpp must-consume=on
+flag borrows -freflection
+exit borrows pass
+judge borrows
+finding borrows must-consume borrow-move-out src/borrows.cpp:39:58 | planted::steal: held
+finding borrows must-consume borrow-move-out src/borrows.cpp:44:11 | planted::commit_twice: draft
+finding borrows must-consume double-consume src/borrows.cpp:45:11 | planted::commit_twice: draft
+finding borrows must-consume borrow-move-out src/borrows.cpp:51:9 | planted::through_an_alias: held
+finding borrows must-consume borrow-move-out src/borrows.cpp:57:13 | planted::on_one_path: held
+finding borrows must-consume borrow-move-out src/borrows.cpp:62:43 | planted::one_field: held
+finding borrows must-consume borrow-move-out src/borrows.cpp:66:77 | planted::payload_out: held
+finding borrows must-consume borrow-move-out src/borrows.cpp:71:58 | planted::open_with_a_lent_key: key
+finding borrows must-consume borrow-move-out src/borrows.cpp:80:75 | planted::element_moved_out::(lambda)::operator(): lent
+finding borrows must-consume borrow-move-out src/borrows.cpp:86:9 | planted::forward_on: value
+finding borrows must-consume borrow-move-out src/borrows.cpp:93:82 | planted::two_names: source
+finding borrows must-consume assign-over-live src/borrows.cpp:93:82 | planted::two_names: target

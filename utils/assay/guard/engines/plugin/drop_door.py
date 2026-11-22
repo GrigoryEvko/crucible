@@ -7,7 +7,10 @@ THE RULE
       untracked-assignment  an assignment over a linear object that is no tracked
                             object of must-consume: a member, an element, or an
                             object behind a reference or a pointer.  The old
-                            value drops
+                            value drops.  A parameter of a reference that is not
+                            const is a lent object of must-consume (THE LENT
+                            PARAMETERS of linear.cpp), so must-consume reads an
+                            assignment over it
       destroy               an explicit destructor call of a linear object that
                             is no tracked object, the clobber of a trivial
                             destructor, and a delete-expression

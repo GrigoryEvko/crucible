@@ -1,0 +1,107 @@
+// The forms that the rule of the lent parameters admits (THE LENT PARAMETERS
+// of utils/tools/quarantine/linear.cpp): each function leaves the caller a
+// live value in the parameter that it lends, on each path to an exit.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+struct Pair {
+    Token left;
+    Token right;
+};
+
+struct KeyBrand final {};
+using Key = ::foundation::core::LoanKey<KeyBrand>;
+
+void sink(Token&& token) noexcept;
+void borrow(Token& token) noexcept;
+[[nodiscard]] int look(Token const& token) noexcept;
+[[nodiscard]] Key reopen(Key&& key) noexcept;
+[[noreturn]] void stop() noexcept;
+
+// The exchange door gives the old value out and leaves the new one.
+Token take_out(Token& held) noexcept { return ::foundation::linear::exchange(held, Token{1}); }
+
+// A move out and a new value before the exit.
+void renew(Token& held) noexcept {
+    sink(std::move(held));
+    held = Token{2};
+}
+
+// A move out and a new value on the one path that moves.
+void renew_on_each_path(Token& held, int count) noexcept {
+    if (count > 0) {
+        sink(std::move(held));
+        held = Token{3};
+    }
+}
+
+// The interchange of two lent values.
+void interchange(Token& left, Token& right) noexcept {
+    Token kept = std::move(left);
+    left = std::move(right);
+    right = std::move(kept);
+}
+
+// A move of one field and a new value for it.
+void renew_field(Pair& held) noexcept {
+    sink(std::move(held.left));
+    held.left = Token{4};
+}
+
+// A read, a lend to another borrower, and a read through a local reference.
+int read(Token& held) noexcept { return look(held); }
+
+void lend_on(Token& held) noexcept { borrow(held); }
+
+int read_through_an_alias(Token& held) noexcept {
+    Token& alias = held;
+    return look(alias);
+}
+
+// A function that gives the lent token back by reference.
+Token& pass_on(Token& held) noexcept { return held; }
+
+// A forwarding reference that the call deduces as Token& forwards an lvalue,
+// which moves nothing.
+template <class Value>
+int forward_on(Value&& value) noexcept {
+    return look(std::forward<Value>(value));
+}
+
+int forwards_a_lent_token(Token& held) noexcept { return forward_on(held); }
+
+// take() empties a lent Option and gives its payload out, as mem::take of
+// Rust does, so the caller keeps a live empty Option.
+Option<Token> take_payload(Option<Token>& held) noexcept { return held.take(); }
+
+// A helper that opens a frame with a lent key gives the key back.
+void reopen_a_lent_key(Key& key) noexcept { key = reopen(std::move(key)); }
+
+// A path that does not return leaves no spent value with the caller.
+void stops_after_the_move(Token& held) noexcept {
+    sink(std::move(held));
+    stop();
+}
+
+// A door ends the lent value in its place.
+[[= ::foundation::linear::drop_door{}]] void end_in_place(Token& held) noexcept { sink(std::move(held)); }
+
+}  // namespace planted

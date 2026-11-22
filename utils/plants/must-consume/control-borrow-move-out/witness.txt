@@ -1,0 +1,11 @@
+# A function that lends a parameter, a reference that is not const, and gives
+# it a value again on each path to an exit is no finding: the exchange door, a
+# move and a new value, the interchange of two values, a new value for a moved
+# field, a read, a lend, a reference that gives the value back, a forwarding
+# reference of an lvalue, take() of a lent Option, a lent key that comes back,
+# a path that does not return, and the body of a door.
+
+compile lent src/lent.cpp must-consume=on
+flag lent -freflection
+exit lent pass
+judge lent

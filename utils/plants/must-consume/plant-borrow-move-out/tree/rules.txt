@@ -1,0 +1,8 @@
+# The rule table of this plant.  The unit of src/ is quarantined, and it can
+# name the Choice family, the loan key, the vocabulary of the linear marker and
+# std::move.
+
+admit foundation::core | the Choice family and the loan key, which the planted code holds
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit std::move | the cast of each consume
+quarantine src/

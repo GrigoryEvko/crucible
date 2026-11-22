@@ -26,7 +26,9 @@
 // THE OBJECTS
 //     The rule tracks a linear local, a structured binding of a linear type, a
 //     parameter of a linear class by value and a parameter of an rvalue
-//     reference to a linear class.  A local reference that extends the life of
+//     reference to a linear class.  It tracks a parameter of a reference that
+//     is not const to a linear class as a lent object (THE LENT PARAMETERS).
+//     A local reference that extends the life of
 //     a linear temporary, such as T&& name = T{}, auto&& name = make() or
 //     T const& name = make(), and the hidden range reference of a range-based
 //     loop over a temporary, name that temporary, so the rule tracks the
@@ -89,8 +91,8 @@
 //     table names.  The once door call_once of include/foundation/Linear.h
 //     owns a closure and calls it one time, so a call of the door runs the
 //     summary of the call operator of the closure (THE SUMMARIES).
-//     The rule gives no finding unconsumed, unconsumed-on-path or
-//     discarded-temporary in the body of a door.  It still gives
+//     The rule gives no finding unconsumed, unconsumed-on-path,
+//     discarded-temporary or borrow-move-out in the body of a door.  It still gives
 //     double-consume and assign-over-live there.  It gives the record door for
 //     each linear-door row whose function it reads, and the module of the rule
 //     refuses a row with no record (the rule table is the roster of the doors).
@@ -130,6 +132,8 @@
 //                          (THE SUMS)
 //     option-known-empty   a door that needs a full sum, such as expect, on a
 //                          sum that each path shows empty (THE SUMS)
+//     borrow-move-out      a consume of a lent object that a path keeps to
+//                          an exit (THE LENT PARAMETERS)
 //     The entity is FUNCTION: OBJECT.  FUNCTION has no template argument, so
 //     each instance of one template gives the same line, and the key of a
 //     ledger row holds no line of an exit.
@@ -197,6 +201,31 @@
 //     ends one.  The body of a door gives neither kind.
 //     The rule does not see a sum that a data member, a static object or a
 //     capture holds, or the end of a sum in the body of a door.
+//
+// THE LENT PARAMETERS
+//     A parameter of a reference that is not const to a linear class is a
+//     lent object: the caller keeps the value, and the function borrows it.
+//     So a move out of it leaves the caller a spent value, which looks the
+//     same as a live one.  A later move of the caller then gives a second value
+//     of one value, such as a second exclusive token of one region.  Rust
+//     refuses a move out of a borrow, and mem::replace and mem::take are its
+//     only moves out of one.  The rule walks a lent object as each other
+//     object, live at the entry.  A path may consume it, but each path must
+//     give it a value again before it leaves the function: an assignment to
+//     the object, or to each field that a path consumed.  The kind
+//     borrow-move-out is at the first consume of a lent object that some path
+//     keeps consumed to an exit.  The exchange door of
+//     include/foundation/Linear.h is the form of mem::replace: it gives the old
+//     value back and leaves its replacement in the object.  A structured
+//     binding by reference of a lent object borrows it, so each of its
+//     bindings is a lent object until the end of its scope.  A lent object owes
+//     no consume at its end.  An assignment over a live lent object drops the
+//     value of the caller, so it gives the kind assign-over-live, and an
+//     assignment after a consume gives no line.  The rule drop-door reads no
+//     assignment over a lent parameter when this rule runs (THE SHAPES).  A
+//     capture by reference of a lent object hides each later consume (THE
+//     CAPTURES).  The body of a door, which ends a value in its place, gives no
+//     line borrow-move-out (THE DOORS).
 //
 // THE BASE DOORS
 //     A member function of a base class gets the base subobject as its object.
@@ -450,6 +479,14 @@ struct LinearCaches {
 };
 
 LinearCaches linear_caches;
+
+// The rules that the arguments of the unit run (register_linear).
+struct LinearMode {
+    bool checks_must_consume = false;
+    bool checks_shapes = false;
+};
+
+LinearMode linear_mode;
 
 // THE FOLDS: each folded tree with the object and the initializer before the
 // fold, and the target of each trivial assignment of an empty class by its
@@ -986,6 +1023,12 @@ struct Slot {
     bool is_capture_borrow = false;
     bool leaves_payload = false;
     unsigned capture_field_uid = 0;
+    // THE LENT PARAMETERS: the object is a parameter that the caller lends,
+    // the location of its first consume, and whether a path reaches an exit
+    // with the object or one of its fields consumed.
+    bool is_lent = false;
+    location_t first_consume = UNKNOWN_LOCATION;
+    bool has_spent_exit = false;
     bool has_live_exit = false;
     bool has_maybe_exit = false;
     bool was_double_reported = false;
@@ -1282,6 +1325,7 @@ private:
         if (type == NULL_TREE || type == error_mark_node) {
             return false;
         }
+        bool is_lent = false;
         if (VAR_P(decl)) {
             bool is_binding = DECL_DECOMPOSITION_P(decl) && !DECL_DECOMP_IS_BASE(decl);
             if (purpose_ == WalkPurpose::summary && DECL_HAS_VALUE_EXPR_P(decl) && !is_binding) {
@@ -1306,7 +1350,10 @@ private:
                 return false;
             }
             if (TYPE_REF_P(type)) {
-                if (!TYPE_REF_IS_RVALUE(type)) {
+                // THE LENT PARAMETERS: a reference that is not const lends
+                // the object, and a const reference only reads it.
+                is_lent = !TYPE_REF_IS_RVALUE(type);
+                if (is_lent && TYPE_READONLY(TREE_TYPE(type))) {
                     return false;
                 }
                 type = TREE_TYPE(type);
@@ -1322,6 +1369,7 @@ private:
         Slot entry;
         entry.decl = decl;
         entry.ends_at_scope = facts.ends_at_scope;
+        entry.is_lent = is_lent;
         entry.is_sum = is_linear_sum(type);
         slots_.push_back(entry);
         slot_of_.emplace(decl, slot);
@@ -1963,6 +2011,9 @@ private:
         if (status == Status::dead) {
             return;
         }
+        if (slots_[whole].is_lent && slots_[whole].first_consume == UNKNOWN_LOCATION) {
+            slots_[whole].first_consume = location;
+        }
         if (field == NULL_TREE) {
             // A consumer takes the payload out of a sum, so the sum is empty
             // after it (THE SUMS).
@@ -1977,6 +2028,23 @@ private:
         }
         if (is_each_field_consumed) {
             state.set(whole, Status::consumed);
+        }
+    }
+
+    // THE LENT PARAMETERS: an assignment to the field FIELD of the lent
+    // object DECL gives the field a value again.  The object is live again
+    // when each path consumed it, and each other consumed field stays
+    // consumed.  An object that the rule does not lend keeps its states,
+    // because the rule drop-door reads an assignment to a field.
+    void refill_lent_field(tree decl, tree field, FlowState& state) {
+        std::size_t whole = slot_of_.at(decl);
+        std::size_t slot = slot_for(decl, field);
+        if (!slots_[whole].is_lent || slot == kNoParent || !state.is_reachable) {
+            return;
+        }
+        state.set(slot, Status::live);
+        if (state.get(whole) == Status::consumed) {
+            state.set(whole, Status::live);
         }
     }
 
@@ -2009,6 +2077,16 @@ private:
         return false;
     }
 
+    // True when a path can reach this point with the object of SLOT or one of
+    // its fields consumed (THE LENT PARAMETERS).
+    bool is_spent(const FlowState& state, std::size_t slot) const {
+        if (is_used(state.get(slot))) {
+            return true;
+        }
+        return std::any_of(slots_[slot].fields.begin(), slots_[slot].fields.end(),
+                           [&state](std::size_t part) { return is_used(state.get(part)); });
+    }
+
     // Notes the status of each object of the scopes from DEPTH on at an exit.
     // KILL makes them dead in STATE.
     void exit_scopes(FlowState& state, std::size_t depth, bool kill) {
@@ -2019,7 +2097,12 @@ private:
             for (std::size_t slot : scopes_[scope]) {
                 Status status = state.get(slot);
                 const Slot& entry = slots_[slot];
-                if (entry.is_capture_borrow) {
+                if (entry.is_lent) {
+                    // THE LENT PARAMETERS: the caller keeps the object, so its
+                    // end owes no consume, and a consumed object or field is a
+                    // spent value of the caller.
+                    slots_[slot].has_spent_exit = entry.has_spent_exit || (!entry.is_escaped && is_spent(state, slot));
+                } else if (entry.is_capture_borrow) {
                     // THE SUMMARIES: the closure borrows the sum, so its end
                     // gives no finding.  A slot that the walk never made live
                     // fails closed.
@@ -2225,6 +2308,7 @@ private:
             return;
         }
         tree initial = DECL_INITIAL(decl);
+        bool lends_bindings = false;
         if (initial != NULL_TREE && initial != error_mark_node) {
             initial = unfolded(initial, decl);
             open_originals_.push_back(initial);
@@ -2262,8 +2346,15 @@ private:
                 }
             }
             note_given_back_alias(decl, initial, state);
+            // THE LENT PARAMETERS: the base of a structured binding by
+            // reference of a lent object borrows it, so each binding is a lent
+            // part of the object of the caller.
+            lends_bindings = source != NULL_TREE && DECL_DECOMPOSITION_P(decl) && DECL_DECOMP_IS_BASE(decl)
+                          && field == NULL_TREE && is_lent_borrow(source, saw_rvalue, decl_type);
             if (source != NULL_TREE && source != decl && is_borrow && field == NULL_TREE) {
                 referent_of_[decl] = source;
+            } else if (lends_bindings) {
+                // No consume: the bindings take the lent object below.
             } else if (source != NULL_TREE && source != decl && is_mutable_address) {
                 note_kept_alias(source, field, state);
             } else if (source != NULL_TREE && source != decl && !is_borrow && !is_field_borrow
@@ -2292,6 +2383,7 @@ private:
                 if (VAR_P(tracked) && DECL_DECOMPOSITION_P(tracked) && !DECL_DECOMP_IS_BASE(tracked)
                     && DECL_DECOMP_BASE(tracked) == decl) {
                     set_object(state, tracked_slot, Status::live);
+                    slots_[tracked_slot].is_lent = slots_[tracked_slot].is_lent || lends_bindings;
                 }
             }
         }
@@ -2840,6 +2932,8 @@ private:
             // The rule drop-door reads an assignment to a field (THE SHAPES).
             if (field == NULL_TREE) {
                 assign_over(decl, state, location);
+            } else {
+                refill_lent_field(decl, field, state);
             }
         } else if (FUNCTION_RVALUE_QUALIFIED(type) || (callee != NULL_TREE && DECL_DESTRUCTOR_P(callee))) {
             consume(decl, field, state, location);
@@ -2916,7 +3010,8 @@ private:
             for (tree sum : sums_given_back(value)) {
                 note_kept_alias(sum, NULL_TREE, state);
             }
-        } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)) {
+        } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)
+                   && !is_lent_borrow(source, saw_rvalue, target_type)) {
             consume(source, field, state, location);
         }
         if (tracked_target != NULL_TREE && state.is_reachable) {
@@ -2926,7 +3021,22 @@ private:
             } else {
                 assign_over(tracked_target, state, location);
             }
+        } else if (!is_init && target != NULL_TREE) {
+            bool saw_target_rvalue = false;
+            tree target_field = NULL_TREE;
+            tree owner = strip_to_tracked(target, saw_target_rvalue, &target_field);
+            if (owner != NULL_TREE && target_field != NULL_TREE) {
+                refill_lent_field(owner, target_field, state);
+            }
         }
+    }
+
+    // THE LENT PARAMETERS: an lvalue reference, such as the result of a
+    // function that gives the lent object back by reference, borrows the lent
+    // object SOURCE when no move cast is on the way, so it consumes nothing.
+    bool is_lent_borrow(tree source, bool saw_rvalue, tree target_type) const {
+        return !saw_rvalue && target_type != NULL_TREE && TYPE_REF_P(target_type) && !TYPE_REF_IS_RVALUE(target_type)
+            && slots_[slot_of_.at(source)].is_lent;
     }
 
     void walk_constructor(tree node, FlowState& state) {
@@ -3041,7 +3151,7 @@ private:
         return is_door_
             && (kind == Kind::linear_unconsumed || kind == Kind::linear_unconsumed_on_path
                 || kind == Kind::linear_discarded_temporary || kind == Kind::linear_option_unconsumed
-                || kind == Kind::linear_option_discarded);
+                || kind == Kind::linear_option_discarded || kind == Kind::linear_borrow_move_out);
     }
 
     void report() {
@@ -3055,6 +3165,11 @@ private:
             return;
         }
         for (const Slot& entry : slots_) {
+            if (entry.has_spent_exit) {
+                location_t where =
+                    entry.first_consume != UNKNOWN_LOCATION ? entry.first_consume : DECL_SOURCE_LOCATION(entry.decl);
+                record(Kind::linear_borrow_move_out, where, entity_of(entry.decl));
+            }
             if (!entry.has_live_exit && !entry.has_maybe_exit) {
                 continue;
             }
@@ -3897,10 +4012,37 @@ void check_captures(tree constructor, const ShapeWalk& walk) {
     }
 }
 
+// True when TARGET names a parameter of FUNCTION that must-consume tracks as
+// a lent object: a reference that is not const to a linear class, and no
+// explicit object parameter (THE LENT PARAMETERS).
+bool is_lent_parameter_target(tree target, tree function) {
+    for (int depth = 0; target != NULL_TREE && depth < kTypeDepth; ++depth) {
+        target = tree_strip_any_location_wrapper(target);
+        tree_code code = TREE_CODE(target);
+        if (code != ADDR_EXPR && code != NOP_EXPR && code != CONVERT_EXPR && code != INDIRECT_REF) {
+            break;
+        }
+        target = TREE_OPERAND(target, 0);
+    }
+    if (target == NULL_TREE || TREE_CODE(target) != PARM_DECL) {
+        return false;
+    }
+    if (target == DECL_ARGUMENTS(function) && DECL_XOBJ_MEMBER_FUNCTION_P(function)) {
+        return false;
+    }
+    tree type = TREE_TYPE(target);
+    return type != NULL_TREE && TYPE_REF_P(type) && !TYPE_REF_IS_RVALUE(type) && !TYPE_READONLY(TREE_TYPE(type))
+        && is_linear_type(TREE_TYPE(type));
+}
+
 // The rule drop-door at an assignment: an assignment over a linear object
-// that is no tracked object of must-consume drops its old value.
+// that is no tracked object of must-consume drops its old value.  A lent
+// parameter is such a tracked object when must-consume runs in the unit.
 void check_assignment_target(tree target, location_t location, const ShapeWalk& walk) {
     if (walk.is_exempt_from_drops || target == NULL_TREE || is_frame_object(target)) {
+        return;
+    }
+    if (linear_mode.checks_must_consume && is_lent_parameter_target(target, walk.function)) {
         return;
     }
     tree type = TREE_TYPE(target);
@@ -4160,14 +4302,6 @@ void report_reentries() {
 
 // ── The bodies ──────────────────────────────────────────────────────────
 
-// The rules that the arguments of the unit run (register_linear).
-struct LinearMode {
-    bool checks_must_consume = false;
-    bool checks_shapes = false;
-};
-
-LinearMode linear_mode;
-
 // True when a body holds a linear object or a linear value, from a quick walk,
 // in a unit that runs must-consume and not the shapes.  Most bodies hold none,
 // and the analysis then does not run.
@@ -4200,10 +4334,15 @@ tree find_linear(tree* node_pointer, int* walk_subtrees, void*) {
     return NULL_TREE;
 }
 
+// True when FUNCTION has a parameter that the rule tracks: a linear class by
+// value, an rvalue reference to one, or a reference that is not const to one,
+// which the caller lends (THE LENT PARAMETERS).  A move of a lent parameter
+// names the reference itself, so the body can hold no expression of a linear
+// class.
 bool has_linear_parameter(tree function) {
     for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
         tree type = TREE_TYPE(parameter);
-        if (type != NULL_TREE && TYPE_REF_P(type) && !TYPE_REF_IS_RVALUE(type)) {
+        if (type != NULL_TREE && TYPE_REF_P(type) && !TYPE_REF_IS_RVALUE(type) && TYPE_READONLY(TREE_TYPE(type))) {
             continue;
         }
         if (is_linear_or_reference(type)) {
@@ -4805,9 +4944,10 @@ void report_scope_escape(const Finding& finding) {
 }
 
 // The error of one finding of the kinds option-unconsumed, option-discarded,
-// option-known-full and option-known-empty of the rule must-consume that no
-// region opts out (THE SUMS).  The message does not start with
-// "quarantine: ", so a regex of a negative fixture reads it.
+// option-known-full and option-known-empty (THE SUMS), and borrow-move-out
+// (THE LENT PARAMETERS), of the rule must-consume that no region opts out.
+// The message does not start with "quarantine: ", so a regex of a negative
+// fixture reads it.
 void report_option_end(const Finding& finding) {
     if (finding.kind == Kind::linear_option_unconsumed) {
         error_at(finding.spelling, "a linear sum can end with a payload that no consumer took: %s",
@@ -4835,6 +4975,17 @@ void report_option_end(const Finding& finding) {
         inform(finding.spelling,
                "its run-time check ends the process on each path, because the sum holds no payload: fill it first, or "
                "end the empty sum with %<expect_none(reason)%>");
+    } else if (finding.kind == Kind::linear_borrow_move_out) {
+        error_at(finding.spelling,
+                 "a function moves a linear value out of a parameter that its caller lends, and a path leaves the "
+                 "parameter spent: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "the caller keeps a spent value that looks the same as a live one, so its next move gives a second "
+               "value of one value, such as a second exclusive token of one region");
+        inform(finding.spelling,
+               "take the value with %<foundation::linear::exchange%>, which leaves a replacement in the parameter, "
+               "give the parameter a value again on each path, or take the parameter by value or by %<T&&%>");
     } else {
         return;
     }

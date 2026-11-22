@@ -1,9 +1,11 @@
 // Each move assignment here moves a value between two objects, or gives a
-// value back to its object through a call, so none is a self-move.  The last
-// two functions are the KNOWN MISS of the rule: an alias through two names.
-// The rule reads one function at a time, so it cannot know that two reference
-// parameters, or two indices of one array, name one object.  The move
-// assignment of the class is the run-time backstop of that alias.
+// value back to its object through a call, so none is a self-move.
+// two_indices is the KNOWN MISS of the rule: an alias through two names.  The
+// rule reads one function at a time, so it cannot know that two indices of
+// one array name one object.  The move assignment of the class is the
+// run-time backstop of that alias.  The same alias through two reference
+// parameters is a move out of a lent parameter, which the kind
+// borrow-move-out refuses (plant-borrow-move-out).
 #include <foundation/Linear.h>
 
 namespace planted {
@@ -41,13 +43,14 @@ struct Pair {
 
 void two_elements(Handle (&row)[2]) noexcept { row[0] = static_cast<Handle&&>(row[1]); }
 
-void two_names(Handle& target, Handle& source) noexcept { target = static_cast<Handle&&>(source); }
-
 void two_indices(Handle (&row)[2], int first, int second) noexcept { row[first] = static_cast<Handle&&>(row[second]); }
 
 // A move from the object of a pointer that the function does not know can
-// name the target or a different object, so it is no self-move.
+// name the target or a different object, so it is no self-move.  The old
+// value of the lent target goes to a consumer first, so the assignment drops
+// nothing.
 void through_an_unknown_pointer(Handle& target, Handle* source) noexcept {
+    take(static_cast<Handle&&>(target));
     target = static_cast<Handle&&>(*source);
 }
 

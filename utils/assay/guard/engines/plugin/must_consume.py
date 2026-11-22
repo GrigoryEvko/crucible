@@ -123,6 +123,9 @@ ACTIONS = {
     "process.  Consume the payload first, or use replace",
     "option-known-empty": "a door that needs a full sum runs on a sum that each path shows empty, so its check ends the "
     "process.  Fill the sum first, or end it with expect_none(reason)",
+    "borrow-move-out": "the function moves the value out of a parameter that its caller lends, and a path leaves it "
+    "spent.  Take the value with foundation::linear::exchange, give the parameter a value again on each path, or take "
+    "it by value",
 }
 # The kinds of THE SUMS.  Each line is a compile error, and no ledger row admits one.
 SUM_KINDS = ("option-unconsumed", "option-discarded", "option-known-full", "option-known-empty")

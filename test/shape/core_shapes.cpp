@@ -1657,7 +1657,7 @@ using ProbeToken = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand
 // The move assignment of a Linear is user-provided, so the class is not
 // trivially copyable.  It stores the value, as the assignment of the value
 // does.
-[[gnu::used]] void linear_assign(fixy::Linear<int>& target, fixy::Linear<int>& source) noexcept {
+[[gnu::used]] void linear_assign(fixy::Linear<int>& target, fixy::Linear<int>&& source) noexcept {
     target = std::move(source);
 }
 
@@ -1666,7 +1666,7 @@ using ProbeToken = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand
 [[gnu::used]] ProbeToken token_pass(ProbeToken token) noexcept { return token; }
 
 // The move assignment of a token is user-provided, and it moves no byte.
-[[gnu::used]] void token_assign(ProbeToken& target, ProbeToken& source) noexcept { target = std::move(source); }
+[[gnu::used]] void token_assign(ProbeToken& target, ProbeToken&& source) noexcept { target = std::move(source); }
 
 // ── The contract checks ─────────────────────────────────────────────────────
 

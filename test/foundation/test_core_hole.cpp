@@ -188,8 +188,9 @@ void test_each_alignment() {
 
 // The two helpers spend a Hole two times on purpose.  The first spend gives
 // the storage back, and the second spend finds no storage, so each build
-// ends the process.  A Hole behind an lvalue reference is no object that
-// the rule must-consume tracks, so the helpers hold the second spend.
+// ends the process.  The rule must-consume reads the Hole that the caller
+// lends, so its ledger counts the second spend and the move out of the lent
+// Hole of each helper.
 void consume_two_times(CountedHole& hole) {
     CountedHole taken{std::move(hole)};
     std::move(taken).consume();

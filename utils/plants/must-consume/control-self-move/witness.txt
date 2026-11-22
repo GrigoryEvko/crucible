@@ -1,19 +1,20 @@
 # A move assignment between two objects, and a value that a call gives back
-# into its object, are no self-move.  two_names and two_indices are the known
-# miss of the rule: an alias through two names, which the rule reading one
-# function at a time cannot see.  A move from the object of an unknown pointer
-# is no self-move, and neither is a move through a reference whose pointer or
-# index changes before the move.  The move assignment of a session handle keeps
-# its guard of a self-move as the run-time backstop of that alias
-# (fixy/session/Handle.h).
+# into its object, are no self-move.  two_indices is the known miss of the
+# rule: an alias through two names, which the rule reading one function at a
+# time cannot see.  The same alias through two reference parameters is a move
+# out of a lent parameter (plant-borrow-move-out).  A move from the object of
+# an unknown pointer is no self-move, and neither is a move through a
+# reference whose pointer or index changes before the move.  The move
+# assignment of a session handle keeps its guard of a self-move as the
+# run-time backstop of that alias (fixy/session/Handle.h).
 
 compile moves src/moves.cpp must-consume=on
 flag moves -freflection
 exit moves pass
 judge moves
-finding moves quarantine c-array-object src/moves.cpp:42:28 | row
+finding moves quarantine c-array-object src/moves.cpp:44:28 | row
 finding moves quarantine c-array-object src/moves.cpp:46:27 | row
-finding moves quarantine raw-pointer-object src/moves.cpp:50:57 | source
-finding moves quarantine raw-pointer-object src/moves.cpp:57:51 | first
-finding moves quarantine raw-pointer-object src/moves.cpp:57:66 | second
-finding moves quarantine c-array-object src/moves.cpp:63:50 | row
+finding moves quarantine raw-pointer-object src/moves.cpp:52:57 | source
+finding moves quarantine raw-pointer-object src/moves.cpp:60:51 | first
+finding moves quarantine raw-pointer-object src/moves.cpp:60:66 | second
+finding moves quarantine c-array-object src/moves.cpp:66:50 | row

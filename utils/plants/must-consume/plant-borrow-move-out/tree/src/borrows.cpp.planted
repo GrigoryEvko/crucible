@@ -1,0 +1,95 @@
+// The moves of a linear value out of a parameter that the caller lends (THE
+// LENT PARAMETERS of utils/tools/quarantine/linear.cpp).  Each function leaves
+// the caller a spent value on a path, so a later move of the caller gives a
+// second value of one value.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+struct Pair {
+    Token left;
+    Token right;
+};
+
+struct KeyBrand final {};
+using Key = ::foundation::core::LoanKey<KeyBrand>;
+
+void sink(Token&& token) noexcept;
+void commit(Token&& draft) noexcept;
+void open_frame(Key&& key) noexcept;
+
+// A function takes the token by a reference and gives it out.
+Token steal(Token& held) noexcept { return std::move(held); }
+
+// A helper commits one draft two times through one reference, so the second
+// commit is a second consume too.
+void commit_twice(Token& draft) noexcept {
+    commit(std::move(draft));
+    commit(std::move(draft));
+}
+
+// A move through a local reference to the lent token.
+void through_an_alias(Token& held) noexcept {
+    Token& alias = held;
+    sink(std::move(alias));
+}
+
+// A move on one path only.
+void on_one_path(Token& held, int count) noexcept {
+    if (count > 0) {
+        sink(std::move(held));
+    }
+}
+
+// A move of one field, with no new value for it.
+void one_field(Pair& held) noexcept { sink(std::move(held.left)); }
+
+// A consumer of a lent Option takes the payload, and the caller keeps a spent
+// Option.  take() is the move out of a borrowed Option.
+void payload_out(Option<Token>& held) noexcept { sink(std::move(held).expect("the caller lends a full Option")); }
+
+// A helper opens a frame with a key that its caller lends.  A key owes no
+// consume at the end of its scope, but the caller keeps a spent key, and its
+// next frame is a second frame of one owner.
+void open_with_a_lent_key(Key& key) noexcept { open_frame(std::move(key)); }
+
+// The body of an element door gives the lent element out.
+template <class Body>
+Token run_with(Token& lent, Body body) noexcept {
+    return body(lent);
+}
+
+Token element_moved_out(Token& held) noexcept {
+    return run_with(held, [](Token& lent) noexcept { return std::move(lent); });
+}
+
+// A forwarding reference that the call deduces as Token&.
+template <class Value>
+void forward_on(Value&& value) noexcept {
+    sink(std::move(value));
+}
+
+void forwards_a_lent_token(Token& held) noexcept { forward_on(held); }
+
+// The alias through two names that the self-move rule cannot see is a move
+// out of a lent parameter into another one.
+void two_names(Token& target, Token& source) noexcept { target = std::move(source); }
+
+}  // namespace planted
