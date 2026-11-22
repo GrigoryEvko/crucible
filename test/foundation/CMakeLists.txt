@@ -4781,6 +4781,12 @@ foundation_neg_compile_test(neg_core_arena_array_door_forged
 foundation_neg_compile_test(neg_core_committed_range_door_forged
   "foundation::core::CommittedRangeDoor::committed_bytes_\\(uint8_t\\*, std::size_t\\). is private within this context"
   "PageSource\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_sort_run_door_forged
+  "foundation::core::SortRunDoor::run_\\(Element\\*, foundation::core::detail::SortCount\\) \\[with Element = int; foundation::core::detail::SortCount = foundation::core::Quantity<foundation::core::unit::Element, long unsigned int>\\]. is private within this context"
+  "Sort\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_sort_run_door_not_friend
+  "foundation::core::SortRunDoor::fixed_run_\\(Element\\*\\) \\[with long unsigned int Count = 4; Element = int\\]. is private within this context"
+  "Sort\\.h:[0-9]+:[0-9]+: note: declared private here")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result

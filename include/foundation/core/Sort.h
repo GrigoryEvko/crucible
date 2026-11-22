@@ -77,6 +77,7 @@
 //   find_lower_bound and find_equivalent make O(log n) compares.  No operation
 //   allocates.
 
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
@@ -433,13 +434,6 @@ enum class PivotSide : std::uint8_t {
     right,
 };
 
-// The run of count elements from first.  The caller proves the elements live,
-// and first not null when the count is above zero.
-template <class T>
-[[nodiscard]] CRUCIBLE_INLINE constexpr View<T> run_of_(T* first, SortCount count) noexcept {
-    return View<T>{ViewDoor::key(), first, count.raw()};
-}
-
 // Copies the elements of source into target, two runs of one count that do
 // not overlap.  At run time an element that the copy of Region.h takes moves
 // as one copy of its bytes.  A constant evaluation, and each other element,
@@ -478,9 +472,8 @@ constexpr void insert_last_(View<T> run, Less& less) noexcept {
 // The insertion sort of a run.  Complexity: O(n^2) compares and copies.
 template <class T, class Less>
 constexpr void insert_each_(View<T> run, Less& less) noexcept {
-    T* const first = first_of_(BaseLayerRead{}, run);
     for (std::size_t count = 2; count <= run.size(); ++count) {
-        insert_last_(run_of_(first, SortCount{count}), less);
+        insert_last_(run.window(0, count).expect("the loop bounds the count by the count of the run"), less);
     }
 }
 
@@ -566,50 +559,52 @@ constexpr void merge_halves_(View<T const> source, View<T> target, Less& less) n
     CRUCIBLE_FATAL_INVARIANT(left == left_end && right == right_end);
 }
 
-// Merges the sorted runs [0, middle) and [middle, count) of source into
-// target, of the same count, from the two ends at the same time.  Each end
-// takes as many elements as the shorter run holds, by the ties of
-// merge_halves_.  A merge from the front then takes the elements between the
-// two ends, and the rest of one run is a copy.  The result is the stable
-// merge.  A less function that is not a strict weak order can make the two
-// ends cross: the check after them then ends the process.  Complexity:
-// count - 1 compares at most, and count copies.
 template <class T, class Less>
-constexpr void merge_two_ends_(View<T const> source, SortCount middle, View<T> target, Less& less) noexcept {
-    std::size_t const count = source.size();
-    T const* const from = first_of_(BaseLayerRead{}, source);
-    T* const to = first_of_(BaseLayerRead{}, target);
-    std::size_t left = 0;
-    std::size_t right = middle.raw();
-    std::size_t left_end = middle.raw();
-    std::size_t right_end = count;
-    std::size_t out = 0;
-    std::size_t out_end = count;
-    std::size_t const shorter = left_end < count - left_end ? left_end : count - left_end;
-    for (std::size_t step = 0; step < shorter; ++step) {
-        std::size_t const is_right = select_bit_(less(from[right], from[left]));
-        to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
-        ++out;
-        right += is_right;
-        left += 1 - is_right;
-        std::size_t const is_left = select_bit_(less(from[right_end - 1], from[left_end - 1]));
-        --out_end;
-        to[out_end] = from[right_end - 1 + ((left_end - right_end) & (std::size_t{0} - is_left))];
-        left_end -= is_left;
-        right_end -= 1 - is_left;
+class StableSort;
+
+template <std::size_t Bytes, std::size_t DigitBits, class Tally, class T, class KeyOf>
+constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& scratch, KeyOf const& key_of) noexcept;
+
+}  // namespace detail
+
+// The door of the stable sort to the raw constructors of a View, one of the
+// doors of the owners above foundation/core/Region.h.  The sort steps
+// through its runs by counts that it computes: the counts of the merge tree,
+// of each partition and of each merge.  No type carries the bound of such a
+// count, so a View of each run through a check of its window would test each
+// count at run time.  The invariant: each run is a part of the elements or of
+// the scratch that the caller gave, and a run of the elements and its run of
+// the scratch lie at the same offset.  The two friends are StableSort and
+// radix_sort_.  The radix sort copies its result back from the scratch, of
+// the count of the run: a View of the scratch of the caller has a count that
+// no type ties to the count of the run, and the copy would test the two.  A
+// home owner row of utils/rule-table.txt keeps this definition in this header.
+// The door goes when the counts of partition_ and of the merge tree carry
+// their bound in their type, as an Index or a Refined count, and the scratch
+// carries the count of its run, so that each run is a window that the type
+// proves.
+class SortRunDoor final : ::foundation::NoObject<SortRunDoor> {
+    template <class T, class Less>
+    friend class detail::StableSort;
+    template <std::size_t Bytes, std::size_t DigitBits, class Tally, class T, class KeyOf>
+    friend constexpr void detail::radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& scratch,
+                                              KeyOf const& key_of) noexcept;
+
+    // The count elements from first, a part of the elements or of the scratch.
+    template <class Element>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr View<Element> run_(Element* first,
+                                                                      detail::SortCount count) noexcept {
+        return View<Element>{first, count.raw()};
     }
-    CRUCIBLE_FATAL_INVARIANT(left <= left_end && right <= right_end);
-    while (left < left_end && right < right_end) {
-        std::size_t const is_right = select_bit_(less(from[right], from[left]));
-        to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
-        ++out;
-        right += is_right;
-        left += 1 - is_right;
+
+    // The Count elements from first, a part of the elements or of the scratch.
+    template <std::size_t Count, class Element>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr View<Element, Count> fixed_run_(Element* first) noexcept {
+        return View<Element, Count>{first};
     }
-    copy_run_(run_of_(from + left, SortCount{left_end - left}), run_of_(to + out, SortCount{left_end - left}));
-    out += left_end - left;
-    copy_run_(run_of_(from + right, SortCount{right_end - right}), run_of_(to + out, SortCount{right_end - right}));
-}
+};
+
+namespace detail {
 
 // THE STABLE SORT OF AN ORDER OF THE CALLER is driftsort, the stable sort of
 // the Rust standard library (Orson Peters and Lukas Bergdoll, 2024).
@@ -656,6 +651,59 @@ public:
     }
 
 private:
+    // The count elements from first, a part of the elements or of the scratch
+    // (SortRunDoor).
+    template <class Element>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr View<Element> run_of_(Element* first, SortCount count) noexcept {
+        return SortRunDoor::run_(first, count);
+    }
+
+    // Merges the sorted runs [0, middle) and [middle, count) of source into
+    // target, of the same count, from the two ends at the same time.  Each end
+    // takes as many elements as the shorter run holds, by the ties of
+    // merge_halves_.  A merge from the front then takes the elements between
+    // the two ends, and the rest of one run is a copy.  The result is the
+    // stable merge.  A less function that is not a strict weak order can make
+    // the two ends cross: the check after them then ends the process.
+    // Complexity: count - 1 compares at most, and count copies.
+    static constexpr void merge_two_ends_(View<T const> source, SortCount middle, View<T> target, Less& less) noexcept {
+        std::size_t const count = source.size();
+        T const* const from = first_of_(BaseLayerRead{}, source);
+        T* const to = first_of_(BaseLayerRead{}, target);
+        std::size_t left = 0;
+        std::size_t right = middle.raw();
+        std::size_t left_end = middle.raw();
+        std::size_t right_end = count;
+        std::size_t out = 0;
+        std::size_t out_end = count;
+        std::size_t const shorter = left_end < count - left_end ? left_end : count - left_end;
+        for (std::size_t step = 0; step < shorter; ++step) {
+            std::size_t const is_right = select_bit_(less(from[right], from[left]));
+            to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
+            ++out;
+            right += is_right;
+            left += 1 - is_right;
+            std::size_t const is_left = select_bit_(less(from[right_end - 1], from[left_end - 1]));
+            --out_end;
+            to[out_end] = from[right_end - 1 + ((left_end - right_end) & (std::size_t{0} - is_left))];
+            left_end -= is_left;
+            right_end -= 1 - is_left;
+        }
+        CRUCIBLE_FATAL_INVARIANT(left <= left_end && right <= right_end);
+        while (left < left_end && right < right_end) {
+            std::size_t const is_right = select_bit_(less(from[right], from[left]));
+            to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
+            ++out;
+            right += is_right;
+            left += 1 - is_right;
+        }
+        SortCount const left_rest{left_end - left};
+        copy_run_(run_of_(from + left, left_rest), run_of_(to + out, left_rest));
+        out += left_end - left;
+        SortCount const right_rest{right_end - right};
+        copy_run_(run_of_(from + right, right_rest), run_of_(to + out, right_rest));
+    }
+
     // The part of the scratch at the offset of a run of the elements.
     [[nodiscard]] constexpr T* scratch_of_(View<T> run) const noexcept {
         return scratch_ + (first_of_(BaseLayerRead{}, run) - elements_);
@@ -1013,9 +1061,9 @@ private:
             sort_eight_(run_of_(first + half, SortCount{8}));
             sorted = 8;
         } else if (count >= 8) {
-            sort_four_(View<T const, 4>{ViewDoor::key(), first}, View<T, 4>{ViewDoor::key(), scratch}, less_);
-            sort_four_(View<T const, 4>{ViewDoor::key(), first + half}, View<T, 4>{ViewDoor::key(), scratch + half},
-                       less_);
+            sort_four_(View<T const, 4>{SortRunDoor::fixed_run_<4>(first)}, SortRunDoor::fixed_run_<4>(scratch), less_);
+            sort_four_(View<T const, 4>{SortRunDoor::fixed_run_<4>(first + half)},
+                       SortRunDoor::fixed_run_<4>(scratch + half), less_);
             sorted = 4;
         } else {
             scratch[0] = first[0];
@@ -1037,8 +1085,8 @@ private:
     // of driftsort).
     constexpr void sort_eight_(View<T> run) noexcept {
         T* const first = first_of_(BaseLayerRead{}, run);
-        sort_four_in_place_(View<T, 4>{ViewDoor::key(), first});
-        sort_four_in_place_(View<T, 4>{ViewDoor::key(), first + 4});
+        sort_four_in_place_(SortRunDoor::fixed_run_<4>(first));
+        sort_four_in_place_(SortRunDoor::fixed_run_<4>(first + 4));
         merge_halves_(View<T const>{run}, run_of_(scratch_of_(run), SortCount{8}), less_);
     }
 
@@ -1171,7 +1219,7 @@ constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& 
         target = source;
         source = sorted;
     }
-    if (source != elements) copy_run_(run_of_(static_cast<T const*>(source), SortCount{count}), run);
+    if (source != elements) copy_run_(SortRunDoor::run_(static_cast<T const*>(source), SortCount{count}), run);
 }
 
 // Sorts a run by the Bytes low bytes of the key of each element, with the
@@ -1245,9 +1293,8 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
                                                                  Less less = Less{}) noexcept {
     std::size_t const count = elements.size();
     if (scratch.size() != count) return err(LengthMismatch{});
-    View<T> const run = detail::run_of_(first_of_(detail::BaseLayerRead{}, elements), detail::SortCount{count});
-    auto const room = side_as<side::SortScratch>(
-        detail::run_of_(first_of_(detail::BaseLayerRead{}, scratch), detail::SortCount{count}));
+    View<T> const run{elements.view()};
+    auto const room = side_as<side::SortScratch>(View<T>{scratch.view()});
     // The key of the radix sort has at most eight bytes.  A wider integer of a
     // GNU dialect, such as __int128, takes the comparator form.
     if constexpr (std::same_as<Less, Ascending> && sizeof(T) <= 8) {

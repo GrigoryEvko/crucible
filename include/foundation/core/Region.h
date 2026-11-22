@@ -332,6 +332,7 @@ class RunSetLayoutDoor;
 class TestedWindowDoor;
 class ArenaArrayDoor;
 class CommittedRangeDoor;
+class SortRunDoor;
 
 // The bytes of a run of unsigned chars, as a View of std::byte (byte_view
 // below).
@@ -423,6 +424,7 @@ class[[= ::foundation::transfer::refers{}]] View {
     friend class TestedWindowDoor;
     friend class ArenaArrayDoor;
     friend class CommittedRangeDoor;
+    friend class SortRunDoor;
 
     // THE TYPED DOORS and the doors over a run that a View proves.
     template <class U, std::size_t Count>

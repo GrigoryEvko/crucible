@@ -956,6 +956,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::TestedWindowDoor, "a door of TestedWindow to a View: static members only, never a value"},
     {^^::foundation::core::ArenaArrayDoor, "a door of BumpArena to a View: static members only, never a value"},
     {^^::foundation::core::CommittedRangeDoor, "a door of a reservation to a View: static members only, never a value"},
+    {^^::foundation::core::SortRunDoor, "a door of the stable sort to a View: static members only, never a value"},
     {^^::foundation::core::Option, kPayload},
     {^^::foundation::core::NoValue, "the marker of an empty Option: it holds nothing, and no Option holds it"},
     {^^::foundation::core::Site,

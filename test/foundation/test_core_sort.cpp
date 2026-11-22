@@ -4,7 +4,8 @@
 // paths of driftsort (few keys, runs of the input, the fallback of the
 // quicksort under the adversary of McIlroy), the end of the process on an
 // order that is not a strict weak order, the radix sort and the orders by key
-// against the comparator form, and the ordered searches against a scan.
+// against the comparator form, the runs of each sort entry inside buffers of
+// their exact count, and the ordered searches against a scan.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -687,6 +688,172 @@ void test_order_by_key_agrees_with_the_comparator_form() {
     }
 }
 
+// The oracle of the runs of the sort.  Each run of the stable sort and of the
+// radix sort is a part of the elements or of the scratch that the caller gave
+// (SortRunDoor of foundation/core/Sort.h).  Each buffer of these tests holds
+// exactly the count of its sort on the heap, so a run with a wrong count
+// reads a redzone of ASan in the default build, and the process ends with no
+// pass.  The edge counts are 0, 1, 2, 7, 8, 9, 15, 16 and 17, and each power
+// of two from 4 to 4096 with its neighbors.
+
+// The input patterns of the oracle of the runs.
+enum class RunPattern : std::uint8_t {
+    sorted,
+    reversed,
+    all_equal,
+    two_values,
+    random,
+};
+
+// The key of the element at position of a run of count elements in pattern.
+[[nodiscard]] std::uint32_t pattern_key(RunPattern pattern, std::uint32_t position, std::uint32_t count,
+                                        ::crucible::test::PhiloxStream& stream) noexcept {
+    switch (pattern) {
+        case RunPattern::sorted:
+            return position;
+        case RunPattern::reversed:
+            return count - position;
+        case RunPattern::all_equal:
+            return 7;
+        case RunPattern::two_values:
+            return static_cast<std::uint32_t>(stream.below(2));
+        case RunPattern::random:
+            return stream.next_word();
+        default:
+            break;
+    }
+    ::fixy::unreachable();
+}
+
+// The float of the element at position: the key as a small integer, and a
+// float of each class for the random pattern.
+[[nodiscard]] float pattern_float(RunPattern pattern, std::uint32_t position, std::uint32_t count,
+                                  ::crucible::test::PhiloxStream& stream) noexcept {
+    if (pattern == RunPattern::random) return draw_special_float(stream);
+    return static_cast<float>(pattern_key(pattern, position, count, stream));
+}
+
+// The total order of IEEE 754 as a less function of the caller, so that the
+// stable sort of floats takes the merge tree of StableSort<float>.
+[[nodiscard]] bool is_below_in_total_order(float left, float right) noexcept {
+    return ::foundation::core::encode_total_order_key(left) < ::foundation::core::encode_total_order_key(right);
+}
+
+// Each sort entry over count elements of pattern: the stable sort of records
+// by key, the radix sort of keys of four bytes against the comparator form,
+// and the radix sort of floats against the merge tree of StableSort<float>.
+void check_runs_of_pattern(std::size_t count, RunPattern pattern, ::crucible::test::PhiloxStream& stream) noexcept {
+    auto const last = static_cast<std::uint32_t>(count);
+    HeapArray<Keyed> records = draw_records(
+        count, [&](std::uint32_t position) noexcept { return pattern_key(pattern, position, last, stream); });
+    CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(records));
+
+    std::uint32_t position = 0;
+    HeapArray<std::uint32_t> keys =
+        ::foundation::core::mint_heap_array_with<std::uint32_t>(test_alloc(), count, [&](std::size_t) noexcept {
+            std::uint32_t const key = pattern_key(pattern, position, last, stream);
+            ++position;
+            return key;
+        });
+    HeapArray<std::uint32_t> keys_by_order =
+        ::foundation::core::mint_heap_array_copy<std::uint32_t>(test_alloc(), View<std::uint32_t const>{keys.view()});
+    HeapArray<std::uint32_t> key_scratch = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint32_t{0});
+    auto const key_order = [](std::uint32_t const& left, std::uint32_t const& right) noexcept { return left < right; };
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(keys, key_scratch));
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(keys_by_order, key_scratch, key_order));
+    View<std::uint32_t const> const by_radix{keys.view()};
+    View<std::uint32_t const> const by_order{keys_by_order.view()};
+    for (std::size_t index = 0; index < count; ++index) {
+        std::uint32_t const key =
+            *by_radix.get(index).expect("a test reads an element at or past the count of its View");
+        CRUCIBLE_TEST_ASSERT(
+            kTest, key == *by_order.get(index).expect("a test reads an element at or past the count of its View"));
+        if (index > 0)
+            CRUCIBLE_TEST_ASSERT(kTest, key >= *by_radix.get(index - 1).expect(
+                                            "a test reads an element at or past the count of its View"));
+    }
+
+    position = 0;
+    HeapArray<float> values =
+        ::foundation::core::mint_heap_array_with<float>(test_alloc(), count, [&](std::size_t) noexcept {
+            float const value = pattern_float(pattern, position, last, stream);
+            ++position;
+            return value;
+        });
+    HeapArray<float> values_by_order =
+        ::foundation::core::mint_heap_array_copy<float>(test_alloc(), View<float const>{values.view()});
+    HeapArray<float> value_scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
+    auto const total_order = [](float const& left, float const& right) noexcept {
+        return is_below_in_total_order(left, right);
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(values, value_scratch));
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(values_by_order, value_scratch, total_order));
+    CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{values_by_order.view()}));
+}
+
+inline constexpr ::fixy::FixedArray<RunPattern, 5> kRunPatterns{
+    RunPattern::sorted, RunPattern::reversed, RunPattern::all_equal, RunPattern::two_values, RunPattern::random};
+
+void test_sort_runs_stay_inside_their_buffers() {
+    ::crucible::test::PhiloxStream stream{0x50470011u};
+    auto const check_count = [&stream](std::size_t count) noexcept {
+        for (RunPattern const pattern : kRunPatterns) {
+            check_runs_of_pattern(count, pattern, stream);
+        }
+    };
+    ::fixy::FixedArray<std::size_t, 9> const edges{0, 1, 2, 7, 8, 9, 15, 16, 17};
+    for (std::size_t const count : edges) {
+        check_count(count);
+    }
+    for (std::size_t power = 4; power <= 4096; power *= 2) {
+        check_count(power - 1);
+        check_count(power);
+        check_count(power + 1);
+    }
+}
+
+// The network of N gives the bits of the naive sort on each pattern.  Its
+// elements are on the stack, where ASan puts a redzone after the array.
+template <std::size_t N>
+void check_network_patterns(::crucible::test::PhiloxStream& stream) noexcept {
+    for (RunPattern const pattern : kRunPatterns) {
+        ::fixy::FixedArray<float, N> values{};
+        values.with_mut([&stream, pattern](auto run) noexcept {
+            std::uint32_t position = 0;
+            for (float& value : run) {
+                value = pattern_float(pattern, position, static_cast<std::uint32_t>(N), stream);
+                ++position;
+            }
+        });
+        ::fixy::FixedArray<float, N> expected{values};
+        expected.with_mut([](auto run) noexcept { naive_sort(View<float>{run.view()}); });
+        values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
+    }
+}
+
+void test_network_runs_stay_inside_their_buffers() {
+    ::crucible::test::PhiloxStream stream{0x50470012u};
+    check_network_patterns<2>(stream);
+    check_network_patterns<7>(stream);
+    check_network_patterns<8>(stream);
+    check_network_patterns<9>(stream);
+    check_network_patterns<15>(stream);
+    check_network_patterns<16>(stream);
+    check_network_patterns<17>(stream);
+    check_network_patterns<31>(stream);
+    check_network_patterns<32>(stream);
+    check_network_patterns<33>(stream);
+    check_network_patterns<63>(stream);
+    check_network_patterns<64>(stream);
+    check_network_patterns<65>(stream);
+    check_network_patterns<127>(stream);
+    check_network_patterns<128>(stream);
+    check_network_patterns<129>(stream);
+    check_network_patterns<255>(stream);
+    check_network_patterns<256>(stream);
+}
+
 // find_lower_bound and find_equivalent give the first position that a scan finds.
 void test_searches_agree_with_a_scan() {
     ::crucible::test::PhiloxStream stream{0x50470004u};
@@ -734,6 +901,8 @@ int main() {
     test_sort_stably_bounds_the_adversary();
     test_radix_sort_agrees_with_the_comparator_form();
     test_order_by_key_agrees_with_the_comparator_form();
+    test_sort_runs_stay_inside_their_buffers();
+    test_network_runs_stay_inside_their_buffers();
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_sort_stably_ends_on_a_random_order(test);
     test_searches_agree_with_a_scan();

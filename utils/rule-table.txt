@@ -485,6 +485,7 @@ home owner foundation::core::RunSetLayoutDoor include/foundation/core/RunSet.h |
 home owner foundation::core::TestedWindowDoor include/foundation/AlignedBytes.h | the door of a tested window of a block to the raw constructors of a View: View befriends it, and its one definition starts and gives the elements of a window that passed its tests only to the tested window and the door of the list of windows
 home owner foundation::core::ArenaArrayDoor include/foundation/core/BumpArena.h | the door of a BumpArena to the raw constructors of a View: View befriends it, and its one definition gives the elements that array() built in new bytes of the arena only to BumpArena
 home owner foundation::core::CommittedRangeDoor include/foundation/os/PageSource.h | the door of a Reservation to the raw constructors of a View: View befriends it, and its one definition gives the bytes of a committed range only to Reservation
+home owner foundation::core::SortRunDoor include/foundation/core/Sort.h | the door of the stable sort to the raw constructors of a View: View befriends it, and its one definition gives the runs of the elements and of the scratch only to StableSort and radix_sort_
 
 home combine foundation::reflect::combine_ids include/foundation/reflect/Mix.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
 
@@ -878,6 +879,7 @@ witness <foundation/core/RunSet.h> deleted | foundation::core::RunSetLayoutDoor 
 witness <foundation/AlignedBytes.h> deleted | foundation::core::TestedWindowDoor | foundation::core::TestedWindowDoor{}
 witness <foundation/core/BumpArena.h> deleted | foundation::core::ArenaArrayDoor | foundation::core::ArenaArrayDoor{}
 witness <foundation/os/PageSource.h> deleted | foundation::core::CommittedRangeDoor | foundation::core::CommittedRangeDoor{}
+witness <foundation/core/Sort.h> deleted | foundation::core::SortRunDoor | foundation::core::SortRunDoor{}
 # A ViewMut, the chunks of its split and a RefMut come only from a frame door
 # or a split, so no pointer, no count and no object that a caller holds become
 # a unique borrow.  Each constructor takes the key that only FrameDoor builds.

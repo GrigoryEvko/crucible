@@ -647,6 +647,11 @@
       "constructor": "\\bSoleWriter\\("
     },
     {
+      "name": "neg_witness_core_sortrundoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bSortRunDoor\\("
+    },
+    {
       "name": "neg_witness_core_statictext_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bStaticText\\("
@@ -1979,6 +1984,10 @@
     {
       "type": "foundation::core::CommittedRangeDoor",
       "header": "foundation/os/PageSource.h"
+    },
+    {
+      "type": "foundation::core::SortRunDoor",
+      "header": "foundation/core/Sort.h"
     },
     {
       "type": "foundation::core::ViewMut<int, forge::brand>",
