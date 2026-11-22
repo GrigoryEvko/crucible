@@ -131,6 +131,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
@@ -335,6 +336,40 @@ template <class T, std::size_t Extent>
 [[nodiscard]] View<std::conditional_t<std::is_const_v<T>, std::byte const, std::byte>, Extent>
 byte_view(View<T, Extent> run) noexcept;
 
+}  // namespace foundation::core
+
+namespace foundation::lifetime {
+
+// A byte of the bytes of a View that start_as_array takes: unsigned char or
+// std::byte, with or without a const.  An array of one of the two types
+// provides the storage of an object ([intro.object]).
+template <typename Byte>
+concept StorageByte =
+    std::is_same_v<std::remove_const_t<Byte>, unsigned char> || std::is_same_v<std::remove_const_t<Byte>, std::byte>;
+
+namespace detail {
+
+// The extent of the View of the objects that start over bytes of Extent
+// bytes.
+template <class T, std::size_t Extent>
+inline constexpr std::size_t started_extent_v =
+    Extent == ::foundation::core::dynamic_extent ? ::foundation::core::dynamic_extent : Extent / sizeof(T);
+
+}  // namespace detail
+
+// The start of the objects that fill the bytes of a View (start_as_array
+// below).
+template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
+    requires ::foundation::core::ViewElement<element_for_storage_t<Byte, T>>
+          && (Extent == ::foundation::core::dynamic_extent || Extent % sizeof(T) == 0)
+[[nodiscard]]
+CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Byte, T>, detail::started_extent_v<T, Extent>>
+start_as_array(::foundation::core::View<Byte, Extent> bytes) noexcept;
+
+}  // namespace foundation::lifetime
+
+namespace foundation::core {
+
 template <class T, std::size_t Extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
 class[[= ::foundation::transfer::refers{}]] View {
@@ -405,6 +440,13 @@ class[[= ::foundation::transfer::refers{}]] View {
         requires std::same_as<std::remove_const_t<U>, unsigned char>
     friend View<std::conditional_t<std::is_const_v<U>, std::byte const, std::byte>, OtherExtent>
     byte_view(View<U, OtherExtent> run) noexcept;
+    template <::foundation::lifetime::ImplicitLifetimeThroughout U, ::foundation::lifetime::StorageByte Byte,
+              std::size_t OtherExtent>
+        requires ViewElement<::foundation::lifetime::element_for_storage_t<Byte, U>>
+              && (OtherExtent == dynamic_extent || OtherExtent % sizeof(U) == 0)
+    friend View<::foundation::lifetime::element_for_storage_t<Byte, U>,
+                ::foundation::lifetime::detail::started_extent_v<U, OtherExtent>>
+    foundation::lifetime::start_as_array(View<Byte, OtherExtent> bytes) noexcept;
 
     constexpr View(T* first, std::size_t count) noexcept
         requires(Extent == dynamic_extent)
@@ -2266,3 +2308,89 @@ byte_view(View<T, Extent> run) noexcept {
 }
 
 }  // namespace foundation::core
+
+namespace foundation::lifetime {
+
+namespace detail {
+
+// The start of count objects of type T over the storage, with no check: the
+// one asm statement of each start.  It gives the address of the first object,
+// and no View, so it makes no View of any run.  The caller proves the three
+// facts that start_as_array of foundation/core/Array.h checks: the storage is
+// aligned for T, the count is at most max_view_count(sizeof(T)), and the
+// storage is not null when the count is above zero.
+//
+// The function gives the guarantee of std::start_lifetime_as_array
+// ([obj.lifetime], P2590R2).  Each object that it starts has an
+// implicit-lifetime type ([basic.types.general]), and the object
+// representation of each object is the bytes that the storage holds before
+// the call.  The function uses the empty asm statement that libstdc++ 16
+// uses for that function (bits/stl_construct.h).  The statement reads and
+// writes the bytes of the region, and it returns the pointer.  GCC then
+// keeps each store to the bytes before the statement.  It keeps each access
+// through the result after the statement.  The type of an earlier object in
+// the bytes then does not apply to the new objects.  The statement writes no
+// byte and emits no instruction.  The function always inlines (CRUCIBLE_INLINE),
+// so each start costs only the checks of its caller.  An out-of-line clone of
+// the start is a barrier of its own, because GCC keeps each access across a
+// call.  Such a clone would hide a missing statement, and a test of the
+// statement would see no start with no statement.
+//
+// The operand has the type of an array of unknown bound of unsigned char.
+// GCC reads that type as an access of unknown length (the GCC manual,
+// "Extended Asm"), so the operand needs no variable length array.  The bit
+// cast removes a const of the storage only for the operand, as the
+// const_cast of libstdc++ does.
+template <ImplicitLifetimeThroughout T, typename Storage>
+    requires(!std::is_volatile_v<Storage> && ::foundation::core::ViewElement<element_for_storage_t<Storage, T>>)
+[[nodiscard]] CRUCIBLE_INLINE element_for_storage_t<Storage, T>* start_storage_(Storage* storage,
+                                                                                std::size_t count) noexcept {
+    using Element = element_for_storage_t<Storage, T>;
+    using Untyped = std::conditional_t<std::is_const_v<Storage>, const void, void>;
+    Element* first = static_cast<Element*>(static_cast<Untyped*>(storage));
+    if (count != 0) {
+        auto* const region = __builtin_bit_cast(unsigned char (*)[], static_cast<Untyped*>(storage));
+        __asm__ __volatile__("" : "+r"(first), "=m"(*region) : "m"(*region));
+    }
+    return first;
+}
+
+}  // namespace detail
+
+// Starts the lifetime of the objects of type T that fill the bytes of a View,
+// and returns them as a View.  The count of the objects is the count of the
+// bytes divided by the size of T, so a caller that starts fewer objects takes
+// a window of the bytes first.  The element of the result is const when the
+// bytes are const.  The View of the bytes proves their storage, so the start
+// makes the View of the objects over the same run, and no other door does.
+// The function always inlines, as the asm statement of the start does.
+//
+// The bytes must be aligned for T, and the start ends the process for bytes
+// that are not, in each build and under each contract semantic.  The count of
+// a View of bytes is at most max_view_count(1), so the count of objects is at
+// most max_view_count(sizeof(T)), and a View holds a pointer that is not null
+// for each count above zero: the two other facts of a start need no check.
+// Bytes of a fixed extent give a View of the fixed extent Extent / sizeof(T),
+// and the type refuses an extent that holds no whole count of objects.  Bytes
+// of a dynamic extent give a View of a dynamic extent, and a count of bytes
+// that holds no whole count of objects ends the process, in each build and
+// under each contract semantic.
+template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
+    requires ::foundation::core::ViewElement<element_for_storage_t<Byte, T>>
+          && (Extent == ::foundation::core::dynamic_extent || Extent % sizeof(T) == 0)
+CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Byte, T>, detail::started_extent_v<T, Extent>>
+start_as_array(::foundation::core::View<Byte, Extent> bytes) noexcept {
+    using Element = element_for_storage_t<Byte, T>;
+    Byte* const first = first_of_(::foundation::core::detail::BaseLayerRead{}, bytes);
+    CRUCIBLE_FATAL_INVARIANT((__builtin_bit_cast(std::uintptr_t, first) & (alignof(Element) - 1)) == 0);
+    if constexpr (Extent == ::foundation::core::dynamic_extent) {
+        CRUCIBLE_FATAL_INVARIANT(bytes.size() % sizeof(T) == 0);
+        std::size_t const count = bytes.size() / sizeof(T);
+        return ::foundation::core::View<Element>{detail::start_storage_<T>(first, count), count};
+    } else {
+        return ::foundation::core::View<Element, Extent / sizeof(T)>{
+            detail::start_storage_<T>(first, Extent / sizeof(T))};
+    }
+}
+
+}  // namespace foundation::lifetime

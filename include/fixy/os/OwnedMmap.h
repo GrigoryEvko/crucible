@@ -608,7 +608,7 @@ private:
         if (!is_mapped()) return Result::some(::foundation::core::View<T>{});
         if (this->state_.length % sizeof(T) != 0) return Result{::foundation::core::none};
         std::size_t const count = this->state_.length / sizeof(T);
-        return Result::some(::foundation::core::detail::view_over_<T>(start_at_<T>(0, count), count));
+        return Result::some(::foundation::core::View<T>{this->run_key_(), start_at_<T>(0, count), count});
     }
 
     // True when count elements of T from the byte offset lie inside the
@@ -625,8 +625,7 @@ private:
     template <typename T>
     [[nodiscard]] T* start_at_(std::size_t offset, std::size_t count) const noexcept {
         unsigned char* const bytes = static_cast<unsigned char*>(this->state_.address) + offset;
-        return first_of_(::foundation::core::detail::BaseLayerRead{},
-                         ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(bytes, count));
+        return ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(bytes, count);
     }
 
     template <typename T>
@@ -634,7 +633,7 @@ private:
                                                                                    std::size_t count) const noexcept {
         using Result = ::foundation::core::Option<::foundation::core::View<T>>;
         if (!fits_at_<T>(offset, count)) return Result{::foundation::core::none};
-        return Result::some(::foundation::core::detail::view_over_<T>(start_at_<T>(offset, count), count));
+        return Result::some(::foundation::core::View<T>{this->run_key_(), start_at_<T>(offset, count), count});
     }
 
     // A View of a fixed extent holds at least one element, so a fit gives
@@ -644,7 +643,7 @@ private:
     view_at_(std::size_t offset) const noexcept {
         using Result = ::foundation::core::Option<::foundation::core::View<T, Count>>;
         if (!fits_at_<T>(offset, Count)) return Result{::foundation::core::none};
-        return Result::some(::foundation::core::detail::view_over_<Count>(start_at_<T>(offset, Count)));
+        return Result::some(::foundation::core::View<T, Count>{this->run_key_(), start_at_<T>(offset, Count)});
     }
 };
 

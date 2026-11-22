@@ -279,8 +279,11 @@ public:
     // holds its N elements in a C array, so the View comes through the typed
     // door of a C array, with no check and no test of a null pointer.  A write
     // takes with_element for one element, or with_mut for the run, so no two
-    // Views of one array write the same elements.
-    [[nodiscard]] constexpr View<T const, N> view() const& noexcept { return detail::view_of_array_(elements_); }
+    // Views of one array write the same elements.  Each call names N: GCC 16
+    // deduces the bound of an array of 2^34 - 1 bytes as the largest size_t.
+    [[nodiscard]] constexpr View<T const, N> view() const& noexcept {
+        return detail::view_of_array_<T const, N>(elements_);
+    }
     void view() && = delete("a view of a temporary FixedArray points into an object that the full expression ends");
     void
     view() const&& = delete("a view of a temporary FixedArray points into an object that the full expression ends");
@@ -289,7 +292,7 @@ public:
     // them.  The key of a frame keeps each caller outside the base out, so
     // only a frame door gives a View that writes the elements of an array.
     [[nodiscard]] friend constexpr View<T, N> frame_run_(detail::FrameKey const& /*key*/, FixedArray& array) noexcept {
-        return detail::view_of_array_(array.elements_);
+        return detail::view_of_array_<T, N>(array.elements_);
     }
 
     // The loop `for (T const& element : array)`.  A loop over a temporary
@@ -353,7 +356,7 @@ public:
         requires(sizeof...(Refused) == 0) && (!is_keyed_) && FrameBody<Body, T, Fresh, N>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_(elements_)});
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_<T, N>(elements_)});
     }
 
     // A body whose result holds a borrow or names the brand of the frame
@@ -386,7 +389,7 @@ public:
     [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
-        return detail::give_run_back_<Fresh>(std::move(key), detail::view_of_array_(elements_),
+        return detail::give_run_back_<Fresh>(std::move(key), detail::view_of_array_<T, N>(elements_),
                                              static_cast<Body&&>(body));
     }
 
@@ -397,7 +400,7 @@ public:
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
     constexpr auto with_mut(LoanKey<KeyBrand>& /*key*/, Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_(elements_)});
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_<T, N>(elements_)});
     }
 
     // A body that reaches a key of the brand of the array binds to these
@@ -1343,70 +1346,27 @@ void with_mut(Owner&& owner, Body&& body) = delete(
 
 namespace foundation::lifetime {
 
-// The start of count objects of type T over the storage, with no check: the
-// door of the base layer, which start_as_array below ends in after its three
-// checks.  The comment there tells how a start works.  The caller proves the
-// three facts that start_as_array checks.  The storage is aligned for T, the
-// count is at most max_view_count(sizeof(T)), and the storage is not null
-// when the count is above zero.  An owner whose own tests give the three
-// facts starts its objects through it, as an owner that proves its run makes
-// its View through the key.  The tested window of the frame door of
-// foundation/AlignedBytes.h is such an owner.  The rule owners keeps each
-// caller outside the base out of the key.
-template <ImplicitLifetimeThroughout T, typename Storage>
-    requires(!std::is_volatile_v<Storage> && ::foundation::core::ViewElement<element_for_storage_t<Storage, T>>)
-[[nodiscard]] CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Storage, T>>
-start_as_array(::foundation::core::detail::ViewKey const& key, Storage* storage, std::size_t count) noexcept {
-    using Element = element_for_storage_t<Storage, T>;
-    using Untyped = std::conditional_t<std::is_const_v<Storage>, const void, void>;
-    Element* first = static_cast<Element*>(static_cast<Untyped*>(storage));
-    if (count != 0) {
-        auto* const region = __builtin_bit_cast(unsigned char (*)[], static_cast<Untyped*>(storage));
-        __asm__ __volatile__("" : "+r"(first), "=m"(*region) : "m"(*region));
-    }
-    return ::foundation::core::View<Element>{key, first, count};
-}
-
-// Starts the lifetime of count objects of type T over the storage and
-// returns them as a View of the base.  The storage must hold count * sizeof(T)
-// bytes aligned for T.  The element of the View is const when the storage or
-// T is const.  A single object is a View of one.
+// Starts the lifetime of count objects of type T over the storage, and gives
+// the address of the first object.  The storage must hold count * sizeof(T)
+// bytes aligned for T.  The element is const when the storage or T is const.
+// The address is no View: a View of the objects comes from the form of
+// start_as_array over a View of bytes (foundation/core/Region.h), or from the
+// owner of the storage.  The asm statement of the start is
+// detail::start_storage_ of foundation/core/Region.h, whose comment tells how
+// a start works.
 //
-// The function gives the guarantee of std::start_lifetime_as_array
-// ([obj.lifetime], P2590R2).  Each object that it starts has an
-// implicit-lifetime type ([basic.types.general]), and the object
-// representation of each object is the bytes that the storage holds before
-// the call.  The function uses the empty asm statement that libstdc++ 16
-// uses for that function (bits/stl_construct.h).  The statement reads and
-// writes the bytes of the region, and it returns the pointer.  GCC then
-// keeps each store to the bytes before the statement.  It keeps each access
-// through the result after the statement.  The type of an earlier object in
-// the bytes then does not apply to the new objects.  The statement writes no
-// byte and emits no instruction.  The function always inlines (CRUCIBLE_INLINE),
-// so each start costs only its checks.  An out-of-line clone of the start is a
-// barrier of its own, because GCC keeps each access across a call.  Such a
-// clone would hide a missing statement, and a test of the statement would see
-// no start with no statement.
-//
-// The operand has the type of an array of unknown bound of unsigned char.
-// GCC reads that type as an access of unknown length (the GCC manual,
-// "Extended Asm"), so the operand needs no variable length array.  The bit
-// cast removes a const of the storage only for the operand, as the
-// const_cast of libstdc++ does.
-//
-// A View holds at most max_view_count elements, and a pointer that is not
-// null when it holds an element.  An object starts only at an address that is
-// aligned for its type.  So the function ends the process for a storage that
-// is not aligned for T, for a larger count and for a null storage with a
-// count, in each build and under each contract semantic.  The three checks are
+// An object starts only at an address that is aligned for its type, and the
+// count and the storage must give a run that a View can hold.  So the function
+// ends the process for a storage that is not aligned for T, for a count past
+// max_view_count(sizeof(T)) and for a null storage with a count, in each build
+// and under each contract semantic.  The three checks are
 // CRUCIBLE_FATAL_INVARIANT, whose failure path does not return.  A contract
 // check is not used, because its handler returns under the observe semantic.
 // GCC then keeps each load after a start of an unknown alignment, and a test
 // of the asm statement would see no start with no statement.  The address of a
 // local of a known alignment folds the check of the alignment.  The checks
 // read the storage before the asm statement, because the statement hides the
-// pointer from the optimizer.  The start then goes through the form with the
-// key above, with no second check.
+// pointer from the optimizer.
 //
 // Volatile storage is refused, because a View holds no volatile element.  A
 // caller that reads through volatile converts the address of an element to a
@@ -1414,51 +1374,13 @@ start_as_array(::foundation::core::detail::ViewKey const& key, Storage* storage,
 // refused for the same reason: a caller starts the lifetime of its elements.
 template <ImplicitLifetimeThroughout T, typename Storage>
     requires(!std::is_volatile_v<Storage> && ::foundation::core::ViewElement<element_for_storage_t<Storage, T>>)
-[[nodiscard]] CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Storage, T>>
-start_as_array(Storage* storage, std::size_t count) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE element_for_storage_t<Storage, T>* start_as_array(Storage* storage,
+                                                                                std::size_t count) noexcept {
     using Element = element_for_storage_t<Storage, T>;
     CRUCIBLE_FATAL_INVARIANT((__builtin_bit_cast(std::uintptr_t, storage) & (alignof(Element) - 1)) == 0);
     CRUCIBLE_FATAL_INVARIANT(count <= ::foundation::core::max_view_count(sizeof(Element)));
     CRUCIBLE_FATAL_INVARIANT(storage != nullptr || count == 0);
-    return start_as_array<T>(::foundation::core::detail::ViewDoor::key(), storage, count);
-}
-
-// A byte of the bytes of a View that start_as_array takes: unsigned char or
-// std::byte, with or without a const.  An array of one of the two types
-// provides the storage of an object ([intro.object]).
-template <typename Byte>
-concept StorageByte =
-    std::is_same_v<std::remove_const_t<Byte>, unsigned char> || std::is_same_v<std::remove_const_t<Byte>, std::byte>;
-
-// Starts the lifetime of the objects of type T that fill the bytes of a View,
-// and returns them as a View.  The count of the objects is the count of the
-// bytes divided by the size of T, so a caller that starts fewer objects takes
-// a window of the bytes first.  The element of the result is const when the
-// bytes are const.  The function calls the form over an address, so each
-// start passes its checks and its one asm statement.  The bytes must be
-// aligned for T, which that form checks.  The function always inlines, as
-// that form does.
-//
-// Bytes of a fixed extent give a View of the fixed extent Extent / sizeof(T),
-// and the type refuses an extent that holds no whole count of objects.  Bytes
-// of a dynamic extent give a View of a dynamic extent, and a count of bytes
-// that holds no whole count of objects ends the process, in each build and
-// under each contract semantic.
-template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
-    requires ::foundation::core::ViewElement<element_for_storage_t<Byte, T>>
-          && (Extent == ::foundation::core::dynamic_extent || Extent % sizeof(T) == 0)
-[[nodiscard]] CRUCIBLE_INLINE auto start_as_array(::foundation::core::View<Byte, Extent> bytes) noexcept {
-    using Element = element_for_storage_t<Byte, T>;
-    Byte* const first = first_of_(::foundation::core::detail::BaseLayerRead{}, bytes);
-    if constexpr (Extent == ::foundation::core::dynamic_extent) {
-        CRUCIBLE_FATAL_INVARIANT(bytes.size() % sizeof(T) == 0);
-        return start_as_array<T>(first, bytes.size() / sizeof(T));
-    } else {
-        ::foundation::core::View<Element> const objects = start_as_array<T>(first, Extent / sizeof(T));
-        return ::foundation::core::View<Element, Extent / sizeof(T)>{
-            ::foundation::core::detail::ViewDoor::key(),
-            first_of_(::foundation::core::detail::BaseLayerRead{}, objects)};
-    }
+    return detail::start_storage_<T>(storage, count);
 }
 
 }  // namespace foundation::lifetime

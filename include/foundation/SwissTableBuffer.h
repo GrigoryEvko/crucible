@@ -112,10 +112,9 @@ public:
         // The allocator creates the control bytes implicitly: an array of a
         // byte type is an implicit-lifetime type.  The slots start their
         // lifetime through the checked start, and the state keeps the first
-        // slot of its View.
+        // slot that it gives.
         ctrl_type* ctrl = static_cast<ctrl_type*>(raw);
-        slot_type* slots = first_of_(core::detail::BaseLayerRead{},
-                                     lifetime::start_as_array<slot_type>(static_cast<char*>(raw) + capacity, capacity));
+        slot_type* slots = lifetime::start_as_array<slot_type>(static_cast<char*>(raw) + capacity, capacity);
 
         return SwissTableBuffer{raw, ctrl, slots, capacity, rounded};
     }

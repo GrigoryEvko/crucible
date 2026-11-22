@@ -77,6 +77,7 @@
 // alignment of a huge page is necessary for the kernel to back a region with
 // huge pages, and not sufficient: nothing here advises the kernel.
 
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Array.h>
@@ -495,6 +496,55 @@ using window_frame_value_t = std::conditional_t<std::is_void_v<Given>, core::Uni
 template <class Body, class T, class Fresh, std::size_t N>
 using listed_body_result_t = std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>;
 
+template <class T>
+class TestedWindow;
+
+template <class T, class Fresh, std::size_t N, class Body>
+[[nodiscard]] core::Result<window_frame_value_t<listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>
+lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept;
+
+}  // namespace detail
+
+namespace core {
+
+// The door of a tested window of a block to the raw constructors of a View
+// (THE DOORS OF THE OWNERS ABOVE THIS HEADER of foundation/core/Region.h).
+// The invariant: each window that reaches the door passed the tests of one
+// window for T against the View of its block.  It lies inside the bytes of
+// the block, its bytes hold a whole count of T, and its first byte is aligned
+// for T.  So the start of the lifetime of its elements needs no second check,
+// and the View of the started elements holds live elements only.  The tested
+// window and the door of the list of windows are its friends, and a home owner
+// row of utils/rule-table.txt keeps this definition in this header.
+class TestedWindowDoor final : ::foundation::NoObject<TestedWindowDoor> {
+    template <class T>
+    friend class ::foundation::detail::TestedWindow;
+    template <class T, class Fresh, std::size_t N, class Body>
+    friend core::Result<
+        ::foundation::detail::window_frame_value_t<::foundation::detail::listed_body_result_t<Body, T, Fresh, N>>,
+        WindowRefusal>
+    foundation::detail::lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows,
+                                             Body&& body) noexcept;
+
+    // The count elements of a tested window from its first byte, after the
+    // start of their lifetime, with no check.
+    template <class T>
+    [[nodiscard]] CRUCIBLE_INLINE static View<T> started_run_(std::uint8_t* first, std::size_t count) noexcept {
+        return View<T>{lifetime::detail::start_storage_<T>(first, count), count};
+    }
+
+    // The count elements of a tested window whose lifetime a start above
+    // began.  The laundered address names the elements that the start began.
+    template <class T>
+    [[nodiscard]] CRUCIBLE_INLINE static View<T> laundered_run_(T* first, std::size_t count) noexcept {
+        return View<T>{count == 0 ? first : __builtin_launder(first), count};
+    }
+};
+
+}  // namespace core
+
+namespace detail {
+
 // The windows of the form of a list, each tested, then each pair, and the
 // views lent to body (THE WINDOWS).  The doors of a block and of a keyed block
 // call it with the brand of their frame.  Complexity: O(W) for the windows and
@@ -543,8 +593,7 @@ lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& 
     for (ByteWindow const& window : asked) {
         std::size_t const count = window.length().raw() / sizeof(T);
         T* const first = static_cast<T*>(static_cast<void*>(block_first + window.start().raw()));
-        core::View<T> const elements{core::detail::ViewDoor::key(), count == 0 ? first : __builtin_launder(first),
-                                     count};
+        core::View<T> const elements = core::TestedWindowDoor::laundered_run_(first, count);
         static_cast<void>(views.append(core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(), elements})
                               .expect("the list of views holds one view for each window"));
     }
@@ -663,11 +712,10 @@ template <std::size_t N, std::size_t... Firsts>
 //     the block holds at most max_view_count(1) bytes.
 //   - The first byte is not null when the window holds an element, because
 //     a View holds a pointer that is not null for each count above zero.
-// So lend starts the elements through the form of start_as_array with the
-// key of a View, which checks nothing (foundation/core/Array.h).  The window
-// of no element at no address also holds the three facts, so it is the
-// default.  The type holds the first byte and the count, so it costs what
-// the two words cost.
+// So lend starts the elements through core::TestedWindowDoor, which checks
+// nothing.  The window of no element at no address also holds the three
+// facts, so it is the default.  The type holds the first byte and the count,
+// so it costs what the two words cost.
 template <class T>
 class TestedWindow final {
 public:
@@ -696,7 +744,7 @@ public:
     template <::foundation::brand::IsBrand Fresh>
     [[nodiscard]] CRUCIBLE_INLINE core::ViewMut<T, Fresh> lend() const noexcept {
         return core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(),
-                                       lifetime::start_as_array<T>(core::detail::ViewDoor::key(), first_, count_)};
+                                       core::TestedWindowDoor::started_run_<T>(first_, count_)};
     }
 
 private:
