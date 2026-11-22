@@ -6,9 +6,13 @@
 // side effects it was waiting for are visible.  This cell makes the counter
 // writable only from the stage that publishes, so the two cannot drift apart.
 //
-// WriteAuth names the type that performs the publication.  The friend list is
-// the whole gate, so there is no token to thread through call sites, and a
-// second writer costs a second friend declaration that a reviewer sees.
+// WriteAuth names the token of the stage that publishes.  Each write and the
+// read of the writer take the token.  The token is closed and states
+// thread_bound{} and not_shareable{}, so only a mint of its owner builds one,
+// and no other thread holds it or reads it (THE BUILD OF A TOKEN of
+// foundation/Transfer.h).  The alias write_auth_type ties the token to the
+// cell, so the door check of synchronized{} reads the token as the proof of
+// the one writer.
 
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
@@ -23,29 +27,31 @@ namespace fixy::handle {
 // Declare a fresh Tag per pipeline.  Two pipelines that reuse one Tag share a
 // cell type even when their WriteAuth differs.
 //
-// The count is private, and each door reads or writes it atomically, so two
-// threads can use one cell at the same time, and the class states
-// synchronized{} (foundation/Transfer.h).
+// The count is private, each door reads or writes it atomically, and each
+// write takes the token of the one writer, so two threads can use one cell at
+// the same time, and the class states synchronized{} (foundation/Transfer.h).
 template <typename Tag, typename WriteAuth>
 class[[= ::foundation::transfer::synchronized{}]] PublishCommitCell {
     alignas(64) std::atomic<uint64_t> value_{0};
 
-    friend WriteAuth;
-
-    // The release half of acq_rel pairs with load_acquire below.
-    uint64_t bump_by(uint64_t delta) noexcept { return value_.fetch_add(delta, std::memory_order_acq_rel); }
-
-    uint64_t bump() noexcept { return bump_by(1); }
-
-    // The read of the one writer of its own count: WriteAuth stores each
-    // value of the cell, so the read needs no order.  A reader on another
-    // thread reads the count with load_acquire, because a relaxed read is
-    // only for the own variable of the thread.
-    [[nodiscard]] uint64_t peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
-
 public:
     using tag_type = Tag;
     using write_auth_type = WriteAuth;
+
+    // The release half of acq_rel pairs with load_acquire below.
+    uint64_t bump_by(WriteAuth const& /*auth*/, uint64_t delta) noexcept {
+        return value_.fetch_add(delta, std::memory_order_acq_rel);
+    }
+
+    uint64_t bump(WriteAuth const& auth) noexcept { return bump_by(auth, 1); }
+
+    // The read of the one writer of its own count: the holder of the token
+    // stores each value of the cell, so the read needs no order.  A reader on
+    // another thread reads the count with load_acquire, because a relaxed read
+    // is only for the own variable of the thread.
+    [[nodiscard]] uint64_t peek_relaxed(WriteAuth const& /*auth*/) const noexcept {
+        return value_.load(std::memory_order_relaxed);
+    }
 
     constexpr PublishCommitCell() noexcept = default;
 

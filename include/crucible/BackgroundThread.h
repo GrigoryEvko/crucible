@@ -939,16 +939,14 @@ private:
     ::fixy::Box<Pipeline> pipeline_;
 
 public:
-    // Total entries fully processed.  The write surface is friend-gated to
-    // PublishStageAuth so only the publishing stage can advance it: bumping
-    // from an earlier stage races the publish callback, and the gate turns
-    // that into a "private member" diagnostic.
+    // Total entries fully processed.  Each write takes the PublishStage proof,
+    // so only the publishing stage can advance it: a bump from an earlier
+    // stage races the publish callback, and that stage holds no such proof.
     //
     // The foreground must see every prior background write when its acquire
     // load sees the count.  bump_by's acq_rel supplies the release half.
-    struct PublishStageAuth;
     struct PublishStageTag {};
-    using TotalProcessedCell = ::fixy::handle::PublishCommitCell<PublishStageTag, PublishStageAuth>;
+    using TotalProcessedCell = ::fixy::handle::PublishCommitCell<PublishStageTag, PublishStage>;
     TotalProcessedCell total_processed;
 
     // The wait of a flush: a spin of 50 microseconds, and then a park on the
@@ -1346,17 +1344,6 @@ public:
     // The record of the region carries reset_point, the point of its work.
     void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                         StreamPoint reset_point) CRUCIBLE_NO_THREAD_SAFETY;
-
-    // The only legal caller of bump_by on total_processed.  Any other call
-    // site fails to compile because bump_by is private to this friend.
-    //
-    // Defined late in the class body so the friend declaration on the cell
-    // above sees the forward-declared name.
-    struct PublishStageAuth {
-        [[nodiscard]] static uint64_t commit(TotalProcessedCell& cell, uint64_t delta) noexcept {
-            return cell.bump_by(delta);
-        }
-    };
 
     // Seals the global schema and kernel tables, sets the ring and the
     // metadata log, and starts the pipeline thread.  The thread runs the

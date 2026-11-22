@@ -56,14 +56,23 @@ namespace {
 
 struct ProbeTag final {};
 
-// The one writer of the commit cell of the probe.  Its read of its own count
-// is the relaxed read of the cell.
-struct ProbeWriter final {
-    template <class Cell>
-    [[nodiscard, gnu::always_inline, gnu::no_instrument_function]] static std::uint64_t
-    peek(Cell const& cell) noexcept {
-        return cell.peek_relaxed();
-    }
+struct ProbeOwner;
+
+// The token of the one writer of the commit cell of the probe.  Its read of
+// its own count is the relaxed read of the cell.  Only its owner builds one.
+class ProbeWriter final {
+    ProbeWriter() noexcept {}
+    friend struct ProbeOwner;
+
+public:
+    ProbeWriter(ProbeWriter const&) = delete("the token names the one writer of the cell");
+    ProbeWriter& operator=(ProbeWriter const&) = delete("the token names the one writer of the cell");
+    ~ProbeWriter() = default;
+};
+
+// The owner of the token of the probe.
+struct ProbeOwner final {
+    [[nodiscard]] static ProbeWriter mint_writer() noexcept { return ProbeWriter{}; }
 };
 
 // The control: a read that says it is pure, of a plain value.
@@ -123,13 +132,16 @@ int main() {
     int failures = failures_of_control();
 
     const fixy::handle::PublishCommitCell<ProbeTag, ProbeWriter> commit{};
+    ProbeWriter const writer = ProbeOwner::mint_writer();
     failures += failures_of(
         fixy::TextView{"PublishCommitCell::load_acquire"},
         [&commit] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept { return commit.load_acquire(); },
         0u);
     failures += failures_of(
         fixy::TextView{"PublishCommitCell::peek_relaxed"},
-        [&commit] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept { return ProbeWriter::peek(commit); },
+        [&commit, &writer] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept {
+            return commit.peek_relaxed(writer);
+        },
         0u);
 
     const fixy::AtomicMonotonic<std::uint64_t> monotonic = fixy::mint_atomic_monotonic<std::uint64_t>(0);

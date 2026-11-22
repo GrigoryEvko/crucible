@@ -18,4 +18,9 @@ static_assert(!__is_assignable(BackgroundThread&, BackgroundThread const&)
 // the owner-key member series replace the nine doors and the exemption.
 static_assert(::foundation::transfer::Synchronized<BackgroundThread>);
 
+// The publish stage and the readers of the totals use the cell of the count
+// at the same time.  Each bump and each relaxed peek takes the proof of the
+// publish stage, which no other thread holds.
+static_assert(::foundation::transfer::Synchronized<BackgroundThread::TotalProcessedCell>);
+
 }  // namespace crucible

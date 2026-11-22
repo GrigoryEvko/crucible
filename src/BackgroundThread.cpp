@@ -264,8 +264,8 @@ template <class T>
 // inside a read (THE LOCKS).
 //
 // A proof of the base holds some ends at each call: RecordProof the publish
-// of the head of the ring, PublishStageAuth the bump of the count, and
-// PublishStage the serve of the mailbox and the region callback.  The drain
+// of the head of the ring, and PublishStage the bump of the count, the serve
+// of the mailbox and the region callback.  The drain
 // end of the ring and the two ends of the lock have no proof, so the loop
 // states them and no call checks them.
 //
@@ -1075,7 +1075,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
             // count after a flush sees the tail too.  The bump's release
             // pairs with the foreground's acquire load.
             owner.release_meta_log(PublishStage{}, publish->meta_floor);
-            (void)PublishStageAuth::commit(owner.total_processed, publish->commit_count);
+            (void)owner.total_processed.bump_by(PublishStage{}, publish->commit_count);
             // The count comes first, and then the notify wakes each flush
             // that parks.  With no flush that parks, the notify is one fence
             // and one load.

@@ -5638,17 +5638,18 @@ set_tests_properties(test_os_args_given PROPERTIES LABELS "fixy")
 fixy_test(test_handle_publish)
 
 # The commit counter: only the publishing stage bumps it, and a reader
-# that sees a count sees the writes made before the bump.  The friend
-# list is the gate, and the fixture is the witness that it refuses.
+# that sees a count sees the writes made before the bump.  Each write takes
+# the token of that stage, and the fixture is the witness that no other
+# stage builds the token.
 fixy_test(test_handle_publish_commit)
 fixy_neg_compile_test(neg_handle_publish_commit_bump_outside_auth
   "is private within this context"
-  "fixy::handle::PublishCommitCell<Tag, WriteAuth>::bump\\(\\)")
+  "Publisher::Publisher\\(\\)")
 # The relaxed read is the read of the writer of its own count.  A reader on
 # another thread reads with acquire order.
 fixy_neg_compile_test(neg_handle_publish_commit_peek_outside_auth
   "is private within this context"
-  "fixy::handle::PublishCommitCell<Tag, WriteAuth>::peek_relaxed\\(\\)")
+  "Publisher::Publisher\\(\\)")
 
 # The one-shot signal: a raise that arrives while the body runs is kept,
 # and several consumers never run two bodies for one raise.  A reset takes
