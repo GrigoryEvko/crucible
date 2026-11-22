@@ -34,7 +34,8 @@
 // check of CheckedTraceImage reads that image once: the header, each count
 // against the length of the image, and the name table to its end.  A file that
 // ends before a record or a name of its counts, a name length outside its
-// range, and a byte after the last name are each refused with a TraceLoadError.
+// range, a name that sanitize_schema_name refuses, two names of one hash, and
+// a byte after the last name are each refused with a TraceLoadError.
 // So each cut of a file that the writer wrote is refused, and the load gives a
 // whole trace or no trace.  The decode then reads only the checked image, and
 // a refused file registers no name.
@@ -90,11 +91,12 @@ inline constexpr auto kTraceNumNamesBound = ::fixy::bounded_above<TRACE_NAMES_MA
 
 // A name length is stored on disk as a 16-bit value, so any of them can
 // arrive.  The lower bound is one, because a zero-length name names nothing.
-// The upper bound is SCHEMA_NAME_MAX, the longest name that the schema table
-// holds, so each name that the writer writes fits it.  The check file of this
-// header holds the two bounds equal.
+// The upper bound is SCHEMA_NAME_MAX, the limit of sanitize_schema_name and
+// the longest name that the schema table holds, so each name that the writer
+// writes fits it.  The braces refuse a SCHEMA_NAME_MAX that 16 bits do not
+// hold.
 inline constexpr uint16_t SCHEMA_NAME_LEN_MIN = 1;
-inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 4096;
+inline constexpr uint16_t SCHEMA_NAME_LEN_MAX{SCHEMA_NAME_MAX};
 inline constexpr auto kSchemaNameLenRange = ::fixy::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>;
 
 struct TraceOpRecord {
@@ -173,6 +175,12 @@ enum class TraceLoadError : uint8_t {
     NameLengthPastLimit,
     // A byte follows the last name of the table.
     TrailingBytes,
+    // A name of the table breaks a claim of sanitize_schema_name: its
+    // schema hash is zero, or it holds a zero byte.
+    NameCorrupt,
+    // Two names of the table have one schema hash.  The writer writes each
+    // hash one time.
+    NameRepeated,
 };
 
 // The loader reads each field from the bytes of the file with no byte swap.
@@ -531,6 +539,49 @@ take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
     return name;
 }
 
+// The characters of a name of the table as a text.  take_trace_name_ keeps
+// the length at most SCHEMA_NAME_MAX.  Complexity: the length of the name.
+[[nodiscard]] inline ::fixy::FixedText<SCHEMA_NAME_MAX> trace_name_text_(TraceName const& name) noexcept {
+    ::fixy::FixedText<SCHEMA_NAME_MAX> text{};
+    for (const std::byte name_byte : name.characters) {
+        text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
+    }
+    return text;
+}
+
+// The error of a load for a refusal of sanitize_schema_name.  take_trace_name_
+// refuses an empty name and a long name first, with NameLengthPastLimit.
+[[nodiscard]] constexpr TraceLoadError trace_name_error_(SchemaNameError error) noexcept {
+    switch (error) {
+        case SchemaNameError::empty:
+        case SchemaNameError::too_long:
+            return TraceLoadError::NameLengthPastLimit;
+        case SchemaNameError::zero_hash:
+        case SchemaNameError::holds_zero:
+            return TraceLoadError::NameCorrupt;
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+// The refusal of one name of the table, or no value.  The name passes
+// sanitize_schema_name, the one validator of a schema name from outside, and
+// its hash is not a hash of earlier, the names before it.  Complexity: the
+// length of the name and the count of earlier.
+[[nodiscard]] inline ::fixy::Option<TraceLoadError> check_trace_name_(TraceName const& name,
+                                                                      ::fixy::View<SchemaHash const> earlier) noexcept {
+    const ::fixy::FixedText<SCHEMA_NAME_MAX> text = trace_name_text_(name);
+    const ::fixy::Option<TraceLoadError> refusal =
+        sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
+            .match([](SchemaTable::SanitizedName) noexcept { return ::fixy::Option<TraceLoadError>{}; },
+                   [](SchemaNameError error) noexcept { return ::fixy::some(trace_name_error_(error)); });
+    if (refusal.is_some()) return refusal;
+    for (const SchemaHash held : earlier) {
+        if (held == name.hash) return ::fixy::some(TraceLoadError::NameRepeated);
+    }
+    return ::fixy::none;
+}
+
 // The report of a refusal of the name table, with the offset in the image of
 // the start of the table.
 [[gnu::cold, gnu::noinline]] inline void report_name_table_(TraceLoadError error, uint64_t table_at) noexcept {
@@ -552,6 +603,16 @@ take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
         case TraceLoadError::CountPastLimit:
             ::fixy::report(::fixy::Sink::Err, "load_trace: the name table at the offset {} counts more than {} names\n",
                            table_at, TRACE_NAMES_MAX);
+            return;
+        case TraceLoadError::NameCorrupt:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: a name of the table at the offset {} has the schema hash zero or holds a zero "
+                           "byte\n",
+                           table_at);
+            return;
+        case TraceLoadError::NameRepeated:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: two names of the table at the offset {} have one schema hash\n", table_at);
             return;
         default:
             return;
@@ -650,7 +711,9 @@ public:
     // kTraceNumNamesBound gives CountPastLimit.  The errors of the names are
     // those of the table (TraceLoadError).  It gives a Result of a
     // CheckedTraceImage or of the TraceLoadError, with a deduced return type,
-    // as CheckedTraceHeader::check.  Complexity: linear in the names.
+    // as CheckedTraceHeader::check.  Complexity: linear in the bytes of the
+    // names, and quadratic in the count of the names for the test of a
+    // repeated hash.  The count is at most TRACE_NAMES_MAX.
     [[nodiscard]] static auto check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image) noexcept;
 
     // Checks a whole image: its header, then the rest.  An image shorter than
@@ -710,11 +773,23 @@ inline auto CheckedTraceImage::check(CheckedTraceHeader const& header, ::fixy::V
     checked.num_names_ = ::fixy::mint_refined<kTraceNumNamesBound>(raw_num_names).value();
     checked.names_ = table.window(detail::kTraceNameCountBytes, table.size() - detail::kTraceNameCountBytes)
                          .expect("the count is the start of the table");
+    // The hashes of the names that passed, for the test of a repeated hash.
+    // The test reads them through a const reference.
+    ::fixy::FixedList<SchemaHash, TRACE_NAMES_MAX> hashes{};
+    const ::fixy::FixedList<SchemaHash, TRACE_NAMES_MAX>& earlier = hashes;
     ::fixy::View<std::byte const> rest = checked.names_;
     for (uint32_t index = 0; index < checked.num_names_; ++index) {
-        const ::fixy::Result<detail::TraceName, TraceLoadError> taken = detail::take_trace_name_(rest);
-        if (taken.is_err()) {
-            const TraceLoadError error = taken.err().value_or(TraceLoadError::NameTableTruncated);
+        ::fixy::Option<TraceLoadError> refusal = detail::take_trace_name_(rest).match(
+            [&hashes, &earlier](detail::TraceName name) noexcept {
+                ::fixy::Option<TraceLoadError> refused = detail::check_trace_name_(name, earlier.view());
+                if (refused.is_some()) return refused;
+                const bool is_held = hashes.append(name.hash).is_ok();
+                CRUCIBLE_FATAL_INVARIANT(is_held);
+                return refused;
+            },
+            [](TraceLoadError error) noexcept { return ::fixy::some(error); });
+        if (refusal.is_some()) {
+            const TraceLoadError error = std::move(refusal).value_or(TraceLoadError::NameTableTruncated);
             detail::report_name_table_(error, table_at);
             return Checked{::fixy::err(error)};
         }
@@ -990,17 +1065,14 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     for (uint32_t index = 0; index < checked.num_names(); ++index) {
         const detail::TraceName entry =
             detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
-        ::fixy::FixedText<SCHEMA_NAME_LEN_MAX> name_text{};
-        for (const std::byte name_byte : entry.characters) {
-            name_text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
-        }
-        // The check of the image bounds the length, which is what lets the
-        // bytes cross from untrusted file content into the table.  The table
-        // copies the characters before the first zero.  A seal that lands
-        // during the load ends the names here too: the table refuses every
-        // later write.
-        auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view())
-                        .retag<::fixy::tags::source::Sanitized>();
+        const ::fixy::FixedText<SCHEMA_NAME_MAX> name_text = detail::trace_name_text_(entry);
+        // The check of the image ran sanitize_schema_name on each name, and
+        // the same validator gives the Sanitized name here.  A seal that
+        // lands during the load ends the names here too: the table refuses
+        // every later write.
+        const SchemaTable::SanitizedName name =
+            sanitize_schema_name(entry.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view()))
+                .expect("the check of the image ran the same validator on each name");
         // A name that the table refuses ends the names here.  A collision is a
         // name that the file gives a held hash in place of its first name.  A
         // full table holds SCHEMA_TABLE_CAP names and refuses each new hash.

@@ -458,17 +458,16 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name) noexcept {
     // The C caller gives a C text.  A null name is refused here.  strnlen
-    // reads at most kMaxSchemaNameBytes + 1 bytes, so a text with no zero
-    // from a malformed caller cannot lead the walk into foreign memory.  The
-    // typed door refuses the zero hash and a length of zero or past the
-    // bound.
+    // reads at most SCHEMA_NAME_MAX + 1 bytes, so a text with no zero from a
+    // malformed caller cannot lead the walk into foreign memory.  The typed
+    // door refuses the zero hash and a length of zero or past the bound.
     if (name == nullptr) return CRUCIBLE_SCHEMA_NAME_REFUSED;
-    const size_t len = ::strnlen(name, crucible::vessel::kMaxSchemaNameBytes + 1);
+    const size_t len = ::strnlen(name, crucible::SCHEMA_NAME_MAX + 1);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    // register_schema_name_typed checks the hash and the length, and its
-    // checks are the sanitizer of the boundary.  A sealed global table sends
-    // the name to the late table, so no seal drops it.
+    // register_schema_name_typed gives the name to sanitize_schema_name, the
+    // sanitizer of the boundary.  A sealed global table sends the name to
+    // the late table, so no seal drops it.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller gives the name as a pointer, and strnlen gave its length")
     const ::fixy::TextView name_text = ::fixy::mint_foreign_text(name, len);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

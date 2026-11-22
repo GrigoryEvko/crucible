@@ -322,23 +322,18 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 // ── Schema-name registration ───────────────────────────────────────
 //
 // crucible_register_schema_name reads the C text of its name, and gives the
-// code of register_schema_name_typed.  A hash of zero, or a name that is
-// empty, longer than kMaxSchemaNameBytes or that holds a zero byte, gives
-// CRUCIBLE_SCHEMA_NAME_REFUSED, and the tables stay as they were.  A table
-// keeps the characters of a name before its first zero, so a name with a
-// zero would register other characters than the caller gave.  The C entry
-// reads its name up to the first zero, and the door refuses the zero for each
-// other caller.  These checks are the sanitizer of the boundary, so each
-// other name is Sanitized.
+// code of register_schema_name_typed.  The name passes
+// crucible::sanitize_schema_name, the one validator of a schema name, which
+// the trace loader calls too.  A hash of zero, or a name that is empty,
+// longer than SCHEMA_NAME_MAX or that holds a zero byte, gives
+// CRUCIBLE_SCHEMA_NAME_REFUSED, and the tables stay as they were.  The C
+// entry reads its name up to the first zero, and the validator refuses the
+// zero for each other caller.
 // Its registration gives CRUCIBLE_SCHEMA_NAME_REGISTERED,
 // CRUCIBLE_SCHEMA_NAME_COLLISION when the table holds a different name of
 // the hash, or CRUCIBLE_SCHEMA_NAME_FULL when the table holds
 // SCHEMA_TABLE_CAP names and the hash is not one of them.  The table then
 // keeps each name that it holds.
-
-// The longest name that the C interface takes, in bytes.  The ATen op names
-// of PyTorch fit in 128 bytes.
-inline constexpr std::size_t kMaxSchemaNameBytes = 256;
 
 // The function is a template on the Vigil, because this header names the
 // Vigil only through a declaration.  Its caller includes crucible/Vigil.h.
@@ -346,15 +341,16 @@ template <class VigilType>
     requires std::same_as<VigilType, crucible::Vigil>
 [[nodiscard, gnu::cold]] int register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
                                                         ::fixy::TextView name) noexcept {
-    if (schema_hash == 0 || name.size() == 0 || name.size() > kMaxSchemaNameBytes) return CRUCIBLE_SCHEMA_NAME_REFUSED;
-    if (::fixy::find(name, '\0').is_some()) return CRUCIBLE_SCHEMA_NAME_REFUSED;
-    const auto name_tag =
-        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name).retag<::fixy::tags::source::Sanitized>();
-    const crucible::SchemaRegistration registration =
-        vigil.register_schema_name(crucible::SchemaHash{schema_hash}, name_tag);
-    if (crucible::is_collision(registration)) return CRUCIBLE_SCHEMA_NAME_COLLISION;
-    if (crucible::is_full(registration)) return CRUCIBLE_SCHEMA_NAME_FULL;
-    return CRUCIBLE_SCHEMA_NAME_REGISTERED;
+    const crucible::SchemaHash hash{schema_hash};
+    return crucible::sanitize_schema_name(hash, ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name))
+        .match(
+            [&vigil, hash](crucible::SchemaTable::SanitizedName sanitized) noexcept -> int {
+                const crucible::SchemaRegistration registration = vigil.register_schema_name(hash, sanitized);
+                if (crucible::is_collision(registration)) return CRUCIBLE_SCHEMA_NAME_COLLISION;
+                if (crucible::is_full(registration)) return CRUCIBLE_SCHEMA_NAME_FULL;
+                return CRUCIBLE_SCHEMA_NAME_REGISTERED;
+            },
+            [](crucible::SchemaNameError) noexcept -> int { return CRUCIBLE_SCHEMA_NAME_REFUSED; });
 }
 
 // ── Recording trust ladder ─────────────────────────────────────────

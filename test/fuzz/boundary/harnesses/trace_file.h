@@ -17,13 +17,11 @@
 
 namespace crucible::fuzz::boundary {
 
-// One operation with one input and one output, two metadata records, and a
-// name table that gives one hash the name aten::x and then aten::y.  The
-// first name registers, and the second name reaches the refusal of a
-// collision in the schema table.  The seed has the version that the loader
-// reads, so the fuzzer starts from a trace that loads.  The header, the
-// record and the metadata come from the encoders of the writer.
-[[nodiscard]] inline SeedList seeds_trace_file() noexcept {
+// The bytes of one operation with one input and one output, two metadata
+// records, and a name table of two names, with the second hash of the call.
+// The header, the record and the metadata come from the encoders of the
+// writer.
+[[nodiscard]] inline SeedBytes write_trace_seed(SchemaHash second_hash) noexcept {
     SeedWriter seed{};
     const auto header = encode_trace_header(1, 2);
     seed.append_bytes(header.view());
@@ -46,11 +44,20 @@ namespace crucible::fuzz::boundary {
     seed.append_raw(std::uint64_t{0xABCD});
     seed.append_raw(std::uint16_t{7});
     seed.append_text("aten::x");
-    seed.append_raw(std::uint64_t{0xABCD});
+    seed.append_raw(second_hash.raw());
     seed.append_raw(std::uint16_t{7});
     seed.append_text("aten::y");
+    return seed.finish();
+}
+
+// Two seeds of the version that the loader reads.  The first trace loads,
+// with each of its two names, so the fuzzer starts from a trace that loads.
+// The second trace gives one hash the name aten::x and then aten::y, and the
+// load refuses the repeated hash whole.
+[[nodiscard]] inline SeedList seeds_trace_file() noexcept {
     SeedList seeds = empty_seed_list();
-    add_seed(seeds, seed.finish());
+    add_seed(seeds, write_trace_seed(SchemaHash{0xABCE}));
+    add_seed(seeds, write_trace_seed(SchemaHash{0xABCD}));
     return seeds;
 }
 

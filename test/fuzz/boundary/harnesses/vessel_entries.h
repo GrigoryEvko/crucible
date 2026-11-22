@@ -16,7 +16,7 @@
 //              pointer that is not null and that has the alignment of its
 //              element.  No code reads through a pointer of the input
 //   name       register_schema_name_typed refuses exactly a hash of 0, an empty
-//              name, a name past kMaxSchemaNameBytes and a name with a zero, a
+//              name, a name past SCHEMA_NAME_MAX and a name with a zero, a
 //              refusal leaves the tables as they were, and each other code
 //              agrees with the lookup of the tables
 //
@@ -56,7 +56,7 @@ inline constexpr std::size_t kMaxRecordsOfAnOp = 8;
 
 // The longest name of a command, past the bound of the door, so the fuzzer
 // reaches the refusal of a long name.
-inline constexpr std::size_t kMaxNameBytes = vessel::kMaxSchemaNameBytes + 64;
+inline constexpr std::size_t kMaxNameBytes = SCHEMA_NAME_MAX + 64;
 
 enum class Command : std::uint8_t {
     Decode,
@@ -281,8 +281,8 @@ inline void check_name(InputCursor& cursor, NameForm form) noexcept {
     const std::size_t held_before = names_held();
     const int code = vessel::register_schema_name_typed(harness_vigil(), hash, name);
 
-    const bool is_refused = hash == 0 || name.size() == 0 || name.size() > vessel::kMaxSchemaNameBytes
-                         || ::fixy::find(name, '\0').is_some();
+    const bool is_refused =
+        hash == 0 || name.size() == 0 || name.size() > SCHEMA_NAME_MAX || ::fixy::find(name, '\0').is_some();
     CRUCIBLE_FUZZ_CLAIM(kName, (code == CRUCIBLE_SCHEMA_NAME_REFUSED) == is_refused);
     const ::fixy::Option<SchemaTable::LookupName> held = schema_name(SchemaHash{hash});
     const bool is_held_name =

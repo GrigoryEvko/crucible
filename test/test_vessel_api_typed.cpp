@@ -645,6 +645,27 @@ void test_schema_name_registration_codes() {
     EXPECT(crucible::vessel::schema_name_typed(crucible::SchemaHash{held_hash + 2}).is_none()
                && crucible::vessel::schema_name_typed(crucible::SchemaHash{held_hash + 3}).is_none(),
            "a refused name leaves the tables as they were");
+
+    // The C door takes a name of SCHEMA_NAME_MAX characters, the limit of the
+    // validator that the trace loader calls too, and refuses one character
+    // more.  The old door refused each name past 256 characters.
+    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX + 1> longest{};
+    for (std::size_t character = 0; character < crucible::SCHEMA_NAME_MAX; ++character)
+        EXPECT(longest.append('n').is_ok(), "the text holds the characters of the case");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash + 4, longest.view())
+               == CRUCIBLE_SCHEMA_NAME_REGISTERED,
+           "a name of SCHEMA_NAME_MAX characters registers");
+    const auto longest_held = crucible::vessel::schema_name_typed(crucible::SchemaHash{held_hash + 4});
+    const bool holds_longest = longest_held.match(
+        [&longest](TypedSchemaName const& found) noexcept { return found.value().view() == longest.view(); },
+        [] noexcept { return false; });
+    EXPECT(holds_longest, "the table holds each character of the longest name");
+    EXPECT(longest.append('n').is_ok(), "the text holds one character more");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash + 5, longest.view())
+               == CRUCIBLE_SCHEMA_NAME_REFUSED,
+           "a name of one character past SCHEMA_NAME_MAX gives the refusal code");
+    EXPECT(crucible::vessel::schema_name_typed(crucible::SchemaHash{held_hash + 5}).is_none(),
+           "a refused long name leaves the tables as they were");
 }
 
 // A table that holds SCHEMA_TABLE_CAP names gives the code of a full table

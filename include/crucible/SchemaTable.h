@@ -344,6 +344,45 @@ private:
     RegistrationSeal seal_;
 };
 
+// The reason that sanitize_schema_name refuses a name from outside.
+enum class SchemaNameError : std::uint8_t {
+    // The hash is zero, the sentinel of no schema, on which the content hash
+    // and the region cache key.
+    zero_hash,
+    // The name has no character.
+    empty,
+    // The name has more than SCHEMA_NAME_MAX characters.
+    too_long,
+    // The name holds a zero.  The table keeps the characters before the
+    // first zero, so it would keep other characters than the name.
+    holds_zero,
+};
+
+// The tags of a name that crosses a trust boundary: a trace file gives an
+// External name, and the C interface gives an ABIBoundary name.
+template <typename Tag>
+concept SchemaNameBoundary =
+    std::same_as<Tag, ::fixy::tags::source::External> || std::same_as<Tag, ::fixy::tags::source::ABIBoundary>;
+
+// The one validator of a schema name from outside the process, and the one
+// door from a boundary tag to a Sanitized name.  Each door that takes a name
+// from outside calls it: the C entry of the vessel, the trace loader, and
+// the export, which writes no name that the loader refuses.  So a Sanitized
+// name means the same at each door.  It refuses a hash of zero, an empty
+// name, a name of more than SCHEMA_NAME_MAX characters, and a name that holds
+// a zero.  Complexity: the length of the name.
+template <SchemaNameBoundary Tag>
+[[nodiscard]] inline ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>
+sanitize_schema_name(SchemaHash hash, ::fixy::Tagged<::fixy::TextView, Tag> const& name) noexcept {
+    using Sanitized = ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>;
+    const ::fixy::TextView characters = name.value();
+    if (hash.raw() == 0) return Sanitized{::fixy::err(SchemaNameError::zero_hash)};
+    if (characters.size() == 0) return Sanitized{::fixy::err(SchemaNameError::empty)};
+    if (characters.size() > SCHEMA_NAME_MAX) return Sanitized{::fixy::err(SchemaNameError::too_long)};
+    if (::fixy::find(characters, '\0').is_some()) return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
+    return Sanitized{::fixy::mint_tagged<Tag>(characters).template retag<::fixy::tags::source::Sanitized>()};
+}
+
 // The global is sealed before any second thread starts, so a registration
 // must mint its mutable view before that point.  A view minted after it is
 // empty.

@@ -740,6 +740,57 @@ static void test_schema_name_table_corrupt_oversize_len() {
     ::fixy::check::pass(kTest, "  test_schema_name_table_corrupt_oversize_len: PASSED\n");
 }
 
+// True when the check of image refuses it for the reason error, and a load
+// that registers the names refuses it for the same reason and registers no
+// name.
+static bool is_refused_whole(TraceImage const& image, TraceLoadError error) {
+    global_schema_table().clear(::foundation::effects::testing::test());
+    constexpr ::fixy::CText kFileName{"crtrace-refused-name.bin"};
+    const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(image.view(), kFileName);
+    const bool is_load_refused = is_refused_as(load_trace(kTestIo, kVigilForeground, path), error);
+    remove_image(kFileName);
+    return CheckedTraceImage::check(image.view()).err() == ::fixy::some(error) && is_load_refused
+        && global_schema_table().count() == 0;
+}
+
+// A name that sanitize_schema_name refuses, the one validator of the C entry
+// and of the loader, refuses the whole file: a name of the schema hash zero,
+// and a name that holds a zero byte.  Two names of one hash refuse it too,
+// also when the two names are equal.  A valid first name stays out of the
+// table.  The old
+// loader registered aten::add, and then the name of the hash zero.
+static void test_names_that_the_validator_refuses_are_refused() {
+    auto zero_hash = make_zero_op_header();
+    append_le<uint32_t>(zero_hash, 2);
+    append_le<uint64_t>(zero_hash, 0xAAAA111122223333ULL);
+    append_le<uint16_t>(zero_hash, 9);
+    append_text(zero_hash, "aten::add");
+    append_le<uint64_t>(zero_hash, 0);
+    append_le<uint16_t>(zero_hash, 3);
+    append_text(zero_hash, "abc");
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_whole(zero_hash, TraceLoadError::NameCorrupt));
+
+    auto zero_byte = make_zero_op_header();
+    append_le<uint32_t>(zero_byte, 1);
+    append_le<uint64_t>(zero_byte, 0x2E5ULL);
+    append_le<uint16_t>(zero_byte, 3);
+    append_text(zero_byte, "a");
+    CRUCIBLE_TEST_ASSERT(kTest, zero_byte.append(std::byte{0}).is_ok());
+    append_text(zero_byte, "b");
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_whole(zero_byte, TraceLoadError::NameCorrupt));
+
+    auto repeated = make_zero_op_header();
+    append_le<uint32_t>(repeated, 2);
+    for (int copy = 0; copy < 2; ++copy) {
+        append_le<uint64_t>(repeated, 0x3E9ULL);
+        append_le<uint16_t>(repeated, 7);
+        append_text(repeated, "aten::x");
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_whole(repeated, TraceLoadError::NameRepeated));
+    global_schema_table().clear(::foundation::effects::testing::test());
+    ::fixy::check::pass(kTest, "  test_names_the_validator_refuses: PASSED\n");
+}
+
 // An image as the writer of the export writes it: two ops, with one input
 // and one output each, four metadata records, and a name table of two
 // names.  The sections end at the offsets of CutSections.
@@ -882,6 +933,19 @@ static void test_the_writer_maxima_pass_the_check() {
     const LoadedTrace trace =
         load_image(longest.view(), "crtrace-longest-name.bin").expect("a name of the longest length loads");
     CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 0);
+    // The load that registers the names puts the whole name in the table.
+    // The old loader refused a name past 256 characters at the C door only.
+    ::fixy::FixedText<SCHEMA_NAME_MAX> longest_name{};
+    for (std::size_t character = 0; character < SCHEMA_NAME_MAX; ++character) {
+        CRUCIBLE_TEST_ASSERT(kTest, longest_name.append('n').is_ok());
+    }
+    constexpr ::fixy::CText kLongestFile{"crtrace-longest-name-registered.bin"};
+    const ::fixy::Path<::fixy::tags::source::Sanitized> longest_path = write_image(longest.view(), kLongestFile);
+    const bool is_registered = load_trace(kTestIo, kVigilForeground, longest_path).is_ok();
+    remove_image(kLongestFile);
+    CRUCIBLE_TEST_ASSERT(kTest, is_registered);
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0x10E6ULL}), longest_name.view()));
+    global_schema_table().clear(::foundation::effects::testing::test());
 
     auto widest = make_zero_op_header();
     append_le<uint32_t>(widest, TRACE_NAMES_MAX);
@@ -1138,6 +1202,7 @@ int main() {
     test_schema_name_table_round_trip();
     test_schema_name_table_corrupt_zero_len();
     test_schema_name_table_corrupt_oversize_len();
+    test_names_that_the_validator_refuses_are_refused();
     test_each_cut_of_a_written_file_is_refused();
     test_cut_files_at_the_section_boundaries_are_refused();
     test_trailing_byte_and_count_past_the_bound_are_refused();
@@ -1148,6 +1213,6 @@ int main() {
     test_op_that_the_ladder_refuses_is_refused();
     test_meta_bytes_break_no_claim_of_the_type();
     test_names_on_a_sealed_table_are_skipped();
-    ::fixy::check::pass(kTest, "test_trace_loader: 26 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_trace_loader: 27 groups, all passed\n");
     return 0;
 }

@@ -286,7 +286,8 @@ enum {
     // same name again.
     CRUCIBLE_SCHEMA_NAME_REGISTERED = 0,
     // The call gives no name to register: a hash of zero, a null name, or a
-    // name that is empty or longer than 256 bytes.  The table is as it was.
+    // name that is empty or longer than 4096 bytes (SCHEMA_NAME_MAX of
+    // crucible/SchemaTable.h).  The table is as it was.
     CRUCIBLE_SCHEMA_NAME_REFUSED = 1,
     // The table holds a different name for the hash.  It keeps that name, and
     // it refuses this one.
