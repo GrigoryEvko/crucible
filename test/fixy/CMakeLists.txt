@@ -391,6 +391,13 @@ fixy_neg_compile_test(neg_synchronized_claim_door_foreign_guard
   "failed: .anonymous.::Counter"
   "Counter::lend\\(\\)"
   "Counter::count_")
+# A key of the class that each thread can build proves no one holder, so two
+# bodies of run_joined that each build one do not pass the door.
+fixy_neg_compile_test(neg_synchronized_door_open_thread_token
+  "takes or gives a token of the class that each thread can build"
+  "failed: .anonymous.::Counter"
+  "Counter::bump\\(Key&\\)"
+  "failed: .anonymous.::Counter::Key")
 fixy_neg_compile_test(neg_joined_body_passes_owner_token
   "run_joined: the body captures .key."
   "OwnerKey&")

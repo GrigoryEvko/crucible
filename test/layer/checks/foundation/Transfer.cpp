@@ -244,10 +244,20 @@ static_assert(first_synchronized_refusal(^^OrdersItsCount) == std::meta::info{})
 // static door that takes its key or reaches no object, a template door that
 // takes its key, and a claim door that gives its key.  The key is a member
 // class that states thread_bound{}, so it is tied to the class (THE PROOF OF A
-// DOOR).
+// DOOR).  Its constructor is private, and the claim door is its one caller:
+// one atomic exchange gives the key to one thread for the life of the count
+// (THE BUILD OF A TOKEN).
 class[[= synchronized{}]] KeyedCount {
 public:
-    struct[[= thread_bound{}]][[= not_shareable{}]] Key final {};
+    class[[= thread_bound{}]][[= not_shareable{}]] Key final {
+        Key() noexcept {}
+        friend class KeyedCount;
+
+    public:
+        Key(Key const&) = delete("a key names the one holder of the count");
+        Key& operator=(Key const&) = delete("a key names the one holder of the count");
+        ~Key() = default;
+    };
 
     KeyedCount() = default;
     KeyedCount(KeyedCount const&) = delete("a count of two threads does not copy");
@@ -261,12 +271,81 @@ public:
     void visit(Key& /*key*/, Body&& body) noexcept {
         body(count_);
     }
-    [[nodiscard]] Key claim() noexcept { return Key{}; }
+    [[nodiscard]] Key claim() noexcept {
+        if (is_key_claimed_.exchange_acq_rel(true)) ::foundation::core::fatal("a second claim of the key of a count");
+        return Key{};
+    }
 
 private:
+    ::foundation::core::Atomic<bool> is_key_claimed_{false};
     int count_ = 0;
 };
 static_assert(Synchronized<KeyedCount>);
+
+// THE BUILD OF A TOKEN.  A key that each thread can build is open: an empty
+// aggregate, an aggregate whose one closed part has a default member
+// initializer, a class with a public constructor template, and a class that
+// can inherit a public constructor of its base.  A class whose public
+// constructors are a copy and a move constructor is a key.  A constructor
+// that takes such a key by reference is gated, and so is an aggregate of two
+// closed parts.  A reference to a class that each thread can build gates
+// nothing.
+struct[[= thread_bound{}]][[= not_shareable{}]] OpenKey final {};
+struct ClosedKey final {
+    ClosedKey(ClosedKey const&) noexcept {}
+
+private:
+    ClosedKey() noexcept {}
+};
+struct InitializedKey;
+class InitializedPart final {
+    InitializedPart() noexcept {}
+    friend struct InitializedKey;
+
+public:
+    InitializedPart(InitializedPart const&) noexcept {}
+};
+struct[[= thread_bound{}]][[= not_shareable{}]] InitializedKey final {
+    InitializedPart part = InitializedPart{};
+};
+struct[[= thread_bound{}]][[= not_shareable{}]] TemplateKey final {
+    template <class Value>
+    explicit TemplateKey(Value /*value*/) noexcept {}
+};
+struct KeyBase {
+    explicit KeyBase(int /*value*/) noexcept {}
+};
+struct[[= thread_bound{}]][[= not_shareable{}]] InheritingKey final : KeyBase {
+    using KeyBase::KeyBase;
+};
+struct[[= thread_bound{}]][[= not_shareable{}]] GatedKey final {
+    GatedKey(ClosedKey const& /*key*/, int /*value*/) noexcept {}
+    GatedKey(GatedKey const&) = delete("a gated key does not copy");
+};
+struct[[= thread_bound{}]][[= not_shareable{}]] ClosedParts final {
+    GatedKey first;
+    KeyedCount::Key second;
+};
+struct GatedHolder final {
+    explicit GatedHolder(ClosedKey /*key*/) noexcept {}
+};
+struct[[= thread_bound{}]][[= not_shareable{}]] BorrowsHolder final {
+    explicit BorrowsHolder(GatedHolder& /*holder*/) noexcept {}
+    BorrowsHolder(BorrowsHolder const&) = delete("a borrow of a holder does not copy");
+};
+struct WriterRole {};
+struct WriterBrand {};
+static_assert(!detail::is_door_token(^^OpenKey) && !detail::is_door_token(^^TemplateKey));
+static_assert(!detail::is_door_token(^^InheritingKey) && !detail::is_door_token(^^InitializedKey));
+static_assert(detail::is_closed_class(^^GatedHolder, detail::closed_walk_depth)
+              && detail::has_public_maker(^^GatedHolder));
+static_assert(!detail::is_door_token(^^BorrowsHolder));
+static_assert(detail::is_closed_class(^^ClosedKey, detail::closed_walk_depth)
+              && !detail::has_public_maker(^^ClosedKey));
+static_assert(detail::is_door_token(^^GatedKey) && detail::is_door_token(^^ClosedParts));
+static_assert(detail::is_door_token(^^KeyedCount::Key));
+static_assert(detail::is_door_token(^^::foundation::core::SoleWriter<WriterRole, WriterBrand>));
+static_assert(detail::is_open_token_of(^^OpenKey, ^^OpenKey) && !detail::is_open_token_of(^^GatedKey, ^^GatedKey));
 
 // THE EXEMPTION holds one class, crucible::BackgroundThread, and no class of
 // this file.  The keyed doors of the owner-key member series remove the

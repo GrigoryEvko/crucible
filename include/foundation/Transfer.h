@@ -174,8 +174,8 @@
 //         writes after the step happen only on the thread that won it, until
 //         that thread gives the token back.  The claim doors of the base are
 //         try_withdraw_producer_root, producer() and producer(lane) of a
-//         pooled PermissionedChannel, and try_withdraw_reader_root and
-//         reader() of SwmrSession.
+//         pooled PermissionedChannel, claim_drain of each PermissionedChannel,
+//         and try_withdraw_reader_root and reader() of SwmrSession.
 //     A door is a public or protected member function or member function
 //     template that is not a constructor, not a destructor and not deleted.
 //     A static one is a door when it takes the class through a reference
@@ -184,7 +184,10 @@
 //     body, a class whose call takes each argument list.  A template with no
 //     such specialization stops the build, so the check fails closed.  A
 //     friend and a free function are no member, and the check does not read
-//     them.  One class has its doors exempt (THE EXEMPTION).
+//     them: GCC 16 gives no friend of a class to reflection.  members_of of a
+//     class lists no friend, and members_of of a namespace lists a friend only
+//     when the namespace declares it too, with no query that tells a friend
+//     apart.  One class has its doors exempt (THE EXEMPTION).
 //
 // THE PROOF OF A DOOR
 //     A parameter is a proof of the class when its bare type is a token and
@@ -199,7 +202,32 @@
 //     member alias of the class names.  So a token of an unrelated class, or
 //     of a tag that the class does not declare as its own, proves nothing
 //     about the class.  A LoanKey carries no authority, so it never counts,
-//     and neither does a QuiescenceProof, which each thread can make.
+//     and neither does a QuiescenceProof, which each thread can make.  A
+//     token counts only when no other thread can build one (THE BUILD OF A
+//     TOKEN).  The check reads the tie first and the build second, so a door
+//     whose one tied token is open stops the build with its own message.
+//
+// THE BUILD OF A TOKEN
+//     A token proves that one thread holds it only when no thread can build a
+//     second one from nothing.  So a token counts only when its class is
+//     closed: no code outside its friends and its own members builds an
+//     object of it.  The token then comes from a mint of its owner, such as a
+//     root, a claim door or the split of a permission.  A class is closed
+//     when it is not an aggregate, has no public constructor template, and
+//     each of its public constructors other than a copy and a move
+//     constructor takes a gating parameter.  A gating parameter has no
+//     default argument, and its class is closed.  When it is an lvalue
+//     reference, its class is also a token, or a key: a class whose public
+//     constructors are only a copy and a move constructor.  So the key of a
+//     Permission or of a SoleWriter gates the constructor that takes it, and
+//     a reference to a channel, which each thread can hold, gates nothing.
+//     An aggregate is closed when one part with no default member initializer
+//     is closed.  GCC 16 shows no inherited constructor, so a public
+//     constructor of a base that no parameter gates, other than a default
+//     constructor, makes the class open.  A token that copies counts only
+//     when it is not Shareable, so no other thread copies it out of a
+//     reference to const.  A walk deeper than closed_walk_depth levels counts
+//     the class as open.
 //
 // THE EXEMPTION
 //     The check does not read the doors of crucible::BackgroundThread.  Nine
@@ -637,6 +665,26 @@ consteval bool refuse_unreadable_door() {
 template <std::meta::info Class, std::meta::info Door>
 inline constexpr bool unreadable_door_refusal = refuse_unreadable_door<Class, Door>();
 
+// The refusal of a door whose one token another thread can build (THE BUILD
+// OF A TOKEN).
+template <std::meta::info Class, std::meta::info Door, std::meta::info Token>
+consteval bool refuse_open_token() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states synchronized{} and holds a plain private part, and a door of it takes "
+                  "or gives a token of the class that each thread can build, through a public constructor or an "
+                  "aggregate initialization.  Two threads that each build one call the door at the same time.  Give "
+                  "the token a private constructor, and let only a mint of its owner build it: a root, a claim "
+                  "door or the split of a permission (THE BUILD OF A TOKEN of foundation/Transfer.h).  The next "
+                  "three messages name the class, the door and the token");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Token));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Door, std::meta::info Token>
+inline constexpr bool open_token_refusal = refuse_open_token<Class, Door, Token>();
+
 // The probe body of a member function template (THE DOORS OF A SYNCHRONIZED
 // CLASS): its call takes each argument list, gives nothing and does not
 // throw.  It is no token, so a parameter of its type proves nothing.
@@ -674,12 +722,116 @@ inline constexpr synchronized_door_exemption synchronized_door_exemptions[] = {
     return false;
 }
 
-// True when the class is a token (THE PROOF OF A DOOR): it states
-// thread_bound{}, or it carries authority{} and does not copy.
-[[nodiscard]] consteval bool is_door_token(std::meta::info bare) {
+// The depth of the walk of a closed class (THE BUILD OF A TOKEN).  A walk that
+// needs more levels counts the class as open, so the check fails closed.
+inline constexpr int closed_walk_depth = 4;
+
+// True when the class has the shape of a token (THE PROOF OF A DOOR): it
+// states thread_bound{}, or it carries authority{} and does not copy.
+[[nodiscard]] consteval bool has_token_shape(std::meta::info bare) {
     if (!is_class_or_union(bare) || !std::meta::is_complete_type(bare)) return false;
     if (states(bare, ^^thread_bound)) return true;
     return states(bare, ^^::foundation::linear::authority) && !std::meta::is_copy_constructible_type(bare);
+}
+
+// True when a public constructor or constructor template of the class, other
+// than a copy or a move constructor, is not deleted.  A class with no such
+// constructor is a key: only its friends and its own members build it.
+[[nodiscard]] consteval bool has_public_maker(std::meta::info bare) {
+    const std::meta::info maker = ::foundation::reflect::find_member(
+        bare, std::meta::access_context::unprivileged(), [](std::meta::info member) {
+            if (std::meta::is_constructor_template(member)) return true;
+            if (!std::meta::is_constructor(member) || std::meta::is_deleted(member)) return false;
+            return !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
+        });
+    return maker != std::meta::info{};
+}
+
+[[nodiscard]] consteval bool is_closed_class(std::meta::info bare, int depth);
+
+// True when a parameter of a public constructor needs a value that no other
+// thread can make (THE BUILD OF A TOKEN).  The class of the parameter is
+// closed, and the parameter has no default argument.  A value or an rvalue
+// reference takes an object that the caller gives up.  An lvalue reference
+// borrows an object that each thread can hold, so it counts only for a token
+// or a key, which no other thread holds.
+[[nodiscard]] consteval bool is_gating_parameter(std::meta::info parameter, int depth) {
+    if (std::meta::has_default_argument(parameter)) return false;
+    const std::meta::info type = std::meta::type_of(parameter);
+    const std::meta::info bare = ::foundation::reflect::bare_type(type);
+    if (!is_closed_class(bare, depth)) return false;
+    if (!std::meta::is_lvalue_reference_type(type)) return true;
+    return has_token_shape(bare) || !has_public_maker(bare);
+}
+
+// The constructors that open_constructor_of reads: each public one, or each
+// public one that a using declaration of a derived class inherits, which is
+// no default, copy or move constructor.
+enum class MakerSet : unsigned char {
+    own = 0,
+    inherited = 1,
+};
+
+// True when a public constructor of the set takes no gating parameter, or a
+// public constructor template exists (THE BUILD OF A TOKEN).  The check
+// cannot read the parameters of a template, so a template opens the class.
+[[nodiscard]] consteval bool has_open_constructor(std::meta::info bare, int depth, MakerSet set) {
+    namespace refl = ::foundation::reflect;
+    const std::meta::info open =
+        refl::find_member(bare, std::meta::access_context::unprivileged(), [depth, set](std::meta::info member) {
+            if (std::meta::is_constructor_template(member)) return true;
+            if (!std::meta::is_constructor(member) || std::meta::is_deleted(member)) return false;
+            if (std::meta::is_copy_constructor(member) || std::meta::is_move_constructor(member)) return false;
+            if (set == MakerSet::inherited && std::meta::is_default_constructor(member)) return false;
+            const std::meta::info gate = refl::find_parameter(
+                member, [depth](std::meta::info parameter) { return is_gating_parameter(parameter, depth - 1); });
+            return gate == std::meta::info{};
+        });
+    return open != std::meta::info{};
+}
+
+// True when no code outside the friends and the members of the class can
+// build an object of it from nothing (THE BUILD OF A TOKEN).  GCC 16 shows no
+// inherited constructor, so a public constructor of a base that a using
+// declaration can inherit makes the class open when no parameter gates it.
+// Complexity: linear in the public members of the class and of its bases,
+// times the parameters of each constructor, to closed_walk_depth levels.
+[[nodiscard]] consteval bool is_closed_class(std::meta::info bare, int depth) {
+    namespace refl = ::foundation::reflect;
+    if (depth <= 0 || !is_class_or_union(bare) || !std::meta::is_complete_type(bare)) return false;
+    const refl::TypeNodeList parts = refl::member_components_of(refl::TypeNode{bare, true});
+    // An aggregate initialization builds each part that it names, and each
+    // other part from its default member initializer or from {}.  So one
+    // closed part with no default member initializer closes the class.
+    if (std::meta::is_aggregate_type(bare)) {
+        for (const refl::TypeNode& part : parts) {
+            const bool has_initializer =
+                part.member != std::meta::info{} && std::meta::has_default_member_initializer(part.member);
+            if (!has_initializer && is_closed_class(part.type, depth - 1)) return true;
+        }
+        return false;
+    }
+    if (has_open_constructor(bare, depth, MakerSet::own)) return false;
+    for (const refl::TypeNode& part : parts) {
+        if (part.member == std::meta::info{} && has_open_constructor(part.type, depth, MakerSet::inherited)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// True when the token can prove that one thread holds it (THE BUILD OF A
+// TOKEN): the class is closed, and a token that copies is not Shareable, so
+// no other thread copies the token out of a reference to const.
+[[nodiscard]] consteval bool is_closed_token(std::meta::info bare) {
+    if (!is_closed_class(bare, closed_walk_depth)) return false;
+    return !std::meta::is_copy_constructible_type(bare) || !::foundation::transfer::holds(bare, Property::Share);
+}
+
+// True when the class is a token (THE PROOF OF A DOOR): it has the shape of a
+// token, and no other thread can build one (THE BUILD OF A TOKEN).
+[[nodiscard]] consteval bool is_door_token(std::meta::info bare) {
+    return has_token_shape(bare) && is_closed_token(bare);
 }
 
 // True when the type is one of the own types of the owner (THE PROOF OF A
@@ -712,6 +864,13 @@ inline constexpr synchronized_door_exemption synchronized_door_exemptions[] = {
 // True when the bare type is a token tied to the owner (THE PROOF OF A DOOR).
 [[nodiscard]] consteval bool is_proof_type(std::meta::info bare, std::meta::info owner) {
     return is_door_token(bare) && is_tied_to(bare, owner);
+}
+
+// True when the bare type has the shape of a token and is tied to the owner,
+// but another thread can build one (THE BUILD OF A TOKEN), so it proves no
+// one holder.
+[[nodiscard]] consteval bool is_open_token_of(std::meta::info bare, std::meta::info owner) {
+    return has_token_shape(bare) && is_tied_to(bare, owner) && !is_closed_token(bare);
 }
 
 // True when the node of a parameter is a proof of the owner (THE PROOF OF A
@@ -762,47 +921,83 @@ inline constexpr synchronized_door_exemption synchronized_door_exemptions[] = {
     return parameter.was_reference && !parameter.was_const && parameter.type == owner;
 }
 
-// The verdict of a door: it holds the rule, it holds no proof, or the check
-// cannot read the parameters of its template.
+// The open token of the owner in the bare result of a door (THE BUILD OF A
+// TOKEN), or a null reflection.  The read follows is_claim_result: the result,
+// the first type argument of a sum, and the own members of that argument.
+[[nodiscard]] consteval std::meta::info open_token_in_result(std::meta::info result, std::meta::info owner) {
+    namespace refl = ::foundation::reflect;
+    if (is_open_token_of(result, owner)) return result;
+    if (!is_class_or_union(result) || !std::meta::has_template_arguments(result)
+        || !states(result, ^^::foundation::linear::sum)) {
+        return std::meta::info{};
+    }
+    const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{result, true});
+    if (arguments.empty() || arguments.begin()->is_value_argument) return std::meta::info{};
+    const std::meta::info held = arguments.begin()->type;
+    if (is_open_token_of(held, owner)) return held;
+    if (!is_class_or_union(held) || !std::meta::is_complete_type(held)) return std::meta::info{};
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{held, true})) {
+        if (part.member != std::meta::info{} && is_open_token_of(part.type, owner)) return part.type;
+    }
+    return std::meta::info{};
+}
+
+// The verdict of a door: it holds the rule, it holds no proof, its one proof
+// is a token that another thread can build, or the check cannot read the
+// parameters of its template.
 enum class DoorVerdict : unsigned char {
     proven = 0,
     unproven = 1,
     unreadable = 2,
+    open_token = 3,
+};
+
+// The verdict of a door and the open token that it names, or a null
+// reflection.
+struct DoorFinding {
+    DoorVerdict verdict = DoorVerdict::proven;
+    std::meta::info token{};
 };
 
 // The type of a function reads as its return node, and then a node for each
 // parameter (argument_components_of of foundation/reflect/TypeComponents.h).
-[[nodiscard]] consteval DoorVerdict verdict_of_door(std::meta::info door, std::meta::info owner) {
+// The tie of a token comes first, and then its build: a door whose only
+// token of the owner is open has the verdict open_token.
+[[nodiscard]] consteval DoorFinding verdict_of_door(std::meta::info door, std::meta::info owner) {
     namespace refl = ::foundation::reflect;
     std::meta::info function = door;
     if (std::meta::is_function_template(door)) {
         const std::meta::info arguments[] = {^^door_probe_body};
-        if (!std::meta::can_substitute(door, arguments)) return DoorVerdict::unreadable;
+        if (!std::meta::can_substitute(door, arguments)) return DoorFinding{.verdict = DoorVerdict::unreadable};
         function = std::meta::substitute(door, arguments);
-        if (!std::meta::is_function(function)) return DoorVerdict::unreadable;
+        if (!std::meta::is_function(function)) return DoorFinding{.verdict = DoorVerdict::unreadable};
         if (std::meta::is_constructor(function) || std::meta::is_destructor(function)
             || std::meta::is_deleted(function)) {
-            return DoorVerdict::proven;
+            return DoorFinding{};
         }
     }
     const bool is_static = std::meta::is_static_member(function);
-    if (!is_static && std::meta::is_const(function)) return DoorVerdict::proven;
+    if (!is_static && std::meta::is_const(function)) return DoorFinding{};
     const refl::TypeNodeList parts = refl::argument_components_of(refl::TypeNode{std::meta::type_of(function), true});
     bool is_result = true;
     bool does_reach_owner = !is_static;
     bool has_proof = false;
     bool gives_proof = false;
+    std::meta::info open_token{};
     for (const refl::TypeNode& part : parts) {
         if (is_result) {
             gives_proof = is_claim_result(part.type, owner);
+            open_token = open_token_in_result(part.type, owner);
             is_result = false;
             continue;
         }
         if (is_static && reaches_owner(part, owner)) does_reach_owner = true;
         if (is_proof_parameter(part, owner)) has_proof = true;
+        if (open_token == std::meta::info{} && is_open_token_of(part.type, owner)) open_token = part.type;
     }
-    if (!does_reach_owner || has_proof || gives_proof) return DoorVerdict::proven;
-    return DoorVerdict::unproven;
+    if (!does_reach_owner || has_proof || gives_proof) return DoorFinding{};
+    if (open_token != std::meta::info{}) return DoorFinding{.verdict = DoorVerdict::open_token, .token = open_token};
+    return DoorFinding{.verdict = DoorVerdict::unproven};
 }
 
 // Stops the build at the first door of the class that does not hold the rule
@@ -812,17 +1007,23 @@ enum class DoorVerdict : unsigned char {
 // the members of the class, times the parameters of each door.
 consteval void check_synchronized_doors(std::meta::info type, std::meta::info plain) {
     namespace refl = ::foundation::reflect;
-    DoorVerdict verdict = DoorVerdict::proven;
+    DoorFinding finding{};
     const std::meta::info door =
-        refl::find_member(type, std::meta::access_context::unchecked(), [type, &verdict](std::meta::info member) {
+        refl::find_member(type, std::meta::access_context::unchecked(), [type, &finding](std::meta::info member) {
             if (!is_door(member)) return false;
-            verdict = verdict_of_door(member, type);
-            return verdict != DoorVerdict::proven;
+            finding = verdict_of_door(member, type);
+            return finding.verdict != DoorVerdict::proven;
         });
     if (door == std::meta::info{}) return;
-    if (verdict == DoorVerdict::unreadable) {
+    if (finding.verdict == DoorVerdict::unreadable) {
         const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(door)};
         static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^unreadable_door_refusal, arguments)));
+        return;
+    }
+    if (finding.verdict == DoorVerdict::open_token) {
+        const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(door),
+                                             std::meta::reflect_constant(finding.token)};
+        static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^open_token_refusal, arguments)));
         return;
     }
     const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(door),

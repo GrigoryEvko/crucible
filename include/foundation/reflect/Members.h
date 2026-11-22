@@ -11,6 +11,9 @@
 //                                          reflection
 //   has_identifier_named(entity, name)     true when the entity has the
 //                                          identifier name, with no walk
+//   find_parameter(function, matches)      the first parameter of the
+//                                          function for which matches gives
+//                                          true, or a null reflection
 //
 // A visitor that gives false for each member visits each member, so a reader
 // that collects reads the scope through find_member too.  A namespace has no
@@ -42,6 +45,16 @@ template <class Name>
 [[nodiscard]] consteval std::meta::info member_named_in(std::meta::info scope, std::meta::access_context access,
                                                         Name const& name) {
     return find_member(scope, access, [&name](std::meta::info member) { return has_identifier_named(member, name); });
+}
+
+// The walk of the parameters of a function, in their order.  Complexity:
+// linear in the parameters of the function.
+template <class Matches>
+[[nodiscard]] consteval std::meta::info find_parameter(std::meta::info function, Matches&& matches) {
+    for (const std::meta::info parameter : std::meta::parameters_of(function)) {
+        if (matches(parameter)) return parameter;
+    }
+    return std::meta::info{};
 }
 
 }  // namespace foundation::reflect

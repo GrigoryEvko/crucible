@@ -4,6 +4,7 @@
 // owner thread.  Each thread can hold a token of an unrelated class, so such a
 // token proves nothing about the counter, and the door bump that takes it
 // stays a door with no proof (THE PROOF OF A DOOR of foundation/Transfer.h).
+// The key is closed, so the tie alone refuses it (THE BUILD OF A TOKEN).
 //
 // Expected diagnostic: a door is not const and takes no proof, and the
 // diagnostic names the door bump with the unrelated key.
@@ -12,7 +13,14 @@
 
 namespace {
 
-struct[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] UnrelatedKey final {};
+class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] UnrelatedKey final {
+    UnrelatedKey() noexcept {}
+
+public:
+    UnrelatedKey(UnrelatedKey const&) = delete("an unrelated key names one holder");
+    UnrelatedKey& operator=(UnrelatedKey const&) = delete("an unrelated key names one holder");
+    ~UnrelatedKey() = default;
+};
 
 class[[= ::foundation::transfer::synchronized{}]] Counter {
 public:

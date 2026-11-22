@@ -465,6 +465,29 @@ consteval bool are_tokens_sendable_and_not_shareable() {
         && transfer::Shareable<Share>;
 }
 static_assert(are_tokens_sendable_and_not_shareable<::foundation::brand::DefaultBrand>());
+
+// A token is closed: its public constructor takes the key of the mints, which
+// only a mint builds, so no thread builds a token past a mint (THE BUILD OF A
+// TOKEN of foundation/Transfer.h).  So a token of an own tag proves a door of
+// a class that states synchronized{}, and so do the lease and the guard of a
+// pool, whose constructors are private.
+class[[= ::foundation::transfer::synchronized{}]] PermittedCount {
+public:
+    struct Region {};
+    struct CountBrand {};
+
+    PermittedCount() = default;
+    PermittedCount(PermittedCount const&) = delete("a count of two threads does not copy");
+    PermittedCount& operator=(PermittedCount const&) = delete("a count of two threads does not copy");
+
+    void add(Permission<Region, CountBrand>& /*token*/) noexcept { ++count_; }
+    void add_leased(ExclusiveLease<Region, CountBrand>& /*lease*/) noexcept { ++count_; }
+    void add_shared(SharedPermissionGuard<Region, CountBrand>& /*guard*/) noexcept { ++count_; }
+
+private:
+    int count_ = 0;
+};
+static_assert(::foundation::transfer::Synchronized<PermittedCount>);
 }  // namespace detail
 
 }  // namespace foundation::permissions
