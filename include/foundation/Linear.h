@@ -39,7 +39,8 @@
 // scope_end_door on a class whose destructor releases its resource.  The
 // annotation once_door marks a function that owns a closure and calls it one
 // time, such as call_once, the one door of a closure that moves a linear
-// capture out.  The
+// capture out.  The door exchange is the one move out of a linear value that
+// a function borrows by a reference that is not const.  The
 // annotation authority marks a class whose value conveys an authority,
 // which the gate of foundation/effects/Computation.h reads.  The annotation
 // binding_hook marks the hook get<I> of a structured binding, such as the
@@ -219,6 +220,21 @@ template <LinearValue T>
 template <class T>
     requires(is_linear_type(^^T))
 constexpr void drop(T&) = delete("the drop door ends a linear value that the caller gives up.  Pass it with std::move");
+
+// The exchange door, the form of mem::replace of Rust.  A function that takes
+// a linear value by a reference that is not const borrows it, so a move out
+// of the reference would leave the caller a spent value, which looks the same
+// as a live one.  The rule must-consume refuses such a move (the kind
+// borrow-move-out).  This door gives the old value back and leaves the
+// replacement in the slot, so the caller keeps a live value.  The two moves
+// do not throw, as the shape of a linear class needs.
+template <LinearValue T>
+    requires(std::is_nothrow_move_assignable_v<T>)
+[[nodiscard]] constexpr T exchange(T& slot, T replacement) noexcept {
+    T old(static_cast<T&&>(slot));
+    slot = static_cast<T&&>(replacement);
+    return old;
+}
 
 // A closure that the once door can call: a class, not a reference and not
 // const, that runs as an rvalue with the arguments.

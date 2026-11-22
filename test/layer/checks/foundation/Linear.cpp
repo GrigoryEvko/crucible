@@ -53,6 +53,23 @@ struct[[= linear_when<IsLinear>]] Conditional {
 
 inline constexpr auto captures_token = [token = Token{}] { static_cast<void>(token); };
 
+// A linear class with a number, so a check reads which value an object holds.
+// Its move leaves zero in the source.
+struct[[= linear{}]] Numbered {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    int number = 0;
+    constexpr explicit Numbered(int value) noexcept : number{value} {}
+    Numbered(const Numbered&) = delete("a linear token has one owner");
+    Numbered& operator=(const Numbered&) = delete("a linear token has one owner");
+    constexpr Numbered(Numbered&& other) noexcept : number{other.number} { other.number = 0; }
+    constexpr Numbered& operator=(Numbered&& other) noexcept {
+        number = other.number;
+        other.number = 0;
+        return *this;
+    }
+    ~Numbered() = default;
+};
+
 // A context and a key that a body of the once door takes by reference.
 struct OnceContext {
     int base = 0;
@@ -128,6 +145,25 @@ inline constexpr auto drop_probe = [](auto&& value) -> decltype(drop(static_cast
 static_assert(std::is_invocable_v<decltype(drop_probe), lc::Token&&>);
 static_assert(!std::is_invocable_v<decltype(drop_probe), lc::Token&>);
 static_assert(!std::is_invocable_v<decltype(drop_probe), int&&>);
+
+// The exchange door gives the old value back and leaves the replacement in
+// the slot, so the slot holds a live value after the call.
+static_assert([] {
+    lc::Numbered slot{1};
+    lc::Numbered old = exchange(slot, lc::Numbered{2});
+    bool const is_exchanged = old.number == 1 && slot.number == 2;
+    drop(static_cast<lc::Numbered&&>(old));
+    drop(static_cast<lc::Numbered&&>(slot));
+    return is_exchanged;
+}());
+// The probe of one call of the exchange door.  The slot is an lvalue of a
+// linear class, and the replacement is a value that the caller gives up.
+inline constexpr auto exchange_probe = [](auto&& slot, auto&& replacement)
+    -> decltype(exchange(static_cast<decltype(slot)&&>(slot), static_cast<decltype(replacement)&&>(replacement))) {};
+static_assert(std::is_invocable_v<decltype(exchange_probe), lc::Numbered&, lc::Numbered&&>);
+static_assert(!std::is_invocable_v<decltype(exchange_probe), lc::Numbered&&, lc::Numbered&&>);
+static_assert(!std::is_invocable_v<decltype(exchange_probe), lc::Numbered&, lc::Numbered&>);
+static_assert(!std::is_invocable_v<decltype(exchange_probe), int&, int&&>);
 
 // The once door owns the closure and calls it one time, and its result is the
 // result of that call.  A closure that moves its linear capture out goes
