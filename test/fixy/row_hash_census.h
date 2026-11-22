@@ -1307,12 +1307,18 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::Cyclic, kPayload},
     {^^::fixy::CyclicBuffer, kPayload},
     {^^::fixy::concurrent::SpscEnd,
-     "an end of an SPSC owner: the Ref of the owner and the state of one side, a member of its holder and never a "
+     "an end of an SPSC owner: the Ref of the owner and the state of one side, a member of its split and never a "
      "kernel signature argument"},
     {^^::fixy::concurrent::SpscSplitBrand,
      "the brand of the Ref of an end: an empty class that is never a value, and the end folds it"},
     {^^::fixy::concurrent::SpscSplit,
-     "the result of the split mint: the owner and its two ends, which the holder takes apart at once"},
+     "the split of an SPSC owner: the Box of the owner and its two ends, which a body borrows through a frame door"},
+    {^^::fixy::concurrent::SpscSideBrand,
+     "the brand of the loan key of one side of a split: an empty class that is never a value"},
+    {^^::fixy::concurrent::SpscEndKey,
+     "the key of the constructor of an end: an empty class that lives for one construction inside a split"},
+    {^^::fixy::concurrent::SpscSplitParts,
+     "the result of the split mint: the split and the key of each side, which a binding takes apart at once"},
     {^^::fixy::WideStart,
      "the start of a WideMonotonic: a value below the start limit that the count takes at its mint or reset, and the "
      "count folds its claim"},

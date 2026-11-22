@@ -1,6 +1,7 @@
 // The ends of an SPSC owner (fixy/concurrent/SpscEnds.h): the mint builds the
-// owner and its two ends in one call, each end holds the Ref of its owner and
-// the state of its side, and the side operations take the end.
+// owner, the split that holds it with its two ends, and the key of each side.
+// A body borrows an end through a frame door of the split, and the side
+// operations take the end.
 
 #include <fixy/concurrent/SpscEnds.h>
 
@@ -70,50 +71,66 @@ private:
     std::uint64_t published_read_ = 0;
 };
 
-// An end is a Ref of its owner and the state of its side.  It only moves.
+// An end is a Ref of its owner and the state of its side.
 using EndRef = ::fixy::Ref<CountLog, ::fixy::concurrent::SpscSplitBrand<CountLog>>;
 static_assert(sizeof(ProducerEnd<CountLog>) == sizeof(EndRef) + sizeof(CountLog::producer_state));
 static_assert(sizeof(ConsumerEnd<CountLog>) == sizeof(EndRef) + sizeof(CountLog::consumer_state));
-static_assert(!std::is_copy_constructible_v<ProducerEnd<CountLog>>);
-static_assert(!std::is_copy_assignable_v<ProducerEnd<CountLog>>);
-static_assert(!std::is_move_assignable_v<ProducerEnd<CountLog>>);
-static_assert(std::is_nothrow_move_constructible_v<ProducerEnd<CountLog>>);
-static_assert(!std::is_constructible_v<ProducerEnd<CountLog>, EndRef>);
 static_assert(ProducerEnd<CountLog>::side == SpscSide::producer && ConsumerEnd<CountLog>::side == SpscSide::consumer);
 static_assert(std::is_same_v<ConsumerEnd<CountLog>::state_type, CountLog::consumer_state>);
 
-// A holder of one end, as a stage of a pipeline holds the consumer end.
-struct ReaderStage final {
-    ConsumerEnd<CountLog> end;
+// Reads each item that the log holds, through the consumer end.
+[[nodiscard]] std::uint64_t read_all(ConsumerEnd<CountLog>& end) noexcept {
+    std::uint64_t count = 0;
+    while (CountLog::try_read(end))
+        ++count;
+    return count;
+}
 
-    [[nodiscard]] std::uint64_t read_all() noexcept {
-        std::uint64_t count = 0;
-        while (CountLog::try_read(end))
-            ++count;
-        return count;
-    }
-};
+// The held count of the log of a split.
+template <class Split>
+[[nodiscard]] std::uint64_t held_of(Split const& split) noexcept {
+    return split.with_owner([](CountLog const& log) noexcept { return log.held(); });
+}
 
 int check_split() {
-    auto [log, producer, consumer] =
+    auto [log, producer_key, consumer_key] =
         ::fixy::concurrent::mint_spsc_split<CountLog>(::foundation::effects::testing::test().alloc, std::uint64_t{3});
-    if (!log->is_owner_of(producer, consumer)) return 1;
 
-    // The producer end keeps its count, and the log keeps the published count.
-    if (!CountLog::try_write(producer) || !CountLog::try_write(producer) || !CountLog::try_write(producer)) return 2;
-    if (CountLog::try_write(producer)) return 3;
-    if (log->held() != 3) return 4;
+    // The two ends name the log of the split.
+    bool const is_owner =
+        log.with_ends(producer_key, consumer_key,
+                      [&log](ProducerEnd<CountLog> const& producer, ConsumerEnd<CountLog> const& consumer) noexcept {
+                          return log.with_owner([&producer, &consumer](CountLog const& owner) noexcept {
+                              return owner.is_owner_of(producer, consumer);
+                          });
+                      });
+    if (!is_owner) return 1;
 
-    // The consumer end moves into its holder and still names the log.
-    ReaderStage stage{.end = std::move(consumer)};
-    if (stage.read_all() != 3) return 5;
-    if (log->held() != 0) return 6;
+    // The producer end keeps its count, and the log keeps the published
+    // count.  The borrow form of the door keeps the key with the caller.
+    std::uint64_t const written = log.with_producer(producer_key, [](ProducerEnd<CountLog>& end) noexcept {
+        std::uint64_t count = 0;
+        while (CountLog::try_write(end))
+            ++count;
+        return count;
+    });
+    if (written != 3) return 2;
+    if (held_of(log) != 3) return 3;
 
-    // The producer end moves too, and its state moves with it.
-    ProducerEnd<CountLog> moved = std::move(producer);
-    if (!CountLog::try_write(moved)) return 7;
-    if (log->held() != 1 || stage.read_all() != 1) return 8;
-    if (!log->is_owner_of(moved, stage.end)) return 9;
+    // The move form gives the key back after the result.
+    auto [read, consumer_back] =
+        log.with_consumer(std::move(consumer_key), [](ConsumerEnd<CountLog>& end) noexcept { return read_all(end); });
+    if (read != 3 || held_of(log) != 0) return 4;
+
+    // A body that gives void gets the key back alone, and the end keeps its
+    // state across two frames.
+    producer_key = log.with_producer(std::move(producer_key), [](ProducerEnd<CountLog>& end) noexcept {
+        static_cast<void>(CountLog::try_write(end));
+    });
+    if (held_of(log) != 1) return 5;
+    if (log.with_consumer(consumer_back, [](ConsumerEnd<CountLog>& end) noexcept { return read_all(end); }) != 1) {
+        return 6;
+    }
     return 0;
 }
 

@@ -19,7 +19,9 @@ struct Owner final {
 }  // namespace
 
 int main() {
-    auto split = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
-    auto again = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc, *split.owner);
-    return 0;
+    auto minted = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
+    return minted.split.with_owner([](Owner const& owner) noexcept {
+        auto again = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc, owner);
+        return 0;
+    });
 }
