@@ -5,10 +5,18 @@
 // non-const rvalue reference.  The order is the data-flow order, so a
 // producer parameter ahead of a consumer parameter is not a stage.
 //
+// THE KEYS OF A STAGE
+//   After the handles, a stage can name keys of named brands, LoanKey<B>&.
+//   The stage door is a root door: it mints one key of each brand on the
+//   thread of the stage, through the entry of foundation/core/RootKeys.h,
+//   which also refuses a handle that reaches a key of such a brand, or an
+//   owner of such a brand through a borrow.
+//
 // The shape this header recognizes is the shape of a stage, so the
 // header sits beside the stage.
 
 #include <fixy/concurrent/HandleTraits.h>
+#include <foundation/core/RootKeys.h>
 #include <foundation/reflect/Signature.h>
 
 #include <cstddef>
@@ -34,20 +42,31 @@ template <auto FnPtr, std::size_t I>
 inline constexpr bool stage_output_param_v =
     stage_param_rvalue_nonconst_v<FnPtr, I> && is_producer_handle_v<refl::param_type_t<FnPtr, I>>;
 
+// A key of a named brand, LoanKey<B>&, which the stage door mints for the body
+// on the thread of the stage (THE KEYS OF A STAGE).
+template <auto FnPtr, std::size_t I>
+inline constexpr bool stage_key_param_v =
+    ::foundation::core::detail::key_brand_of_<refl::param_type_t<FnPtr, I>>::is_key;
+
 struct stage_arity_counts {
     std::size_t input_count = 0;
     std::size_t output_count = 0;
+    std::size_t key_count = 0;
     bool ordered = true;
 };
 
+// The kinds of the parameters come in the order inputs, outputs, keys.
 template <auto FnPtr, std::size_t I>
 consteval void consume_stage_param(stage_arity_counts& counts, bool& seen_output) noexcept {
     if constexpr (stage_input_param_v<FnPtr, I>) {
-        if (seen_output) counts.ordered = false;
+        if (seen_output || counts.key_count != 0) counts.ordered = false;
         ++counts.input_count;
     } else if constexpr (stage_output_param_v<FnPtr, I>) {
+        if (counts.key_count != 0) counts.ordered = false;
         seen_output = true;
         ++counts.output_count;
+    } else if constexpr (stage_key_param_v<FnPtr, I>) {
+        ++counts.key_count;
     } else {
         counts.ordered = false;
     }
@@ -74,6 +93,8 @@ private:
 public:
     static constexpr std::size_t input_count = counts.input_count;
     static constexpr std::size_t output_count = counts.output_count;
+    static constexpr std::size_t key_count = counts.key_count;
+    static constexpr std::size_t handle_count = counts.input_count + counts.output_count;
     static constexpr bool ordered = counts.ordered;
 };
 
@@ -81,7 +102,7 @@ template <auto FnPtr>
 concept VariadicPipelineStage =
     ::foundation::reflect::arity_v<FnPtr> >= 2 && std::is_void_v<::foundation::reflect::return_type_t<FnPtr>>
     && StageArity<FnPtr>::ordered && StageArity<FnPtr>::input_count > 0 && StageArity<FnPtr>::output_count > 0
-    && StageArity<FnPtr>::input_count + StageArity<FnPtr>::output_count == ::foundation::reflect::arity_v<FnPtr>;
+    && StageArity<FnPtr>::handle_count + StageArity<FnPtr>::key_count == ::foundation::reflect::arity_v<FnPtr>;
 
 template <auto FnPtr>
 concept PipelineStage =

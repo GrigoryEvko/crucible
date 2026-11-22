@@ -6754,7 +6754,7 @@ fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
 # and they refuse a body that reaches a key of such a brand, or an owner of
 # such a brand through a borrow (THE BORROW OF A ROOT DOOR of
 # foundation/core/Frame.h).
-foreach(root_door_plant joined_borrow parent_key nested value_and_borrow export beside_export)
+foreach(root_door_plant joined_borrow parent_key nested value_and_borrow export beside_export stage_handle_borrow)
   fixy_neg_compile_test(neg_root_door_${root_door_plant}
     "static assertion failed: a body of a root door reaches a key of a brand of its keys, or an owner of such a brand through a borrow"
     "neg_root_door_${root_door_plant}\\.cpp")

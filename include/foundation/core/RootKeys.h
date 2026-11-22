@@ -78,6 +78,8 @@ struct call_parameters_<R (*)(Ps...) noexcept> {
     static constexpr bool is_known = true;
     using list = ParameterList<Ps...>;
 };
+template <class R, class... Ps>
+struct call_parameters_<R (*)(Ps...)> : call_parameters_<R (*)(Ps...) noexcept> {};
 
 template <class Body>
 struct body_signature_ {
@@ -187,10 +189,13 @@ template <std::size_t Leading, class Body, class... Args>
 constexpr decltype(auto) run_root_body_(Body& body, Args&&... leading) noexcept {
     using Brands = root_key_brands_t<Body, Leading>;
     using Result = typename root_body_result_<Body, Brands, Args&&...>::type;
+    // A function pointer holds no state, and its type names its own key
+    // parameters, so the walk reads only its arguments.
+    using State = std::conditional_t<std::is_pointer_v<Body>, KeyBrands<>, Body>;
     static_assert(are_distinct_key_brands_of_(Brands{}),
                   "a body of a root door names two keys of one brand, or a key of a brand that is no key brand: name "
                   "each key brand one time");
-    static_assert(borrow_no_key_owner_<Body, std::remove_cvref_t<Args>...>(Brands{}),
+    static_assert(borrow_no_key_owner_<State, std::remove_cvref_t<Args>...>(Brands{}),
                   "a body of a root door reaches a key of a brand of its keys, or an owner of such a brand through a "
                   "borrow: move each owner into the body by value, and keep each key with its holder");
     if constexpr (!std::is_void_v<Result>) {

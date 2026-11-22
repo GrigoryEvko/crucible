@@ -89,6 +89,19 @@ template <auto FnPtr>
     return true;
 }
 
+// Calls the stage with its handles.  A stage that names keys gets them from
+// the entry of the root doors, on the thread of the stage, and the entry checks
+// the handles (THE KEYS OF A STAGE of fixy/concurrent/StageShape.h).
+template <auto FnPtr, class... Handles>
+void call_stage_(Handles&&... handles) noexcept {
+    if constexpr (StageArity<FnPtr>::key_count == 0) {
+        FnPtr(static_cast<Handles&&>(handles)...);
+    } else {
+        auto function = FnPtr;
+        ::foundation::core::detail::run_root_body_<sizeof...(Handles)>(function, static_cast<Handles&&>(handles)...);
+    }
+}
+
 }  // namespace detail
 
 // Each parameter of the body and the context move to the thread of the stage.
@@ -197,7 +210,7 @@ private:
     static consteval bool compute() noexcept {
         if constexpr (!VariadicPipelineStage<FnPtr>) {
             return false;
-        } else if constexpr (sizeof...(Handles) != ::foundation::reflect::arity_v<FnPtr>) {
+        } else if constexpr (sizeof...(Handles) != StageArity<FnPtr>::handle_count) {
             return false;
         } else {
             return each_handle_matches(std::make_index_sequence<sizeof...(Handles)>{});
@@ -284,7 +297,7 @@ public:
     void run() && noexcept {
         consumer_handle_type in = std::move(in_);
         producer_handle_type out = std::move(out_);
-        FnPtr(std::move(in), std::move(out));
+        detail::call_stage_<FnPtr>(std::move(in), std::move(out));
     }
 
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
@@ -325,8 +338,7 @@ private:
 template <auto FnPtr, class Ctx>
     requires CtxFitsVariadicStage<FnPtr, Ctx>
 class MpmcStage {
-    using handle_pack =
-        detail::stage_handle_pack<FnPtr, std::make_index_sequence<::foundation::reflect::arity_v<FnPtr>>>;
+    using handle_pack = detail::stage_handle_pack<FnPtr, std::make_index_sequence<StageArity<FnPtr>::handle_count>>;
 
 public:
     using ctx_type = Ctx;
@@ -403,7 +415,7 @@ private:
     // the body returns, as for Stage::run.
     template <class... Handles>
     static void run_body_(Handles... handles) noexcept {
-        FnPtr(std::move(handles)...);
+        detail::call_stage_<FnPtr>(std::move(handles)...);
     }
 
     [[no_unique_address]] Ctx ctx_;

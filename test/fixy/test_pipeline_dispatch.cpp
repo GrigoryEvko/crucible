@@ -86,6 +86,23 @@ static void small_c(Consumer<1536>&&, Producer<1536>&&) noexcept { record_call()
 
 static void large(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { record_call(); }
 
+// A stage that names a key of a named brand after its handles.  The stage
+// door mints the key on the thread of the stage, and the stage opens a frame
+// of the holder that it owns with it (THE KEYS OF A STAGE).
+struct StageHolderBrand final {};
+struct StageHolder {
+    ::foundation::core::FixedArray<int, 4, StageHolderBrand> array{};
+};
+static void keyed_stage(Consumer<1 * KiB>&&, Producer<1 * KiB>&&,
+                        ::foundation::core::LoanKey<StageHolderBrand>& key) noexcept {
+    StageHolder holder{};
+    holder.array.with_mut(key, [](auto run) noexcept { run.view().at(::foundation::core::index<0>()) = 6; });
+    CRUCIBLE_FATAL_INVARIANT(holder.array.at(::foundation::core::index<0>()) == 6);
+    record_call();
+}
+static_assert(cc::StageArity<&keyed_stage>::key_count == 1 && cc::StageArity<&keyed_stage>::handle_count == 2);
+static_assert(cc::PipelineStage<&keyed_stage>);
+
 using SmallA = cc::Stage<&small_a, fixy::HotFgCtx>;
 using SmallB = cc::Stage<&small_b, fixy::HotFgCtx>;
 using SmallC = cc::Stage<&small_c, fixy::HotFgCtx>;
@@ -151,6 +168,16 @@ static void test_small_pipeline_runs_inline() {
             "small inline pipeline should run only on caller thread");
     require(non_main_thread_calls.load(std::memory_order_relaxed) == 0,
             "small inline pipeline unexpectedly spawned a worker thread");
+}
+
+// The keyed stage checks the write of its holder itself.
+static void test_keyed_stage_gets_its_key() {
+    fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
+    const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
+    auto s0 = cc::mint_stage<&keyed_stage>(ctx, Consumer<1 * KiB>{}, Producer<1 * KiB>{});
+    auto s1 = cc::mint_stage<&small_b>(ctx, Consumer<1536>{}, Producer<1536>{});
+    auto p = cc::mint_pipeline(coordinator, std::move(s0), std::move(s1));
+    std::move(p).run(coordinator);
 }
 
 static void test_large_pipeline_spawns_threads() {
@@ -247,6 +274,7 @@ static void test_threaded_stages_stay_in_the_caller_mask() {
 
 int main() {
     pipeline_dispatch_test::test_small_pipeline_runs_inline();
+    pipeline_dispatch_test::test_keyed_stage_gets_its_key();
     pipeline_dispatch_test::test_large_pipeline_spawns_threads();
     pipeline_dispatch_test::test_threaded_stages_stay_in_the_caller_mask();
     ::fixy::check::pass(kTest, "test_pipeline_dispatch: ALL PASSED\n");
