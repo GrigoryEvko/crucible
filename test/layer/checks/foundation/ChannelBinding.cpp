@@ -29,8 +29,16 @@ static_assert(!transfer::detail::states(^^EndpointClaim, ^^transfer::synchronize
 namespace detail::channel_binding_self_test {
 
 // A class that keeps its state private and states that two threads write it
-// at the same time, as a channel does.
+// at the same time, as a channel does.  It has no assignment, which would
+// write its plain state with no proof (THE DOORS OF A SYNCHRONIZED CLASS of
+// foundation/Transfer.h).
 class[[= transfer::synchronized{}]] SharedChannel {
+public:
+    SharedChannel() = default;
+    SharedChannel(SharedChannel const&) = delete("a channel does not copy");
+    SharedChannel& operator=(SharedChannel const&) = delete("a channel does not copy");
+
+private:
     int head_ = 0;
 };
 

@@ -208,34 +208,37 @@ namespace {
 
 // The cell of the reference: a value of 16 bytes that each operation reaches
 // through the __atomic builtins, which GCC sends to libatomic.  The value is
-// private, and each access of it is atomic, so the cell states synchronized:
-// two threads can read and write it at the same time.
-class[[= ::foundation::transfer::synchronized{}]] LibatomicCell final {
+// private, and each access of it is atomic, so the cell hands a Payload from
+// one thread to another, as the Atomic of the base does, and it states
+// payload_cell.
+template <class Payload>
+    requires(sizeof(Payload) == 16)
+class[[= ::foundation::transfer::payload_cell{}]] LibatomicCell final {
     __extension__ using Word = unsigned __int128;
 
     alignas(16) Word word_ = 0;
 
-    [[nodiscard]] static Word to_word_(Generation value) noexcept { return __builtin_bit_cast(Word, value); }
-    [[nodiscard]] static Generation from_word_(Word word) noexcept { return __builtin_bit_cast(Generation, word); }
+    [[nodiscard]] static Word to_word_(Payload value) noexcept { return __builtin_bit_cast(Word, value); }
+    [[nodiscard]] static Payload from_word_(Word word) noexcept { return __builtin_bit_cast(Payload, word); }
 
 public:
-    explicit LibatomicCell(Generation initial) noexcept : word_{to_word_(initial)} {}
+    explicit LibatomicCell(Payload initial) noexcept : word_{to_word_(initial)} {}
 
-    [[nodiscard]] Generation load_acquire() const noexcept {
+    [[nodiscard]] Payload load_acquire() const noexcept {
         return from_word_(__atomic_load_n(&word_, __ATOMIC_ACQUIRE));
     }
 
-    void store_release(Generation value) noexcept { __atomic_store_n(&word_, to_word_(value), __ATOMIC_RELEASE); }
+    void store_release(Payload value) noexcept { __atomic_store_n(&word_, to_word_(value), __ATOMIC_RELEASE); }
 
     // The Result of the base, so the rows of the two cells run one body.
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, ::fixy::CasRefusal<Generation>>
-    cas_acq_rel(Generation expected, Generation desired) noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, ::fixy::CasRefusal<Payload>> cas_acq_rel(Payload expected,
+                                                                                        Payload desired) noexcept {
         Word observed = to_word_(expected);
         if (__atomic_compare_exchange_n(&word_, &observed, to_word_(desired), false, __ATOMIC_ACQ_REL,
                                         __ATOMIC_ACQUIRE)) {
             return ::fixy::Unit{};
         }
-        return ::fixy::err(::fixy::CasRefusal<Generation>{from_word_(observed)});
+        return ::fixy::err(::fixy::CasRefusal<Payload>{from_word_(observed)});
     }
 };
 
@@ -255,14 +258,14 @@ int main() {
                                                                               : fixy::TextView{"a compare-and-swap"});
 #endif
 
-    FormRows const reference = measure_form_of<LibatomicCell>();
+    FormRows const reference = measure_form_of<LibatomicCell<Generation>>();
     print_form("libatomic", reference, reference);
 #if defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16)
     print_form("WideAtomicByInstruction", measure_form_of<os::WideAtomicByInstruction<Generation>>(), reference);
 #endif
     print_form("WideAtomicByLock", measure_form_of<os::WideAtomicByLock<Generation>>(), reference);
 
-    bench::Report const shared_reference = measure_shared_load<LibatomicCell>(ctx, row_cores);
+    bench::Report const shared_reference = measure_shared_load<LibatomicCell<Generation>>(ctx, row_cores);
     print_row(RowName{.form = "libatomic", .operation = "load_acquire with a second reader"}, shared_reference,
               shared_reference);
 #if defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16)

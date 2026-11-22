@@ -378,6 +378,22 @@ fixy_neg_compile_test(neg_mutation_atomic_monotonic_copy_step_shared
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_sole_step_without_proof
   "no matching function for call to"
   "::advance_sole_writer_from\\(const uint64_t&, long unsigned int\\)")
+# A proof of quiescence, which each thread can make, is no proof of a door of
+# a synchronized class, and neither is the share guard of a tag that the class
+# does not declare.  A joined body cannot borrow the key of the owner.
+fixy_neg_compile_test(neg_synchronized_door_quiescence_proof
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "Counter::bump\\(const fixy::thread::QuiescenceProof<.anonymous.::Counter>&\\)"
+  "Counter::count_")
+fixy_neg_compile_test(neg_synchronized_claim_door_foreign_guard
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "Counter::lend\\(\\)"
+  "Counter::count_")
+fixy_neg_compile_test(neg_joined_body_passes_owner_token
+  "run_joined: the body captures .key."
+  "OwnerKey&")
 # The type of the counter names the proof of its writer, so the proof of
 # another owner does not advance it.
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_foreign_proof

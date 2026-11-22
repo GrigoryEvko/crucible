@@ -107,7 +107,10 @@ public:
     SignalOwner& operator=(SignalOwner&&) = delete("the thread borrows its owner at one address");
     ~SignalOwner() = default;
 
-    void request_stop() noexcept { stop.signal(); }
+    // The key of the door that starts the thread.  The thread that holds the
+    // owner makes it, and the key stays on that thread (THE PROOF OF A DOOR
+    // of foundation/Transfer.h).
+    struct[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {};
 
     // The proof of the OwnerThread of this owner, for the owner that the
     // caller names.  A test names another owner to show the refusal.
@@ -117,7 +120,7 @@ public:
 
     // Starts the thread of the owner.  The body waits for the stop that the
     // end of the OwnerThread signals.
-    void start_waiting_thread() noexcept {
+    void start_waiting_thread(StarterKey& /*key*/) noexcept {
         ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
         ::fixy::thread::mint_owner_thread<&SignalOwner::thread_, &SignalOwner::request_stop>(
             bg, ::fixy::thread::ThreadOptions{}, *this,
@@ -132,6 +135,9 @@ public:
     h::OneShotFlag stop;
 
 private:
+    // The stop hook of the thread, which writes only the flag.
+    void request_stop() noexcept { stop.signal(); }
+
     ::fixy::thread::OwnerThread<SignalOwner> thread_{};
 };
 
@@ -162,7 +168,8 @@ void a_proof_of_an_owner_that_does_not_hold_the_thread_ends_the_process() noexce
 void a_reset_with_a_proof_of_before_the_start_ends_the_process() noexcept {
     SignalOwner owner{};
     ::fixy::thread::QuiescenceProof<SignalOwner> const before_the_start = owner.quiescence_for(owner);
-    owner.start_waiting_thread();
+    SignalOwner::StarterKey key{};
+    owner.start_waiting_thread(key);
     owner.stop.reset_in_quiescent_context(before_the_start);
 }
 

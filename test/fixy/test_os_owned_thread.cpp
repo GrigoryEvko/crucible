@@ -230,9 +230,14 @@ public:
     LoopingOwner& operator=(LoopingOwner&&) = delete("the thread borrows its owner at one address");
     ~LoopingOwner() = default;
 
+    // The key of the doors that start and stop the thread.  The thread that
+    // holds the owner makes it, and the key stays on that thread (THE PROOF
+    // OF A DOOR of foundation/Transfer.h).
+    struct[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] StarterKey final {};
+
     // Starts the thread with the options, and waits until the body loops.
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, Errno>
-    start(ThreadOptions const& options) noexcept {
+    start(StarterKey& /*key*/, ThreadOptions const& options) noexcept {
         should_stop_.store_release(false);
         has_looped_.store_release(false);
         ::foundation::core::Result<::foundation::core::Unit, Errno> started =
@@ -245,7 +250,7 @@ public:
         return started;
     }
 
-    void stop() noexcept { thread_.stop_and_join(); }
+    void stop(StarterKey& /*key*/) noexcept { thread_.stop_and_join(); }
 
     [[nodiscard]] bool holds_thread() const noexcept { return thread_.holds_thread(); }
 
@@ -284,7 +289,8 @@ void test_end_of_an_owner_stops_its_thread_first() {
     reset_cells();
     {
         LoopingOwner owner{};
-        owner.start(ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
+        LoopingOwner::StarterKey key{};
+        owner.start(key, ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
         CRUCIBLE_FATAL_INVARIANT(owner.holds_thread());
     }
     CRUCIBLE_FATAL_INVARIANT(did_body_see_live_members.load_acquire());
@@ -299,12 +305,13 @@ void test_early_stop_empties_the_member() {
     reset_cells();
     {
         LoopingOwner owner{};
-        owner.start(ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
-        owner.stop();
+        LoopingOwner::StarterKey key{};
+        owner.start(key, ThreadOptions{}).expect("the door starts the thread of an owner with the default options");
+        owner.stop(key);
         CRUCIBLE_FATAL_INVARIANT(!owner.holds_thread());
         CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 1);
-        owner.start(ThreadOptions{}).expect("the door starts a second thread after the first one joined");
-        owner.stop();
+        owner.start(key, ThreadOptions{}).expect("the door starts a second thread after the first one joined");
+        owner.stop(key);
         CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 2);
     }
     CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 2);
@@ -315,7 +322,8 @@ void test_early_stop_empties_the_member() {
 void test_refused_start_leaves_the_member_empty() {
     reset_cells();
     LoopingOwner owner{};
-    auto const refused = owner.start(ThreadOptions{.guard_bytes = 0});
+    LoopingOwner::StarterKey key{};
+    auto const refused = owner.start(key, ThreadOptions{.guard_bytes = 0});
     CRUCIBLE_FATAL_INVARIANT(refused.err().value_or(Errno::eperm) == Errno::einval);
     CRUCIBLE_FATAL_INVARIANT(!owner.holds_thread());
     CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 0);

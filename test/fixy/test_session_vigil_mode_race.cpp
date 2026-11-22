@@ -76,8 +76,13 @@ inline constexpr std::uint64_t kRounds = (2 * kDirectRounds) + (kSessions * kRou
 // states synchronized (foundation/Transfer.h).
 class[[= ::foundation::transfer::synchronized{}]] Shared {
 public:
+    // The key of the writer of the plain value.  The writer thread makes it,
+    // and the key stays on that thread (THE PROOF OF A DOOR of
+    // foundation/Transfer.h).
+    struct[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriterKey final {};
+
     // The writer calls it before the release store of a mode.
-    void write_round(std::uint64_t round) noexcept { written_ = round; }
+    void write_round(WriterKey& /*key*/, std::uint64_t round) noexcept { written_ = round; }
     // The reader calls it after the acquire load of that mode.
     [[nodiscard]] std::uint64_t read_round() const noexcept { return written_; }
 
@@ -105,7 +110,8 @@ constexpr auto apply = []<typename Transition>(vm::ModeLease& lease, Transition&
 // One round of the publishers of the cell.  The round number counts from
 // one, so the value zero of a reply names no round.
 void publish_one_round(vm::ModeCell& cell, vm::ModeWriter const& writer, Shared& shared, std::uint64_t round) noexcept {
-    shared.write_round(round);
+    Shared::WriterKey key{};
+    shared.write_round(key, round);
     cell.publish_compiled(writer);
     wait_until(shared.read_compiled, round);
     cell.publish_recording_after_divergence(writer);
@@ -118,7 +124,8 @@ template <typename AtChoice>
 [[nodiscard]] vm::ModeLease take_edges(AtChoice at_choice, Shared& shared, std::uint64_t round,
                                        std::uint64_t last) noexcept {
     if (round > last) return std::move(at_choice).template select<2>(s::no_label).close();
-    shared.write_round(round);
+    Shared::WriterKey key{};
+    shared.write_round(key, round);
     auto compiled = std::move(at_choice).template select<0>(s::no_label).send(vm::ModeRecordingToCompiled{}, apply);
     wait_until(shared.read_compiled, round);
     auto recording = std::move(compiled).template select<1>(s::no_label).send(vm::ModeCompiledToRecording{}, apply);

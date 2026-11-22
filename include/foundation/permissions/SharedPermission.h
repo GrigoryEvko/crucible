@@ -155,10 +155,12 @@ public:
 // of a guard is its named door.
 // A guard points at its pool, which each thread that holds a share writes
 // with atomic steps by design, so it moves between threads as its tag does
-// (foundation/Transfer.h, rule 6).
+// (foundation/Transfer.h, rule 6).  The guard conveys the authority of its
+// share, and it does not copy, so it is a token of the doors of a class that
+// owns its pool (THE PROOF OF A DOOR of foundation/Transfer.h).
 template <typename Tag, typename Brand>
 class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::by_arguments{}]]
-    SharedPermissionGuard {
+                   [[= ::foundation::linear::authority{}]] SharedPermissionGuard {
     SharedPermissionPool<Tag, Brand>* pool_ = nullptr;
 
     constexpr explicit SharedPermissionGuard(SharedPermissionPool<Tag, Brand>& p) noexcept : pool_{&p} {}

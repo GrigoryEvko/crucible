@@ -1871,6 +1871,43 @@ foundation_neg_compile_test(neg_share_pool_lend_without_ctx_pure_tag
 foundation_neg_compile_test(neg_share_pool_upgrade_without_ctx_pure_tag
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::Pure, .*>::try_upgrade\\(\\)."
   "candidate expects 1 argument, 0 provided")
+# The check of a statement of synchronized{} reads the doors of the class: a
+# door with no proof, a mutable plain member, a token of an unrelated class, a
+# LoanKey, a template door with no proof, a template door that the probe body
+# cannot fill, and a static door that writes the object each refuse.
+foundation_neg_compile_test(neg_synchronized_door_without_proof
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "Counter::bump\\(\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_mutable_plain_member
+  "a private member of it is mutable, but two threads cannot write the member"
+  "failed: .anonymous.::Counter"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_door_unrelated_thread_token
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "Counter::bump\\(.anonymous.::UnrelatedKey&\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_door_loan_key
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "Counter::bump\\(foundation::core::LoanKey<.anonymous.::CounterBrand>&\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_template_door_without_proof
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "Counter::visit\\(Body&&\\)"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_template_door_unreadable
+  "has no specialization for the probe body"
+  "failed: .anonymous.::Counter"
+  "Counter::set\\(Value\\)")
+foundation_neg_compile_test(neg_synchronized_static_door_without_proof
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "static void .anonymous.::Counter::reset\\(.anonymous.::Counter&\\)"
+  "Counter::count_")
 # The deposit takes only a lease of the pool, so a second root of one call
 # site has no door into the pool.
 foundation_neg_compile_test(neg_share_pool_deposit_of_a_second_root

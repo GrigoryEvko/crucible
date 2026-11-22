@@ -68,17 +68,21 @@ void write_first_byte(::foundation::os::GuardedRegion& region, char value) noexc
 // A word that the first thread of a case sets to a value other than zero
 // when it ends its part.  The two threads read and write it with relaxed
 // order only, so the sanitizer takes no happens-before edge from it.  The
-// word is private, and each access of it is atomic, so the word states
-// synchronized: two threads can read and write it at the same time.
-class[[= ::foundation::transfer::synchronized{}]] RelaxedWord {
+// word is private, and each access of it is atomic, so the class is a cell
+// of its payload (payload_cell of foundation/Transfer.h): two threads can
+// read and write it at the same time.
+template <class Word>
+class[[= ::foundation::transfer::payload_cell{}]] RelaxedCell {
 public:
-    void publish_relaxed(std::uint64_t value) noexcept { __atomic_store_n(&value_, value, __ATOMIC_RELAXED); }
+    void publish_relaxed(Word value) noexcept { __atomic_store_n(&value_, value, __ATOMIC_RELAXED); }
 
-    [[nodiscard]] std::uint64_t read_relaxed() const noexcept { return __atomic_load_n(&value_, __ATOMIC_RELAXED); }
+    [[nodiscard]] Word read_relaxed() const noexcept { return __atomic_load_n(&value_, __ATOMIC_RELAXED); }
 
 private:
-    std::uint64_t value_ = 0;
+    Word value_ = 0;
 };
+
+using RelaxedWord = RelaxedCell<std::uint64_t>;
 
 // A file of /dev/null, open for reading only.
 using NullFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;

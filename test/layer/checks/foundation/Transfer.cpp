@@ -11,7 +11,10 @@
 #include <foundation/core/Region.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/core/Strided.h>
+#include <foundation/core/Text.h>
 #include <foundation/reflect/TypeComponents.h>
+
+#include <type_traits>
 
 namespace foundation::transfer {
 
@@ -235,6 +238,44 @@ private:
 };
 static_assert(Synchronized<OrdersItsCount> && Shareable<OrdersItsCount> && Sendable<OrdersItsCount>);
 static_assert(first_synchronized_refusal(^^OrdersItsCount) == std::meta::info{});
+
+// THE DOORS OF A SYNCHRONIZED CLASS, the controls.  A class with a plain
+// private part keeps each door: a door that takes its key, a const door, a
+// static door that takes its key or reaches no object, a template door that
+// takes its key, and a claim door that gives its key.  The key is a member
+// class that states thread_bound{}, so it is tied to the class (THE PROOF OF A
+// DOOR).
+class[[= synchronized{}]] KeyedCount {
+public:
+    struct[[= thread_bound{}]][[= not_shareable{}]] Key final {};
+
+    KeyedCount() = default;
+    KeyedCount(KeyedCount const&) = delete("a count of two threads does not copy");
+    KeyedCount& operator=(KeyedCount const&) = delete("a count of two threads does not copy");
+
+    void add(Key& /*key*/) noexcept { ++count_; }
+    [[nodiscard]] int read() const noexcept { return count_; }
+    static void reset(Key& /*key*/, KeyedCount& count) noexcept { count.count_ = 0; }
+    [[nodiscard]] static int twice(int value) noexcept { return 2 * value; }
+    template <class Body>
+    void visit(Key& /*key*/, Body&& body) noexcept {
+        body(count_);
+    }
+    [[nodiscard]] Key claim() noexcept { return Key{}; }
+
+private:
+    int count_ = 0;
+};
+static_assert(Synchronized<KeyedCount>);
+
+// THE EXEMPTION holds one class, crucible::BackgroundThread, and no class of
+// this file.  The keyed doors of the owner-key member series remove the
+// exemption and these pins with it.
+static_assert(std::extent_v<decltype(detail::synchronized_door_exemptions)> == 1);
+static_assert(::foundation::core::mint_static_text(detail::synchronized_door_exemptions[0].space) == "crucible"
+              && ::foundation::core::mint_static_text(detail::synchronized_door_exemptions[0].name)
+                     == "BackgroundThread");
+static_assert(!detail::is_exempt_from_door_check(^^KeyedCount) && !detail::is_exempt_from_door_check(^^OrdersItsCount));
 
 // A class of one owner thread does not move and is not a target of a shared
 // write, but a read through a reference to const is safe when its parts are.

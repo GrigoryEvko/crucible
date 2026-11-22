@@ -131,7 +131,8 @@
 //     const and Shareable.  A part that fails stops the build, and the
 //     diagnostic names the class and the part.  A private member is state
 //     that the code of the class orders, as the comment beside the statement
-//     tells.
+//     tells, and the check reads the doors of the class that write it (THE
+//     DOORS OF A SYNCHRONIZED CLASS).
 //     by_arguments{} states that the class owns the object of its first type
 //     argument behind its pointers, as a Box does, and that its other type
 //     arguments name no object that it holds.  refers{} states that the class
@@ -154,6 +155,59 @@
 //     object of one owner thread thus moves no such object.  Each statement is
 //     a claim that the code of the class makes true, and the comment beside
 //     it gives the reason.
+//
+// THE DOORS OF A SYNCHRONIZED CLASS
+//     The check of a statement of synchronized{} also reads the member
+//     functions of the class.  A class whose private parts are each
+//     Synchronized, or const and Shareable, writes only cells that two
+//     threads can write, so each door of it is safe.  When a private part is
+//     plain, which is a reference or a part that two threads cannot write,
+//     each door of the class is one of these, or the build stops:
+//       - const.  A const door writes only mutable parts, and a mutable part
+//         that two threads cannot write stops the build;
+//       - a door that takes a proof of the class (THE PROOF OF A DOOR);
+//       - a claim door.  Its result is a proof of the class, an Option or a
+//         Result of one, or an Option or a Result of a handle class whose own
+//         member is a proof of the class.  A claim door makes its token with
+//         one atomic step, such as a compare-exchange of a pool, and its
+//         comment states the invariant that protects its plain writes: the
+//         writes after the step happen only on the thread that won it, until
+//         that thread gives the token back.  The claim doors of the base are
+//         try_withdraw_producer_root, producer() and producer(lane) of a
+//         pooled PermissionedChannel, and try_withdraw_reader_root and
+//         reader() of SwmrSession.
+//     A door is a public or protected member function or member function
+//     template that is not a constructor, not a destructor and not deleted.
+//     A static one is a door when it takes the class through a reference
+//     that is not const.  GCC 16 gives no parameters of a member function template,
+//     so the check reads the specialization of each template for a probe
+//     body, a class whose call takes each argument list.  A template with no
+//     such specialization stops the build, so the check fails closed.  A
+//     friend and a free function are no member, and the check does not read
+//     them.  One class has its doors exempt (THE EXEMPTION).
+//
+// THE PROOF OF A DOOR
+//     A parameter is a proof of the class when its bare type is a token and
+//     the token is tied to the class.  A token is a class that carries the
+//     annotation authority{} of foundation/Linear.h and does not copy, such as
+//     a Permission, a SoleWriter, an ExclusiveLease and the guard of a share,
+//     or a class that states thread_bound{}, such as the claim of a producer.
+//     A reference to const of a token counts only when the token is not
+//     Shareable, so no two threads read one token.  The token is tied to the
+//     class when it is the class or a member class of it, or when one of its
+//     type arguments is the class, a member class of it, or a type that a
+//     member alias of the class names.  So a token of an unrelated class, or
+//     of a tag that the class does not declare as its own, proves nothing
+//     about the class.  A LoanKey carries no authority, so it never counts,
+//     and neither does a QuiescenceProof, which each thread can make.
+//
+// THE EXEMPTION
+//     The check does not read the doors of crucible::BackgroundThread.  Nine
+//     of its doors take no proof, and plant 06 of the audit of the threads,
+//     where two bodies of run_joined call set_numerics, proves the race.  The
+//     keyed doors of the owner-key member series replace those doors, and
+//     that series removes the exemption and the test that pins it to one
+//     class.
 //
 // THE OPAQUE TYPES
 //     A class that is only declared, such as a handle whose definition is out
@@ -525,8 +579,261 @@ consteval void refuse_synchronized_part(std::meta::info type, std::meta::info pa
     static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^synchronized_statement_refusal, arguments)));
 }
 
+// The refusal of a private member that is mutable and that two threads cannot
+// write (THE DOORS OF A SYNCHRONIZED CLASS): a const door writes it.
+template <std::meta::info Class, std::meta::info Part>
+consteval bool refuse_mutable_part() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states synchronized{}, and a private member of it is mutable, but two threads "
+                  "cannot write the member at the same time.  A const door of the class writes the member, so two "
+                  "threads that call the door race.  Give the member a type that two threads can write, such as an "
+                  "Atomic, or drop mutable (THE DOORS OF A SYNCHRONIZED CLASS of foundation/Transfer.h).  The next "
+                  "two messages name the class and the member");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Part));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Part>
+inline constexpr bool mutable_part_refusal = refuse_mutable_part<Class, Part>();
+
+// The refusal of a door with no proof (THE DOORS OF A SYNCHRONIZED CLASS).
+template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
+consteval bool refuse_unproven_door() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states synchronized{} and holds a plain private part, but a door of it is not "
+                  "const, takes no proof of the class and gives no proof of the class, so two threads that call the "
+                  "door can write the part at the same time.  Give the door a proof tied to the class, such as a "
+                  "Permission of a tag of the class, make it a claim door that gives the token of the class, or "
+                  "make it const over parts that two threads can write (THE DOORS OF A SYNCHRONIZED CLASS and THE "
+                  "PROOF OF A DOOR of foundation/Transfer.h).  The next three messages name the class, the door and "
+                  "the first plain part");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Part));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
+inline constexpr bool unproven_door_refusal = refuse_unproven_door<Class, Door, Part>();
+
+// The refusal of a member function template with no specialization for the
+// probe body (THE DOORS OF A SYNCHRONIZED CLASS): the check cannot read its
+// parameters, so it fails closed.
+template <std::meta::info Class, std::meta::info Door>
+consteval bool refuse_unreadable_door() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states synchronized{} and holds a plain private part, and a member function "
+                  "template of it has no specialization for the probe body, a class whose call takes each argument "
+                  "list.  GCC 16 gives no parameters of a template itself, so the check cannot read the proof of the "
+                  "door, and it refuses the door.  Give the template one type parameter that a callable class can "
+                  "fill, or make the door a function (THE DOORS OF A SYNCHRONIZED CLASS of foundation/Transfer.h).  "
+                  "The next two messages name the class and the template");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Door>
+inline constexpr bool unreadable_door_refusal = refuse_unreadable_door<Class, Door>();
+
+// The probe body of a member function template (THE DOORS OF A SYNCHRONIZED
+// CLASS): its call takes each argument list, gives nothing and does not
+// throw.  It is no token, so a parameter of its type proves nothing.
+struct door_probe_body final {
+    template <class... Arguments>
+    constexpr void operator()(Arguments&&... /*arguments*/) const noexcept {}
+};
+
+// One class whose doors the check does not read (THE EXEMPTION): the name of
+// its namespace, which lies in the global namespace, and its own name.  The
+// check file of foundation/Transfer.h pins the table to the one class.
+struct synchronized_door_exemption {
+    char const* space = "";
+    char const* name = "";
+};
+
+inline constexpr synchronized_door_exemption synchronized_door_exemptions[] = {
+    {.space = "crucible", .name = "BackgroundThread"},
+};
+
+// True when the class is an exemption (THE EXEMPTION).  The name query of
+// foundation/reflect/Members.h compares each name and walks no scope.  A
+// specialization is no exemption.  Complexity: linear in the exemptions,
+// times the length of a name.
+[[nodiscard]] consteval bool is_exempt_from_door_check(std::meta::info type) {
+    namespace refl = ::foundation::reflect;
+    if (!std::meta::has_identifier(type) || std::meta::has_template_arguments(type)) return false;
+    const std::meta::info space = std::meta::parent_of(type);
+    if (!std::meta::is_namespace(space) || std::meta::parent_of(space) != ^^::) return false;
+    for (const synchronized_door_exemption& exemption : synchronized_door_exemptions) {
+        if (refl::has_identifier_named(type, exemption.name) && refl::has_identifier_named(space, exemption.space)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when the class is a token (THE PROOF OF A DOOR): it states
+// thread_bound{}, or it carries authority{} and does not copy.
+[[nodiscard]] consteval bool is_door_token(std::meta::info bare) {
+    if (!is_class_or_union(bare) || !std::meta::is_complete_type(bare)) return false;
+    if (states(bare, ^^thread_bound)) return true;
+    return states(bare, ^^::foundation::linear::authority) && !std::meta::is_copy_constructible_type(bare);
+}
+
+// True when the type is one of the own types of the owner (THE PROOF OF A
+// DOOR): the owner, a member class of it, or a type that a public member
+// alias of it names.  Complexity: linear in the members of the owner.
+[[nodiscard]] consteval bool is_own_type_of(std::meta::info owner, std::meta::info candidate) {
+    namespace refl = ::foundation::reflect;
+    const std::meta::info bare = refl::bare_type(candidate);
+    if (bare == owner) return true;
+    if (is_class_or_union(bare) && std::meta::parent_of(bare) == owner) return true;
+    const std::meta::info alias =
+        refl::find_member(owner, std::meta::access_context::unprivileged(), [bare](std::meta::info member) {
+            return std::meta::is_type_alias(member) && std::meta::dealias(member) == bare;
+        });
+    return alias != std::meta::info{};
+}
+
+// True when the token is tied to the owner (THE PROOF OF A DOOR): it is an own
+// type of the owner, or one of its type arguments is one.
+[[nodiscard]] consteval bool is_tied_to(std::meta::info token, std::meta::info owner) {
+    namespace refl = ::foundation::reflect;
+    if (is_own_type_of(owner, token)) return true;
+    if (!std::meta::has_template_arguments(token)) return false;
+    for (const refl::TypeNode& argument : refl::argument_components_of(refl::TypeNode{token, true})) {
+        if (!argument.is_value_argument && is_own_type_of(owner, argument.type)) return true;
+    }
+    return false;
+}
+
+// True when the bare type is a token tied to the owner (THE PROOF OF A DOOR).
+[[nodiscard]] consteval bool is_proof_type(std::meta::info bare, std::meta::info owner) {
+    return is_door_token(bare) && is_tied_to(bare, owner);
+}
+
+// True when the node of a parameter is a proof of the owner (THE PROOF OF A
+// DOOR).  A reference to const of a token counts only when the token is not
+// Shareable.
+[[nodiscard]] consteval bool is_proof_parameter(::foundation::reflect::TypeNode parameter, std::meta::info owner) {
+    if (!is_proof_type(parameter.type, owner)) return false;
+    if (!parameter.was_reference || !parameter.was_const) return true;
+    return !::foundation::transfer::holds(parameter.type, Property::Share);
+}
+
+// True when the bare result of a door is the token of a claim door (THE DOORS
+// OF A SYNCHRONIZED CLASS): a proof of the owner, or a sum whose first type
+// argument is a proof of the owner or a handle class whose own member is one.
+// The read stops at the members of the handle, so the rule stays exact.
+[[nodiscard]] consteval bool is_claim_result(std::meta::info result, std::meta::info owner) {
+    namespace refl = ::foundation::reflect;
+    if (is_proof_type(result, owner)) return true;
+    if (!is_class_or_union(result) || !std::meta::has_template_arguments(result)
+        || !states(result, ^^::foundation::linear::sum)) {
+        return false;
+    }
+    const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{result, true});
+    if (arguments.empty() || arguments.begin()->is_value_argument) return false;
+    const std::meta::info held = arguments.begin()->type;
+    if (is_proof_type(held, owner)) return true;
+    if (!is_class_or_union(held) || !std::meta::is_complete_type(held)) return false;
+    for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{held, true})) {
+        if (part.member != std::meta::info{} && is_proof_type(part.type, owner)) return true;
+    }
+    return false;
+}
+
+// True when the member is a door (THE DOORS OF A SYNCHRONIZED CLASS).  A
+// static member is read too, because a parameter can give it the object.
+[[nodiscard]] consteval bool is_door(std::meta::info member) {
+    const bool is_template = std::meta::is_function_template(member);
+    if (!std::meta::is_function(member) && !is_template) return false;
+    if (std::meta::is_private(member)) return false;
+    if (is_template) return true;
+    return !std::meta::is_constructor(member) && !std::meta::is_destructor(member) && !std::meta::is_deleted(member);
+}
+
+// True when the node of a parameter of a static function names the owner
+// through a reference that is not const, so the function can write the
+// object as a door does.
+[[nodiscard]] consteval bool reaches_owner(::foundation::reflect::TypeNode parameter, std::meta::info owner) {
+    return parameter.was_reference && !parameter.was_const && parameter.type == owner;
+}
+
+// The verdict of a door: it holds the rule, it holds no proof, or the check
+// cannot read the parameters of its template.
+enum class DoorVerdict : unsigned char {
+    proven = 0,
+    unproven = 1,
+    unreadable = 2,
+};
+
+// The type of a function reads as its return node, and then a node for each
+// parameter (argument_components_of of foundation/reflect/TypeComponents.h).
+[[nodiscard]] consteval DoorVerdict verdict_of_door(std::meta::info door, std::meta::info owner) {
+    namespace refl = ::foundation::reflect;
+    std::meta::info function = door;
+    if (std::meta::is_function_template(door)) {
+        const std::meta::info arguments[] = {^^door_probe_body};
+        if (!std::meta::can_substitute(door, arguments)) return DoorVerdict::unreadable;
+        function = std::meta::substitute(door, arguments);
+        if (!std::meta::is_function(function)) return DoorVerdict::unreadable;
+        if (std::meta::is_constructor(function) || std::meta::is_destructor(function)
+            || std::meta::is_deleted(function)) {
+            return DoorVerdict::proven;
+        }
+    }
+    const bool is_static = std::meta::is_static_member(function);
+    if (!is_static && std::meta::is_const(function)) return DoorVerdict::proven;
+    const refl::TypeNodeList parts = refl::argument_components_of(refl::TypeNode{std::meta::type_of(function), true});
+    bool is_result = true;
+    bool does_reach_owner = !is_static;
+    bool has_proof = false;
+    bool gives_proof = false;
+    for (const refl::TypeNode& part : parts) {
+        if (is_result) {
+            gives_proof = is_claim_result(part.type, owner);
+            is_result = false;
+            continue;
+        }
+        if (is_static && reaches_owner(part, owner)) does_reach_owner = true;
+        if (is_proof_parameter(part, owner)) has_proof = true;
+    }
+    if (!does_reach_owner || has_proof || gives_proof) return DoorVerdict::proven;
+    return DoorVerdict::unproven;
+}
+
+// Stops the build at the first door of the class that does not hold the rule
+// (THE DOORS OF A SYNCHRONIZED CLASS).  plain names the first plain private
+// part.  The walk is unchecked, because a derived class can call a protected
+// door, and is_door then drops each private member.  Complexity: linear in
+// the members of the class, times the parameters of each door.
+consteval void check_synchronized_doors(std::meta::info type, std::meta::info plain) {
+    namespace refl = ::foundation::reflect;
+    DoorVerdict verdict = DoorVerdict::proven;
+    const std::meta::info door =
+        refl::find_member(type, std::meta::access_context::unchecked(), [type, &verdict](std::meta::info member) {
+            if (!is_door(member)) return false;
+            verdict = verdict_of_door(member, type);
+            return verdict != DoorVerdict::proven;
+        });
+    if (door == std::meta::info{}) return;
+    if (verdict == DoorVerdict::unreadable) {
+        const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(door)};
+        static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^unreadable_door_refusal, arguments)));
+        return;
+    }
+    const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(door),
+                                         std::meta::reflect_constant(plain)};
+    static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^unproven_door_refusal, arguments)));
+}
+
 consteval void check_synchronized_statement(std::meta::info type) {
     namespace refl = ::foundation::reflect;
+    const bool is_exempt = is_exempt_from_door_check(type);
+    std::meta::info plain{};
     for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
         // A node of a base names no member.  Each base, private or not, is
         // Synchronized, so a base that two threads cannot write refuses.
@@ -534,14 +841,34 @@ consteval void check_synchronized_statement(std::meta::info type) {
             if (!is_shared_writable(part.type)) refuse_synchronized_part(type, part.type);
             continue;
         }
-        if (std::meta::is_private(part.member)) continue;
         // A member that is a reference is not held by value.  No write
         // reaches a const member, so a read is all it must allow.
+        if (std::meta::is_private(part.member)) {
+            // A const door writes a mutable member (THE DOORS OF A
+            // SYNCHRONIZED CLASS).  The first plain member is enough for the
+            // check of the doors, so the walk stops there.
+            if (part.is_mutable) {
+                if (!part.is_held_by_value || !is_shared_writable(part.type)) {
+                    const std::meta::info arguments[] = {std::meta::reflect_constant(type),
+                                                         std::meta::reflect_constant(part.member)};
+                    static_cast<void>(
+                        std::meta::extract<bool>(std::meta::substitute(^^mutable_part_refusal, arguments)));
+                }
+                continue;
+            }
+            if (is_exempt || plain != std::meta::info{}) continue;
+            const bool holds_write = part.is_held_by_value
+                                  && (part.was_const ? ::foundation::transfer::holds(part.type, Property::Share)
+                                                     : is_shared_writable(part.type));
+            if (!holds_write) plain = part.member;
+            continue;
+        }
         const bool holds_write = part.is_held_by_value
                               && (part.was_const ? ::foundation::transfer::holds(part.type, Property::Share)
                                                  : is_shared_writable(part.type));
         if (!holds_write) refuse_synchronized_part(type, part.member);
     }
+    if (plain != std::meta::info{}) check_synchronized_doors(type, plain);
 }
 
 // The goal that rule 1 asks of a reference to the type of the node, for the

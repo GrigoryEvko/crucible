@@ -9,6 +9,8 @@
 //   member_named_in(scope, access, name)   the first member with the
 //                                          identifier name, or a null
 //                                          reflection
+//   has_identifier_named(entity, name)     true when the entity has the
+//                                          identifier name, with no walk
 //
 // A visitor that gives false for each member visits each member, so a reader
 // that collects reads the scope through find_member too.  A namespace has no
@@ -28,14 +30,18 @@ template <class Matches>
     return std::meta::info{};
 }
 
-// The name is a text that compares with the identifier of a member, such as
-// a string literal or the name that a caller gives on.
+// The name is a text that compares with the identifier of an entity, such as
+// a string literal or the name that a caller gives on.  Complexity: linear in
+// the length of the name.
+template <class Name>
+[[nodiscard]] consteval bool has_identifier_named(std::meta::info entity, Name const& name) {
+    return std::meta::has_identifier(entity) && std::meta::identifier_of(entity) == name;
+}
+
 template <class Name>
 [[nodiscard]] consteval std::meta::info member_named_in(std::meta::info scope, std::meta::access_context access,
                                                         Name const& name) {
-    return find_member(scope, access, [&name](std::meta::info member) {
-        return std::meta::has_identifier(member) && std::meta::identifier_of(member) == name;
-    });
+    return find_member(scope, access, [&name](std::meta::info member) { return has_identifier_named(member, name); });
 }
 
 }  // namespace foundation::reflect
