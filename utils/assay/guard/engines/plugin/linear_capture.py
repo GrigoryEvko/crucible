@@ -6,7 +6,10 @@ THE RULE
       reference-capture  a capture by reference of a linear object, by its name
                          or by the default capture.  No rule sees a consume
                          through such a capture, and the rule must-consume gives
-                         the captured object no line
+                         the captured object no line.  A capture by const
+                         reference only reads the object and gives no line,
+                         unless its class has a door that consumes a const
+                         object: a const&& member function or a mutable field
     Decision 9 of misc/12_10_2026_linear.md: a closure with a linear capture is
     linear by its parts, the API that runs it takes it by value, and the call
     is std::move(closure)().

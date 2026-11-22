@@ -273,8 +273,13 @@
 //     foundation/core/Frame.h, owes no consume: the end of its scope is its
 //     door.  A nested frame of two keyed owners captures the key of the inner
 //     owner by reference, so a capture by reference of a loan key is no
-//     finding.  Each other linear class stays a finding, also a class with a
-//     door at the end of its scope.
+//     finding.  A capture by const reference reads the object and cannot
+//     consume it, because an rvalue member and a move constructor do not bind
+//     to a const object.  So it is no finding, unless the class has a door
+//     that consumes a const object: a member function with the qualifier
+//     const&&, or a mutable field, in the class, a base or a member that it
+//     holds by value (consumes_through_const).  Each other linear class stays
+//     a finding, also a class with a door at the end of its scope.
 //
 // THE SUMMARIES
 //     Three facts of a body serve each later caller in the unit, at the
@@ -4394,10 +4399,47 @@ bool is_frame_object(tree node) {
     return false;
 }
 
+// True when the class TYPE has a door that consumes a const object: a member
+// function with the qualifier const&& that is not deleted, or a mutable
+// field.  The walk reads the class, each base and each member that it holds
+// by value, to the depth kTypeDepth (THE CAPTURES).  Complexity: linear in
+// the members of the classes that it reads.
+bool consumes_through_const(tree type, int depth) {
+    tree main = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(main) || depth >= kTypeDepth) {
+        return false;
+    }
+    for (tree member = TYPE_FIELDS(main); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        tree function = TREE_CODE(member) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(member) : member;
+        if (TREE_CODE(function) == FUNCTION_DECL) {
+            tree method = TREE_TYPE(function);
+            bool const is_deleted = DECL_LANG_SPECIFIC(function) != nullptr && DECL_DELETED_FN(function);
+            if (DECL_IOBJ_MEMBER_FUNCTION_P(function) && !is_deleted && FUNCTION_RVALUE_QUALIFIED(method)
+                && (type_memfn_quals(method) & TYPE_QUAL_CONST) != 0) {
+                return true;
+            }
+            continue;
+        }
+        if (TREE_CODE(member) != FIELD_DECL) {
+            continue;
+        }
+        if (DECL_MUTABLE_P(member)) {
+            return true;
+        }
+        tree held = TREE_TYPE(member);
+        if (!TYPE_REF_P(held) && consumes_through_const(strip_array_types(held), depth + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // True when FIELD of the class CLOSURE is a capture by reference of a linear
-// object that is no loan key.  A loan key is a linear class with the
-// annotation loan_key_mark of foundation/core/Frame.h, and the end of its
-// scope is its door, so the closure hides no consume of it (THE CAPTURES).
+// object that is no loan key, and that the closure can consume.  A loan key
+// is a linear class with the annotation loan_key_mark of
+// foundation/core/Frame.h, and the end of its scope is its door, so the
+// closure hides no consume of it.  A capture by const reference of a class
+// with no door that consumes a const object only reads it (THE CAPTURES).
 bool is_linear_reference_capture(tree closure, tree field) {
     static tree const loan_key_mark = get_identifier("loan_key_mark");
     static tree const core = get_identifier("core");
@@ -4411,7 +4453,8 @@ bool is_linear_reference_capture(tree closure, tree field) {
     }
     tree main = TYPE_MAIN_VARIANT(object);
     bool const is_loan_key = CLASS_TYPE_P(main) && carries_base_annotation(TYPE_ATTRIBUTES(main), loan_key_mark, core);
-    return !is_loan_key;
+    bool const only_reads = TYPE_READONLY(object) && !consumes_through_const(main, 0);
+    return !is_loan_key && !only_reads;
 }
 
 // One capture by reference of a linear object, the field FIELD of the closure

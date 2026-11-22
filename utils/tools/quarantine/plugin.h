@@ -429,7 +429,9 @@
 //     library-holder        linear-containment: a declaration whose type holds
 //                           a class of the library with a linear argument
 //     reference-capture     linear-capture: a capture by reference of a
-//                           linear object that is no loan key
+//                           linear object that is no loan key, other than a
+//                           capture by const reference of a class with no door
+//                           that consumes a const object
 //     untracked-assignment  drop-door: an assignment over a linear object that
 //                           is no tracked local, which drops its old value
 //     destroy               drop-door: a delete-expression or a destructor

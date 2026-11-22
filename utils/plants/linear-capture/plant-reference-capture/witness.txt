@@ -1,6 +1,8 @@
 # A capture by reference of a linear object, by its name and by the default
 # capture, gives one line for each capture.  A class with a door at the end
-# of its scope that is no loan key gives its line too.
+# of its scope that is no loan key gives its line too.  A capture by const
+# reference gives a line when the class has a const&& member or a mutable
+# field.
 
 compile capture src/capture.cpp linear-shapes=on
 flag capture -freflection
@@ -9,3 +11,5 @@ judge capture
 finding capture linear-capture reference-capture src/capture.cpp:20:22 | planted::captures: named
 finding capture linear-capture reference-capture src/capture.cpp:21:23 | planted::captures: defaulted
 finding capture linear-capture reference-capture src/capture.cpp:40:19 | planted::lends_scoped: scoped
+finding capture linear-capture reference-capture src/capture.cpp:67:18 | planted::consumes_through_const: consumed_view
+finding capture linear-capture reference-capture src/capture.cpp:68:18 | planted::consumes_through_const: held_view

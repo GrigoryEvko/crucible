@@ -1,7 +1,8 @@
 // The captures that the rule linear-capture admits: a move of a linear object
 // into the closure, a capture by reference of a value that is not linear, the
-// capture of this, and a capture by reference of a loan key, a linear class
-// with the annotation loan_key_mark of foundation/core/Frame.h.
+// capture of this, a capture by reference of a loan key, a linear class with
+// the annotation loan_key_mark of foundation/core/Frame.h, and a capture by
+// const reference of a token that the body only reads.
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Frame.h>
@@ -48,6 +49,31 @@ void captures() {
     auto counted = [&count] { ++count; };
     moved();
     counted();
+}
+
+// A capture by const reference of a token that the body only reads, by a
+// const name and by an initializer.  The token has no member with the
+// qualifier const&& and no mutable field, so the closure cannot consume it.
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Reading {
+    int value = 0;
+    constexpr Reading() noexcept = default;
+    constexpr Reading(Reading&&) noexcept = default;
+    constexpr Reading& operator=(Reading&& other) noexcept {
+        value = other.value;
+        return *this;
+    }
+    Reading(const Reading&) = delete;
+};
+
+void take_reading(Reading&& reading) noexcept;
+
+void reads_through_const() {
+    Reading reading;
+    Reading const& view = reading;
+    auto by_name = [&view] { return view.value; };
+    auto by_initializer = [&held = static_cast<Reading const&>(reading)] { return held.value; };
+    static_cast<void>(by_name() + by_initializer());
+    take_reading(static_cast<Reading&&>(reading));
 }
 
 }  // namespace planted

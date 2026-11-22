@@ -41,4 +41,33 @@ void lends_scoped() {
     lent();
 }
 
+// A capture by const reference of a class with a door that consumes a const
+// object stays a finding: a const&& member, and a mutable field.
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] ConstConsumed {
+    constexpr ConstConsumed() noexcept = default;
+    constexpr ConstConsumed(ConstConsumed&&) noexcept = default;
+    constexpr ConstConsumed& operator=(ConstConsumed&&) noexcept { return *this; }
+    ConstConsumed(const ConstConsumed&) = delete;
+    [[nodiscard]] constexpr int consume() const&& noexcept { return 1; }
+};
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] MutableHeld {
+    mutable int spent = 0;
+    constexpr MutableHeld() noexcept = default;
+    constexpr MutableHeld(MutableHeld&&) noexcept = default;
+    constexpr MutableHeld& operator=(MutableHeld&&) noexcept { return *this; }
+    MutableHeld(const MutableHeld&) = delete;
+};
+
+void consumes_through_const() {
+    ConstConsumed consumed;
+    MutableHeld held;
+    ConstConsumed const& consumed_view = consumed;
+    MutableHeld const& held_view = held;
+    auto drain = [&consumed_view] { return static_cast<ConstConsumed const&&>(consumed_view).consume(); };
+    auto spend = [&held_view] { held_view.spent = 1; };
+    static_cast<void>(drain());
+    spend();
+}
+
 }  // namespace planted

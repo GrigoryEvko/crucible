@@ -1,6 +1,7 @@
 # A move into the closure, a capture by reference of a value that is not
-# linear, the capture of this, and a capture by reference of a loan key give
-# no line.
+# linear, the capture of this, a capture by reference of a loan key, and a
+# capture by const reference of a token that the body only reads give no
+# line.
 
 compile capture src/capture.cpp linear-shapes=on
 flag capture -freflection
