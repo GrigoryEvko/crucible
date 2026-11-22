@@ -298,21 +298,31 @@ void test_empty_drain() {
 // Seat and puts the next session there, and the take after the loop gives the
 // last session back.
 //
-// Each body owns its handle, and it writes its results into Atomics of the
-// test.  The thread door joins both threads before it returns, and the test
-// reads the results after it.
+// The result of the producer of the round trip: the end of its loop, and the
+// handle that came back.
+struct ProducerResult {
+    bool is_done = false;
+    bool has_handle_back = false;
+};
+
+// The result of the consumer of the round trip: the count of matched items,
+// and the handle that came back.  The flag word holds no padding byte.
+struct ConsumerResult {
+    int matched = 0;
+    int has_handle_back = 0;
+};
+
+// Each body owns its handle, and it gives its result back.  The thread door
+// joins both threads before it returns, and the test reads the results from
+// the value of the call.
 void test_typed_session_round_trip() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
     constexpr int kCount = 128;
-    ::fixy::Atomic<bool> producer_done{false};
-    ::fixy::Atomic<bool> producer_handle_back{false};
-    ::fixy::Atomic<int> matched_count{0};
-    ::fixy::Atomic<bool> consumer_handle_back{false};
 
-    auto produce = [handle = std::move(producer), &producer_done, &producer_handle_back]() mutable noexcept {
+    auto produce = [handle = std::move(producer)]() mutable noexcept {
         const FgCtx ctx = ::foundation::effects::testing::foreground();
         auto head =
             ::foundation::core::mint_seat(ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle)));
@@ -322,11 +332,11 @@ void test_typed_session_round_trip() {
             });
         }
         auto back = std::move(head).take().select<1>(::fixy::session::no_label).close();
-        producer_handle_back.store_release(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount));
-        producer_done.store_release(true);
+        return ProducerResult{.is_done = true,
+                              .has_handle_back = back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount)};
     };
 
-    auto consume = [handle = std::move(consumer), &matched_count, &consumer_handle_back]() mutable noexcept {
+    auto consume = [handle = std::move(consumer)]() mutable noexcept {
         const BgCtx ctx{::foundation::effects::testing::bg()};
         int matched = 0;
         auto head =
@@ -339,18 +349,18 @@ void test_typed_session_round_trip() {
             });
         }
         auto back = std::move(head).take().select<1>(::fixy::session::no_label).close();
-        matched_count.store_release(matched);
-        consumer_handle_back.store_release(back.tail_index() == static_cast<std::uint32_t>(kCount));
+        return ConsumerResult{.matched = matched,
+                              .has_handle_back = back.tail_index() == static_cast<std::uint32_t>(kCount) ? 1 : 0};
     };
 
     const ::fixy::BgLoadCtx bg{::foundation::effects::testing::bg()};
-    ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, produce, consume)
-        .expect("the thread door starts the producer and the consumer");
+    auto const [produced, consumed] = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, produce, consume)
+                                          .expect("the thread door starts the producer and the consumer");
 
-    CRUCIBLE_TEST_ASSERT(kTest, producer_done.load_acquire());
-    CRUCIBLE_TEST_ASSERT(kTest, producer_handle_back.load_acquire());
-    CRUCIBLE_TEST_ASSERT(kTest, consumer_handle_back.load_acquire());
-    CRUCIBLE_TEST_ASSERT(kTest, matched_count.load_acquire() == kCount);
+    CRUCIBLE_TEST_ASSERT(kTest, produced.is_done);
+    CRUCIBLE_TEST_ASSERT(kTest, produced.has_handle_back);
+    CRUCIBLE_TEST_ASSERT(kTest, consumed.has_handle_back == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, consumed.matched == kCount);
 }
 
 // A session that ends at once gives back a handle that still reaches the

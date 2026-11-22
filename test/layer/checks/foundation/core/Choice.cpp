@@ -655,6 +655,51 @@ static_assert(sizeof(Result<std::uint64_t, WideError>) == 24);
 static_assert(std::is_trivially_copyable_v<Result<std::uint64_t, Code>>);
 static_assert(std::is_trivially_copyable_v<Result<std::uint32_t, Code32>>);
 
+// The zero tail of an alternative that is smaller than the storage of a sum
+// of at most 16 bytes.  A tail that does not fill the storage exactly makes
+// the alternative larger than the storage, and the static_assert of the slot
+// or a size here fails.  The sweep crosses each word width of the storage
+// (1, 2, 4 and 8 bytes) with an alternative that ends at a word and one that
+// ends inside a word, on the side of the value and on the side of the error.
+enum class Code16 : std::uint16_t {
+    full,
+    closed
+};
+
+struct ThreeHalves {
+    std::uint16_t first = 0;
+    std::uint16_t second = 0;
+    std::uint16_t third = 0;
+};
+
+struct ThreeWords {
+    std::uint32_t first = 0;
+    std::uint32_t second = 0;
+    std::uint32_t third = 0;
+};
+
+static_assert(sizeof(Result<ThreeBytes, Code>) == 4);
+static_assert(sizeof(Result<ThreeHalves, Code>) == 8);
+static_assert(sizeof(Result<ThreeHalves, Code16>) == 8);
+static_assert(sizeof(Result<ThreeWords, Code>) == 16);
+static_assert(sizeof(Result<ThreeWords, Code16>) == 16);
+static_assert(sizeof(Result<ThreeWords, Code32>) == 16);
+static_assert(sizeof(Result<std::uint32_t, Code16>) == 8);
+static_assert(sizeof(Result<std::uint64_t, Code16>) == 16);
+static_assert(sizeof(Result<std::uint64_t, Code32>) == 16);
+static_assert(sizeof(Result<std::uint8_t, Code32>) == 8);
+static_assert(sizeof(Result<std::uint16_t, Code32>) == 8);
+static_assert(sizeof(Result<ThreeBytes, Code32>) == 8);
+static_assert(sizeof(Result<std::uint8_t, WideError>) == 24);
+static_assert(std::is_trivially_copyable_v<Result<ThreeWords, Code>>);
+static_assert(std::is_trivially_copyable_v<Result<std::uint64_t, Code16>>);
+
+// A constant error and a constant value of each shape read back.
+static_assert(Result<std::uint64_t, Code16>{err(Code16::closed)}.err().expect("a constant error") == Code16::closed);
+static_assert(Result<ThreeWords, Code>{ThreeWords{.first = 1, .second = 2, .third = 3}}.expect("a constant value").third
+              == 3);
+static_assert(Result<std::uint8_t, Code32>{std::uint8_t{9}}.expect("a constant value") == 9);
+
 // Zero bytes are a value or an error that no constructor made, so the
 // checked lifetime start refuses each Result.
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Result<int, Code>>);

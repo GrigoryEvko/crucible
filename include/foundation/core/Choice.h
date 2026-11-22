@@ -2063,15 +2063,25 @@ struct ZeroWords<Word, 1> {
     Word first_ = 0;
 };
 
+// How an alternative of a plain sum fills the bytes of the storage that its
+// value does not hold (SumSlotOf tells which).
+enum class ZeroFill : unsigned char {
+    // The alternative writes no byte after its value.
+    none,
+    // An empty alternative writes zero words over the full storage.
+    storage,
+    // An alternative that is smaller than the storage writes zero words over
+    // the full storage, and then starts its value over the first bytes.
+    under,
+};
+
 // An alternative of a plain sum.  An empty alternative, such as the empty
-// marker of an Option or the Unit of a Result, has no value bytes.  When
-// WritesZeroWords is true, it writes zero words over the full storage, so a
-// copy of the sum reads no byte that no constructor wrote (SumSlotOf tells
-// when).  An alternative that holds a value leaves the bytes after it as they
-// are, as std::expected does, so its value stays in a register.  Width is the
-// alignment of the storage, at most eight bytes.  Only the slot of a plain
-// sum reads the value.
-template <class T, std::size_t Size, std::size_t Width, bool WritesZeroWords>
+// marker of an Option or the Unit of a Result, has no value bytes.  Fill
+// tells how the alternative writes the storage bytes that its value does not
+// hold, so a copy of the sum reads no byte that no constructor wrote
+// (SumSlotOf tells when).  Width is the alignment of the storage, at most eight bytes.
+// Only the slot of a plain sum reads the value.
+template <class T, std::size_t Size, std::size_t Width, ZeroFill Fill>
 class PlainAlternative {
     T value_;
 
@@ -2085,7 +2095,7 @@ public:
 };
 
 template <class T, std::size_t Size, std::size_t Width>
-class PlainAlternative<T, Size, Width, true> {
+class PlainAlternative<T, Size, Width, ZeroFill::storage> {
     [[no_unique_address]] T value_;
     ZeroWords<typename WordOf<Width>::type, Size / Width> zero_{};
 
@@ -2097,6 +2107,50 @@ public:
     constexpr explicit PlainAlternative(U&& from) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : value_(static_cast<U&&>(from)) {}
 };
+
+// The zero words and the value share the bytes of the alternative.  The
+// constructor writes the zero words over the full storage first, and then
+// starts the value over the first bytes.  The value is the active member, and
+// the bytes after it keep the zero words.  So a copy of the sum reads a
+// written byte at each offset.  A member after the value would make GCC cut
+// the storage into two scalars, and each other alternative would then split
+// and rebuild its word.  With the zero words under the value, the storage
+// stays one scalar, and GCC folds the zero words into the move of the value.
+// No code writes the zero words after the constructor, so the union names its
+// active member as the tag of a sum does, and it carries the mark closed_tag.
+template <class T, std::size_t Size, std::size_t Width>
+class PlainAlternative<T, Size, Width, ZeroFill::under> {
+    static_assert(sizeof(T) < Size, "a value under zero words is smaller than the storage");
+
+    union[[= ::foundation::core::closed_tag{}]] {
+        ZeroWords<typename WordOf<Width>::type, Size / Width> zero_;
+        T value_;
+    };
+
+    template <bool IsPlain, class... Ts>
+    friend class SumSlotOf;
+
+public:
+    template <class U>
+    constexpr explicit PlainAlternative(U&& from) noexcept(std::is_nothrow_constructible_v<T, U&&>) : zero_{} {
+        ::new(static_cast<void*>(&value_)) T(static_cast<U&&>(from));
+    }
+};
+
+// The fill of an alternative in a storage of Size bytes.  Only a sum of at
+// most 16 bytes fills (SumSlotOf tells why).
+template <class T, std::size_t Size, bool IsRegisterPair>
+[[nodiscard]] consteval ZeroFill zero_fill_of_() noexcept {
+    if constexpr (!IsRegisterPair) {
+        return ZeroFill::none;
+    } else if constexpr (std::is_empty_v<T>) {
+        return ZeroFill::storage;
+    } else if constexpr (sizeof(T) == Size) {
+        return ZeroFill::none;
+    } else {
+        return ZeroFill::under;
+    }
+}
 
 template <class T, class E>
 class ResultSlot;
@@ -2138,20 +2192,24 @@ struct SumDoor {
 //
 // The ABI of x86_64 and of aarch64 gives a sum of at most 16 bytes back in
 // two registers.  GCC can then read each byte of the storage into a register,
-// also when the active alternative is empty.  -Wmaybe-uninitialized then
-// reports a byte that no constructor wrote.  So the empty alternative of such
-// a sum writes zero words over the storage (PlainAlternative).  A larger sum
-// goes through memory, and GCC gives no such report for it.  Its empty
-// alternative writes no byte, so a clear of an Option of a large payload
-// writes only its tag, as the reset of std::optional does.
+// also when the active alternative is empty or smaller than the storage.
+// -Wmaybe-uninitialized then reports a byte that no constructor wrote, for
+// example the bytes after the error of two bytes in a Result of a value of
+// eight bytes.  So each alternative of such a sum writes zero words over the
+// storage bytes that its value does not hold (PlainAlternative).  In a
+// register, such a zero is usually the zero extension of the move of the
+// value.  A larger sum goes through memory, and GCC gives no such report for
+// it.  Its alternatives write no byte after the value, so a clear of an
+// Option of a large payload writes only its tag, as the reset of
+// std::optional does.
 template <class... Ts>
 class SumSlotOf<true, Ts...> {
     static constexpr std::size_t storage_size_ = sizeof(Alternatives<Ts...>);
     static constexpr std::size_t word_width_ = alignof(Alternatives<Ts...>) < 8 ? alignof(Alternatives<Ts...>) : 8;
     using TagWord = std::conditional_t<word_width_ == 8, unsigned long long, unsigned char>;
     static constexpr bool is_register_pair_ = sizeof(TaggedCells<Alternatives<Ts...>, TagWord>) <= 16;
-    using Storage =
-        Alternatives<PlainAlternative<Ts, storage_size_, word_width_, std::is_empty_v<Ts> && is_register_pair_>...>;
+    using Storage = Alternatives<
+        PlainAlternative<Ts, storage_size_, word_width_, zero_fill_of_<Ts, storage_size_, is_register_pair_>()>...>;
     static_assert(sizeof(Storage) == storage_size_ && alignof(Storage) == alignof(Alternatives<Ts...>),
                   "the zero words of an empty alternative do not change the storage");
 
