@@ -10,9 +10,10 @@ namespace fc = ::foundation::core;
 
 namespace {
 
-int read_after_reset(fc::Option<fc::Ref<int>>& held) {
+template <class Held>
+int read_after_reset(Held& held) {
     int sum = 0;
-    for (fc::Ref<int> const& ref : held) {
+    for (auto const& ref : held) {
         held = fc::none;
         sum += *ref;
     }
@@ -23,6 +24,6 @@ int read_after_reset(fc::Option<fc::Ref<int>>& held) {
 
 int main() {
     int object = 7;
-    fc::Option<fc::Ref<int>> held = fc::Option<fc::Ref<int>>::some(fc::erase_brand(fc::to(object)));
+    auto held = fc::some(fc::to(object));
     return read_after_reset(held);
 }

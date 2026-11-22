@@ -2828,7 +2828,7 @@ foundation_neg_compile_test(neg_core_option_borrow_match_value_arm_assigns
 # The loop door of an Option carries the annotation borrow_match too, so the
 # rule reads the body of a loop over a niche or a plain Option as an arm.
 foundation_neg_compile_test(neg_core_option_loop_body_assigns
-  "neg_core_option_loop_body_assigns\\.cpp:16:[0-9]+: error: this body of a loop over a sum writes the sum that the loop reads \\(assignment held\\)"
+  "neg_core_option_loop_body_assigns\\.cpp:17:[0-9]+: error: this body of a loop over a sum writes the sum that the loop reads \\(assignment held\\)"
   "the loop gives its body a reference into the sum")
 foundation_neg_compile_test(neg_core_option_loop_body_moves
   "neg_core_option_loop_body_moves\\.cpp:16:[0-9]+: error: this body of a loop over a sum writes the sum that the loop reads \\(move held\\)"
