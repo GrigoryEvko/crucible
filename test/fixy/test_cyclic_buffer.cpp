@@ -1,15 +1,23 @@
 // Sentinel TU for fixy/CyclicBuffer.h.  The ring keeps the last N elements,
 // reads the most recent first, and its fill count saturates at N while the
-// cursor keeps counting every claim.
+// cursor keeps counting every claim.  A body borrows one element through a
+// door, and a keyed ring opens a door that writes only with its key.
 
 #include <fixy/CyclicBuffer.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
 using Ring = ::fixy::CyclicBuffer<std::uint64_t, 4>;
+
+// The value of the element back places before the newest.
+template <class RingType>
+[[nodiscard]] std::uint64_t value_back(RingType const& ring, ::fixy::Index<4> back) noexcept {
+    return ring.with_slot(ring.slot_back(back), [](std::uint64_t const& value) noexcept { return value; });
+}
 
 [[nodiscard]] int starts_empty() {
     const Ring ring{};
@@ -24,7 +32,10 @@ using Ring = ::fixy::CyclicBuffer<std::uint64_t, 4>;
     ring.push(std::uint64_t{20});
     ring.push(std::uint64_t{30});
     if (ring.size() != 3 || ring.full()) return 1;
-    if (ring.recent(0) != 30 || ring.recent(1) != 20 || ring.recent(2) != 10) return 2;
+    if (value_back(ring, ::fixy::index<0>()) != 30 || value_back(ring, ::fixy::index<1>()) != 20
+        || value_back(ring, ::fixy::index<2>()) != 10) {
+        return 2;
+    }
     return 0;
 }
 
@@ -35,18 +46,23 @@ using Ring = ::fixy::CyclicBuffer<std::uint64_t, 4>;
     for (std::uint64_t value = 0; value < 11; ++value)
         ring.push(value);
     if (ring.size() != 4 || !ring.full()) return 1;
-    if (ring.recent(0) != 10 || ring.recent(3) != 7) return 2;
+    if (value_back(ring, ::fixy::index<0>()) != 10 || value_back(ring, ::fixy::index<3>()) != 7) return 2;
     if (ring.cursor().raw() != 11 || ring.cursor().index() != 3) return 3;
+    if (ring.next_slot() != ::fixy::Index<4>{::fixy::index<3>()}) return 4;
     return 0;
 }
 
-// A claim hands back the slot to fill, and the write lands in the ring.
-[[nodiscard]] int claim_returns_the_slot_to_fill() {
+// A claim lends the slot to fill to a body, and the write lands in the ring.
+// A pass claims a slot and keeps its element.
+[[nodiscard]] int claim_lends_the_slot_to_fill() {
     Ring ring{};
-    ring.claim() = 99;
-    std::uint64_t& slot = ring.claim();
-    slot = 7;
-    if (ring.size() != 2 || ring.recent(0) != 7 || ring.recent(1) != 99) return 1;
+    ring.with_claim([](std::uint64_t& slot) noexcept { slot = 99; });
+    ring.with_claim([](std::uint64_t& slot) noexcept { slot = 7; });
+    if (ring.size() != 2 || value_back(ring, ::fixy::index<0>()) != 7 || value_back(ring, ::fixy::index<1>()) != 99) {
+        return 1;
+    }
+    ring.pass_slot();
+    if (ring.size() != 3 || value_back(ring, ::fixy::index<0>()) != 0) return 2;
     return 0;
 }
 
@@ -55,7 +71,7 @@ using Ring = ::fixy::CyclicBuffer<std::uint64_t, 4>;
     Ring ring{};
     ring.push(std::uint64_t{5});
     const Ring& view = ring;
-    return view.recent(0) == 5 ? 0 : 1;
+    return value_back(view, ::fixy::index<0>()) == 5 ? 0 : 1;
 }
 
 // The count of the ends of each Step.  A test reads it around a fresh claim.
@@ -74,19 +90,44 @@ struct Step {
 };
 
 // A fresh claim of a full ring ends the oldest element one time and starts a
-// value-initialized element in its slot.  The reference of the claim reaches
-// the slot that recent(0) reads.
-[[nodiscard]] int claim_fresh_starts_a_new_element_in_the_slot() {
+// value-initialized element in its slot, which the slot of the newest names.
+[[nodiscard]] int fresh_claim_starts_a_new_element_in_the_slot() {
     ::fixy::CyclicBuffer<Step, 2> ring{};
-    ring.claim().value = 11;
-    ring.claim().value = 12;
+    ring.with_claim([](Step& step) noexcept { step.value = 11; });
+    ring.with_claim([](Step& step) noexcept { step.value = 12; });
     const int ends_before = g_step_ends;
-    Step& fresh = ring.claim_fresh();
+    const std::uint64_t fresh = ring.with_fresh_claim([](Step& step) noexcept {
+        std::uint64_t const started = step.value;
+        step.value = 13;
+        return started;
+    });
     if (g_step_ends != ends_before + 1) return 1;
-    if (fresh.value != 7 || &fresh != &ring.recent(0)) return 2;
-    if (ring.recent(1).value != 12 || ring.size() != 2) return 3;
-    fresh.value = 13;
-    if (ring.recent(0).value != 13) return 4;
+    if (fresh != 7) return 2;
+    auto const read = [](Step const& step) noexcept { return step.value; };
+    if (ring.with_slot(ring.slot_back(::fixy::index<0>()), read) != 13) return 3;
+    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), read) != 12 || ring.size() != 2) return 4;
+    return 0;
+}
+
+// A keyed ring takes its key at each door that writes.  The move form gives
+// the key back, and the borrow form keeps it with the caller.
+[[nodiscard]] int keyed_ring_writes_with_its_key() {
+    auto minted = ::fixy::mint_cyclic_buffer<std::uint64_t, 4>();
+    auto& ring = minted.at(::fixy::index<0>());
+    auto& key = minted.at(::fixy::index<1>());
+    auto back = ring.with_claim(std::move(key), [](std::uint64_t& slot) noexcept { slot = 41; });
+    ring.with_claim(back, [](std::uint64_t& slot) noexcept { slot = 42; });
+    ring.push(back, std::uint64_t{43});
+    auto swapped =
+        ring.with_slot(std::move(back), ring.slot_back(::fixy::index<0>()), [](std::uint64_t& slot) noexcept {
+            std::uint64_t const held = slot;
+            slot = 44;
+            return held;
+        });
+    std::uint64_t const old_value = swapped.at(::fixy::index<0>());
+    if (old_value != 43) return 1;
+    if (value_back(ring, ::fixy::index<0>()) != 44) return 2;
+    if (value_back(ring, ::fixy::index<2>()) != 41) return 3;
     return 0;
 }
 
@@ -96,8 +137,9 @@ int main() {
     if (const int failed = starts_empty(); failed != 0) return 10 + failed;
     if (const int failed = reads_most_recent_first(); failed != 0) return 20 + failed;
     if (const int failed = evicts_the_oldest_past_capacity(); failed != 0) return 30 + failed;
-    if (const int failed = claim_returns_the_slot_to_fill(); failed != 0) return 40 + failed;
+    if (const int failed = claim_lends_the_slot_to_fill(); failed != 0) return 40 + failed;
     if (const int failed = const_ring_reads_the_same_slots(); failed != 0) return 50 + failed;
-    if (const int failed = claim_fresh_starts_a_new_element_in_the_slot(); failed != 0) return 60 + failed;
+    if (const int failed = fresh_claim_starts_a_new_element_in_the_slot(); failed != 0) return 60 + failed;
+    if (const int failed = keyed_ring_writes_with_its_key(); failed != 0) return 70 + failed;
     return 0;
 }

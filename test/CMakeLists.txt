@@ -2091,9 +2091,10 @@ crucible_neg_compile_test(neg_transaction_log_non_power_of_two
   "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be a power of 2"
   "the expression .\\(N & N - 1\\) == 0 \\[with N = 7\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_transaction_log_zero_capacity
-  "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N>  requires  N > 0"
+  "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N, class KeyBrand>  requires \\(IsBrand<KeyBrand>\\) && \\(N > 0"
   "the expression .N > 0 \\[with N = 0\\]. evaluated to .false."
-  "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be at least 4")
+  "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be at least 4"
+  "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<long unsigned int Count>  requires  IndexCount<Count> class foundation::core::Index.")
 crucible_neg_compile_test(neg_transaction_log_capacity_one
   "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be at least 4: a claim keeps the slots of the active transaction and the rollback target"
   "the comparison reduces to .\\(1 >= 4\\).")
@@ -2106,11 +2107,21 @@ crucible_neg_compile_test(neg_transaction_log_capacity_two
 # under the Loaded tag, the tag of a loaded region, both fail at the commit
 # boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
-  "neg_transaction_region_raw_pointer.cpp:34:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
-  "\\{aka .fixy::Tagged<foundation::core::Ref<const crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
+  "neg_transaction_region_raw_pointer.cpp:34:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
+  "no known conversion for argument 3 from .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion. \\{aka .fixy::Tagged<foundation::core::Ref<const crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
-  "neg_transaction_region_loaded_cross_tag.cpp:37:33: error: cannot convert"
-  ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
+  "neg_transaction_region_loaded_cross_tag.cpp:37:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
+  "no known conversion for argument 3 from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
+# A draft does not move, so a move out of a reference gives no second draft
+# of one claim.
+crucible_neg_compile_test(neg_transaction_draft_moves_out_of_a_reference
+  "use of deleted function .crucible::TxDraft<N, KeyBrand>::TxDraft\\(crucible::TxDraft<N, KeyBrand>&&\\)"
+  "a draft is the one writer of its transaction: it stays where begin_tx built it, and commit or abandon takes it by reference")
+# A CommittedTx of a keyed log holds the brand of its log, so a CommittedTx
+# of a second log reaches no door of the first.
+crucible_neg_compile_test(neg_transaction_committed_of_another_log
+  "no matching function for call to .crucible::TransactionLog<4, Owner, fixy::<lambda\\(\\)> >::activate\\(foundation::core::LoanKey<fixy::<lambda\\(\\)> >&, const Owner&, crucible::CommittedTx<4, fixy::<lambda\\(\\)> >\\)."
+  "no known conversion for argument 3 from .CommittedTx<\\[\\.\\.\\.\\],fixy::<lambda\\(\\)>>. to .CommittedTx<\\[\\.\\.\\.\\],fixy::<lambda\\(\\)>>.")
 
 # Transaction::step_id is fixy::Monotonic<uint64_t>.
 #   * neg_transaction_step_id_assign_from_raw: Monotonic has no assignment
@@ -2133,7 +2144,7 @@ crucible_neg_compile_test(neg_transaction_log_rollback_without_owner
   "neg_transaction_log_rollback_without_owner.cpp:[0-9]+:[0-9]+: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(\\)."
   "candidate expects 1 argument, 0 provided")
 crucible_neg_compile_test(neg_transaction_log_copyable_owner
-  "neg_transaction_log_copyable_owner.cpp:16:68: error: template constraint failure for .template<unsigned int N, class Owner>  requires  OwnerProof<Owner> class crucible::TransactionLog."
+  "neg_transaction_log_copyable_owner.cpp:16:68: error: template constraint failure for .template<unsigned int N, class Owner, class KeyBrand>  requires \\(OwnerProof<Owner>\\) && \\(IsBrand<KeyBrand>\\) class crucible::TransactionLog."
   "the expression .!\\(is_copy_constructible_v<P>\\) \\[with P = CopyableOwner\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_publish_stage_built_outside
   "is private within this context"

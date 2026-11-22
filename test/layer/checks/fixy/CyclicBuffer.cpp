@@ -29,20 +29,25 @@ static_assert(CB8::wrapper_kind() == "structural::CyclicBuffer");
 }
 static_assert(default_is_empty());
 
+// The value of the element back places before the newest.
+template <std::size_t Back>
+[[nodiscard]] consteval int value_back(CB8 const& b) noexcept {
+    return b.with_slot(b.slot_back(index<Back>()), [](int const& value) noexcept { return value; });
+}
+
 [[nodiscard]] consteval bool push_grows_and_recent_tracks() noexcept {
     CB8 b{};
     b.push(10);
     b.push(20);
     b.push(30);
-    return b.size() == 3 && b.recent(0) == 30 && b.recent(1) == 20 && b.recent(2) == 10;
+    return b.size() == 3 && value_back<0>(b) == 30 && value_back<1>(b) == 20 && value_back<2>(b) == 10;
 }
 static_assert(push_grows_and_recent_tracks());
 
 [[nodiscard]] consteval bool claim_then_mutate() noexcept {
     CB8 b{};
-    int& slot = b.claim();
-    slot = 99;
-    return b.size() == 1 && b.recent(0) == 99;
+    b.with_claim([](int& slot) noexcept { slot = 99; });
+    return b.size() == 1 && value_back<0>(b) == 99;
 }
 static_assert(claim_then_mutate());
 
@@ -51,7 +56,7 @@ static_assert(claim_then_mutate());
     for (int v = 0; v < 12; ++v)
         b.push(v);
     if (b.size() != 8 || !b.full()) return false;
-    return b.recent(0) == 11 && b.recent(7) == 4;
+    return value_back<0>(b) == 11 && value_back<7>(b) == 4;
 }
 static_assert(saturates_and_evicts());
 
@@ -80,9 +85,15 @@ struct ThrowingDefault {
     ThrowingDefault() noexcept(false) {}
 };
 template <typename Ring>
-concept HasFreshClaim = requires(Ring& ring) { ring.claim_fresh(); };
+concept HasFreshClaim = requires(Ring& ring) { ring.with_fresh_claim([](typename Ring::value_type&) noexcept {}); };
 static_assert(HasFreshClaim<CB8>);
 static_assert(!HasFreshClaim<CyclicBuffer<ThrowingDefault, 8>>);
+
+// The ring gives no reference to an element out: each door lends one element
+// to a body for the time of the call.
+template <typename Ring>
+concept GivesAReference = requires(Ring& ring) { ring.recent(0); } || requires(Ring& ring) { ring.claim(); };
+static_assert(!GivesAReference<CB8>);
 
 }  // namespace detail::cyclic_buffer_self_test
 

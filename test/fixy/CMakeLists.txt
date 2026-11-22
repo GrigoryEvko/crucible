@@ -2153,8 +2153,27 @@ fixy_test(test_cyclic_buffer)
 # power of two.  The ring also rejects a push of a const element, because
 # a push writes into the slot that it gets.
 fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
-  "template constraint failure for .template<class T, long unsigned int N> +requires +N > 0"
-  "== 0 class fixy::CyclicBuffer.")
+  "template constraint failure for .template<class T, long unsigned int N, class KeyBrand> +requires \\(IsBrand<KeyBrand>\\) && \\(N > 0"
+  "== 0\\) class fixy::CyclicBuffer.")
+# The doors of a CyclicBuffer lend one slot to a body, and a keyed ring opens
+# a door that writes only with its key.  A body that reaches the key, a helper
+# with no key and a body that gives its slot out do not compile, and the mint
+# refuses a named brand and an element that can throw at its start.
+fixy_neg_compile_test(neg_cyclic_buffer_nested_slot_door
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(key_type&&, Body&&\\) &"
+  "a body of a keyed door of a CyclicBuffer reaches its LoanKey, so code in the body could open a second door that writes a slot")
+fixy_neg_compile_test(neg_cyclic_buffer_helper_has_no_key
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_slot\\(foundation::core::Index<Count>, Body&&\\) &"
+  "a keyed CyclicBuffer lends a slot that a body writes only with its LoanKey: call with_slot\\(key, slot, body\\)")
+fixy_neg_compile_test(neg_cyclic_buffer_body_gives_its_slot_out
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
+  "a later claim reuses each slot of a CyclicBuffer, so the result of a door holds no reference and no address")
+fixy_neg_compile_test(neg_cyclic_buffer_mint_names_brand
+  "no matching function for call to .mint_cyclic_buffer<uint64_t, 4, .anonymous.::ChosenBrand>\\(\\)."
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = .<unnamed>::ChosenBrand.\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_cyclic_buffer_mint_no_default
+  "no matching function for call to .mint_cyclic_buffer<.anonymous.::ThrowingDefault, 4>\\(\\)."
+  "is_nothrow_default_constructible_v<T>")
 fixy_neg_compile_test(neg_cyclic_buffer_push_of_a_const_element
   "template constraint failure for .template<class T, long unsigned int N, class KeyBrand>  requires \\(IsBrand<KeyBrand>\\) && \\(\\(OwnedElement<T>\\)"
   "required for the satisfaction of .OwnedElement<T>. \\[with T = const test_cyclic_buffer_const_element::Reading\\]")

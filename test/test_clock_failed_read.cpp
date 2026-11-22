@@ -283,19 +283,22 @@ private:
 
 // Says whether a transaction holds the place `expected` in the order of the
 // events of its log.
-[[nodiscard]] bool holds_place(crucible::Transaction const* tx, std::uint64_t expected, ::fixy::TextView what) {
-    if (tx == nullptr) {
-        ::fixy::report(::fixy::Sink::Err, "{}: the log gave no transaction\n", what);
-        return false;
-    }
-    if (tx->event_order.get() != expected) {
-        ::fixy::report(::fixy::Sink::Err, "{}: the transaction holds the place {}, and it must hold {}\n", what,
-                       static_cast<unsigned long long>(tx->event_order.get()),
-                       static_cast<unsigned long long>(expected));
-        return false;
-    }
-    return true;
+[[nodiscard]] bool holds_place(::fixy::Option<std::uint64_t> place, std::uint64_t expected, ::fixy::TextView what) {
+    return place.match(
+        [expected, what](std::uint64_t held) {
+            if (held == expected) return true;
+            ::fixy::report(::fixy::Sink::Err, "{}: the transaction holds the place {}, and it must hold {}\n", what,
+                           static_cast<unsigned long long>(held), static_cast<unsigned long long>(expected));
+            return false;
+        },
+        [what]() {
+            ::fixy::report(::fixy::Sink::Err, "{}: a later claim reused the slot of the transaction\n", what);
+            return false;
+        });
 }
+
+// The place of the last event of a transaction.
+[[nodiscard]] std::uint64_t place_of(crucible::Transaction const& tx) noexcept { return tx.event_order.get(); }
 
 // Makes a region of a copy of one operation and calculates its merkle root.
 // The copy and the region are in the arena.
@@ -331,51 +334,59 @@ void transaction_stamps_read_no_clock(Tally& tally) {
             return;
         }
     }
-    const auto commit = [&log, &owner](crucible::Transaction* tx, crucible::RegionNode* region) {
-        return log.commit(owner, *tx,
-                          ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-                              ::fixy::Ref<crucible::RegionNode const>{::fixy::erase_brand(::fixy::to(*region))}),
-                          region->content_hash, region->merkle_hash);
+    using Log = crucible::TransactionLog<16, SoloOwner>;
+    const auto commit = [&log, &owner](Log::Draft&& draft, crucible::RegionNode* region) {
+        return log
+            .commit(owner, std::move(draft),
+                    ::fixy::mint_tagged<::fixy::tags::source::Arena>(
+                        ::fixy::Ref<crucible::RegionNode const>{::fixy::erase_brand(::fixy::to(*region))}),
+                    region->content_hash, region->merkle_hash)
+            .expect("no claim runs between the claim and its commit");
+    };
+    const auto place = [&log, &owner](Log::Committed committed) {
+        return log.with_tx(owner, committed, place_of).ok();
     };
 
     give_each_read(7, 0);
-    auto* first = &log.begin_tx(owner, 1);
-    tally.expect(holds_place(first, 1, "begin_tx of the first transaction, with the clock at 7 s"));
+    auto first_draft = log.begin_tx(owner, 1);
+    tally.expect(holds_place(log.with_draft(owner, first_draft, place_of).ok(), 1,
+                             "begin_tx of the first transaction, with the clock at 7 s"));
 
     refuse_each_read();
-    tally.expect(commit(first, regions[0]));
-    tally.expect(holds_place(first, 2, "commit of the first transaction, with a clock that fails"));
+    const Log::Committed first = commit(std::move(first_draft), regions[0]);
+    tally.expect(holds_place(place(first), 2, "commit of the first transaction, with a clock that fails"));
 
     give_each_read(8, 0);
-    tally.expect(log.activate(owner, *first).is_none());
-    tally.expect(holds_place(first, 3, "activate of the first transaction, with the clock at 8 s"));
+    tally.expect(log.activate(owner, first).expect("fresh").is_none());
+    tally.expect(holds_place(place(first), 3, "activate of the first transaction, with the clock at 8 s"));
 
     refuse_each_read();
-    auto* second = &log.begin_tx(owner, 2);
-    tally.expect(holds_place(second, 4, "begin_tx of the second transaction, with a clock that fails"));
+    auto second_draft = log.begin_tx(owner, 2);
+    tally.expect(holds_place(log.with_draft(owner, second_draft, place_of).ok(), 4,
+                             "begin_tx of the second transaction, with a clock that fails"));
 
     give_each_read(9, 0);
-    tally.expect(commit(second, regions[1]));
-    tally.expect(holds_place(second, 5, "commit of the second transaction, with the clock at 9 s"));
+    const Log::Committed second = commit(std::move(second_draft), regions[1]);
+    tally.expect(holds_place(place(second), 5, "commit of the second transaction, with the clock at 9 s"));
 
     refuse_each_read();
-    tally.expect(::fixy::same_target(log.activate(owner, *second), ::fixy::some(::fixy::to(*first))));
-    tally.expect(holds_place(first, 6, "the first transaction, displaced with a clock that fails"));
-    tally.expect(holds_place(second, 7, "activate of the second transaction, with a clock that fails"));
+    tally.expect(log.activate(owner, second).expect("fresh") == ::fixy::some(first));
+    tally.expect(holds_place(place(first), 6, "the first transaction, displaced with a clock that fails"));
+    tally.expect(holds_place(place(second), 7, "activate of the second transaction, with a clock that fails"));
 
     give_each_read(10, 0);
-    auto* third = &log.begin_tx(owner, 3);
+    auto third_draft = log.begin_tx(owner, 3);
     give_each_read(11, 0);
-    tally.expect(commit(third, regions[2]));
+    const Log::Committed third = commit(std::move(third_draft), regions[2]);
     give_each_read(12, 0);
-    tally.expect(::fixy::same_target(log.activate(owner, *third), ::fixy::some(::fixy::to(*second))));
-    tally.expect(holds_place(second, 10, "the second transaction, displaced with the clock at 12 s"));
-    tally.expect(holds_place(third, 11, "activate of the third transaction, with the clock at 12 s"));
+    tally.expect(log.activate(owner, third).expect("fresh") == ::fixy::some(second));
+    tally.expect(holds_place(place(second), 10, "the second transaction, displaced with the clock at 12 s"));
+    tally.expect(holds_place(place(third), 11, "activate of the third transaction, with the clock at 12 s"));
 
     refuse_each_read();
     tally.expect(log.rollback(owner));
-    tally.expect(holds_place(third, 12, "the third transaction, rolled back with a clock that fails"));
-    tally.expect(holds_place(second, 13, "the second transaction, restored with a clock that fails"));
+    tally.expect(holds_place(place(third), 12, "the third transaction, rolled back with a clock that fails"));
+    tally.expect(holds_place(place(second), 13, "the second transaction, restored with a clock that fails"));
     use_the_kernel_clock();
 }
 

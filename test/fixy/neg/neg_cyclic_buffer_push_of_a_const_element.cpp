@@ -15,5 +15,5 @@ int main() {
     using test_cyclic_buffer_const_element::Reading;
     ::fixy::CyclicBuffer<const Reading, 4> ring{};
     ring.push(Reading{3});
-    return ring.recent(0).value;
+    return 0;
 }

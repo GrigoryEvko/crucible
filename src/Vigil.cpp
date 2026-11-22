@@ -107,17 +107,23 @@ bool Vigil::rollback() {
             bg.request_mark(ops_before);
             // The restored transaction was active before, and only a commit
             // with a region makes a transaction active.
-            const ::fixy::Ref<Transaction> active =
-                tx_log.active(stage).expect("a rollback leaves the restored transaction active");
+            const auto active = tx_log.active(stage).expect("a rollback leaves the restored transaction active");
             ::fixy::Option<::fixy::handle::Published<RegionNode>> region_of_rollback{};
-            for (const ::fixy::Ref<RegionNode const>& region : active->region.value()) {
-                region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, *region));
-                // The foreground gets the region outside the publication slot,
-                // so the store keeps it until the foreground writes its holders
-                // again (THE LIFE OF A REGION of BackgroundThread.h).
-                bg.keep_region(stage, ::fixy::some(region));
-            }
-            CRUCIBLE_FATAL_INVARIANT(region_of_rollback.is_some());
+            const bool has_region =
+                tx_log
+                    .with_tx(stage, active,
+                             [&bg, &stage, &region_of_rollback](Transaction const& tx) noexcept {
+                                 for (const ::fixy::Ref<RegionNode const>& region : tx.region.value()) {
+                                     region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, *region));
+                                     // The foreground gets the region outside the publication slot,
+                                     // so the store keeps it until the foreground writes its holders
+                                     // again (THE LIFE OF A REGION of BackgroundThread.h).
+                                     bg.keep_region(stage, ::fixy::some(region));
+                                 }
+                                 return region_of_rollback.is_some();
+                             })
+                    .expect("no claim runs between the rollback and this read");
+            CRUCIBLE_FATAL_INVARIANT(has_region);
             return region_of_rollback;
         });
     return restored.match(
@@ -152,18 +158,19 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // reserved.  The background thread is the sole writer.
     const uint64_t step = step_.bump();
 
-    Transaction& tx = tx_log_.begin_tx(stage, step);
-    // The result is discarded because a state-machine logic error here
-    // is not something the background thread can recover from.
-    //
-    // The merkle root goes through the checked accessor so the non-zero
-    // invariant is witnessed at this call site: its precondition fires
-    // here if the hash was never recomputed.
-    (void)tx_log_.commit(stage, tx,
-                         ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-                             ::fixy::Ref<RegionNode const>{::fixy::erase_brand(::fixy::to(region))}),
-                         region.content_hash, ::crucible::make_merkle_root(region.computed_merkle_hash()));
-    (void)tx_log_.activate(stage, tx);
+    // The draft is the one writer of the new transaction, and the commit
+    // consumes it.  The merkle root goes through the checked accessor so the
+    // non-zero invariant is witnessed at this call site: its precondition
+    // fires here if the hash was never recomputed.
+    const Transaction::ArenaRegion committed_region = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
+        ::fixy::Ref<RegionNode const>{::fixy::erase_brand(::fixy::to(region))});
+    const MerkleHash merkle_root = ::crucible::make_merkle_root(region.computed_merkle_hash());
+    const auto committed =
+        tx_log_.commit(stage, tx_log_.begin_tx(stage, step), committed_region, region.content_hash, merkle_root)
+            .expect("no claim runs between the claim of this call and its commit");
+    // The activation of the transaction that this call committed finds it
+    // committed and in its slot, so it gives no refusal.
+    static_cast<void>(tx_log_.activate(stage, committed).expect("the transaction of this commit is fresh"));
 
     // Publishing the region signals the foreground, which picks it up
     // on its next dispatch.  The mode stays RECORDING here.  The
