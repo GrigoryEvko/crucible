@@ -1047,7 +1047,7 @@ using box_frame_return_t = detail::frame_return_t<detail::body_result_t<Body&&, 
 // The frame door of a Box (THE FRAME OF A BOX).  Complexity: O(1), and the
 // cost of the body.
 template <BoxPayload T, class Body>
-    requires CompleteBoxPayload<T> && BoxFrameBody<Body, T>
+    requires DroppableBoxPayload<T> && BoxFrameBody<Body, T>
 [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] box_frame_return_t<Body, T> with_mut(Box<T>&& box,
                                                                                               Body&& body) noexcept {
     using Given = detail::body_result_t<Body&&, T&>;
@@ -1067,9 +1067,19 @@ template <BoxPayload T, class Body>
 // A body whose result holds a borrow binds to this overload, so the refusal
 // gives its reason.
 template <BoxPayload T, class Body>
-    requires CompleteBoxPayload<T> && RefusedBoxFrameBody<Body, T>
+    requires DroppableBoxPayload<T> && RefusedBoxFrameBody<Body, T>
 void with_mut(Box<T>&& box, Body&& body) =
     delete("the result of a frame door leaves the frame, so it holds no reference and no address: give a plain value");
+
+// A linear object leaves a Box only through consume.  A body could move it
+// out through the reference and leave the Box full of a moved-from value,
+// and a later consume would give that value out again.  So a Box of a linear
+// payload has no frame door, as an Option of a linear payload has none.
+template <BoxPayload T, class Body>
+    requires CompleteBoxPayload<T> && (!DroppableBoxPayload<T>)
+void with_mut(Box<T>&& box, Body&& body) =
+    delete("a Box of a linear payload has no frame door, because the body could move the object out and leave the Box "
+           "full: take the object out with consume");
 
 // A named Box stays with the caller while the body runs, so the body could
 // end its object beside the reference through a capture.  This twin refuses
