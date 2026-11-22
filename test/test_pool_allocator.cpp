@@ -94,7 +94,7 @@ static void test_basic_init() {
 
     CRUCIBLE_TEST_ASSERT(kTest, pool.is_initialized());
     CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().is_some());
-    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().expect("the pool holds bytes").is_aligned<PoolAllocator::ALIGNMENT>());
+    CRUCIBLE_TEST_ASSERT(kTest, is_aligned<PoolAllocator::ALIGNMENT>(pool.pool_base().expect("the pool holds bytes")));
     CRUCIBLE_TEST_ASSERT(kTest, pool.pool_bytes() == 3072);
     CRUCIBLE_TEST_ASSERT(kTest, pool.num_slots() == 3);
     CRUCIBLE_TEST_ASSERT(kTest, pool.num_external() == 1);
@@ -114,8 +114,8 @@ static void test_basic_init() {
 
     // The base is aligned and both offsets are multiples of the
     // alignment, so every internal slot inherits the alignment.
-    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(SlotId{0}, pv).expect("slot 0 is pooled").is_aligned<256>());
-    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(SlotId{1}, pv).expect("slot 1 is pooled").is_aligned<256>());
+    CRUCIBLE_TEST_ASSERT(kTest, is_aligned<256>(pool.slot_ptr(SlotId{0}, pv).expect("slot 0 is pooled")));
+    CRUCIBLE_TEST_ASSERT(kTest, is_aligned<256>(pool.slot_ptr(SlotId{1}, pv).expect("slot 1 is pooled")));
 
     // An external slot has no place in the pool, so it holds no address
     // until someone registers storage for it.

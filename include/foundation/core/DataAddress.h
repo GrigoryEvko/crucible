@@ -23,8 +23,8 @@
 // the null pointer and takes one word, and an Option<DataAddress<Device>>
 // takes two.  The values go in registers.
 //
-// A RunAddress answers is_aligned<N>() and ==, and a DataAddress also answers
-// address() and device().  Two data addresses are equal when they hold the
+// is_aligned<N>(address) and == answer for each of the two types, and a
+// DataAddress also answers address() and device().  Two data addresses are equal when they hold the
 // same address on the same device.  An address changes from run to run, so
 // neither type has a hash or an order.  Neither has arithmetic, because the
 // replay of a region only gives an address on.
@@ -130,11 +130,14 @@ public:
     // the reason that the constructor of a Ref gives.
     constexpr RunAddress(void* address, detail::RunAddressKey const& /*key*/) noexcept : address_{address} {}
 
-    // True when the address is a multiple of Alignment, a power of two.
+    // True when the address is a multiple of Alignment, a power of two.  The
+    // query is a friend and not a member function template, because a
+    // reflection gives no const qualifier of a member function template, and
+    // the niche statement of a RunAddress needs members that write nothing.
     template <std::size_t Alignment>
         requires(Alignment != 0 && (Alignment & (Alignment - 1)) == 0)
-    [[nodiscard]] bool is_aligned() const noexcept {
-        return (__builtin_bit_cast(std::uintptr_t, address_) & (Alignment - 1)) == 0;
+    [[nodiscard]] friend bool is_aligned(RunAddress const& address) noexcept {
+        return (__builtin_bit_cast(std::uintptr_t, address.address_) & (Alignment - 1)) == 0;
     }
 
     [[nodiscard]] friend constexpr bool operator==(RunAddress const& left, RunAddress const& right) noexcept {
@@ -186,11 +189,12 @@ public:
     // The device that holds the run.
     [[nodiscard]] constexpr Device device() const noexcept { return device_; }
 
-    // True when the address is a multiple of Alignment, a power of two.
+    // True when the address is a multiple of Alignment, a power of two.  The
+    // query is a friend for the reason that RunAddress gives.
     template <std::size_t Alignment>
         requires(Alignment != 0 && (Alignment & (Alignment - 1)) == 0)
-    [[nodiscard]] bool is_aligned() const noexcept {
-        return address_.template is_aligned<Alignment>();
+    [[nodiscard]] friend bool is_aligned(DataAddress const& data) noexcept {
+        return is_aligned<Alignment>(data.address_);
     }
 
     // The same address on the same device.

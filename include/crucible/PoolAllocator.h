@@ -285,11 +285,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
         return found.match(
             [](::fixy::View<const ::fixy::View<uint8_t>, 1> entry) noexcept {
                 const ::fixy::View<uint8_t const> bytes{entry.at(::fixy::index<0>())};
-                const bool is_aligned = ::fixy::mint_run_address(entry.at(::fixy::index<0>()), 0)
-                                            .is_some_and([](::fixy::RunAddress const& first) noexcept {
-                                                return first.template is_aligned<alignof(T)>();
-                                            });
-                if (!is_aligned || bytes.size() % sizeof(T) != 0) return Found{::fixy::none};
+                const bool is_first_aligned = ::fixy::mint_run_address(entry.at(::fixy::index<0>()), 0)
+                                                  .is_some_and([](::fixy::RunAddress const& first) noexcept {
+                                                      return is_aligned<alignof(T)>(first);
+                                                  });
+                if (!is_first_aligned || bytes.size() % sizeof(T) != 0) return Found{::fixy::none};
                 return Found::some(::foundation::lifetime::start_as_array<T>(bytes));
             },
             [] noexcept { return Found{::fixy::none}; });

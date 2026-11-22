@@ -117,14 +117,14 @@ void test_alignment() {
     line.bytes.with_mut([](auto run) noexcept {
         View<unsigned char> const bytes = run.view();
         for (RunAddress const address : mint_run_address(bytes, 0)) {
-            CRUCIBLE_FATAL_INVARIANT(address.is_aligned<1>() && address.is_aligned<8>() && address.is_aligned<64>());
-            CRUCIBLE_FATAL_INVARIANT((HostData{address, kHost}.is_aligned<64>()));
+            CRUCIBLE_FATAL_INVARIANT(is_aligned<1>(address) && is_aligned<8>(address) && is_aligned<64>(address));
+            CRUCIBLE_FATAL_INVARIANT((is_aligned<64>(HostData{address, kHost})));
         }
         for (RunAddress const address : mint_run_address(bytes, 1)) {
-            CRUCIBLE_FATAL_INVARIANT(address.is_aligned<1>() && !address.is_aligned<2>());
+            CRUCIBLE_FATAL_INVARIANT(is_aligned<1>(address) && !is_aligned<2>(address));
         }
         for (RunAddress const address : mint_run_address(bytes, 32)) {
-            CRUCIBLE_FATAL_INVARIANT((address.is_aligned<32>() && !HostData{address, kHost}.is_aligned<64>()));
+            CRUCIBLE_FATAL_INVARIANT((is_aligned<32>(address) && !is_aligned<64>(HostData{address, kHost})));
         }
     });
 }

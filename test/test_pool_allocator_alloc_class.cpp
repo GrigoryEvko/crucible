@@ -187,7 +187,7 @@ static void test_pool_base_pinned_small_pool() {
 
     // The pool base is aligned at least to the allocator's own
     // granularity, whatever the pool size.
-    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().expect("the pool holds bytes").is_aligned<PoolAllocator::ALIGNMENT>());
+    CRUCIBLE_TEST_ASSERT(kTest, is_aligned<PoolAllocator::ALIGNMENT>(pool.pool_base().expect("the pool holds bytes")));
 
     pool.destroy();
 }
@@ -214,7 +214,7 @@ static void test_pool_base_huge_pinned() {
     const ::fixy::Option<::fixy::RunAddress> wrapped = std::move(pinned).consume();
     CRUCIBLE_TEST_ASSERT(kTest, wrapped == raw);
     CRUCIBLE_TEST_ASSERT(kTest, raw.is_some());
-    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
+    CRUCIBLE_TEST_ASSERT(kTest, is_aligned<HP>(pool.pool_base().expect("the pool holds bytes")));
 
     pool.destroy();
 }
@@ -303,7 +303,7 @@ static void test_pool_base_pinned_with_huge_alignment() {
     const ::fixy::Option<::fixy::RunAddress> p1 = std::move(pool_pinned).consume();
     const ::fixy::Option<::fixy::RunAddress> p2 = std::move(huge_pinned).consume();
     CRUCIBLE_TEST_ASSERT(kTest, p1 == p2);
-    CRUCIBLE_TEST_ASSERT(kTest, pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
+    CRUCIBLE_TEST_ASSERT(kTest, is_aligned<HP>(pool.pool_base().expect("the pool holds bytes")));
 
     pool.destroy();
 }

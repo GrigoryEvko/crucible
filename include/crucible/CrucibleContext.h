@@ -465,11 +465,11 @@ private:
         return ::fixy::mint_run_address(bytes, 0).is_none_or([alignment](::fixy::RunAddress const& first) noexcept {
             switch (alignment) {
                 case 2:
-                    return first.is_aligned<2>();
+                    return is_aligned<2>(first);
                 case 4:
-                    return first.is_aligned<4>();
+                    return is_aligned<4>(first);
                 case 8:
-                    return first.is_aligned<8>();
+                    return is_aligned<8>(first);
                 default:
                     return true;
             }
