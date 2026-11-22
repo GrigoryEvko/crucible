@@ -18,10 +18,9 @@
 
 #include <fixy/os/OwnedThread.h>
 #include <foundation/Platform.h>
-#include <foundation/Transfer.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Fatal.h>
 
-#include <atomic>
 #include <concepts>
 #include <type_traits>
 #include <utility>
@@ -32,12 +31,12 @@ namespace fixy::handle {
 // so an embedder cannot forget it.  One flag then costs a whole cache
 // line instead of one byte, which is the price of the guarantee.
 //
-// The flag is private, and each door reads or writes it atomically.  A reset
-// takes the proof that no other thread reaches the flag.  So two threads can
-// use one flag at the same time, and the class states synchronized{}
+// The flag is an Atomic of the base, and each door reads or writes it
+// atomically.  So two threads can use one flag at the same time: the class
+// is Synchronized by its structure, and it states no transfer fact
 // (foundation/Transfer.h).
-class[[= ::foundation::transfer::synchronized{}]] alignas(64) OneShotFlag {
-    std::atomic<bool> flag_{false};
+class alignas(64) OneShotFlag {
+    ::foundation::core::Atomic<bool> flag_{false};
 
 public:
     OneShotFlag() = default;
@@ -49,11 +48,11 @@ public:
     OneShotFlag&
     operator=(OneShotFlag&&) = delete("OneShotFlag is an inter-thread signal; move breaks acquire/release");
 
-    CRUCIBLE_INLINE void signal() noexcept { flag_.store(true, std::memory_order_release); }
+    CRUCIBLE_INLINE void signal() noexcept { flag_.store_release(true); }
 
     // A consumer reads a flag that the producer stores, so the load takes
     // acquire order.  On x86_64 it is the same plain load as a relaxed load.
-    [[nodiscard]] CRUCIBLE_INLINE bool peek() const noexcept { return flag_.load(std::memory_order_acquire); }
+    [[nodiscard]] CRUCIBLE_INLINE bool peek() const noexcept { return flag_.load_acquire(); }
 
     // The first load keeps the path that finds no signal to one load and
     // one branch.  It reads a flag of the producer, so it takes acquire
@@ -64,9 +63,9 @@ public:
     template <typename F>
         requires std::is_invocable_v<F>
     [[nodiscard]] CRUCIBLE_INLINE bool check_and_run(F&& body) noexcept(std::is_nothrow_invocable_v<F>) {
-        if (!flag_.load(std::memory_order_acquire)) [[likely]]
+        if (!flag_.load_acquire()) [[likely]]
             return false;
-        if (!flag_.exchange(false, std::memory_order_acq_rel)) return false;
+        if (!flag_.exchange_acq_rel(false)) return false;
         std::forward<F>(body)();
         return true;
     }
@@ -74,9 +73,9 @@ public:
     // A reset is correct only where neither side can reach the flag.  The
     // proof shows that no thread of the owner of the flag runs (THE
     // QUIESCENCE OF AN OWNER), so the caller is the one thread that reaches
-    // the flag, and its relaxed store races with no read.  A flag that does
-    // not lie inside the owner of the proof ends the process, and so does a
-    // proof whose OwnerThread holds a thread again.
+    // the flag.  The store is atomic, so a reset races with no read in any
+    // case.  A flag that does not lie inside the owner of the proof ends the
+    // process, and so does a proof whose OwnerThread holds a thread again.
     template <class Owner>
     void reset_in_quiescent_context(::fixy::thread::QuiescenceProof<Owner> const& proof) noexcept {
         if (!proof.holds_part(*this)) [[unlikely]] {
@@ -85,7 +84,7 @@ public:
         if (!proof.is_quiescent()) [[unlikely]] {
             refuse_reset_while_the_thread_runs_();
         }
-        flag_.store(false, std::memory_order_relaxed);
+        flag_.store_release(false);
     }
 
 private:
