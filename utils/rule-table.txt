@@ -854,9 +854,8 @@ witness <foundation/core/Frame.h> no-match | foundation::core::RefMut<int, forge
 witness <foundation/core/Frame.h> private | foundation::core::detail::FrameKey | foundation::core::detail::FrameKey{}
 # A loan key comes only from a mint of a keyed owner or from a root door, so
 # no caller makes a key of a brand that it names.  The constructor takes the
-# token that only LoanKeyDoor builds (THE LOAN KEY of foundation/core/Frame.h).
+# key that only FrameDoor builds (THE LOAN KEY of foundation/core/Frame.h).
 witness <foundation/core/Frame.h> no-match | foundation::core::LoanKey<forge::brand> | foundation::core::LoanKey<forge::brand>{}
-witness <foundation/core/Frame.h> private | foundation::core::detail::LoanKeyToken | foundation::core::detail::LoanKeyToken{}
 # A cursor of a View or of a TextView takes the key that only
 # ViewCursorDoor builds, so each cursor comes from the run that it walks.
 witness <foundation/core/Cursor.h> no-match | foundation::core::ViewCursor<int> | foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}

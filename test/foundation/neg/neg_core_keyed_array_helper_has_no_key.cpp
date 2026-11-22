@@ -15,7 +15,9 @@ void open_without_key(Array& array) noexcept {
 }  // namespace
 
 int main() {
-    auto [array, key] = ::foundation::core::mint_fixed_array<int, 4>();
+    auto minted = ::foundation::core::mint_fixed_array<int, 4>();
+    auto& array = minted.at(::foundation::core::index<0>());
+    auto& key = minted.at(::foundation::core::index<1>());
     key = array.with_mut(std::move(key), [&array](auto outer) noexcept {
         open_without_key(array);
         static_cast<void>(outer.size());

@@ -342,11 +342,6 @@
       "constructor": "\\bIndexKey\\("
     },
     {
-      "name": "neg_witness_core_detail_loankeytoken_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bLoanKeyToken\\("
-    },
-    {
       "name": "neg_witness_core_detail_refkey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bRefKey\\("
@@ -1846,10 +1841,6 @@
     },
     {
       "type": "foundation::core::LoanKey<forge::brand>",
-      "header": "foundation/core/Frame.h"
-    },
-    {
-      "type": "foundation::core::detail::LoanKeyToken",
       "header": "foundation/core/Frame.h"
     },
     {

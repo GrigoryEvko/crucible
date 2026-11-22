@@ -150,7 +150,7 @@
 //     array.with_mut(key, body);                     the door borrows the key
 //                       for the call
 //   A key is a linear class with no state.  Only a mint or a root door makes
-//   one (detail::LoanKeyDoor), so no body makes a key.  A spelling with no
+//   one, with the key of detail::FrameDoor, so no body makes a key.  A spelling with no
 //   key brand, such as FixedArray<T, N>, has the brand Unkeyed and the doors
 //   with no key.
 //
@@ -210,27 +210,6 @@ public:
 
 struct FrameDoor {
     [[nodiscard]] static constexpr FrameKey key() noexcept { return FrameKey{}; }
-};
-
-// The key of the constructor of a LoanKey (THE LOAN KEY).  LoanKeyDoor is its
-// one friend, and only the mints of a keyed owner and the root doors call the
-// door.  The door and the token hold no template, so no explicit
-// specialization of a template reaches the token.  A use of the door outside
-// the base is a finding of the rule owners (detail-use).
-struct LoanKeyDoor;
-
-class [[nodiscard]] LoanKeyToken final {
-    friend struct LoanKeyDoor;
-
-    constexpr LoanKeyToken() noexcept {}
-    constexpr LoanKeyToken(LoanKeyToken const&) noexcept {}
-
-public:
-    LoanKeyToken& operator=(LoanKeyToken const&) = delete("a token of a loan key lives for one construction");
-};
-
-struct LoanKeyDoor {
-    [[nodiscard]] static constexpr LoanKeyToken token() noexcept { return LoanKeyToken{}; }
 };
 
 // The type that the call static_cast<Body&&>(body)(argument) of a door gives
@@ -325,9 +304,10 @@ class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear:
 public:
     using brand_type = Brand;
 
-    // The key of a mint or of a root door, with the token that only
-    // LoanKeyDoor builds.
-    constexpr explicit LoanKey(detail::LoanKeyToken const& /*token*/) noexcept {}
+    // The key of a mint or of a root door, with the key of the frame doors
+    // that only FrameDoor builds.  Only the mints of a keyed owner and the
+    // root doors build a loan key.
+    constexpr explicit LoanKey(detail::FrameKey const& /*key*/) noexcept {}
 
     LoanKey(LoanKey const&) =
         delete("a loan key opens one frame at a time: a copy would open a second frame of an owner");

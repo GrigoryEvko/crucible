@@ -555,7 +555,7 @@ template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand
 [[nodiscard]] constexpr Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
                                LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
 mint_fixed_array() noexcept {
-    return {FixedArray<T, N, Fresh>{}, LoanKey<Fresh>{detail::LoanKeyDoor::token()}};
+    return {FixedArray<T, N, Fresh>{}, LoanKey<Fresh>{detail::FrameDoor::key()}};
 }
 
 // ── HeapArray ──────────────────────────────────────────────────────────────

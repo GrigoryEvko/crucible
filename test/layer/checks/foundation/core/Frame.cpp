@@ -129,7 +129,7 @@ static_assert(!std::is_copy_constructible_v<LoanKey<CheckBrand>> && !std::is_cop
 static_assert(std::is_trivially_move_constructible_v<LoanKey<CheckBrand>>);
 static_assert(std::is_trivially_destructible_v<LoanKey<CheckBrand>>);
 static_assert(!std::is_trivially_copyable_v<LoanKey<CheckBrand>>);
-static_assert(!std::is_default_constructible_v<LoanKey<CheckBrand>> && !std::is_default_constructible_v<LoanKeyToken>);
+static_assert(!std::is_default_constructible_v<LoanKey<CheckBrand>>);
 static_assert(std::is_same_v<LoanKey<CheckBrand>::brand_type, CheckBrand>);
 
 // The gate: a key, a reference to it, a Ref of it and a sum that holds it

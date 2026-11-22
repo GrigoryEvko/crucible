@@ -861,7 +861,7 @@ template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh = CR
                            core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
 mint_keyed_bytes(Block&& block) noexcept {
     return {KeyedBytes<Fresh>{detail::AlignedBytesDoor::key(), static_cast<Block&&>(block)},
-            core::LoanKey<Fresh>{core::detail::LoanKeyDoor::token()}};
+            core::LoanKey<Fresh>{core::detail::FrameDoor::key()}};
 }
 
 // A named block stays with the caller, so the keyed block would share its
