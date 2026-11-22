@@ -392,6 +392,11 @@
       "constructor": "\\bWindowCursor\\("
     },
     {
+      "name": "neg_witness_core_fixedheaparray_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bFixedHeapArray\\("
+    },
+    {
       "name": "neg_witness_core_growlist_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bGrowList\\("
@@ -1890,6 +1895,10 @@
     {
       "type": "foundation::core::MaskedArray<int>",
       "header": "foundation/core/Array.h"
+    },
+    {
+      "type": "foundation::core::FixedHeapArray<int, 4>",
+      "header": "foundation/core/FixedHeapArray.h"
     },
     {
       "type": "foundation::core::GrowList<int>",

@@ -326,12 +326,13 @@ that the axis does not apply to the row.
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 20 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 5 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_foreign_text` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 2 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 4 |
-| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 14 |
+| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 15 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_with` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_written` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |
@@ -408,4 +409,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 82 | 46 | 27 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 167 | 63 | 100 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 168 | 63 | 101 | 4 | 0 | 3 |

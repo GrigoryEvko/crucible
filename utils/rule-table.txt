@@ -900,6 +900,10 @@ witness <foundation/core/Array.h> no-match | foundation::core::WriteLease<int> |
 # takes the key of HeapArrayDoor, so each MaskedArray comes through
 # mint_masked_array.
 witness <foundation/core/Array.h> no-match | foundation::core::MaskedArray<int> | foundation::core::MaskedArray<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+# A FixedHeapArray has no constructor from a pointer either.  Its constructor
+# takes the key of HeapArrayDoor, so each FixedHeapArray comes through
+# mint_fixed_heap_array.
+witness <foundation/core/FixedHeapArray.h> no-match | foundation::core::FixedHeapArray<int, 4> | foundation::core::FixedHeapArray<int, 4>{forge::rvalue<int*>()}
 # A GrowList and a GrowText have no constructor from a pointer, so the
 # destructor frees only storage that an append allocated.  Their one
 # constructor is private, and its mint is its friend, so each one comes
