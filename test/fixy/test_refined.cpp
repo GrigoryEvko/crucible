@@ -100,7 +100,37 @@ static_assert(!std::is_copy_constructible_v<fixy::RefinedLinear<fixy::positive, 
 static_assert(!std::is_copy_assignable_v<fixy::RefinedLinear<fixy::positive, int>>,
               "a refinement of a value that does not copy does not copy either");
 static_assert(std::is_move_constructible_v<fixy::RefinedLinear<fixy::positive, int>>);
+static_assert(std::is_move_assignable_v<fixy::RefinedLinear<fixy::positive, int>>);
 static_assert(fixy::qtt_consume_tracked || sizeof(fixy::RefinedLinear<fixy::positive, int>) == sizeof(int));
+
+// A move keeps the refinement of the source only when the move of the payload
+// leaves the value there.  A payload whose move clears its source gives a
+// refinement that does not move, so no source holds a value that the
+// predicate refuses.  A move that copies the bytes keeps the move.
+class ClearedOnMove {
+    std::uint32_t value_ = 0;
+
+public:
+    constexpr explicit ClearedOnMove(std::uint32_t value) noexcept : value_{value} {}
+    constexpr ClearedOnMove(ClearedOnMove const& other) noexcept = default;
+    constexpr ClearedOnMove(ClearedOnMove&& other) noexcept : value_{other.value_} { other.value_ = 0; }
+    constexpr ClearedOnMove& operator=(ClearedOnMove const& other) noexcept = default;
+    constexpr ClearedOnMove& operator=(ClearedOnMove&& other) noexcept {
+        value_ = other.value_;
+        other.value_ = 0;
+        return *this;
+    }
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return value_; }
+};
+
+inline constexpr auto not_cleared = [](ClearedOnMove const& word) constexpr noexcept { return word.raw() != 0; };
+
+static_assert(!std::is_move_constructible_v<Refined<not_cleared, ClearedOnMove>>);
+static_assert(!std::is_move_assignable_v<Refined<not_cleared, ClearedOnMove>>);
+static_assert(std::is_copy_constructible_v<Refined<not_cleared, ClearedOnMove>>,
+              "a copy of the refined value leaves its source, so the refinement copies");
+static_assert(std::is_nothrow_move_constructible_v<Refined<lo_set, TwoWords>>);
+static_assert(std::is_nothrow_move_assignable_v<Refined<lo_set, TwoWords>>);
 
 // into takes an rvalue Refined and nothing else, and does not exist on
 // the sealed wrapper.

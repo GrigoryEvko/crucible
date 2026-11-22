@@ -1364,6 +1364,16 @@ fixy_neg_compile_test(neg_refined_predicate_fails_at_consteval_mint
   "in .constexpr. expansion of .fixy::mint_refined<.*, int>\\(-1\\)."
   "fixy/Refined\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
+# A move of a refinement leaves the source with the value that the move of
+# its payload leaves there.  A payload whose move clears its source would
+# leave a source that the predicate refuses, so its refinement does not move.
+fixy_neg_compile_test(neg_refined_member_move_clears_source
+  "use of deleted function .*Refinement\\(fixy::Refinement<Pred, T, Sealed>&&\\)"
+  "the move of the refined value changes its source")
+fixy_neg_compile_test(neg_refined_assign_clears_source
+  "use of deleted function .*operator=\\(fixy::Refinement<Pred, T, Sealed>&&\\)"
+  "the move of the refined value changes its source")
+
 # The constant mint runs the predicate on its template argument in its gate,
 # so a refused constant does not compile, also in a default member
 # initializer, and a predicate that does not take the type fails first.

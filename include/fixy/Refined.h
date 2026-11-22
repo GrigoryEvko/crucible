@@ -74,6 +74,19 @@ struct sealed_row_discipline<true> {
     using row_discipline = ::fixy::refined::row_discipline::sealed_refinement;
 };
 
+// THE MOVE OF A REFINEMENT: true when a move of T leaves the source with the
+// value of the target, so a predicate that held before the move holds for
+// the source too.  A move that copies the bytes does it.  A Linear or an
+// Affine of such a T does it too: its move copies the bytes in a Release
+// build, and in a test build each read of the moved-from wrapper ends the
+// process.  The assignments of a payload whose move constructor copies its
+// bytes copy its bytes too, as a byte seal of foundation/ByteSeal.h asks.
+template <typename T>
+inline constexpr bool move_keeps_value_v = std::is_trivially_move_constructible_v<T>;
+
+template <auto Grade, typename T>
+inline constexpr bool move_keeps_value_v<::fixy::Qtt<Grade, T>> = move_keeps_value_v<T>;
+
 }  // namespace detail
 
 }  // namespace refined
@@ -228,8 +241,9 @@ public:
         requires Sealed
         : impl_{key_{}, std::move(r).into(), typename lattice_type::element_type{}} {}
 
-    // The refinement is a property of the value, so copying or moving
-    // preserves it and neither needs to re-check.  What a sealed
+    // The refinement is a property of the value, so a copy preserves it, and
+    // so does a move that leaves the value in the source (THE MOVE OF A
+    // REFINEMENT below).  Neither needs to re-check.  What a sealed
     // refinement forbids is extraction, not movement.
     //
     // These four are load-bearing and cannot be dropped as implicit.
@@ -254,12 +268,28 @@ public:
     // of a door before the conversion of a raw argument to a refined
     // parameter, and the diagnostic then names the context in place of the
     // raw value.
+    //
+    // THE MOVE OF A REFINEMENT
+    //   A move leaves the source with the value that the move of T leaves
+    //   there.  The predicate holds for the source only when that value is
+    //   the value before the move (refined::detail::move_keeps_value_v).  For
+    //   each other T, such as a class whose move clears its source, the source
+    //   would hold a value that the predicate refuses, and value() of the
+    //   source would give it.  So such a refinement does not move: build it in
+    //   its place, or take the value out with into().
 private:
     static constexpr bool assigns_payload_ = __is_assignable(T&, T const&);
+    static constexpr bool keeps_value_on_move_ = refined::detail::move_keeps_value_v<T>;
 
 public:
     Refinement(const Refinement&) = default;
-    Refinement(Refinement&&) = default;
+    Refinement(Refinement&&)
+        requires keeps_value_on_move_
+    = default;
+    Refinement(Refinement&&)
+        requires(!keeps_value_on_move_)
+    = delete("the move of the refined value changes its source, so the source would hold a value that the "
+             "predicate refuses: build the refinement in its place, or take the value out with into()");
     constexpr Refinement& operator=(const Refinement& other) noexcept(std::is_nothrow_copy_assignable_v<T>)
         requires assigns_payload_
     {
@@ -269,10 +299,16 @@ public:
     Refinement& operator=(const Refinement&)
         requires(!assigns_payload_)
     = delete("the refined value does not copy, so its refinement does not copy either");
-    constexpr Refinement& operator=(Refinement&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
+    constexpr Refinement& operator=(Refinement&& other) noexcept(std::is_nothrow_move_assignable_v<T>)
+        requires keeps_value_on_move_
+    {
         impl_ = std::move(other.impl_);
         return *this;
     }
+    Refinement& operator=(Refinement&&)
+        requires(!keeps_value_on_move_)
+    = delete("the move of the refined value changes its source, so the source would hold a value that the "
+             "predicate refuses: build the refinement in its place, or take the value out with into()");
 
     // For a sealed refinement this is the only way to observe the
     // value.  There is deliberately no mutable accessor on either.
