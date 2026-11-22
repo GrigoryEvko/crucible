@@ -8,7 +8,7 @@ runner of evidence, the stop of a run at its deadline, and a step that cannot ru
 heavy step, which must not wait for its own lock.  They also hold the text of the report and the usage of the command.
 A run removes each report other than the last ones of its tier.  A step of cmake builds the build of its preset with
 no test, so the nightly entry compiles the aarch64 build and only the release entry runs its tests.  --only keeps the
-jobs of its names.
+jobs of its names.  The cases of the usage hold also when the caller runs in a heavy step.
 """
 
 import os
@@ -418,27 +418,39 @@ def report_cases(expect: testing.Expect) -> None:
 
 
 def usage_cases(expect: testing.Expect) -> None:
-    """Hold the usage errors of the command, and --plan on this tree (Usage)."""
-    expect("a budget of 0 is a usage error", entry.main(NIGHTLY, ["--budget-s", "0"]) == ExitCode.USAGE)
-    saved = os.environ.get(heavy.STEP_VARIABLE)
-    os.environ[heavy.STEP_VARIABLE] = heavy.STEP_VALUE
-    try:
-        refused = entry.main(NIGHTLY, ["--plan"])
-        os.environ.pop(heavy.STEP_VARIABLE)
+    """Hold the usage errors of the command, and --plan on this tree (Usage).
+
+    The group owns STEP_VARIABLE of assay.loop.heavy.  It removes the variable for its block, and it sets the variable
+    only for the case of the refusal.
+    """
+    with testing.environment_variable(heavy.STEP_VARIABLE, None):
+        expect("a budget of 0 is a usage error", entry.main(NIGHTLY, ["--budget-s", "0"]) == ExitCode.USAGE)
+        with testing.environment_variable(heavy.STEP_VARIABLE, heavy.STEP_VALUE):
+            refused = entry.main(NIGHTLY, ["--plan"])
         planned = entry.main(RELEASE, ["--plan"])
-    finally:
-        if saved is None:
-            os.environ.pop(heavy.STEP_VARIABLE, None)
-        else:
-            os.environ[heavy.STEP_VARIABLE] = saved
+        only, printed = testing.captured(lambda: entry.main(NIGHTLY, ["--plan", "--only", "aarch64-compile"]))
+        unknown, _ = testing.captured(lambda: entry.main(NIGHTLY, ["--plan", "--only", "no-such-job"]))
     expect("the entry refuses to run in a heavy step", refused == ExitCode.USAGE)
     expect("--plan prints the jobs of this tree and runs nothing", planned == ExitCode.OK)
-    only, printed = testing.captured(lambda: entry.main(NIGHTLY, ["--plan", "--only", "aarch64-compile"]))
-    unknown, _ = testing.captured(lambda: entry.main(NIGHTLY, ["--plan", "--only", "no-such-job"]))
     expect(
         f"--only keeps only the jobs of its names, and a name of no job is a usage error: {printed!r}",
         only == ExitCode.OK and printed.split("\n")[0] == "step aarch64-compile" and unknown == ExitCode.USAGE,
     )
+
+
+def heavy_step_cases(expect: testing.Expect) -> None:
+    """Hold the cases of usage_cases() when the caller runs in a heavy step, as a run of the suite in `loop heavy` does.
+
+    `loop heavy` gives its command STEP_VARIABLE of assay.loop.heavy, and the launcher of a test passes each variable
+    whose name starts with CRUCIBLE_ to the test (assay.loop.teststep).
+    """
+
+    def in_step(case: str, holds: bool) -> None:
+        """Write the line of one case of usage_cases() with the condition of this group."""
+        expect(f"in a heavy step, {case}", holds)
+
+    with testing.environment_variable(heavy.STEP_VARIABLE, heavy.STEP_VALUE):
+        usage_cases(in_step)
 
 
 def main(argv: list[str]) -> int:
@@ -446,5 +458,14 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (scope_cases, jobs_cases, budget_cases, run_cases, tests_lock_cases, report_cases, usage_cases),
+        (
+            scope_cases,
+            jobs_cases,
+            budget_cases,
+            run_cases,
+            tests_lock_cases,
+            report_cases,
+            usage_cases,
+            heavy_step_cases,
+        ),
     )
