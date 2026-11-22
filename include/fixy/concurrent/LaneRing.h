@@ -87,8 +87,10 @@
 #include <fixy/concurrent/RingValue.h>
 #include <fixy/concurrent/SpscRing.h>
 
+#include <foundation/ByteSeal.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
@@ -169,6 +171,10 @@ public:
     class[[= ::foundation::linear::authority{}]][[= ::foundation::transfer::not_shareable{}]] LaneProof final {
         lane_index lane_{::foundation::core::index<0>()};
 
+        // The seal refuses each byte route, such as std::bit_cast, so no bytes
+        // become a proof.
+        [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
         explicit constexpr LaneProof(lane_index lane) noexcept : lane_{lane} {}
         friend Owner;
 
@@ -186,6 +192,10 @@ public:
     // The proof of the one consumer (THE WRITERS).  Only Owner mints one, for
     // the call of its consumer, and it does not copy or move.
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] ConsumerProof final {
+        // The seal refuses each byte route, such as std::bit_cast, so no bytes
+        // become a proof.
+        [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
         constexpr ConsumerProof() noexcept {}
         friend Owner;
 

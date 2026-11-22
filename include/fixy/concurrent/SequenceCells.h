@@ -58,6 +58,7 @@
 
 #include <fixy/concurrent/RingValue.h>
 
+#include <foundation/ByteSeal.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
@@ -128,6 +129,10 @@ public:
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriteTicket final {
         CellTicket ticket_{std::uint64_t{0}};
 
+        // The seal refuses each byte route, such as std::bit_cast, so no bytes
+        // become a ticket.
+        [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
         explicit constexpr WriteTicket(CellTicket ticket) noexcept : ticket_{ticket} {}
         friend Owner;
         friend class SequenceCells;
@@ -144,6 +149,10 @@ public:
     // TICKET).  Only Owner mints one, under the proof of its one reader.
     class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] ReadTicket final {
         CellTicket ticket_{std::uint64_t{0}};
+
+        // The seal refuses each byte route, such as std::bit_cast, so no bytes
+        // become a ticket.
+        [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
         explicit constexpr ReadTicket(CellTicket ticket) noexcept : ticket_{ticket} {}
         friend Owner;

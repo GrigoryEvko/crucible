@@ -751,20 +751,24 @@ public:
     using recombined_token =
         std::conditional_t<is_pooled, RecombinedParts, ::foundation::permissions::Permission<whole_tag, Brand>>;
 
-    // The ring of a recombined access (with_recombined_access).  It holds the
-    // token of the access, so its holder holds each role of the channel, and
-    // it gives the push of each form.  Each push makes the proof of its writer
-    // here: the proof of the producer of a wire, and the proof of a lane of a
-    // lanes channel under the claim of the lane.  A push of a merge claims its
-    // ticket itself.  The class does not copy and does not move, so it lives
-    // only in the frame of the access, which takes the token back at its end.
-    class RecombinedRing {
+    // The ring of a recombined access (with_recombined_access).  The access
+    // holds its token and the claim of each role while the body runs, so the
+    // holder of the ring holds each role of the channel, and the ring gives
+    // the push of each form.  Each push makes the proof of its writer here:
+    // the proof of the producer of a wire, and the proof of a lane of a lanes
+    // channel under the claim of the lane.  A push of a merge claims its ticket
+    // itself.  The ring is a proof of the channel (THE PROOF OF A DOOR of
+    // foundation/Transfer.h): only the access builds it, it belongs to the
+    // thread of the access, and it does not copy or move, so it lives only in
+    // the frame of the access.
+    class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]]
+        RecombinedRing {
         PermissionedChannel& channel_;
-        recombined_token token_;
+        // The seal refuses each byte route, such as std::bit_cast, so no bytes
+        // become a ring of an access.
+        [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-        RecombinedRing(PermissionedChannel& channel, recombined_token&& token) noexcept
-            : channel_{channel}, token_{std::move(token)} {}
-        [[nodiscard]] recombined_token release_() && noexcept { return std::move(token_); }
+        explicit RecombinedRing(PermissionedChannel& channel) noexcept : channel_{channel} {}
         friend class PermissionedChannel;
 
     public:
@@ -813,10 +817,9 @@ public:
     // ends the process here, and no handle can start while the body runs.  A
     // lease of another channel of the same type ends the process, because only
     // the identity of the pool tells two such channels apart.  The body gets
-    // the ring of the access, which holds the token: it can fill the ring
-    // before the first session.  The drain empties what the last session
-    // left.  The token comes back, so the caller can split the whole again or
-    // deposit the lease.
+    // the ring of the access: it can fill the ring before the first session.
+    // The drain empties what the last session left.  The token comes back, so
+    // the caller can split the whole again or deposit the lease.
     template <typename Body>
         requires std::is_invocable_v<Body, RecombinedRing&>
     [[nodiscard]] recombined_token
@@ -836,11 +839,13 @@ public:
             }
         }
         consumer_claim_.take("recombined access to a channel while its consumer handle lives.");
-        RecombinedRing ring{*this, std::move(token)};
-        std::forward<Body>(body)(ring);
+        {
+            RecombinedRing ring{*this};
+            std::forward<Body>(body)(ring);
+        }
         consumer_claim_.release();
         producer_claim_.release();
-        return std::move(ring).release_();
+        return std::move(token);
     }
 
     // Takes the producer root of a merge or a lanes channel out of its pool
@@ -1028,14 +1033,16 @@ private:
 
     // The proofs of the two sides of the ring of a wire (THE PROVEN FORM of
     // fixy/concurrent/SpscRing.h), and the proof of the consumer of the ring
-    // of a merge (THE WRITERS of fixy/concurrent/MpscRing.h).  The ring names
-    // this channel as its owner, so only this channel makes them.  Only the
-    // handle of each role, a drain and the receive after an empty pop call
-    // them.  The handle holds the linear token and the claim of its role, and
-    // a drain holds the claim of each role, so the one writer of each side is
-    // a fact of the types.  A drain and a recombined access of a wire use the
-    // checked calls of the ring.  The return types are deduced, because the
-    // ring of each form names its own proof types.
+    // of a merge or of the lanes (THE WRITERS of fixy/concurrent/MpscRing.h
+    // and of fixy/concurrent/LaneRing.h).  The ring names this channel as its
+    // owner, so only this channel makes them.  Only the handle of each role, a
+    // drain, a recombined access and the receive after an empty pop call them.
+    // The handle holds the linear token and the claim of its role, and a drain
+    // and a recombined access hold the claim of each role, so the one writer
+    // of each side is a fact of the types.  The drain of a wire and the receive
+    // of a wire after its close use the checked pop of the ring.  The return
+    // types are deduced, because the ring of each form names its own proof
+    // types.
     [[nodiscard]] static constexpr auto prove_producer_() noexcept
         requires(Form == ChannelForm::wire)
     {
