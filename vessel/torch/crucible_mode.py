@@ -189,6 +189,11 @@ for _name, _ord in [("sparse_csr", 2), ("sparse_csc", 3),
 # the operation, as the decoders of the native vessel refuse it.
 _UNNAMED_ORDINAL = 127
 
+# The lanes of the sizes and of the strides of a CrucibleMeta (kMaxTensorNDim
+# of crucible/TensorMeta.h), and the largest rank that its byte holds.
+MAX_META_LANES = 8
+MAX_META_RANK_BYTE = 255
+
 
 def _dtype_ordinal(dtype: torch.dtype) -> int:
     """Return the crucible ordinal of an element type, or _UNNAMED_ORDINAL."""
@@ -456,19 +461,24 @@ class CrucibleMode(TorchDispatchMode):
     @staticmethod
     def _fill_meta(meta, tensor):
         ndim = tensor.dim()
-        # TensorMeta.sizes/strides are fixed [8]. Clamp to avoid OOB.
-        clamped = min(ndim, 8)
-        meta.ndim = clamped
+        # The record holds the true rank, and the sizes and the strides of at
+        # most MAX_META_LANES dimensions.  The rank saturates at the largest
+        # value of its byte, so a rank of 264 cannot wrap to 8.  The C entry
+        # refuses each rank above 8 with the action REFUSED, so a tensor that
+        # a TensorMeta cannot describe keeps its op out of the ring, as on the
+        # native path.
+        meta.ndim = min(ndim, MAX_META_RANK_BYTE)
+        lanes = min(ndim, MAX_META_LANES)
         if tensor.layout == torch.strided:
-            for d in range(clamped):
+            for d in range(lanes):
                 meta.sizes[d] = tensor.size(d)
                 meta.strides[d] = tensor.stride(d)
         else:
             # Sparse tensors: sizes available, strides not.
-            for d in range(clamped):
+            for d in range(lanes):
                 meta.sizes[d] = tensor.size(d)
                 meta.strides[d] = 0
-        for d in range(clamped, 8):
+        for d in range(lanes, MAX_META_LANES):
             meta.sizes[d] = 0
             meta.strides[d] = 0
         meta.data_ptr = tensor.data_ptr() if tensor.layout == torch.strided else 0

@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""The native vessel records no tensor that a TensorMeta cannot describe.
+"""The two recording paths of the vessel record no tensor that a TensorMeta cannot describe.
 
 A TensorMeta holds at most 8 dimensions, and each size and each stride is at
 most 2^59 - 1 (kMaxTensorDimExtent of crucible/TensorMeta.h).  An operation
 with a tensor past one of these bounds runs eagerly and stays out of the ring.
-Each check records a loop under CrucibleNative:
+The first check records a loop under CrucibleMode, which gives each operation
+to the C entry crucible_dispatch_op_ex:
+
+    mode rank       tensors of rank 9 and 10 as an input and as an output, and a
+                    view of the size 2^60.  The record of the mode holds the
+                    true rank, so the C entry refuses each such operation.  A
+                    region forms, it holds no operation of these tensors, and
+                    the rank-8 pair below gives two records with different bytes
+
+Each other check records a loop under CrucibleNative, the dispatch library:
 
     rank            tensors of rank 9 and 10 as an input and as an output of an
                     unboxed kernel, and as an output of the boxed fallback.  A
@@ -44,12 +53,14 @@ import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 # A caller starts this file by its path, so the vessel directory is not always
 # on the import path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+from crucible_mode import CrucibleMode  # noqa: E402
 from crucible_native import CrucibleMeta, CrucibleNative  # noqa: E402
 
 # The import sets one intra-op thread and one inter-op thread, so the
@@ -157,11 +168,15 @@ class Recording:
         self.results = results
 
 
-def record(step: Step, directory: Path, label: str) -> Recording:
-    """Record step() under CrucibleNative until a region is active, or for MAX_ITERATIONS iterations."""
+def record(step: Step, directory: Path, label: str, session: Callable[[], Any] = CrucibleNative) -> Recording:
+    """Record step() under a session until a region is active, or for MAX_ITERATIONS iterations.
+
+    The session is CrucibleNative, the dispatch library, or CrucibleMode, which
+    gives each operation to the C entry.  The two have the same queries.
+    """
     path = directory / f"{label}.crtrace"
     results: list[torch.Tensor] = []
-    with CrucibleNative() as ctx:
+    with session() as ctx:
         for _ in range(MAX_ITERATIONS):
             results = step()
             if ctx.active_num_ops() > 0:
@@ -228,18 +243,18 @@ def check_no_region(label: str, recording: Recording) -> list[str]:
     return []
 
 
-def check_two_shapes(recording: Recording) -> list[str]:
+def check_two_shapes(label: str, recording: Recording) -> list[str]:
     """Return one line when the rank-8 pair does not give two aten::abs records with different bytes."""
     if recording.ops is None:
         return []
     wanted = schema_hash("aten::abs")
     inputs = {op.metas[0] for op in recording.ops if op.schema_hash == wanted and op.num_inputs == 1}
     if len(inputs) != 2:
-        return [f"two shapes: the region holds {len(inputs)} different input records of aten::abs, not 2"]
+        return [f"{label}: the region holds {len(inputs)} different input records of aten::abs, not 2"]
     shapes = sorted(struct.unpack_from(f"<{MAX_NDIM}q", meta, META_SIZES_OFFSET) for meta in inputs)
     expected = sorted(tuple(shape) for shape in NARROW_SHAPES)
     if shapes != expected:
-        return [f"two shapes: the records of aten::abs hold the sizes {shapes}, not {expected}"]
+        return [f"{label}: the records of aten::abs hold the sizes {shapes}, not {expected}"]
     return []
 
 
@@ -247,6 +262,28 @@ def report(problems: list[str]) -> list[str]:
     """Print each problem at once, so a later end of the process does not hide it, and return the problems."""
     for line in problems:
         print(f"  FAIL: {line}", flush=True)
+    return problems
+
+
+def mode_rank_checks(directory: Path) -> list[str]:
+    """Run the checks of the ranks, of the size 2^60 and of the two shapes under CrucibleMode."""
+    storage = torch.arange(15, dtype=torch.float32)
+    wide = [storage.view(shape) for shape in WIDE_SHAPES]
+    narrow = [storage.view(shape) for shape in NARROW_SHAPES]
+    rank_eight = storage.view(RANK_EIGHT)
+    seed = torch.zeros(1)
+
+    def mode_step() -> list[torch.Tensor]:
+        results = [torch.neg(view) for view in wide]
+        results.append(rank_eight.unsqueeze(0))
+        results.append(seed.expand(HUGE_EXTENT))
+        results += [torch.abs(view) for view in narrow]
+        return results
+
+    recording = record(mode_step, directory, "mode rank", session=CrucibleMode)
+    problems = report(check_region_without("mode rank", recording, ("aten::neg", "aten::unsqueeze", "aten::expand")))
+    problems += report(check_two_shapes("mode two shapes", recording))
+    problems += report(check_eager("mode rank", recording, mode_step))
     return problems
 
 
@@ -267,7 +304,7 @@ def rank_checks(directory: Path) -> list[str]:
     recording = record(rank_step, directory, "rank")
     problems = report(check_region_without("rank", recording, (
         "aten::neg", "aten::unsqueeze", "crucible_bounds::wide_output")))
-    problems += report(check_two_shapes(recording))
+    problems += report(check_two_shapes("two shapes", recording))
     problems += report(check_eager("rank", recording, rank_step))
 
     # Each nest: its label, the operation, the shape of the wide tensor, the
@@ -327,7 +364,8 @@ def main() -> int:
     """Run each check and report."""
     with tempfile.TemporaryDirectory(prefix="crucible-tensor-meta-bounds-") as scratch:
         directory = Path(scratch)
-        problems = rank_checks(directory)
+        problems = mode_rank_checks(directory)
+        problems += rank_checks(directory)
         problems += extent_checks(directory)
     if problems:
         return 1
