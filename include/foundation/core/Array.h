@@ -491,7 +491,7 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto enumerate() const& noexcept {
         using Stage = detail::EnumerateStage<T const, N, Fresh, N>;
-        return Walk<Stage>{Stage{view(), 0}};
+        return Walk<Stage>{Stage{view()}};
     }
     void enumerate() const&& =
         delete("a loop over a temporary FixedArray points into an object that the full expression ends");

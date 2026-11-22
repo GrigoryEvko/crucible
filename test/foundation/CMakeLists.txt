@@ -4603,6 +4603,54 @@ foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_specialization
   "template-id .try_zip<>. for .constexpr foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 18446744073709551615>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> >, foundation::core::LengthMismatch> foundation::core::Walk<foundation::core::detail::ViewStage<int, 18446744073709551615> >::try_zip\\([^)]*&&\\) &&. does not match any template declaration"
   "foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> >, foundation::core::LengthMismatch> foundation::core::Walk<Stage>::try_zip")
 
+# The type of a stage and of a cursor of a walk is a part of the type of the
+# walk, so a caller deduces it with no name of namespace detail.  Each
+# fixture deduces one and reaches a part that takes raw facts: a start or an
+# extent of an enumerate stage, at_ of each stage kind, the constructor of a
+# zip, and the constructor of each cursor of an adapter.
+foundation_neg_compile_test(neg_core_walk_enumerate_stage_start_forged
+  "EnumerateStage\\(foundation::core::View<Element, Extent>, std::size_t\\).*is private within this context"
+  "count_forged")
+foundation_neg_compile_test(neg_core_walk_enumerate_stage_extent_forged
+  "no matching function for call to .foundation::core::detail::EnumerateStage<const int, 4, .*, 18446744073709551615>::EnumerateStage"
+  "count_forged")
+foundation_neg_compile_test(neg_core_walk_view_stage_at_forged
+  "ViewStage<T, Extent>::at_\\(std::size_t\\) const.*is private within this context"
+  "read_past")
+foundation_neg_compile_test(neg_core_walk_reverse_stage_at_forged
+  "ReverseStage<Element>::at_\\(std::size_t\\) const.*is private within this context"
+  "read_past")
+foundation_neg_compile_test(neg_core_walk_window_stage_at_forged
+  "WindowStage<Element, Width>::at_\\(std::size_t\\) const.*is private within this context"
+  "read_past")
+foundation_neg_compile_test(neg_core_walk_chunk_stage_at_forged
+  "ChunkStage<Element, Width>::at_\\(std::size_t\\) const.*is private within this context"
+  "read_past")
+foundation_neg_compile_test(neg_core_walk_enumerate_stage_at_forged
+  "EnumerateStage<Element, Count, Brand, Extent>::at_\\(std::size_t\\) const.*is private within this context"
+  "read_past")
+foundation_neg_compile_test(neg_core_walk_map_stage_at_forged
+  "MapStage<Inner, Fn>::at_\\(std::size_t\\) const.*is private within this context"
+  "read_past")
+foundation_neg_compile_test(neg_core_walk_zip_stage_at_forged
+  "ZipStage<First, Second, Brand>::at_\\(std::size_t\\) const.*is private within this context"
+  "read_past")
+foundation_neg_compile_test(neg_core_walk_zip_stage_counts_forged
+  "ZipStage<First, Second, Brand>::ZipStage\\(First, Second\\).*is private within this context"
+  "count_forged")
+foundation_neg_compile_test(neg_core_walk_zip_cursor_forged
+  "ZipStage<First, Second, Brand>::Cursor::Cursor\\(const foundation::core::detail::ZipStage<First, Second, Brand>\\*, std::size_t\\).*is private within this context"
+  "read_forged")
+foundation_neg_compile_test(neg_core_walk_map_cursor_forged
+  "MapStage<Inner, Fn>::Cursor::Cursor\\(.*\\).*is private within this context"
+  "read_forged")
+foundation_neg_compile_test(neg_core_walk_filter_cursor_forged
+  "FilterStage<Inner, Keep>::Cursor::Cursor\\(.*\\).*is private within this context"
+  "read_forged")
+foundation_neg_compile_test(neg_core_walk_limit_cursor_forged
+  "LimitStage<Inner>::Cursor::Cursor\\(.*\\).*is private within this context"
+  "read_forged")
+
 # enumerate() needs the proven indexes of indices(), so a View of a dynamic
 # extent has none.  zip of two Views of different fixed extents is refused
 # at compile time, and the loop of a temporary array is refused.

@@ -386,7 +386,7 @@ public:
         requires(sizeof...(Refused) == 0 && Extent != dynamic_extent)
     [[nodiscard]] constexpr auto enumerate() const noexcept {
         using Stage = detail::EnumerateStage<T, Extent, Fresh, Extent>;
-        return Walk<Stage>{Stage{*this, 0}};
+        return Walk<Stage>{Stage{*this}};
     }
 
     // The walk of each element one time, from the last element:
@@ -510,6 +510,17 @@ template <class T, std::size_t Extent>
 class ViewStage final {
     View<T, Extent> elements_;
 
+    template <class Inner, class Fn>
+    friend class MapStage;
+    template <class First, class Second, class Brand>
+    friend class ZipStage;
+
+    // The element at position, which the caller proves below size_() (THE
+    // STAGES of foundation/core/Walk.h).
+    [[nodiscard]] constexpr T& at_(std::size_t position) const noexcept {
+        return first_of_(ViewDoor::key(), elements_)[position];
+    }
+
 public:
     using element_reference = T&;
     static constexpr bool is_exact = true;
@@ -540,11 +551,6 @@ public:
     }
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return elements_.size(); }
-
-    // The element at position, which the caller proves below size_().
-    [[nodiscard]] constexpr T& at_(std::size_t position) const noexcept {
-        return first_of_(ViewDoor::key(), elements_)[position];
-    }
 
     // The first count elements, or each element when count is larger.
     [[nodiscard]] constexpr ViewStage<T, dynamic_extent> limited_(std::size_t count) && noexcept {
@@ -1069,6 +1075,17 @@ class ReverseStage final {
 
     [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), elements_); }
 
+    template <class Inner, class Fn>
+    friend class MapStage;
+    template <class First, class Second, class Brand>
+    friend class ZipStage;
+
+    // The element at position from the last element, which the caller proves
+    // below size_() (THE STAGES of foundation/core/Walk.h).
+    [[nodiscard]] constexpr Element& at_(std::size_t position) const noexcept {
+        return first_()[elements_.size() - 1 - position];
+    }
+
 public:
     using element_reference = Element&;
     static constexpr bool is_exact = true;
@@ -1095,12 +1112,6 @@ public:
     }
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return elements_.size(); }
-
-    // The element at position from the last element, which the caller proves
-    // below size_().
-    [[nodiscard]] constexpr Element& at_(std::size_t position) const noexcept {
-        return first_()[elements_.size() - 1 - position];
-    }
 
     // The last count elements, or each element when count is larger.
     [[nodiscard]] constexpr ReverseStage limited_(std::size_t count) && noexcept {
@@ -1183,6 +1194,17 @@ class WindowStage final {
         return size < Width ? first : first + (size - Width + 1);
     }
 
+    template <class Inner, class Fn>
+    friend class MapStage;
+    template <class First, class Second, class Brand>
+    friend class ZipStage;
+
+    // The run at position, which the caller proves below size_() (THE STAGES
+    // of foundation/core/Walk.h).
+    [[nodiscard]] constexpr View<Element, Width> at_(std::size_t position) const noexcept {
+        return View<Element, Width>{ViewDoor::key(), first_() + position};
+    }
+
 public:
     using element_reference = View<Element, Width>;
     static constexpr bool is_exact = true;
@@ -1209,11 +1231,6 @@ public:
     }
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return runs_(); }
-
-    // The run at position, which the caller proves below size_().
-    [[nodiscard]] constexpr View<Element, Width> at_(std::size_t position) const noexcept {
-        return View<Element, Width>{ViewDoor::key(), first_() + position};
-    }
 
     // The first count runs, or each run when count is larger.
     [[nodiscard]] constexpr WindowStage limited_(std::size_t count) && noexcept {
@@ -1288,6 +1305,17 @@ class ChunkStage final {
 
     constexpr ChunkStage(View<Element> elements, std::size_t runs) noexcept : elements_{elements}, runs_{runs} {}
 
+    template <class Inner, class Fn>
+    friend class MapStage;
+    template <class First, class Second, class Brand>
+    friend class ZipStage;
+
+    // The run at position, which the caller proves below size_() (THE STAGES
+    // of foundation/core/Walk.h).
+    [[nodiscard]] constexpr View<Element, Width> at_(std::size_t position) const noexcept {
+        return View<Element, Width>{ViewDoor::key(), first_() + position * Width};
+    }
+
 public:
     using element_reference = View<Element, Width>;
     static constexpr bool is_exact = true;
@@ -1317,11 +1345,6 @@ public:
     }
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return runs_; }
-
-    // The run at position, which the caller proves below size_().
-    [[nodiscard]] constexpr View<Element, Width> at_(std::size_t position) const noexcept {
-        return View<Element, Width>{ViewDoor::key(), first_() + position * Width};
-    }
 
     // The first count runs, or each run when count is larger.
     [[nodiscard]] constexpr ChunkStage limited_(std::size_t count) && noexcept {
@@ -1404,16 +1427,36 @@ public:
 // Count, each with its index.  The stage holds the run that it walks and the
 // position of its first element in the View, so a limit or a skip keeps the
 // index of each element.  The root has the extent Count, and a limit or a
-// skip gives a dynamic extent.
+// skip gives a dynamic extent.  The run ends at or before the position Count,
+// so each index of a pair is below Count.  The one public constructor takes
+// a whole View of Count elements, and only a limit or a skip of a stage
+// builds a run from a later position.
 template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 class EnumerateStage final {
     View<Element, Extent> run_;
     std::size_t start_ = 0;
 
+    template <class Other, std::size_t OtherCount, ::foundation::brand::IsBrand OtherBrand, std::size_t OtherExtent>
+    friend class EnumerateStage;
+    template <class Inner, class Fn>
+    friend class MapStage;
+    template <class First, class Second, class ZipBrand>
+    friend class ZipStage;
+
+    // The run from the position start of a View of Count elements.  The
+    // caller proves start + run.size() at most Count.
+    constexpr EnumerateStage(View<Element, Extent> run, std::size_t start) noexcept : run_{run}, start_{start} {}
+
     [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), run_); }
 
     [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> pair_(std::size_t position) const noexcept {
         return {Index<Count>{IndexDoor::key(), start_ + position}, RefDoor::lend<Brand>(first_()[position])};
+    }
+
+    // The element at position with its index, which the caller proves below
+    // size_() (THE STAGES of foundation/core/Walk.h).
+    [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> at_(std::size_t position) const noexcept {
+        return pair_(position);
     }
 
 public:
@@ -1422,8 +1465,10 @@ public:
     static constexpr std::size_t extent = Extent;
     static constexpr bool cursor_borrows_stage = false;
 
-    // The run from the position start of a View of Count elements.
-    constexpr EnumerateStage(View<Element, Extent> run, std::size_t start) noexcept : run_{run}, start_{start} {}
+    // Each element of a View of Count elements, from the position 0.
+    constexpr explicit EnumerateStage(View<Element, Count> elements) noexcept
+        requires(Extent == Count)
+        : run_{elements} {}
 
     template <class Sink>
     [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
@@ -1443,10 +1488,6 @@ public:
     }
 
     [[nodiscard]] constexpr std::size_t size_() const noexcept { return run_.size(); }
-
-    // The element at position with its index, which the caller proves below
-    // size_().
-    [[nodiscard]] constexpr element_reference at_(std::size_t position) const noexcept { return pair_(position); }
 
     // The first count elements, or each element when count is larger.
     [[nodiscard]] constexpr auto limited_(std::size_t count) && noexcept {
