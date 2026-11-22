@@ -1269,13 +1269,9 @@ void test_owed_alternative_end_aborts() {
         "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"};
 #ifdef CRUCIBLE_QTT_TRACK_CONSUME
     expect_dies(
-        test_context(),
-        [] noexcept {
-            ::foundation::linear::drop(Result<CountedToken, Refusal>{CountedToken{91}});
-        },
+        test_context(), [] noexcept { ::foundation::linear::drop(Result<CountedToken, Refusal>{CountedToken{91}}); },
         kOwedEnd);
-    expect_dies(
-        test_context(), [] noexcept { ::foundation::linear::drop(refuse_with(92)); }, kOwedEnd);
+    expect_dies(test_context(), [] noexcept { ::foundation::linear::drop(refuse_with(92)); }, kOwedEnd);
 #endif
     {
         Result<CountedToken, Refusal> first{CountedToken{93}};

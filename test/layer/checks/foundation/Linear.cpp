@@ -153,8 +153,8 @@ static_assert([] {
 }());
 // The probe of one call of the once door.  It takes a closure as an rvalue
 // only, so a named closure stays with no second name that can call it again.
-inline constexpr auto once_probe = [](auto&& closure) -> decltype(call_once(static_cast<decltype(closure)&&>(closure))) {
-};
+inline constexpr auto once_probe =
+    [](auto&& closure) -> decltype(call_once(static_cast<decltype(closure)&&>(closure))) {};
 using GiveOne = decltype([]() noexcept { return 1; });
 static_assert(std::is_invocable_v<decltype(once_probe), GiveOne&&>);
 static_assert(!std::is_invocable_v<decltype(once_probe), GiveOne&>);

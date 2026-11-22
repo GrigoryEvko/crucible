@@ -302,8 +302,7 @@ void test_linear_alternative() {
 void test_owed_linear_alternative_end_aborts([[maybe_unused]] TestRunnerCtx const& test) {
 #ifdef CRUCIBLE_QTT_TRACK_CONSUME
     expect_dies(
-        test,
-        [] noexcept { ::foundation::linear::drop(OneOf<CountedToken, Refusal>{CountedToken{52}}); },
+        test, [] noexcept { ::foundation::linear::drop(OneOf<CountedToken, Refusal>{CountedToken{52}}); },
         ::foundation::core::TextView{
             "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"});
 #endif

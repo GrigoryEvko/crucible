@@ -236,7 +236,8 @@ concept OnceClosure = std::is_class_v<Closure> && !std::is_reference_v<Closure> 
 template <class Closure, class... Arguments>
     requires OnceClosure<Closure, Arguments...>
 [[= once_door{}]] constexpr auto
-call_once(Closure&& closure, Arguments&&... arguments) noexcept(std::is_nothrow_invocable_v<Closure&&, Arguments&&...>) {
+    call_once(Closure&& closure,
+              Arguments&&... arguments) noexcept(std::is_nothrow_invocable_v<Closure&&, Arguments&&...>) {
     Closure owned(static_cast<Closure&&>(closure));
     return static_cast<Closure&&>(owned)(static_cast<Arguments&&>(arguments)...);
 }
