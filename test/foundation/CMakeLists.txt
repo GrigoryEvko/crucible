@@ -3093,9 +3093,12 @@ foundation_test(test_alloc_size_class)
 # The window door of foundation/alloc/Window.h: the ladder under a cap, a map
 # that reads no owner, the records inside the region, the fault of a guard
 # chunk, and a count of mappings that follows the extents.  The death test of
-# the guard chunk runs through the Check family of fixy.
+# the guard chunk runs through the Check family of fixy.  qemu-user gives one
+# line of /proc/self/maps for each mprotect call, so the test skips the two
+# counts of the lines under the emulator.
 foundation_test(test_alloc_chunk_map)
 target_link_libraries(test_alloc_chunk_map PRIVATE fixy)
+crucible_test_reads_emulator(test_alloc_chunk_map)
 # The chunk source of foundation/alloc/Window.h: eight threads of the thread
 # door of fixy claim and commit the chunks of one window at the same time, and
 # each chunk has one claim.  The tsan preset runs it with no suppression.

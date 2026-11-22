@@ -18,7 +18,8 @@
 //     region does not grow with the chunks of a committed extent.  After 4096
 //     chunks of 9 extents it grows by at most two lines for each extent and
 //     for each section of records.  A line of another mapping, such as a map
-//     of a sanitizer for itself, does not count.
+//     of a sanitizer for itself, does not count.  Under qemu-user, the two
+//     counts skip, and each other check of the case runs.
 //   - publish_host_window fills the host slot and no other slot.
 //   - publish_device_window fills the 63 slots of the devices in order, and
 //     the next device gets table_full with no end of the process.
@@ -52,6 +53,14 @@ using ::fixy::signal::FatalSignal;
 using ::foundation::core::ByteCount;
 
 constexpr std::size_t kGibibyte = std::size_t{1} << 30;
+
+// True when the test runs under qemu-user (test/foundation/CMakeLists.txt sets
+// the definition).  qemu-user gives one line of the /proc/self/maps of the
+// guest for each mprotect call, but the kernel merges the adjacent ranges of
+// one protection into one line.  Under the emulator, the line counts of
+// mappings_follow_extents then grow with the chunks, and the two checks of
+// the counts skip.  Each other check of the case runs.
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 // The text of /proc/self/maps.  The buffer is static, so a read adds no
 // mapping of its own.
@@ -276,13 +285,19 @@ void mappings_follow_extents(TestRunnerCtx const& test) {
         ++taken;
         if (taken == 1) after_first = count_window_mappings(test, record);
         if (taken == alloc::kChunksPerExtent - 1) {
-            CRUCIBLE_TEST_ASSERT(test, count_window_mappings(test, record) == after_first);
+            std::size_t const in_extent = count_window_mappings(test, record);
+            CRUCIBLE_TEST_ASSERT(test, kIsUnderEmulator || in_extent == after_first);
         }
     }
     std::size_t const after = count_window_mappings(test, record);
     std::size_t const sections = 2;
     CRUCIBLE_TEST_ASSERT(test, extents == 9);
-    CRUCIBLE_TEST_ASSERT(test, after <= before + 2 * extents + 2 * sections);
+    if (kIsUnderEmulator) {
+        ::foundation::core::report(::foundation::core::Sink::Err,
+                                   "mappings_follow_extents: the two counts of the lines SKIPPED (qemu-user)\n");
+    } else {
+        CRUCIBLE_TEST_ASSERT(test, after <= before + 2 * extents + 2 * sections);
+    }
     pass(test, "  mappings_follow_extents: PASSED\n");
 }
 
