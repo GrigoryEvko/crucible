@@ -108,7 +108,13 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // and detector_history_count take the proof that no pipeline runs
 // (prove_quiescence), and at() of the uncompiled queue takes the
 // publish-stage proof.  The mailbox of the publish stage and its two
-// sentinels are private.
+// sentinels are private.  The requests, the flush and rearm_stop write only
+// atomic cells, so they are const.  Nine doors take no proof that the check
+// of the statement reads: bind_ring, bind_meta_log, set_numerics, start,
+// stop, run_on_publish_stage, compute_memory_plan, run_in_row and
+// build_trace_from.  The check exempts this one class until the keyed doors
+// of the owner-key member series replace those doors (THE EXEMPTION of
+// foundation/Transfer.h).
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
@@ -230,7 +236,12 @@ public:
     // Resources, Concurrency and Local Reasoning, 2007).  One thread owns
     // the resource, the frame rule keeps every other thread out of it, and
     // ownership moves by a message to the owner, never by sharing.
-    class PublishStage {
+    //
+    // The proof belongs to the thread that owns the state, so it states
+    // thread_bound{}, and no two threads read one proof, so it states
+    // not_shareable{} (foundation/Transfer.h).  No checked door then carries
+    // a proof, or a reference to one, to another thread.
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] PublishStage {
         PublishStage() noexcept {}
         friend struct BackgroundThread;
 
@@ -903,14 +914,18 @@ private:
 public:
     // A one-way signal for a single run() invocation.  start() re-arms it
     // under quiescence before launching the next pipeline.
-    alignas(64)::fixy::handle::OneShotFlag stop_requested;
+    // It is mutable, because the const door rearm_stop writes it, and two
+    // threads can write the flag (THE DOORS OF A SYNCHRONIZED CLASS of
+    // foundation/Transfer.h).
+    alignas(64) mutable ::fixy::handle::OneShotFlag stop_requested;
 
     // Takes the stop signal down for the next run.  The proof of quiescence
     // comes from the thread of the pipeline, so a call while that thread runs
     // ends the process (THE QUIESCENCE OF AN OWNER of
     // fixy/os/OwnedThread.h).  A test that runs run_in_row on its own
-    // thread calls it between two runs.
-    void rearm_stop() noexcept { stop_requested.reset_in_quiescent_context(thread_.quiescence(*this)); }
+    // thread calls it between two runs.  The door writes only the flag, a
+    // cell that two threads can write, so it is const.
+    void rearm_stop() const noexcept { stop_requested.reset_in_quiescent_context(thread_.quiescence(*this)); }
 
 private:
     // The pipeline: its thread, the types of its four channels, the input
@@ -963,9 +978,13 @@ public:
     // flush compares it with count_processed_ring_ops, so a BackgroundThread
     // that runs on a ring that an earlier consumer used waits only for the
     // ops that it took itself.
+    //
+    // The flush reads atomic cells and parks on the event count, which two
+    // threads can write, so it is const (THE DOORS OF A SYNCHRONIZED CLASS of
+    // foundation/Transfer.h).
     template <class Ctx>
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
-    [[nodiscard]] FlushResult flush(Ctx const& ctx) noexcept {
+    [[nodiscard]] FlushResult flush(Ctx const& ctx) const noexcept {
         CRUCIBLE_PRE(!holds_stage_on_this_thread_());
         if (!ring_.has_value()) return ::fixy::Unit{};
         const uint64_t target_produced = ring_.get()->total_produced();
@@ -1013,7 +1032,11 @@ public:
     // moves the point back.  A newer request replaces an older one that the
     // detect stage did not reach.  Two divergences with no op between them
     // request one point.
-    void request_restart(uint64_t ops_before) noexcept {
+    //
+    // The three requests write only atomic cells, which two threads can
+    // write, so they are const (THE DOORS OF A SYNCHRONIZED CLASS of
+    // foundation/Transfer.h).
+    void request_restart(uint64_t ops_before) const noexcept {
         (void)requested_reset_.try_advance(StreamPoint::restart_at(ops_before));
     }
 
@@ -1022,7 +1045,7 @@ public:
     // also clears the ops between the two points.  A restart that the detect
     // stage applies after this read only makes the second restart one that a
     // mark would have done.
-    void request_mark(uint64_t ops_before) noexcept {
+    void request_mark(uint64_t ops_before) const noexcept {
         const StreamPoint last = requested_reset_.get();
         const bool has_unapplied_restart = last.restarts_detector() && applied_reset_.get() != last;
         (void)requested_reset_.try_advance(has_unapplied_restart ? StreamPoint::restart_at(ops_before)
@@ -1042,7 +1065,7 @@ public:
     // request or of a newer one.  A newer request has a point that is not
     // before this one, so each region cut between the two points is stale,
     // and no region gives out an old point with a newer hash.
-    void request_numerics(uint64_t ops_before, NumericsHash numerics) noexcept {
+    void request_numerics(uint64_t ops_before, NumericsHash numerics) const noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
         CRUCIBLE_PRE(!numerics.is_sentinel());
         requested_numerics_.store_release(numerics);
@@ -1055,11 +1078,14 @@ public:
     [[nodiscard]] StreamPoint applied_reset() const noexcept { return applied_reset_.get(); }
 
 private:
-    ::fixy::AtomicMonotonic<StreamPoint> requested_reset_ = ::fixy::mint_atomic_monotonic<StreamPoint>(StreamPoint{});
+    // The two cells of the requests are mutable, because the const requests
+    // write them, and two threads can write each one.
+    mutable ::fixy::AtomicMonotonic<StreamPoint> requested_reset_ =
+        ::fixy::mint_atomic_monotonic<StreamPoint>(StreamPoint{});
     // The numerics of the last request_numerics, or of set_numerics.  The
     // producer writes it, and the detect stage reads it at each reset that it
     // applies.
-    ::fixy::Atomic<NumericsHash> requested_numerics_{compute_numerics_hash(NumericsPolicy{}, EagerNumerics{})};
+    mutable ::fixy::Atomic<NumericsHash> requested_numerics_{compute_numerics_hash(NumericsPolicy{}, EagerNumerics{})};
     // The detect stage is the one writer of the two below (THE WRITER OF A
     // COUNTER of fixy/Mutation.h).
     struct AppliedResetWriter final {};
@@ -1849,7 +1875,9 @@ private:
     // The event count of each flush that waits.  The publish stage notifies
     // it after each count of total_processed, and the pipeline thread after
     // its end.  The count has a line of its own (fixy/concurrent/EventCount.h).
-    ::fixy::concurrent::EventCount processed_events_{};
+    // It is mutable, because the const flush parks on it, and two threads can
+    // write it.
+    mutable ::fixy::concurrent::EventCount processed_events_{};
 
     // The thread that runs the pipeline, while one runs.  start() gives it a
     // thread, and stop() and the end of this object call request_stop_ and
