@@ -379,6 +379,72 @@ public:
     // The channel's identity is its address, since the ring's atomics depend
     // on a stable one.
 
+private:
+    // The parts that a producer of each form writes: the ring, the roster of
+    // the producers and the claims of the lanes.  A producer handle of a merge
+    // or a lanes channel binds only this part.  For those two forms each part
+    // of it is Synchronized: the ring by its tickets or by the proofs of its
+    // lanes, and the roster and the claims by their atomic cells.  So two
+    // producer handles write it at the same time with no proof, and a producer
+    // handle reaches no other part of the channel, such as the pool of its
+    // shares.  The identity names the channel for the pipelines, through a
+    // pointer to const, which writes nothing.
+    class ProducerSide {
+    public:
+        explicit ProducerSide(PermissionedChannel const& channel) noexcept : identity_{__builtin_addressof(channel)} {}
+        ProducerSide(ProducerSide const&) = delete("the producer side lives in its channel, whose address names it");
+        ProducerSide& operator=(ProducerSide const&) = delete("the producer side lives in its channel");
+        ~ProducerSide() = default;
+
+        // The binding of a producer handle of a merge or a lanes channel.
+        [[nodiscard]] ::foundation::ChannelBinding<ProducerSide> bind() noexcept
+            requires(is_pooled)
+        {
+            return ::foundation::ChannelBinding<ProducerSide>{*this, ::foundation::BindingKey<ProducerSide>{}};
+        }
+
+        // The end of a producer handle of a merge or a lanes channel with its
+        // share.  The last producer of a merge closes the channel.  A producer
+        // of the lanes form ends its lane and then gives the claim of the lane
+        // back, so the next claim of the lane reads the end.  A handle ends one
+        // time, so the end is cold, and a stage that holds the handle keeps one
+        // call in place of the loop of the roster.
+        CRUCIBLE_COLD void end_producer(typename parts::lane const& lane) noexcept
+            requires(is_pooled)
+        {
+            if constexpr (Form == ChannelForm::lanes) {
+                ring_.end_lane(lane);
+                lane_claims_.with_element(lane.lane(),
+                                          [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
+            } else {
+                static_cast<void>(lane);
+                producers_.end_producer();
+            }
+        }
+
+        [[nodiscard]] ::foundation::ChannelIdentity<PermissionedChannel> identity() const noexcept { return identity_; }
+
+    private:
+        // The channel and its handles reach the parts.
+        friend class PermissionedChannel;
+
+        ring_type ring_;
+        // The live producer handles of a wire or a merge.  A lanes channel
+        // tells its end through the end words of its lanes.
+        ProducerRoster producers_;
+        // The claim of each lane of the lanes form, which its producer handle
+        // holds for its life.
+        [[no_unique_address]] typename parts::lane_claims lane_claims_;
+        ::foundation::ChannelIdentity<PermissionedChannel> const identity_;
+    };
+
+    // The binding of a producer handle: the producer side of a merge or a
+    // lanes channel, and the whole channel of a wire, whose handle holds the
+    // linear producer token.
+    using producer_binding =
+        ::foundation::ChannelBinding<std::conditional_t<is_pooled, ProducerSide, PermissionedChannel>>;
+
+public:
     // A wire channel starts with no handle.  The caller keeps both tokens.
     PermissionedChannel() noexcept
         requires(Form == ChannelForm::wire)
@@ -398,24 +464,43 @@ public:
         // using the one token or the one share.  A moved-from producer of a
         // merge would push with no pool share, during the window that
         // assumes every producer out.
-        ::foundation::ChannelBinding<PermissionedChannel> ch_;
+        producer_binding ch_;
         [[no_unique_address]] typename parts::producer_share share_;
         // The proof of the lane of a producer of the lanes form, and no value
         // in another form.  Each constructor builds it.
         [[no_unique_address]] typename parts::lane lane_;
 
         constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
-            requires(Form != ChannelForm::lanes)
+            requires(Form == ChannelForm::wire)
             : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}},
               share_{std::move(share)},
               lane_{::foundation::core::index<0>()} {}
+        constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
+            requires(Form == ChannelForm::merge)
+            : ch_{channel.side_.bind()}, share_{std::move(share)}, lane_{::foundation::core::index<0>()} {}
         constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share,
                                  typename parts::lane&& lane) noexcept
             requires(Form == ChannelForm::lanes)
-            : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}},
-              share_{std::move(share)},
-              lane_{std::move(lane)} {}
+            : ch_{channel.side_.bind()}, share_{std::move(share)}, lane_{std::move(lane)} {}
         friend class PermissionedChannel;
+
+        // The ring of the binding.
+        [[nodiscard, gnu::always_inline]] ring_type& ring_of_() const noexcept {
+            if constexpr (is_pooled) {
+                return ch_->ring_;
+            } else {
+                return ch_->side_.ring_;
+            }
+        }
+
+        // The end of the producer of this handle (ProducerSide::end_producer).
+        void end_() noexcept {
+            if constexpr (is_pooled) {
+                ch_->end_producer(lane_);
+            } else {
+                ch_->end_producer_(lane_);
+            }
+        }
 
     public:
         static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<parts::producer_lines, T>;
@@ -446,7 +531,7 @@ public:
         // ends with the handle, after this body, so no item of this producer
         // comes after the end.
         ~ProducerHandle() {
-            if (ch_.is_bound()) ch_->end_producer_(lane_);
+            if (ch_.is_bound()) end_();
         }
 
         // The release door of a wire producer.  The handle gives the producer
@@ -468,7 +553,7 @@ public:
         // The token of a wire ends here, and the share of a merge or of a lane
         // goes back to its pool here.
         void close() && noexcept {
-            ch_->end_producer_(lane_);
+            end_();
             ch_.unbind();
             if constexpr (Form == ChannelForm::wire) {
                 ::foundation::linear::drop(std::move(share_));
@@ -485,11 +570,11 @@ public:
         // ring (THE PROVEN FORM of fixy/concurrent/SpscRing.h).
         [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept {
             if constexpr (Form == ChannelForm::wire) {
-                return ch_->ring_.try_push_proven(PermissionedChannel::prove_producer_(), item);
+                return ring_of_().try_push_proven(PermissionedChannel::prove_producer_(), item);
             } else if constexpr (Form == ChannelForm::lanes) {
-                return ch_->ring_.try_push(lane_, item);
+                return ring_of_().try_push(lane_, item);
             } else {
-                return ch_->ring_.try_push(item);
+                return ring_of_().try_push(item);
             }
         }
 
@@ -519,15 +604,19 @@ public:
         // retrying, never for a correctness invariant.  Each takes the bare
         // tag of Nondet, as the snapshot of the ring does.
         [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-            return ch_->ring_.empty_approx(nondet);
+            return ring_of_().empty_approx(nondet);
         }
         [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-            return ch_->ring_.size_approx(nondet);
+            return ring_of_().size_approx(nondet);
         }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return channel_capacity; }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedChannel> channel_identity() const noexcept {
-            return ch_.identity();
+            if constexpr (is_pooled) {
+                return ch_.is_bound() ? ch_->identity() : ::foundation::ChannelIdentity<PermissionedChannel>{};
+            } else {
+                return ch_.identity();
+            }
         }
     };
 
@@ -552,24 +641,26 @@ public:
         template <typename... PopTag>
         [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_(PopTag... tag) noexcept {
             if constexpr (Form == ChannelForm::wire) {
-                return ch_->ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
+                return ch_->side_.ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
             } else {
-                return ch_->ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
+                return ch_->side_.ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
             }
         }
 
         template <typename... PopTag>
         [[nodiscard, gnu::always_inline]] ::foundation::core::Result<T, NoItem> receive_(PopTag... tag) noexcept {
             if constexpr (Form == ChannelForm::wire) {
-                ::foundation::core::Option<T> item = ch_->ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
+                ::foundation::core::Option<T> item =
+                    ch_->side_.ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
                 if (item.is_some()) [[likely]] {
                     return std::move(item).ok_or(NoItem::Empty);
                 }
                 return ch_->receive_after_empty_(tag...);
             } else if constexpr (Form == ChannelForm::lanes) {
-                return ch_->ring_.try_receive(PermissionedChannel::prove_consumer_());
+                return ch_->side_.ring_.try_receive(PermissionedChannel::prove_consumer_());
             } else {
-                ::foundation::core::Option<T> item = ch_->ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
+                ::foundation::core::Option<T> item =
+                    ch_->side_.ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
                 if (item.is_some()) [[likely]] {
                     return std::move(item).ok_or(NoItem::Empty);
                 }
@@ -622,10 +713,10 @@ public:
         }
 
         [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-            return ch_->ring_.empty_approx(nondet);
+            return ch_->side_.ring_.empty_approx(nondet);
         }
         [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-            return ch_->ring_.size_approx(nondet);
+            return ch_->side_.ring_.size_approx(nondet);
         }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return channel_capacity; }
 
@@ -670,7 +761,7 @@ public:
     {
         producer_claim_.take("two live producer handles of one wire channel. One call site minted the root of the "
                              "channel two times.");
-        producers_.add_producer();
+        side_.producers_.add_producer();
         return ProducerHandle{*this, std::move(perm)};
     }
 
@@ -688,7 +779,7 @@ public:
     {
         auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(producer_pool_);
         if (lent.is_none()) return ::foundation::core::none;
-        producers_.add_producer();
+        side_.producers_.add_producer();
         return ::foundation::core::Option<ProducerHandle>::some(
             ProducerHandle{*this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share")});
     }
@@ -713,10 +804,10 @@ public:
         if (lent.is_none()) return ::foundation::core::none;
         // The claim of a lane is an atomic claim, so two threads can take the
         // claims of two lanes through the element door at the same time.
-        lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
+        side_.lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
             claim.take("two live producer handles of one lane of a lanes channel.");
         });
-        if (ring_.end_of_lane(lane) == LaneEnd::ended) [[unlikely]] {
+        if (side_.ring_.end_of_lane(lane) == LaneEnd::ended) [[unlikely]] {
             ::foundation::core::fatal("a producer handle of a lane that ended. A lane ends one time in a stream, and "
                                       "the drain of the channel opens each lane again.");
         }
@@ -784,9 +875,9 @@ public:
             requires(Form != ChannelForm::lanes)
         {
             if constexpr (Form == ChannelForm::wire) {
-                return channel_.ring_.try_push_proven(PermissionedChannel::prove_producer_(), item);
+                return channel_.side_.ring_.try_push_proven(PermissionedChannel::prove_producer_(), item);
             } else {
-                return channel_.ring_.try_push(item);
+                return channel_.side_.ring_.try_push(item);
             }
         }
 
@@ -795,17 +886,17 @@ public:
         [[nodiscard]] bool try_push(lane_index lane, T const& item) noexcept
             requires(Form == ChannelForm::lanes)
         {
-            channel_.lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
+            channel_.side_.lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
                 claim.take("a push of a recombined access into a lane while a producer handle of the lane lives.");
             });
-            bool const is_pushed = channel_.ring_.try_push(PermissionedChannel::prove_lane_(lane), item);
-            channel_.lane_claims_.with_element(lane,
-                                               [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
+            bool const is_pushed = channel_.side_.ring_.try_push(PermissionedChannel::prove_lane_(lane), item);
+            channel_.side_.lane_claims_.with_element(
+                lane, [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
             return is_pushed;
         }
 
         [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-            return channel_.ring_.size_approx(nondet);
+            return channel_.side_.ring_.size_approx(nondet);
         }
     };
 
@@ -966,7 +1057,7 @@ public:
         }
         if constexpr (Form == ChannelForm::wire) {
             for (;;) {
-                ::foundation::core::Option<T> item = ring_.try_pop();
+                ::foundation::core::Option<T> item = side_.ring_.try_pop();
                 if (item.is_none()) break;
                 drop(std::move(item).expect("the test above found an item"));
             }
@@ -976,7 +1067,7 @@ public:
                 ::foundation::core::fatal("a drain of a {} channel while a producer handle lives.",
                                           pooled_text_({.merge = "merge", .lanes = "lanes"}));
             }
-            ring_.drain(prove_consumer_(), std::forward<Drop>(drop));
+            side_.ring_.drain(prove_consumer_(), std::forward<Drop>(drop));
             producer_pool_.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
         }
     }
@@ -1006,10 +1097,10 @@ public:
     }
 
     [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-        return ring_.empty_approx(nondet);
+        return side_.ring_.empty_approx(nondet);
     }
     [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
-        return ring_.size_approx(nondet);
+        return side_.ring_.size_approx(nondet);
     }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return channel_capacity; }
 
@@ -1018,9 +1109,9 @@ public:
     // snapshot for a test: a consumer reads the end through try_receive.
     [[nodiscard]] bool is_closed() const noexcept {
         if constexpr (Form == ChannelForm::lanes) {
-            return ring_.is_each_lane_ended();
+            return side_.ring_.is_each_lane_ended();
         } else {
-            return producers_.is_closed();
+            return side_.producers_.is_closed();
         }
     }
 
@@ -1063,22 +1154,14 @@ private:
         return typename ring_type::LaneProof{lane};
     }
 
-    // The end of a producer handle with its token or its share.  The last one
-    // closes the channel.  A wire gives its producer role back.  A producer of
-    // the lanes form ends its lane and then gives the claim of the lane back,
-    // so the next claim of the lane reads the end.  A handle ends one time, so
-    // the end is cold, and a stage that holds the handle keeps one call in
-    // place of the loop of the roster.
-    CRUCIBLE_COLD void end_producer_(typename parts::lane const& lane) noexcept {
-        if constexpr (Form == ChannelForm::lanes) {
-            ring_.end_lane(lane);
-            lane_claims_.with_element(lane.lane(),
-                                      [](::foundation::EndpointClaim& claim) noexcept { claim.release(); });
-        } else {
-            static_cast<void>(lane);
-            producers_.end_producer();
-            if constexpr (Form == ChannelForm::wire) producer_claim_.release();
-        }
+    // The end of a producer handle of a wire with its token.  It is the last
+    // producer, so it closes the channel, and it gives its producer role back.
+    // A handle ends one time, so the end is cold (ProducerSide::end_producer).
+    CRUCIBLE_COLD void end_producer_(typename parts::lane const& /*lane*/) noexcept
+        requires(Form == ChannelForm::wire)
+    {
+        side_.producers_.end_producer();
+        producer_claim_.release();
     }
 
     // The release door of a wire producer: the channel stays open.  It is cold
@@ -1086,7 +1169,7 @@ private:
     CRUCIBLE_COLD void release_producer_() noexcept
         requires(Form == ChannelForm::wire)
     {
-        producers_.release_producer();
+        side_.producers_.release_producer();
         producer_claim_.release();
     }
 
@@ -1097,7 +1180,7 @@ private:
     // handle ends, so the same holds for a merge.
     template <typename... PopTag>
     [[nodiscard]] ::foundation::core::Result<T, NoItem> receive_after_empty_(PopTag... tag) noexcept {
-        if (!producers_.is_closed()) [[likely]] {
+        if (!side_.producers_.is_closed()) [[likely]] {
             return ::foundation::core::err(NoItem::Empty);
         }
         return receive_after_close_(tag...);
@@ -1107,25 +1190,21 @@ private:
     template <typename... PopTag>
     [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_close_(PopTag... tag) noexcept {
         if constexpr (Form == ChannelForm::merge) {
-            return ring_.try_pop(prove_consumer_(), tag...).ok_or(NoItem::Closed);
+            return side_.ring_.try_pop(prove_consumer_(), tag...).ok_or(NoItem::Closed);
         } else {
-            return ring_.try_pop(tag...).ok_or(NoItem::Closed);
+            return side_.ring_.try_pop(tag...).ok_or(NoItem::Closed);
         }
     }
 
-    ring_type ring_;
+    // The ring, the roster of the producers and the claims of the lanes
+    // (ProducerSide).
+    ProducerSide side_{*this};
     // The claim of the producer side.  A wire producer handle holds it for its
     // life.  On a pooled form, the recombined access, the drain and the deposit
     // of the producer root hold it, so two of them never overlap.
     ::foundation::EndpointClaim producer_claim_;
     [[no_unique_address]] typename parts::producer_pool producer_pool_;
-    // The claim of each lane of the lanes form, which its producer handle
-    // holds for its life.
-    [[no_unique_address]] typename parts::lane_claims lane_claims_;
     ::foundation::EndpointClaim consumer_claim_;
-    // The live producer handles of a wire or a merge.  A lanes channel tells
-    // its end through the end words of its lanes.
-    ProducerRoster producers_;
 };
 
 namespace detail {
