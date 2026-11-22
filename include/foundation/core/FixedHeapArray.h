@@ -50,6 +50,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>
+#include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
@@ -168,10 +169,11 @@ public:
     // of the elements, with the scope brand of the frame, and the door gives
     // the result of body.  The array stays in place, so the door copies no
     // element.  The pack refuses each explicit argument, so no caller names
-    // the brand.  Complexity: O(1), and the cost of body.
+    // the brand.  The door always inlines, so a body that its caller inlines
+    // costs no call.  Complexity: O(1), and the cost of body.
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && FrameBody<Body, T, Fresh, N>
-    [[= ::foundation::linear::borrow_match{}]] constexpr auto with_mut(Body&& body) & noexcept {
+    [[= ::foundation::linear::borrow_match{}]] CRUCIBLE_INLINE constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
             ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), first_()}});
     }
