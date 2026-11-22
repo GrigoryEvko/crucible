@@ -299,17 +299,16 @@ void run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::View<
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
     const ::fixy::thread::ThreadOptions options = rule_thread_options(cores, budget);
     if (inputs.kind == WorkloadKind::L2MatrixMultiply) {
-        ProductRow const* const first_row = ::foundation::core::foreign_first(rows);
         auto region = ::fixy::mint_owned_region(::foundation::core::foreign_first(rows), rows.size(),
                                                 perm::mint_permission_root<ProductWhole>());
         auto whole =
             ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent, kPieces>(
                 ctx, test, budget, std::move(region),
-                [&inputs, &sink, &tally, first_row](auto& shard) noexcept {
+                [&inputs, &sink, &tally](auto shard, auto place) noexcept {
                     tally.note_calling_thread();
                     if (shard.size() == 0) return;
-                    auto const begin = static_cast<std::size_t>(shard.data() - first_row);
-                    run_l2_rows(inputs, Range{begin, begin + shard.size()}, sink, shard.data());
+                    run_l2_rows(inputs, Range{place.first(), place.first() + shard.size()}, sink,
+                                ::foundation::core::foreign_first(shard.view()));
                 },
                 options);
         ::foundation::linear::drop(std::move(whole));
@@ -320,7 +319,8 @@ void run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::View<
     auto whole =
         ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent, kPieces>(
             ctx, test, budget, std::move(region),
-            [&inputs, &sink, &tally](auto& shard) noexcept {
+            [&inputs, &sink, &tally](auto shard, auto place) noexcept {
+                static_cast<void>(place);
                 tally.note_calling_thread();
                 for (const std::uint32_t piece : shard) {
                     run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);

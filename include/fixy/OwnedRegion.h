@@ -381,18 +381,21 @@ public:
         return std::move(perm_);
     }
 
-    [[nodiscard]] constexpr std::span<T> span() noexcept { return std::span<T>{base_, count_}; }
     [[nodiscard]] constexpr std::span<T const> cspan() const noexcept { return std::span<T const>{base_, count_}; }
-
-    [[nodiscard]] constexpr T* data() noexcept { return base_; }
-    [[nodiscard]] constexpr T const* data() const noexcept { return base_; }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
     [[nodiscard]] constexpr bool empty() const noexcept { return count_ == 0; }
 
-    [[nodiscard]] constexpr T* begin() noexcept { return base_; }
-    [[nodiscard]] constexpr T* end() noexcept { return base_ + count_; }
-    [[nodiscard]] constexpr T const* begin() const noexcept { return base_; }
-    [[nodiscard]] constexpr T const* end() const noexcept { return base_ + count_; }
+    // The run of the elements for a frame door: a View that writes them.  The
+    // key of a frame keeps each caller outside the base out, so only a frame
+    // door gives a View that writes the elements of a region: with_mut below,
+    // and the runner of mint_parallel_for (fixy/concurrent/Spawn.h), which
+    // lends each body the run of its shard.  The mint over a pointer checked
+    // the base and the count, and a split and a recombine keep the two inside
+    // that run, so the View takes the door of the base layer with no check.
+    [[nodiscard]] friend constexpr ::foundation::core::View<T>
+    frame_run_(::foundation::core::detail::FrameKey const& /*key*/, OwnedRegion& region) noexcept {
+        return ::foundation::core::View<T>{::foundation::core::detail::ViewDoor::key(), region.base_, region.count_};
+    }
 
     // The split is mint_split, declared above.  It reaches the private
     // partition through this friendship, so the only way to a shard is
@@ -457,6 +460,11 @@ template <typename T, typename Tag, typename Brand>
     requires std::is_object_v<T>
 [[nodiscard]] constexpr OwnedRegion<T, Tag, Brand>
 mint_owned_region(T* base, std::size_t count, ::foundation::permissions::Permission<Tag, Brand>&& perm) noexcept {
+    // The base and the count come from the caller, so the mint checks the two
+    // once, here: view_over_ ends the process on a count past the largest
+    // count of a View, and on a null base with a count.  Each frame door and
+    // each borrow of the region then makes its View with no check.
+    static_cast<void>(::foundation::core::detail::view_over_(base, count));
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }
 
@@ -474,23 +482,75 @@ mint_owned_region(::foundation::effects::Alloc alloc_token, Allocator& arena, st
     return OwnedRegion<T, Tag, Brand>{base, count, std::move(perm)};
 }
 
-// A borrow of a region: a View of its elements, which names no brand.  The
-// region holds its elements while it lives, so the View lives no longer
-// than the region.  The region is taken by lvalue reference and the twin
-// refuses a temporary region, whose storage may be gone at the end of the
-// statement.  A region adopts its base and its count from its caller, so
-// view_over_ checks the two in each build.
+// A borrow of a region: a View of its const elements, which names no brand.
+// The region holds its elements while it lives, so the View lives no longer
+// than the region.  The region is taken by lvalue reference and the twins
+// refuse a temporary region, whose storage may be gone at the end of the
+// statement.  A write takes the frame door with_mut below, so no two Views
+// of one region write the same elements.  The mint over a pointer checked
+// the base and the count, so the View takes the door of the base layer.
 template <typename T, typename Tag, typename Brand>
     requires ::foundation::brand::IsBrand<Brand>
-[[nodiscard]] constexpr ::foundation::core::View<T> mint_borrowed(OwnedRegion<T, Tag, Brand>& region
-                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return ::foundation::core::detail::view_over_(region.data(), region.size());
+[[nodiscard]] constexpr ::foundation::core::View<T const> mint_borrowed(OwnedRegion<T, Tag, Brand> const& region
+                                                                        CRUCIBLE_LIFETIMEBOUND) noexcept {
+    std::span<T const> const elements = region.cspan();
+    return ::foundation::core::View<T const>{::foundation::core::detail::ViewDoor::key(), elements.data(),
+                                             elements.size()};
 }
 
 template <typename T, typename Tag, typename Brand>
     requires ::foundation::brand::IsBrand<Brand>
-constexpr ::foundation::core::View<T> mint_borrowed(OwnedRegion<T, Tag, Brand>&&) =
+constexpr ::foundation::core::View<T const> mint_borrowed(OwnedRegion<T, Tag, Brand>&&) =
     delete("a borrow of a temporary region outlives it; bind the region to a name that outlives the borrow");
+
+template <typename T, typename Tag, typename Brand>
+    requires ::foundation::brand::IsBrand<Brand>
+constexpr ::foundation::core::View<T const> mint_borrowed(OwnedRegion<T, Tag, Brand> const&&) =
+    delete("a borrow of a temporary region outlives it; bind the region to a name that outlives the borrow");
+
+// The frame door of a region (foundation/core/Frame.h).  The region moves
+// into the frame, body gets the ViewMut of its elements with the scope brand
+// of the frame, and the door gives the region back: alone for a body that
+// gives void, and after the result in a Record for each other body.  While
+// the body runs, the caller holds no name for the region: the name that it
+// moved from covers no byte, so a door of that name gives an empty run.  A
+// region moves a pointer and a count, so the door holds no key: the move is
+// the proof that no other door reaches the run.  A region has no move
+// assignment, so the caller binds the region that the door gives to a new
+// name.  The pack refuses each explicit argument.  Complexity: O(1), and the
+// cost of body.
+template <class... Refused, class T, class Tag, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ::foundation::core::FrameBody<Body, T, Fresh>
+[[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<
+    ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
+    OwnedRegion<T, Tag, Brand>>
+with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept {
+    OwnedRegion<T, Tag, Brand> held{std::move(region)};
+    ::foundation::core::View<T> const run = frame_run_(::foundation::core::detail::FrameDoor::key(), held);
+    return ::foundation::core::detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
+}
+
+// A body whose result holds a borrow or names the brand of the frame binds
+// to this overload, so the refusal gives its reason.
+template <class... Refused, class T, class Tag, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ::foundation::core::RefusedFrameBody<Body, T, Fresh>
+void with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) = delete(
+    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+    "the frame: give a plain value");
+
+// A named region stays with the caller while the body runs, so the body could
+// write it beside the ViewMut through a capture.  These twins refuse a named
+// region and a const one, which cannot move into the frame.
+template <class T, class Tag, class Brand, class Body>
+void with_mut(OwnedRegion<T, Tag, Brand>& region, Body&& body) = delete(
+    "with_mut takes the region into its frame and gives it back: pass std::move(region), and bind the region that "
+    "the call returns to a new name");
+template <class T, class Tag, class Brand, class Body>
+void with_mut(OwnedRegion<T, Tag, Brand> const& region, Body&& body) = delete(
+    "a const region lends no writer of its elements: read them through mint_borrowed, or take a region that is not "
+    "const");
 
 template <std::size_t N, typename... Never, typename T, typename Tag, typename Brand, typename SplitName>
     requires(N > 0 && std::is_object_v<T>)

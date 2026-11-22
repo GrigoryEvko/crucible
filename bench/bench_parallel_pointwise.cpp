@@ -248,14 +248,13 @@ void print_shard_cores(Placement const& placement) noexcept {
         ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64},
         ::fixy::mint_owned_region<std::uint32_t>(nullptr, std::size_t{0},
                                                  ::foundation::permissions::mint_permission_root<ShardProbeCells>()),
-        [&cpus](auto& shard) noexcept {
+        [&cpus](auto shard, auto place) noexcept {
             static_cast<void>(shard);
-            constexpr std::size_t index = std::remove_cvref_t<decltype(shard)>::tag_type::index;
             ::fixy::FixedText<1024> stat{};
             bool const is_read = ::foundation::os::read_file("/proc/thread-self/stat", stat).is_ok();
             std::uint64_t const cpu = is_read ? bench::detail::processor_of_stat(stat.view()).value_or(kNoCpu) : kNoCpu;
             // Each shard writes only the Atomic of its own index, and the main thread reads it after the join.
-            cpus.with_element(::fixy::index<index>(),
+            cpus.with_element(place.index(),
                               [cpu](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(cpu); });
         },
         options_of<Shards>(placement));
@@ -293,7 +292,11 @@ template <std::size_t Shards>
             ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64},
             ::fixy::mint_owned_region<std::uint32_t>(
                 nullptr, std::size_t{0}, ::foundation::permissions::mint_permission_root<ShardProbeCells>()),
-            [](auto& shard) noexcept { static_cast<void>(shard); }, options);
+            [](auto shard, auto place) noexcept {
+                static_cast<void>(shard);
+                static_cast<void>(place);
+            },
+            options);
         ::foundation::linear::drop(std::move(whole));
     });
 }

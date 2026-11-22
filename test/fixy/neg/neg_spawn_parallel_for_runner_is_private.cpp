@@ -6,23 +6,30 @@
 // friend.  A free function in a detail namespace once held it, and any
 // translation unit could start threads through it with no context at all.
 //
-// This caller hands over a background context and a tuple of values, so
-// the only rejection left is the access check.
+// This caller hands over a background context and the shards of a split,
+// so the only rejection left is the access check.
 //
 // Expected diagnostic: the fan-out is private within this context.
 
 #include <fixy/concurrent/Spawn.h>
+#include <foundation/permissions/Permission.h>
 
-#include <tuple>
 #include <utility>
 
 namespace eff = foundation::effects;
 
+namespace {
+struct RegionWhole {
+    using permission_row = ::foundation::effects::Row<>;
+};
+}  // namespace
+
 int main() {
     eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    std::tuple<int, int> shards{0, 0};
+    auto parts = fixy::mint_split<2>(
+        fixy::mint_owned_region<int>(nullptr, 0uz, foundation::permissions::mint_permission_root<RegionWhole>()));
     [[maybe_unused]] auto started = fixy::spawn::ParallelForRunner::run_shards_(
-        ctx, shards, [](int& shard) noexcept { ++shard; }, std::size_t{2}, fixy::thread::ThreadOptions{},
-        std::make_index_sequence<2>{});
+        ctx, parts.shards, [](auto shard, auto) noexcept { static_cast<void>(shard); }, std::size_t{2},
+        fixy::thread::ThreadOptions{}, std::make_index_sequence<2>{});
     return 0;
 }

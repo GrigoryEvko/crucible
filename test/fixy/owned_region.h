@@ -62,12 +62,23 @@ public:
 // The allocation capability of the test context.
 inline ::foundation::effects::Alloc test_alloc_token() noexcept { return ::foundation::effects::testing::test().alloc; }
 
-// The byte offset of a shard from the start of its region.  It is read
-// as an integer, so a shard that starts past the region gives a number
-// that the caller can compare, not a pointer that is undefined to form.
-template <typename Shard, typename T>
-std::uintptr_t byte_offset_of(Shard const& shard, T const* base) noexcept {
-    return std::bit_cast<std::uintptr_t>(shard.data()) - std::bit_cast<std::uintptr_t>(base);
+// True when the elements of a region lie inside the run of the whole and
+// start at position.  offset_of of foundation/core/Region.h compares the
+// two address ranges as integers, so a region that starts past the whole
+// gives false, not a pointer that is undefined to form.
+template <typename T, typename Region>
+[[nodiscard]] bool starts_at(::foundation::core::View<T const> whole, Region const& region,
+                             std::size_t position) noexcept {
+    return ::foundation::core::offset_of(whole, ::fixy::mint_borrowed(region))
+        == ::foundation::core::Option<std::size_t>::some(position);
+}
+
+// True when a region names no element of the run of the whole and no
+// position in it: the region of a consuming door, which is empty at a null
+// base.
+template <typename T, typename Region>
+[[nodiscard]] bool lies_outside(::foundation::core::View<T const> whole, Region const& region) noexcept {
+    return region.empty() && ::foundation::core::offset_of(whole, ::fixy::mint_borrowed(region)).is_none();
 }
 
 // One shard count over every total from 0 to 64.  The storage is a heap
@@ -85,32 +96,36 @@ void split_and_recombine_every_total(TestRunnerCtx const& test) {
             std::uint32_t* const base = pass == 0 ? storage.get() : nullptr;
             auto region = ::fixy::mint_owned_region(base, total, mint_permission_root<DataA>());
             using Region = decltype(region);
+            ::foundation::core::View<std::uint32_t const> const all = ::fixy::mint_borrowed(region);
             auto parts = ::fixy::mint_split<N>(std::move(region));
 
             // Each shard starts where the one before it ends, holds the
             // count or one element more than the count of every other
-            // shard, and writes its own index over its range.
+            // shard, and writes its own index over its range through its
+            // frame door.  The frame door gives each shard back, and the
+            // shards that it gives make the tuple of the recombine.  A
+            // braced list runs its parts in order.
             std::array<std::size_t, N> sizes{};
             std::size_t next_start = 0;
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (
-                    [&] {
-                        auto& shard = std::get<Is>(parts.shards);
-                        CRUCIBLE_TEST_ASSERT(test, byte_offset_of(shard, base) == next_start * sizeof(std::uint32_t));
-                        CRUCIBLE_TEST_ASSERT(test, shard.size() == total / N || shard.size() == total / N + 1);
-                        for (auto& element : shard.span())
+            auto written = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                return std::tuple{[&] {
+                    auto& shard = std::get<Is>(parts.shards);
+                    CRUCIBLE_TEST_ASSERT(test, starts_at(all, shard, next_start));
+                    CRUCIBLE_TEST_ASSERT(test, shard.size() == total / N || shard.size() == total / N + 1);
+                    sizes[Is] = shard.size();
+                    next_start += shard.size();
+                    return ::fixy::with_mut(std::move(shard), [](auto run) noexcept {
+                        for (std::uint32_t& element : run)
                             element = static_cast<std::uint32_t>(Is);
-                        sizes[Is] = shard.size();
-                        next_start += shard.size();
-                    }(),
-                    ...);
+                    });
+                }()...};
             }(std::make_index_sequence<N>{});
             CRUCIBLE_TEST_ASSERT(test, next_start == total);
 
             // recombine accepts every split, and the whole it gives back
             // holds each shard's index exactly over that shard's range.
-            auto whole = Region::recombine(std::move(parts.witness), std::move(parts.shards));
-            CRUCIBLE_TEST_ASSERT(test, whole.data() == base);
+            auto whole = Region::recombine(std::move(parts.witness), std::move(written));
+            CRUCIBLE_TEST_ASSERT(test, starts_at(all, whole, 0));
             CRUCIBLE_TEST_ASSERT(test, whole.size() == total);
             std::size_t position = 0;
             for (std::size_t shard_index = 0; shard_index < N; ++shard_index) {

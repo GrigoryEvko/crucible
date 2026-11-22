@@ -20,10 +20,13 @@ void test_split_into_chunk_math(TestRunnerCtx const& test) {
 
     // Each element holds its own index, so a shard's contents identify
     // the offset it was cut from.
-    for (std::size_t i = 0; i < 1000; ++i)
-        region.span()[i] = i;
+    auto seeded = ::fixy::with_mut(std::move(region), [](auto run) noexcept {
+        std::uint64_t position = 0;
+        for (std::uint64_t& element : run)
+            element = position++;
+    });
 
-    auto parts = ::fixy::mint_split<8>(std::move(region));
+    auto parts = ::fixy::mint_split<8>(std::move(seeded));
     auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
 
     // 1000 over 8 divides exactly, so every shard is the same size.
@@ -49,6 +52,7 @@ void test_split_uneven(TestRunnerCtx const& test) {
     auto perm = mint_permission_root<DataA>();
     using Brand = decltype(perm)::brand_type;
     auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 1001, std::move(perm));
+    ::foundation::core::View<std::uint64_t const> const all = ::fixy::mint_borrowed(region);
 
     auto parts = ::fixy::mint_split<8>(std::move(region));
     auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
@@ -59,8 +63,9 @@ void test_split_uneven(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, s1.size() == 125);
     CRUCIBLE_TEST_ASSERT(test, s6.size() == 125);
     CRUCIBLE_TEST_ASSERT(test, s7.size() == 125);
-    CRUCIBLE_TEST_ASSERT(test, s1.data() == s0.data() + 126);
-    CRUCIBLE_TEST_ASSERT(test, s7.data() + 125 == s0.data() + 1001);
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, s0, 0));
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, s1, 126));
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, s7, 1001 - 125));
 }
 
 void test_split_smaller_than_n(TestRunnerCtx const& test) {
@@ -68,6 +73,7 @@ void test_split_smaller_than_n(TestRunnerCtx const& test) {
     auto perm = mint_permission_root<DataA>();
     using Brand = decltype(perm)::brand_type;
     auto region = OwnedRegion<std::uint64_t, DataA, Brand>::adopt(test_alloc_token(), arena, 5, std::move(perm));
+    ::foundation::core::View<std::uint64_t const> const all = ::fixy::mint_borrowed(region);
 
     auto parts = ::fixy::mint_split<8>(std::move(region));
     auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
@@ -81,8 +87,20 @@ void test_split_smaller_than_n(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, s6.size() == 0);
     CRUCIBLE_TEST_ASSERT(test, s7.size() == 0);
     CRUCIBLE_TEST_ASSERT(test, s5.empty());
-    CRUCIBLE_TEST_ASSERT(test, s5.data() == s0.data() + 5);
-    CRUCIBLE_TEST_ASSERT(test, s7.data() == s0.data() + 5);
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, s0, 0));
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, s5, 5));
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, s7, 5));
+}
+
+// The frame of one shard: it writes the slice index of the shard over the
+// range of the shard, and gives the shard back.
+template <typename Shard>
+[[nodiscard]] Shard write_slice_index(Shard& shard) noexcept {
+    constexpr std::uint64_t shard_index = Shard::tag_type::index;
+    return ::fixy::with_mut(std::move(shard), [](auto run) noexcept {
+        for (std::uint64_t& element : run)
+            element = shard_index;
+    });
 }
 
 // The join, spelled out once: every shard writes its own slice index over its range, and the shards are
@@ -98,33 +116,26 @@ void test_split_then_rebuild_through_recombine(TestRunnerCtx const& test) {
 
     // A value no shard index can produce, so an untouched element is
     // distinguishable from a written one.
-    for (std::size_t i = 0; i < N; ++i)
-        region.span()[i] = 0xDEAD;
+    auto seeded = ::fixy::with_mut(std::move(region), [](auto run) noexcept {
+        for (std::uint64_t& element : run)
+            element = 0xDEAD;
+    });
 
-    std::uint64_t* base = region.data();
-    const std::size_t count = region.size();
+    ::foundation::core::View<std::uint64_t const> const all = ::fixy::mint_borrowed(seeded);
+    const std::size_t count = seeded.size();
 
-    auto parts = ::fixy::mint_split<8>(std::move(region));
-    std::apply(
-        [](auto&... sub) {
-            (
-                [](auto& one) {
-                    using SubT = std::remove_cvref_t<decltype(one)>;
-                    constexpr std::size_t shard_idx = SubT::tag_type::index;
-                    for (auto& x : one.span())
-                        x = shard_idx;
-                }(sub),
-                ...);
-        },
-        parts.shards);
+    // Each shard writes through its frame door, which gives the shard back,
+    // and the shards that it gives make the tuple of the recombine.
+    auto parts = ::fixy::mint_split<8>(std::move(seeded));
+    auto written = std::apply([](auto&... sub) { return std::tuple{write_slice_index(sub)...}; }, parts.shards);
 
     // The receipt the split wrote is surrendered beside the shards, and
     // it is what tells recombine that one split produced them.
-    auto recombined = Whole::recombine(std::move(parts.witness), std::move(parts.shards));
+    auto recombined = Whole::recombine(std::move(parts.witness), std::move(written));
 
     // recombine derives both from the shards rather than being told, so
     // check it recovered the extent the split started from.
-    CRUCIBLE_TEST_ASSERT(test, recombined.data() == base);
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, recombined, 0));
     CRUCIBLE_TEST_ASSERT(test, recombined.size() == count);
     CRUCIBLE_TEST_ASSERT(test, recombined.size() == N);
     for (std::size_t shard = 0; shard < 8; ++shard) {

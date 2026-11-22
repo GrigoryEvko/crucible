@@ -140,16 +140,22 @@ void test_adopt_and_view(TestRunnerCtx const& test) {
 
     CRUCIBLE_TEST_ASSERT(test, region.size() == 64);
     CRUCIBLE_TEST_ASSERT(test, !region.empty());
-    CRUCIBLE_TEST_ASSERT(test, region.data() != nullptr);
-    CRUCIBLE_TEST_ASSERT(test, region.span().size() == 64);
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::mint_borrowed(region).size() == 64);
 
-    for (std::size_t i = 0; i < 64; ++i)
-        region.span()[i] = static_cast<float>(i);
+    // The frame door lends the run of the region to the body, and gives the
+    // region back.
+    auto written = ::fixy::with_mut(std::move(region), [](auto run) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(run.size() == 64);
+        std::size_t position = 0;
+        for (float& element : run)
+            element = static_cast<float>(position++);
+    });
+    CRUCIBLE_TEST_ASSERT(test, written.size() == 64);
     // Compared as bits rather than as floats, because -Werror=float-equal
     // forbids the direct comparison.  These small integers survive the
     // round trip through float exactly, so the bit compare is sound.
     for (std::size_t i = 0; i < 64; ++i) {
-        const std::uint32_t got = std::bit_cast<std::uint32_t>(region.cspan()[i]);
+        const std::uint32_t got = std::bit_cast<std::uint32_t>(written.cspan()[i]);
         const std::uint32_t exp = std::bit_cast<std::uint32_t>(static_cast<float>(i));
         CRUCIBLE_TEST_ASSERT(test, got == exp);
     }
@@ -181,12 +187,12 @@ void test_wrap_borrows_storage(TestRunnerCtx const& test) {
 
     // The region proves ownership of the bytes but does not own the
     // storage, so a write through it lands in the caller's array.
-    CRUCIBLE_TEST_ASSERT(test, region.data() == storage);
-    region.span()[5] = 60;
+    auto written = ::fixy::with_mut(
+        std::move(region), [](auto run) noexcept { *run.get(5).expect("the region holds six elements") = 60; });
     CRUCIBLE_TEST_ASSERT(test, storage[5] == 60);
 
     std::uint64_t sum = 0;
-    for (auto v : region)
+    for (auto v : ::fixy::mint_borrowed(written))
         sum += v;
     CRUCIBLE_TEST_ASSERT(test, sum == 1 + 2 + 3 + 4 + 5 + 60);
 }
@@ -215,7 +221,7 @@ void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
     using Region = decltype(region);
 
     auto borrow = ::fixy::mint_borrowed(region);
-    static_assert(std::is_same_v<decltype(borrow), ::fixy::View<std::uint64_t>>);
+    static_assert(std::is_same_v<decltype(borrow), ::fixy::View<std::uint64_t const>>);
     CRUCIBLE_TEST_ASSERT(test, borrow.size() == 8);
 
     auto parts = ::fixy::mint_split<2>(std::move(region));
@@ -232,7 +238,7 @@ void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
     auto whole = OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
     static_assert(::foundation::brand::SameBrand<decltype(whole), Region>);
     CRUCIBLE_TEST_ASSERT(test, whole.size() == 8);
-    CRUCIBLE_TEST_ASSERT(test, whole.data() == storage);
+    CRUCIBLE_TEST_ASSERT(test, starts_at(borrow, whole, 0));
     static_assert(!std::is_constructible_v<OwnedRegion<std::uint64_t, DataA>, decltype(whole)&&>,
                   "a branded region does not erase");
 }
@@ -270,8 +276,13 @@ void require_mixed_rebuild_aborts(TestRunnerCtx const& test, Split split) {
         },
         kRefusedRecombine);
     auto parts_c = split(third);
+    ::foundation::core::View<std::uint64_t const> const first_shard =
+        ::fixy::mint_borrowed(std::get<0>(parts_c.shards));
     auto whole = Region::recombine(std::move(parts_c.witness), std::move(parts_c.shards));
-    CRUCIBLE_TEST_ASSERT(test, whole.data() == third && whole.size() == 4);
+    // Shard 0 of its own split lies at the start of the whole.
+    CRUCIBLE_TEST_ASSERT(test, ::foundation::core::offset_of(::fixy::mint_borrowed(whole), first_shard)
+                                       == ::foundation::core::Option<std::size_t>::some(0uz)
+                                   && whole.size() == 4);
 }
 
 // A shard moved out of the tuple before the recombine is empty at a null
@@ -290,7 +301,10 @@ void require_recombine_aborts_without_shard(TestRunnerCtx const& test) {
         [&] noexcept {
             auto kept = std::move(std::get<KeptIndex>(parts.shards));
             (void)Region::recombine(std::move(parts.witness), std::move(parts.shards));
-            kept.span()[0] = 7;
+            auto written = ::fixy::with_mut(std::move(kept), [](auto run) noexcept {
+                *run.get(0).expect("the kept shard holds two elements") = 7;
+            });
+            ::foundation::linear::drop(std::move(written).release());
         },
         kRefusedRecombine);
 }
@@ -314,25 +328,26 @@ void test_every_consuming_door_empties_the_region(TestRunnerCtx const& test) {
     static std::uint64_t storage[4] = {1, 2, 3, 4};
     auto source = branded_at_one_site(storage, 4);
     using Branded = decltype(source);
+    ::foundation::core::View<std::uint64_t const> const all = ::fixy::mint_borrowed(source);
 
     Branded moved_into = std::move(source);
-    CRUCIBLE_TEST_ASSERT(test, source.empty() && source.data() == nullptr);
-    CRUCIBLE_TEST_ASSERT(test, moved_into.data() == storage && moved_into.size() == 4);
+    CRUCIBLE_TEST_ASSERT(test, lies_outside(all, source));
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, moved_into, 0) && moved_into.size() == 4);
 
     auto parts = ::fixy::mint_split<2>(std::move(moved_into));
-    CRUCIBLE_TEST_ASSERT(test, moved_into.empty() && moved_into.data() == nullptr);
+    CRUCIBLE_TEST_ASSERT(test, lies_outside(all, moved_into));
 
     auto whole = Branded::recombine(std::move(parts.witness), std::move(parts.shards));
-    CRUCIBLE_TEST_ASSERT(test, std::get<0>(parts.shards).empty() && std::get<0>(parts.shards).data() == nullptr);
-    CRUCIBLE_TEST_ASSERT(test, std::get<1>(parts.shards).empty() && std::get<1>(parts.shards).data() == nullptr);
-    CRUCIBLE_TEST_ASSERT(test, whole.data() == storage && whole.size() == 4);
+    CRUCIBLE_TEST_ASSERT(test, lies_outside(all, std::get<0>(parts.shards)));
+    CRUCIBLE_TEST_ASSERT(test, lies_outside(all, std::get<1>(parts.shards)));
+    CRUCIBLE_TEST_ASSERT(test, starts_at(all, whole, 0) && whole.size() == 4);
 
     // The release door gives the token back, and the token wraps the same
     // storage again.
     auto token = std::move(whole).release();
-    CRUCIBLE_FATAL_INVARIANT(whole.empty() && whole.data() == nullptr);
+    CRUCIBLE_FATAL_INVARIANT(lies_outside(all, whole));
     auto rewrapped = Branded::wrap(storage, 4, std::move(token));
-    CRUCIBLE_FATAL_INVARIANT(rewrapped.data() == storage && rewrapped.size() == 4);
+    CRUCIBLE_FATAL_INVARIANT(starts_at(all, rewrapped, 0) && rewrapped.size() == 4);
 }
 
 void test_recombine_refuses_shards_of_two_regions_of_one_site(TestRunnerCtx const& test) {
@@ -351,8 +366,12 @@ void test_adopt_zero_length(TestRunnerCtx const& test) {
 
     CRUCIBLE_TEST_ASSERT(test, region.empty());
     CRUCIBLE_TEST_ASSERT(test, region.size() == 0);
-    CRUCIBLE_TEST_ASSERT(test, region.data() == nullptr);
-    CRUCIBLE_TEST_ASSERT(test, region.span().empty());
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::mint_borrowed(region).size() == 0);
+    // The empty region is at a null base, so it lies inside each other run
+    // with no address, and in no run that has one.
+    CRUCIBLE_TEST_ASSERT(
+        test, ::foundation::core::offset_of(::foundation::core::View<int const>{}, ::fixy::mint_borrowed(region))
+                  == ::foundation::core::Option<std::size_t>::some(0uz));
 }
 
 }  // namespace

@@ -7090,10 +7090,17 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_no_coupling
   "BodyCoupling")
 
 # Deviation 4: recombine needs every shard back, so a body that consumes
-# its shard is refused.
+# its shard is refused.  A body gets the ViewMut of its shard, and no body
+# names a region.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
   "static assertion failed: a body that consumes its shard must be refused"
-  "is_nothrow_invocable_v<Body&, fixy::OwnedRegion<T, fixy::Slice<Whole, 0[^>]*>, Brand>&>")
+  "is_nothrow_invocable_v<Body&, typename fixy::spawn::detail::shard_run<T, fixy::Slice<Whole, 0, fixy::Unsplit>, is_const_v<T> >::type, fixy::spawn::ShardPlace<N> > \\[with Body = <unnamed>::ConsumingBody")
+# The body of the old form takes the region of its shard by reference, and
+# the gate refuses it: a body that held the region could open a second door
+# of its run.
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_takes_region
+  "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>\\(.*RegionBody\\)"
+  "is_nothrow_invocable_v<Body&, typename fixy::spawn::detail::shard_run<T, fixy::Slice<Whole, 0, fixy::Unsplit>, is_const_v<T> >::type, fixy::spawn::ShardPlace<N> > \\[with Body = <unnamed>::RegionBody")
 
 # The fan-out of mint_parallel_for is a private member of
 # ParallelForRunner, and the mint is its only friend: no other scope calls
@@ -7498,6 +7505,17 @@ fixy_neg_compile_test(neg_shared_read_from_a_temporary_region
   "use of deleted function"
   "mint_shared_read\\(const Ctx&, const foundation::permissions::SharedPermissionGuard<Tag, Brand>&, const SharedRegion<T, Tag, Brand>&&"
   "the region is destroyed at the end of the full expression")
+
+# mint_borrowed gives a View of the const elements of a region, so two
+# borrows of one region write no element.
+fixy_neg_compile_test(neg_owned_region_two_mutable_views
+  "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
+  "neg_owned_region_two_mutable_views\\.cpp:20:")
+# The frame door takes a region by move, so a body that opens the door of
+# the same named region gets the deleted twin of a named region.
+fixy_neg_compile_test(neg_owned_region_nested_frame_door
+  "use of deleted function .void fixy::with_mut\\(OwnedRegion<T, Tag, Brand>&, Body&&\\)"
+  "with_mut takes the region into its frame and gives it back: pass std::move\\(region\\)")
 
 # ── The consume tracker ───────────────────────────────────────────────
 #

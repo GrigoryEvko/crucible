@@ -29,8 +29,8 @@ struct MoveOnlyBody {
     MoveOnlyBody() = default;
     MoveOnlyBody(MoveOnlyBody const&) = delete("a body that owns a resource is not copied");
     MoveOnlyBody(MoveOnlyBody&&) noexcept = default;
-    template <class Shard>
-    void operator()(Shard& shard) noexcept {
+    template <class Shard, class Place>
+    void operator()(Shard shard, Place) noexcept {
         (void)shard;
     }
 };

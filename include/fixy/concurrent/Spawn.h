@@ -23,11 +23,16 @@
 //     fixy/Collision.h reads detach_with and syscall_only: a borrow
 //     together with a spawn that no join ties to the frame is refused.
 //
-//  3. mint_parallel_for's body takes its shard by mutable reference and
-//     the shards are recombined, not rebuilt.  A rebuild has to consume
-//     the thing it reissues, so no helper mints a parent Permission from
-//     nothing.  The shards stay in the tuple, each worker mutates its own
-//     element, and recombine consumes all of them to reissue the parent.
+//  3. The runner of mint_parallel_for is the frame door of each shard
+//     (foundation/core/Frame.h).  A body gets the ViewMut of the elements of
+//     its shard and the ShardPlace of the shard, and it names no region.  The
+//     shards stay in the tuple of the runner, which no body names, so no
+//     door of a body reaches the run of a shard beside its ViewMut.  The
+//     ViewMut of shard I carries the tag of shard I as its brand, so the
+//     ViewMuts of two shards name two brands, and their runs do not overlap.
+//     The shards are recombined, not rebuilt.  A rebuild has to consume the
+//     thing it reissues, so no helper mints a parent Permission from nothing.
+//     recombine consumes each shard to reissue the parent.
 //
 //  4. mint_spawn takes the coupling of its bodies as a template argument
 //     with no default, and the budget of its children as a parameter.  The
@@ -364,23 +369,71 @@ mint_spawn_on_host(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::Host
                                                          std::forward<Callables>(callables)...);
 }
 
+class ParallelForRunner;
+
+namespace detail {
+
+// The run that the frame of a shard lends to its body: the ViewMut of the
+// elements, with the tag of the shard as its brand.  A region of const
+// elements lends the View of its elements, which no body writes.
+template <typename T, typename ShardTag, bool = std::is_const_v<T>>
+struct shard_run {
+    using type = ::foundation::core::ViewMut<T, ShardTag>;
+};
+
+template <typename T, typename ShardTag>
+struct shard_run<T, ShardTag, true> {
+    using type = ::foundation::core::View<T>;
+};
+
+}  // namespace detail
+
+template <typename T, typename ShardTag>
+using shard_run_t = typename detail::shard_run<T, ShardTag>::type;
+
+// The place of one shard in the region that the split of mint_parallel_for
+// cut: the index of the shard among the N shards, and the position of the
+// first element of the shard in that region.  The runner gives each body the
+// place of its shard beside the ViewMut of its elements, so a body that
+// reads a run of the whole at the position of its shard needs no address.
+// Only the runner builds a place.
+template <std::size_t N>
+    requires ::foundation::core::IndexCount<N>
+class [[nodiscard]] ShardPlace final {
+    ::foundation::core::Index<N> index_{::foundation::core::index<0>()};
+    std::size_t first_ = 0;
+
+    constexpr ShardPlace(::foundation::core::Index<N> index, std::size_t first) noexcept
+        : index_{index}, first_{first} {}
+
+    friend class ParallelForRunner;
+
+public:
+    [[nodiscard]] constexpr ::foundation::core::Index<N> index() const noexcept { return index_; }
+    [[nodiscard]] constexpr std::size_t first() const noexcept { return first_; }
+};
+
 // The background capability is demanded even when N is one or the budget
 // runs every shard inline, so the contract does not change shape with N
 // or with the size of the work.  The choice between the arms happens at
 // run time, and the threaded arm must be admissible.
-// The shard a body actually receives carries the name of the split that
-// cut it, and that name is minted inside the call below, so no clause
-// out here can spell it.  The probe shard therefore carries the Unsplit
-// name, which stands for the shape of a shard rather than for one
-// split's shard.  A body generic over its shard satisfies the clause and
-// the call; a body that spells the probe shard exactly satisfies the
-// clause and then fails inside, which is the one case where the
-// diagnostic lands in this header rather than at the call.
+// The ViewMut that a body actually receives carries the tag of its shard,
+// which names the split that cut it, and that name is minted inside the
+// call below, so no clause out here can spell it.  The probe therefore
+// carries the tag of shard 0 with the Unsplit name, which stands for the
+// shape of a shard rather than for one split's shard.  A body generic over
+// its ViewMut satisfies the clause and the call; a body that spells the
+// probe exactly satisfies the clause and then fails inside, which is the one
+// case where the diagnostic lands in this header rather than at the call.
+// The body takes the ViewMut by value: a body that takes it by reference
+// does not satisfy the clause.  A region of const elements gives the View of
+// its elements in place of the ViewMut (shard_run_t).
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
-concept CtxFitsParallelFor = (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
-                          && perm::CtxAdmitsPermission<Whole, Ctx>
-                          && std::is_nothrow_invocable_v<Body&, ::fixy::OwnedRegion<T, ::fixy::Slice<Whole, 0>, Brand>&>
-                          && (N == 1 || std::is_copy_constructible_v<Body>);
+concept CtxFitsParallelFor =
+    (N > 0)
+    && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg> && perm::CtxAdmitsPermission<Whole, Ctx>
+    && std::is_nothrow_invocable_v<Body&, shard_run_t<T, ::fixy::Slice<Whole, 0>>, ShardPlace<N>>
+    && (N == 1 || std::is_copy_constructible_v<Body>);
 
 // The gate of the door of a test (design note 5).  The context passes the
 // gate of mint_parallel_for.  The second context owns Test, which only the
@@ -413,8 +466,8 @@ mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fix
                                       ::fixy::thread::ThreadOptions const& options) noexcept;
 
 // The work of mint_parallel_for.  run_shards_ is the fan-out: one thread
-// for each of `threads` workers, and each worker mutates the tuple
-// elements whose index is its own modulo `threads`.  Each shard then has
+// for each of `threads` workers, and each worker runs the frame of each
+// shard whose index is its own modulo `threads`.  Each shard then has
 // exactly one thread.  The door of fixy/os/ThreadTasks.h starts the threads
 // and joins every one before it returns, so every body has returned before
 // the member does and the tuple is whole again for recombine.
@@ -452,6 +505,42 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         std::size_t threads = 1;
     };
 
+    // The first element of the region that the split cut: the first element
+    // of shard 0, which starts at the position zero of the region.  No body
+    // reaches a shard, so no shard moves while the bodies run.
+    template <typename Shards>
+    [[nodiscard]] static auto first_of_whole_(Shards& shards) noexcept {
+        return first_of_(::foundation::core::detail::ViewDoor::key(),
+                         frame_run_(::foundation::core::detail::FrameDoor::key(), std::get<0>(shards)));
+    }
+
+    // The frame of shard I (design note 3): body gets the ViewMut of the
+    // elements of the shard, with the tag of the shard as its brand, and the
+    // place of the shard among the N shards.  The split cut each shard out of
+    // one run, so the position of the shard is the distance of its first
+    // element from the first element of the whole.  A shard of const elements
+    // gives the View of its elements (shard_run_t).  The shard stays in the
+    // tuple, and only this frame lends its run.  Complexity: O(1), and the
+    // cost of body.
+    template <std::size_t I, std::size_t N, typename Shards, typename Body, typename Element>
+    static void run_shard_(Shards& shards, Body& body, Element* whole_first) noexcept {
+        auto& shard = std::get<I>(shards);
+        using Shard = std::remove_reference_t<decltype(shard)>;
+        static_assert(std::is_same_v<Element, typename Shard::value_type>);
+        ::foundation::core::View<Element> const run = frame_run_(::foundation::core::detail::FrameDoor::key(), shard);
+        ShardPlace<N> const place{
+            ::foundation::core::index<I>(),
+            static_cast<std::size_t>(first_of_(::foundation::core::detail::ViewDoor::key(), run) - whole_first)};
+        if constexpr (std::is_const_v<Element>) {
+            static_cast<void>(body(run, place));
+        } else {
+            static_cast<void>(body(
+                ::foundation::core::ViewMut<Element, typename Shard::tag_type>{
+                    ::foundation::core::detail::FrameDoor::key(), run},
+                place));
+        }
+    }
+
     // Runs on the thread of one worker.  The worker copies the body, so each
     // thread calls a body of its own, and runs each shard whose index is its
     // own modulo the thread count.
@@ -459,7 +548,8 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     static void run_worker_(void* frame) noexcept {
         worker_frame_<Shards, Body> const& source = *static_cast<worker_frame_<Shards, Body>*>(frame);
         Body body = *source.body;
-        ((Is % source.threads == source.worker ? static_cast<void>(body(std::get<Is>(*source.shards)))
+        auto* const whole_first = first_of_whole_(*source.shards);
+        ((Is % source.threads == source.worker ? run_shard_<Is, sizeof...(Is)>(*source.shards, body, whole_first)
                                                : static_cast<void>(0)),
          ...);
     }
@@ -485,7 +575,8 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     // Runs each shard on the calling thread, in shard order.
     template <typename Shards, typename Body, std::size_t... Is>
     static void run_inline_(Shards& shards, Body& body, std::index_sequence<Is...>) noexcept {
-        (static_cast<void>(body(std::get<Is>(shards))), ...);
+        auto* const whole_first = first_of_whole_(shards);
+        (run_shard_<Is, sizeof...(Is)>(shards, body, whole_first), ...);
     }
 
     // The body of the two mints.  The workers get the options.
@@ -506,7 +597,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
             static_cast<void>(ctx);
             static_cast<void>(budget);
             static_cast<void>(options);
-            static_cast<void>(body(std::get<0>(parts.shards)));
+            run_inline_(parts.shards, body, std::make_index_sequence<1>{});
         } else if constexpr (Coupling == BodyCoupling::WaitOnEachOther) {
             // One thread for each shard, for each budget and each host, and
             // no run on the calling thread (design note 5).

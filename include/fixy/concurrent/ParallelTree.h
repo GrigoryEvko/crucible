@@ -42,8 +42,8 @@
 //   foundation/core/Region.h divides the ViewMut out at the cut of the shards
 //   of mint_parallel_for, so each shard writes through the ViewMut of its own
 //   grains, and each output has one writer by its type.  A shard takes its
-//   part by the index of its Slice, and it checks that its first slot is the
-//   first slot of that cut, so a different cut ends the process.
+//   part by the index of its place, and the place gives the first slot of
+//   the shard by the cut of the split.
 //
 // THE SCRATCH
 //   A form with a region gives the region back, and the values of its slots
@@ -51,9 +51,10 @@
 //   ends the process.  The sums of segments wrap the run of the ViewMut of the
 //   sums in a region of their own, one slot for each segment, and need no
 //   scratch.  Only a form with the allocation capability allocates.  A shard
-//   of a region writes its slots through the raw run of the shard, with the
-//   detail kernels of Reduce.h and Scan.h.  The raw run stays until a region
-//   has a frame door that gives a ViewMut.
+//   of a region writes its slots through the ViewMut that the runner of
+//   mint_parallel_for lends it, with the detail kernels of Reduce.h and
+//   Scan.h, which take the first element of the run.  The place of the shard
+//   gives the position of its first slot in the region.
 //
 // THE TARGET
 //   The sum forms call the SIMD kernels of foundation/core, so they are in
@@ -120,17 +121,11 @@ namespace eff = ::foundation::effects;
 template <typename Ctx>
 concept CtxFitsParallelTree = eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>;
 
-// The View of the elements of a region or of a shard.
-template <typename Region>
-[[nodiscard]] auto region_view_(Region& region) noexcept {
-    return ::foundation::core::detail::view_over_(region.data(), region.size());
-}
-
-// The position of the first slot of a shard in the region that the split
-// cut: the distance from the first slot of the region.
-template <typename Shard, typename T>
-[[nodiscard]] std::size_t first_slot_(Shard const& shard, T const* base) noexcept {
-    return static_cast<std::size_t>(shard.data() - base);
+// The first element of the ViewMut of a shard, for the detail kernels of
+// Reduce.h and Scan.h, which write a run from its first element.
+template <typename Run>
+[[nodiscard]] auto first_of_run_(Run const& run) noexcept {
+    return first_of_(::foundation::core::detail::ViewDoor::key(), run);
 }
 
 // The region of the slots holds one slot for each grain of the run.
@@ -194,15 +189,14 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
 sum_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elements,
                         ::fixy::OwnedRegion<T, Whole, Brand>&& partials) noexcept {
     detail::check_slots_(partials.size(), elements.size());
-    T const* const base = partials.data();
     auto whole = spawn::mint_parallel_for<Coupling, Shards>(
         ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials),
-        [elements, base](auto& shard) noexcept {
+        [elements](auto shard, auto place) noexcept {
             if (shard.size() == 0) return;
             ::foundation::core::detail::sum_grains_by_tree_<parallel_tree_grain>(
-                elements, detail::first_slot_(shard, base), shard.data(), shard.size());
+                elements, place.first(), detail::first_of_run_(shard), shard.size());
         });
-    T const sum = ::foundation::core::sum_by_tree(::foundation::core::View<T const>{detail::region_view_(whole)});
+    T const sum = ::foundation::core::sum_by_tree(::fixy::mint_borrowed(whole));
     return TreeSumParts<T, Whole, Brand>{sum, std::move(whole)};
 }
 
@@ -221,16 +215,14 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
 reduce_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elements,
                            ::fixy::OwnedRegion<T, Whole, Brand>&& partials, Combine combine) noexcept {
     detail::check_slots_(partials.size(), elements.size());
-    T const* const base = partials.data();
     auto whole = spawn::mint_parallel_for<Coupling, Shards>(
         ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials),
-        [elements, base, combine](auto& shard) noexcept {
+        [elements, combine](auto shard, auto place) noexcept {
             if (shard.size() == 0) return;
             ::foundation::core::detail::reduce_grains_by_tree_<parallel_tree_grain>(
-                elements, detail::first_slot_(shard, base), shard.data(), shard.size(), combine);
+                elements, place.first(), detail::first_of_run_(shard), shard.size(), combine);
         });
-    auto value =
-        ::foundation::core::reduce_by_tree(::foundation::core::View<T const>{detail::region_view_(whole)}, combine);
+    auto value = ::foundation::core::reduce_by_tree(::fixy::mint_borrowed(whole), combine);
     return TreeReduceParts<T, Whole, Brand>{std::move(value), std::move(whole)};
 }
 
@@ -254,32 +246,33 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, ::found
     }
     detail::check_slots_(carries.size(), in.size());
     std::size_t const grains = carries.size();
-    T const* const base = carries.data();
     WorkBudget const budget = detail::budget_of_<T>(in.size(), in.size());
-    auto summed =
-        spawn::mint_parallel_for<Coupling, Shards>(ctx, budget, std::move(carries), [in, base](auto& shard) noexcept {
+    auto summed = spawn::mint_parallel_for<Coupling, Shards>(
+        ctx, budget, std::move(carries), [in](auto shard, auto place) noexcept {
             if (shard.size() == 0) return;
-            ::foundation::core::detail::sum_grains_by_tree_<parallel_tree_grain>(in, detail::first_slot_(shard, base),
-                                                                                 shard.data(), shard.size());
+            ::foundation::core::detail::sum_grains_by_tree_<parallel_tree_grain>(
+                in, place.first(), detail::first_of_run_(shard), shard.size());
         });
-    T* const slots = summed.data();
-    ::foundation::core::detail::sum_scan_lanes_<::foundation::core::ScanKind::Exclusive, T,
-                                                ::foundation::simd::native_lanes<T>>(slots, slots, grains,
-                                                                                     static_cast<T const*>(nullptr));
+    auto scanned = ::fixy::with_mut(std::move(summed), [](auto slots) noexcept {
+        T* const first = detail::first_of_run_(slots);
+        ::foundation::core::detail::sum_scan_lanes_<::foundation::core::ScanKind::Exclusive, T,
+                                                    ::foundation::simd::native_lanes<T>>(
+            first, first, slots.size(), static_cast<T const*>(nullptr));
+    });
     // The parts of out are a region of Shards elements, so the split of the
     // door gives shard s the part s and no other.  The carries stay in the
     // region of the call, and each shard reads the carries of its grains.
     auto parts = detail::split_by_shards_<Shards>(std::move(out), grains);
-    ::foundation::core::View<T const> const all_carries{detail::region_view_(summed)};
+    ::foundation::core::View<T const> const all_carries = ::fixy::mint_borrowed(scanned);
     ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
         ctx, budget,
         ::fixy::mint_owned_region(first_of_(::foundation::core::detail::ViewDoor::key(),
                                             frame_run_(::foundation::core::detail::FrameDoor::key(), parts)),
                                   Shards, ::foundation::permissions::mint_permission_root<detail::ParallelScanParts>()),
-        [in, all_carries, kind, grains](auto& shard) noexcept {
-            constexpr std::size_t index = std::remove_cvref_t<decltype(shard)>::tag_type::index;
+        [in, all_carries, kind, grains](auto shard, auto place) noexcept {
+            std::size_t const index = place.index().raw();
             CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
-            auto own = std::move(*shard.data()).expect("each shard takes its part one time");
+            auto own = std::move(*detail::first_of_run_(shard)).expect("each shard takes its part one time");
             std::size_t const first = ::fixy::detail::shard_start(grains, Shards, index);
             std::size_t const count = ::fixy::detail::shard_start(grains, Shards, index + 1) - first;
             if (count == 0) return;
@@ -293,7 +286,7 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, ::found
                                                                                    std::move(own));
             }
         }));
-    return summed;
+    return scanned;
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -406,19 +399,18 @@ void sum_segments_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T
         ::foundation::core::fatal("a parallel segmented sum got offsets that fail check_segment_offsets for {} sums",
                                   sums.size());
     }
-    T* const base = first_of_(::foundation::core::detail::ViewDoor::key(), sums);
     ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
         ctx, detail::budget_of_<T>(elements.size(), sums.size()),
-        ::fixy::mint_owned_region(base, sums.size(),
+        ::fixy::mint_owned_region(detail::first_of_run_(sums), sums.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
-        [elements, offsets, base = static_cast<T const*>(base)](auto& shard) noexcept {
+        [elements, offsets](auto shard, auto place) noexcept {
             if (shard.size() == 0) return;
-            std::size_t const first = detail::first_slot_(shard, base);
             ::foundation::core::View<std::size_t const> const own_offsets =
-                offsets.window(first, shard.size() + 1).expect("the offsets of a shard fit the checked offsets");
-            static_cast<void>(
-                ::foundation::core::detail::sum_segments_by_tree_(elements, own_offsets, shard.data(), shard.size())
-                    .expect("a window of checked offsets passes the check"));
+                offsets.window(place.first(), shard.size() + 1)
+                    .expect("the offsets of a shard fit the checked offsets");
+            static_cast<void>(::foundation::core::detail::sum_segments_by_tree_(
+                                  elements, own_offsets, detail::first_of_run_(shard), shard.size())
+                                  .expect("a window of checked offsets passes the check"));
         }));
 }
 

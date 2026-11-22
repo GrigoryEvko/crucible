@@ -91,6 +91,7 @@ void test_an_upgrade_waits_for_every_share(TestRunnerCtx const& test) {
     BgCtx ctx{eff::testing::bg()};
 
     auto region = ::fixy::mint_owned_region(storage, std::size_t{4}, perm::mint_permission_root<Cache>());
+    ::fixy::View<std::uint64_t const> const all = ::fixy::mint_borrowed(region);
     ::fixy::SharedRegion shared{std::move(region)};
 
     {
@@ -109,8 +110,10 @@ void test_an_upgrade_waits_for_every_share(TestRunnerCtx const& test) {
 
     CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 0);
     const bool is_whole_region = shared.try_upgrade(ctx).match(
-        [](auto owned) noexcept {
-            const bool is_same_region = owned.size() == 4 && owned.data() == storage;
+        [all](auto owned) noexcept {
+            const bool is_same_region = owned.size() == 4
+                                     && ::foundation::core::offset_of(all, ::fixy::mint_borrowed(owned))
+                                            == ::foundation::core::Option<std::size_t>::some(0uz);
             ::foundation::linear::drop(std::move(owned));
             return is_same_region;
         },
@@ -241,8 +244,11 @@ void test_the_consumed_region_is_empty(TestRunnerCtx const& test) {
     auto region = ::fixy::mint_owned_region(storage, std::size_t{3}, perm::mint_permission_root<Cache>());
     ::fixy::SharedRegion shared{std::move(region)};
     CRUCIBLE_TEST_ASSERT(test, region.empty());
-    CRUCIBLE_TEST_ASSERT(test, region.data() == nullptr);
-    CRUCIBLE_TEST_ASSERT(test, region.span().empty());
+    // The consumed region is at a null base, so it lies inside the run of a
+    // default View, which has no address.
+    CRUCIBLE_TEST_ASSERT(
+        test, ::foundation::core::offset_of(::fixy::View<std::uint64_t const>{}, ::fixy::mint_borrowed(region))
+                  == ::foundation::core::Option<std::size_t>::some(0uz));
     CRUCIBLE_TEST_ASSERT(test, shared.size() == 3);
 }
 
