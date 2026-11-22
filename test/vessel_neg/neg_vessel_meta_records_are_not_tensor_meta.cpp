@@ -18,6 +18,6 @@
 
 int main() {
     ::fixy::FixedArray<CrucibleMeta, 1> records{};
-    const auto typed = crucible::vessel::as_meta_typed(&records.at(::fixy::index<0>()), 1);
+    const auto typed = crucible::vessel::as_meta_typed(&records.at(::fixy::index<0>()), 1).expect("one record");
     return crucible::raw_grad_fn_hash(*typed.value()) == 0 ? 0 : 1;
 }

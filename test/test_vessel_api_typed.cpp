@@ -113,6 +113,14 @@ int g_failures = 0;
 // that the cases compare and never read.
 using VigilBytes = ::fixy::FixedArray<std::byte, sizeof(crucible::Vigil)>;
 
+// The typed records of a pair that the door admits.  Each case that calls it
+// gives an aligned array of count records, so the door gives a value.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives the records of a C caller as a pointer and a count")
+[[nodiscard]] TypedMeta typed_records(const CrucibleMeta* metas, std::size_t count) noexcept {
+    return crucible::vessel::as_meta_typed(metas, count).expect("the case gives an aligned array of count records");
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 void test_handle_roundtrip() {
     alignas(crucible::Vigil) VigilBytes storage{};
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives a CrucibleHandle of vessel_api.h to the typed door")
@@ -160,14 +168,12 @@ void test_meta_roundtrip() {
     const ::fixy::FixedArray<CrucibleMeta, 2> arr{meta, meta};
     const CrucibleMeta& first = arr.at(::fixy::index<0>());
 
-    // The count is passed explicitly.  A count of zero is reserved for
-    // the null case, because the C boundary promises that a zero count
-    // comes with a null pointer, and the helper refuses a non-null
-    // pointer with a zero count under a debug build.
-    auto typed_single = crucible::vessel::as_meta_typed(&first, 1);
+    // The count is passed explicitly.  A count above zero keeps the
+    // pointer of the caller.
+    auto typed_single = typed_records(&first, 1);
     EXPECT(typed_single.value() != nullptr, "as_meta_typed on non-null meta must return non-null pointer");
 
-    auto typed_multi = crucible::vessel::as_meta_typed(&first, 2);
+    auto typed_multi = typed_records(&first, 2);
     EXPECT(typed_multi.value() == &first, "as_meta_typed pointer must match the raw pointer");
 
     // The decode gives each field of the record, the data pointer too.
@@ -210,14 +216,54 @@ void test_meta_roundtrip() {
 }
 
 void test_meta_zero_n_with_null() {
-    // The C boundary promises that a zero count comes with a null
-    // pointer.  The helper takes that pair and returns a typed null that
+    // A zero count reads no record.  The door gives a typed null that
     // round-trips, which is what an op with no tensor arguments uses.
-    auto typed = crucible::vessel::as_meta_typed(nullptr, 0);
+    auto typed = typed_records(nullptr, 0);
     EXPECT(typed.value() == nullptr, "as_meta_typed(nullptr, 0) must return null typed view");
 
     EXPECT(crucible::vessel::metas_from_typed(typed) == nullptr,
            "metas_from_typed of null typed view must round-trip to nullptr");
+}
+
+// The door of the arrays of a C caller tests each pointer and count pair, and
+// gives no value for a pair that breaks the rule of the C interface.  A
+// contract check judges no pointer of a caller, so each pair gives a value or
+// no value, and the process lives.
+void test_array_door_judges_each_pair() {
+    const ::fixy::FixedArray<CrucibleMeta, 2> records{};
+    const CrucibleMeta& first = records.at(::fixy::index<0>());
+    const ::fixy::FixedArray<int64_t, 5> scalars{};
+    const auto gives_null = [](TypedMeta typed) noexcept { return typed.value() == nullptr; };
+    const auto gives_nothing = [] noexcept { return false; };
+
+    // The pairs of a C caller hold raw pointers: a null pointer, a pointer
+    // one byte past an aligned record, which does not have the alignment of
+    // a CrucibleMeta, and the out arrays of the two entries that write.  The
+    // door reads no byte through a pointer.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the case gives the door the pointer and count pairs of a C caller")
+    const auto* const misaligned = std::bit_cast<const CrucibleMeta*>(std::bit_cast<std::uintptr_t>(&first) + 1U);
+    EXPECT(crucible::vessel::as_meta_typed(nullptr, 2).is_none(), "a null array with a count above 0 is refused");
+    EXPECT(crucible::vessel::as_meta_typed(&first, 2).is_some(), "an aligned array with a count above 0 is admitted");
+    EXPECT(crucible::vessel::as_meta_typed(misaligned, 1).is_none(), "a misaligned array with a count is refused");
+
+    // A pointer with a count of 0 reads no record, so the door admits each
+    // pointer and gives the null pointer.  A ctypes caller gives the buffer
+    // of an empty array in such a pair.
+    EXPECT(crucible::vessel::as_meta_typed(&first, 0).match(gives_null, gives_nothing),
+           "a pointer with a count of 0 gives the null pointer");
+    EXPECT(crucible::vessel::as_meta_typed(misaligned, 0).match(gives_null, gives_nothing),
+           "a misaligned pointer with a count of 0 gives the null pointer");
+
+    // The same door takes each element type of an array of the C interface.
+    EXPECT(crucible::vessel::as_array_typed(static_cast<const int64_t*>(nullptr), 5).is_none(),
+           "a null scalar array with a count above 0 is refused");
+    EXPECT(crucible::vessel::as_array_typed(&scalars.at(::fixy::index<0>()), 5).is_some(),
+           "a scalar array with a count is admitted");
+    EXPECT(crucible::vessel::as_array_typed(static_cast<CrucibleSlot*>(nullptr), 0).is_some(),
+           "a null out array with a capacity of 0 is a read of the count");
+    EXPECT(crucible::vessel::as_array_typed(static_cast<CrucibleSlot*>(nullptr), 3).is_none(),
+           "a null out array with a capacity above 0 is refused");
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 void test_data_ptr_typed() {
@@ -239,7 +285,7 @@ void test_data_ptr_typed() {
     });
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    auto typed_arr = crucible::vessel::as_meta_typed(&first, 3);
+    auto typed_arr = typed_records(&first, 3);
 
     auto p0 = crucible::vessel::data_ptr_typed(typed_arr, 0);
     auto p1 = crucible::vessel::data_ptr_typed(typed_arr, 1);
@@ -295,7 +341,7 @@ void test_ffi_records_copy() {
     sources.with_element(::fixy::index<0>(), [](CrucibleMeta& source) noexcept { source.ndim = 1; });
     sources.with_element(::fixy::index<1>(), [](CrucibleMeta& source) noexcept { source.ndim = 2; });
     sources.with_element(::fixy::index<2>(), [](CrucibleMeta& source) noexcept { source.ndim = 3; });
-    const TypedMeta typed = crucible::vessel::as_meta_typed(&sources.at(::fixy::index<0>()), 3);
+    const TypedMeta typed = typed_records(&sources.at(::fixy::index<0>()), 3);
 
     ::fixy::FixedArray<crucible::TensorMeta, 3> slots{};
     const auto ranks = slots.with_mut(
@@ -326,7 +372,7 @@ void test_ffi_records_read_the_c_records() {
     // The View of the records borrows the slots, so the reads stay in the
     // frame of the slots.
     ::fixy::FixedArray<crucible::TensorMeta, 2> slots{};
-    const TypedMeta typed = crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2);
+    const TypedMeta typed = typed_records(&callers.at(::fixy::index<0>()), 2);
     slots.with_mut([typed, written](auto run) noexcept {
         const ::fixy::View<const crucible::TensorMeta> records =
             crucible::vessel::decode_ffi_records(typed, run.view())
@@ -412,7 +458,7 @@ void test_ffi_decode_refuses_each_broken_claim() {
 
     ::fixy::FixedArray<CrucibleMeta, 2> callers{held, wide_grad};
     ::fixy::FixedArray<crucible::TensorMeta, 2> slots{};
-    const TypedMeta typed = crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2);
+    const TypedMeta typed = typed_records(&callers.at(::fixy::index<0>()), 2);
     const bool is_refused = slots.with_mut(
         [typed](auto run) noexcept { return crucible::vessel::decode_ffi_records(typed, run.view()).is_none(); });
     EXPECT(is_refused, "an op with a refused record is refused");
@@ -458,7 +504,7 @@ void test_ffi_records_reuse_the_slots_of_the_producer() {
     const CrucibleMeta& first = sources.at(::fixy::index<0>());
     const CrucibleMeta& fourth = sources.at(::fixy::index<3>());
     const auto typed_at = [](const CrucibleMeta& record, uint32_t count) noexcept {
-        return crucible::vessel::as_meta_typed(&record, count);
+        return typed_records(&record, count);
     };
 
     crucible::Vigil vigil;
@@ -478,7 +524,7 @@ void test_ffi_records_reuse_the_slots_of_the_producer() {
         has_ranks(decode_in_frame(stack, typed_at(first, 1), 1).value_or(Ranks{}), ::fixy::FixedArray<uint8_t, 1>{1}),
         "a call after a refused call reads no record of the refused call");
 
-    const auto none_read = decode_in_frame(stack, crucible::vessel::as_meta_typed(nullptr, 0), 0);
+    const auto none_read = decode_in_frame(stack, typed_records(nullptr, 0), 0);
     const bool is_none_read_empty =
         none_read.match([](Ranks const& ranks) noexcept { return ranks.size() == 0; }, [] noexcept { return false; });
     EXPECT(is_none_read_empty, "an op with no tensor decodes, and reads no record of the call before");
@@ -774,6 +820,7 @@ int main() {
     test_handle_roundtrip();
     test_meta_roundtrip();
     test_meta_zero_n_with_null();
+    test_array_door_judges_each_pair();
     test_data_ptr_typed();
     test_ffi_records_copy();
     test_ffi_records_read_the_c_records();

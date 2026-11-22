@@ -15,8 +15,10 @@
 //   as_vigil_typed(handle)    : CrucibleHandle           -> TypedHandle
 //   from_typed(typed)         : TypedHandle              -> CrucibleHandle
 //
-//   TypedMeta                 := Tagged<const CrucibleMeta*, ABIBoundary>
-//   as_meta_typed(metas)      : const CrucibleMeta*      -> TypedMeta
+//   TypedArray<E>             := Tagged<E*, ABIBoundary>
+//   as_array_typed(first, n)  : E*, std::size_t          -> Option<TypedArray<E>>
+//   TypedMeta                 := TypedArray<const CrucibleMeta>
+//   as_meta_typed(metas, n)   : const CrucibleMeta*, n   -> Option<TypedMeta>
 //   metas_from_typed(typed)   : TypedMeta                -> const CrucibleMeta*
 //
 //   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> ExternalDataPtr
@@ -55,11 +57,13 @@
 //
 // ── Usage rule (review-enforced) ───────────────────────────────────
 //
-// Every C-ABI thunk in vessel_api.cpp begins with `as_vigil_typed(h)`
-// (and `as_meta_typed(metas)` if it accepts a meta array).  No raw
+// Every C-ABI thunk in vessel_api.cpp begins with `as_vigil_typed(h)`.
+// A thunk that takes an array gives the pointer and the count to
+// `as_meta_typed` or `as_array_typed` before it reads or writes an element,
+// and it gives its refusal when the door gives no value.  No raw
 // `static_cast<Vigil*>(h)` is permitted outside this header.  Grepping
-// for `as_vigil_typed` or `as_meta_typed` finds every ABI-crossing site
-// in O(1).
+// for `as_vigil_typed`, `as_meta_typed` or `as_array_typed` finds every
+// ABI-crossing site in O(1).
 
 #include "vessel_api.h"
 
@@ -105,10 +109,14 @@ static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
 
 // ── The typed records of a C caller ───────────────────────────────
 //
-// The records keep their C type.  decode_ffi_meta below makes a TensorMeta
-// from one record.
+// An array of a C caller, as the pointer to its first element.  The records
+// keep their C type.  decode_ffi_meta below makes a TensorMeta from one
+// record.
 
-using TypedMeta = ::fixy::Tagged<const CrucibleMeta*, ::fixy::tags::source::ABIBoundary>;
+template <class Element>
+using TypedArray = ::fixy::Tagged<Element*, ::fixy::tags::source::ABIBoundary>;
+
+using TypedMeta = TypedArray<const CrucibleMeta>;
 
 static_assert(sizeof(TypedMeta) == sizeof(const CrucibleMeta*));
 static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
@@ -159,15 +167,6 @@ inline void assert_plausible_vigil_handle(CrucibleHandle handle) noexcept {
     CRUCIBLE_PRE((bits & (kVigilHandleAlignment - 1U)) == 0U);
 }
 
-// An empty array comes with a null pointer, and each other array comes with
-// a pointer that is not null.  The pointer has the alignment of a
-// CrucibleMeta.  The checks stay in each build, so a damaged array of the C
-// ABI ends the process before a read through it.
-inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n_metas) noexcept {
-    CRUCIBLE_PRE((metas == nullptr) == (n_metas == 0U));
-    CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(metas) & (alignof(CrucibleMeta) - 1U)) == 0U);
-}
-
 }  // namespace detail
 
 [[nodiscard]] CRUCIBLE_HOT TypedHandle as_vigil_typed(CrucibleHandle handle) noexcept {
@@ -179,15 +178,39 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
     return static_cast<CrucibleHandle>(handle.value());
 }
 
-// ── Meta-array typed view ──────────────────────────────────────────
+// ── The arrays of a C caller ───────────────────────────────────────
 //
-// `n_metas` is consumed only by the plausibility check.  The returned
-// typed view does not carry the length, because callers already thread
-// `n_metas` separately through the C ABI.  When n_metas==0, `metas`
-// MUST be nullptr — the invariant the C ABI promises.
-[[nodiscard]] CRUCIBLE_HOT TypedMeta as_meta_typed(const CrucibleMeta* metas, std::size_t n_metas = 0) noexcept {
-    detail::assert_plausible_meta_array(metas, n_metas);
-    return ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(metas);
+// A C caller gives an array as a pointer to its first element and a count.
+// The pointer and the count are outside data, so this door tests the pair
+// once, at the boundary, and a thunk gives the refusal of its entry when the
+// door gives no value.  No contract check judges a pointer of a caller.
+//
+//   - A count of 0 reads no element.  The door gives the null pointer, so a
+//     caller can give each pointer with an empty array, such as the buffer
+//     of an empty ctypes array.
+//   - A count above 0 needs a pointer that is not null and that has the
+//     alignment of the element type.  The door gives no value for each
+//     other pointer.
+//
+// The typed pointer does not carry the count, because each caller keeps
+// the count of the C call beside it.  The door cannot prove that the caller
+// owns count elements at the pointer: that is the pact of the C interface.
+
+template <class Element>
+[[nodiscard]] CRUCIBLE_HOT ::fixy::Option<TypedArray<Element>> as_array_typed(Element* first,
+                                                                              std::size_t count) noexcept {
+    using Checked = ::fixy::Option<TypedArray<Element>>;
+    if (count == 0U)
+        return Checked::some(::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(static_cast<Element*>(nullptr)));
+    const bool is_aligned = (std::bit_cast<std::uintptr_t>(first) & (alignof(Element) - 1U)) == 0U;
+    if (first == nullptr || !is_aligned) return ::fixy::none;
+    return Checked::some(::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(first));
+}
+
+// The records of a C caller: n_metas CrucibleMeta records at metas.
+[[nodiscard]] CRUCIBLE_HOT ::fixy::Option<TypedMeta> as_meta_typed(const CrucibleMeta* metas,
+                                                                   std::size_t n_metas) noexcept {
+    return as_array_typed(metas, n_metas);
 }
 
 [[nodiscard]] CRUCIBLE_HOT const CrucibleMeta* metas_from_typed(TypedMeta typed) noexcept { return typed.value(); }

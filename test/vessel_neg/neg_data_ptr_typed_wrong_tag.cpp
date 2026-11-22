@@ -22,10 +22,10 @@
 #include <fixy/Tagged.h>
 
 int main() {
-    // Build a typed-meta view from a single-element array (n_metas=1
-    // satisfies the (non-null, n>0) ABI plausibility check).
+    // Build a typed-meta view from a single-element array.  The door admits
+    // an aligned array with a count above 0.
     ::fixy::FixedArray<CrucibleMeta, 1> metas{};
-    auto typed = crucible::vessel::as_meta_typed(&metas.at(::fixy::index<0>()), 1);
+    auto typed = crucible::vessel::as_meta_typed(&metas.at(::fixy::index<0>()), 1).expect("the door admits one record");
 
     // data_ptr_typed returns ::fixy::Tagged<void*, source::External>.
     // Should FAIL: the target ::fixy::Tagged<void*, source::Sanitized>

@@ -22,6 +22,19 @@
 //                               via `as_meta_typed(metas, n)`, and each
 //                               record → TensorMeta via
 //                               `decode_ffi_meta(record)`.
+//   * each other array        → Tagged<E*, ABIBoundary> via
+//                               `as_array_typed(first, n)`.  The door
+//                               tests the pointer and the count, and the
+//                               entry gives its refusal for a pair that
+//                               breaks the rule of the arrays below.
+//
+// ── The arrays of a caller ───────────────────────────────────────────
+//
+// Each array is a pointer and a count.  A count of 0 reads and writes no
+// element, so the pointer can then have any value.  A count above 0 needs a
+// pointer that is not null and that has the alignment of the element type.
+// An entry that gets another pair gives its refusal: the action REFUSED, or
+// 0 with no write for an entry that writes into an array of the caller.
 //   * CrucibleMeta::data_ptr  → Tagged<void*, source::External>
 //                               via `data_ptr_typed(typed_meta, i)`
 //                               — provenance threads into
@@ -198,7 +211,8 @@ CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s) CRUCIBLE_VESSEL
 // The thunk computes the guard word of the op from the records of its inputs
 // and from its scalars, as the native recording paths do.  The caller gives no
 // guard word.
-// An op that the checks of the thunk refuse gives the action REFUSED.
+// An op that the checks of the thunk refuse gives the action REFUSED, such as
+// a pair of metas and n_metas that breaks the rule of the arrays above.
 CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h, uint64_t schema_hash,
                                                                 uint16_t num_inputs, uint16_t num_outputs,
                                                                 const CrucibleMeta* metas,
@@ -206,7 +220,9 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h
 
 // Extended dispatch with scalar arguments and grad/inference flags.
 // scalar_values: up to 5 int64_t values (floats bitcast via memcpy).
-// num_scalars: number of valid entries in scalar_values (0-5).
+// num_scalars: number of valid entries in scalar_values (0-5).  The pair
+// obeys the rule of the arrays above, as metas and n_metas do, so a null
+// scalar_values with a count above 0 gives the action REFUSED.
 // scalar_types: the tag of each value (ScalarType2 of crucible/TraceRing.h),
 // two bits for each, the first value in the low bits: 0 an integer, 1 a
 // double, 2 a bool, 3 an argument that boxes into None.  The bits of a slot
@@ -353,7 +369,8 @@ typedef struct {
 // plan.  The call writes the first slots into out, at most capacity of them,
 // and returns the count of the slots of the plan.  It returns 0 when the Vigil
 // has no active region or the region has no plan.  out is null only with a
-// capacity of 0, for a read of the count.
+// capacity of 0, for a read of the count.  A pair of out and capacity that
+// breaks the rule of the arrays above gives 0, and the call writes nothing.
 CRUCIBLE_VESSEL_API uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out,
                                                           uint32_t capacity) CRUCIBLE_VESSEL_NOEXCEPT;
 
@@ -378,7 +395,9 @@ typedef struct {
 // of the ops and of the slots.  The call writes the first slots into out, at
 // most capacity of them, and returns the count of the data slots.  The call
 // takes the producer claim of the Vigil, as a dispatch does.  out is null only
-// with a capacity of 0, for a read of the count.
+// with a capacity of 0, for a read of the count.  A pair of out and capacity
+// that breaks the rule of the arrays above gives 0, and the call writes
+// nothing.
 CRUCIBLE_VESSEL_API uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out,
                                                     uint32_t capacity) CRUCIBLE_VESSEL_NOEXCEPT;
 

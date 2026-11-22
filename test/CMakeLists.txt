@@ -702,6 +702,11 @@ crucible_test(test_background_thread_run_in_row test_background_thread_run_in_ro
 crucible_test(test_computation_cache_federation)
 
 crucible_test(test_vessel_api_typed)
+# The pointer and count pairs of the C entries, through libcrucible_vessel.so
+# as a ctypes caller reaches it.  Each pair gives a value or the refusal of
+# its entry, and the process lives.
+crucible_test(test_vessel_c_entries)
+target_link_libraries(test_vessel_c_entries PRIVATE crucible_vessel)
 crucible_test(test_vessel_entry_slots)
 crucible_test(test_storage_nbytes_simd)
 # The strided view of a tensor over the run of its slot: a dense matrix, a

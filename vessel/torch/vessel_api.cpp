@@ -249,17 +249,13 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
 
-    // A count with no array behind it is a corrupt caller, and it is
-    // refused here rather than one line further on. as_meta_typed states
-    // the C ABI invariant that the pointer and the count travel together
-    // and holds it with a debug assert, which ends the process. This is
-    // the FFI, so the answer to a caller that broke the invariant is the
-    // action REFUSED in every build mode.
-    if (metas == nullptr && n_metas > 0) return refused_dispatch_result();
-
-    // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
-    // helper for the provenance tag.
-    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
+    // The pointer and the count of the records come from the caller.  A
+    // count above 0 with a null pointer, or with a pointer that does not have
+    // the alignment of a CrucibleMeta, gives the action REFUSED in each build
+    // (as_meta_typed).  A count of 0 reads no record.
+    ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
+    if (checked_metas.is_none()) return refused_dispatch_result();
+    const crucible::vessel::TypedMeta metas_typed = std::move(checked_metas).expect("the test above found the records");
 
     // The trust ladder.  Every field above came from a caller this
     // process does not control, so the Entry starts at the first tag and
@@ -309,6 +305,20 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
+    // The two arrays of the caller, tested as in crucible_dispatch_op.  A
+    // scalar count above 0 with a null pointer, or with a pointer that does
+    // not have the alignment of an int64_t, gives the action REFUSED.  A
+    // count of 0 reads no value, as crucible_mode.py gives a buffer of five
+    // with each count.
+    ::fixy::Option<crucible::vessel::TypedArray<const int64_t>> checked_scalars =
+        crucible::vessel::as_array_typed(scalar_values, num_scalars);
+    if (checked_scalars.is_none()) return refused_dispatch_result();
+    const crucible::vessel::TypedArray<const int64_t> scalars_typed =
+        std::move(checked_scalars).expect("the test above found the scalar values");
+    ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
+    if (checked_metas.is_none()) return refused_dispatch_result();
+    const crucible::vessel::TypedMeta metas_typed = std::move(checked_metas).expect("the test above found the records");
+
     // C→C++ boundary: wrap raw uint64_t into strong hash types.  The guard
     // word comes from the decoded records and the scalar slots below.
     crucible::TraceRing::Entry entry{};
@@ -336,28 +346,19 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     // ladder below rejects the operation outright when the claim does
     // not fit.
     constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::size();
+    // The door gave a pointer that is not null for each count above 0.
     const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
-    if (scalar_values) {
-        for (uint16_t i = 0; i < stored_scalars; i++) {
-            const int64_t value = scalar_values[i];
-            entry.scalar_values.with_element(
-                ::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
-                [value](int64_t& held) noexcept { held = value; });
-        }
-        // The tags of the stored values, after the flags, because the tag of
-        // slot 4 is in the two high bits of op_flags.  The bits of a slot past
-        // the stored values are zero, as on the recording paths.
-        entry.set_packed_scalar_types(
-            static_cast<uint16_t>(scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
+    for (uint16_t i = 0; i < stored_scalars; i++) {
+        const int64_t value = scalars_typed.value()[i];
+        entry.scalar_values.with_element(
+            ::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
+            [value](int64_t& held) noexcept { held = value; });
     }
-
-    // A count with no array behind it is a corrupt caller, as in
-    // crucible_dispatch_op, and it gives the action REFUSED.
-    if (metas == nullptr && n_metas > 0) return refused_dispatch_result();
-
-    // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
-    // helper for the provenance tag.
-    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
+    // The tags of the stored values, after the flags, because the tag of
+    // slot 4 is in the two high bits of op_flags.  The bits of a slot past
+    // the stored values are zero, as on the recording paths.
+    entry.set_packed_scalar_types(
+        static_cast<uint16_t>(scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
 
     // The trust ladder of crucible_dispatch_op.  The producer claim gates
     // this entry and its decode as it gates crucible_dispatch_op, and an op
@@ -666,18 +667,23 @@ uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
 }
 
 // The plan is in the memory of the active region, which lives while the
-// Vigil keeps it active.  O(n) in the slots that the call writes.
+// Vigil keeps it active.  O(n) in the slots that the call writes.  A
+// capacity above 0 with a null out, or with an out that does not have the
+// alignment of a CrucibleSlot, gives 0, and the call writes nothing
+// (as_array_typed).
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint32_t capacity) noexcept {
-    CRUCIBLE_PRE(out != nullptr || capacity == 0);
-    CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(out) & (alignof(CrucibleSlot) - 1U)) == 0U);
+    ::fixy::Option<crucible::vessel::TypedArray<CrucibleSlot>> checked_out =
+        crucible::vessel::as_array_typed(out, capacity);
+    if (checked_out.is_none()) return 0;
+    CrucibleSlot* const first = std::move(checked_out).expect("the test above found the out array").value();
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
     for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
         for (const ::fixy::Ref<crucible::MemoryPlan const> plan : region->plan) {
             uint32_t written = 0;
             for (const crucible::TensorSlot& slot : plan->slots) {
                 if (written == capacity) break;
-                out[written] = encode_slot(slot);
+                first[written] = encode_slot(slot);
                 ++written;
             }
             return plan->num_slots();
@@ -686,18 +692,22 @@ uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint3
     return 0;
 }
 
+// A capacity above 0 with a null out, or with an out that does not have the
+// alignment of a CrucibleBoundScalar, gives 0, and the call writes nothing.
 uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out, uint32_t capacity) noexcept {
-    CRUCIBLE_PRE(out != nullptr || capacity == 0);
-    CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(out) & (alignof(CrucibleBoundScalar) - 1U)) == 0U);
+    ::fixy::Option<crucible::vessel::TypedArray<CrucibleBoundScalar>> checked_out =
+        crucible::vessel::as_array_typed(out, capacity);
+    if (checked_out.is_none()) return 0;
+    CrucibleBoundScalar* const first = std::move(checked_out).expect("the test above found the out array").value();
     const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
     const ::fixy::View<const crucible::Vigil::BoundScalar> bound = vigil->bound_scalars(fg);
     uint32_t written = 0;
     for (const crucible::Vigil::BoundScalar& source : bound) {
         if (written == capacity) break;
-        out[written] = CrucibleBoundScalar{.op_index = source.op.raw(),
-                                           .slot = static_cast<uint32_t>(source.slot.value().raw()),
-                                           .value = source.value};
+        first[written] = CrucibleBoundScalar{.op_index = source.op.raw(),
+                                             .slot = static_cast<uint32_t>(source.slot.value().raw()),
+                                             .value = source.value};
         ++written;
     }
     return ::fixy::narrow<uint32_t>(bound.size()).expect("a region holds fewer data slots than 2^32");
