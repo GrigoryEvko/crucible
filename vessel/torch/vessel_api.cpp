@@ -582,66 +582,70 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const size_t file_bytes = crucible::TRACE_HEADER_BYTES + size_t{num_ops} * sizeof(crucible::TraceOpRecord)
                             + size_t{total_metas} * crucible::TRACE_META_BYTES + sizeof(uint32_t) + name_bytes;
 
+    // The cursor writes the image through the frame door of the buffer, and
+    // the body reads only its lent run.
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(io.cap().alloc, file_bytes, std::byte{0});
-    ExportCursor cursor{image.view()};
+    image = ::fixy::with_mut(std::move(image), [&](auto run) noexcept {
+        ExportCursor cursor{run.view()};
 
-    // Header: "CRTR" + version + num_ops + num_metas = 16B.
-    cursor.put(crucible::encode_trace_header(num_ops, total_metas));
+        // Header: "CRTR" + version + num_ops + num_metas = 16B.
+        cursor.put(crucible::encode_trace_header(num_ops, total_metas));
 
-    // Op records: 88B each (TraceOpRecord layout).
-    for (const crucible::TraceEntry& te : region->ops) {
-        crucible::TraceOpRecord rec{};
-        rec.schema_hash = te.schema_hash;
-        rec.shape_hash = te.shape_hash;
-        rec.scope_hash = te.scope_hash;
-        rec.callsite_hash = te.callsite_hash;
-        rec.depth = te.depth;
-        rec.scalar_types = te.scalar_kinds.tags();
-        rec.data_slots = te.scalar_kinds.data_slots().bits();
-        rec.num_inputs = te.num_inputs();
-        rec.num_outputs = te.num_outputs();
-        rec.num_scalars = te.num_scalar_args();
-        rec.grad_enabled = te.grad_enabled ? 1 : 0;
-        // Pack all op_flags back into one byte for on-disk format.
-        uint8_t flags = 0;
-        if (te.inference_mode) flags |= crucible::op_flag::INFERENCE_MODE;
-        if (te.is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
-        flags |= (static_cast<uint8_t>(te.training_phase) & 0x3) << crucible::op_flag::PHASE_SHIFT;
-        if (te.torch_function) flags |= crucible::op_flag::TORCH_FUNCTION;
-        rec.inference_mode = flags;
-        // The record stores the first five scalars.  An absent array leaves
-        // the zeros of the record.
-        uint16_t stored = 0;
-        for (const int64_t value : te.scalar_args()) {
-            if (stored == 5) break;
-            rec.scalar_values.with_element(
-                ::fixy::Index<5>::check(stored).expect("the test above keeps the lane below 5"),
-                [value](int64_t& held) noexcept { held = value; });
-            ++stored;
+        // Op records: 88B each (TraceOpRecord layout).
+        for (const crucible::TraceEntry& te : region->ops) {
+            crucible::TraceOpRecord rec{};
+            rec.schema_hash = te.schema_hash;
+            rec.shape_hash = te.shape_hash;
+            rec.scope_hash = te.scope_hash;
+            rec.callsite_hash = te.callsite_hash;
+            rec.depth = te.depth;
+            rec.scalar_types = te.scalar_kinds.tags();
+            rec.data_slots = te.scalar_kinds.data_slots().bits();
+            rec.num_inputs = te.num_inputs();
+            rec.num_outputs = te.num_outputs();
+            rec.num_scalars = te.num_scalar_args();
+            rec.grad_enabled = te.grad_enabled ? 1 : 0;
+            // Pack all op_flags back into one byte for on-disk format.
+            uint8_t flags = 0;
+            if (te.inference_mode) flags |= crucible::op_flag::INFERENCE_MODE;
+            if (te.is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
+            flags |= (static_cast<uint8_t>(te.training_phase) & 0x3) << crucible::op_flag::PHASE_SHIFT;
+            if (te.torch_function) flags |= crucible::op_flag::TORCH_FUNCTION;
+            rec.inference_mode = flags;
+            // The record stores the first five scalars.  An absent array leaves
+            // the zeros of the record.
+            uint16_t stored = 0;
+            for (const int64_t value : te.scalar_args()) {
+                if (stored == 5) break;
+                rec.scalar_values.with_element(
+                    ::fixy::Index<5>::check(stored).expect("the test above keeps the lane below 5"),
+                    [value](int64_t& held) noexcept { held = value; });
+                ++stored;
+            }
+            cursor.put(crucible::encode_trace_op(rec));
         }
-        cursor.put(crucible::encode_trace_op(rec));
-    }
 
-    // Meta records: TRACE_META_BYTES each (TensorMeta layout).
-    for (const crucible::TraceEntry& te : region->ops) {
-        for (const auto& m : te.input_metas())
-            cursor.put(crucible::encode_trace_meta(m));
-        for (const auto& m : te.output_metas())
-            cursor.put(crucible::encode_trace_meta(m));
-    }
+        // Meta records: TRACE_META_BYTES each (TensorMeta layout).
+        for (const crucible::TraceEntry& te : region->ops) {
+            for (const auto& m : te.input_metas())
+                cursor.put(crucible::encode_trace_meta(m));
+            for (const auto& m : te.output_metas())
+                cursor.put(crucible::encode_trace_meta(m));
+        }
 
-    cursor.put_field(num_names);
-    const auto write_entry = [&cursor](const crucible::SchemaEntry& entry) noexcept {
-        const ::fixy::TextView name = crucible::SchemaTable::name_of(entry).value().view();
-        cursor.put_field(entry.hash.raw());
-        cursor.put_field(static_cast<uint16_t>(name.size()));
-        cursor.put_text(name);
-    };
-    for (const crucible::SchemaEntry& entry : table.entries())
-        write_entry(entry);
-    for (const crucible::SchemaEntry& entry : late.entries())
-        if (!is_in_global(entry.hash)) write_entry(entry);
-    CRUCIBLE_FATAL_INVARIANT(cursor.is_full());
+        cursor.put_field(num_names);
+        const auto write_entry = [&cursor](const crucible::SchemaEntry& entry) noexcept {
+            const ::fixy::TextView name = crucible::SchemaTable::name_of(entry).value().view();
+            cursor.put_field(entry.hash.raw());
+            cursor.put_field(static_cast<uint16_t>(name.size()));
+            cursor.put_text(name);
+        };
+        for (const crucible::SchemaEntry& entry : table.entries())
+            write_entry(entry);
+        for (const crucible::SchemaEntry& entry : late.entries())
+            if (!is_in_global(entry.hash)) write_entry(entry);
+        CRUCIBLE_FATAL_INVARIANT(cursor.is_full());
+    });
 
     // The door writes a temporary file beside the target, syncs it, renames
     // it onto the target and syncs the directory (THE DURABLE REPLACE of
