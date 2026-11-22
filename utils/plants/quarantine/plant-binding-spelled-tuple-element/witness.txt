@@ -1,11 +1,14 @@
-# A quarantined unit spells std::tuple_element of a family type.  The admit
-# row of std::tuple_element holds only the base, so the spelled name is a
-# finding, also where a capture of a binding gives none
-# (control-binding-capture).
+# A quarantined unit spells std::tuple_element of a family type, in a
+# declaration and in the initializer of an init-capture.  The admit row of
+# std::tuple_element holds only the base, so each spelled name is a finding,
+# also where a capture of a binding gives none (control-binding-capture).  The
+# walk reads no type of a capture proxy, and the initializer of an
+# init-capture is a part of the body of the function.
 
 compile report src/spelled.cpp
 exit report pass
 finding report quarantine std-entity src/spelled.cpp:9:47 | std::tuple_element::type
+finding report quarantine std-entity src/spelled.cpp:14:62 | std::tuple_element::type
 
 compile error src/spelled.cpp mode=error out=no errors=report
 exit error fail
