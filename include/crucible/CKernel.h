@@ -218,10 +218,11 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline CKernelTableSingleton global_ckernel_
                                                ::fixy::Tagged<SchemaHash, ::fixy::tags::source::External> schema_hash,
                                                CKernelId id) {
     CKernelTable& table = *global_ckernel_table().value();
-    for (const CKernelTable::MutableView& view : table.mint_mutable_view(fg)) {
-        return table.register_op(fg, view, schema_hash.value(), id);
-    }
-    return false;
+    return table.mint_mutable_view(fg).match(
+        [&fg, &table, schema_hash, id](CKernelTable::MutableView view) {
+            return table.register_op(fg, view, schema_hash.value(), id);
+        },
+        [] { return false; });
 }
 
 // ---------------------------------------------------------------------

@@ -276,6 +276,10 @@ BINDING_ERROR = "this call names the hook '{entity}' of a structured binding"
 # The rule borrow-match, and the start of its error (THE ERRORS of utils/tools/quarantine/borrow.cpp).
 BORROW_RULE = "borrow-match"
 BORROW_ERROR = "this arm of a borrow match writes the sum that the match reads ({entity})"
+# The entity of a finding of a loop over a sum starts with this mark, and its error starts with this text (THE LOOP
+# of borrow.cpp).
+BORROW_LOOP_MARK = "loop "
+BORROW_LOOP_ERROR = "this body of a loop over a sum writes the sum that the loop reads ({entity})"
 # The rules that give an error in each mode for each finding: the contract rule, the rules binding-hook and
 # borrow-match and the rules of the family unit fact.
 EACH_MODE_RULES = frozenset((CONTRACT_RULE, BINDING_RULE, BORROW_RULE, "contract-semantic", "fast-math-override"))
@@ -838,6 +842,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, f"the '{finding.entity}' contract specifier is not permitted in this tree"))
         elif finding.rule == BINDING_RULE:
             errors.append((place, BINDING_ERROR.format(entity=finding.entity)))
+        elif finding.rule == BORROW_RULE and finding.entity.startswith(BORROW_LOOP_MARK):
+            errors.append((place, BORROW_LOOP_ERROR.format(entity=finding.entity.removeprefix(BORROW_LOOP_MARK))))
         elif finding.rule == BORROW_RULE:
             errors.append((place, BORROW_ERROR.format(entity=finding.entity)))
         elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:

@@ -176,10 +176,8 @@ void test_owning_payload() {
         Option<CountedOwner> target{static_cast<Option<CountedOwner>&&>(source)};
         CRUCIBLE_FATAL_INVARIANT(source.is_none() && target.is_some());
         CRUCIBLE_FATAL_INVARIANT(live_owners == 1);
-        int seen_handle = 0;
-        for (CountedOwner const& owner : target) {
-            seen_handle = owner.handle();
-        }
+        int const seen_handle =
+            target.match([](CountedOwner const& owner) noexcept { return owner.handle(); }, [] noexcept { return 0; });
         CRUCIBLE_FATAL_INVARIANT(seen_handle == 11);
         CountedOwner const taken = static_cast<Option<CountedOwner>&&>(target).expect("the target took the owner");
         CRUCIBLE_FATAL_INVARIANT(taken.handle() == 11 && target.is_none());
@@ -251,18 +249,16 @@ void test_equality_agrees_with_plain_model() {
 }
 
 // A linear payload takes the owning form, so a move of the Option moves the
-// token and copies no byte of it.  The const loop reads the token with no
-// move, and the rvalue match gives the token to its arm.
+// token and copies no byte of it.  The borrow match of a const Option reads
+// the token with no move, and the rvalue match gives the token to its arm.
 void test_linear_payload() {
     {
         Option<CountedToken> source = Option<CountedToken>::some(CountedToken{51});
         Option<CountedToken> target{static_cast<Option<CountedToken>&&>(source)};
         CRUCIBLE_FATAL_INVARIANT(target.is_some() && live_tokens == 1);
         Option<CountedToken> const& reader = target;
-        int seen_handle = 0;
-        for (CountedToken const& token : reader) {
-            seen_handle = token.handle();
-        }
+        int const seen_handle =
+            reader.match([](CountedToken const& token) noexcept { return token.handle(); }, [] noexcept { return 0; });
         CRUCIBLE_FATAL_INVARIANT(seen_handle == 51 && target.is_some());
         int const matched = static_cast<Option<CountedToken>&&>(target).match(
             [](CountedToken token) noexcept {
@@ -1009,21 +1005,15 @@ void test_combinators_agree_with_match() {
     }
 }
 
-// as_ref gives the payload of a named Option as an Option of a Ref, and the
-// Option keeps its payload.
+// as_ref gives the payload of a named niche or plain Option as an Option of
+// a Ref, and the Option keeps its payload.  An owning Option has no as_ref
+// (the fixture neg_core_as_ref_owning).
 void test_as_ref() {
     using ::foundation::core::as_ref;
     Option<int> const held = Option<int>::some(42);
     Option<int> const empty{};
     CRUCIBLE_FATAL_INVARIANT(as_ref(held).is_some_and([](auto const& ref) noexcept { return *ref == 42; }));
     CRUCIBLE_FATAL_INVARIANT(as_ref(empty).is_none() && held.is_some());
-    {
-        Option<CountedOwner> const owned = Option<CountedOwner>::some(CountedOwner{85});
-        CRUCIBLE_FATAL_INVARIANT(
-            as_ref(owned).is_some_and([](auto const& ref) noexcept { return ref->handle() == 85; }));
-        CRUCIBLE_FATAL_INVARIANT(handle_of(owned) == 85 && live_owners == 1);
-    }
-    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
 }
 
 // take, fill and replace of a named Option, in the plain, the niche and the

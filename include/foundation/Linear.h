@@ -90,7 +90,9 @@ struct scope_end_door final {};
 struct binding_hook final {};
 
 // The annotation of a match that gives each arm a reference into the
-// payload of the sum.  A write of the sum in an arm ends that payload.
+// payload of the sum.  A write of the sum in an arm ends that payload.  The
+// loop door begin() of an Option carries it too, and the body of the loop
+// is then such an arm.
 struct borrow_match final {};
 
 // The annotation of a sum class: a class that holds one of some

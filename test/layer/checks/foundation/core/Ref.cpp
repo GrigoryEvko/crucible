@@ -314,12 +314,13 @@ consteval bool reaches_in_constant_evaluation() {
 }
 static_assert(reaches_in_constant_evaluation());
 
-// as_ref gives the payload of a named Option as an Option of a Ref of a
-// const payload with a fresh brand, one brand for each call.  The Option of
-// a Ref has the size of one pointer.  A temporary Option takes the deleted
-// overload, because the Ref would dangle.  The Ref reads a linear payload
-// too, and consumes nothing.  The annotation no_start_over_bytes keeps the
-// checked lifetime start from forging a handle.
+// as_ref gives the payload of a named niche or plain Option as an Option of
+// a Ref of a const payload with a fresh brand, one brand for each call.  The
+// Option of a Ref has the size of one pointer.  A temporary Option takes the
+// deleted overload, because the Ref would dangle.  An owning Option, such as
+// an Option of a linear handle, takes a deleted overload too, because the Ref
+// would outlive each lend that the Option counts.  The annotation
+// no_start_over_bytes keeps the checked lifetime start from forging a handle.
 struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] LinearHandle {
     int handle = 0;
     constexpr explicit LinearHandle(int value) noexcept : handle{value} {}
@@ -330,19 +331,24 @@ struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_o
         return *this;
     }
 };
+struct PlainPair {
+    int first = 0;
+    int second = 0;
+};
 template <class Held>
 Held ref_of(Option<Held>);
 extern Option<int> const held_number;
-extern Option<LinearHandle> const held_handle;
+extern Option<PlainPair> const held_pair;
 static_assert(std::is_same_v<decltype(target_of(ref_of(as_ref(held_number)))), Target<int const>>);
 static_assert(::foundation::brand::IsFreshBrand<decltype(brand_of(ref_of(as_ref(held_number))))>);
 static_assert(!std::is_same_v<decltype(as_ref(held_number)), decltype(as_ref(held_number))>);
 static_assert(sizeof(decltype(as_ref(held_number))) == sizeof(void*));
-static_assert(std::is_same_v<decltype(target_of(ref_of(as_ref(held_handle)))), Target<LinearHandle const>>);
+static_assert(std::is_same_v<decltype(target_of(ref_of(as_ref(held_pair)))), Target<PlainPair const>>);
 template <class O>
 constexpr bool borrows_with_as_ref = requires(O option) { as_ref(static_cast<O&&>(option)); };
 static_assert(borrows_with_as_ref<Option<int>&> && borrows_with_as_ref<Option<int> const&>);
 static_assert(!borrows_with_as_ref<Option<int>> && !borrows_with_as_ref<Option<int> const>);
+static_assert(!borrows_with_as_ref<Option<LinearHandle>&> && !borrows_with_as_ref<Option<LinearHandle> const&>);
 
 // The Ref reads the payload in a constant evaluation, and an empty Option
 // gives no Ref.

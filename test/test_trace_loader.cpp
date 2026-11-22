@@ -535,13 +535,18 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
     constexpr SchemaHash kFirstHash{0xAAAA111122223333ULL};
     constexpr SchemaHash kHeldHash{0xBBBB444455556666ULL};
     constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
-    for (const SchemaTable::MutableView& view : global_schema_table().mint_mutable_view(kVigilForeground)) {
-        const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view, kHeldHash,
-                                                         ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(
-                                                             ::fixy::TextView{"aten::held"}))
-                                        .is_ok();
-        CRUCIBLE_TEST_ASSERT(kTest, was_registered);
-    }
+    global_schema_table()
+        .mint_mutable_view(kVigilForeground)
+        .match(
+            [&kHeldHash](SchemaTable::MutableView view) noexcept {
+                const bool was_registered =
+                    register_schema_name(
+                        kTestIo, kTestIo.cap().alloc, view, kHeldHash,
+                        ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::held"}))
+                        .is_ok();
+                CRUCIBLE_TEST_ASSERT(kTest, was_registered);
+            },
+            []() noexcept {});
 
     const ::fixy::process::ChildReport report =
         ::fixy::process::wait(
@@ -584,15 +589,20 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
     constexpr SchemaHash kFirstHash{0xAAAA111122223333ULL};
     constexpr SchemaHash kRefusedHash{0xBBBB444455556666ULL};
     constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
-    for (const SchemaTable::MutableView& view : global_schema_table().mint_mutable_view(kVigilForeground)) {
-        for (uint64_t filler = 1; filler < SCHEMA_TABLE_CAP; ++filler) {
-            const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
-                                                             ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(
-                                                                 ::fixy::TextView{"aten::filler"}))
-                                            .is_ok();
-            CRUCIBLE_TEST_ASSERT(kTest, was_registered);
-        }
-    }
+    global_schema_table()
+        .mint_mutable_view(kVigilForeground)
+        .match(
+            [](SchemaTable::MutableView view) noexcept {
+                for (uint64_t filler = 1; filler < SCHEMA_TABLE_CAP; ++filler) {
+                    const bool was_registered =
+                        register_schema_name(
+                            kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
+                            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::filler"}))
+                            .is_ok();
+                    CRUCIBLE_TEST_ASSERT(kTest, was_registered);
+                }
+            },
+            []() noexcept {});
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == SCHEMA_TABLE_CAP - 1);
 
     const ::fixy::process::ChildReport report =

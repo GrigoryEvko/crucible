@@ -408,11 +408,14 @@ template <SchemaNameSource Tag>
 [[nodiscard]] inline SchemaRegistration register_schema_name(VigilFgCtx const& fg,
                                                              ::foundation::effects::Alloc allocation, SchemaHash hash,
                                                              SchemaTable::Name<Tag> const& name) {
+    // A sealed table mints no view, which is the refusal of a sealed table.
     SchemaTable& global_table = global_schema_table();
-    for (const SchemaTable::MutableView& global_view : global_table.mint_mutable_view(fg)) {
-        SchemaRegistration in_global = global_table.register_name(fg, allocation, global_view, hash, name);
-        if (!is_sealed_refusal(in_global)) return in_global;
-    }
+    SchemaRegistration in_global = global_table.mint_mutable_view(fg).match(
+        [&fg, &global_table, allocation, hash, &name](SchemaTable::MutableView global_view) {
+            return global_table.register_name(fg, allocation, global_view, hash, name);
+        },
+        [] { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
+    if (!is_sealed_refusal(in_global)) return in_global;
     // Nothing seals the late table, so its view exists and no seal refuses
     // its write.
     SchemaTable& late_table = late_schema_table();

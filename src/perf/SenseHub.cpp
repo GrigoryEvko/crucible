@@ -47,35 +47,41 @@ SenseHub::~SenseHub() = default;
 
 Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     Snapshot snapshot{};
-    for (::fixy::Box<State> const& state : state_) {
-        for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state->counters) {
-            // The BPF producer bumps each counter with a full-barrier add, so
-            // an acquire load here makes every kernel-side store that
-            // precedes a bump visible, and stops the compiler hoisting later
-            // reads above it.  shared_words_at of the mapping checks the
-            // bounds and the alignment, and it starts the lifetime of the
-            // counters.
-            for (::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS> const counters :
-                 mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0})) {
-                snapshot.counters.with_mut([&counters](auto run) noexcept {
-                    for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
-                        run.view().at(i) = counters.load_acquire(i);
-                    }
-                });
-            }
+    // The BPF producer bumps each counter with a full-barrier add, so an
+    // acquire load here makes every kernel-side store that precedes a bump
+    // visible, and stops the compiler hoisting later reads above it.
+    // shared_words_at of the mapping checks the bounds and the alignment, and
+    // it starts the lifetime of the counters.
+    auto const read_counters = [&snapshot](detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped) noexcept {
+        for (::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS> const counters :
+             mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0})) {
+            snapshot.counters.with_mut([&counters](auto run) noexcept {
+                for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
+                    run.view().at(i) = counters.load_acquire(i);
+                }
+            });
         }
-    }
+    };
+    state_.match(
+        [&read_counters](::fixy::Box<State> const& state) noexcept {
+            state->counters.match(read_counters, []() noexcept {});
+        },
+        []() noexcept {});
     return snapshot;
 }
 
 ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS>>
 SenseHub::counters_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
-    for (::fixy::Box<State> const& state : state_) {
-        for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state->counters) {
-            return mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0});
-        }
-    }
-    return ::fixy::none;
+    using Counters = ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS>>;
+    return state_.match(
+        [](::fixy::Box<State> const& state) noexcept {
+            return state->counters.match(
+                [](detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped) noexcept {
+                    return mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0});
+                },
+                []() noexcept { return Counters{::fixy::none}; });
+        },
+        []() noexcept { return Counters{::fixy::none}; });
 }
 
 ::fixy::Refined<::fixy::bounded_above<64>, std::size_t> SenseHub::attached_programs() const noexcept {

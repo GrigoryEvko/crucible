@@ -956,10 +956,8 @@ private:
     [[gnu::cold]] void release_unheld_loads_() noexcept {
         loads_.with_mut([this](auto slots) noexcept {
             for (::fixy::Option<LoadedRegion>& load : slots) {
-                bool is_unheld = false;
-                for (const LoadedRegion& kept : load) {
-                    is_unheld = !is_held_by_foreground_(kept.region);
-                }
+                const bool is_unheld = load.is_some_and(
+                    [this](const LoadedRegion& kept) noexcept { return !is_held_by_foreground_(kept.region); });
                 if (is_unheld) load = ::fixy::none;
             }
         });

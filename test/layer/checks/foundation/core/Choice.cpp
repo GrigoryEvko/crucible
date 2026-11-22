@@ -965,15 +965,22 @@ static_assert(option_form_of<Token> == OptionForm::owning && option_form_of<Hold
 static_assert(!std::is_copy_constructible_v<Option<HoldsToken>> && !std::is_trivially_copyable_v<Option<HoldsToken>>);
 static_assert(!std::is_copy_constructible_v<Result<HoldsToken, Code>>);
 
-// A linear payload has no value_or().  The loop of each Option takes the
-// const cursor, also of an Option that is not const, so a move through it is
-// a copy, which a linear payload refuses.
+// A linear payload has no value_or().  The loop of a niche or a plain Option
+// takes the const cursor, also of an Option that is not const.  An owning
+// Option, of a linear payload or of an owner, has no loop, because a cursor
+// counts no lend of its payload (THE LEND COUNT).
 template <class O, class T>
 concept GivesValueOr =
     requires(O option, T fallback) { static_cast<O&&>(option).value_or(static_cast<T&&>(fallback)); };
 static_assert(!GivesValueOr<Option<Token>, Token> && GivesValueOr<Option<Owner>, Owner>);
-static_assert(std::is_same_v<decltype(std::declval<Option<Token>&>().begin()), OptionCursor<Token const>>);
-static_assert(std::is_same_v<decltype(std::declval<Option<Owner>&>().begin()), OptionCursor<Owner const>>);
+template <class O>
+concept LoopsOver = requires(O option) {
+    option.begin();
+    option.end();
+};
+static_assert(!LoopsOver<Option<Token>&> && !LoopsOver<Option<Token> const&>);
+static_assert(!LoopsOver<Option<Owner>&> && !LoopsOver<Option<Owner> const&>);
+static_assert(LoopsOver<Option<std::uint64_t>&> && LoopsOver<Option<std::uint64_t> const&>);
 static_assert(
     std::is_same_v<decltype(std::declval<Option<std::uint64_t>&>().begin()), OptionCursor<std::uint64_t const>>);
 

@@ -2462,6 +2462,20 @@ foundation_neg_compile_test(neg_core_result_map_err_integer
 foundation_neg_compile_test(neg_core_as_ref_temporary
   "use of deleted function .void foundation::core::as_ref\\(const Option<.>&&\\)"
   "a Ref into a temporary Option dangles at the end of the full expression")
+# An owning Option has no as_ref, because the Ref would outlive each lend that
+# the Option counts.
+foundation_neg_compile_test(neg_core_as_ref_owning
+  "neg_core_as_ref_owning\\.cpp:15:[0-9]+: error: use of deleted function .void foundation::core::as_ref\\(const Option<.>&\\)"
+  "a Ref of the payload of an owning Option outlives each lend that the Option counts")
+# An owning Option has no loop, because a cursor counts no lend of its
+# payload.  The two forms of the loop that end the payload in the body stop
+# at the loop itself.
+foundation_neg_compile_test(neg_core_option_loop_owning_assigns
+  "neg_core_option_loop_owning_assigns\\.cpp:16:[0-9]+: error: use of deleted function .void foundation::core::Option<T>::begin\\(\\) const &"
+  "a loop over an owning Option counts no lend of its payload")
+foundation_neg_compile_test(neg_core_option_loop_owning_reads_after_reset
+  "neg_core_option_loop_owning_reads_after_reset\\.cpp:16:[0-9]+: error: use of deleted function .void foundation::core::Option<T>::begin\\(\\) const &"
+  "a loop over an owning Option counts no lend of its payload")
 foundation_neg_compile_test(neg_core_option_match_arm_types
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(\\)>\\)."
   "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int. _Up = long int\\]. evaluated to .false.")
@@ -2811,6 +2825,14 @@ foundation_neg_compile_test(neg_core_option_borrow_match_object_arm_assigns
 foundation_neg_compile_test(neg_core_option_borrow_match_value_arm_assigns
   "neg_core_option_borrow_match_value_arm_assigns\\.cpp:13:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(assignment held\\)"
   "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
+# The loop door of an Option carries the annotation borrow_match too, so the
+# rule reads the body of a loop over a niche or a plain Option as an arm.
+foundation_neg_compile_test(neg_core_option_loop_body_assigns
+  "neg_core_option_loop_body_assigns\\.cpp:16:[0-9]+: error: this body of a loop over a sum writes the sum that the loop reads \\(assignment held\\)"
+  "the loop gives its body a reference into the sum")
+foundation_neg_compile_test(neg_core_option_loop_body_moves
+  "neg_core_option_loop_body_moves\\.cpp:16:[0-9]+: error: this body of a loop over a sum writes the sum that the loop reads \\(move held\\)"
+  "the loop gives its body a reference into the sum")
 foundation_neg_compile_test(neg_core_surface_open_name
   "static assertion failed: the public member constexpr bool Probe::has_value\\(\\) const of Probe is no shared verb, no language protocol and no name of the family list"
   "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")

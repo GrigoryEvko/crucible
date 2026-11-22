@@ -238,18 +238,22 @@ template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
 // The payload of an Option as an Option of a Ref of a const T with the
 // fresh brand of the call, or no value for an empty Option: one test of the
 // state, as get() of a OneOf gives an alternative.  The Option keeps its
-// payload, and the Ref reads it, also of a linear payload.  The loop of the
-// Option gives the payload, so the Ref and its brand leave only the body of
-// this function, whose own template argument the brand is.  The pack refuses
-// each explicit argument, so no caller names the brand.  The function is free
-// and not a member, because this header includes Choice.h, so the class
-// Option cannot name a Ref.  The addresses of the Option and of its payload
-// are not null, because a reference names an object.  The build keeps each
-// test of an address for null (-fno-delete-null-pointer-checks), so two
-// assumptions state those facts, and the full Option of the Ref takes no
-// test of the null pointer.
+// payload, and the Ref reads it.  The loop of the Option gives the payload,
+// so the Ref and its brand leave only the body of this function, whose own
+// template argument the brand is.  The pack refuses each explicit argument,
+// so no caller names the brand.  The function is free and not a member,
+// because this header includes Choice.h, so the class Option cannot name a
+// Ref.  The addresses of the Option and of its payload are not null, because
+// a reference names an object.  The build keeps each test of an address for
+// null (-fno-delete-null-pointer-checks), so two assumptions state those
+// facts, and the full Option of the Ref takes no test of the null pointer.
+//
+// Only a niche or a plain Option gives its payload as a Ref, as only they
+// have the loop.  An owning Option counts each lend of its payload (THE LEND
+// COUNT of Choice.h), and a Ref outlives each count: a write of the Option
+// would then end the object that the Ref names, with no check.
 template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-    requires(sizeof...(Refused) == 0)
+    requires(sizeof...(Refused) == 0) && (detail::option_form_of<T> != detail::OptionForm::owning)
 [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
 as_ref(Option<T> const& option) noexcept {
     [[assume(__builtin_addressof(option) != nullptr)]];
@@ -259,6 +263,12 @@ as_ref(Option<T> const& option) noexcept {
     }
     return none;
 }
+
+template <class... Refused, ChoicePayload T>
+    requires(detail::option_form_of<T> == detail::OptionForm::owning)
+void as_ref(Option<T> const& option) =
+    delete("a Ref of the payload of an owning Option outlives each lend that the Option counts, and a write of the "
+           "Option then ends the object that the Ref names: read the payload with match");
 
 template <class... Refused, class T>
 void as_ref(Option<T> const&& option) =

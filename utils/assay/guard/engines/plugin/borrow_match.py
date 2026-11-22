@@ -7,7 +7,9 @@ THE RULE
     payload, in each build and each mode (borrow.cpp).  A borrow match carries
     the annotation foundation::linear::borrow_match of
     include/foundation/Linear.h, such as the match of a const Option, Result or
-    OneOf.  The rule reads those finding lines in the sections of the objects
+    OneOf.  The body of a range loop over a sum is an arm too, when the loop
+    door begin() carries the annotation, and the entity of its finding starts
+    with "loop".  The rule reads those finding lines in the sections of the objects
     of the target all of one build (assay.guard.engines.plugin.runner, THE
     SECTIONS).  The same line from two objects counts one time.  The entity of
     a finding is the kind of the write and the receiver.
@@ -46,9 +48,10 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
                 item.file,
                 item.line,
                 RULE,
-                f"an arm of a borrow match writes the sum that the match reads ({item.entity}).  Match the rvalue, "
-                f"std::move(sum).match(...), or change the sum after the match: the write ends or changes the "
-                f"payload while the arm holds a reference into it (CLAUDE.md section XXII)",
+                f"an arm of a borrow match, or the body of a loop over a sum, writes the sum that it reads "
+                f"({item.entity}).  Match the rvalue, std::move(sum).match(...), or change the sum after the match "
+                f"or the loop: the write ends or changes the payload while the arm holds a reference into it "
+                f"(CLAUDE.md section XXII)",
                 item.kind,
                 item.entity,
             )

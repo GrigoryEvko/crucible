@@ -19,8 +19,10 @@
 // to each other: ok() and ok_or() make the crossing.
 //
 // Option<T> holds one T or no value.  The only roads to the payload are a
-// loop of zero or one turns, the total match(), value_or(), ok_or(), the
-// combinators, and expect(), the fatal unwrap with a reason.  The type has
+// loop of zero or one turns over a niche or a plain Option, the total
+// match(), value_or(), ok_or(), the combinators, and expect(), the fatal
+// unwrap with a reason.  An owning Option has no loop, because its
+// storage counts each lend of its payload and a cursor counts none.  The type has
 // no operator* and no operator->, so a read of an empty Option is not
 // possible.  The whole type is [[nodiscard]].
 //
@@ -1788,10 +1790,36 @@ public:
     // expression ends, so the overloads for an rvalue are deleted.  A loop
     // over a temporary binds it to a reference first, and calls these
     // overloads on that lvalue.
-    [[nodiscard]] constexpr OptionCursor<T const> begin() const& noexcept {
+    //
+    // The door begin() carries the annotation borrow_match, so the rule
+    // borrow-match reads the body of the loop as an arm, and it refuses a
+    // write of this Option in the body (THE LOOP of the rule).  A cursor
+    // counts no lend, so only a niche or a plain Option has the loop.  Those
+    // two forms own nothing, and their borrow match counts no lend either.
+    [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr OptionCursor<T const> begin() const& noexcept
+        requires(detail::option_form_of<T> != detail::OptionForm::owning)
+    {
         return OptionCursor<T const>{slot_.holds_() ? &slot_.payload_() : nullptr};
     }
-    [[nodiscard]] constexpr OptionCursor<T const> end() const& noexcept { return OptionCursor<T const>{nullptr}; }
+    [[nodiscard]] constexpr OptionCursor<T const> end() const& noexcept
+        requires(detail::option_form_of<T> != detail::OptionForm::owning)
+    {
+        return OptionCursor<T const>{nullptr};
+    }
+
+    // An owning Option counts each lend of its payload (THE LEND COUNT), and
+    // a cursor counts none.  A loop would then lend the payload while a write
+    // in a callee of the body ends it, with no check in any build.  So an
+    // owning Option has no loop: the borrow match, is_some_and, is_none_or
+    // and with_mut read its payload and count the lend.
+    void begin() const&
+        requires(detail::option_form_of<T> == detail::OptionForm::owning)
+    = delete("a loop over an owning Option counts no lend of its payload, and a write that ends the payload in the "
+             "body goes unseen: read the payload with match, is_some_and or is_none_or");
+    void end() const&
+        requires(detail::option_form_of<T> == detail::OptionForm::owning)
+    = delete("a loop over an owning Option counts no lend of its payload, and a write that ends the payload in the "
+             "body goes unseen: read the payload with match, is_some_and or is_none_or");
 
     void begin() && = delete("a cursor of a temporary Option points into an object that the full expression ends");
     void end() && = delete("a cursor of a temporary Option points into an object that the full expression ends");

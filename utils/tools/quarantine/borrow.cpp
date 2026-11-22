@@ -21,6 +21,20 @@
 //     parameter by value is an arm as well.  The arm on_none of an Option has
 //     no parameter and gets no payload, so a write there is no finding.
 //
+// THE LOOP
+//     A range loop over a sum lends the payload too: its cursor and its
+//     reference name the payload for the whole body.  The loop door begin() of
+//     an Option carries the annotation, so the rule reads such a loop as a
+//     borrow match: the range is the receiver, and the body of the loop is the
+//     arm.  The front end lowers the loop into a cursor that the call of the
+//     door initializes, an increment and a condition that name the cursor, and
+//     the body.  So the rule records each local that a call of a borrow match
+//     with the receiver as its one argument initializes, and it reads the body
+//     of each loop whose increment or condition names such a local.  The body
+//     is in the frame of the function, so its writes and the receiver need no
+//     join.  A write after the end of the loop is no finding.  The entity of a
+//     finding of a loop starts with "loop".
+//
 // THE PATHS
 //     A path names an object: a variable or a parameter, and then a field or a
 //     dereference for each step.  The receiver is a path.  In the body of an
@@ -79,7 +93,9 @@
 //     control-known-gaps of utils/plants/borrow-match/ pins each of them.  The
 //     owning storage of a sum (foundation/core/Choice.h) counts the borrow
 //     matches that lend its payload, and a write of the sum while a match
-//     lends the payload ends the process, in each build.
+//     lends the payload ends the process, in each build.  A cursor counts no
+//     lend, so an owning Option has no loop, and the limits of the body of a
+//     loop over a niche or a plain Option are those of an arm.
 //
 // THE ERRORS
 //     Each finding is a compile error in each build and each mode
@@ -155,10 +171,19 @@ struct Names {
 
 Names names;
 
+// A write of the body of a loop to the sum that the loop reads (THE LOOP):
+// its place, and the entity of its finding.
+struct LoopWrite {
+    location_t location = UNKNOWN_LOCATION;
+    std::string entity;
+};
+
 // The writes of each arm that holds a reference, by the TYPE_UID of its
-// closure, and each call of a borrow match (THE JOIN).
+// closure, each call of a borrow match (THE JOIN), and each write of the body
+// of a loop over a sum (THE LOOP).
 std::unordered_map<unsigned, std::vector<ArmWrite>> arm_writes;
 std::vector<MatchCall> match_calls;
+std::vector<LoopWrite> loop_writes;
 
 // The answer of is_borrow_match for each function, keyed by the declaration.
 // Each collection clears it, because a collection can free a tree and reuse
@@ -417,11 +442,67 @@ void record_arm(tree function) {
 using Pointees = std::unordered_map<int, Path>;
 
 // The state of the walk of the calls of one function: the pointees of each
-// local variable of a class type, by the DECL_UID of the variable.  The walk
-// visits an initializer before a later call that names the variable.
+// local variable of a class type, and the receiver of each cursor of a loop
+// door (THE LOOP), by the DECL_UID of the variable.  The walk visits an
+// initializer before a later call that names the variable.
 struct CallWalk {
     std::unordered_map<int, Pointees> named;
+    std::unordered_map<int, Path> cursors;
 };
+
+// The receiver of a call of a borrow match: the object of its first argument,
+// the object parameter of a member or the reference parameter of a free
+// door.  A call of std::move that the front end did not fold names its own
+// argument.  A receiver that ends with the dereference of a pointer is
+// spelled with a star.
+Path receiver_of(tree call) {
+    tree object = argument_at(call, 0);
+    tree bare = strip_wrappers(object);
+    if (bare != NULL_TREE && (TREE_CODE(bare) == CALL_EXPR || TREE_CODE(bare) == AGGR_INIT_EXPR)
+        && is_std_move_cast(cp_get_callee_fndecl_nofold(bare)) && argument_count(bare) >= 1) {
+        object = argument_at(bare, 0);
+    }
+    Path receiver = pointee_path(object, NULL_TREE, 0);
+    if (ends_with_arrow(receiver.text)) {
+        receiver.text = "*" + receiver.text.substr(0, receiver.text.size() - 2);
+    }
+    return receiver;
+}
+
+// The call of a loop door that initializes a cursor: a call of a borrow match
+// whose one argument is the receiver (THE LOOP), or null.
+tree loop_door_call(tree initializer) {
+    for (int depth = 0; initializer != NULL_TREE && depth < kTypeDepth; ++depth) {
+        initializer = strip_wrappers(initializer);
+        if (TREE_CODE(initializer) != TARGET_EXPR) {
+            break;
+        }
+        initializer = TARGET_EXPR_INITIAL(initializer);
+    }
+    if (initializer == NULL_TREE || (TREE_CODE(initializer) != CALL_EXPR && TREE_CODE(initializer) != AGGR_INIT_EXPR)) {
+        return NULL_TREE;
+    }
+    bool const is_loop_door =
+        argument_count(initializer) == 1 && is_borrow_match(cp_get_callee_fndecl_nofold(initializer));
+    return is_loop_door ? initializer : NULL_TREE;
+}
+
+// Records the receiver of a cursor that a call of a loop door initializes.
+// LEFT is the initialized object and RIGHT its value.
+void record_cursor(CallWalk& walk, tree left, tree right) {
+    left = strip_wrappers(left);
+    if (left == NULL_TREE || !VAR_P(left)) {
+        return;
+    }
+    tree call = loop_door_call(right);
+    if (call == NULL_TREE) {
+        return;
+    }
+    Path receiver = receiver_of(call);
+    if (receiver.root != kNoRoot) {
+        walk.cursors[static_cast<int>(DECL_UID(left))] = std::move(receiver);
+    }
+}
 
 // True when TYPE can be the type of an arm: a class.  The join reads only the
 // classes whose call operator recorded the writes of an arm (THE RECEIVER AND
@@ -500,12 +581,9 @@ void record_initializer(CallWalk& walk, tree left, tree right) {
 // CALL is a CALL_EXPR or an AGGR_INIT_EXPR of a borrow match (THE CALLS).
 void record_call(const CallWalk& walk, tree call) {
     MatchCall record;
-    record.receiver = pointee_path(argument_at(call, 0), NULL_TREE, 0);
+    record.receiver = receiver_of(call);
     if (record.receiver.root == kNoRoot) {
         return;
-    }
-    if (ends_with_arrow(record.receiver.text)) {
-        record.receiver.text = "*" + record.receiver.text.substr(0, record.receiver.text.size() - 2);
     }
     for (int index = 1; index < argument_count(call); ++index) {
         tree object = arm_object(argument_at(call, index));
@@ -531,6 +609,98 @@ void record_call(const CallWalk& walk, tree call) {
     }
 }
 
+// The callback of cp_walk_tree over the initializer of a loop: it records
+// each cursor of a loop door (THE LOOP) and nothing else.
+tree walk_cursors(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    auto& walk = *static_cast<CallWalk*>(data);
+    if (node == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (TYPE_P(node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) == INIT_EXPR || TREE_CODE(node) == MODIFY_EXPR) {
+        record_cursor(walk, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
+    } else if (TREE_CODE(node) == DECL_EXPR) {
+        if (tree decl = DECL_EXPR_DECL(node); VAR_P(decl) && DECL_INITIAL(decl) != NULL_TREE) {
+            record_cursor(walk, decl, DECL_INITIAL(decl));
+        }
+    }
+    return NULL_TREE;
+}
+
+// The state of the search for a cursor in the increment or the condition of
+// a loop: the cursors of the walk, and the receiver of the first one found.
+struct CursorSearch {
+    const std::unordered_map<int, Path>* cursors = nullptr;
+    const Path* receiver = nullptr;
+};
+
+tree find_cursor(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    auto& search = *static_cast<CursorSearch*>(data);
+    if (node == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (TYPE_P(node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (VAR_P(node)) {
+        auto found = search.cursors->find(static_cast<int>(DECL_UID(node)));
+        if (found != search.cursors->end()) {
+            search.receiver = &found->second;
+            return node;
+        }
+    }
+    return NULL_TREE;
+}
+
+// The receiver of the loop LOOP when its increment or its condition names a
+// cursor of a loop door, or null (THE LOOP).
+const Path* loop_receiver(CallWalk& walk, tree loop) {
+    tree init = FOR_INIT_STMT(loop);
+    if (init != NULL_TREE) {
+        cp_walk_tree_without_duplicates(&init, walk_cursors, &walk);
+    }
+    if (walk.cursors.empty()) {
+        return nullptr;
+    }
+    CursorSearch search;
+    search.cursors = &walk.cursors;
+    for (tree part : {FOR_EXPR(loop), FOR_COND(loop)}) {
+        if (part != NULL_TREE && search.receiver == nullptr) {
+            cp_walk_tree_without_duplicates(&part, find_cursor, &search);
+        }
+    }
+    return search.receiver;
+}
+
+bool reaches(const Path& written, WriteKind kind, const Path& receiver);
+
+// Records each write of the body of a loop over a sum to that sum (THE LOOP).
+// Complexity: linear in the body, times the length of a path.
+void record_loop(CallWalk& walk, tree loop) {
+    const Path* receiver = loop_receiver(walk, loop);
+    tree body = FOR_BODY(loop);
+    if (receiver == nullptr || body == NULL_TREE) {
+        return;
+    }
+    std::vector<ArmWrite> writes;
+    ArmWalk arm_walk;
+    arm_walk.writes = &writes;
+    arm_walk.last_location = EXPR_LOCATION(loop);
+    cp_walk_tree_without_duplicates(&body, walk_arm_writes, &arm_walk);
+    for (ArmWrite& write : writes) {
+        if (reaches(write.target, write.kind, *receiver)) {
+            loop_writes.push_back(
+                LoopWrite{write.location, std::string("loop ") + write_kind_name(write.kind) + " " + receiver->text});
+        }
+    }
+}
+
 tree walk_calls(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
     auto& walk = *static_cast<CallWalk*>(data);
@@ -545,11 +715,16 @@ tree walk_calls(tree* node_pointer, int* walk_subtrees, void* data) {
         case INIT_EXPR:
         case MODIFY_EXPR:
             record_initializer(walk, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
+            record_cursor(walk, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
             break;
         case DECL_EXPR:
             if (tree decl = DECL_EXPR_DECL(node); VAR_P(decl) && DECL_INITIAL(decl) != NULL_TREE) {
                 record_initializer(walk, decl, DECL_INITIAL(decl));
+                record_cursor(walk, decl, DECL_INITIAL(decl));
             }
+            break;
+        case FOR_STMT:
+            record_loop(walk, node);
             break;
         case CALL_EXPR:
         case AGGR_INIT_EXPR:
@@ -620,8 +795,15 @@ void finish_borrow_matches_now() {
             }
         }
     }
+    for (const LoopWrite& write : loop_writes) {
+        Place place = place_of(write.location, Scope::quarantine);
+        if (place.file != nullptr) {
+            add_finding(Kind::borrow_match, nullptr, place, write.entity);
+        }
+    }
     match_calls.clear();
     arm_writes.clear();
+    loop_writes.clear();
 }
 
 void on_pre_genericize(void* gcc_data, void*) {
@@ -645,6 +827,22 @@ void on_collection(void*, void*) { borrow_match_answers.clear(); }
 void finish_borrow_matches() { finish_borrow_matches_now(); }
 
 void report_borrow_match(const Finding& finding) {
+    const std::string loop_mark = "loop ";
+    if (finding.entity.compare(0, loop_mark.size(), loop_mark) == 0) {
+        error_at(finding.spelling,
+                 "this body of a loop over a sum writes the sum that the loop reads (%s), and the payload that the "
+                 "reference of the loop names can end while the body holds it",
+                 finding.entity.c_str() + loop_mark.size());
+        inform(finding.spelling,
+               "the loop gives its body a reference into the sum, and an assignment, a move or a mutating call of "
+               "the sum ends or changes the payload that the reference names");
+        inform(finding.spelling, "read the payload in a match or in the loop, and change the sum after the end of the "
+                                 "loop");
+        inform(finding.spelling,
+               "a test of the write itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region "
+               "of %<foundation/Quarantine.h%>");
+        return;
+    }
     error_at(finding.spelling,
              "this arm of a borrow match writes the sum that the match reads (%s), and the payload that the arm "
              "borrows can end while the arm holds its reference",

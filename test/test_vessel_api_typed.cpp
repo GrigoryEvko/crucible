@@ -561,20 +561,22 @@ void test_schema_name_typed() {
     constexpr uint64_t hash_b = 0xB1B2B3B4B5B6B7B8ULL;
 
     constexpr crucible::VigilFgCtx fg = ::foundation::effects::testing::foreground<crucible::Vigil>();
-    for (const crucible::SchemaTable::MutableView& view : crucible::global_schema_table().mint_mutable_view(fg)) {
-        const bool was_a_registered =
-            crucible::register_schema_name(
-                fg, ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_a},
-                ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_a"}))
-                .is_ok();
-        EXPECT(was_a_registered, "an open schema table must take the first registration");
-        const bool was_b_registered =
-            crucible::register_schema_name(
-                fg, ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_b},
-                ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_b"}))
-                .is_ok();
-        EXPECT(was_b_registered, "an open schema table must take the second registration");
-    }
+    crucible::global_schema_table().mint_mutable_view(fg).match(
+        [&](crucible::SchemaTable::MutableView view) {
+            const bool was_a_registered =
+                crucible::register_schema_name(
+                    fg, ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_a},
+                    ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_a"}))
+                    .is_ok();
+            EXPECT(was_a_registered, "an open schema table must take the first registration");
+            const bool was_b_registered =
+                crucible::register_schema_name(
+                    fg, ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_b},
+                    ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_b"}))
+                    .is_ok();
+            EXPECT(was_b_registered, "an open schema table must take the second registration");
+        },
+        [] {});
 
     // The characters of a name that the table gives, or no character for an
     // unknown hash.

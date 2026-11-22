@@ -73,9 +73,9 @@ constexpr ::fixy::TextView kLentChange{
     return frozen.size();
 }
 
-[[gnu::noipa]] void drop(::fixy::Option<core::GrowList<int>>& held) noexcept {
-    held = ::fixy::Option<core::GrowList<int>>{::fixy::none};
-}
+// A FixedList counts no lend of its elements, so its clear ends the lent list
+// with no earlier check, and the list itself sees its end.
+[[gnu::noipa]] void drop(core::FixedList<core::GrowList<int>, 1>& held) noexcept { held.clear(); }
 
 // The frame door of an owner moves the list into its frame and gives it back.
 [[gnu::noipa]] std::size_t frame_of(core::GrowList<int>& list) noexcept {
@@ -131,8 +131,9 @@ void freeze_from_callee() noexcept {
 }
 
 void end_from_callee() noexcept {
-    ::fixy::Option<core::GrowList<int>> held = ::fixy::Option<core::GrowList<int>>::some(small_list());
-    for (core::GrowList<int> const& list : held) {
+    core::FixedList<core::GrowList<int>, 1> held{};
+    static_cast<void>(held.append(small_list()));
+    for (core::GrowList<int> const& list : std::as_const(held).view()) {
         static_cast<void>(list.with_view([&held](core::View<int const> view) noexcept {
             drop(held);
             return view.size();

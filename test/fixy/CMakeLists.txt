@@ -7097,8 +7097,8 @@ fixy_neg_compile_test(neg_linear_forged_by_bit_cast
 
 # The Choice family reads the linear marker of foundation/Linear.h.  An
 # Option or a Result of a linear payload takes the owning form, has no
-# value_or() and no mutable cursor, and gives a linear error only through
-# the rvalue err().
+# value_or() and no loop, and gives a linear error only through the rvalue
+# err().
 fixy_neg_compile_test(neg_core_option_reads_the_linear_marker
   "non-constant condition for static assertion"
   "call to non-.constexpr. function .void foundation::core::fatal")
@@ -7108,8 +7108,8 @@ fixy_neg_compile_test(neg_core_option_expect_after_move
   "a door that needs a full linear sum runs on a sum that each path shows empty"
   "read_twice: source expect")
 fixy_neg_compile_test(neg_core_option_linear_cursor_moves_out
-  "redundant move in initialization"
-  "use of deleted function .fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\)")
+  "neg_core_option_linear_cursor_moves_out\\.cpp:14:[0-9]+: error: use of deleted function .void foundation::core::Option<T>::begin\\(\\) const &"
+  "a loop over an owning Option counts no lend of its payload")
 fixy_neg_compile_test(neg_core_option_linear_value_or_drops_fallback
   "no matching function for call to .foundation::core::Option<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >::value_or"
   "required for the satisfaction of .DroppablePayload<T>.")

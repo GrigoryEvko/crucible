@@ -12,6 +12,9 @@
 # an Option of such a payload in a cast to void (115), a replace that
 # initializes a local with a destructor (121), and an assignment in an arm of
 # a match whose result has a destructor (127).
+# The body of a loop over a sum is an arm too: an assignment of a local (147),
+# a move through a reference parameter (156), and a mutating call through the
+# capture of this with a loop variable by value (167).
 # The second compile shows that a parse with no object gives the same errors.
 
 compile writes src/writes.cpp
@@ -34,6 +37,9 @@ finding writes borrow-match borrow-match src/writes.cpp:100:45 | assignment held
 finding writes borrow-match borrow-match src/writes.cpp:115:78 | mutating-call held
 finding writes borrow-match borrow-match src/writes.cpp:121:48 | mutating-call held
 finding writes borrow-match borrow-match src/writes.cpp:127:58 | assignment held
+finding writes borrow-match borrow-match src/writes.cpp:147:14 | loop assignment held
+finding writes borrow-match borrow-match src/writes.cpp:156:27 | loop move held
+finding writes borrow-match borrow-match src/writes.cpp:167:40 | loop mutating-call this->held
 error writes src/writes.cpp:21 | this arm of a borrow match writes the sum that the match reads (assignment held)
 error writes src/writes.cpp:26 | this arm of a borrow match writes the sum that the match reads (move held)
 error writes src/writes.cpp:32 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
@@ -49,7 +55,11 @@ error writes src/writes.cpp:100 | this arm of a borrow match writes the sum that
 error writes src/writes.cpp:115 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
 error writes src/writes.cpp:121 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
 error writes src/writes.cpp:127 | this arm of a borrow match writes the sum that the match reads (assignment held)
+error writes src/writes.cpp:147 | this body of a loop over a sum writes the sum that the loop reads (assignment held)
+error writes src/writes.cpp:156 | this body of a loop over a sum writes the sum that the loop reads (move held)
+error writes src/writes.cpp:167 | this body of a loop over a sum writes the sum that the loop reads (mutating-call this->held)
 text writes | an assignment, a move or a mutating call of the sum ends or changes the payload
+text writes | the loop gives its body a reference into the sum
 text writes | PROBE: reason
 
 compile syntax src/writes.cpp out=no stage=syntax errors=writes notes=writes

@@ -355,13 +355,15 @@ struct RingLayout {
     template <class Tag>
     [[nodiscard]] static ::fixy::View<const Event>
     events(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
-        for (ReadOnlyMapping<Tag> const& mapped : mapping) {
-            for (::fixy::View<const Event, Capacity> const ring :
-                 mapped.template view_at<const Event, Capacity>(sizeof(Header))) {
-                return ::fixy::View<const Event>{ring};
-            }
-        }
-        return ::fixy::View<const Event>{};
+        return mapping.match(
+            [](ReadOnlyMapping<Tag> const& mapped) noexcept {
+                for (::fixy::View<const Event, Capacity> const ring :
+                     mapped.template view_at<const Event, Capacity>(sizeof(Header))) {
+                    return ::fixy::View<const Event>{ring};
+                }
+                return ::fixy::View<const Event>{};
+            },
+            []() noexcept { return ::fixy::View<const Event>{}; });
     }
 
     // The header binds to a reference to volatile, so the read of write_idx
@@ -371,14 +373,16 @@ struct RingLayout {
     // rest of an event.
     template <class Tag>
     [[nodiscard]] static uint64_t write_index(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
-        for (ReadOnlyMapping<Tag> const& mapped : mapping) {
-            for (::fixy::View<const Header, 1> const headers : mapped.template view_at<const Header, 1>(0)) {
-                for (const volatile Header& header : headers) {
-                    return header.write_idx;
+        return mapping.match(
+            [](ReadOnlyMapping<Tag> const& mapped) noexcept -> uint64_t {
+                for (::fixy::View<const Header, 1> const headers : mapped.template view_at<const Header, 1>(0)) {
+                    for (const volatile Header& header : headers) {
+                        return header.write_idx;
+                    }
                 }
-            }
-        }
-        return 0;
+                return 0;
+            },
+            []() noexcept -> uint64_t { return 0; });
     }
 };
 

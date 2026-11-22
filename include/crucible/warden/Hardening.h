@@ -90,9 +90,7 @@ public:
     CRUCIBLE_NOINLINE void revert() noexcept {
         if (reverted_) return;
         reverted_ = true;
-        for (UndoCtx const& ctx : undo_ctx_) {
-            undo_(ctx);
-        }
+        undo_ctx_.match([this](UndoCtx const& ctx) noexcept { undo_(ctx); }, []() noexcept {});
         // Restoring the prior affinity mask retracts the claim that
         // this thread sits on one named CPU.
         pinned_cpu_ = -1;

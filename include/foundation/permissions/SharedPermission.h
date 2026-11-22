@@ -506,20 +506,22 @@ namespace detail {
         Pool& pool = std::get<sizeof...(Args) - 2>(forwarded);
         Body&& body = std::get<sizeof...(Args) - 1>(std::move(forwarded));
         auto lent = pool.lend(std::get<0>(forwarded));
-        // The loop makes one turn when the pool lent a share, and the guard
-        // stays in the Option until the return.
-        for (SharedPermissionGuard<typename Pool::tag_type, typename Pool::brand_type> const& guard : lent) {
+        if (lent.is_none()) {
             if constexpr (std::is_void_v<Result>) {
-                std::forward<Body>(body)(guard.token());
-                return true;
+                return false;
             } else {
-                return ::foundation::core::Option<Result>::some(std::forward<Body>(body)(guard.token()));
+                return ::foundation::core::Option<Result>{::foundation::core::none};
             }
         }
+        // The guard of the lent share moves to a local, which lives until the
+        // return.  The body runs in this frame, so no closure captures it.
+        SharedPermissionGuard<typename Pool::tag_type, typename Pool::brand_type> const guard =
+            std::move(lent).expect("the pool lent a share, as the test above shows");
         if constexpr (std::is_void_v<Result>) {
-            return false;
+            std::forward<Body>(body)(guard.token());
+            return true;
         } else {
-            return ::foundation::core::Option<Result>{::foundation::core::none};
+            return ::foundation::core::Option<Result>::some(std::forward<Body>(body)(guard.token()));
         }
     }
 

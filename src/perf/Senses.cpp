@@ -64,79 +64,88 @@ Senses Senses::load_all(::fixy::InitLoadCtx const& init) noexcept { return load_
 
 ::fixy::Option<::fixy::Ref<SenseHub const>> Senses::sense_hub() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        return borrow_of(state.sense_hub);
-    }
-#endif
+    using Borrow = ::fixy::Option<::fixy::Ref<SenseHub const>>;
+    return state_.match([](State const& state) noexcept { return borrow_of(state.sense_hub); },
+                        []() noexcept { return Borrow{::fixy::none}; });
+#else
     return ::fixy::none;
+#endif
 }
 
 ::fixy::Option<::fixy::Ref<SchedSwitch const>> Senses::sched_switch() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        return borrow_of(state.sched_switch);
-    }
-#endif
+    using Borrow = ::fixy::Option<::fixy::Ref<SchedSwitch const>>;
+    return state_.match([](State const& state) noexcept { return borrow_of(state.sched_switch); },
+                        []() noexcept { return Borrow{::fixy::none}; });
+#else
     return ::fixy::none;
+#endif
 }
 
 ::fixy::Option<::fixy::Ref<PmuSample const>> Senses::pmu_sample() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        return borrow_of(state.pmu_sample);
-    }
-#endif
+    using Borrow = ::fixy::Option<::fixy::Ref<PmuSample const>>;
+    return state_.match([](State const& state) noexcept { return borrow_of(state.pmu_sample); },
+                        []() noexcept { return Borrow{::fixy::none}; });
+#else
     return ::fixy::none;
+#endif
 }
 
 ::fixy::Option<::fixy::Ref<LockContention const>> Senses::lock_contention() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        return borrow_of(state.lock_contention);
-    }
-#endif
+    using Borrow = ::fixy::Option<::fixy::Ref<LockContention const>>;
+    return state_.match([](State const& state) noexcept { return borrow_of(state.lock_contention); },
+                        []() noexcept { return Borrow{::fixy::none}; });
+#else
     return ::fixy::none;
+#endif
 }
 
 ::fixy::Option<::fixy::Ref<SyscallLatency const>> Senses::syscall_latency() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        return borrow_of(state.syscall_latency);
-    }
-#endif
+    using Borrow = ::fixy::Option<::fixy::Ref<SyscallLatency const>>;
+    return state_.match([](State const& state) noexcept { return borrow_of(state.syscall_latency); },
+                        []() noexcept { return Borrow{::fixy::none}; });
+#else
     return ::fixy::none;
+#endif
 }
 
 ::fixy::Option<::fixy::Ref<SchedTpBtf const>> Senses::sched_tp_btf() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        return borrow_of(state.sched_tp_btf);
-    }
-#endif
+    using Borrow = ::fixy::Option<::fixy::Ref<SchedTpBtf const>>;
+    return state_.match([](State const& state) noexcept { return borrow_of(state.sched_tp_btf); },
+                        []() noexcept { return Borrow{::fixy::none}; });
+#else
     return ::fixy::none;
+#endif
 }
 
 ::fixy::Option<::fixy::Ref<SyscallTpBtf const>> Senses::syscall_tp_btf() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        return borrow_of(state.syscall_tp_btf);
-    }
-#endif
+    using Borrow = ::fixy::Option<::fixy::Ref<SyscallTpBtf const>>;
+    return state_.match([](State const& state) noexcept { return borrow_of(state.syscall_tp_btf); },
+                        []() noexcept { return Borrow{::fixy::none}; });
+#else
     return ::fixy::none;
+#endif
 }
 
 CoverageReport Senses::coverage() const noexcept {
     CoverageReport report{};
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    for (State const& state : state_) {
-        report.sense_hub_attached = state.sense_hub.is_some();
-        report.sched_switch_attached = state.sched_switch.is_some();
-        report.pmu_sample_attached = state.pmu_sample.is_some();
-        report.lock_contention_attached = state.lock_contention.is_some();
-        report.syscall_latency_attached = state.syscall_latency.is_some();
-        report.sched_tp_btf_attached = state.sched_tp_btf.is_some();
-        report.syscall_tp_btf_attached = state.syscall_tp_btf.is_some();
-    }
+    state_.match(
+        [&report](State const& state) noexcept {
+            report.sense_hub_attached = state.sense_hub.is_some();
+            report.sched_switch_attached = state.sched_switch.is_some();
+            report.pmu_sample_attached = state.pmu_sample.is_some();
+            report.lock_contention_attached = state.lock_contention.is_some();
+            report.syscall_latency_attached = state.syscall_latency.is_some();
+            report.sched_tp_btf_attached = state.sched_tp_btf.is_some();
+            report.syscall_tp_btf_attached = state.syscall_tp_btf.is_some();
+        },
+        []() noexcept {});
 #endif
     return report;
 }

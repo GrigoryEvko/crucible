@@ -370,17 +370,19 @@ template <class Brand>
         std::fprintf(stderr, "the pool kept the exclusive after the last share ended\n");
         ++failures;
     }
-    for (auto const& held : exclusive) {
-        if (auto discarded = fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, held);
-            discarded.is_err()) {
-            std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (errno %d)\n",
-                         foundation::os::error_number_of(discarded));
-            ++failures;
-        } else if (bytes[0] != 0 || bytes[kPageBytes - 1] != 0) {
-            std::fprintf(stderr, "MADV_DONTNEED with the pooled exclusive did not discard the page\n");
-            ++failures;
-        }
-    }
+    exclusive.match(
+        [&](auto const& held) noexcept {
+            if (auto discarded = fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, held);
+                discarded.is_err()) {
+                std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (errno %d)\n",
+                             foundation::os::error_number_of(discarded));
+                ++failures;
+            } else if (bytes[0] != 0 || bytes[kPageBytes - 1] != 0) {
+                std::fprintf(stderr, "MADV_DONTNEED with the pooled exclusive did not discard the page\n");
+                ++failures;
+            }
+        },
+        []() noexcept {});
     // The one exit gives the exclusive back to the pool, also when a check failed.
     std::move(exclusive).match([&pool](auto held) noexcept { pool.deposit_exclusive(std::move(held)); },
                                []() noexcept {});

@@ -87,12 +87,8 @@ void test_multiple_guards_block_upgrade(::fixy::TestRunnerCtx const& test) {
 
     // A token from each guard, to show that copying one out does not move
     // the carrier count.
-    for (auto const& guard : g1) {
-        [[maybe_unused]] auto t1 = guard.token();
-    }
-    for (auto const& guard : g2) {
-        [[maybe_unused]] auto t2 = guard.token();
-    }
+    g1.match([](auto const& guard) noexcept { [[maybe_unused]] auto t1 = guard.token(); }, []() noexcept {});
+    g2.match([](auto const& guard) noexcept { [[maybe_unused]] auto t2 = guard.token(); }, []() noexcept {});
 
     // Each refused upgrade gives an empty Option, and expect_none ends it.  A
     // granted upgrade gives a full Option, and expect_none then ends the
