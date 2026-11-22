@@ -3,4 +3,5 @@
 
 admit foundation::lifetime | the byte seal, which the planted code names
 admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit foundation::core | the annotation of a loan key, which the planted code names
 quarantine src/

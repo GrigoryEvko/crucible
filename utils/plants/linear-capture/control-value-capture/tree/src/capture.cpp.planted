@@ -1,9 +1,10 @@
 // The captures that the rule linear-capture admits: a move of a linear object
 // into the closure, a capture by reference of a value that is not linear, the
-// capture of this, and a capture by reference of a linear object whose class
-// has a door at the end of its scope.
+// capture of this, and a capture by reference of a loan key, a linear class
+// with the annotation loan_key_mark of foundation/core/Frame.h.
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/core/Frame.h>
 
 namespace planted {
 
@@ -15,18 +16,18 @@ struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_ov
 };
 
 struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
-         = ::foundation::lifetime::no_start_over_bytes{}]] ScopedToken {
-    constexpr ScopedToken() noexcept = default;
-    constexpr ScopedToken(ScopedToken&&) noexcept = default;
-    constexpr ScopedToken& operator=(ScopedToken&&) noexcept { return *this; }
-    ScopedToken(const ScopedToken&) = delete;
+         = ::foundation::core::loan_key_mark{}, = ::foundation::lifetime::no_start_over_bytes{}]] KeyToken {
+    constexpr KeyToken() noexcept = default;
+    constexpr KeyToken(KeyToken&&) noexcept = default;
+    constexpr KeyToken& operator=(KeyToken&&) noexcept { return *this; }
+    KeyToken(const KeyToken&) = delete;
 };
 
-void lend(ScopedToken& token) noexcept;
+void lend(KeyToken& key) noexcept;
 
-void lends_scoped() {
-    ScopedToken scoped;
-    auto lent = [&scoped] { lend(scoped); };
+void lends_key() {
+    KeyToken key;
+    auto lent = [&key] { lend(key); };
     lent();
 }
 

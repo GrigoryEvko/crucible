@@ -212,11 +212,13 @@
 // THE CAPTURES
 //     A lambda initializes a capture by reference with the address of the
 //     object.  The closure hides each later consume, so the object gives no
-//     finding, and the rule linear-capture reports the capture.  A class with a
-//     door at the end of its scope, such as a loan key, owes no consume: the
-//     end of the scope of the object ends it, and so does the end of each
-//     object that a move through the capture makes.  So a capture by reference
-//     of such an object is no finding.
+//     finding, and the rule linear-capture reports the capture.  A loan key,
+//     a linear class with the annotation loan_key_mark of
+//     foundation/core/Frame.h, owes no consume: the end of its scope is its
+//     door.  A nested frame of two keyed owners captures the key of the inner
+//     owner by reference, so a capture by reference of a loan key is no
+//     finding.  Each other linear class stays a finding, also a class with a
+//     door at the end of its scope.
 //
 // THE SELF-MOVES
 //     A move assignment whose target and source are one object is the kind
@@ -262,8 +264,8 @@
 //                           with a linear argument (library-holder).  Such a
 //                           class is no aggregate, and it is linear by its parts
 //                           or it has a destructor that is not trivial
-//       linear-capture      a capture by reference of a linear object whose
-//                           class has no door at the end of its scope
+//       linear-capture      a capture by reference of a linear object that is
+//                           no loan key
 //       drop-door          an assignment over a linear object that is no
 //                           tracked object of must-consume, and a destructor
 //                           call or a clobber of such an object.  A door, a
@@ -3160,10 +3162,12 @@ bool is_frame_object(tree node) {
 }
 
 // True when FIELD of the class CLOSURE is a capture by reference of a linear
-// object whose class has no door at the end of its scope.  The end of the scope
-// of the object, or of each object that a move through the capture makes,
-// is the door of such a class, so the closure hides no consume (THE CAPTURES).
+// object that is no loan key.  A loan key is a linear class with the
+// annotation loan_key_mark of foundation/core/Frame.h, and the end of its
+// scope is its door, so the closure hides no consume of it (THE CAPTURES).
 bool is_linear_reference_capture(tree closure, tree field) {
+    static tree const loan_key_mark = get_identifier("loan_key_mark");
+    static tree const core = get_identifier("core");
     if (closure == NULL_TREE || !LAMBDA_TYPE_P(TYPE_MAIN_VARIANT(closure)) || field == NULL_TREE
         || TREE_CODE(field) != FIELD_DECL || !TYPE_REF_P(TREE_TYPE(field))) {
         return false;
@@ -3173,7 +3177,8 @@ bool is_linear_reference_capture(tree closure, tree field) {
         return false;
     }
     tree main = TYPE_MAIN_VARIANT(object);
-    return !CLASS_TYPE_P(main) || !has_scope_door(main);
+    bool const is_loan_key = CLASS_TYPE_P(main) && carries_base_annotation(TYPE_ATTRIBUTES(main), loan_key_mark, core);
+    return !is_loan_key;
 }
 
 // One capture by reference of a linear object, the field FIELD of the closure

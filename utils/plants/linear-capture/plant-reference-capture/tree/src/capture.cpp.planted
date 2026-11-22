@@ -23,4 +23,22 @@ void captures() {
     by_default();
 }
 
+// A class with a door at the end of its scope that is no loan key stays a
+// finding.
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
+         = ::foundation::lifetime::no_start_over_bytes{}]] ScopedToken {
+    constexpr ScopedToken() noexcept = default;
+    constexpr ScopedToken(ScopedToken&&) noexcept = default;
+    constexpr ScopedToken& operator=(ScopedToken&&) noexcept { return *this; }
+    ScopedToken(const ScopedToken&) = delete;
+};
+
+void lend(ScopedToken& token) noexcept;
+
+void lends_scoped() {
+    ScopedToken scoped;
+    auto lent = [&scoped] { lend(scoped); };
+    lent();
+}
+
 }  // namespace planted
