@@ -541,6 +541,12 @@ PROBES: tuple[Probe, ...] = (
         "test and no call of the body",
     ),
     Probe(
+        "heap_array_with_element",
+        "with_element of a HeapArray adds one compare of the position with the count and one branch to the fatal "
+        "exit to the or of the raw subscript, with no call of the arm",
+        checks=("fatal",),
+    ),
+    Probe(
         "fixed_array_frame_pop",
         "a copy into two FixedArrays through their member frame doors is the two copies of the raw form, with no copy "
         "of an element into a frame: the doors lend the runs in place.  At -O2 and -O3 the family side moves its "

@@ -67,6 +67,10 @@
 //   size(), view(), the loop, get(position), and the iteration verbs, as
 //                       a FixedArray gives them.  No type holds the count of a
 //                       HeapArray, so it has no indices() and no enumerate()
+//   with_element(position, on_some, on_none)
+//                       the element door: on_some gets the element at a
+//                       position below size() in place, and on_none runs for
+//                       each other position (THE ELEMENT DOOR)
 //
 // A HeapArray owns its storage alone.  A move gives the storage to the
 // target and leaves the source empty, and the destructor ends each element
@@ -101,6 +105,10 @@
 //   with_element(index, body)   of a FixedArray, with an Index<N>: body gets
 //                       the element in place, as T&, for the time of the
 //                       call, and the door gives the result of body
+//   with_element(position, on_some, on_none)   of a HeapArray, with a
+//                       position that no type proves: on_some gets the
+//                       element in place below size(), and on_none runs at or
+//                       past it.  The two arms give one type.  One compare
 // The result holds no borrow (HoldsNoBorrow of foundation/core/Choice.h), so
 // no reference to the element leaves the door, and the door gives no View.  A
 // const array gives T const&.  The door carries the annotation borrow_match,
@@ -826,6 +834,53 @@ public:
     void
     get(std::size_t) const&& = delete("an element of a temporary HeapArray dangles at the end of the full expression");
 
+    // The run of the elements for the frame door with_mut: a View that writes
+    // them.  The key of a frame keeps each caller outside the base out, so
+    // only a frame door gives a View that writes the elements of an array.
+    [[nodiscard]] friend constexpr View<T> frame_run_(detail::FrameKey const& /*key*/, HeapArray& array) noexcept {
+        return View<T>{detail::ViewDoor::key(), array.state_.first, array.state_.count};
+    }
+
+    // The frame door of one element (THE ELEMENT DOOR): on_some gets the
+    // element at position in place, for the time of the call, and at or past
+    // size() on_none runs.  The two arms give the same type, which holds no
+    // borrow, so no reference to the element leaves the door.  A const array
+    // gives a const element.  No type holds the count of a HeapArray, so the
+    // position is a count, as for get().  Complexity: one compare, and the
+    // cost of the arm.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
+        with_element(std::size_t position, OnSome&& on_some,
+                     OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
+                                                  && std::is_nothrow_invocable_v<OnNone>) {
+        if (position >= this->state_.count) {
+            return static_cast<OnNone&&>(on_none)();
+        }
+        return static_cast<OnSome&&>(on_some)(this->state_.first[position]);
+    }
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
+        with_element(std::size_t position, OnSome&& on_some,
+                     OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
+                                                       && std::is_nothrow_invocable_v<OnNone>) {
+        if (position >= this->state_.count) {
+            return static_cast<OnNone&&>(on_none)();
+        }
+        return static_cast<OnSome&&>(on_some)(static_cast<T const*>(this->state_.first)[position]);
+    }
+    template <class OnSome, class OnNone>
+    void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) && =
+        delete("a frame door of a temporary HeapArray lends an element of storage that the full expression frees");
+    template <class OnSome, class OnNone>
+    void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const&& =
+        delete("a frame door of a temporary HeapArray lends an element of storage that the full expression frees");
+
     // The iteration verbs of the View of the elements.
     [[nodiscard]] constexpr auto reverse() & noexcept { return view().reverse(); }
     [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
@@ -1039,6 +1094,12 @@ public:
     void
     view() const&& = delete("a view of a temporary MaskedArray points into storage that the full expression frees");
 
+    // The run of the elements for the frame door with_mut, with the key of a
+    // frame, as for a HeapArray.
+    [[nodiscard]] friend constexpr View<T> frame_run_(detail::FrameKey const& /*key*/, MaskedArray& array) noexcept {
+        return View<T>{detail::ViewDoor::key(), array.state_.first, array.state_.count};
+    }
+
     // The element at key & (count - 1), with no check of the key.  The count
     // is a power of two, so each masked key is below it.  An empty array
     // holds no storage, and each build tests that case here: one test and one
@@ -1100,7 +1161,8 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
-    View<typename Owner::element_type, detail::frame_extent_v<Owner>> const run = held.view();
+    View<typename Owner::element_type, detail::frame_extent_v<Owner>> const run =
+        frame_run_(detail::FrameDoor::key(), held);
     return detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
 }
 

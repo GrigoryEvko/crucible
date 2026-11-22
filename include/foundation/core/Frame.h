@@ -38,8 +38,8 @@
 //                       FixedArray, given to the body in place (Array.h),
 //                       with no key
 //     list.with_element(position, on_some, on_none)   the element at a
-//                       position of a GrowList, given to an arm in place
-//                       (Grow.h), with no key
+//                       position of a GrowList (Grow.h) or of a HeapArray
+//                       (Array.h), given to an arm in place, with no key
 //     with_mut_windows<T>(block, windows, body)   one ViewMut<T> for each of
 //                       some disjoint windows of a named AlignedBytes
 //                       (foundation/AlignedBytes.h), as slice::get_disjoint_mut

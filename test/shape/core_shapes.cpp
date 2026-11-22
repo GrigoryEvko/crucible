@@ -351,6 +351,16 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     words.with_element(position, [bit](std::uint64_t& word) noexcept { word |= bit; });
 }
 
+// The or of a bit into one element of a HeapArray through the element door.
+// A position at or past the count takes the fatal exit, as the write through
+// get() and expect did.
+[[gnu::used]] void heap_array_with_element(::foundation::core::HeapArray<std::uint32_t>& array, std::size_t position,
+                                           std::uint32_t bit) noexcept {
+    array.with_element(
+        position, [bit](std::uint32_t& element) noexcept { element |= bit; },
+        [] noexcept { ::foundation::core::fatal("the probe gets a position below the count"); });
+}
+
 // Two arrays of a batch, as the batch of the drain stage holds them.
 struct ShapeBatch final {
     ::foundation::core::FixedArray<std::uint64_t, 64> words{};
@@ -1798,6 +1808,10 @@ struct RawCycle {
 [[gnu::used]] void fixed_array_with_element_raw(std::uint64_t* first, std::uint32_t position,
                                                 std::uint64_t bit) noexcept {
     first[position] |= bit;
+}
+
+[[gnu::used]] void heap_array_with_element_raw(RawHeap& array, std::size_t position, std::uint32_t bit) noexcept {
+    array.first[position] |= bit;
 }
 
 struct RawShapeBatch final {

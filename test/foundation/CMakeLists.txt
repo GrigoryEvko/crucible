@@ -4307,6 +4307,11 @@ foundation_neg_compile_test(neg_core_heap_array_copied
 foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
   "use of deleted function .void foundation::core::HeapArray<T, Align>::view\\(\\) && \\[with T = int; long unsigned int Align = 4\\]."
   "a view of a temporary HeapArray points into storage that the full expression frees")
+# The element door of a HeapArray carries the annotation borrow_match, so the
+# rule borrow-match refuses a second door of the same array in its arm.
+foundation_neg_compile_test(neg_core_heap_array_nested_element_door
+  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
+  "the payload that the arm borrows can end while the arm holds its reference")
 foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
   "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
   "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")

@@ -72,7 +72,8 @@ void test_fill_and_reads() {
     for (std::uint32_t const element : numbers) {
         CRUCIBLE_FATAL_INVARIANT(element == 7);
     }
-    ::foundation::core::fill(numbers.view(), std::uint32_t{3});
+    numbers = ::foundation::core::with_mut(
+        std::move(numbers), [](auto run) noexcept { ::foundation::core::fill(run.view(), std::uint32_t{3}); });
     std::size_t total = 0;
     for (std::uint32_t const element : numbers) {
         total += element;
@@ -82,7 +83,9 @@ void test_fill_and_reads() {
     // get gives the element below the count, and no value at the count.
     CRUCIBLE_FATAL_INVARIANT(*numbers.get(999).expect("the position is below the count") == 3);
     CRUCIBLE_FATAL_INVARIANT(!numbers.get(1000).is_some());
-    *numbers.get(10).expect("the position is below the count") = 11;
+    numbers.with_element(
+        10, [](std::uint32_t& element) noexcept { element = 11; },
+        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
     HeapArray<std::uint32_t> const& fixed = numbers;
     CRUCIBLE_FATAL_INVARIANT(*fixed.get(10).expect("the position is below the count") == 11);
 
@@ -91,6 +94,43 @@ void test_fill_and_reads() {
         CRUCIBLE_FATAL_INVARIANT(element == 3);
         break;
     }
+}
+
+// The element door writes one element in place below the count and gives the
+// result of on_some.  At the count and past it, on_none runs, and no element
+// changes.  The door of a const array reads, and an empty array runs on_none
+// for each position.
+void test_element_door_writes_in_place() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    HeapArray<std::uint64_t> words = mint_heap_array(alloc, 4, std::uint64_t{1});
+    int const steps = words.with_element(
+        2,
+        [](std::uint64_t& word) noexcept {
+            word |= 16;
+            return 1;
+        },
+        [] noexcept { return 0; });
+    int const missed = words.with_element(
+        4,
+        [](std::uint64_t& word) noexcept {
+            word = 0;
+            return 1;
+        },
+        [] noexcept { return 0; });
+    HeapArray<std::uint64_t> const& read = words;
+    std::uint64_t const third = read.with_element(
+        2, [](std::uint64_t const& word) noexcept { return word; }, [] noexcept { return std::uint64_t{0}; });
+    CRUCIBLE_FATAL_INVARIANT(steps == 1 && missed == 0 && third == 17);
+    std::uint64_t total = 0;
+    for (std::uint64_t const word : words) {
+        total += word;
+    }
+    CRUCIBLE_FATAL_INVARIANT(total == 1 + 1 + 17 + 1);
+
+    HeapArray<std::uint64_t> empty{};
+    bool const is_none =
+        empty.with_element(0, [](std::uint64_t&) noexcept { return false; }, [] noexcept { return true; });
+    CRUCIBLE_FATAL_INVARIANT(is_none);
 }
 
 template <std::size_t Alignment>
@@ -176,7 +216,9 @@ void test_equality() {
     HeapArray<int> const shorter = mint_heap_array(alloc, 3, 2);
     CRUCIBLE_FATAL_INVARIANT(left == right);
     CRUCIBLE_FATAL_INVARIANT(!(left == shorter));
-    *right.get(3).expect("the position is below the count") = 5;
+    right.with_element(
+        3, [](int& element) noexcept { element = 5; },
+        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
     CRUCIBLE_FATAL_INVARIANT(!(left == right));
 }
 
@@ -189,7 +231,9 @@ void test_order() {
     HeapArray<int> longer = mint_heap_array(alloc, 4, 2);
     CRUCIBLE_FATAL_INVARIANT(prefix < longer);
     CRUCIBLE_FATAL_INVARIANT(longer > prefix);
-    *longer.get(0).expect("the position is below the count") = 1;
+    longer.with_element(
+        0, [](int& element) noexcept { element = 1; },
+        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
     CRUCIBLE_FATAL_INVARIANT(longer < prefix);
     HeapArray<double> const negative_zero = mint_heap_array(alloc, 2, -0.0);
     HeapArray<double> const positive_zero = mint_heap_array(alloc, 2, 0.0);
@@ -227,7 +271,9 @@ void test_agrees_with_plain_model() {
         std::uint64_t model_sum = static_cast<std::uint64_t>(fill) * count;
         if (count != 0) {
             std::size_t const position = stream.below(count);
-            *array.get(position).expect("the position is below the count") = fill + 1;
+            array.with_element(
+                position, [fill](std::uint32_t& element) noexcept { element = fill + 1; },
+                [] noexcept { ::foundation::core::fatal("the position is below the count"); });
             model_sum += 1;
         }
         std::uint64_t sum = 0;
@@ -314,10 +360,14 @@ void test_with_builds_in_place() {
 void test_copy_of_view() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<std::uint32_t> source = mint_heap_array(alloc, 9, std::uint32_t{4});
-    *source.get(8).expect("the position is below the count") = 11;
+    source.with_element(
+        8, [](std::uint32_t& element) noexcept { element = 11; },
+        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
     HeapArray<std::uint32_t> copied = mint_heap_array_copy<std::uint32_t>(alloc, source.view());
     CRUCIBLE_FATAL_INVARIANT(copied == source);
-    *copied.get(0).expect("the position is below the count") = 2;
+    copied.with_element(
+        0, [](std::uint32_t& element) noexcept { element = 2; },
+        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
     CRUCIBLE_FATAL_INVARIANT(*source.get(0).expect("the position is below the count") == 4);
 
     HeapArray<std::uint32_t, 64> const window =
@@ -454,6 +504,7 @@ int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_empty_array();
     test_fill_and_reads();
+    test_element_door_writes_in_place();
     test_each_alignment();
     test_sealed_element();
     test_destruction_counts();
