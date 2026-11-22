@@ -35,6 +35,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
+#include <fixy/concurrent/LaneRing.h>
 #include <fixy/concurrent/SpscRing.h>
 
 #include "bench_harness.h"
@@ -54,6 +55,10 @@ using SmallSpsc = SpscRing<std::uint64_t, 1024>;
 // publish/load measurement (single cache line for storage_).
 using Snap = AtomicSnapshot<std::uint64_t>;
 
+// A ring of two lanes of 16 cells each.  The round trip pushes into the lane
+// of the turn and receives the item, so each receive steps the turn.
+using TwoLanes = ::fixy::concurrent::LaneRing<std::uint64_t, 16, ::fixy::concurrent::LaneCount{2}>;
+
 // The allocation capability of the rings and the snapshots of the rows.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
@@ -70,7 +75,7 @@ int main() {
     bench::print("  AtomicSnapshot<uint64> sizeof: {} bytes\n", sizeof(Snap));
     bench::print("\n");
 
-    ::fixy::FixedArray<bench::Report, 10> reports{
+    ::fixy::FixedArray<bench::Report, 11> reports{
         // ── HARNESS BASELINE: the cost of one sink ────────────────────
         // Measures the bench-loop overhead: ++i and one sink of i.  The
         // sink is an empty asm statement with no call (THE SINK of
@@ -209,6 +214,23 @@ int main() {
                 if (!ok) ring->reset();
             });
         }(),
+
+        // ── LaneRing: round trip on one thread (depth stays 0/1) ──────
+        // Each sample pushes into the lane of the turn and receives the
+        // item: one push of an SPSC lane, one deferred pop, and the step of
+        // the turn.  The turn takes the two lanes in turn, so the lane of a
+        // sample is the low bit of its count.
+        [&] {
+            ::fixy::Box<TwoLanes> ring_box = ::fixy::mint_box<TwoLanes>(kAlloc);
+            auto const ring = ::fixy::to(*ring_box);
+            std::uint64_t i = 0;
+            return bench::run("lane_ring round-trip (push to the lane of the turn + try_receive)", [&] {
+                ++i;
+                (void)ring->try_push(TwoLanes::lane_index::mask(i - 1), i);
+                auto v = ring->try_receive();
+                bench::do_not_optimize(v);
+            });
+        }(),
     };
 
     bench::emit_reports_text(reports.view());
@@ -227,6 +249,7 @@ int main() {
     //   [7] atomic_snapshot.load (uncontended)
     //   [8] atomic_snapshot.try_load (uncontended)
     //   [9] trace_ring.try_append (reference, +reset-on-full)
+    //   [10] lane_ring round-trip (push to the lane of the turn + try_receive)
 
     // Headline #1: actual ring cost = single-push p50 - harness overhead p50.
     // The sink makes no call, so the overhead is the loop and the increment.
