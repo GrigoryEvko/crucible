@@ -77,9 +77,19 @@ auto bench_halves() noexcept {
 // The allocation capability of the rings and the channels of the rows.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
+// The owner of the bare ring.  It makes the proof of the one consumer (THE
+// WRITERS of fixy/concurrent/MpscRing.h), which pops on the thread of the row.
+struct BareRingOwner final {
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<BareRingOwner, ::fixy::concurrent::MpscConsumerRole>
+    consumer() noexcept {
+        return {};
+    }
+};
+
+using BareRing = ::fixy::concurrent::MpscRing<Item, kCap, BareRingOwner>;
+
 bench::Report bare_mpsc_push() {
-    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring_box =
-        ::fixy::mint_box<::fixy::concurrent::MpscRing<Item, kCap>>(kAlloc);
+    ::fixy::Box<BareRing> ring_box = ::fixy::mint_box<BareRing>(kAlloc);
     auto const ring = ::fixy::to(*ring_box);
     Item i = 0;
     return bench::run("bare MpscRing.try_push", [&] {
@@ -103,15 +113,14 @@ bench::Report wrapped_mpsc_push() {
 }
 
 bench::Report bare_mpsc_pop() {
-    ::fixy::Box<::fixy::concurrent::MpscRing<Item, kCap>> ring_box =
-        ::fixy::mint_box<::fixy::concurrent::MpscRing<Item, kCap>>(kAlloc);
+    ::fixy::Box<BareRing> ring_box = ::fixy::mint_box<BareRing>(kAlloc);
     auto const ring = ::fixy::to(*ring_box);
     for (Item i = 0; i < kCap / 2; ++i)
         (void)ring->try_push(i);
     // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
     const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
     return bench::run("bare MpscRing.try_pop", [&] {
-        auto v = ring->try_pop(merge);
+        auto v = ring->try_pop(BareRingOwner::consumer(), merge);
         bench::do_not_optimize(v);
     });
 }

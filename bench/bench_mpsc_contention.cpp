@@ -68,7 +68,16 @@ constexpr std::size_t kSamples = 32;  // ≥30 for Mann-Whitney
 constexpr std::size_t kWarmup = 3;
 constexpr std::size_t kMaxWallMs = 60000;
 
-using Ring = MpscRing<Item, kCap>;
+// The owner of the ring.  It makes the proof of the one consumer (THE WRITERS
+// of fixy/concurrent/MpscRing.h), which the drain worker holds.
+struct RingOwner final {
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<RingOwner, ::fixy::concurrent::MpscConsumerRole>
+    consumer() noexcept {
+        return {};
+    }
+};
+
+using Ring = MpscRing<Item, kCap, RingOwner>;
 // The count of the threads of a cycle: the producers and the consumer.  Each
 // thread takes one core of the claim (THE CORES OF A CYCLE).
 using ThreadCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
@@ -157,8 +166,9 @@ struct DrainWorker {
         // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
         const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
         while (local < total) {
-            const std::size_t n =
-                buf.with_mut([this, merge](auto run) noexcept { return ring.try_pop_batch(merge, run.view()); });
+            const std::size_t n = buf.with_mut([this, merge](auto run) noexcept {
+                return ring.try_pop_batch(RingOwner::consumer(), merge, run.view());
+            });
             if (n == 0) {
                 CRUCIBLE_SPIN_PAUSE;
                 continue;

@@ -14,6 +14,17 @@
 //   claim is the one writer of its ticket, and the holder of the next ticket
 //   of the reader side is the one reader of it.
 //
+// THE PROOF OF A TICKET
+//   The value of a cell is plain, and two threads write it in turn.  So each
+//   write of a value takes a WriteTicket, and each read takes a ReadTicket.
+//   Only the queue that names itself as Owner mints a ticket: a write ticket
+//   after its claim of the ticket, such as the compare-and-swap of the head,
+//   and a read ticket under the proof of its one reader.  A ticket does not
+//   copy and does not move, so a door takes it only as the value that the
+//   mint gives, and one ticket writes or reads one time.  So the cells state
+//   synchronized{} (foundation/Transfer.h): the turn words are atomic, and
+//   each door that writes a value takes a ticket.
+//
 // THE TURN WORD
 //   The word of a cell reads 2 * r while the cell is free for the writer of
 //   round r, and 2 * r + 1 while it holds the value of round r.  A writer
@@ -49,6 +60,7 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Id.h>
 
@@ -77,8 +89,9 @@ enum class CellSpacing : std::uint8_t {
     line,
 };
 
-template <RingValue T, std::size_t Capacity, CellSpacing Spacing = CellSpacing::line>
-class SequenceCells : public ::foundation::Pinned<SequenceCells<T, Capacity, Spacing>> {
+template <RingValue T, std::size_t Capacity, class Owner, CellSpacing Spacing = CellSpacing::line>
+class[[= ::foundation::transfer::synchronized{}]] SequenceCells
+    : public ::foundation::Pinned<SequenceCells<T, Capacity, Owner, Spacing>> {
     static_assert(Capacity != 0 && (Capacity & (Capacity - 1)) == 0,
                   "fixy::concurrent::SequenceCells<T, Capacity>: Capacity must be a power of two.  The cell of a "
                   "ticket is its low bits, and the round of a ticket is its high bits.");
@@ -110,6 +123,40 @@ class SequenceCells : public ::foundation::Pinned<SequenceCells<T, Capacity, Spa
     [[nodiscard]] Cell const& cell_(CellTicket ticket) const noexcept { return cells_[ticket.raw() & MASK]; }
 
 public:
+    // The proof of the one writer of the value of a ticket (THE PROOF OF A
+    // TICKET).  Only Owner mints one, after its claim of the ticket.
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] WriteTicket final {
+        CellTicket ticket_{std::uint64_t{0}};
+
+        explicit constexpr WriteTicket(CellTicket ticket) noexcept : ticket_{ticket} {}
+        friend Owner;
+        friend class SequenceCells;
+
+    public:
+        WriteTicket(WriteTicket const&) = delete("a ticket writes its value one time");
+        WriteTicket(WriteTicket&&) = delete("a ticket writes its value one time, as the value that its mint gives");
+        WriteTicket& operator=(WriteTicket const&) = delete("a ticket writes its value one time");
+        WriteTicket& operator=(WriteTicket&&) = delete("a ticket writes its value one time");
+        ~WriteTicket() = default;
+    };
+
+    // The proof of the one reader of the value of a ticket (THE PROOF OF A
+    // TICKET).  Only Owner mints one, under the proof of its one reader.
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] ReadTicket final {
+        CellTicket ticket_{std::uint64_t{0}};
+
+        explicit constexpr ReadTicket(CellTicket ticket) noexcept : ticket_{ticket} {}
+        friend Owner;
+        friend class SequenceCells;
+
+    public:
+        ReadTicket(ReadTicket const&) = delete("a ticket reads its value one time");
+        ReadTicket(ReadTicket&&) = delete("a ticket reads its value one time, as the value that its mint gives");
+        ReadTicket& operator=(ReadTicket const&) = delete("a ticket reads its value one time");
+        ReadTicket& operator=(ReadTicket&&) = delete("a ticket reads its value one time");
+        ~ReadTicket() = default;
+    };
+
     SequenceCells() noexcept = default;
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
@@ -128,12 +175,12 @@ public:
         return distance < 0 ? CellTurn::behind : CellTurn::ahead;
     }
 
-    // Writes the value of the ticket and publishes it.  The caller holds the
+    // Writes the value of the ticket and publishes it.  The ticket proves the
     // claim of the ticket, and write_turn gave free for its cell.
-    void publish(CellTicket ticket, T const& value) noexcept {
-        Cell& cell = cell_(ticket);
+    void publish(WriteTicket ticket, T const& value) noexcept {
+        Cell& cell = cell_(ticket.ticket_);
         cell.value = value;
-        cell.word.store_release(free_word_(ticket) + 1);
+        cell.word.store_release(free_word_(ticket.ticket_) + 1);
     }
 
     // True when the cell of the ticket holds the value of the ticket, with
@@ -143,15 +190,20 @@ public:
         return cell_(ticket).word.load_acquire() == free_word_(ticket) + 1;
     }
 
-    // The value of the ticket.  The caller is the one reader of the ticket,
-    // and is_published gave true.
-    [[nodiscard]] T value_of(CellTicket ticket) const noexcept { return cell_(ticket).value; }
-
-    // Frees the cell of the ticket for the writer of its next round.  The
-    // caller read the value of the ticket.
-    void free(CellTicket ticket) noexcept { cell_(ticket).word.store_release(free_word_(ticket) + 2); }
+    // Reads the value of the ticket, and then frees the cell for the writer of
+    // its next round.  The ticket proves the one reader, and is_published gave
+    // true.
+    [[nodiscard]] T take(ReadTicket ticket) noexcept {
+        Cell& cell = cell_(ticket.ticket_);
+        T const value = cell.value;
+        cell.word.store_release(free_word_(ticket.ticket_) + 2);
+        return value;
+    }
 
 private:
+    // The cells.  The word of each cell is atomic.  The value of a cell is
+    // plain: the write ticket of its ticket admits its write, and the read
+    // ticket admits its read and the free of its cell.
     alignas(64) std::array<Cell, Capacity> cells_{};
 };
 

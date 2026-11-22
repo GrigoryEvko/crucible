@@ -38,6 +38,16 @@
 //   spacing line.  A ring of many producers is the purpose of this type, so
 //   the spacing line is the default.  A ring that mostly has one producer, or
 //   that takes batch pushes, names CellSpacing::packed.
+//
+// THE WRITERS
+//   Each part of the ring has its writer in a type, so two threads can write
+//   the ring at the same time (foundation/Transfer.h).  The producers share
+//   the head, an atomic counter of many writers.  A push writes the value of
+//   a cell with the write ticket that its compare-and-swap of the head won.
+//   The tail has one writer, the consumer, and each pop takes the proof of
+//   the consumer, which only Owner makes.  A pop reads the value of a cell
+//   and frees the cell with a read ticket, which the ring mints only under
+//   that proof (THE PROOF OF A TICKET of fixy/concurrent/SequenceCells.h).
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -66,14 +76,19 @@ namespace fixy::concurrent {
 // consumer.
 struct MpscConsumerRole final {};
 
-template <RingValue T, std::size_t Capacity, CellSpacing Spacing = CellSpacing::line>
-class MpscRing : public ::foundation::Pinned<MpscRing<T, Capacity, Spacing>> {
+template <RingValue T, std::size_t Capacity, class Owner, CellSpacing Spacing = CellSpacing::line>
+class MpscRing : public ::foundation::Pinned<MpscRing<T, Capacity, Owner, Spacing>> {
+    using cells_type = SequenceCells<T, Capacity, MpscRing, Spacing>;
+
 public:
     using value_type = T;
     static constexpr std::size_t channel_capacity = Capacity;
     static constexpr CellSpacing cell_spacing = Spacing;
     using row_discipline = ::fixy::row_discipline::mpsc_ring;
     using row_payload = T;
+    using owner_type = Owner;
+    // The proof of the one consumer, which only Owner makes (THE WRITERS).
+    using consumer_proof = ::fixy::SoleWriterProof<Owner, MpscConsumerRole>;
 
     static_assert(std::has_single_bit(Capacity), "fixy::concurrent::MpscRing<T, Capacity>: Capacity must be a power "
                                                  "of two.  The position-to-cell map is a bitwise AND with "
@@ -110,7 +125,7 @@ public:
             }
             std::uint64_t expected = pos;
             if (head_.compare_exchange_advance_weak_relaxed(expected, pos + 1)) [[likely]] {
-                cells_.publish(ticket, value);
+                cells_.publish(write_ticket_(ticket), value);
                 return true;
             }
             pos = expected;
@@ -142,7 +157,7 @@ public:
             std::uint64_t expected = pos;
             if (head_.compare_exchange_advance_weak_relaxed(expected, pos + N)) [[likely]] {
                 for (std::size_t i = 0; i < N; ++i) {
-                    cells_.publish(CellTicket{pos + i}, source[i]);
+                    cells_.publish(write_ticket_(CellTicket{pos + i}), source[i]);
                 }
                 return N;
             }
@@ -150,37 +165,40 @@ public:
         }
     }
 
-    // The caller guarantees no concurrent try_pop or try_pop_batch.  A pop
-    // is a merge: the schedule of the producers decides the order of the
-    // items, so two runs with the same inputs can pop two sequences.  Thus
-    // each pop takes the bare tag of Nondet.
+    // Each pop takes the proof of the one consumer (THE WRITERS).  A pop is
+    // a merge: the schedule of the producers decides the order of the items,
+    // so two runs with the same inputs can pop two sequences.  Thus each pop
+    // also takes the bare tag of Nondet.
 
-    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop(::foundation::effects::cap::Nondet) noexcept {
+    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop(consumer_proof const& /*proof*/,
+                                                                  ::foundation::effects::cap::Nondet) noexcept {
         return pop_one_();
     }
 
     // Gives each item that the ring holds to drop, the oldest first, and
-    // returns when the ring is empty.  The caller guarantees no concurrent
-    // push and no concurrent pop.  The order of the items reads the merge,
-    // so the drop holds no state: its class is empty, and it can only end
-    // each item.  A drop with no state can still write a global, and no gate
-    // refuses that.  Complexity: linear in the count of the items.
+    // returns when the ring is empty.  The proof names the one consumer, and
+    // the caller guarantees no concurrent push.  The order of the items reads
+    // the merge, so the drop holds no state: its class is empty, and it can
+    // only end each item.  A drop with no state can still write a global,
+    // and no gate refuses that.  Complexity: linear in the count of the items.
     template <typename Drop>
         requires __is_empty
-    (__remove_cvref(Drop)) && __is_nothrow_invocable(Drop&, T) void drain(Drop&& drop) noexcept {
+    (__remove_cvref(Drop))
+        && __is_nothrow_invocable(Drop&, T) void drain(consumer_proof const& /*proof*/, Drop&& drop) noexcept {
         for (::foundation::core::Option<T> item = pop_one_(); item.is_some(); item = pop_one_()) {
             drop(static_cast<::foundation::core::Option<T>&&>(item).expect("the test of the loop found an item"));
         }
     }
 
-    // The caller guarantees no concurrent try_pop or try_pop_batch.  A batch
-    // pop is a merge, as a pop is, so it takes the bare tag of Nondet.  The
-    // pop takes the published cells from the tail up to the first cell that
-    // is not published, and at most out.size() of them.  The ring holds at
-    // most Capacity items, so the scan stops after Capacity cells, before it
-    // wraps to a cell that it took.  Complexity: linear in the items taken.
+    // A batch pop takes the proof of the one consumer, and it is a merge, as
+    // a pop is, so it takes the bare tag of Nondet.  The pop takes the
+    // published cells from the tail up to the first cell that is not
+    // published, and at most out.size() of them.  The ring holds at most
+    // Capacity items, so the scan stops after Capacity cells, before it wraps
+    // to a cell that it took.  Complexity: linear in the items taken.
 
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::effects::cap::Nondet,
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(consumer_proof const& /*proof*/,
+                                                      ::foundation::effects::cap::Nondet,
                                                       ::foundation::core::View<T> out) noexcept {
         const std::size_t cap = Capacity < out.size() ? Capacity : out.size();
         if (cap == 0) return 0;
@@ -191,8 +209,7 @@ public:
         while (R < cap) {
             CellTicket const ticket{pos0 + R};
             if (!cells_.is_published(ticket)) break;
-            target[R] = cells_.value_of(ticket);
-            cells_.free(ticket);
+            target[R] = cells_.take(read_ticket_(ticket));
             ++R;
         }
         if (R == 0) return 0;
@@ -220,21 +237,34 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    // The oldest item, or no value when its cell is not published.  The
-    // acquire load of the turn word pairs with the release store of the
-    // producer, so the read of the value sees the published item.  The free
-    // of the cell comes after the read, so the producer of the next round
-    // writes the cell after the read.
+    // The oldest item, or no value when its cell is not published.  Only a
+    // door that takes the proof of the consumer calls it.  The acquire load of
+    // the turn word pairs with the release store of the producer, so the read
+    // of the value sees the published item.  The free of the cell comes after
+    // the read, so the producer of the next round writes the cell after the
+    // read.
     [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_one_() noexcept {
         const std::uint64_t pos = tail_.peek_relaxed();
         CellTicket const ticket{pos};
         if (!cells_.is_published(ticket)) {
             return ::foundation::core::none;
         }
-        const T item = cells_.value_of(ticket);
-        cells_.free(ticket);
+        const T item = cells_.take(read_ticket_(ticket));
         tail_.advance_sole_writer_from(prove_consumer_(), pos, pos + 1);
         return ::foundation::core::Option<T>::some(item);
+    }
+
+    // The write ticket of a ticket that the compare-and-swap of the head won,
+    // and the read ticket of the ticket at the tail, under the proof of the
+    // consumer (THE PROOF OF A TICKET of fixy/concurrent/SequenceCells.h).
+    [[nodiscard, gnu::always_inline]] static constexpr typename cells_type::WriteTicket
+    write_ticket_(CellTicket ticket) noexcept {
+        return typename cells_type::WriteTicket{ticket};
+    }
+
+    [[nodiscard, gnu::always_inline]] static constexpr typename cells_type::ReadTicket
+    read_ticket_(CellTicket ticket) noexcept {
+        return typename cells_type::ReadTicket{ticket};
     }
 
     // The writer of the tail, the consumer (THE WRITER OF A COUNTER of
@@ -252,7 +282,7 @@ private:
     // AtomicMonotonic carries: it is alignas(64) and at least a line in
     // size, and asserts both in its own header.
 
-    SequenceCells<T, Capacity, Spacing> cells_{};
+    cells_type cells_{};
     ::fixy::AtomicMonotonic<std::uint64_t> head_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
     ::fixy::AtomicMonotonic<std::uint64_t, tail_writer_> tail_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, tail_writer_>(0);

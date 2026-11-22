@@ -164,8 +164,17 @@ void pop_waiting(::fixy::BgLoadCtx const& ctx, Waits& waits, Pop&& pop) noexcept
 
 // ── Shape ────────────────────────────────────────────────────────────
 
+// The owner of each MPSC ring of the test.  It makes the proof of the one
+// consumer of a ring (THE WRITERS of fixy/concurrent/MpscRing.h), and each
+// case pops a ring on one thread.
+struct MpscOwner final {
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MpscOwner, c::MpscConsumerRole> consumer() noexcept {
+        return {};
+    }
+};
+
 using Spsc = c::SpscRing<Plain, 8>;
-using Mpsc = c::MpscRing<Plain, 8>;
+using Mpsc = c::MpscRing<Plain, 8, MpscOwner>;
 
 // The address is the identity: both rings hold atomics other threads
 // reach through a pointer taken once.
@@ -188,8 +197,8 @@ static_assert(alignof(Mpsc) >= 64);
 // A cell of the spacing line takes one cache line, and a packed cell takes its
 // word and its value (THE SPACING OF THE CELLS of fixy/concurrent/SequenceCells.h).
 // A ring of many producers takes the spacing line by default.
-static_assert(c::SequenceCells<std::uint64_t, 8, c::CellSpacing::line>::cell_bytes == 64);
-static_assert(c::SequenceCells<std::uint64_t, 8, c::CellSpacing::packed>::cell_bytes == 16);
+static_assert(c::SequenceCells<std::uint64_t, 8, MpscOwner, c::CellSpacing::line>::cell_bytes == 64);
+static_assert(c::SequenceCells<std::uint64_t, 8, MpscOwner, c::CellSpacing::packed>::cell_bytes == 16);
 static_assert(Mpsc::cell_spacing == c::CellSpacing::line);
 static_assert(alignof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
 static_assert(sizeof(::fixy::AtomicMonotonic<std::uint64_t>) >= 64);
@@ -205,8 +214,8 @@ static_assert(Spsc::count_between(20, 2) == 8, "the count never passes the capac
 
 // A small ring wraps after few tickets, and a wide ring holds a batch that
 // spans many cache lines of cells.  Both are exercised below.
-using MpscSmall = c::MpscRing<int, 4>;
-using MpscWide = c::MpscRing<int, 128>;
+using MpscSmall = c::MpscRing<int, 4, MpscOwner>;
+using MpscWide = c::MpscRing<int, 128, MpscOwner>;
 
 [[nodiscard]] int spsc_single_threaded() {
     Spsc ring{};
@@ -622,7 +631,7 @@ struct ProvenOwner final {
 
 [[nodiscard]] int mpsc_single_threaded() {
     Mpsc ring{};
-    if (!ring.empty_approx(kNondet) || ring.try_pop(kNondet).is_some()) {
+    if (!ring.empty_approx(kNondet) || ring.try_pop(MpscOwner::consumer(), kNondet).is_some()) {
         std::fprintf(stderr, "a fresh MPSC ring did not read as empty\n");
         return 1;
     }
@@ -639,7 +648,7 @@ struct ProvenOwner final {
     }
 
     for (int i = 0; i < 8; ++i) {
-        const Plain item = ring.try_pop(kNondet).value_or(Plain{-1, 0});
+        const Plain item = ring.try_pop(MpscOwner::consumer(), kNondet).value_or(Plain{-1, 0});
         if (item.value != i) {
             std::fprintf(stderr, "MPSC pop %d came back out of order\n", i);
             return 1;
@@ -664,8 +673,9 @@ struct ProvenOwner final {
     // took, and returns more items than the ring holds.  The count and
     // the empty ring below show the clamp.
     Run<Plain, 64> oversized{};
-    const std::size_t taken =
-        oversized.with_each([&ring](::fixy::View<Plain> cells) noexcept { return ring.try_pop_batch(kNondet, cells); });
+    const std::size_t taken = oversized.with_each([&ring](::fixy::View<Plain> cells) noexcept {
+        return ring.try_pop_batch(MpscOwner::consumer(), kNondet, cells);
+    });
     if (taken != 6) {
         std::fprintf(stderr, "MPSC oversized batch pop returned %zu, not the six available\n", taken);
         return 1;
@@ -684,7 +694,7 @@ struct ProvenOwner final {
         ::fixy::report(::fixy::Sink::Err, "MPSC ring refused a push after the oversized drain\n");
         return 1;
     }
-    (void)ring.try_pop(kNondet);
+    (void)ring.try_pop(MpscOwner::consumer(), kNondet);
     return 0;
 }
 
@@ -697,7 +707,9 @@ struct ProvenOwner final {
     }
     if (small.try_push(4)) return 1;
     Run<int, 4> out{};
-    if (out.with_each([&small](::fixy::View<int> cells) noexcept { return small.try_pop_batch(kNondet, cells); }) != 4
+    if (out.with_each([&small](::fixy::View<int> cells) noexcept {
+            return small.try_pop_batch(MpscOwner::consumer(), kNondet, cells);
+        }) != 4
         || out.at(3) != 3)
         return 1;
 
@@ -709,7 +721,9 @@ struct ProvenOwner final {
 
     // The drain crosses many cache lines of cells.
     Run<int, 100> drained{};
-    if (drained.with_each([&wide](::fixy::View<int> cells) noexcept { return wide.try_pop_batch(kNondet, cells); })
+    if (drained.with_each([&wide](::fixy::View<int> cells) noexcept {
+            return wide.try_pop_batch(MpscOwner::consumer(), kNondet, cells);
+        })
         != 100)
         return 1;
     for (int i = 0; i < 100; ++i) {
@@ -730,7 +744,7 @@ struct ProvenOwner final {
 // stale turn word gives one more item to a batch pop.
 template <std::size_t Capacity, c::CellSpacing Spacing>
 [[nodiscard]] int mpsc_batch_case(std::size_t offset, std::size_t count, std::size_t singles) {
-    c::MpscRing<int, Capacity, Spacing> ring{};
+    c::MpscRing<int, Capacity, MpscOwner, Spacing> ring{};
     Run<int, Capacity> items{};
     Run<int, 2 * Capacity> drained{};
     const auto fail = [&](fixy::TextView what) {
@@ -741,7 +755,9 @@ template <std::size_t Capacity, c::CellSpacing Spacing>
 
     if (offset > 0) {
         if (ring.try_push_batch(items.first(offset)) != offset) return fail(fixy::TextView{"offset push"});
-        if (drained.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(kNondet, cells); })
+        if (drained.with_each([&ring](::fixy::View<int> cells) noexcept {
+                return ring.try_pop_batch(MpscOwner::consumer(), kNondet, cells);
+            })
             != offset)
             return fail(fixy::TextView{"offset pop"});
     }
@@ -750,15 +766,18 @@ template <std::size_t Capacity, c::CellSpacing Spacing>
         items.set(i, static_cast<int>(i.raw()));
     if (ring.try_push_batch(items.first(count)) != count) return fail(fixy::TextView{"batch push"});
     for (std::size_t i = 0; i < singles; ++i) {
-        if (ring.try_pop(kNondet).value_or(-1) != static_cast<int>(i)) return fail(fixy::TextView{"single pop"});
+        if (ring.try_pop(MpscOwner::consumer(), kNondet).value_or(-1) != static_cast<int>(i))
+            return fail(fixy::TextView{"single pop"});
     }
-    const std::size_t rest =
-        drained.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(kNondet, cells); });
+    const std::size_t rest = drained.with_each([&ring](::fixy::View<int> cells) noexcept {
+        return ring.try_pop_batch(MpscOwner::consumer(), kNondet, cells);
+    });
     if (rest != count - singles) return fail(fixy::TextView{"the batch pop count"});
     for (std::size_t i = 0; i < rest; ++i) {
         if (drained.at(i) != static_cast<int>(singles + i)) return fail(fixy::TextView{"the batch pop order"});
     }
-    if (ring.try_pop(kNondet).is_some() || ring.size_approx(kNondet) != 0 || !ring.empty_approx(kNondet)) {
+    if (ring.try_pop(MpscOwner::consumer(), kNondet).is_some() || ring.size_approx(kNondet) != 0
+        || !ring.empty_approx(kNondet)) {
         return fail(fixy::TextView{"the drained ring"});
     }
 
@@ -766,7 +785,9 @@ template <std::size_t Capacity, c::CellSpacing Spacing>
         items.set(i, static_cast<int>(Capacity + i.raw()));
     if (ring.try_push_batch(items.first(Capacity)) != Capacity) return fail(fixy::TextView{"the refill"});
     if (ring.try_push(-1)) return fail(fixy::TextView{"a push past capacity"});
-    if (drained.with_each([&ring](::fixy::View<int> cells) noexcept { return ring.try_pop_batch(kNondet, cells); })
+    if (drained.with_each([&ring](::fixy::View<int> cells) noexcept {
+            return ring.try_pop_batch(MpscOwner::consumer(), kNondet, cells);
+        })
         != Capacity) {
         return fail(fixy::TextView{"the refill drain count"});
     }
@@ -872,7 +893,7 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
     constexpr int kPerProducer = 4000;
     constexpr int kTotal = static_cast<int>(kProducers) * kPerProducer;
 
-    c::MpscRing<Plain, 1024> ring{};
+    c::MpscRing<Plain, 1024, MpscOwner> ring{};
     ::fixy::Atomic<std::uint32_t> finished{0};
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     Waits waits{};
@@ -902,7 +923,7 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
         while (received < kTotal) {
             ::fixy::Option<Plain> popped = ::fixy::none;
             pop_waiting(ctx, waits, [&ring, &popped, &finished]() noexcept {
-                popped = ring.try_pop(kNondet);
+                popped = ring.try_pop(MpscOwner::consumer(), kNondet);
                 return popped.is_some() || (finished.load_acquire() == kProducers && ring.empty_approx(kNondet));
             });
             if (popped.is_some()) {
@@ -953,7 +974,7 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
     constexpr int kPerProducer = kRounds * static_cast<int>(kCapacity + kPartial);
     constexpr int kTotal = static_cast<int>(kProducers) * kPerProducer;
 
-    c::MpscRing<Plain, kCapacity> ring{};
+    c::MpscRing<Plain, kCapacity, MpscOwner> ring{};
     fixy::Atomic<std::uint32_t> finished{0};
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     Waits waits{};
@@ -1007,9 +1028,10 @@ template <c::CellSpacing Spacing, std::size_t... Capacities>
             // The single pop comes before the batch pop, so the order of each
             // producer runs from the single item into the batch.
             pop_waiting(ctx, waits, [&ring, &single, &got, &drained, &finished]() noexcept {
-                single = ring.try_pop(kNondet);
-                got = drained.with_each(
-                    [&ring](::fixy::View<Plain> cells) noexcept { return ring.try_pop_batch(kNondet, cells); });
+                single = ring.try_pop(MpscOwner::consumer(), kNondet);
+                got = drained.with_each([&ring](::fixy::View<Plain> cells) noexcept {
+                    return ring.try_pop_batch(MpscOwner::consumer(), kNondet, cells);
+                });
                 return single.is_some() || got != 0
                     || (finished.load_acquire() == kProducers && ring.empty_approx(kNondet));
             });
@@ -1051,7 +1073,7 @@ constexpr std::uint32_t kProducers = 64;
 constexpr std::uint64_t kPushesPerProducer = 4000;
 constexpr std::size_t kBatch = 4;
 constexpr std::size_t kCapacity = std::size_t{1} << 18;
-using Ring = c::MpscRing<std::uint64_t, kCapacity, c::CellSpacing::packed>;
+using Ring = c::MpscRing<std::uint64_t, kCapacity, MpscOwner, c::CellSpacing::packed>;
 constexpr int kRounds = 4;
 // The pushes of a producer between two wakes of the consumer.
 constexpr std::uint64_t kNotifyEvery = 64;
@@ -1110,7 +1132,7 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
         for (;;) {
             bool has_item = false;
             pop_waiting(ctx, waits, [&ring, &has_item, &finished]() noexcept {
-                has_item = ring->try_pop(kNondet).is_some();
+                has_item = ring->try_pop(MpscOwner::consumer(), kNondet).is_some();
                 return has_item || (finished.load_acquire() == kProducers && ring->empty_approx(kNondet));
             });
             if (!has_item) break;

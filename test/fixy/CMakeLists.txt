@@ -5799,11 +5799,19 @@ fixy_neg_compile_test(neg_os_clock_reader_read_in_body_without_nondet
 fixy_neg_compile_test(neg_ring_snapshot_without_nondet_tag
   "no matching function for call to .fixy::concurrent::SpscRing<int, 8>::empty_approx\\(\\)."
   "candidate expects 1 argument, 0 provided")
+# Only the Owner of the cells mints a ticket, and a ticket writes its cell one
+# time: a stranger cannot build one, and a ticket in a name does not write.
+fixy_neg_compile_test(neg_sequence_cells_forged_write_ticket
+  "SequenceCells<T, Capacity, Owner, Spacing>::WriteTicket::WriteTicket\\(fixy::concurrent::CellTicket\\)"
+  "is private within this context")
+fixy_neg_compile_test(neg_sequence_cells_ticket_written_twice
+  "use of deleted function .fixy::concurrent::SequenceCells<T, Capacity, Owner, Spacing>::WriteTicket::"
+  "a ticket writes its value one time, as the value that its mint gives")
 # A pop of the raw MPSC ring is a merge, so it takes the tag of Nondet.  A
 # drain gives the items in the order of the merge, so its drop holds no state.
 fixy_neg_compile_test(neg_mpsc_ring_pop_without_nondet_tag
-  "no matching function for call to .fixy::concurrent::MpscRing<int, 8>::try_pop\\(\\)."
-  "candidate expects 1 argument, 0 provided")
+  "no matching function for call to .fixy::concurrent::MpscRing<int, 8, .anonymous.::Owner>::try_pop\\("
+  "candidate expects 2 arguments, 1 provided")
 fixy_neg_compile_test(neg_mpsc_drain_with_state
   "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::drain\\("
   "__is_empty")

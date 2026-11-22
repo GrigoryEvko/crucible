@@ -201,7 +201,7 @@ struct channel_form_parts<ChannelForm::wire, T, Capacity, LaneCount{1}, Producer
 
 template <RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand, typename Owner>
 struct channel_form_parts<ChannelForm::merge, T, Capacity, LaneCount{1}, ProducerTag, Brand, Owner> {
-    using ring_type = MpscRing<T, Capacity>;
+    using ring_type = MpscRing<T, Capacity, Owner>;
     // The producer handle holds one share of the pool, which parks the
     // producer token.
     using producer_share = ::foundation::permissions::SharedPermissionGuard<ProducerTag, Brand>;
@@ -548,6 +548,8 @@ public:
         [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_(PopTag... tag) noexcept {
             if constexpr (Form == ChannelForm::wire) {
                 return ch_->ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
+            } else if constexpr (Form == ChannelForm::merge) {
+                return ch_->ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
             } else {
                 return ch_->ring_.try_pop(tag...);
             }
@@ -564,7 +566,7 @@ public:
             } else if constexpr (Form == ChannelForm::lanes) {
                 return ch_->ring_.try_receive();
             } else {
-                ::foundation::core::Option<T> item = ch_->ring_.try_pop(tag...);
+                ::foundation::core::Option<T> item = ch_->ring_.try_pop(PermissionedChannel::prove_consumer_(), tag...);
                 if (item.is_some()) [[likely]] {
                     return std::move(item).ok_or(NoItem::Empty);
                 }
@@ -910,7 +912,11 @@ public:
                 ::foundation::core::fatal("a drain of a {} channel while a producer handle lives.",
                                           pooled_text_({.merge = "merge", .lanes = "lanes"}));
             }
-            ring_.drain(std::forward<Drop>(drop));
+            if constexpr (Form == ChannelForm::merge) {
+                ring_.drain(prove_consumer_(), std::forward<Drop>(drop));
+            } else {
+                ring_.drain(std::forward<Drop>(drop));
+            }
             producer_pool_.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
         }
     }
@@ -966,14 +972,15 @@ private:
     }
 
     // The proofs of the two sides of the ring of a wire (THE PROVEN FORM of
-    // fixy/concurrent/SpscRing.h).  The ring names this channel as its owner,
-    // so only this channel makes them.  Only the producer handle and the
-    // consumer handle call them, and each one holds the linear token and the
-    // claim of its role, so the one writer of each side is a fact of the
-    // types.  A drain and a recombined access use the checked calls of the
-    // ring.
-    // The return types are deduced, because the ring of a merge has no proof
-    // types to name in a declaration.
+    // fixy/concurrent/SpscRing.h), and the proof of the consumer of the ring
+    // of a merge (THE WRITERS of fixy/concurrent/MpscRing.h).  The ring names
+    // this channel as its owner, so only this channel makes them.  Only the
+    // handle of each role, a drain and the receive after an empty pop call
+    // them.  The handle holds the linear token and the claim of its role, and
+    // a drain holds the claim of each role, so the one writer of each side is
+    // a fact of the types.  A drain and a recombined access of a wire use the
+    // checked calls of the ring.  The return types are deduced, because the
+    // ring of each form names its own proof types.
     [[nodiscard]] static constexpr auto prove_producer_() noexcept
         requires(Form == ChannelForm::wire)
     {
@@ -981,7 +988,7 @@ private:
     }
 
     [[nodiscard]] static constexpr auto prove_consumer_() noexcept
-        requires(Form == ChannelForm::wire)
+        requires(Form != ChannelForm::lanes)
     {
         return typename ring_type::consumer_proof{};
     }
@@ -1028,7 +1035,11 @@ private:
     // A stream ends one time, so the pop after its end is cold.
     template <typename... PopTag>
     [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_close_(PopTag... tag) noexcept {
-        return ring_.try_pop(tag...).ok_or(NoItem::Closed);
+        if constexpr (Form == ChannelForm::merge) {
+            return ring_.try_pop(prove_consumer_(), tag...).ok_or(NoItem::Closed);
+        } else {
+            return ring_.try_pop(tag...).ok_or(NoItem::Closed);
+        }
     }
 
     ring_type ring_;

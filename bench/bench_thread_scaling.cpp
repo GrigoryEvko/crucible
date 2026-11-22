@@ -310,6 +310,18 @@ struct ProvenOwner final {
     [[nodiscard]] static constexpr auto consumer() noexcept { return Ring::consumer_proof{}; }
 };
 
+// The owner of the MPSC rings of the rows (THE WRITERS of
+// fixy/concurrent/MpscRing.h).  A row runs one consumer of a ring, so the
+// bench makes the proof of the consumer, as the channel of a merge makes it
+// for its handle.
+struct MpscOwner final {
+    using Ring = ::fixy::concurrent::MpscRing<Item, kRingCapacity, MpscOwner>;
+    using PackedRing =
+        ::fixy::concurrent::MpscRing<Item, kRingCapacity, MpscOwner, ::fixy::concurrent::CellSpacing::packed>;
+
+    [[nodiscard]] static constexpr auto consumer() noexcept { return Ring::consumer_proof{}; }
+};
+
 // True for an op with one consumer on the thread of a slot.
 template <OpKind Kind>
 inline constexpr bool kHasConsumer = Kind != OpKind::SharedAdd && Kind != OpKind::OwnAdd;
@@ -425,8 +437,8 @@ struct RowControl {
 // it outlives each worker of the row.  Each row builds each ring and each
 // reference, and it uses the one of its op.
 struct RowState : RowControl {
-    ::fixy::concurrent::MpscRing<Item, kRingCapacity> mpsc{};
-    ::fixy::concurrent::MpscRing<Item, kRingCapacity, ::fixy::concurrent::CellSpacing::packed> mpsc_packed{};
+    MpscOwner::Ring mpsc{};
+    MpscOwner::PackedRing mpsc_packed{};
     ::fixy::concurrent::LaneRing<Item, kLaneCapacity, kBenchLanes> lanes{};
     ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
     ProvenOwner::Ring spsc_proven{};
@@ -601,15 +613,15 @@ template <OpKind Kind>
         return count != 0;
     };
     if constexpr (Kind == OpKind::MpscPush || Kind == OpKind::MpscSlowPush) {
-        return take_one(state.mpsc.try_pop(merge));
+        return take_one(state.mpsc.try_pop(MpscOwner::consumer(), merge));
     } else if constexpr (Kind == OpKind::LanesPush || Kind == OpKind::LanesSlowPush) {
         // The pop of the ring of lanes is in the order of its lanes, so it
         // takes no tag of Nondet.
         return take_one(state.lanes.try_pop());
     } else if constexpr (Kind == OpKind::MpscPackedPush) {
-        return take_one(state.mpsc_packed.try_pop(merge));
+        return take_one(state.mpsc_packed.try_pop(MpscOwner::consumer(), merge));
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
-        return take_batch(state.mpsc.try_pop_batch(merge, out));
+        return take_batch(state.mpsc.try_pop_batch(MpscOwner::consumer(), merge, out));
     } else if constexpr (Kind == OpKind::MpscReferencePush) {
         return take_one(state.mpsc_reference.try_pop());
     } else if constexpr (Kind == OpKind::SpscPush) {

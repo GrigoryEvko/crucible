@@ -330,8 +330,17 @@ struct Run {
     }
 };
 
+// The owner of the MPSC ring of the control.  It makes the proof of the one
+// consumer (THE WRITERS of fixy/concurrent/MpscRing.h), which pops on one
+// thread.
+struct MergeOwner final {
+    [[nodiscard]] static constexpr ::fixy::SoleWriterProof<MergeOwner, cc::MpscConsumerRole> consumer() noexcept {
+        return {};
+    }
+};
+
 using LaneRun = Run<Lanes>;
-using MergeRun = Run<cc::MpscRing<Item, 16>>;
+using MergeRun = Run<cc::MpscRing<Item, 16, MergeOwner>>;
 
 // True for the ring of lanes, and false for the MPSC ring of the control.
 template <class Ring>
@@ -374,7 +383,7 @@ template <class Ring>
         return receive_code(run.ring);
     } else {
         bool const has_ended = run.finished.load_acquire() == 4;
-        ::fixy::Option<Item> item = run.ring.try_pop(kNondet);
+        ::fixy::Option<Item> item = run.ring.try_pop(MergeOwner::consumer(), kNondet);
         if (item.is_some()) return std::move(item).expect("the test above found an item");
         return has_ended ? kClosed : kEmpty;
     }

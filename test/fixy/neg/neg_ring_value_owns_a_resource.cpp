@@ -23,4 +23,4 @@ struct Owns {
 // declaration.  An alias would be rejected at its own line and then
 // again at every use of the alias name, and a fixture that reports
 // three errors cannot say which one it tested.
-int main() { return sizeof(c::MpscRing<Owns, 8>) == 0 ? 1 : 0; }
+int main() { return sizeof(c::MpscRing<Owns, 8, void>) == 0 ? 1 : 0; }
