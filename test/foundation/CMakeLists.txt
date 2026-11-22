@@ -1933,6 +1933,13 @@ foundation_neg_compile_test(neg_synchronized_door_takes_a_share
   "failed: .anonymous.::Counter"
   "Counter::add_shared\\(foundation::permissions::SharedPermissionGuard<Region, CounterBrand>&\\)"
   "Counter::count_")
+# A door template of a context reads as its specialization for a probe
+# context, and a context proves no door (the probe of a context door).
+foundation_neg_compile_test(neg_synchronized_context_door_writes_plain
+  "but a door of it is not const, takes no proof of the class"
+  "failed: .anonymous.::Counter"
+  "CtxOwnsCapability<Ctx, foundation::effects::Effect::Div> void .anonymous.::Counter::add\\(const Ctx&\\)"
+  "Counter::count_")
 foundation_neg_compile_test(neg_synchronized_nested_holds_a_share
   "and a door of a nested class of it can write the class"
   "failed: .anonymous.::Counter"

@@ -1048,3 +1048,20 @@ using TestRunnerCtx = TestWitnessCtx;
 }  // namespace detail::ctx_witnesses
 
 }  // namespace foundation::effects
+
+// The probe contexts of the door check of foundation/Transfer.h (the probe of
+// a context door).  Together they own each capability atom: the background,
+// the initialization and the test atom, each with Alloc, IO, Block, Nondet and
+// Div.  The check reads a door template whose one parameter is a context as
+// its specialization for the first of them that substitutes.  The seal counts
+// the three, so a probe that a later file adds stops the build.
+namespace foundation::transfer::door_probe_contexts {
+
+inline constexpr door_probe_context background{.context =
+                                                   ^^::foundation::effects::detail::ctx_witnesses::BgBlockWitness};
+inline constexpr door_probe_context initialization{
+    .context = ^^::foundation::effects::detail::ctx_witnesses::InitBlockWitness};
+inline constexpr door_probe_context test{.context = ^^::foundation::effects::detail::ctx_witnesses::TestWitnessCtx};
+inline constexpr door_probe_seal sealed{.count = 3};
+
+}  // namespace foundation::transfer::door_probe_contexts

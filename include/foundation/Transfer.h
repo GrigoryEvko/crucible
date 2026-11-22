@@ -181,8 +181,9 @@
 //     A static one is a door when it takes the class through a reference
 //     that is not const.  GCC 16 gives no parameters of a member function template,
 //     so the check reads the specialization of each template for a probe
-//     body, a class whose call takes each argument list.  A template with no
-//     such specialization stops the build, so the check fails closed.  A
+//     body, a class whose call takes each argument list, or else for a probe
+//     context (the probe of a context door).  A template with no such
+//     specialization stops the build, so the check fails closed.  A
 //     friend and a free function are no member, and the check does not read
 //     them: GCC 16 gives no friend of a class to reflection.  members_of of a
 //     class lists no friend, and members_of of a namespace lists a friend only
@@ -375,6 +376,41 @@ enum class Property : unsigned char {
 // True when the type holds the property (THE RULES).  The definition follows
 // first_refusal.
 [[nodiscard]] consteval bool holds(std::meta::info type, Property property);
+
+// Probe of a context door
+//
+// A member function template whose one template parameter is a context, such
+// as load of a reader of fixy/channels/SwmrSession.h, has no specialization
+// for the probe body of the door check, because its constraint asks for a
+// context that owns a capability.  The check then reads its specialization for
+// each probe context in turn, and it reads the first one that substitutes.  A
+// context is no token, so a parameter of a context proves nothing, and the
+// verdict of the door comes from its other parameters and its result.  A
+// template with a parameter that no probe fills stops the build.
+//
+// foundation/effects/Ctx.h names the probe contexts: one variable of type
+// door_probe_context in the namespace door_probe_contexts for each context,
+// and one door_probe_seal that counts them.  Together the contexts own each
+// capability atom.  The check reads the namespace in specialize_door, a
+// function and no template, so no unit can specialize it.  A namespace with
+// members and no seal, with two seals, or with a count that differs from its
+// seal stops the build.
+//
+// A unit that does not include the effects header reads no probe context, so
+// a door template of a context stops the build there, and the check fails
+// closed.
+
+// One probe context: the reflection of a context type.  It is a structural
+// type, so the check reads a variable of it as a constant.
+struct door_probe_context {
+    std::meta::info context{};
+};
+
+struct door_probe_seal {
+    std::size_t count = 0;
+};
+
+namespace door_probe_contexts {}
 
 namespace detail {
 
@@ -710,16 +746,18 @@ template <std::meta::info Class, std::meta::info Door, std::meta::info Part>
 inline constexpr bool unproven_nested_door_refusal = refuse_unproven_nested_door<Class, Door, Part>();
 
 // The refusal of a member function template with no specialization for the
-// probe body (THE DOORS OF A SYNCHRONIZED CLASS): the check cannot read its
-// parameters, so it fails closed.
+// probe body and none for a probe context (THE DOORS OF A SYNCHRONIZED CLASS):
+// the check cannot read its parameters, so it fails closed.
 template <std::meta::info Class, std::meta::info Door>
 consteval bool refuse_unreadable_door() {
     static_assert(Class == std::meta::info{},
                   "transfer: a class states synchronized{} and holds a plain private part, and a member function "
                   "template of it has no specialization for the probe body, a class whose call takes each argument "
-                  "list.  GCC 16 gives no parameters of a template itself, so the check cannot read the proof of the "
-                  "door, and it refuses the door.  Give the template one type parameter that a callable class can "
-                  "fill, or make the door a function (THE DOORS OF A SYNCHRONIZED CLASS of foundation/Transfer.h).  "
+                  "list, and none for a probe context of foundation/effects/Ctx.h.  GCC 16 gives no parameters of a "
+                  "template itself, so the check cannot read the proof of the door, and it refuses the door.  Give "
+                  "the template one type parameter that a callable class or a context can fill, include "
+                  "foundation/effects/Ctx.h for a context, or make the door a function (THE DOORS OF A SYNCHRONIZED "
+                  "CLASS and the probe of a context door of foundation/Transfer.h).  "
                   "The next two messages name the class and the template");
     static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
     static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
@@ -756,6 +794,47 @@ struct door_probe_body final {
     template <class... Arguments>
     constexpr void operator()(Arguments&&... /*arguments*/) const noexcept {}
 };
+
+// Each function below has no constant definition.  A call to one stops the
+// constant evaluation, and the diagnostic names it (the probe of a context
+// door).
+void the_door_probe_contexts_have_no_seal() noexcept;
+void the_door_probe_contexts_have_two_seals() noexcept;
+void a_door_probe_context_stands_outside_its_seal() noexcept;
+
+// The specialization of a member function template for the probe body, or
+// else for the first probe context of the namespace probes that substitutes,
+// or a null reflection (the probe of a context door).  The caller gives the
+// namespace door_probe_contexts as an argument, so GCC walks it at each call
+// and not one time at the definition, when it holds no member.  A fault of
+// the seal of the probe contexts stops the build.  Complexity: linear in the
+// members of the namespace.
+[[nodiscard]] consteval std::meta::info specialize_door(std::meta::info door, std::meta::info probes) {
+    const std::meta::info body[] = {^^door_probe_body};
+    if (std::meta::can_substitute(door, body)) return std::meta::substitute(door, body);
+    std::size_t members = 0;
+    std::size_t seals = 0;
+    std::size_t sealed = 0;
+    std::meta::info specialized{};
+    static_cast<void>(::foundation::reflect::find_member(
+        probes, std::meta::access_context::unprivileged(), [&](std::meta::info member) {
+            if (is_variable_of(member, ^^door_probe_seal)) {
+                ++seals;
+                sealed = std::meta::extract<door_probe_seal>(member).count;
+                return false;
+            }
+            ++members;
+            if (specialized != std::meta::info{} || !is_variable_of(member, ^^door_probe_context)) return false;
+            const std::meta::info context[] = {
+                std::meta::dealias(std::meta::extract<door_probe_context>(member).context)};
+            if (std::meta::can_substitute(door, context)) specialized = std::meta::substitute(door, context);
+            return false;
+        }));
+    if (members != 0 && seals == 0) the_door_probe_contexts_have_no_seal();
+    if (seals > 1) the_door_probe_contexts_have_two_seals();
+    if (members != sealed) a_door_probe_context_stands_outside_its_seal();
+    return specialized;
+}
 
 // One class whose doors the check does not read (THE EXEMPTION): the name of
 // its namespace, which lies in the global namespace, and its own name.  The
@@ -1031,10 +1110,10 @@ struct DoorFinding {
     namespace refl = ::foundation::reflect;
     std::meta::info function = door;
     if (std::meta::is_function_template(door)) {
-        const std::meta::info arguments[] = {^^door_probe_body};
-        if (!std::meta::can_substitute(door, arguments)) return DoorFinding{.verdict = DoorVerdict::unreadable};
-        function = std::meta::substitute(door, arguments);
-        if (!std::meta::is_function(function)) return DoorFinding{.verdict = DoorVerdict::unreadable};
+        function = specialize_door(door, ^^door_probe_contexts);
+        if (function == std::meta::info{} || !std::meta::is_function(function)) {
+            return DoorFinding{.verdict = DoorVerdict::unreadable};
+        }
         if (std::meta::is_constructor(function) || std::meta::is_destructor(function)
             || std::meta::is_deleted(function)) {
             return DoorFinding{};
@@ -1207,9 +1286,8 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
     namespace refl = ::foundation::reflect;
     std::meta::info function = door;
     if (std::meta::is_function_template(door)) {
-        const std::meta::info arguments[] = {^^door_probe_body};
-        if (!std::meta::can_substitute(door, arguments)) return DoorFinding{.verdict = DoorVerdict::unreadable};
-        function = std::meta::substitute(door, arguments);
+        function = specialize_door(door, ^^door_probe_contexts);
+        if (function == std::meta::info{}) return DoorFinding{.verdict = DoorVerdict::unreadable};
         if (!std::meta::is_function(function) || std::meta::is_destructor(function)
             || std::meta::is_deleted(function)) {
             return DoorFinding{};

@@ -274,6 +274,50 @@ static_assert(std::is_same_v<decltype(std::declval<TestWitnessCtx const&>().in_r
               "in_row keeps the source.");
 static_assert(!CtxHasPureSource<int>);
 
+// The probe contexts of this header (the probe of a context door of
+// foundation/Transfer.h).  A door template whose one parameter is a context
+// reads as its specialization for the first probe context that substitutes.  The key proves add, and read is
+// const.  read asks for the test atom, which only the third probe context
+// owns.  The fixture neg_synchronized_context_door_writes_plain holds add with
+// no key.
+class[[= ::foundation::transfer::synchronized{}]] CountsInContext {
+public:
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] Key final {
+        Key() noexcept {}
+        friend class CountsInContext;
+
+    public:
+        Key(Key const&) = delete("a key names the one holder of the count");
+        Key& operator=(Key const&) = delete("a key names the one holder of the count");
+        ~Key() = default;
+    };
+
+    CountsInContext() = default;
+    CountsInContext(CountsInContext const&) = delete("a count of two threads does not copy");
+    CountsInContext& operator=(CountsInContext const&) = delete("a count of two threads does not copy");
+
+    template <class Ctx>
+        requires CtxOwnsCapability<Ctx, Effect::Div>
+    void add(Ctx const& /*ctx*/, Key& /*key*/) noexcept {
+        ++count_;
+    }
+    template <class Ctx>
+        requires CtxOwnsCapability<Ctx, Effect::Test>
+    [[nodiscard]] int read(Ctx const& /*ctx*/) const noexcept {
+        return count_;
+    }
+
+private:
+    int count_ = 0;
+};
+static_assert(::foundation::transfer::Synchronized<CountsInContext>);
+static_assert(::foundation::transfer::detail::specialize_door(^^CountsInContext::add,
+                                                              ^^::foundation::transfer::door_probe_contexts)
+                  != std::meta::info{}
+              && ::foundation::transfer::detail::specialize_door(^^CountsInContext::read,
+                                                                 ^^::foundation::transfer::door_probe_contexts)
+                     != std::meta::info{});
+
 }  // namespace detail::ctx_witnesses
 
 }  // namespace foundation::effects
