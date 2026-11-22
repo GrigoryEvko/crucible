@@ -1,0 +1,13 @@
+# Each linear temporary that a reference extends, and that ends with no
+# consume, gives a line (THE OBJECTS of linear.cpp): a prvalue that an rvalue
+# reference extends (line 31), a token that a reference to const extends
+# (37), a full Option that auto&& extends (43), which is an error in each
+# mode, and the hidden range reference of a loop over a temporary array of
+# tokens (50).
+compile extended src/extended.cpp must-consume=on errors=extended
+flag extended -freflection
+exit extended fail
+finding extended must-consume unconsumed src/extended.cpp:31:13 | planted::rvalue_reference_extends: held
+finding extended must-consume unconsumed src/extended.cpp:37:18 | planted::const_reference_extends: held
+finding extended must-consume option-unconsumed src/extended.cpp:43:12 | planted::forwarding_reference_extends_a_sum: held
+finding extended must-consume unconsumed src/extended.cpp:50:43 | planted::loop_over_a_temporary: __for_range

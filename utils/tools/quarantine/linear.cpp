@@ -26,7 +26,12 @@
 // THE OBJECTS
 //     The rule tracks a linear local, a structured binding of a linear type, a
 //     parameter of a linear class by value and a parameter of an rvalue
-//     reference to a linear class.  It does not track a static or a
+//     reference to a linear class.  A local reference that extends the life of
+//     a linear temporary, such as T&& name = T{}, auto&& name = make() or
+//     T const& name = make(), and the hidden range reference of a range-based
+//     loop over a temporary, name that temporary, so the rule tracks the
+//     reference as the object, and the end of its scope is the end of the
+//     temporary.  It does not track a static or a
 //     thread-local variable, a capture, the hidden variable of a structured
 //     binding, or the explicit object parameter of a member function.  It
 //     tracks no object of a move constructor, of a move assignment, or of a
@@ -1276,12 +1281,16 @@ private:
             if (purpose_ == WalkPurpose::summary && DECL_HAS_VALUE_EXPR_P(decl) && !is_binding) {
                 return track_capture_borrow(decl, slot);
             }
+            // THE OBJECTS: a reference that extends the life of a temporary,
+            // also the hidden range of a range-based loop, names the object.
+            bool is_extending = binds_extended_temporary(decl, DECL_INITIAL(decl));
             if (TREE_STATIC(decl) || DECL_EXTERNAL(decl) || DECL_THREAD_LOCAL_P(decl)
-                || (DECL_HAS_VALUE_EXPR_P(decl) && !is_binding) || (DECL_ARTIFICIAL(decl) && !is_binding)) {
+                || (DECL_HAS_VALUE_EXPR_P(decl) && !is_binding)
+                || (DECL_ARTIFICIAL(decl) && !is_binding && !is_extending)) {
                 return false;
             }
             if (TYPE_REF_P(type)) {
-                if (!is_binding) {
+                if (!is_binding && !is_extending) {
                     return false;
                 }
                 type = TREE_TYPE(type);
@@ -1312,6 +1321,67 @@ private:
         slot_of_.emplace(decl, slot);
         add_field_slots(slot, type);
         return true;
+    }
+
+    // THE OBJECTS: true when the local reference DECL extends the life of a
+    // temporary: its initializer INITIAL gives the address of a temporary, or
+    // of the hidden variable that the front end makes for such a temporary.
+    // A reference whose initializer calls a function gets INITIAL in an
+    // initialization after its declaration.  The base of a structured binding
+    // is no such reference.
+    static bool binds_extended_temporary(tree decl, tree initial) {
+        if (!VAR_P(decl) || !TYPE_REF_P(TREE_TYPE(decl)) || DECL_DECOMPOSITION_P(decl) || TREE_STATIC(decl)
+            || DECL_EXTERNAL(decl) || DECL_HAS_VALUE_EXPR_P(decl)) {
+            return false;
+        }
+        tree node = initial;
+        bool saw_address = false;
+        for (int depth = 0; node != NULL_TREE && node != error_mark_node && depth < kTypeDepth; ++depth) {
+            node = tree_strip_any_location_wrapper(node);
+            switch (TREE_CODE(node)) {
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case CLEANUP_POINT_EXPR:
+                    node = TREE_OPERAND(node, 0);
+                    continue;
+                case COMPOUND_EXPR:
+                    node = TREE_OPERAND(node, 1);
+                    continue;
+                case ADDR_EXPR:
+                    saw_address = true;
+                    node = TREE_OPERAND(node, 0);
+                    continue;
+                case TARGET_EXPR:
+                    return true;
+                case VAR_DECL:
+                    return saw_address && DECL_ARTIFICIAL(node) && !TREE_STATIC(node) && !DECL_DECOMPOSITION_P(node)
+                        && !DECL_HAS_VALUE_EXPR_P(node);
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    // THE OBJECTS: a slot for the reference DECL that an initialization after
+    // its declaration binds to a linear temporary, in the innermost scope,
+    // which holds the declaration.
+    void track_extending(tree decl) {
+        tree type = TREE_TYPE(TREE_TYPE(decl));
+        TypeFacts facts = facts_of(type);
+        if (facts.linearity == Linearity::none) {
+            return;
+        }
+        std::size_t slot = slots_.size();
+        Slot entry;
+        entry.decl = decl;
+        entry.ends_at_scope = facts.ends_at_scope;
+        entry.is_sum = is_linear_sum(type);
+        slots_.push_back(entry);
+        slot_of_.emplace(decl, slot);
+        add_field_slots(slot, type);
+        scopes_.back().push_back(slot);
     }
 
     // THE SUMMARIES: the proxy DECL of a capture by reference of a linear sum
@@ -2687,6 +2757,12 @@ private:
         tree stripped_target = target;
         while (stripped_target != NULL_TREE && TREE_CODE(stripped_target) == INDIRECT_REF) {
             stripped_target = TREE_OPERAND(stripped_target, 0);
+        }
+        // THE OBJECTS: the initialization of a reference that extends a
+        // linear temporary starts the object of the reference.
+        if (is_init && stripped_target != NULL_TREE && slot_of_.count(stripped_target) == 0
+            && binds_extended_temporary(stripped_target, value)) {
+            track_extending(stripped_target);
         }
         tree tracked_target =
             stripped_target != NULL_TREE && slot_of_.count(stripped_target) != 0 ? stripped_target : NULL_TREE;

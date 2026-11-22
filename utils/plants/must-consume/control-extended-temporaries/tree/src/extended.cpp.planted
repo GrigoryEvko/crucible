@@ -1,0 +1,58 @@
+// Linear temporaries whose life a reference extends, and which a consume ends,
+// and references that extend no temporary (THE OBJECTS of linear.cpp).  The
+// unit gives no line of the rule.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+struct Plain {
+    int value = 0;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] Token make_token() noexcept;
+[[nodiscard]] Option<Token> make_option() noexcept;
+[[nodiscard]] Plain make_plain() noexcept;
+
+// A prvalue that an rvalue reference extends, which a consume ends.
+void rvalue_reference_consumed() {
+    Token&& held = make_token();
+    sink(std::move(held));
+}
+
+// A full Option that auto&& extends, which a consumer ends.
+void forwarding_reference_consumed() {
+    auto&& held = make_option();
+    sink(std::move(held).expect("the Option holds a token"));
+}
+
+// A reference that names a local, and no temporary.
+void reference_to_a_local() {
+    Token token{2};
+    Token&& held = std::move(token);
+    sink(std::move(held));
+}
+
+// A temporary of no linear type that a reference to const extends.
+void plain_temporary_extended() {
+    Plain const& held = make_plain();
+    static_cast<void>(held.value);
+}
+
+}  // namespace planted

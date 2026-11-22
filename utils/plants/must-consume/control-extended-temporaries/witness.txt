@@ -1,0 +1,7 @@
+# A linear temporary that a reference extends and a consume ends gives no
+# line (THE OBJECTS of linear.cpp): a prvalue that an rvalue reference
+# extends, and a full Option that auto&& extends.  A reference to a local and
+# a temporary of no linear type give none either.
+compile extended src/extended.cpp must-consume=on
+flag extended -freflection
+exit extended pass

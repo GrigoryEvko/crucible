@@ -1,0 +1,55 @@
+// Linear temporaries whose life a reference extends, and which end with no
+// consume (THE OBJECTS of linear.cpp).  The rule tracks each reference as the
+// object of its temporary.
+#include <foundation/Linear.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+[[nodiscard]] Token make_token() noexcept;
+[[nodiscard]] Option<Token> make_option() noexcept;
+[[nodiscard]] ::foundation::core::FixedArray<Token, 2> make_tokens() noexcept;
+
+// A prvalue that a named rvalue reference extends.
+void rvalue_reference_extends() {
+    Token&& held = Token{1};
+    static_cast<void>(held.handle);
+}
+
+// A token that a reference to const extends: no consume can take it.
+void const_reference_extends() {
+    Token const& held = make_token();
+    static_cast<void>(held.handle);
+}
+
+// A full Option that auto&& extends: a linear sum that ends with its payload.
+void forwarding_reference_extends_a_sum() {
+    auto&& held = make_option();
+    static_cast<void>(held.is_some());
+}
+
+// A loop over a temporary array of tokens: the hidden range reference
+// extends the array, and each token drops at its end.
+void loop_over_a_temporary() {
+    for (Token const& token : make_tokens()) {
+        static_cast<void>(token.handle);
+    }
+}
+
+}  // namespace planted
