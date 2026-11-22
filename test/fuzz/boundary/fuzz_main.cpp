@@ -61,11 +61,16 @@ int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
     return 0;
 }
 
-namespace {
-
 #ifdef __AFL_HAVE_MANUAL_CONTROL
 // AFL++ persistent mode: the input comes from shared memory, 10000 inputs for
-// each fork.
+// each fork.  __AFL_INIT and __AFL_LOOP declare the functions and the
+// variable __afl_connected of the AFL++ runtime at block scope, and such a
+// declaration names an entity of the enclosing namespace.  In an unnamed
+// namespace it has internal linkage and no definition, and in a named
+// namespace it names no entity of the runtime.  So the loop is a function of
+// the global namespace.
+int run_persistent_loop();
+
 int run_persistent_loop() {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -84,8 +89,6 @@ int run_persistent_loop() {
     return 0;
 }
 #endif
-
-}  // namespace
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -148,7 +151,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: main takes the arguments of the C runtime as
 
 int main(int argc, char** argv) {
 #ifdef __AFL_HAVE_MANUAL_CONTROL
-    if (argc < 2) return run_persistent_loop();
+    if (argc < 2) return ::run_persistent_loop();
 #endif
     return ::crucible::fuzz::boundary::run_fuzz_main(::fixy::os::args(argc, argv));
 }
