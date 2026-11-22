@@ -130,10 +130,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
         }
 
         if (plan_slots > 0) {
-            addresses_ = ::fixy::mint_heap_array<::fixy::Option<::fixy::RunAddress>>(
-                allocation, plan_slots, ::fixy::Option<::fixy::RunAddress>{::fixy::none});
+            ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>> address_column =
+                ::fixy::mint_heap_array<::fixy::Option<::fixy::RunAddress>>(
+                    allocation, plan_slots, ::fixy::Option<::fixy::RunAddress>{::fixy::none});
             devices_ = ::fixy::mint_heap_array<TensorDevice>(allocation, plan_slots, kHostDevice);
-            views_ = ::fixy::mint_heap_array<::fixy::View<uint8_t>>(allocation, plan_slots, ::fixy::View<uint8_t>{});
+            ::fixy::HeapArray<::fixy::View<uint8_t>> view_column =
+                ::fixy::mint_heap_array<::fixy::View<uint8_t>>(allocation, plan_slots, ::fixy::View<uint8_t>{});
 
             // Externally owned slots hold no address and no bytes. The rest
             // are the window of their bytes in the pool, and the address of
@@ -152,35 +154,16 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // could not carry the check: it reads a slot of the plan this loop
             // walks, which no precondition on init can name.
             //
-            // One branded scope of the slots reads the two columns at each
-            // index with no check, and the address comes from the window, so
-            // the address of each pooled slot is the first byte of its View by
-            // construction.  A pooled slot of no byte has no first byte, so its
-            // address is the byte of the pool at its offset.  Complexity: one
-            // pass over the slots.
+            // The two columns write through their frame doors, and the body of
+            // each frame passes its lent run to write_pool_windows_.
             const ::fixy::View<uint8_t> pool = pool_.view();
-            static_cast<void>(::fixy::mint_branded_scope(plan.slots, [this, pool, &plan](auto const& slots) noexcept {
-                auto const addresses =
-                    slots.parallel(addresses_.view()).expect("the column holds one entry for each slot of the plan");
-                auto const views =
-                    slots.parallel(views_.view()).expect("the column holds one entry for each slot of the plan");
-                for (auto const index : slots.indices()) {
-                    const TensorSlot& slot = slots.at(index);
-                    if (slot.is_external) continue;
-                    pool.window(slot.offset_bytes, slot.nbytes)
-                        .match(
-                            [&](::fixy::View<uint8_t> bytes) noexcept {
-                                if (slot.offset_bytes % ALIGNMENT != 0) [[unlikely]]
-                                    refuse_slot_(slot, plan, index);
-                                addresses.at(index) = bytes.size() == 0
-                                                        ? ::fixy::mint_run_address(pool, slot.offset_bytes)
-                                                        : ::fixy::mint_run_address(bytes, 0);
-                                views.at(index) = bytes;
-                            },
-                            [&]() noexcept { refuse_slot_(slot, plan, index); });
-                }
-                return ::fixy::Unit{};
-            }));
+            address_column = ::fixy::with_mut(std::move(address_column), [&](auto address_run) noexcept {
+                view_column = ::fixy::with_mut(std::move(view_column), [&](auto view_run) noexcept {
+                    write_pool_windows_(plan, pool, address_run.view(), view_run.view());
+                });
+            });
+            addresses_ = std::move(address_column);
+            views_ = std::move(view_column);
         }
         // A contract predicate that reads a member through `this` is skipped
         // when the compiler folds the body at compile time, so every such
@@ -270,13 +253,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // so the column of bytes takes the empty View, and slot_view gives no
     // value for the slot.
     CRUCIBLE_INLINE void register_external(SlotId sid, TensorData data, InitializedView const&) noexcept {
-        auto address = addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
-        auto device = devices_.get(sid.raw()).expect("the two columns hold one entry for each slot");
-        auto bytes = views_.get(sid.raw()).expect("the three columns hold one entry for each slot");
-        *address = ::fixy::some(data.address());
-        *device = data.device();
-        *bytes = ::fixy::View<uint8_t>{};
-        CRUCIBLE_POST(0, *address == ::fixy::some(data.address()));
+        write_slot_(sid, ::fixy::some(data.address()), data.device(), ::fixy::View<uint8_t>{});
+        CRUCIBLE_POST(0, *addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots")
+                             == ::fixy::some(data.address()));
     }
 
     // The bytes of an external slot as a View of the host.  The View borrows
@@ -286,13 +265,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // the View, or no address for a View of no byte.
     CRUCIBLE_INLINE void register_external_view(SlotId sid, ::fixy::View<uint8_t> bytes,
                                                 InitializedView const&) noexcept {
-        auto address = addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
-        auto device = devices_.get(sid.raw()).expect("the two columns hold one entry for each slot");
-        auto held = views_.get(sid.raw()).expect("the three columns hold one entry for each slot");
-        *address = ::fixy::mint_run_address(bytes, 0);
-        *device = kHostDevice;
-        *held = bytes;
-        CRUCIBLE_POST(0, is_address_of_bytes_(*address, *held));
+        const ::fixy::Option<::fixy::RunAddress> address = ::fixy::mint_run_address(bytes, 0);
+        write_slot_(sid, address, kHostDevice, bytes);
+        CRUCIBLE_POST(0, is_address_of_bytes_(address, bytes));
     }
 
     // The bytes of a slot as a read-only View of T, for a reader of an input:
@@ -435,6 +410,38 @@ private:
         return ::fixy::erase_brand(::fixy::mint_view<pool_state::Initialized>(*this));
     }
 
+    // Writes the address and the bytes of each pooled slot of the plan into
+    // the two lent runs of the columns.  One branded scope of the slots reads
+    // the two runs at each index with no check, and the address comes from
+    // the window, so the address of each pooled slot is the first byte of its
+    // View by construction.  A pooled slot of no byte has no first byte, so
+    // its address is the byte of the pool at its offset.  Complexity: one
+    // pass over the slots.
+    static void write_pool_windows_(const MemoryPlan& plan, ::fixy::View<uint8_t> pool,
+                                    ::fixy::View<::fixy::Option<::fixy::RunAddress>> address_run,
+                                    ::fixy::View<::fixy::View<uint8_t>> view_run) noexcept {
+        static_cast<void>(::fixy::mint_branded_scope(plan.slots, [&](auto const& slots) noexcept {
+            auto const addresses =
+                slots.parallel(address_run).expect("the column holds one entry for each slot of the plan");
+            auto const views = slots.parallel(view_run).expect("the column holds one entry for each slot of the plan");
+            for (auto const index : slots.indices()) {
+                const TensorSlot& slot = slots.at(index);
+                if (slot.is_external) continue;
+                pool.window(slot.offset_bytes, slot.nbytes)
+                    .match(
+                        [&](::fixy::View<uint8_t> bytes) noexcept {
+                            if (slot.offset_bytes % ALIGNMENT != 0) [[unlikely]]
+                                refuse_slot_(slot, plan, index);
+                            addresses.at(index) = bytes.size() == 0 ? ::fixy::mint_run_address(pool, slot.offset_bytes)
+                                                                    : ::fixy::mint_run_address(bytes, 0);
+                            views.at(index) = bytes;
+                        },
+                        [&]() noexcept { refuse_slot_(slot, plan, index); });
+            }
+            return ::fixy::Unit{};
+        }));
+    }
+
     // Ends the process for a pooled slot that the pool cannot serve: its
     // window ends past the pool, or its first byte is off the alignment.  The
     // path is cold and out of line, so the loop of init holds no object of
@@ -451,6 +458,22 @@ private:
     // no bytes.
     [[nodiscard]] ::fixy::Option<::fixy::RunAddress> pool_address_() const noexcept {
         return ::fixy::mint_run_address(pool_.view(), 0);
+    }
+
+    // Writes the address, the device and the bytes of the slot sid into the
+    // three columns, through the element door of each column.  An id at or
+    // past the count of slots ends the process.  Complexity: O(1).
+    CRUCIBLE_INLINE void write_slot_(SlotId sid, ::fixy::Option<::fixy::RunAddress> address, TensorDevice device,
+                                     ::fixy::View<uint8_t> bytes) noexcept {
+        addresses_.with_element(
+            sid.raw(), [&address](::fixy::Option<::fixy::RunAddress>& slot) noexcept { slot = address; },
+            [] noexcept { ::fixy::fatal("a slot id of the plan is below the count of its slots"); });
+        devices_.with_element(
+            sid.raw(), [device](TensorDevice& slot) noexcept { slot = device; },
+            [] noexcept { ::fixy::fatal("the two columns hold one entry for each slot"); });
+        views_.with_element(
+            sid.raw(), [bytes](::fixy::View<uint8_t>& slot) noexcept { slot = bytes; },
+            [] noexcept { ::fixy::fatal("the three columns hold one entry for each slot"); });
     }
 
     // True when the address is the first byte of the bytes, or the bytes are

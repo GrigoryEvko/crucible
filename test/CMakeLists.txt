@@ -4436,11 +4436,11 @@ crucible_neg_compile_test(neg_meta_log_reference_read
 crucible_neg_compile_test(neg_metalog_consumer_reference_read
     "has no member named .at."
     ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ConsumerHandle. has no member")
-# The MetaLog keeps a View of its own buffer, so no code outside the log
-# assigns the buffer, which would free the storage that the View names.
+# The MetaLog holds the ring of its records in a private FixedHeapArray, so no
+# code outside the log assigns the ring, which would free its storage.
 crucible_neg_compile_test(neg_meta_log_buffer_assignment
-    "crucible::MetaLog::entries_buffer_. is private within this context"
-    "error: .* crucible::MetaLog::entries_buffer_. is private")
+    "crucible::MetaLog::records_. is private within this context"
+    "use of deleted function .foundation::core::FixedHeapArray<T, N, Align>& foundation::core::FixedHeapArray<T, N, Align>::operator=\\(foundation::core::FixedHeapArray<T, N, Align>&&\\)")
 
 # HS14 for the two MetaLog session mints.  Each gate is one concept, and
 # each fixture fails one clause of it: the context, the handle passed as

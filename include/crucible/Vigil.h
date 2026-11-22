@@ -1023,13 +1023,28 @@ private:
             if (read.op.raw() == matched) bind_external_read_(op, read, compiled_view);
             ++next_external_read_;
         }
-        // The guard matched the tags and the data slots of the live op, and
-        // an entry stores each of its five slots, so each read is in bounds.
-        const ::fixy::View<BoundScalar> scalars = bound_scalars_.view();
+        // The cursor passes the slots of the earlier ops.  At the first slot of
+        // the live op, the frame of the list writes the value of each slot of
+        // the op, and the slots after them belong to later ops.  So only an op
+        // with a data slot opens the frame.  The guard matched the tags and
+        // the data slots of the live op, and an entry stores each of its five
+        // slots, so each read is in bounds.
+        const ::fixy::View<const BoundScalar> scalars = bound_scalars_.view();
         while (next_bound_scalar_ < scalars.size()) {
-            BoundScalar& bound = *scalars.get(next_bound_scalar_).expect("the test above bounds the cursor");
+            const BoundScalar& bound = *scalars.get(next_bound_scalar_).expect("the test above bounds the cursor");
             if (bound.op.raw() > matched) break;
-            if (bound.op.raw() == matched) bound.value = op.entry().scalar_values.at(bound.slot.value());
+            if (bound.op.raw() == matched) {
+                bound_scalars_ = ::fixy::with_mut(std::move(bound_scalars_), [&](auto writable) noexcept {
+                    while (next_bound_scalar_ < writable.size()) {
+                        BoundScalar& slot =
+                            *writable.get(next_bound_scalar_).expect("the test above bounds the cursor");
+                        if (slot.op.raw() != matched) break;
+                        slot.value = op.entry().scalar_values.at(slot.slot.value());
+                        ++next_bound_scalar_;
+                    }
+                });
+                break;
+            }
             ++next_bound_scalar_;
         }
         if (step.status() == ReplayStatus::COMPLETE) {
@@ -1485,15 +1500,17 @@ private:
         };
         uint32_t count = 0;
         each_slot([&count](const BoundScalar&) noexcept { ++count; });
-        bound_scalars_ = ::fixy::mint_heap_array(allocation_, count, BoundScalar{});
-        const ::fixy::View<BoundScalar> scalars = bound_scalars_.view();
+        ::fixy::HeapArray<BoundScalar> listed = ::fixy::mint_heap_array(allocation_, count, BoundScalar{});
         uint32_t filled = 0;
         next_bound_scalar_ = count;
-        each_slot([&](const BoundScalar& bound) noexcept {
-            *scalars.get(filled).expect("the first pass counted each slot") = bound;
-            if (next_bound_scalar_ == count && bound.op.raw() >= resume_op) next_bound_scalar_ = filled;
-            ++filled;
+        listed = ::fixy::with_mut(std::move(listed), [&](auto scalars) noexcept {
+            each_slot([&](const BoundScalar& bound) noexcept {
+                *scalars.get(filled).expect("the first pass counted each slot") = bound;
+                if (next_bound_scalar_ == count && bound.op.raw() >= resume_op) next_bound_scalar_ = filled;
+                ++filled;
+            });
         });
+        bound_scalars_ = std::move(listed);
     }
 
     // Verifies the prefix match, then delegates the pool detach, the slot

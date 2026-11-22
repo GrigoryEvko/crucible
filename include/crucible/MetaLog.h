@@ -88,17 +88,14 @@ struct CRUCIBLE_OWNER MetaLog {
     ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
 
 private:
-    // The buffer owns the records, at the alignment of a huge page.  It is
-    // private, because an assignment to it would free the storage that the
-    // View below names.
-    ::fixy::HeapArray<TensorMeta, crucible::warden::kHugePageBytes> entries_buffer_;
-    // The View of the CAPACITY records of the buffer.  Its count is in its
-    // type, so a masked slot and the window of a run of an append have no
-    // check that the optimizer keeps.  The View holds only the base, so an
-    // indexed access on the hot path is one load of that word from this
-    // object.  The log does not move, and no code outside the log writes the
-    // buffer or the View, so the View stays valid.
-    ::fixy::View<TensorMeta, CAPACITY> records_;
+    // The buffer of the CAPACITY records, at the alignment of a huge page.
+    // Its count is in its type, so a masked slot and the window of a run of
+    // an append have no check that the optimizer keeps.  An indexed access on
+    // the hot path is one load of the base of the buffer from this object.
+    // The producer writes a run through the frame door of the buffer, and the
+    // consumer reads through its View of the const records.  The buffer does
+    // not move, and it holds its storage until the end of the log.
+    ::fixy::FixedHeapArray<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes> records_;
 
 public:
     alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
@@ -107,9 +104,8 @@ public:
     // The caller gives the allocation capability of its context for the
     // buffer of the records.
     explicit MetaLog(::foundation::effects::Alloc allocation)
-        : entries_buffer_{::fixy::mint_heap_array<TensorMeta, crucible::warden::kHugePageBytes>(allocation, CAPACITY,
-                                                                                                TensorMeta{})},
-          records_{entries_buffer_.view().template window<CAPACITY>(0).expect("the buffer holds CAPACITY records")} {
+        : records_{::fixy::mint_fixed_heap_array<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes>(
+              allocation, TensorMeta{})} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
         //
@@ -156,10 +152,10 @@ public:
         // one is not a trade a runtime constructor can make. MADV_COLLAPSE,
         // which puts the stall where the caller chooses, is the shape to
         // reach for if huge pages are wanted later.
-        crucible::warden::register_hot_region(::fixy::pages::storage_of(records_), /*huge_hint=*/true);
+        crucible::warden::register_hot_region(::fixy::pages::storage_of(records_.view()), /*huge_hint=*/true);
     }
 
-    ~MetaLog() { crucible::warden::unregister_hot_region(::fixy::pages::storage_of(records_)); }
+    ~MetaLog() { crucible::warden::unregister_hot_region(::fixy::pages::storage_of(records_.view())); }
 
     MetaLog(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
     MetaLog& operator=(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
@@ -221,7 +217,7 @@ public:
         CRUCIBLE_PRE(dst.size() <= CAPACITY);
         if (dst.size() == 0) return;
         const uint32_t count = static_cast<uint32_t>(dst.size());
-        const ::fixy::View<TensorMeta const> ring = records_;
+        const ::fixy::View<TensorMeta const> ring = records_.view();
         const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
         const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
         copy_records_(dst, 0, ring, start_pos, first_chunk);
@@ -242,7 +238,7 @@ public:
     // reference into a slot, because the producer writes a new record into a
     // slot after its release.
     [[nodiscard]] bool holds_record(TensorMeta const& record) const noexcept {
-        const ::fixy::View<TensorMeta const> ring = records_;
+        const ::fixy::View<TensorMeta const> ring = records_.view();
         return ::foundation::core::offset_of(ring, record).is_some();
     }
 
@@ -360,14 +356,17 @@ private:
         return records_.at(::fixy::Index<CAPACITY>::check(index & MASK).expect("a masked slot is below the capacity"));
     }
 
-    // Copies the count records of src from src_at into the buffer from at.
-    // The caller gives two windows that fit, and the count of records_ is in
-    // its type, so the optimizer removes each check of a window.
+    // Copies the count records of src from src_at into the buffer from at,
+    // through the frame door of the buffer.  The caller gives two windows that
+    // fit, and the count of the buffer is in its type, so the optimizer
+    // removes each check of a window.
     CRUCIBLE_INLINE void write_records_(uint64_t at, ::fixy::View<TensorMeta const> src, uint64_t src_at,
                                         uint64_t count) noexcept {
-        ::fixy::copy(records_.window(at, count).expect("the records fit in the buffer"),
-                     src.window(src_at, count).expect("the records of the copy are records of the run"))
-            .expect("the two windows of the copy hold the same count");
+        records_.with_mut([&](auto ring) noexcept {
+            ::fixy::copy(ring.view().window(at, count).expect("the records fit in the buffer"),
+                         src.window(src_at, count).expect("the records of the copy are records of the run"))
+                .expect("the two windows of the copy hold the same count");
+        });
     }
 
     // Copies the count records of src from src_at into dst from dst_at.  Each

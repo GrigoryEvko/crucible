@@ -808,8 +808,12 @@ public:
         void push(RegionNode& region) noexcept {
             const uint64_t capacity = slots_.size();
             if (capacity != 0) {
-                *slots_.get(total_.peek_relaxed() % capacity).expect("a count modulo the capacity is below it") =
-                    ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
+                slots_.with_element(
+                    total_.peek_relaxed() % capacity,
+                    [&region](RegionLink& slot) noexcept {
+                        slot = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
+                    },
+                    [] noexcept { ::fixy::fatal("a count modulo the capacity is below it"); });
             }
             (void)total_.bump();
         }

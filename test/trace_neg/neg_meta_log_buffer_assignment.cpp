@@ -1,9 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The MetaLog keeps a View of the records of its own buffer.  An assignment
-// to the buffer would free the storage that the View names, and each later
-// append and read through the View would use freed memory.  The buffer and
-// the View are private, so no code outside the log writes them.
+// The MetaLog holds the ring of its records in a FixedHeapArray.  An
+// assignment to the ring would free the storage that the producer writes and
+// the consumer reads, and each later append and read would use freed memory.
+// The ring is private, and a FixedHeapArray has no assignment, so no code
+// outside the log writes it.
 
 #include <crucible/MetaLog.h>
 #include <crucible/TensorMeta.h>
@@ -11,7 +12,8 @@
 
 int main() {
     ::crucible::MetaLog log{::foundation::effects::testing::test().alloc};
-    log.entries_buffer_ = ::fixy::mint_heap_array<::crucible::TensorMeta, ::crucible::warden::kHugePageBytes>(
-        ::foundation::effects::testing::test().alloc, 1, ::crucible::TensorMeta{});
+    log.records_ = ::fixy::mint_fixed_heap_array<::crucible::TensorMeta, ::crucible::MetaLog::CAPACITY,
+                                                 ::crucible::warden::kHugePageBytes>(
+        ::foundation::effects::testing::test().alloc, ::crucible::TensorMeta{});
     return 0;
 }

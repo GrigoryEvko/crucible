@@ -278,7 +278,10 @@ template <std::size_t RecordBytes>
 decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t i, LoadedTrace& trace,
                  uint32_t& meta_cursor) noexcept {
     constexpr bool is_first_format = RecordBytes == TRACE_FIRST_OP_BYTES;
-    TraceRing::Entry& entry = *trace.entries.get(i).expect("an op index is below the op count");
+    // The op fills a local entry, and the end of the decode writes it and the
+    // other values of the op into the columns of the trace, each through its
+    // element door.
+    TraceRing::Entry entry{};
     entry.schema_hash = SchemaHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, schema_hash)>(op_record)};
     entry.shape_hash = ShapeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, shape_hash)>(op_record)};
     const auto num_inputs = read_record_field_<uint16_t, offsetof(TraceOpRecord, num_inputs)>(op_record);
@@ -336,6 +339,7 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
     // and the wrap would turn an operation claiming tens of thousands of
     // tensors into one claiming none.
     const uint32_t total_tensors = uint32_t{num_inputs} + uint32_t{num_outputs};
+    MetaIndex meta_start = MetaIndex::none();
     if (total_tensors > 0) {
         // Every consumer reads this operation's metadata as a run starting
         // at the cursor, so a cursor that runs past the end of the array
@@ -353,17 +357,22 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
                            i, total_tensors, meta_cursor, trace.num_metas);
             return ::fixy::err(TraceLoadError::MetaRunPastCount);
         }
-        *trace.meta_starts.get(i).expect("an op index is below the op count") = MetaIndex{meta_cursor};
+        meta_start = MetaIndex{meta_cursor};
         meta_cursor += total_tensors;
-    } else {
-        *trace.meta_starts.get(i).expect("an op index is below the op count") = MetaIndex::none();
     }
 
-    *trace.scope_hashes.get(i).expect("an op index is below the op count") =
-        ScopeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, scope_hash)>(op_record)};
-    *trace.callsite_hashes.get(i).expect("an op index is below the op count") =
-        CallsiteHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, callsite_hash)>(op_record)};
-    *trace.depths.get(i).expect("an op index is below the op count") = depth;
+    const auto write_at_op = [i](auto& column, auto const& value) noexcept {
+        column.with_element(
+            i, [&value](auto& slot) noexcept -> void { slot = value; },
+            [] noexcept { ::fixy::fatal("an op index is below the op count"); });
+    };
+    write_at_op(trace.entries, entry);
+    write_at_op(trace.meta_starts, meta_start);
+    write_at_op(trace.scope_hashes,
+                ScopeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, scope_hash)>(op_record)});
+    write_at_op(trace.callsite_hashes,
+                CallsiteHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, callsite_hash)>(op_record)});
+    write_at_op(trace.depths, depth);
     return ::fixy::Unit{};
 }
 
@@ -748,7 +757,9 @@ template <std::size_t OpBytes, std::size_t MetaBytes>
             return ::fixy::err(TraceLoadError::MetaCorrupt);
         }
         for (const TensorMeta& decoded : meta) {
-            *trace.metas.get(index).expect("a metadata index is below the metadata count") = decoded;
+            trace.metas.with_element(
+                index, [&decoded](TensorMeta& slot) noexcept { slot = decoded; },
+                [] noexcept { ::fixy::fatal("a metadata index is below the metadata count"); });
         }
         ++index;
     }
@@ -926,13 +937,17 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // rest.  Each step after the check reads the checked image, and no step
     // reads the file again.
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(io.cap().alloc, file_bytes, std::byte{0});
-    ::fixy::copy(
-        image.view().template window<TRACE_HEADER_BYTES>(0).expect("the size test keeps the header in the image"),
-        header.view());
-    CRUCIBLE_TRY(_, detail::read_exact_(io, source,
-                                        image.view()
-                                            .window(TRACE_HEADER_BYTES, file_bytes - TRACE_HEADER_BYTES)
-                                            .expect("the header is the start of the image")));
+    auto [read, filled] = ::fixy::with_mut(std::move(image), [&io, &source, &header, file_bytes](auto run) noexcept {
+        ::fixy::copy(
+            run.view().template window<TRACE_HEADER_BYTES>(0).expect("the size test keeps the header in the image"),
+            header.view());
+        return detail::read_exact_(io, source,
+                                   run.view()
+                                       .window(TRACE_HEADER_BYTES, file_bytes - TRACE_HEADER_BYTES)
+                                       .expect("the header is the start of the image"));
+    });
+    image = std::move(filled);
+    CRUCIBLE_TRY(_, std::move(read));
     CRUCIBLE_TRY(checked, CheckedTraceImage::check(checked_header, ::fixy::View<std::byte const>{image.view()}));
 
     LoadedTrace trace{};

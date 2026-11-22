@@ -562,10 +562,13 @@ read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::
                     }
                     ::fixy::HeapArray<std::byte> bytes =
                         ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
-                    if (::fixy::fs::read_full(ctx, file.ref(), bytes.view()).value_or(0) != bytes.size()) {
+                    auto [count_read, filled] = ::fixy::with_mut(std::move(bytes), [&ctx, &file](auto run) noexcept {
+                        return ::fixy::fs::read_full(ctx, file.ref(), run.view()).value_or(0);
+                    });
+                    if (count_read != filled.size()) {
                         return ::fixy::some(LoadError::file_size);
                     }
-                    read = ::fixy::Option<::fixy::HeapArray<std::byte>>::some(std::move(bytes));
+                    read = ::fixy::Option<::fixy::HeapArray<std::byte>>::some(std::move(filled));
                     return ::fixy::none;
                 },
                 [](::foundation::os::Errno) -> ::fixy::Option<LoadError> {
@@ -596,9 +599,7 @@ template <class Ctx>
 // allocation and a copy of each byte.
 [[nodiscard]] ::fixy::HeapArray<std::byte> copy_bytes_(::foundation::effects::Alloc allocation,
                                                        ::fixy::View<const std::byte> bytes) noexcept {
-    ::fixy::HeapArray<std::byte> owned = ::fixy::mint_heap_array(allocation, bytes.size(), std::byte{0});
-    ::fixy::copy(owned.view(), bytes).expect("the copy has the count of the bytes");
-    return owned;
+    return ::fixy::mint_heap_array_copy<std::byte>(allocation, bytes);
 }
 
 // The first line of a text, without its newline, and the text after the
@@ -790,8 +791,9 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     if (is_present && with_file_ctx_(file_ctx, is_sound_and_flushed)) return hash;
 
     const size_t cap = estimate_serial_size(region).value();
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(allocation_, cap, std::byte{0});
-    const size_t n = serialize_region(::fixy::to(region), image.view());
+    auto [n, image] =
+        ::fixy::with_mut(::fixy::mint_heap_array(allocation_, cap, std::byte{0}),
+                         [&region](auto run) noexcept { return serialize_region(::fixy::to(region), run.view()); });
     if (n == 0) return ContentHash{};
     const ::fixy::View<const std::byte> written =
         image.view().window(0, n).expect("the writer writes inside its image");
@@ -905,26 +907,31 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
     // Each event goes to the batch through its own encoder, which is
     // the one route from an event to bytes.  The hash consumes those
     // bytes structurally.  Complexity: linear in the number of events.
-    ::fixy::HeapArray<std::byte> payload = ::fixy::mint_heap_array(allocation, payload_bytes, std::byte{0});
-    std::size_t position = 0;
-    for (const SessionEvent& event : events) {
-        const auto record = event.encode();
-        ::fixy::copy(payload.view()
-                         .window<sizeof(SessionEvent)>(position * sizeof(SessionEvent))
-                         .expect("the payload holds a record for each event"),
-                     ::fixy::bytes(record));
-        ++position;
-    }
+    ::fixy::HeapArray<std::byte> payload =
+        ::fixy::with_mut(::fixy::mint_heap_array(allocation, payload_bytes, std::byte{0}), [events](auto run) noexcept {
+            std::size_t position = 0;
+            for (const SessionEvent& event : events) {
+                const auto record = event.encode();
+                ::fixy::copy(run.view()
+                                 .template window<sizeof(SessionEvent)>(position * sizeof(SessionEvent))
+                                 .expect("the payload holds a record for each event"),
+                             ::fixy::bytes(record));
+                ++position;
+            }
+        });
     const ContentHash hash = session_event_batch_hash(payload.view());
     const cipher::federation::FederationKey key = session_event_batch_key(payload.view());
 
     // The entry fills its buffer: the header and then the payload.
-    ::fixy::HeapArray<std::byte> encoded =
-        ::fixy::mint_heap_array(allocation, cipher::federation::FEDERATION_HEADER_BYTES + payload_bytes, std::byte{0});
-    CRUCIBLE_TRY(_, cipher::federation::serialize_federation_entry(encoded.view(), key, payload.view())
-                        .map_err([](cipher::federation::FederationError) noexcept {
-                            return PersistRefusal::entry_encode_failed;
-                        }));
+    auto [entry_written, encoded_entry] = ::fixy::with_mut(
+        ::fixy::mint_heap_array(allocation, cipher::federation::FEDERATION_HEADER_BYTES + payload_bytes, std::byte{0}),
+        [&key, &payload](auto run) noexcept {
+            return cipher::federation::serialize_federation_entry(run.view(), key, payload.view())
+                .map_err(
+                    [](cipher::federation::FederationError) noexcept { return PersistRefusal::entry_encode_failed; });
+        });
+    CRUCIBLE_TRY(_, std::move(entry_written));
+    ::fixy::HeapArray<std::byte> const encoded = std::move(encoded_entry);
 
     // The index line: "<first_step>,<last_step>,<count>,<16-hex hash>\n".
     // The longest form is 20 + 1 + 20 + 1 + 20 + 1 + 16 + 1 = 80 bytes,
