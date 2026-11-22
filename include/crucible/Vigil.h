@@ -1023,28 +1023,25 @@ private:
             if (read.op.raw() == matched) bind_external_read_(op, read, compiled_view);
             ++next_external_read_;
         }
-        // The cursor passes the slots of the earlier ops.  At the first slot of
-        // the live op, the frame of the list writes the value of each slot of
-        // the op, and the slots after them belong to later ops.  So only an op
-        // with a data slot opens the frame.  The guard matched the tags and
-        // the data slots of the live op, and an entry stores each of its five
-        // slots, so each read is in bounds.
-        const ::fixy::View<const BoundScalar> scalars = bound_scalars_.view();
-        while (next_bound_scalar_ < scalars.size()) {
-            const BoundScalar& bound = *scalars.get(next_bound_scalar_).expect("the test above bounds the cursor");
-            if (bound.op.raw() > matched) break;
-            if (bound.op.raw() == matched) {
-                bound_scalars_ = ::fixy::with_mut(std::move(bound_scalars_), [&](auto writable) noexcept {
-                    while (next_bound_scalar_ < writable.size()) {
-                        BoundScalar& slot =
-                            *writable.get(next_bound_scalar_).expect("the test above bounds the cursor");
-                        if (slot.op.raw() != matched) break;
-                        slot.value = op.entry().scalar_values.at(slot.slot.value());
-                        ++next_bound_scalar_;
-                    }
-                });
-                break;
-            }
+        // The cursor passes the slots of the earlier ops, writes the value of
+        // each slot of the live op, and stops at the first slot of a later op.
+        // The element door of each step lends the slot at the cursor in place,
+        // and its none arm stops the walk at the end of the list.  The guard
+        // matched the tags and the data slots of the live op, and an entry
+        // stores each of its five slots, so each read is in bounds.
+        enum class SlotStep : uint8_t {
+            Stop,
+            Next,
+        };
+        while (bound_scalars_.with_element(
+                   next_bound_scalar_,
+                   [matched, &op](BoundScalar& slot) noexcept {
+                       if (slot.op.raw() > matched) return SlotStep::Stop;
+                       if (slot.op.raw() == matched) slot.value = op.entry().scalar_values.at(slot.slot.value());
+                       return SlotStep::Next;
+                   },
+                   [] noexcept { return SlotStep::Stop; })
+               == SlotStep::Next) {
             ++next_bound_scalar_;
         }
         if (step.status() == ReplayStatus::COMPLETE) {
