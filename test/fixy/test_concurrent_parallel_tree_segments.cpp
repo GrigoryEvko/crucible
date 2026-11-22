@@ -87,9 +87,40 @@ void sum_segments_into_elements() {
     });
 }
 
+// The type route: elements that are a ViewMut of another frame prove by their
+// brand that they share no element with the sums (THE ALIAS PROOF of
+// foundation/core/Frame.h), so the segmented sum makes no test of the overlap.
+// The sums have the bits of sum_segments_by_tree of one thread.
+[[nodiscard]] bool segments_of_branded_elements_match() {
+    tree::BgCtx const ctx{tree::eff::testing::bg()};
+    constexpr std::size_t kSegments = 3;
+    constexpr std::size_t kElements = 2 * ::fixy::concurrent::parallel_tree_grain + 5;
+    HeapArray<std::size_t> const offsets = ::foundation::core::mint_heap_array_with<std::size_t>(
+        tree::test_alloc(), kSegments + 1, [](std::size_t index) noexcept {
+            return index == kSegments ? kElements : index * ::fixy::concurrent::parallel_tree_grain;
+        });
+    View<std::size_t const> const checked{offsets.view()};
+    HeapArray<float> source = tree::draw_floats(kElements, 0x9A4A000Au);
+    HeapArray<float> parallel = ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
+    HeapArray<float> single = ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
+    View<float const> const drawn{source.view()};
+    single = ::foundation::core::with_mut(std::move(single), [drawn, checked](auto out) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::sum_segments_by_tree(drawn, checked, std::move(out)).is_ok());
+    });
+    source = ::foundation::core::with_mut(std::move(source), [&ctx, &parallel, checked](auto elements) noexcept {
+        parallel = ::foundation::core::with_mut(std::move(parallel), [&ctx, &elements, checked](auto sums) noexcept {
+            static_assert(::foundation::core::DisjointInput<decltype(elements), typename decltype(sums)::brand_type>);
+            ::fixy::concurrent::sum_segments_by_tree_in_parallel<spawn::BodyCoupling::WaitOnEachOther, 2>(
+                ctx, elements, checked, std::move(sums));
+        });
+    });
+    return tree::same_runs(View<float const>{parallel.view()}, View<float const>{single.view()});
+}
+
 void test_elements_apart_from_sums() {
     constexpr ::fixy::TextView kRefusal{"a parallel segmented sum got elements that share storage with its sums"};
     ::fixy::check::expect_dies(kTest, sum_segments_into_elements, kRefusal);
+    CRUCIBLE_TEST_ASSERT(kTest, segments_of_branded_elements_match());
 }
 
 }  // namespace
