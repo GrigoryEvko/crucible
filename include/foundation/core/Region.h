@@ -292,6 +292,9 @@ inline constexpr std::size_t storage_extent_v = Extent == dynamic_extent ? dynam
 template <class T, std::size_t Extent>
     requires ViewElement<T>
 [[nodiscard]] View<std::byte const, storage_extent_v<T, Extent>> storage_of_run_(View<T, Extent> run) noexcept;
+template <class T>
+    requires std::is_object_v<T>
+[[nodiscard]] View<std::byte const, sizeof(T)> storage_of_object_(T const& object) noexcept;
 
 // A body of for_each_chunk_pair_: it takes the Views of one run of Width
 // elements of each of two runs, and it does not throw.
@@ -355,16 +358,15 @@ template <class T, std::size_t Extent>
 inline constexpr std::size_t started_extent_v =
     Extent == ::foundation::core::dynamic_extent ? ::foundation::core::dynamic_extent : Extent / sizeof(T);
 
-}  // namespace detail
-
-// The start of the objects that fill the bytes of a View (start_as_array
-// below).
+// The body of the start of the objects that fill the bytes of a View
+// (start_as_array below).  View names it as a friend.
 template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
     requires ::foundation::core::ViewElement<element_for_storage_t<Byte, T>>
           && (Extent == ::foundation::core::dynamic_extent || Extent % sizeof(T) == 0)
-[[nodiscard]]
-CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Byte, T>, detail::started_extent_v<T, Extent>>
-start_as_array(::foundation::core::View<Byte, Extent> bytes) noexcept;
+[[nodiscard]] CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Byte, T>, started_extent_v<T, Extent>>
+objects_over_bytes_(::foundation::core::View<Byte, Extent> bytes) noexcept;
+
+}  // namespace detail
 
 }  // namespace foundation::lifetime
 
@@ -431,6 +433,9 @@ class[[= ::foundation::transfer::refers{}]] View {
         requires ViewElement<U>
     friend View<std::byte const, detail::storage_extent_v<U, OtherExtent>>
     detail::storage_of_run_(View<U, OtherExtent> run) noexcept;
+    template <class U>
+        requires std::is_object_v<U>
+    friend View<std::byte const, sizeof(U)> detail::storage_of_object_(U const& object) noexcept;
     template <std::size_t Width, class First, class Second, class Body>
         requires(Width != dynamic_extent) && ViewExtent<First, Width> && ViewExtent<Second, Width>
              && detail::ChunkPairBody<Body, First, Second, Width>
@@ -446,7 +451,7 @@ class[[= ::foundation::transfer::refers{}]] View {
               && (OtherExtent == dynamic_extent || OtherExtent % sizeof(U) == 0)
     friend View<::foundation::lifetime::element_for_storage_t<Byte, U>,
                 ::foundation::lifetime::detail::started_extent_v<U, OtherExtent>>
-    foundation::lifetime::start_as_array(View<Byte, OtherExtent> bytes) noexcept;
+    foundation::lifetime::detail::objects_over_bytes_(View<Byte, OtherExtent> bytes) noexcept;
 
     constexpr View(T* first, std::size_t count) noexcept
         requires(Extent == dynamic_extent)
@@ -743,6 +748,21 @@ View<std::byte const, storage_extent_v<T, Extent>> storage_of_run_(View<T, Exten
         return View<std::byte const, storage_extent_v<T, Extent>>{first};
     }
 }
+
+// The storage of one object: the sizeof(T) bytes that hold it, as a View of
+// std::byte const.  The reference proves the object live, also an object of
+// an array type.  The View borrows the object, so a temporary object binds to
+// the deleted form below.  The cast of the address is no constant expression,
+// so the door is not constexpr.
+template <class T>
+    requires std::is_object_v<T>
+View<std::byte const, sizeof(T)> storage_of_object_(T const& object) noexcept {
+    return View<std::byte const, sizeof(T)>{
+        static_cast<std::byte const*>(static_cast<void const*>(__builtin_addressof(object)))};
+}
+
+template <class T>
+void storage_of_object_(T const&&) = delete("the storage of a temporary object ends at the end of the full expression");
 
 // The runs of Width elements of two runs of one count, in lockstep, from the
 // first element: body gets the View<First, Width> and the View<Second, Width>
@@ -2355,6 +2375,26 @@ template <ImplicitLifetimeThroughout T, typename Storage>
     return first;
 }
 
+// The body of start_as_array over a View of bytes: the checks of the start,
+// the asm statement, and the View of the objects over the same run.  View
+// names it as a friend, so it reaches the raw constructors.
+template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
+    requires ::foundation::core::ViewElement<element_for_storage_t<Byte, T>>
+          && (Extent == ::foundation::core::dynamic_extent || Extent % sizeof(T) == 0)
+CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Byte, T>, started_extent_v<T, Extent>>
+objects_over_bytes_(::foundation::core::View<Byte, Extent> bytes) noexcept {
+    using Element = element_for_storage_t<Byte, T>;
+    Byte* const storage = first_of_(::foundation::core::detail::BaseLayerRead{}, bytes);
+    CRUCIBLE_FATAL_INVARIANT((__builtin_bit_cast(std::uintptr_t, storage) & (alignof(Element) - 1)) == 0);
+    if constexpr (Extent == ::foundation::core::dynamic_extent) {
+        CRUCIBLE_FATAL_INVARIANT(bytes.size() % sizeof(T) == 0);
+        std::size_t const count = bytes.size() / sizeof(T);
+        return ::foundation::core::View<Element>{start_storage_<T>(storage, count), count};
+    } else {
+        return ::foundation::core::View<Element, Extent / sizeof(T)>{start_storage_<T>(storage, Extent / sizeof(T))};
+    }
+}
+
 }  // namespace detail
 
 // Starts the lifetime of the objects of type T that fill the bytes of a View,
@@ -2378,19 +2418,10 @@ template <ImplicitLifetimeThroughout T, typename Storage>
 template <ImplicitLifetimeThroughout T, StorageByte Byte, std::size_t Extent>
     requires ::foundation::core::ViewElement<element_for_storage_t<Byte, T>>
           && (Extent == ::foundation::core::dynamic_extent || Extent % sizeof(T) == 0)
+[[nodiscard]]
 CRUCIBLE_INLINE ::foundation::core::View<element_for_storage_t<Byte, T>, detail::started_extent_v<T, Extent>>
 start_as_array(::foundation::core::View<Byte, Extent> bytes) noexcept {
-    using Element = element_for_storage_t<Byte, T>;
-    Byte* const first = first_of_(::foundation::core::detail::BaseLayerRead{}, bytes);
-    CRUCIBLE_FATAL_INVARIANT((__builtin_bit_cast(std::uintptr_t, first) & (alignof(Element) - 1)) == 0);
-    if constexpr (Extent == ::foundation::core::dynamic_extent) {
-        CRUCIBLE_FATAL_INVARIANT(bytes.size() % sizeof(T) == 0);
-        std::size_t const count = bytes.size() / sizeof(T);
-        return ::foundation::core::View<Element>{detail::start_storage_<T>(first, count), count};
-    } else {
-        return ::foundation::core::View<Element, Extent / sizeof(T)>{
-            detail::start_storage_<T>(first, Extent / sizeof(T))};
-    }
+    return detail::objects_over_bytes_<T>(bytes);
 }
 
 }  // namespace foundation::lifetime

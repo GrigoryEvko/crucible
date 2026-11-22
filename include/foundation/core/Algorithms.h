@@ -302,7 +302,7 @@ concept ByteImageable =
 // so the operation is not constexpr.
 template <ByteImageable T>
 [[nodiscard]] View<std::byte const, sizeof(T)> bytes(T const& object) noexcept {
-    return detail::storage_of_run_(detail::view_of_object_(object));
+    return detail::storage_of_object_(object);
 }
 
 template <ByteImageable T>

@@ -293,6 +293,7 @@ namespace detail::owner {
 template <typename T>
 struct RegionRunState {
     using owner_state_mark = ::foundation::core::OwnerStateMark;
+    static constexpr bool releases_nothing = true;
 
     T* base = nullptr;
     std::size_t count = 0;
@@ -425,8 +426,8 @@ public:
     // core.
     template <typename U, typename UTag, typename UBrand>
         requires ::foundation::brand::IsBrand<UBrand>
-    friend constexpr ::foundation::core::View<U const> mint_borrowed(OwnedRegion<U, UTag, UBrand> const& region
-                                                                     CRUCIBLE_LIFETIMEBOUND) noexcept;
+    friend constexpr ::foundation::core::View<U const>
+    mint_borrowed(OwnedRegion<U, UTag, UBrand> const& region) noexcept;
 
     // The split is mint_split, declared above.  It reaches the private
     // partition through this friendship, so the only way to a shard is

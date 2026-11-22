@@ -471,12 +471,13 @@ namespace detail::array_start_checks {
 
 using ::foundation::core::detail::array_checks::Record;
 
-// The checked start gives a View of the base.  Its element is const when the
-// storage or T is const.  Volatile storage is refused, and so is an array
-// element, because a View holds neither.
+// The checked start over an address gives the address of the first object,
+// and no View.  Its element is const when the storage or T is const.
+// Volatile storage is refused, and so is an array element, because a View of
+// the objects holds neither.
 template <typename Storage, typename T>
 concept can_start_as = requires(Storage* storage) {
-    { start_as_array<T>(storage, 1) } -> std::same_as<::foundation::core::View<element_for_storage_t<Storage, T>>>;
+    { start_as_array<T>(storage, 1) } -> std::same_as<element_for_storage_t<Storage, T>*>;
 };
 static_assert(can_start_as<unsigned char, Record> && can_start_as<void, Record>);
 static_assert(can_start_as<const unsigned char, Record> && can_start_as<unsigned char, const Record>);

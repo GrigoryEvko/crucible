@@ -115,6 +115,12 @@ concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 // (foundation/core/CaptureStore.h) reads its type arguments and no member.
 struct owns_its_storage final {};
 
+// A state whose release gives nothing back, such as the run of a region that
+// owns no storage.  It states the member releases_nothing as true, so the end
+// of its core is trivial, as the end of its two words was before the core.
+template <class State>
+concept ReleasesNothing = requires { requires State::releases_nothing; };
+
 template <OwnerState State>
 class OwnerCore;
 
@@ -179,7 +185,14 @@ protected:
     OwnerCore&
     operator=(OwnerCore const&) = delete("an owner owns its storage alone: a copy would release it two times");
 
-    CRUCIBLE_INLINE constexpr ~OwnerCore() { State::release(state_); }
+    CRUCIBLE_INLINE constexpr ~OwnerCore()
+        requires(!ReleasesNothing<State>)
+    {
+        State::release(state_);
+    }
+    constexpr ~OwnerCore()
+        requires ReleasesNothing<State>
+    = default;
 
     // Gives the state to the caller, and leaves the emptied state in this
     // owner.  The caller then owns what the state owns.

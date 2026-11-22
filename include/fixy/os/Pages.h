@@ -81,7 +81,7 @@ concept CtxFitsThpCall =
 template <class T>
     requires(std::is_object_v<T> && !std::is_array_v<T>)
 [[nodiscard]] ::foundation::core::View<std::byte const, sizeof(T)> storage_of(T const& object) noexcept {
-    return ::foundation::core::detail::storage_of_run_(::foundation::core::detail::view_of_object_(object));
+    return ::foundation::core::detail::storage_of_object_(object);
 }
 
 template <class T>
