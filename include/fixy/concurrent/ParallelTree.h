@@ -310,12 +310,14 @@ struct ParallelTreeSlots {
 
 // The first element of the slots, for the region of a form.  Each form makes
 // its region in its own body with a fresh root permission, so the brand of
-// the region stays in the call that made it.  The View borrows its storage
-// for the call, and the region gives the split of mint_parallel_for and no
-// other access.
+// the region stays in the call that made it.  The keyed run of the frame
+// doors gives the writable slots of the storage, the storage stays with the
+// form for the call, and the region gives the split of mint_parallel_for and
+// no other access.
 template <typename T>
-[[nodiscard]] T* first_slot_of_(::foundation::core::View<T> slots) noexcept {
-    return first_of_(::foundation::core::detail::ViewDoor::key(), slots);
+[[nodiscard]] T* first_slot_of_(::foundation::core::HeapArray<T>& storage) noexcept {
+    return first_of_(::foundation::core::detail::ViewDoor::key(),
+                     frame_run_(::foundation::core::detail::FrameDoor::key(), storage));
 }
 
 }  // namespace detail
@@ -334,7 +336,7 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
         ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), T{});
     auto parts = sum_by_tree_in_parallel<Coupling, Shards>(
         ctx, elements,
-        ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
+        ::fixy::mint_owned_region(detail::first_slot_of_(storage), storage.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()));
     T const sum = parts.sum;
     ::foundation::linear::drop(std::move(parts.partials));
@@ -360,7 +362,7 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
         ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), fill);
     auto parts = reduce_by_tree_in_parallel<Coupling, Shards>(
         ctx, elements,
-        ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
+        ::fixy::mint_owned_region(detail::first_slot_of_(storage), storage.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
         combine);
     ::foundation::core::Option<T> value = std::move(parts.value);
@@ -383,7 +385,7 @@ void scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc, ::fo
         ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(in.size()), T{});
     ::foundation::linear::drop(scan_sums_in_parallel<Coupling, Shards>(
         ctx, kind, in, std::move(out),
-        ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
+        ::fixy::mint_owned_region(detail::first_slot_of_(storage), storage.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>())));
 }
 

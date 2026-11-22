@@ -1473,7 +1473,9 @@ template <class T, class Marker>
         if (!detail::read_heap_count_<step, sizeof(Element), align>(cursor, count, fault)) return false;
         auto build = [](std::size_t /*position*/) noexcept { return Element{}; };
         Bare array = mint_heap_array_with<Element, align>(allocation, count, build);
-        for (Element& element : array.view()) {
+        // The decode writes each element in turn and returns at the first
+        // fault, so it takes the keyed run of the new array.
+        for (Element& element : frame_run_(detail::FrameDoor::key(), array)) {
             if (!detail::decode_part_(element, cursor.first, cursor.offset, fault)) return false;
             cursor.advance(step);
         }

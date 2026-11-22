@@ -655,7 +655,10 @@ decode_session_log(::foundation::core::Alloc allocation, ::foundation::core::Vie
          bytes.chunks<session_event_size>()) {
         auto decoded = decode_session_event(record);
         if (!decoded) return ::foundation::core::err(EventLogDecodeFailure{index, decoded.error()});
-        *events.get(index).expect("the events hold a slot for each record") = *decoded;
+        const SessionEvent& value = *decoded;
+        events.with_element(
+            index, [&value](SessionEvent& event) noexcept { event = value; },
+            [] noexcept { ::foundation::core::fatal("the events hold a slot for each record"); });
         ++index;
     }
     return events;
@@ -839,7 +842,10 @@ merge_session_logs(::foundation::core::Alloc allocation, const SessionEventLog& 
             const StepId step = (*logs[index])[next[index]].step_id();
             if (chosen == log_count || StepIdLess{}(step, (*logs[chosen])[next[chosen]].step_id())) chosen = index;
         }
-        *events.get(place).expect("the events hold a slot for each event of the logs") = (*logs[chosen])[next[chosen]];
+        const SessionEvent& merged = (*logs[chosen])[next[chosen]];
+        events.with_element(
+            place, [&merged](SessionEvent& event) noexcept { event = merged; },
+            [] noexcept { ::foundation::core::fatal("the events hold a slot for each event of the logs"); });
         ++next[chosen];
     }
     return events;
