@@ -2156,7 +2156,7 @@ fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
   "template constraint failure for .template<class T, long unsigned int N> +requires +N > 0"
   "== 0 class fixy::CyclicBuffer.")
 fixy_neg_compile_test(neg_cyclic_buffer_push_of_a_const_element
-  "template constraint failure for .template<class T, long unsigned int N>  requires \\(OwnedElement<T>\\)"
+  "template constraint failure for .template<class T, long unsigned int N, class Brand>  requires \\(IsBrand<Brand>\\) && \\(\\(OwnedElement<T>\\)"
   "required for the satisfaction of .OwnedElement<T>. \\[with T = const test_cyclic_buffer_const_element::Reading\\]")
 fixy_test(test_saturated)
 fixy_test(test_saturate)

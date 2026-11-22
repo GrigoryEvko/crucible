@@ -387,6 +387,65 @@ struct ShapeBatch final {
     });
 }
 
+// The brands of the keyed arrays of the probes, one for each array.
+struct ShapeWordsBrand final {};
+struct ShapeHalvesBrand final {};
+struct ShapeSourceBrand final {};
+struct ShapeTargetBrand final {};
+
+struct KeyedShapeBatch final {
+    ::foundation::core::FixedArray<std::uint64_t, 64, ShapeWordsBrand> words{};
+    ::foundation::core::FixedArray<std::uint32_t, 64, ShapeHalvesBrand> halves{};
+};
+
+// The pop of a batch of keyed arrays: the pop of fixed_array_frame_pop, with
+// the two keyed frame doors in the borrow form.  A key is an empty class with
+// a trivial move, so it takes no register as an argument, and the code is the
+// code of the doors with no key.
+[[gnu::used]] void keyed_array_frame_pop(KeyedShapeBatch& batch, ::foundation::core::LoanKey<ShapeWordsBrand> words_key,
+                                         ::foundation::core::LoanKey<ShapeHalvesBrand> halves_key,
+                                         fixy::View<std::uint64_t const, 64> words,
+                                         fixy::View<std::uint32_t const, 64> halves) noexcept {
+    batch.words.with_mut(words_key, [&batch, &halves_key, words, halves](auto word_run) noexcept {
+        batch.halves.with_mut(halves_key, [&word_run, words, halves](auto half_run) noexcept {
+            fixy::copy(word_run.view(), words);
+            fixy::copy(half_run.view(), halves);
+        });
+    });
+}
+
+// A copy from the frame of one keyed array into the frame of another: the
+// two frames have two brands, so the copy is one memcpy (THE ALIAS PROOF of
+// foundation/core/Frame.h).
+[[gnu::used]] void keyed_frame_copy(::foundation::core::FixedArray<int, 64, ShapeSourceBrand>& source,
+                                    ::foundation::core::LoanKey<ShapeSourceBrand>& source_key,
+                                    ::foundation::core::FixedArray<int, 64, ShapeTargetBrand>& target,
+                                    ::foundation::core::LoanKey<ShapeTargetBrand>& target_key) noexcept {
+    source.with_mut(source_key, [&target, &target_key](auto source_run) noexcept {
+        target.with_mut(target_key, [&source_run](auto target_run) noexcept {
+            static_cast<void>(::foundation::core::copy(std::move(target_run), source_run).is_ok());
+        });
+    });
+}
+
+// An op that doubles its input, for write_each.
+struct ShapeTwice final {
+    int operator()(int const& value) const noexcept { return value * 2; }
+};
+
+// write_each from the frame of one keyed array into the frame of another: the
+// two brands give the loop of restrict pointers.
+[[gnu::used]] void keyed_frame_write_each(::foundation::core::FixedArray<int, 64, ShapeSourceBrand>& source,
+                                          ::foundation::core::LoanKey<ShapeSourceBrand>& source_key,
+                                          ::foundation::core::FixedArray<int, 64, ShapeTargetBrand>& target,
+                                          ::foundation::core::LoanKey<ShapeTargetBrand>& target_key) noexcept {
+    source.with_mut(source_key, [&target, &target_key](auto source_run) noexcept {
+        target.with_mut(target_key, [&source_run](auto target_run) noexcept {
+            static_cast<void>(::foundation::core::write_each(std::move(target_run), ShapeTwice{}, source_run).is_ok());
+        });
+    });
+}
+
 // The open of a loan of count elements, a write of its first element, and
 // its end, as the record of one op opens its frame of records.
 [[gnu::used]] std::uint64_t window_loan_open(::foundation::core::WindowStack<std::uint64_t, 64>& stack,
@@ -1841,6 +1900,26 @@ struct RawShapeBatch final {
                                              std::uint32_t const* halves) noexcept {
     std::memmove(batch.words, words, sizeof batch.words);
     std::memmove(batch.halves, halves, sizeof batch.halves);
+}
+
+// The pop of a batch of keyed arrays before the keys: the same two copies.
+[[gnu::used]] void keyed_array_frame_pop_raw(RawShapeBatch& batch, std::uint64_t const* words,
+                                             std::uint32_t const* halves) noexcept {
+    std::memmove(batch.words, words, sizeof batch.words);
+    std::memmove(batch.halves, halves, sizeof batch.halves);
+}
+
+// A copy between two arrays that do not overlap: one memcpy.
+[[gnu::used]] void keyed_frame_copy_raw(int* target, int const* source) noexcept {
+    std::memcpy(target, source, 64 * sizeof(int));
+}
+
+// The loop of write_each over two runs that do not overlap, with restrict
+// pointers.
+[[gnu::used]] void keyed_frame_write_each_raw(int* __restrict target, int const* __restrict source) noexcept {
+    for (std::size_t position = 0; position != 64; ++position) {
+        target[position] = source[position] * 2;
+    }
 }
 
 // The stack and the frame of the records of an op before the window stack:

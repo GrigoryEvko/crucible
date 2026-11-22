@@ -996,6 +996,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::RefMut,
      "the unique borrow of one object in a frame door: it owns nothing and makes no claim about what the object "
      "holds"},
+    {^^::foundation::core::LoanKey,
+     "the key of the frames of the keyed owners of one brand: it is empty, holds no value and makes no claim about "
+     "what an owner holds"},
+    {^^::foundation::KeyedBytes,
+     "a block of bytes that opens its windows only with its key: it holds storage and makes no claim about what the "
+     "bytes hold"},
     {^^::foundation::core::CallRef,
      "a borrow of one callable: it owns nothing, it lives in a frame, and it is never a value in a kernel signature"},
     {^^::foundation::core::Address,

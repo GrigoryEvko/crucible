@@ -119,6 +119,52 @@ template <class Owner, class Body>
 constexpr bool frames_with = requires(Owner&& owner, Body body) { with_mut(static_cast<Owner&&>(owner), body); };
 static_assert(!frames_with<HeapArray<int>, GivesRun> && frames_with<HeapArray<int>, CountsElements>);
 
+// ── The loan key ──────────────────────────────────────────────────────
+
+// A key is empty and linear.  It does not copy, its move and its end are
+// trivial, its assignment is not, so std::bit_cast builds none, and only its
+// token builds it.
+static_assert(std::is_empty_v<LoanKey<CheckBrand>> && ::foundation::linear::is_linear_v<LoanKey<CheckBrand>>);
+static_assert(!std::is_copy_constructible_v<LoanKey<CheckBrand>> && !std::is_copy_assignable_v<LoanKey<CheckBrand>>);
+static_assert(std::is_trivially_move_constructible_v<LoanKey<CheckBrand>>);
+static_assert(std::is_trivially_destructible_v<LoanKey<CheckBrand>>);
+static_assert(!std::is_trivially_copyable_v<LoanKey<CheckBrand>>);
+static_assert(!std::is_default_constructible_v<LoanKey<CheckBrand>> && !std::is_default_constructible_v<LoanKeyToken>);
+static_assert(std::is_same_v<LoanKey<CheckBrand>::brand_type, CheckBrand>);
+
+// The gate: a key, a reference to it, a Ref of it and a sum that holds it
+// reach a key of the brand.  A key of a second brand, a plain value and a
+// keyed array do not.  DefaultBrand names no owner, so it has no gate.
+struct OtherBrand final {};
+static_assert(!ReachesNoLoanKey<LoanKey<CheckBrand>, CheckBrand>);
+static_assert(!ReachesNoLoanKey<LoanKey<CheckBrand>&, CheckBrand>);
+static_assert(!ReachesNoLoanKey<Ref<LoanKey<CheckBrand>>, CheckBrand>);
+static_assert(!ReachesNoLoanKey<Option<LoanKey<CheckBrand>>, CheckBrand>);
+static_assert(ReachesNoLoanKey<LoanKey<OtherBrand>, CheckBrand> && ReachesNoLoanKey<int, CheckBrand>);
+static_assert(ReachesNoLoanKey<FixedArray<int, 4, CheckBrand>, CheckBrand>);
+static_assert(!ReachesNoLoanKey<int, ::foundation::brand::DefaultBrand>);
+
+// The keyed doors of a FixedArray: the move form gives the key back alone or
+// after the result, and the borrow form gives the result.  A keyed array has
+// no door with no key, and an array of DefaultBrand has no keyed door.
+using KeyedArray = FixedArray<int, 4, CheckBrand>;
+static_assert(
+    std::is_same_v<decltype(std::declval<KeyedArray&>().with_mut(std::declval<LoanKey<CheckBrand>>(), WritesNothing{})),
+                   LoanKey<CheckBrand>>);
+static_assert(std::is_same_v<decltype(std::declval<KeyedArray&>().with_mut(std::declval<LoanKey<CheckBrand>>(),
+                                                                           CountsElements{})),
+                             Record<std::size_t, LoanKey<CheckBrand>>>);
+static_assert(std::is_same_v<decltype(std::declval<KeyedArray&>().with_mut(std::declval<LoanKey<CheckBrand>&>(),
+                                                                           CountsElements{})),
+                             std::size_t>);
+template <class Array>
+constexpr bool opens_with_no_key = requires(Array& array) { array.with_mut(WritesNothing{}); };
+static_assert(!opens_with_no_key<KeyedArray> && opens_with_no_key<FixedArray<int, 4>>);
+template <class Array>
+constexpr bool opens_with_key =
+    requires(Array& array, LoanKey<CheckBrand>& key) { array.with_mut(key, WritesNothing{}); };
+static_assert(opens_with_key<KeyedArray> && !opens_with_key<FixedArray<int, 4>>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // A RefMut gives the dereference and its brand, and no other member.

@@ -561,6 +561,23 @@ PROBES: tuple[Probe, ...] = (
         longer=2,
     ),
     Probe(
+        "keyed_array_frame_pop",
+        "the pop of fixed_array_frame_pop through the keyed frame doors with a borrow of each key: a key is empty, so "
+        "the code is the code of the doors with no key, and the same two movs at -O2 and -O3",
+        calls=("memmove",),
+        longer=2,
+    ),
+    Probe(
+        "keyed_frame_copy",
+        "a copy between the frames of two keyed arrays is the memcpy of the raw form: the two frames have two brands, "
+        "so the alias proof keeps the memcpy",
+    ),
+    Probe(
+        "keyed_frame_write_each",
+        "write_each between the frames of two keyed arrays is the loop of the restrict pointers of the raw form: the "
+        "two brands keep the restrict loop",
+    ),
+    Probe(
         "window_loan_open",
         "the open and the end of a loan of a WindowStack are the window test and the step of the top of the raw "
         "stack, with the assumption on the top kept, and the check of the end folds.  At -O3 the two sides are the "

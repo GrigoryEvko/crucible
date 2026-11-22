@@ -230,11 +230,37 @@ public:
 
 }  // namespace detail
 
-template <class T, std::size_t N>
+// The body of a keyed frame door of an owner whose elements are T and whose
+// brand is Brand: a body of FrameBody that reaches no key of the brand, over
+// elements that hold no key of the brand (THE GATE of foundation/core/Frame.h).
+template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
+concept KeyedFrameBody =
+    FrameBody<Body, T, Fresh, Extent> && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>;
+
+// A body of a keyed frame door that reaches a key of the brand of its owner:
+// the refused twin of each keyed door binds to it.
+template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
+concept KeyReachingFrameBody = FrameBody<Body, T, Fresh, Extent> && !ReachesNoLoanKey<Body, Brand>;
+
+// The body of a keyed element door: it takes the element with no throw, its
+// result holds no borrow and fits a Record, and it reaches no key of the brand.
+template <class Body, class T, class Brand>
+concept KeyedElementBody = std::is_nothrow_invocable_v<Body&&, T&>
+                        && (std::is_void_v<detail::body_result_t<Body&&, T&>>
+                            || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
+                                && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>))
+                        && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>;
+
+template <class T, std::size_t N, ::foundation::brand::IsBrand Brand = ::foundation::brand::DefaultBrand>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
 class FixedArray final : private detail::ArrayStorage<T, N> {
     using Storage = detail::ArrayStorage<T, N>;
     using Storage::elements_;
+
+    // An array of a fresh brand opens its frames only with its LoanKey (THE
+    // LOAN KEY of foundation/core/Frame.h).  An array of DefaultBrand has the
+    // doors with no key.
+    static constexpr bool is_keyed_ = ::foundation::brand::IsFreshBrand<Brand>;
 
 public:
     using element_type = T;
@@ -294,11 +320,16 @@ public:
     // call of body with no trait.  A const array gives a const element.
     // Complexity: O(1), and the cost of body.
     template <class Body>
-        requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
+        requires(!is_keyed_) && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
     }
+    template <class Body>
+        requires is_keyed_ && std::is_invocable_v<Body, T&>
+    void with_element(Index<N> index, Body&& body) & = delete(
+        "a keyed FixedArray lends an element that a body writes only with its LoanKey: call with_element(key, index, "
+        "body)");
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<detail::body_result_t<Body, T const&>>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
@@ -321,7 +352,7 @@ public:
     // argument, so no caller names the brand.  Complexity: O(1), and the cost
     // of body.
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && FrameBody<Body, T, Fresh, N>
+        requires(sizeof...(Refused) == 0) && (!is_keyed_) && FrameBody<Body, T, Fresh, N>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
             ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), elements_}});
@@ -330,10 +361,94 @@ public:
     // A body whose result holds a borrow or names the brand of the frame
     // binds to this overload, so the refusal gives its reason.
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && RefusedFrameBody<Body, T, Fresh, N>
+        requires(sizeof...(Refused) == 0) && (!is_keyed_) && RefusedFrameBody<Body, T, Fresh, N>
     void with_mut(Body&& body) & = delete(
         "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
         "the frame: give a plain value");
+
+    // A keyed array opens a frame only with its key, so a body with no key
+    // binds to this overload, and the refusal gives its reason.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && std::is_invocable_v<Body&&, ViewMut<T, Fresh, N>>
+    void with_mut(Body&& body) & =
+        delete("a keyed FixedArray opens a frame only with its LoanKey: call with_mut(std::move(key), body) or "
+               "with_mut(key, body)");
+
+    // THE KEYED FRAME DOOR (THE LOAN KEY of foundation/core/Frame.h): body
+    // gets the ViewMut<T, Fresh, N> of the elements in place, as the door with
+    // no key gives it.  The key moves into the door, and the door gives it
+    // back: alone for a body that gives void, and after the result in a
+    // Record for each other body.  The body reaches no key of the brand of the
+    // array (THE GATE), so no code inside the frame opens a second frame of
+    // the array.  The frame brand is the scope brand of the call, so copy()
+    // takes its memcpy and write_each its restrict loop as for the door with
+    // no key.  Complexity: O(1), and the cost of body.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, Brand, Fresh, N>
+    [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>, LoanKey<Brand>>
+    with_mut(LoanKey<Brand>&& key, Body&& body) & noexcept {
+        return detail::give_run_back_<Fresh>(key, View<T, N>{detail::ViewDoor::key(), elements_},
+                                             static_cast<Body&&>(body));
+    }
+
+    // The same door with a borrow of the key for the call: body gets the
+    // ViewMut, the key stays with the caller, and the door gives the result
+    // of body.  A root door lends the key of a named brand in this form.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, Brand, Fresh, N>
+    constexpr auto with_mut(LoanKey<Brand>& /*key*/, Body&& body) & noexcept {
+        return static_cast<Body&&>(body)(
+            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), View<T, N>{detail::ViewDoor::key(), elements_}});
+    }
+
+    // A body that reaches a key of the brand of the array binds to these
+    // overloads, so the refusal gives its reason.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyReachingFrameBody<Body, T, Brand, Fresh, N>
+    void with_mut(LoanKey<Brand>&& key, Body&& body) & = delete(
+        "a body of a keyed frame reaches a LoanKey of the brand of its owner, so code in the body could open a second "
+        "frame of the owner: capture only what the body reads, and keep the key with the caller");
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyReachingFrameBody<Body, T, Brand, Fresh, N>
+    void with_mut(LoanKey<Brand>& key, Body&& body) & = delete(
+        "a body of a keyed frame reaches a LoanKey of the brand of its owner, so code in the body could open a second "
+        "frame of the owner: capture only what the body reads, and keep the key with the caller");
+
+    // THE KEYED ELEMENT DOOR: body gets the element at a proven index in
+    // place, as T&, and the key comes back as with the keyed frame door: alone
+    // for a body that gives void, and after the result in a Record for each
+    // other body.  The borrow form keeps the key with the caller and gives
+    // the result of body.  The body reaches no key of the brand (THE GATE), so
+    // no code inside the call gives a second reference to the element.
+    // Complexity: O(1), and the cost of body.
+    template <class Body>
+        requires is_keyed_ && KeyedElementBody<Body, T, Brand>
+    [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, T&>, LoanKey<Brand>>
+    with_element(LoanKey<Brand>&& key, Index<N> index, Body&& body) & noexcept {
+        using Given = detail::body_result_t<Body&&, T&>;
+        if constexpr (std::is_void_v<Given>) {
+            static_cast<Body&&>(body)(elements_[index.raw()]);
+            return static_cast<LoanKey<Brand>&&>(key);
+        } else {
+            return detail::frame_return_t<Given, LoanKey<Brand>>{static_cast<Body&&>(body)(elements_[index.raw()]),
+                                                                 static_cast<LoanKey<Brand>&&>(key)};
+        }
+    }
+    template <class Body>
+        requires is_keyed_ && KeyedElementBody<Body, T, Brand>
+    constexpr auto with_element(LoanKey<Brand>& /*key*/, Index<N> index, Body&& body) & noexcept {
+        return static_cast<Body&&>(body)(elements_[index.raw()]);
+    }
+    template <class Body>
+        requires is_keyed_ && std::is_nothrow_invocable_v<Body&&, T&> && (!ReachesNoLoanKey<Body, Brand>)
+    void with_element(LoanKey<Brand>&& key, Index<N> index, Body&& body) & = delete(
+        "a body of a keyed element door reaches a LoanKey of the brand of its owner, so code in the body could give a "
+        "second reference to the element: capture only what the body reads, and keep the key with the caller");
+    template <class Body>
+        requires is_keyed_ && std::is_nothrow_invocable_v<Body&&, T&> && (!ReachesNoLoanKey<Body, Brand>)
+    void with_element(LoanKey<Brand>& key, Index<N> index, Body&& body) & = delete(
+        "a body of a keyed element door reaches a LoanKey of the brand of its owner, so code in the body could give a "
+        "second reference to the element: capture only what the body reads, and keep the key with the caller");
 
     // A const array lends no writer, so each body binds to this overload,
     // and the refusal gives its reason.
@@ -420,6 +535,27 @@ public:
         return ::foundation::core::order(left.elements_, right.elements_);
     }
 };
+
+// The gate of mint_fixed_array: an element that a FixedArray of N holds and
+// that has a default constructor with no throw, and no explicit argument
+// after T and N.
+template <class T, std::size_t N, class... Refused>
+concept CanMintFixedArray = (sizeof...(Refused) == 0) && OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
+                         && std::is_nothrow_default_constructible_v<T>;
+
+// A keyed FixedArray of N value-initialized elements and its LoanKey (THE
+// LOAN KEY of foundation/core/Frame.h): auto [array, key] =
+// mint_fixed_array<T, N>().  The brand is the fresh brand of the call site, in
+// undeducible_brand_t, so no caller names it, and no target type sets it.
+// The array comes back as a prvalue part of the Record, so no element moves.
+// Complexity: O(N) for the value-initialization.
+template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CanMintFixedArray<T, N, Refused...>
+[[nodiscard]] constexpr Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
+                               LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
+mint_fixed_array() noexcept {
+    return {FixedArray<T, N, Fresh>{}, LoanKey<Fresh>{detail::LoanKeyDoor::token()}};
+}
 
 // ── HeapArray ──────────────────────────────────────────────────────────────
 

@@ -109,6 +109,53 @@ void test_fixed_array() {
     CRUCIBLE_TEST_ASSERT(kTest, is_in_place);
 }
 
+// A keyed FixedArray lends its run in place with its key.  The key moves into
+// the door and comes back, alone for a body that gives void and after the
+// result in a Record for a body that gives a value.  The borrow form keeps the
+// key with the caller.  The element door writes one element.  The door copies
+// no element, and a copy between the frames of two keyed arrays of two mints
+// takes the memcpy of the alias proof.
+void test_keyed_array() {
+    auto [array, key] = ::foundation::core::mint_fixed_array<int, 4>();
+    key = array.with_mut(std::move(key), [](auto out) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, out.size() == 4);
+        int next = 1;
+        for (int& element : out) {
+            element = next;
+            ++next;
+        }
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, sum_of(array) == 10);
+    auto [total, back] = array.with_mut(std::move(key), [](auto out) noexcept { return sum_of(out); });
+    CRUCIBLE_TEST_ASSERT(kTest, total == 10);
+    int const lent_total = array.with_mut(back, [](auto out) noexcept { return sum_of(out); });
+    CRUCIBLE_TEST_ASSERT(kTest, lent_total == 10);
+    View<int const, 4> const elements = array.view();
+    bool const is_in_place = array.with_mut(
+        back, [elements](auto out) noexcept { return offset_of(elements, View<int const>{out.view()}).is_some(); });
+    CRUCIBLE_TEST_ASSERT(kTest, is_in_place);
+
+    back = array.with_element(std::move(back), ::foundation::core::index<2>(),
+                              [](int& element) noexcept { element = 30; });
+    int const third = array.with_element(back, ::foundation::core::index<2>(), [](int& element) noexcept {
+        element += 1;
+        return element;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, third == 31 && array.at(::foundation::core::index<2>()) == 31);
+
+    auto [target, target_key] = ::foundation::core::mint_fixed_array<int, 4>();
+    auto& lent_key = target_key;
+    auto& lent_target = target;
+    array.with_mut(back, [&lent_target, &lent_key](auto source_view) noexcept {
+        lent_target.with_mut(lent_key, [&source_view](auto target_view) noexcept {
+            static_assert(
+                ::foundation::core::DisjointInput<decltype(source_view), typename decltype(target_view)::brand_type>);
+            ::foundation::core::copy(std::move(target_view), source_view).expect("the two runs have one count");
+        });
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(target.view(), array.view()));
+}
+
 // A HeapArray gives its storage to the frame, so the name that the caller
 // moved from holds no element while the body runs.
 void test_heap_array() {
@@ -424,6 +471,7 @@ void test_copy_between_frames() {
 
 int main() {
     test_fixed_array();
+    test_keyed_array();
     test_heap_array();
     test_masked_array();
     test_fixed_list();

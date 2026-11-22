@@ -34,6 +34,12 @@
 //                       GrowList (Grow.h)
 //     array.with_mut(body)   a FixedArray, in place (Array.h), and a
 //                       FixedHeapArray, in place (FixedHeapArray.h)
+//     array.with_mut(key, body)   a keyed FixedArray, in place, with its
+//                       LoanKey (THE LOAN KEY), by move or by a borrow of the key
+//     array.with_element(key, index, body)   one element of a keyed
+//                       FixedArray, with its LoanKey
+//     with_mut_windows<T>(block, key, windows, body)   some windows of a
+//                       KeyedBytes block, with its LoanKey (foundation/AlignedBytes.h)
 //     sum.with_mut(arms...)   Option and Result (Choice.h) and OneOf (OneOf.h)
 //     array.with_element(index, body)   the element at an Index<N> of a
 //                       FixedArray, given to the body in place (Array.h),
@@ -130,10 +136,52 @@
 // source.  The move constructor and the destructor are trivial, so the ABI
 // passes a RefMut in a register.  The seal makes the move assignment
 // user-provided, so std::bit_cast builds no RefMut.
+//
+// THE LOAN KEY
+//   An owner that lends its run in place stays reachable in the body of its
+//   frame: through a capture, a function that the body calls, or a Ref of the
+//   owner.  Each door call gives its frame a brand of its own, so a second
+//   frame of the same owner would give a second ViewMut of a different brand
+//   over the same run, and the alias proof would be false.  So a keyed owner
+//   opens a frame only with a LoanKey<Brand> of its own brand:
+//     auto [array, key] = mint_fixed_array<int, 64>();
+//     key = array.with_mut(std::move(key), body);   the key moves into the
+//                       door, and the door gives it back after the body
+//     array.with_mut(key, body);                     the door borrows the key
+//                       for the call
+//   A key is a linear class with no state.  Only a mint or a root door makes
+//   one (detail::LoanKeyDoor), so no body makes a key.
+//
+// THE GATE
+//   A keyed door refuses a body that reaches a key of the brand of its owner
+//   (ReachesNoLoanKey): a capture of the key, a capture of an object that holds
+//   the key or that points to it, at each depth of the walk of
+//   foundation/reflect/TypeComponents.h.  The walk instantiates each class that
+//   it reaches through a pointer, and it refuses a class whose members it cannot
+//   read, such as an incomplete class behind a pointer.  So a body reaches no
+//   key, and a function that the body calls gets only what the body gives it.
+//   No code inside the body thus opens a second frame of an owner of the brand.
+//   A value behind type erasure, such as a void pointer, hides its type from the
+//   walk.  The quarantine refuses such a pointer outside the base.
+//
+// THE BRAND OF A KEY
+//   A mint gives the fresh brand of its call site (CRUCIBLE_FRESH_BRAND), so
+//   the brand names one site and not one object.  Two objects of one brand,
+//   from two runs of one site or from a copy of an owner, need no brand of
+//   their own: one key opens either one, and the gate keeps a second key of the
+//   brand out of each body, so the frames of the brand open one at a time.  The
+//   rule brand-escape keeps a fresh brand out of a result, a member and an
+//   object of static storage duration.  So a key of a fresh brand lives in the
+//   automatic storage of the scope of its mint.  A move or a copy of an owner
+//   keeps its brand, because the brand is in its type.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <foundation/Transfer.h>
+#include <foundation/reflect/TypeComponents.h>
 
+#include <meta>
 #include <type_traits>
 
 namespace foundation::core {
@@ -159,6 +207,27 @@ public:
 
 struct FrameDoor {
     [[nodiscard]] static constexpr FrameKey key() noexcept { return FrameKey{}; }
+};
+
+// The key of the constructor of a LoanKey (THE LOAN KEY).  LoanKeyDoor is its
+// one friend, and only the mints of a keyed owner and the root doors call the
+// door.  The door and the token hold no template, so no explicit
+// specialization of a template reaches the token.  A use of the door outside
+// the base is a finding of the rule owners (detail-use).
+struct LoanKeyDoor;
+
+class [[nodiscard]] LoanKeyToken final {
+    friend struct LoanKeyDoor;
+
+    constexpr LoanKeyToken() noexcept {}
+    constexpr LoanKeyToken(LoanKeyToken const&) noexcept {}
+
+public:
+    LoanKeyToken& operator=(LoanKeyToken const&) = delete("a token of a loan key lives for one construction");
+};
+
+struct LoanKeyDoor {
+    [[nodiscard]] static constexpr LoanKeyToken token() noexcept { return LoanKeyToken{}; }
 };
 
 // The type that the call static_cast<Body&&>(body)(argument) of a door gives
@@ -204,5 +273,74 @@ public:
     [[nodiscard]] constexpr T* operator->() & noexcept { return object_; }
     [[nodiscard]] constexpr T const* operator->() const& noexcept { return object_; }
 };
+
+// The key of the frames of the keyed owners of one brand (THE LOAN KEY).  The
+// class is empty, so it costs no byte and no instruction.  It is linear: each
+// path gives it back to its holder or ends it through a door.  It does not
+// copy, so one key gives one frame at a time.  Its move and its end are
+// trivial, and the seal makes its assignment user-provided, so std::bit_cast
+// builds no key.  It moves to another thread, and two threads never read one
+// key (not_shareable of foundation/Transfer.h).  A key holds no resource, so
+// the end of its scope is its door (scope_end_door of foundation/Linear.h).
+// DefaultBrand names no owner, so no mint and no root door gives a key of it.
+// The signature of a keyed door of an owner of DefaultBrand names the type,
+// and the keyed doors of such an owner take no key, so the class takes each
+// brand.
+template <class Brand>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::scope_end_door{}]]
+                   [[= ::foundation::transfer::not_shareable{}]] LoanKey final {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+public:
+    using brand_type = Brand;
+
+    // The key of a mint or of a root door, with the token that only
+    // LoanKeyDoor builds.
+    constexpr explicit LoanKey(detail::LoanKeyToken const& /*token*/) noexcept {}
+
+    LoanKey(LoanKey const&) =
+        delete("a loan key opens one frame at a time: a copy would open a second frame of an owner");
+    LoanKey& operator=(LoanKey const&) =
+        delete("a loan key opens one frame at a time: a copy would open a second frame of an owner");
+    constexpr LoanKey(LoanKey&&) noexcept = default;
+    constexpr LoanKey& operator=(LoanKey&&) noexcept = default;
+    ~LoanKey() = default;
+};
+
+namespace detail {
+
+// The predicate of the walk of the gate (THE GATE): a node that is a key of
+// the brand, or a class whose members the walk cannot read.  A class that the
+// walk reached through a pointer and that is incomplete has no readable
+// members, and neither has a class whose state reflection does not show.  The
+// predicate refuses both, so the gate fails closed.  The predicate is a
+// template argument, so it is an object of static storage duration.  It holds
+// the key as a reflection, so its type names no brand, and the rule
+// brand-escape reads no brand in it.
+struct LoanKeyOf final {
+    std::meta::info key{};
+
+    [[nodiscard]] consteval bool operator()(::foundation::reflect::TypeNode node) const {
+        if (node.type == key) {
+            return true;
+        }
+        bool const is_class = std::meta::is_class_type(node.type) || std::meta::is_union_type(node.type);
+        return (is_class && !node.may_read_members) || ::foundation::reflect::holds_unreadable_state(node);
+    }
+};
+
+}  // namespace detail
+
+// True when no value of Root reaches a key of the brand (THE GATE): no part
+// of it, by value, through a reference, a pointer or a template argument, at
+// each depth, is a LoanKey<Brand>.  Each keyed door asks it of its body and of
+// the element of its owner.  The walk reads each class one time.  Complexity:
+// linear in the distinct types that Root reaches, at compile time only.
+template <class Root, class Brand>
+concept ReachesNoLoanKey =
+    ::foundation::brand::IsFreshBrand<Brand>
+    && !::foundation::reflect::any_component_satisfies<detail::LoanKeyOf{std::meta::dealias(^^LoanKey<Brand>)},
+                                                       ::foundation::reflect::SpecializationRead::Instantiating>(
+        ^^std::remove_cvref_t<Root>);
 
 }  // namespace foundation::core

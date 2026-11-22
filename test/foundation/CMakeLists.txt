@@ -2186,6 +2186,19 @@ foundation_neg_compile_test(neg_aligned_bytes_static_window_view_leaves_frame
 foundation_neg_compile_test(neg_aligned_bytes_static_windows_too_many
   "use of deleted function .void foundation::with_mut_windows"
   "with_mut_windows takes at most max_block_windows windows")
+# A keyed block (THE LOAN KEY of foundation/core/Frame.h) lends its windows only
+# with its LoanKey, and the gate refuses a body that opens a second frame of
+# the windows with the key that it captures.  The two fixtures of
+# mint_keyed_bytes: a named block, and a brand that the caller names.
+foundation_neg_compile_test(neg_core_keyed_windows_nested
+  "use of deleted function .void foundation::with_mut_windows\\(KeyedBytes<Brand>&, Key&&, const core::FixedArray<ByteWindow, N>&, Body&&\\)"
+  "a body of a keyed frame reaches a LoanKey of the brand of its block")
+foundation_neg_compile_test(neg_core_mint_keyed_bytes_named_block
+  "use of deleted function .void foundation::mint_keyed_bytes\\(Block&&\\)"
+  "mint_keyed_bytes takes the block into the keyed block: pass std::move\\(block\\)")
+foundation_neg_compile_test(neg_core_mint_keyed_bytes_names_brand
+  "no matching function for call to .mint_keyed_bytes<.anonymous.::HeldBrand>\\(foundation::AlignedBytes\\)."
+  "CanMintKeyedBytes")
 # A tested window starts its elements with no check, so only the tests of the
 # static form make one: its constructor from a first byte and a count is
 # private.
@@ -3864,10 +3877,10 @@ foundation_neg_compile_test(neg_core_view_windows_past_extent
   "no matching function for call to .foundation::core::View<int, 4>::windows<5>\\(\\)."
   "constexpr auto foundation::core::View<T, Extent>::windows\\(\\) const \\[with long unsigned int Width = Width; T = int; long unsigned int Extent = 4\\].")
 foundation_neg_compile_test(neg_core_fixed_array_reverse_of_temporary
-  "use of deleted function .void foundation::core::FixedArray<T, N>::reverse\\(\\) const && \\[with T = int; long unsigned int N = 4\\]."
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::reverse\\(\\) const && \\[with T = int; long unsigned int N = 4; Brand = foundation::brand::DefaultBrand\\]."
   "a loop over a temporary FixedArray points into an object that the full expression ends")
 foundation_neg_compile_test(neg_core_fixed_array_chunks_of_temporary
-  "use of deleted function .void foundation::core::FixedArray<T, N>::chunks\\(\\) const && \\[with long unsigned int Width = 2; T = int; long unsigned int N = 4\\]."
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::chunks\\(\\) const && \\[with long unsigned int Width = 2; T = int; long unsigned int N = 4; Brand = foundation::brand::DefaultBrand\\]."
   "a loop over a temporary FixedArray points into an object that the full expression ends")
 
 foundation_neg_compile_test(neg_core_index_zero_count
@@ -3884,11 +3897,11 @@ foundation_neg_compile_test(neg_core_fixed_array_partial_list
   "ArrayStorage\\(foundation::core::detail::ArrayParameter<T, Positions>\\.\\.\\.\\) requires  N <= foundation::core::detail::max_listed_array_count && \\(is_nothrow_move_constructible_v<T>\\) \\[with T = int; long unsigned int N = 3; long unsigned int \\.\\.\\.Positions = \\{0, 1, 2\\}\\]."
   "candidate expects 3 arguments, 2 provided")
 foundation_neg_compile_test(neg_core_fixed_array_list_past_bound
-  "no matching function for call to .foundation::core::FixedArray<int, 257>::FixedArray\\(<brace-enclosed initializer list>\\)."
-  "FixedArray\\(\\) requires  is_nothrow_default_constructible_v<T> \\[with T = int; long unsigned int N = 257\\]."
+  "no matching function for call to .foundation::core::FixedArray<int, 257, foundation::brand::DefaultBrand>::FixedArray\\(<brace-enclosed initializer list>\\)."
+  "FixedArray\\(\\) requires  is_nothrow_default_constructible_v<T> \\[with T = int; long unsigned int N = 257; Brand = foundation::brand::DefaultBrand\\]."
   "candidate expects 0 arguments, 257 provided")
 foundation_neg_compile_test(neg_core_fixed_array_view_of_temporary
-  "use of deleted function .void foundation::core::FixedArray<T, N>::view\\(\\) && \\[with T = int; long unsigned int N = 4\\]."
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::view\\(\\) && \\[with T = int; long unsigned int N = 4; Brand = foundation::brand::DefaultBrand\\]."
   "a view of a temporary FixedArray points into an object that the full expression ends")
 foundation_neg_compile_test(neg_core_fixed_array_subscript
   "no match for .operator\\[\\]. \\(operand types are .const foundation::core::FixedArray<int, 4>. and .std::size_t."
@@ -3908,11 +3921,50 @@ foundation_neg_compile_test(neg_core_fixed_array_nested_frame_door
 # no borrow and names no brand of the frame.  The refused twin of the door
 # gives the reason.
 foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_view_mut
-  "use of deleted function .void foundation::core::FixedArray<T, N>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
   "the result of a frame door leaves the frame, so it holds no reference and no address")
 foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_brand
-  "use of deleted function .void foundation::core::FixedArray<T, N>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
   "and it names no brand of the frame: give a plain value")
+# A keyed FixedArray (THE LOAN KEY of foundation/core/Frame.h) opens a frame
+# only with its LoanKey, and the gate of each keyed door refuses a body that
+# reaches a key of the brand of the owner.  Each fixture is one route of a
+# second frame of one owner: a nested door with the captured key, a helper
+# with no key, a closure that the body calls, a Ref of the array, a holder of
+# a Ref of the key, and the element door.
+foundation_neg_compile_test(neg_core_keyed_array_nested_door
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_mut\\(foundation::core::LoanKey<Brand>&&, Body&&\\) &"
+  "a body of a keyed frame reaches a LoanKey of the brand of its owner, so code in the body could open a second frame of the owner")
+foundation_neg_compile_test(neg_core_keyed_array_helper_has_no_key
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_mut\\(Body&&\\) &"
+  "a keyed FixedArray opens a frame only with its LoanKey")
+foundation_neg_compile_test(neg_core_keyed_array_called_closure
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_mut\\(foundation::core::LoanKey<Brand>&&, Body&&\\) &"
+  "a body of a keyed frame reaches a LoanKey of the brand of its owner")
+foundation_neg_compile_test(neg_core_keyed_array_ref_alias
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_mut\\(Body&&\\) &"
+  "a keyed FixedArray opens a frame only with its LoanKey")
+foundation_neg_compile_test(neg_core_loan_key_through_holder
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_mut\\(foundation::core::LoanKey<Brand>&&, Body&&\\) &"
+  "a body of a keyed frame reaches a LoanKey of the brand of its owner")
+foundation_neg_compile_test(neg_core_keyed_element_reaches_key
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_element\\(foundation::core::LoanKey<Brand>&&, foundation::core::Index<Count>, Body&&\\) &"
+  "a body of a keyed element door reaches a LoanKey of the brand of its owner")
+foundation_neg_compile_test(neg_core_keyed_element_without_key
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::with_element\\(foundation::core::Index<Count>, Body&&\\) &"
+  "a keyed FixedArray lends an element that a body writes only with its LoanKey")
+# A loan key does not copy, so one key opens one frame at a time.
+foundation_neg_compile_test(neg_core_loan_key_copied
+  "use of deleted function .foundation::core::LoanKey<Brand>::LoanKey\\(const foundation::core::LoanKey<Brand>&\\)"
+  "a loan key opens one frame at a time: a copy would open a second frame of an owner")
+# The two fixtures of mint_fixed_array: a brand that the caller names, and an
+# element with no default constructor.
+foundation_neg_compile_test(neg_core_mint_fixed_array_names_brand
+  "no matching function for call to .mint_fixed_array<int, 4, .anonymous.::HeldBrand>\\(\\)."
+  "CanMintFixedArray")
+foundation_neg_compile_test(neg_core_mint_fixed_array_no_default
+  "no matching function for call to .mint_fixed_array<.anonymous.::NoDefault, 4>\\(\\)."
+  "is_nothrow_default_constructible_v")
 # A window loan and a window stack do not copy, and a loan does not move, so
 # the loans of one stack end in the reverse order of their opens.
 foundation_neg_compile_test(neg_core_window_loan_copied
@@ -4403,7 +4455,7 @@ foundation_neg_compile_test(neg_core_view_get_forged_body
   "redefinition of .template<class Brand, class T>  requires  IsBrand<Brand> constexpr auto foundation::core::detail::element_at_\\(T\\*, std::size_t, std::size_t\\)."
   "previously declared here")
 foundation_neg_compile_test(neg_core_fixed_array_get_of_temporary
-  "use of deleted function .void foundation::core::FixedArray<T, N>::get\\(std::size_t\\) && \\[with T = int; long unsigned int N = 4; std::size_t = long unsigned int\\]."
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::get\\(std::size_t\\) && \\[with T = int; long unsigned int N = 4; Brand = foundation::brand::DefaultBrand; std::size_t = long unsigned int\\]."
   "an element of a temporary FixedArray dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_heap_array_without_allocation_marker
   "no matching function for call to .mint_heap_array\\(foundation::effects::cap::IO, int, int\\)."
@@ -4525,7 +4577,7 @@ foundation_neg_compile_test(neg_core_view_first_of_specialized
 # and a type that names a held brand matches no function.
 foundation_neg_compile_test(neg_core_fixed_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
-  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) const &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedArray<T, N, Brand>::get\\(std::size_t\\) const &")
 foundation_neg_compile_test(neg_core_heap_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) const &")
@@ -4562,7 +4614,7 @@ foundation_neg_compile_test(neg_core_zip_different_fixed_extents
   "\\[with Other = foundation::core::detail::ViewStage<const int, 5>; Stage = foundation::core::detail::ViewStage<const int, 4>\\]"
   "two walks of different fixed extents have different counts, so the longer walk has elements with no pair")
 foundation_neg_compile_test(neg_core_fixed_array_enumerate_of_temporary
-  "use of deleted function .void foundation::core::FixedArray<T, N>::enumerate\\(\\) const && \\[with T = int; long unsigned int N = 4\\]."
+  "use of deleted function .void foundation::core::FixedArray<T, N, Brand>::enumerate\\(\\) const && \\[with T = int; long unsigned int N = 4; Brand = foundation::brand::DefaultBrand\\]."
   "a loop over a temporary FixedArray points into an object that the full expression ends")
 
 # ── The door directory of the base floor: foundation/os ───────────────

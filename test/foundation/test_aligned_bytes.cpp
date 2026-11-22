@@ -261,6 +261,54 @@ void test_windows_lend_disjoint_views() {
     CRUCIBLE_FATAL_INVARIANT(empty.is_ok());
 }
 
+// A keyed block lends its windows with its LoanKey.  The key moves into the
+// door and comes back with the Result, also after a refused window, and the
+// borrow form keeps the key with the caller.  The static form lends one
+// ViewMut for each window as an argument.
+void test_keyed_windows() {
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    auto [block, key] =
+        ::foundation::mint_keyed_bytes(mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64})));
+    CRUCIBLE_FATAL_INVARIANT(block.size() == 256 && block.alignment() == 64);
+    FixedList<ByteWindow, 2> const windows = make_windows(kFirst16, kAt64Of32);
+    auto [written, back] = with_mut_windows<float>(block, std::move(key), windows, [](auto& views) noexcept {
+        std::size_t count = 0;
+        for (auto& view : views) {
+            for (float& element : view) {
+                element = 2.0f;
+                ++count;
+            }
+        }
+        return count;
+    });
+    CRUCIBLE_FATAL_INVARIANT(written.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
+    auto [refused, again] =
+        with_mut_windows<float>(block, std::move(back), make_windows(kFirst16, kAt8Of16), [](auto&) noexcept {});
+    CRUCIBLE_FATAL_INVARIANT(refused.is_err());
+    auto const lent = with_mut_windows<float>(block, again, windows, [](auto& views) noexcept {
+        std::size_t count = 0;
+        for (auto& view : views) {
+            for (float const element : view) {
+                count += ::foundation::core::bit_cast<std::uint32_t>(element)
+                              == ::foundation::core::bit_cast<std::uint32_t>(2.0f)
+                           ? 1u
+                           : 0u;
+            }
+        }
+        return count;
+    });
+    CRUCIBLE_FATAL_INVARIANT(lent.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
+    ::foundation::core::FixedArray<ByteWindow, 2> const fixed{kFirst16, kAt64Of32};
+    auto const sizes = with_mut_windows<float>(
+        block, again, fixed, [](auto first, auto second) noexcept { return first.size() + second.size(); });
+    CRUCIBLE_FATAL_INVARIANT(sizes.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
+    std::size_t nonzero_between = 0;
+    for (std::uint8_t const byte : block.view().window(16, 48).expect("the gap between the windows fits")) {
+        nonzero_between += byte != 0 ? 1u : 0u;
+    }
+    CRUCIBLE_FATAL_INVARIANT(nonzero_between == 0);
+}
+
 // Each refused window gives its kind, and the body does not run.  A window
 // of no byte shares no byte with a second window.
 void test_windows_refusals() {
@@ -367,6 +415,7 @@ int main() {
     test_move();
     test_layouts_refuse_bad_requests();
     test_windows_lend_disjoint_views();
+    test_keyed_windows();
     test_windows_refusals();
     test_static_windows_agree_with_the_list();
 
