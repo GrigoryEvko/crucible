@@ -40,7 +40,9 @@
 // annotation once_door marks a function that owns a closure and calls it one
 // time, such as call_once, the one door of a closure that moves a linear
 // capture out.  The door exchange is the one move out of a linear value that
-// a function borrows by a reference that is not const.  The
+// a function borrows by a reference that is not const.  The door
+// end_unrun_body is the one end of a body that no door called and that holds
+// a linear value by value, with the reason of the caller.  The
 // annotation authority marks a class whose value conveys an authority,
 // which the gate of foundation/effects/Computation.h reads.  The annotation
 // binding_hook marks the hook get<I> of a structured binding, such as the
@@ -63,6 +65,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/reflect/TypeComponents.h>
 
+#include <cstdint>
 #include <meta>
 #include <type_traits>
 
@@ -90,8 +93,8 @@ struct detach_door final {};
 struct scope_end_door final {};
 
 // The annotation of a function that owns a closure and calls it one time,
-// such as call_once.  The rule must-consume admits the call of a closure that
-// moves a linear capture out only in such a function.
+// such as call_once.  The rule must-consume reads a call of such a function
+// as one call of the closure, and the end of the closure after it.
 struct once_door final {};
 
 // The annotation of the hook get<I> of a structured binding.  A direct call
@@ -203,6 +206,26 @@ inline constexpr bool is_linear_v = is_linear_type(^^T);
 template <class T>
 concept LinearValue = !std::is_reference_v<T> && !std::is_const_v<T> && is_linear_type(^^T);
 
+// True when the class states its own end: it carries the annotation linear,
+// it is no sum, and no type argument of its template is linear.  A class
+// that is linear only by the values that it holds, such as a class with a
+// linear member, a closure with a linear capture, an Option or a Record of a
+// token, states no end of its own.  Its end drops each linear value that it
+// holds, and no rule reads the end of such a value in the body of a door.
+// Complexity: linear in the template arguments of the class.
+[[nodiscard]] consteval bool states_own_end(std::meta::info type) {
+    const std::meta::info bare = ::foundation::reflect::bare_type(type);
+    if (!is_marked_linear(bare) || carries_annotation(bare, ^^sum)) return false;
+    for (const ::foundation::reflect::TypeNode& argument :
+         ::foundation::reflect::argument_components_of(::foundation::reflect::TypeNode{bare, false})) {
+        const bool is_held_type =
+            !argument.is_value_argument
+            && (!std::meta::is_class_type(argument.type) || std::meta::is_complete_type(argument.type));
+        if (is_held_type && is_linear_type(argument.type)) return false;
+    }
+    return true;
+}
+
 // The drop door that reports nothing.  It moves the value into its own
 // frame, so the destructor of the value runs before the door returns.  A
 // search for this annotation lists each deliberate discard.  A class whose
@@ -264,5 +287,38 @@ template <class Closure, class... Arguments>
     requires(std::is_class_v<Closure>)
 constexpr void call_once(Closure&, Arguments&&...) = delete("the once door takes the closure that the caller gives "
                                                             "up.  Pass it with std::move");
+
+// Why a caller ends a body that no door called (end_unrun_body).
+enum class UnrunReason : std::uint8_t {
+    // A door could not start the thread of the body, and the caller gives
+    // the body up.
+    start_refused,
+    // A test of a refused start ends the body that came back.
+    refusal_test,
+};
+
+// A body that no door called and that holds a linear value by value: a
+// class, such as a closure with a linear capture, that states no end of its
+// own (states_own_end).
+template <class Body>
+concept UnrunBody = LinearValue<Body> && std::is_class_v<Body> && !states_own_end(^^Body);
+
+// The one door that ends a body that no door called and that holds a linear
+// value by value, such as a body that a refused start of a thread gives back.
+// The body moves into the frame of the door, so each linear value that it
+// holds ends there with no consume.  The reason tells why the caller gives
+// the body up.  A search for this door lists each such end.
+template <UnrunBody Body>
+[[= detach_door{}]] constexpr void end_unrun_body(Body&& body, UnrunReason /*reason*/) noexcept {
+    Body ended(static_cast<Body&&>(body));
+    static_cast<void>(ended);
+}
+
+// A named body stays with the caller, so an end of it here would leave a
+// second name for its values.  The deleted twin gives the reason.
+template <class Body>
+    requires(is_linear_type(^^Body))
+constexpr void end_unrun_body(Body&, UnrunReason) = delete("the door ends a body that the caller gives up.  Pass it "
+                                                           "with std::move");
 
 }  // namespace foundation::linear

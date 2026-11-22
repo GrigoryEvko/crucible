@@ -395,6 +395,44 @@ void test_a_body_moves_a_linear_capture_out() {
     CRUCIBLE_FATAL_INVARIANT(beside_value == 6);
 }
 
+// A refused start of a body that holds a linear value gives the body and the
+// continuation back in the error, so no door drops the value.  The caller
+// starts the body again with the default options, and the body consumes its
+// token there.  A second refusal ends the body that comes back through
+// end_unrun_body, with its reason.
+void test_a_refused_start_gives_a_linear_body_back() {
+    WorkerCtx const ctx{eff::testing::bg()};
+    auto waits = []() noexcept {};
+    using Values = ::foundation::core::Record<std::uint32_t, ::foundation::core::Unit>;
+    auto restarted = [owned = LinearToken{7}]() mutable noexcept { return std::move(owned).consume(); };
+    using Restarted = ::fixy::thread::RefusedStart<decltype(restarted), decltype(waits)>;
+    auto first = ::fixy::thread::run_beside(ctx, ThreadOptions{.guard_bytes = 0}, std::move(restarted), waits);
+    std::uint32_t const restarted_value = std::move(first).match(
+        [](Values) noexcept -> std::uint32_t { ::foundation::core::fatal("the door refuses a guard of zero bytes"); },
+        [&ctx](Restarted refusal) noexcept -> std::uint32_t {
+            CRUCIBLE_FATAL_INVARIANT(refusal.error == Errno::einval);
+            auto [body, continuation] = std::move(refusal.parts);
+            auto [value, continued] = ::fixy::thread::run_beside(ctx, ThreadOptions{}, std::move(body), continuation)
+                                          .expect("the door starts the body that came back with the default options");
+            static_cast<void>(continued);
+            return value;
+        });
+    CRUCIBLE_FATAL_INVARIANT(restarted_value == 7);
+
+    auto ended = [owned = LinearToken{8}]() mutable noexcept { return std::move(owned).consume(); };
+    using Ended = ::fixy::thread::RefusedStart<decltype(ended), decltype(waits)>;
+    auto second = ::fixy::thread::run_beside(ctx, ThreadOptions{.guard_bytes = 0}, std::move(ended), waits);
+    Errno const ended_error = std::move(second).match(
+        [](Values) noexcept -> Errno { ::foundation::core::fatal("the door refuses a guard of zero bytes"); },
+        [](Ended refusal) noexcept -> Errno {
+            auto [body, continuation] = std::move(refusal.parts);
+            ::foundation::linear::end_unrun_body(std::move(body), ::foundation::linear::UnrunReason::refusal_test);
+            static_cast<void>(continuation);
+            return refusal.error;
+        });
+    CRUCIBLE_FATAL_INVARIANT(ended_error == Errno::einval);
+}
+
 }  // namespace
 
 int main() {
@@ -410,5 +448,6 @@ int main() {
     test_refused_option_runs_no_thread();
     test_each_body_is_an_object_of_the_door();
     test_a_body_moves_a_linear_capture_out();
+    test_a_refused_start_gives_a_linear_body_back();
     return 0;
 }

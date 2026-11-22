@@ -15,5 +15,8 @@ struct Thief {
 }  // namespace
 int main() {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
-    return ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, Thief{}, [] noexcept {}).is_ok() ? 0 : 1;
+    auto continuation = [] noexcept {};
+    static_cast<void>(::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, Thief{}, continuation)
+                          .expect("the door starts the body"));
+    return 0;
 }

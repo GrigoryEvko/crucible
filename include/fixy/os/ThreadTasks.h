@@ -42,8 +42,14 @@
 //     Result, with the error number of the call that failed: eagain when the
 //     process or the host has no resources for one more thread, eperm when
 //     the caller has no permission for an option, and einval for an option
-//     that is not valid.  No thread of the call runs then.  A start that fails
-//     after other threads of the call started ends the process.  A started
+//     that is not valid.  No thread of the call runs then.  When a body or a
+//     continuation of the call holds a linear value, the error is a
+//     RefusedStart: the error number and each part of the call, which no door
+//     ran, so no door drops a linear value in silence.  The caller starts a
+//     part again, or ends it through end_unrun_body of foundation/Linear.h
+//     with a reason.  The error of each other call is the error number
+//     (start_error_t).  A start that fails after other threads of the call
+//     started ends the process.  A started
 //     task can wait for a task that did not start, so a join of the started
 //     threads could wait forever, and the door has no correct state to give
 //     back.  A join that fails ends the process too, because the door started
@@ -120,12 +126,15 @@
 //     overload with the reason.  Without it, one keyed body given two times
 //     would mint a key on each thread and open two frames of one owner that it
 //     holds by value, and one mutable body given two times would write its own
-//     captures from two threads.  The thread of a body gives it to the once
-//     door call_once of foundation/Linear.h, which owns it, calls it one time
-//     and ends it.  A continuation goes through the once door too.  The door
-//     ends what stays in its own frame after the join, a linear part through
-//     the drop door.  A body that the caller reads after the call gives that
-//     value back as its result (THE RESULTS).
+//     captures from two threads.  Each body then moves into an Option of the
+//     frame.  The thread of a body takes it out of its Option and gives it to
+//     the once door call_once of foundation/Linear.h, which owns it, calls it
+//     one time and ends it.  A continuation goes through the once door too.
+//     After the join, each Option is empty, and expect_none checks it: the
+//     door drops no body.  The body owns each value that it captures by value,
+//     and it consumes each linear one on each path (the kind
+//     capture-unconsumed of the rule must-consume).  A body that the caller
+//     reads after the call gives that value back as its result (THE RESULTS).
 //
 // THE RESULTS
 //     A body of run_joined gives a value, or gives nothing.  Each thread
@@ -453,23 +462,42 @@ template <typename Value>
 concept JoinedValue = ::foundation::transfer::Sendable<Value> && ::foundation::core::DroppablePayload<Value>
                    && ::foundation::core::HoldsNoBorrow<Value>;
 
-// The frame of one body of run_joined: the body, the context of the call and
-// the slot of the value of the body.  The body and the slot live in the frame
-// of the door, which waits for each thread (THE CONTEXT OF A BODY, THE BODIES
-// BY MOVE, THE RESULTS).
+// The frame of one body of run_joined: the Option that holds the body, the
+// context of the call and the slot of the value of the body.  The Option and
+// the slot live in the frame of the door, which waits for each thread (THE
+// CONTEXT OF A BODY, THE BODIES BY MOVE, THE RESULTS).
 struct joined_body_ {
     void* body = nullptr;
     void const* ctx = nullptr;
     void* value = nullptr;
 };
 
-// Ends a body or a continuation that a door owns.  A linear one ends through
-// the drop door, after its one call, or with no call when the start failed.
-// Another one ends with the frame of the door.
-template <typename Part>
-constexpr void end_owned_part_(Part&& part) noexcept {
-    if constexpr (::foundation::linear::LinearValue<Part>) ::foundation::linear::drop(static_cast<Part&&>(part));
-}
+// True when a part of a call, a body or a continuation, holds a linear value
+// (THE ERRORS).
+template <typename... Parts>
+inline constexpr bool holds_linear_part_ = (::foundation::linear::is_linear_v<Parts> || ...);
+
+}  // namespace detail
+
+// The refusal of a start of a call with a part that holds a linear value (THE
+// ERRORS): the error number of the call that failed, and each part that no
+// thread ran, in the order of the call.  The caller binds the parts, and it
+// starts each one again or ends it, such as through end_unrun_body of
+// foundation/Linear.h.
+template <typename... Parts>
+struct RefusedStart {
+    ::foundation::os::Errno error{};
+    ::foundation::core::Record<Parts...> parts{};
+};
+
+// The error of a start of a call with these parts (THE ERRORS): a
+// RefusedStart when a part holds a linear value, and the error number for
+// each other call.
+template <typename... Parts>
+using start_error_t =
+    std::conditional_t<detail::holds_linear_part_<Parts...>, RefusedStart<Parts...>, ::foundation::os::Errno>;
+
+namespace detail {
 
 // Calls the body one time with the context that it takes, and gives its value.
 // The body moves from the frame of the door into the once door call_once of
@@ -508,13 +536,18 @@ template <typename Ctx, typename Body>
     }
 }
 
+// Takes the body out of its Option in the frame of the door, calls it one
+// time, and writes its value into its slot.  The Option is empty after the
+// take, so the door reads that the thread took the body (THE BODIES BY MOVE).
 template <typename Ctx, typename Body>
 void run_joined_body_(void* frame) noexcept {
     using Value = joined_result_t_<Ctx, Body>;
     joined_body_ const& joined = *static_cast<joined_body_ const*>(frame);
-    *static_cast<::foundation::core::Option<Value>*>(joined.value) =
-        ::foundation::core::Option<Value>::some(call_joined_body_<Ctx, Body>(
-            static_cast<Body&&>(*static_cast<Body*>(joined.body)), *static_cast<Ctx const*>(joined.ctx)));
+    *static_cast<::foundation::core::Option<Value>*>(joined.value) = ::foundation::core::Option<Value>::some(
+        call_joined_body_<Ctx, Body>(static_cast<::foundation::core::Option<Body>*>(joined.body)
+                                         ->take()
+                                         .expect("the frame of the door gives each body to one thread"),
+                                     *static_cast<Ctx const*>(joined.ctx)));
 }
 
 // Registers HOOK for the child of each fork (THE FORK HOOK).  The error is
@@ -561,27 +594,47 @@ using joined_values_t =
 namespace detail {
 
 // Each body is a parameter by value, so each body is an object of this frame,
-// also when the caller moves one object two times (THE BODIES BY MOVE).
+// also when the caller moves one object two times.  Each body then moves into
+// an Option of the frame, and its thread takes it out (THE BODIES BY MOVE).
 template <typename Ctx, std::size_t... Is, typename... Bodies>
-[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, start_error_t<Bodies...>>
 run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is...> /*order*/,
             Bodies... bodies) noexcept {
+    ::foundation::core::Record<::foundation::core::Option<Bodies>...> owned{
+        ::foundation::core::Option<Bodies>::some(static_cast<Bodies&&>(bodies))...};
     ::foundation::core::Record<::foundation::core::Option<joined_result_t_<Ctx, Bodies>>...> slots{};
-    joined_body_ joined[sizeof...(Bodies)]{joined_body_{&bodies, &ctx, &slots.at(::foundation::core::index<Is>())}...};
+    joined_body_ joined[sizeof...(Bodies)]{
+        joined_body_{&owned.at(::foundation::core::index<Is>()), &ctx, &slots.at(::foundation::core::index<Is>())}...};
     thread_task tasks[sizeof...(Bodies)]{thread_task{&joined[Is], &run_joined_body_<Ctx, Bodies>}...};
     using Values = joined_values_t<Ctx, Bodies...>;
-    using Joined = ::foundation::core::Result<Values, ::foundation::os::Errno>;
+    using Joined = ::foundation::core::Result<Values, start_error_t<Bodies...>>;
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
         run_thread_tasks(::foundation::core::detail::view_over_(tasks, sizeof...(Bodies)), options);
-    (end_owned_part_(static_cast<Bodies&&>(bodies)), ...);
-    if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
-        return started;
-    } else {
-        if (started.is_err()) {
-            return Joined{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
+    // Each path checks that each Option is empty after its last use of the
+    // frame.
+    if (started.is_err()) {
+        ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
+        // No thread ran, so each Option still holds its body (THE ERRORS).
+        if constexpr (holds_linear_part_<Bodies...>) {
+            Joined refusal{::foundation::core::err(RefusedStart<Bodies...>{
+                error,
+                ::foundation::core::Record<Bodies...>{
+                    owned.at(::foundation::core::index<Is>()).take().expect("no thread ran a refused body")...}})};
+            (std::move(owned.at(::foundation::core::index<Is>())).expect_none("the refusal holds each body"), ...);
+            return refusal;
+        } else {
+            return Joined{::foundation::core::err(error)};
         }
-        return Joined{Values{
+    }
+    if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
+        Joined joined_values{::foundation::core::Unit{}};
+        (std::move(owned.at(::foundation::core::index<Is>())).expect_none("the thread of each body took it"), ...);
+        return joined_values;
+    } else {
+        Joined joined_values{Values{
             std::move(slots.at(::foundation::core::index<Is>())).expect("each body of the call ran one time")...}};
+        (std::move(owned.at(::foundation::core::index<Is>())).expect_none("the thread of each body took it"), ...);
+        return joined_values;
     }
 }
 
@@ -630,7 +683,7 @@ consteval void check_raw_probe_body_() noexcept {
 template <typename Ctx, typename... Bodies>
     requires(!NamesABodyAsAnLvalue<Bodies...>) && CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0)
          && (JoinedBody<Bodies, Ctx> && ...)
-[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, start_error_t<Bodies...>>
 run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&&... bodies) noexcept {
     constexpr ::foundation::closure::DoorPolicy policy =
         sizeof...(Bodies) == 1 ? joined_sole_policy : joined_concurrent_policy;
@@ -678,39 +731,59 @@ inline constexpr ::foundation::closure::DoorPolicy beside_caller_policy{::founda
 namespace detail {
 
 // run_beside with the body and the continuation by value, so each is an
-// object of this frame (THE BODIES BY MOVE).
+// object of this frame.  The body then moves into an Option of the frame,
+// and its thread takes it out (THE BODIES BY MOVE).
 template <typename Ctx, typename Body, typename Continuation>
-[[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, start_error_t<Body, Continuation>>
 run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuation continuation) noexcept {
     using Values = beside_values_t<Ctx, Body, Continuation>;
-    using Beside = ::foundation::core::Result<Values, ::foundation::os::Errno>;
+    using Beside = ::foundation::core::Result<Values, start_error_t<Body, Continuation>>;
+    constexpr ::foundation::core::StaticIndex<0> only = ::foundation::core::index<0>();
+    ::foundation::core::Record<::foundation::core::Option<Body>> owned{
+        ::foundation::core::Option<Body>::some(static_cast<Body&&>(body))};
     ::foundation::core::Option<joined_result_t_<Ctx, Body>> slot{};
-    joined_body_ joined{&body, &ctx, &slot};
+    joined_body_ joined{&owned.at(only), &ctx, &slot};
     thread_task task{&joined, &run_joined_body_<Ctx, Body>};
     ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> started = start_thread_task(task, options);
+    // Each path checks that the Option is empty after its last use of the
+    // frame.
     if (started.is_err()) {
-        end_owned_part_(static_cast<Body&&>(body));
-        end_owned_part_(static_cast<Continuation&&>(continuation));
-        return Beside{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
+        ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
+        // No thread ran, so the Option still holds the body (THE ERRORS).
+        if constexpr (holds_linear_part_<Body, Continuation>) {
+            Beside refusal{::foundation::core::err(RefusedStart<Body, Continuation>{
+                error, ::foundation::core::Record<Body, Continuation>{
+                           owned.at(only).take().expect("no thread ran a refused body"),
+                           static_cast<Continuation&&>(continuation)}})};
+            std::move(owned.at(only)).expect_none("the refusal holds the body");
+            return refusal;
+        } else {
+            return Beside{::foundation::core::err(error)};
+        }
     }
     std::uint64_t const handle = std::move(started).expect("a start that is no error holds its handle");
     // The once door owns the continuation, calls it one time and ends it.
     if constexpr (std::is_void_v<std::invoke_result_t<Continuation>>) {
         ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
         join_thread_task(handle);
-        end_owned_part_(static_cast<Body&&>(body));
         if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
-            return Beside{::foundation::core::Unit{}};
+            Beside joined_values{::foundation::core::Unit{}};
+            std::move(owned.at(only)).expect_none("the thread of the body took it");
+            return joined_values;
         } else {
-            return Beside{
+            Beside joined_values{
                 Values{std::move(slot).expect("the body of the thread ran one time"), ::foundation::core::Unit{}}};
+            std::move(owned.at(only)).expect_none("the thread of the body took it");
+            return joined_values;
         }
     } else {
         beside_result_t_<Continuation> continued =
             ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
         join_thread_task(handle);
-        end_owned_part_(static_cast<Body&&>(body));
-        return Beside{Values{std::move(slot).expect("the body of the thread ran one time"), std::move(continued)}};
+        Beside joined_values{
+            Values{std::move(slot).expect("the body of the thread ran one time"), std::move(continued)}};
+        std::move(owned.at(only)).expect_none("the thread of the body took it");
+        return joined_values;
     }
 }
 
@@ -719,11 +792,12 @@ run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuatio
 // Runs the body on a thread of its own with the options, runs the
 // continuation on the calling thread at the same time, and joins the thread
 // when the continuation returns (THE THREAD BESIDE THE CALLER).  A start that
-// fails is the error of the call, and the continuation does not run then.
+// fails is the error of the call, and the continuation does not run then
+// (THE ERRORS).
 template <typename Ctx, typename Body, typename Continuation>
     requires(!NamesABodyAsAnLvalue<Body>)
          && CtxStartsThreads<Ctx> && JoinedBody<Body, Ctx> && BesideContinuation<Continuation>
-[[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, start_error_t<Body, Continuation>>
 run_beside(Ctx const& ctx, ThreadOptions const& options, Body&& body, Continuation continuation) noexcept {
     constexpr ::foundation::closure::ClosureVerdict verdict =
         ::foundation::closure::check_closure(^^Body, beside_caller_policy, "run_beside");
@@ -787,13 +861,13 @@ void run_beside_each_body_(void* frame) noexcept {
 // join for each thread, and a frame that holds Bound tasks.
 template <typename Ctx, std::size_t Bound, typename Body, typename Continuation>
     requires CtxStartsThreads<Ctx> && BesideEachBody<Body> && BesideContinuation<Continuation>
-[[nodiscard]] ::foundation::core::Result<detail::beside_result_t_<Continuation>, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<detail::beside_result_t_<Continuation>, start_error_t<Continuation>>
 run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::core::Index<Bound> count, Body body,
                 Continuation continuation) noexcept {
     constexpr ::foundation::closure::ClosureVerdict verdict =
         ::foundation::closure::check_closure(^^Body, beside_each_policy, "run_beside_each");
     static_assert(verdict.is_admitted(), verdict);
-    using Continued = ::foundation::core::Result<detail::beside_result_t_<Continuation>, ::foundation::os::Errno>;
+    using Continued = ::foundation::core::Result<detail::beside_result_t_<Continuation>, start_error_t<Continuation>>;
     using Slot = ::foundation::core::Index<Bound>;
     ::foundation::core::FixedArray<detail::beside_each_frame_<Body>, Bound> frames{};
     ::foundation::core::FixedArray<detail::thread_task, Bound> tasks{};
@@ -815,7 +889,15 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
         detail::start_thread_tasks(started_tasks, options);
     if (started.is_err()) {
-        return Continued{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
+        ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
+        // The body holds no linear value (beside_each_policy), so only the
+        // continuation can come back (THE ERRORS).
+        if constexpr (detail::holds_linear_part_<Continuation>) {
+            return Continued{::foundation::core::err(RefusedStart<Continuation>{
+                error, ::foundation::core::Record<Continuation>{static_cast<Continuation&&>(continuation)}})};
+        } else {
+            return Continued{::foundation::core::err(error)};
+        }
     }
     if constexpr (std::is_void_v<std::invoke_result_t<Continuation>>) {
         ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
@@ -854,7 +936,7 @@ concept CtxRunsRawProbes = ::foundation::effects::CtxOwnsCapability<TestCtx, ::f
 template <typename Ctx, typename TestCtx, typename... Bodies>
     requires(!NamesABodyAsAnLvalue<Bodies...>) && CtxStartsThreads<Ctx> && CtxRunsRawProbes<TestCtx>
          && (sizeof...(Bodies) > 0) && (JoinedBody<Bodies, Ctx> && ...)
-[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, start_error_t<Bodies...>>
 run_joined_raw_probe(Ctx const& ctx, TestCtx const& /*test*/, RawProbeReason /*reason*/, ThreadOptions const& options,
                      Bodies&&... bodies) noexcept {
     (detail::check_raw_probe_body_<Bodies>(), ...);
