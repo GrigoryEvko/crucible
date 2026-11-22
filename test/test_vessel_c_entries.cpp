@@ -274,10 +274,11 @@ void remove_export_file() noexcept {
 
 // The C entry and the export take a name of SCHEMA_NAME_MAX characters, and
 // the loader reads the file of the export.  The C entry refuses one character
-// more.  An internal name that starts with a zero is stored empty, and the
-// export refuses it, because the loader refuses an empty name: the export
-// gives 0 and writes no file.  The old export wrote the file with the length
-// 0, and the old C entry refused each name past 256 characters.
+// more.  The table refuses an internal name that starts with a zero, so only
+// a Sanitized name that no validator made puts an empty name in the table.
+// The export refuses such a name, because the loader refuses an empty name:
+// the export gives 0 and writes no file.  The old export wrote the file with
+// the length 0, and the old C entry refused each name past 256 characters.
 void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) {
     // Each text holds its characters and the zero that ends a C text.
     ::fixy::FixedText<crucible::SCHEMA_NAME_MAX + 1> longest{};
@@ -305,22 +306,25 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
 
     // The tables are process-wide, so the export of the library reads a name
     // that this binary registers.  The global table is sealed, so the name
-    // goes to the late table.
+    // goes to the late table.  The retag skips sanitize_schema_name, which
+    // refuses a name that holds a zero.
     ::fixy::FixedText<8> leading_zero{};
     EXPECT(leading_zero.append('\0').is_ok() && leading_zero.append('a').is_ok() && leading_zero.append('b').is_ok(),
            "the text holds a zero and two letters");
     EXPECT(leading_zero.size() == 3, "the view of the name holds the zero");
+    const crucible::SchemaTable::SanitizedName unchecked =
+        ::fixy::mint_tagged<::fixy::tags::source::External>(leading_zero.view())
+            .retag<::fixy::tags::source::Sanitized>();
     constexpr crucible::VigilFgCtx kForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
     EXPECT(crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc,
-                                          crucible::SchemaHash{kEmptyStoredSchema},
-                                          ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(leading_zero.view()))
+                                          crucible::SchemaHash{kEmptyStoredSchema}, unchecked)
                .is_ok(),
-           "the table takes the internal name");
+           "the table takes the Sanitized name");
     const auto stored = crucible::schema_name(crucible::SchemaHash{kEmptyStoredSchema});
     const bool is_stored_empty = stored.match(
         [](crucible::SchemaTable::LookupName const& found) noexcept { return found.value().view().size() == 0; },
         [] noexcept { return false; });
-    EXPECT(is_stored_empty, "the table keeps the internal name as an empty name");
+    EXPECT(is_stored_empty, "the table keeps the Sanitized name as an empty name");
 
     EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 0,
            "the export refuses an empty name");

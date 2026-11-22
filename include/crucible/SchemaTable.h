@@ -67,6 +67,33 @@ enum class SchemaRefusal : std::uint8_t {
 // The result of the registration of a schema name.
 using SchemaRegistration = ::fixy::Result<::fixy::Unit, SchemaRefusal>;
 
+// The reason that the table refuses a schema name.
+enum class SchemaNameError : std::uint8_t {
+    // The hash is zero, the sentinel of no schema, on which the content hash
+    // and the region cache key.
+    zero_hash,
+    // The name has no character.
+    empty,
+    // The name has more than SCHEMA_NAME_MAX characters.
+    too_long,
+    // The name holds a zero.  The table keeps the characters before the
+    // first zero, so it would keep other characters than the name.
+    holds_zero,
+};
+
+// The reason that the table refuses the characters of a name of hash, or no
+// value: a hash of zero, no character, or more than SCHEMA_NAME_MAX
+// characters.  It is the part of the check that a name of each provenance
+// passes: sanitize_schema_name runs it on a name from outside, and
+// SchemaTable::register_name on an internal name.  Complexity: constant.
+[[nodiscard]] constexpr ::fixy::Option<SchemaNameError> schema_name_error(SchemaHash hash,
+                                                                          ::fixy::TextView characters) noexcept {
+    if (hash.raw() == 0) return ::fixy::some(SchemaNameError::zero_hash);
+    if (characters.size() == 0) return ::fixy::some(SchemaNameError::empty);
+    if (characters.size() > SCHEMA_NAME_MAX) return ::fixy::some(SchemaNameError::too_long);
+    return ::fixy::none;
+}
+
 // The entries, the count and the phase are private.  A public field is a
 // write that no view and no seal can refuse.
 class SchemaTable {
@@ -164,6 +191,14 @@ public:
     // the program itself, so each of the two is a defect, and it ends the
     // process with the reason.
     //
+    // A Sanitized name passed sanitize_schema_name, so its type proves its
+    // check.  An internal name has no such door, so the table runs the same
+    // check on its characters, the characters before its first zero
+    // (schema_name_error): a hash of zero, no character, or more than
+    // SCHEMA_NAME_MAX characters is a defect of the program, and it ends the
+    // process with the reason.  The table would otherwise keep an empty name,
+    // or a name on the sentinel of no schema.
+    //
     // The context of the writer picks the entry of the write section
     // (RegistrationSeal::with_write_section): the context of a Vigil's
     // producer claim, or a context that owns Div.
@@ -176,6 +211,11 @@ public:
         const ::fixy::TextView name = name_tag.value();
         if (name.size() == 0) return ::fixy::Unit{};
         constexpr bool is_internal_name = std::same_as<Tag, ::fixy::tags::source::FromInternal>;
+        if constexpr (is_internal_name) {
+            schema_name_error(hash, characters_of_(name))
+                .match([hash](SchemaNameError refused) noexcept { report_refused_internal_name_(hash, refused); },
+                       [] noexcept {});
+        }
         ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
         const bool was_open =
             seal_.with_write_section(writer, [&] { refusal = write_name_(allocation, hash, name, is_internal_name); });
@@ -421,6 +461,29 @@ private:
                       hash.raw(), stored, other);
     }
 
+    // An internal name that the check of schema_name_error refuses is a defect
+    // of the program: a hash of zero, a name that starts with a zero, or a
+    // name of more than SCHEMA_NAME_MAX characters.
+    [[noreturn, gnu::cold]] static void report_refused_internal_name_(SchemaHash hash,
+                                                                      SchemaNameError refused) noexcept {
+        switch (refused) {
+            case SchemaNameError::zero_hash:
+                ::fixy::fatal("crucible: an internal schema name has the hash zero, the sentinel of no schema.  The "
+                              "hash of a schema is never zero");
+            case SchemaNameError::empty:
+                ::fixy::fatal("crucible: the internal schema name of the hash {} has no character before its first "
+                              "zero, so the table would keep an empty name",
+                              hash.raw());
+            case SchemaNameError::too_long:
+                ::fixy::fatal("crucible: the internal schema name of the hash {} is longer than SCHEMA_NAME_MAX "
+                              "characters.  Raise SCHEMA_NAME_MAX in crucible/SchemaTable.h",
+                              hash.raw());
+            case SchemaNameError::holds_zero:
+            default:
+                ::fixy::unreachable();
+        }
+    }
+
     // A full table refuses an internal name.  A quiet return leaves each later
     // schema unregistered, and the fallback dispatch that results shows far
     // from the registration that was lost.
@@ -458,20 +521,6 @@ private:
     RegistrationSeal seal_;
 };
 
-// The reason that sanitize_schema_name refuses a name from outside.
-enum class SchemaNameError : std::uint8_t {
-    // The hash is zero, the sentinel of no schema, on which the content hash
-    // and the region cache key.
-    zero_hash,
-    // The name has no character.
-    empty,
-    // The name has more than SCHEMA_NAME_MAX characters.
-    too_long,
-    // The name holds a zero.  The table keeps the characters before the
-    // first zero, so it would keep other characters than the name.
-    holds_zero,
-};
-
 // The tags of a name that crosses a trust boundary: a trace file gives an
 // External name, and the C interface gives an ABIBoundary name.
 template <typename Tag>
@@ -490,11 +539,15 @@ template <SchemaNameBoundary Tag>
 sanitize_schema_name(SchemaHash hash, ::fixy::Tagged<::fixy::TextView, Tag> const& name) noexcept {
     using Sanitized = ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>;
     const ::fixy::TextView characters = name.value();
-    if (hash.raw() == 0) return Sanitized{::fixy::err(SchemaNameError::zero_hash)};
-    if (characters.size() == 0) return Sanitized{::fixy::err(SchemaNameError::empty)};
-    if (characters.size() > SCHEMA_NAME_MAX) return Sanitized{::fixy::err(SchemaNameError::too_long)};
-    if (::fixy::find(characters, '\0').is_some()) return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
-    return Sanitized{::fixy::mint_tagged<Tag>(characters).template retag<::fixy::tags::source::Sanitized>()};
+    const ::fixy::Option<SchemaNameError> refusal = schema_name_error(hash, characters);
+    return refusal.match(
+        [](SchemaNameError const& refused) noexcept { return Sanitized{::fixy::err(refused)}; },
+        [characters] noexcept {
+            if (::fixy::find(characters, '\0').is_some()) {
+                return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
+            }
+            return Sanitized{::fixy::mint_tagged<Tag>(characters).template retag<::fixy::tags::source::Sanitized>()};
+        });
 }
 
 // The global is sealed before any second thread starts, so a registration

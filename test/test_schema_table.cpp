@@ -294,6 +294,38 @@ static void test_name_ends_at_its_first_zero() {
     ::fixy::check::pass(kTest, "  test_name_ends_at_first_zero:   PASSED\n");
 }
 
+// Registers an internal name that starts with a zero, so it has no character
+// before its first zero.
+static void register_name_with_a_leading_zero() noexcept {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    ::fixy::FixedText<16> name{};
+    name.append('\0').expect("the name fits");
+    name.append("aten::mm").expect("the name fits");
+    reg(t, mv, H(0x79), S(name.view()));
+}
+
+// Registers an internal name on the hash zero, the sentinel of no schema.
+static void register_name_of_the_hash_zero() noexcept {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0), S("aten::mm"));
+}
+
+// An internal name that starts with a zero would be kept as an empty name,
+// and a name on the hash zero would stand for no schema.  Each is a defect of
+// the program, and the registration ends the process with the reason, in a
+// child process of expect_dies.
+static void test_refused_internal_name_ends_the_process() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(test, register_name_with_a_leading_zero,
+                               ::fixy::TextView{"crucible: the internal schema name of the hash 121 has no character "
+                                                "before its first zero"});
+    ::fixy::check::expect_dies(test, register_name_of_the_hash_zero,
+                               ::fixy::TextView{"crucible: an internal schema name has the hash zero"});
+    ::fixy::check::pass(kTest, "  test_refused_internal_name:     PASSED\n");
+}
+
 static void test_default_is_mutable_and_seal_flips() {
     SchemaTable t;
     CRUCIBLE_TEST_ASSERT(kTest, !t.is_sealed());
@@ -543,6 +575,7 @@ int main() {
     test_global_table_convenience();
     test_empty_name_is_noop();
     test_name_ends_at_its_first_zero();
+    test_refused_internal_name_ends_the_process();
     test_default_is_mutable_and_seal_flips();
     test_sealed_table_mints_no_mutable_view();
     test_clear_resets_seal();
