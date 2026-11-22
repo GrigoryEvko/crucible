@@ -31,7 +31,8 @@
 //     binding, or the explicit object parameter of a member function.  It
 //     tracks no object of a move constructor, of a move assignment, or of a
 //     constructor or an assignment of a class that carries the annotation,
-//     because these functions define the transfer.
+//     because these functions define the transfer.  Only the walk of the
+//     summary of a call operator tracks a capture (THE SUMMARIES).
 //
 // THE CONSUMES
 //     An object is consumed when it reaches one of these places, through
@@ -179,11 +180,13 @@
 //     argument of a reference or a pointer that is not const.  An alias of
 //     the sum can fill it at each later point: a capture by reference, an
 //     address that is not const in a pointer, and a reference member that is
-//     not const.  So after an alias, no fact shows the sum empty or full, and
-//     only a consume ends it.  A capture hides each later consume, so a
+//     not const.  So after an alias, no fact shows the sum empty or full.
+//     A consume ends it only up to the next call that can fill it (THE
+//     SUMMARIES, THE ALIASES).  A capture hides each later consume, so a
 //     captured sum that can be full at its end gives the kind
-//     option-unconsumed.  An empty sum at an exit drops nothing.  A Result and a OneOf have no member with these annotations,
-//     so only a consume ends one.  The body of a door gives neither kind.
+//     option-unconsumed.  An empty sum at an exit drops nothing.  A Result
+//     and a OneOf have no member with these annotations, so only a consume
+//     ends one.  The body of a door gives neither kind.
 //     The rule does not see a sum that a data member, a static object or a
 //     capture holds, or the end of a sum in the body of a door.
 //
@@ -221,26 +224,57 @@
 //     door at the end of its scope.
 //
 // THE SUMMARIES
-//     Two facts of a body serve each later caller in the unit, at the
+//     Three facts of a body serve each later caller in the unit, at the
 //     PLUGIN_PRE_GENERICIZE of the body:
 //       * the capture fields of a closure whose sum the body of its call
 //         operator can fill: an argument of a parameter that writes it, other
 //         than the object of a consumer or of a member that empties, and the
 //         target of an assignment (note_closure_fills)
+//       * the capture fields of a call operator whose sum each path of its
+//         body leaves consumed or empty.  A walk of the body in the form of
+//         the summary gives it: the walk tracks the proxy of each capture by
+//         reference of a linear sum, which the closure borrows, and its end
+//         gives no finding (note_closure_empties)
 //       * a function whose body keeps no reference parameter that names a
 //         linear sum: each use of such a parameter is the object of a member
 //         call, or an argument of a parameter that does not write, or of a
-//         callee that keeps no reference (note_kept_references).
-//     A call of a closure, and a call that takes a closure, can run its body.
-//     So after such a call, each sum that the closure captures by reference
-//     and that its summary names holds a payload again, also after a
-//     consume.  A closure with no summary can fill each such sum.  A call
-//     that takes a sum by a reference or a pointer that writes, and whose
-//     callee has no fact that it keeps no reference, makes an alias of the
-//     sum: the callee can keep the reference and fill the sum at a later
-//     point.  A callee whose body the unit genericizes after the caller, such
-//     as a template that the end of the unit instantiates, has no fact.  The
-//     facts are keyed by a UID (THE COLLECTIONS of plugin.h).
+//         callee that keeps no reference (note_kept_references).  A body that
+//         only names a reference needs no complete class, so a parameter of
+//         an incomplete class counts as one that can name a sum.
+//     The call of a call operator consumes each sum that its summary leaves
+//     empty.  A call of a closure, and a call that takes a closure, can run
+//     its body.  So after such a call, each other sum that the closure
+//     captures by reference and that its summary names holds a payload
+//     again, also after a consume.  A closure with no summary can fill each
+//     such sum, and a closure that a callee takes can fill it at each later
+//     call too (THE ALIASES).  A call that takes a sum by a reference or a
+//     pointer that writes, and whose callee can keep the reference, makes an
+//     alias of the sum.
+//     A callee whose body the unit genericizes after the caller, such as a
+//     template that the end of the unit instantiates or a function below the
+//     caller, has no fact at the walk of the caller.  So a body that reads
+//     such a callee gets two walks: one where the callee can keep the
+//     reference, and one where it keeps none.  When the two walks give other
+//     findings, the findings wait for the end of the unit.  Then each such
+//     callee has its fact, or it has no body in the unit and can keep the
+//     reference, and the rule adds the findings of the walk that the facts
+//     give (judge_deferred_findings).  The fact of a body that gives a sum
+//     to such a callee waits in the same way, and the end of the unit gives
+//     each waiting fact by a least fixed point, so a recursion keeps the
+//     reference.  The facts are keyed by a UID (THE COLLECTIONS of plugin.h).
+//
+// THE ALIASES
+//     A stored address that is not const, a reference member that is not
+//     const, a callee that can keep a reference, and a closure that a callee
+//     takes can name a tracked sum beside the name of its object.  A write
+//     through such an alias needs a call, so each call that starts after the
+//     consume of the sum can fill it again, and the sum then holds a payload
+//     that the end of its scope drops.  The call of a member of a linear sum
+//     on a tracked object changes only that object, and std::move changes
+//     nothing.  The callee of the call that takes the consumed payload starts
+//     before the consume ends, so the rule reads it as no such call.  A
+//     capture by reference is no such alias, because the summary of the
+//     closure tells what each call of it does.
 //
 // THE SELF-MOVES
 //     A move assignment whose target and source are one object is the kind
@@ -644,11 +678,69 @@ bool is_linear_sum(tree type) {
 
 // THE SUMMARIES: the capture fields of each closure whose reference names a
 // linear sum that the body of the call operator can fill, by the TYPE_UID of
-// the closure, and each function whose body keeps no reference parameter that
-// names a linear sum, by its DECL_UID.  No collection reuses a UID, so the
-// facts stay for the unit (THE COLLECTIONS of plugin.h).
+// the closure, and the capture fields that each path of a call operator
+// leaves empty, by the DECL_UID of the call operator.  Each function whose
+// body keeps no reference parameter that names a linear sum, by its DECL_UID,
+// and each function whose PLUGIN_PRE_GENERICIZE gave its fact.  A fact that
+// waits for the facts of callees with a later body holds the DECL_UID of each
+// such callee.  No collection reuses a UID, so the facts stay for the unit
+// (THE COLLECTIONS of plugin.h).
 std::unordered_map<unsigned, std::vector<unsigned>> closure_fills;
+std::unordered_map<unsigned, std::vector<unsigned>> closure_empties;
 std::unordered_set<unsigned> keeps_no_sum_reference;
+std::unordered_set<unsigned> summarized_functions;
+std::unordered_map<unsigned, std::vector<unsigned>> waiting_kept_facts;
+
+// THE SUMMARIES: what a callee does with a reference parameter that names a
+// linear sum, at one point of the unit.
+enum class KeptFact : std::uint8_t {
+    keeps_nothing,  // the body keeps no such reference
+    can_keep,  // the body can keep one, or no body exists for the call
+    unknown,  // the unit genericizes the body after this point, or the fact waits for such a body
+};
+
+// The fact of the callee CALLEE at this point of the unit.  A call through a
+// pointer can keep each reference.
+KeptFact kept_fact_of(tree callee) {
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL) {
+        return KeptFact::can_keep;
+    }
+    unsigned uid = DECL_UID(callee);
+    if (keeps_no_sum_reference.count(uid) != 0) {
+        return KeptFact::keeps_nothing;
+    }
+    if (summarized_functions.count(uid) != 0 && waiting_kept_facts.count(uid) == 0) {
+        return KeptFact::can_keep;
+    }
+    return KeptFact::unknown;
+}
+
+// The fact that each callee that the walk of a body found with no fact keeps
+// nothing, after the walks of the unit.
+bool keeps_nothing_each(const std::vector<unsigned>& callees) {
+    return std::all_of(callees.begin(), callees.end(),
+                       [](unsigned uid) { return keeps_no_sum_reference.count(uid) != 0; });
+}
+
+// Gives each waiting fact whose callees keep nothing its fact, until no fact
+// changes.  A fact that waits on itself, also through other callees, stays a
+// fact that can keep, so recursion fails closed.  Complexity: quadratic in the
+// waiting facts in the worst case, and each unit holds a few.
+void resolve_waiting_kept_facts() {
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (auto entry = waiting_kept_facts.begin(); entry != waiting_kept_facts.end();) {
+            if (keeps_nothing_each(entry->second)) {
+                keeps_no_sum_reference.insert(entry->first);
+                entry = waiting_kept_facts.erase(entry);
+                changed = true;
+            } else {
+                ++entry;
+            }
+        }
+    }
+}
 
 // True when FIELD is a capture by reference of a linear sum.
 bool is_sum_capture(tree field) {
@@ -863,9 +955,20 @@ struct Slot {
     // the callee can keep it and fill the sum at a later point, so no fact
     // of the content holds for THE KNOWN CONTENT after it (THE SUMS).
     bool is_borrowed = false;
+    // A stored address, a reference member, a callee that can keep a
+    // reference or a closure that a callee can keep names the sum, so each
+    // call that starts after its consume can fill it again (THE ALIASES).
+    bool can_refill_at_calls = false;
     // A closure captured the object by reference, so the rule cannot see its
     // consume, and the rule linear-capture reports the capture (THE CAPTURES).
     bool is_escaped = false;
+    // THE SUMMARIES: the object is a capture by reference of a linear sum in
+    // the body of a call operator, which the closure borrows.  Its end
+    // gives no finding, and LEAVES_PAYLOAD tells that a path to an exit can
+    // leave a payload in it.
+    bool is_capture_borrow = false;
+    bool leaves_payload = false;
+    unsigned capture_field_uid = 0;
     bool has_live_exit = false;
     bool has_maybe_exit = false;
     bool was_double_reported = false;
@@ -889,6 +992,44 @@ struct PendingFinding {
     Kind kind;
     location_t location;
     std::string entity;
+};
+
+// One finding of a walk of a body, with its place, before the rule adds it.
+// It holds no tree, so it can wait for the end of the unit (THE SUMMARIES).
+struct WalkFinding {
+    Kind kind = Kind::linear_unconsumed;
+    Place place;
+    std::string entity;
+
+    [[nodiscard]] bool operator==(const WalkFinding& other) const {
+        return kind == other.kind && place.file == other.place.file && place.line == other.place.line
+            && place.column == other.place.column && entity == other.entity;
+    }
+};
+
+// The findings of a body that depend on callees with no fact at its walk:
+// the findings of the walk where such a callee can keep a reference, the
+// findings of the walk where it keeps none, and the callees.  The end of the
+// unit adds one of the two lists (THE SUMMARIES).
+struct DeferredFindings {
+    std::vector<WalkFinding> if_kept;
+    std::vector<WalkFinding> if_not_kept;
+    std::vector<unsigned> callees;
+};
+
+std::vector<DeferredFindings> deferred_findings;
+
+// How a walk of a body reads a callee with no fact (THE SUMMARIES).
+enum class UnknownCallee : std::uint8_t {
+    can_keep,
+    keeps_nothing,
+};
+
+// What a walk of a body gives: the findings of the rule, or only the
+// summary of a call operator (THE SUMMARIES).
+enum class WalkPurpose : std::uint8_t {
+    findings,
+    summary,
 };
 
 // The bound of the passes of the fixed point of one loop.  The lattice of one
@@ -951,12 +1092,22 @@ bool is_transfer_function(tree function) {
     return is_special && scope != NULL_TREE && TYPE_P(scope) && linearity_of(scope) == Linearity::direct;
 }
 
+tree capture_field_of(tree node, tree closure);
+
 class Analysis {
 public:
-    Analysis(tree function, bool is_door) : function_(function), is_door_(is_door) {}
+    Analysis(tree function, bool is_door, UnknownCallee unknown_callee, WalkPurpose purpose)
+        : function_(function), is_door_(is_door), unknown_callee_(unknown_callee), purpose_(purpose) {}
 
-    void run() {
-        collect_orphans();
+    // The walk of the body.  A second walk of one body takes the dropped
+    // elements of the first walk, because the first walk takes the folds of
+    // the body from the list of the unit (THE DROPPED ELEMENTS).
+    void run(const Analysis* first_walk = nullptr) {
+        if (first_walk != nullptr) {
+            orphans_ = first_walk->orphans_;
+        } else {
+            collect_orphans();
+        }
         scopes_.emplace_back();
         FlowState entry;
         if (!is_exempt_function()) {
@@ -976,9 +1127,33 @@ public:
         report();
     }
 
+    [[nodiscard]] const std::vector<WalkFinding>& findings() const { return findings_; }
+
+    // The callees with no fact that the walk read (THE SUMMARIES).
+    [[nodiscard]] const std::vector<unsigned>& unknown_callees() const { return unknown_callees_; }
+
+    // THE SUMMARIES: the capture fields of a call operator that each path to
+    // an exit leaves empty.  A walk with a goto gives none.
+    [[nodiscard]] std::vector<unsigned> emptied_capture_fields() const {
+        std::vector<unsigned> fields;
+        if (is_unanalyzed_) {
+            return fields;
+        }
+        for (const Slot& entry : slots_) {
+            if (entry.is_capture_borrow && !entry.leaves_payload) {
+                fields.push_back(entry.capture_field_uid);
+            }
+        }
+        return fields;
+    }
+
 private:
     tree function_;
     bool is_door_;
+    UnknownCallee unknown_callee_;
+    WalkPurpose purpose_;
+    std::vector<WalkFinding> findings_;
+    std::vector<unsigned> unknown_callees_;
     std::vector<Slot> slots_;
     std::unordered_map<tree, std::size_t> slot_of_;
     // Each lvalue reference local that borrows a tracked object, and that
@@ -1034,8 +1209,11 @@ private:
         if (folds.empty()) {
             return;
         }
-        element_folds.erase(std::remove_if(element_folds.begin(), element_folds.end(), is_of_function),
-                            element_folds.end());
+        // The walk of a summary leaves the folds to the walk of the findings.
+        if (purpose_ == WalkPurpose::findings) {
+            element_folds.erase(std::remove_if(element_folds.begin(), element_folds.end(), is_of_function),
+                                element_folds.end());
+        }
         PresenceWalk walk;
         tree body = DECL_SAVED_TREE(function_);
         cp_walk_tree(&body, walk_presence, &walk, &walk.visited);
@@ -1089,6 +1267,9 @@ private:
         }
         if (VAR_P(decl)) {
             bool is_binding = DECL_DECOMPOSITION_P(decl) && !DECL_DECOMP_IS_BASE(decl);
+            if (purpose_ == WalkPurpose::summary && DECL_HAS_VALUE_EXPR_P(decl) && !is_binding) {
+                return track_capture_borrow(decl, slot);
+            }
             if (TREE_STATIC(decl) || DECL_EXTERNAL(decl) || DECL_THREAD_LOCAL_P(decl)
                 || (DECL_HAS_VALUE_EXPR_P(decl) && !is_binding) || (DECL_ARTIFICIAL(decl) && !is_binding)) {
                 return false;
@@ -1124,6 +1305,28 @@ private:
         slots_.push_back(entry);
         slot_of_.emplace(decl, slot);
         add_field_slots(slot, type);
+        return true;
+    }
+
+    // THE SUMMARIES: the proxy DECL of a capture by reference of a linear sum
+    // in the body of a call operator gets a slot that the closure borrows.
+    bool track_capture_borrow(tree decl, std::size_t& slot) {
+        tree closure = DECL_CONTEXT(function_);
+        if (closure == NULL_TREE || !LAMBDA_TYPE_P(closure)) {
+            return false;
+        }
+        tree field = capture_field_of(DECL_VALUE_EXPR(decl), TYPE_MAIN_VARIANT(closure));
+        if (!is_sum_capture(field)) {
+            return false;
+        }
+        slot = slots_.size();
+        Slot entry;
+        entry.decl = decl;
+        entry.is_sum = true;
+        entry.is_capture_borrow = true;
+        entry.capture_field_uid = DECL_UID(field);
+        slots_.push_back(entry);
+        slot_of_.emplace(decl, slot);
         return true;
     }
 
@@ -1213,6 +1416,18 @@ private:
         }
         slots_[slot].is_aliased = true;
         note_can_be_full(decl, field, state);
+    }
+
+    // THE ALIASES: an alias that is no capture of a closure of this body, such
+    // as a stored address, a reference member or a reference that a callee
+    // can keep, can fill the tracked sum at each call after its consume.
+    void note_kept_alias(tree decl, tree field, FlowState& state) {
+        std::size_t slot = sum_slot(decl, field);
+        if (slot == kNoParent) {
+            return;
+        }
+        note_alias(decl, field, state);
+        slots_[slot].can_refill_at_calls = true;
     }
 
     // True when a fact of a test, of take, of fill or of a builder can show
@@ -1722,7 +1937,13 @@ private:
             for (std::size_t slot : scopes_[scope]) {
                 Status status = state.get(slot);
                 const Slot& entry = slots_[slot];
-                if (entry.ends_at_scope || (entry.is_escaped && !entry.is_sum)) {
+                if (entry.is_capture_borrow) {
+                    // THE SUMMARIES: the closure borrows the sum, so its end
+                    // gives no finding.  A slot that the walk never made live
+                    // fails closed.
+                    bool is_empty_here = status == Status::consumed || state.get_content(slot) == Content::empty;
+                    slots_[slot].leaves_payload = slots_[slot].leaves_payload || !is_empty_here;
+                } else if (entry.ends_at_scope || (entry.is_escaped && !entry.is_sum)) {
                     // The end of the scope is the door of the object, or a
                     // capture by reference hides the consume (THE CAPTURES).
                 } else if (entry.is_sum && state.get_content(slot) == Content::empty) {
@@ -1961,7 +2182,7 @@ private:
             if (source != NULL_TREE && source != decl && is_borrow && field == NULL_TREE) {
                 referent_of_[decl] = source;
             } else if (source != NULL_TREE && source != decl && is_mutable_address) {
-                note_alias(source, field, state);
+                note_kept_alias(source, field, state);
             } else if (source != NULL_TREE && source != decl && !is_borrow && !is_field_borrow
                        && (saw_rvalue || is_linear_or_reference(decl_type))) {
                 consume(source, field, state, location_or(initial, DECL_SOURCE_LOCATION(decl)));
@@ -2222,6 +2443,7 @@ private:
         if (callee != NULL_TREE && TREE_CODE(callee) != FUNCTION_DECL) {
             callee = NULL_TREE;
         }
+        refill_at_call(call, callee, state);
         if (!is_aggregate) {
             walk_expression(CALL_EXPR_FN(call), state);
         }
@@ -2280,10 +2502,10 @@ private:
                 note_can_be_full(decl, field, state);
                 if (std::size_t slot = sum_slot(decl, field); slot != kNoParent) {
                     slots_[slot].is_borrowed = true;
-                    // THE SUMMARIES: a callee with no fact can keep the
-                    // reference and fill the sum at each later point.
-                    if (callee == NULL_TREE || keeps_no_sum_reference.count(DECL_UID(callee)) == 0) {
-                        note_alias(decl, field, state);
+                    // THE SUMMARIES: a callee that can keep the reference can
+                    // fill the sum at each later point.
+                    if (can_keep_reference(callee)) {
+                        note_kept_alias(decl, field, state);
                     }
                 }
             }
@@ -2293,16 +2515,16 @@ private:
             }
         }
         // THE SUMMARIES: the call of a closure runs its body, and a call that
-        // takes a closure can run it.
+        // takes a closure can run it, also at a later call.
         if (callee != NULL_TREE && LAMBDA_FUNCTION_P(callee)) {
-            apply_closure_fills(DECL_CONTEXT(callee), state);
+            apply_closure_call(callee, location, state);
         }
         for (int index = 0; index < count; ++index) {
             tree argument_type = TREE_TYPE(argument_at(call, index));
             argument_type =
                 argument_type != NULL_TREE && TYPE_REF_P(argument_type) ? TREE_TYPE(argument_type) : argument_type;
             if (argument_type != NULL_TREE && LAMBDA_TYPE_P(argument_type)) {
-                apply_closure_fills(argument_type, state);
+                apply_closure_fills(argument_type, ClosureCall::later_too, nullptr, state);
             }
         }
         if (callee != NULL_TREE && TREE_THIS_VOLATILE(callee)) {
@@ -2310,11 +2532,86 @@ private:
         }
     }
 
+    // THE SUMMARIES: true when the callee CALLEE can keep a reference
+    // parameter that names a linear sum.  A callee with no fact at this point
+    // keeps it in the walk that reads such a callee as one that can keep, and
+    // the walk notes the callee for the end of the unit.
+    bool can_keep_reference(tree callee) {
+        KeptFact fact = kept_fact_of(callee);
+        if (fact != KeptFact::unknown) {
+            return fact == KeptFact::can_keep;
+        }
+        unsigned uid = DECL_UID(callee);
+        if (std::find(unknown_callees_.begin(), unknown_callees_.end(), uid) == unknown_callees_.end()) {
+            unknown_callees_.push_back(uid);
+        }
+        return unknown_callee_ == UnknownCallee::can_keep;
+    }
+
+    // THE ALIASES: a call that starts after the consume of a sum that an
+    // alias names can fill the sum again through the alias, so the sum holds
+    // a payload again.  The call of a member of a linear sum on a tracked
+    // object changes only that object, and std::move changes nothing.
+    void refill_at_call(tree call, tree callee, FlowState& state) {
+        if (!state.is_reachable || is_std_move_cast(callee)) {
+            return;
+        }
+        if (callee != NULL_TREE && TREE_CODE(TREE_TYPE(callee)) == METHOD_TYPE && is_linear_sum(DECL_CONTEXT(callee))
+            && argument_count(call) >= 1) {
+            bool saw_rvalue = false;
+            tree field = NULL_TREE;
+            if (strip_to_tracked(argument_at(call, 0), saw_rvalue, &field) != NULL_TREE) {
+                return;
+            }
+        }
+        for (std::size_t slot = 0; slot < slots_.size(); ++slot) {
+            if (!slots_[slot].can_refill_at_calls) {
+                continue;
+            }
+            Status status = state.get(slot);
+            if (status == Status::consumed || status == Status::maybe) {
+                set_object(state, slot, Status::live);
+            }
+            if (status != Status::dead) {
+                state.set_content(slot, Content::can_be_full);
+            }
+        }
+    }
+
+    // Whether a closure runs only at the call that the walk reads, or can run
+    // at a later call too, because a callee took it and can keep it.
+    enum class ClosureCall : std::uint8_t {
+        here,
+        later_too,
+    };
+
+    // THE SUMMARIES: the call of the call operator OPERATOR leaves each sum
+    // that each path of its body leaves empty consumed, and each other sum
+    // that the body can fill holds a payload again.
+    void apply_closure_call(tree call_operator, location_t location, FlowState& state) {
+        auto empties = closure_empties.find(DECL_UID(call_operator));
+        const std::vector<unsigned>* emptied = empties != closure_empties.end() ? &empties->second : nullptr;
+        tree closure = DECL_CONTEXT(call_operator);
+        if (emptied != nullptr && closure != NULL_TREE && TYPE_P(closure) && state.is_reachable) {
+            auto targets = capture_targets_.find(TYPE_UID(TYPE_MAIN_VARIANT(closure)));
+            if (targets != capture_targets_.end()) {
+                for (const auto& [field, decl] : targets->second) {
+                    if (std::find(emptied->begin(), emptied->end(), field) != emptied->end()) {
+                        consume(decl, NULL_TREE, state, location);
+                    }
+                }
+            }
+        }
+        apply_closure_fills(closure, ClosureCall::here, emptied, state);
+    }
+
     // THE SUMMARIES: the body of the closure CLOSURE_TYPE can fill each sum
     // that it captures by reference and that its summary names, so the sum
     // holds a payload again after the call.  A closure with no summary can
-    // fill each such sum.
-    void apply_closure_fills(tree closure_type, FlowState& state) {
+    // fill each such sum.  A capture that EMPTIED names ends empty.  A
+    // closure that a callee can keep can fill the sum at each later call.
+    void apply_closure_fills(tree closure_type, ClosureCall when, const std::vector<unsigned>* emptied,
+                             FlowState& state) {
         if (closure_type == NULL_TREE || !TYPE_P(closure_type) || !state.is_reachable) {
             return;
         }
@@ -2327,14 +2624,19 @@ private:
         for (const auto& [field, decl] : targets->second) {
             bool can_fill = fills == closure_fills.end()
                          || std::find(fills->second.begin(), fills->second.end(), field) != fills->second.end();
+            bool is_emptied =
+                emptied != nullptr && std::find(emptied->begin(), emptied->end(), field) != emptied->end();
             std::size_t slot = sum_slot(decl, NULL_TREE);
-            if (!can_fill || slot == kNoParent) {
+            if (!can_fill || is_emptied || slot == kNoParent) {
                 continue;
             }
             if (state.get(slot) == Status::consumed || state.get(slot) == Status::maybe) {
                 set_object(state, slot, Status::live);
             }
             state.set_content(slot, Content::can_be_full);
+            if (when == ClosureCall::later_too) {
+                slots_[slot].can_refill_at_calls = true;
+            }
         }
     }
 
@@ -2417,7 +2719,7 @@ private:
                 capture_targets_[TYPE_UID(closure)].emplace_back(DECL_UID(TREE_OPERAND(target, 1)), source);
             }
         } else if (source != NULL_TREE && source != tracked_target && is_mutable_address) {
-            note_alias(source, field, state);
+            note_kept_alias(source, field, state);
         } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)) {
             consume(source, field, state, location);
         }
@@ -2458,19 +2760,27 @@ private:
                                                                                                     referred);
                     }
                 }
+                // A closure fills the sum at its calls (THE SUMMARIES), and a
+                // reference member of each other class at each later call
+                // (THE ALIASES).
                 if (referred != NULL_TREE && !TYPE_READONLY(TREE_TYPE(TREE_TYPE(field)))) {
-                    note_alias(referred, NULL_TREE, state);
+                    if (LAMBDA_TYPE_P(TREE_TYPE(node))) {
+                        note_alias(referred, NULL_TREE, state);
+                    } else {
+                        note_kept_alias(referred, NULL_TREE, state);
+                    }
                 }
                 continue;
             }
             // An address or a pointer in an element is no transfer.  An
-            // address that is not const can fill a tracked sum (THE SUMS).
+            // address that is not const can fill a tracked sum at each later
+            // call (THE ALIASES).
             tree value_type = TREE_TYPE(value);
             if (value_type == NULL_TREE || TREE_CODE(value_type) == POINTER_TYPE) {
                 bool saw_address = false;
                 tree addressed = value_type != NULL_TREE ? strip_to_tracked(value, saw_address) : NULL_TREE;
                 if (addressed != NULL_TREE && !TYPE_READONLY(TREE_TYPE(value_type))) {
-                    note_alias(addressed, NULL_TREE, state);
+                    note_kept_alias(addressed, NULL_TREE, state);
                 }
                 continue;
             }
@@ -2532,6 +2842,9 @@ private:
     }
 
     void report() {
+        if (purpose_ == WalkPurpose::summary) {
+            return;
+        }
         if (is_unanalyzed_) {
             if (!slots_.empty()) {
                 record(Kind::linear_unanalyzed, function_location(), function_text(function_));
@@ -2562,9 +2875,71 @@ private:
         if (place.file == nullptr) {
             return;
         }
-        add_finding(kind, nullptr, place, entity);
+        findings_.push_back(WalkFinding{kind, place, entity});
     }
 };
+
+void add_walk_findings(const std::vector<WalkFinding>& findings) {
+    for (const WalkFinding& finding : findings) {
+        add_finding(finding.kind, nullptr, finding.place, finding.entity);
+    }
+}
+
+// THE SUMMARIES: the walk of the body of FUNCTION.  When the walk read a
+// callee with no fact, and a second walk where such a callee keeps no
+// reference gives other findings, the end of the unit picks the findings by
+// the facts of the callees (judge_deferred_findings).  Complexity: one walk of
+// the body, or two.
+void analyze_body(tree function, bool is_door) {
+    Analysis first(function, is_door, UnknownCallee::can_keep, WalkPurpose::findings);
+    first.run();
+    if (first.unknown_callees().empty()) {
+        add_walk_findings(first.findings());
+        return;
+    }
+    Analysis second(function, is_door, UnknownCallee::keeps_nothing, WalkPurpose::findings);
+    second.run(&first);
+    if (first.findings() == second.findings()) {
+        add_walk_findings(first.findings());
+        return;
+    }
+    deferred_findings.push_back(DeferredFindings{first.findings(), second.findings(), first.unknown_callees()});
+}
+
+// THE SUMMARIES: the capture fields of the closure of the call operator
+// FUNCTION that each path of its body leaves empty.  Only a closure that
+// captures a linear sum by reference gets the walk.  Complexity: one walk of
+// the body for such a closure.
+void note_closure_empties(tree function) {
+    tree closure = DECL_CONTEXT(function);
+    if (closure == NULL_TREE || !LAMBDA_TYPE_P(closure)) {
+        return;
+    }
+    bool captures_sum = false;
+    for (tree field = TYPE_FIELDS(closure); field != NULL_TREE && !captures_sum; field = DECL_CHAIN(field)) {
+        captures_sum = TREE_CODE(field) == FIELD_DECL && is_sum_capture(field);
+    }
+    if (!captures_sum) {
+        return;
+    }
+    Analysis walk(function, false, UnknownCallee::can_keep, WalkPurpose::summary);
+    walk.run();
+    std::vector<unsigned> emptied = walk.emptied_capture_fields();
+    if (!emptied.empty()) {
+        closure_empties[DECL_UID(function)] = std::move(emptied);
+    }
+}
+
+// THE SUMMARIES: the findings that waited for the facts of their callees.
+// Each callee with no fact at the walk has its fact now, or has no body in
+// the unit and keeps a reference.
+void judge_deferred_findings() {
+    resolve_waiting_kept_facts();
+    for (const DeferredFindings& deferred : deferred_findings) {
+        add_walk_findings(keeps_nothing_each(deferred.callees) ? deferred.if_not_kept : deferred.if_kept);
+    }
+    deferred_findings.clear();
+}
 
 // ── The shapes (THE SHAPES) ─────────────────────────────────────────────
 
@@ -3855,11 +4230,15 @@ struct KeptReferenceWalk {
     tree parameter = NULL_TREE;
     int uses = 0;
     int read_uses = 0;
+    // The callees with no fact at this point that take the parameter by a
+    // reference that writes.  The fact of the body waits for theirs.
+    std::vector<unsigned> waits_for;
 };
 
 // The uses of PARAMETER in a body, and the uses that keep nothing: the object
 // argument of a member call, and an argument of a call whose callee keeps no
-// reference, or whose parameter does not write.
+// reference, or whose parameter does not write.  A callee with no fact at
+// this point keeps nothing when its own fact says so at the end of the unit.
 tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
     auto& walk = *static_cast<KeptReferenceWalk*>(data);
@@ -3878,14 +4257,15 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
     bool is_function = callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL;
     tree type = function_type_of(node, is_function ? callee : NULL_TREE);
     bool is_method = type != NULL_TREE && TREE_CODE(type) == METHOD_TYPE;
-    bool keeps_nothing = is_function && keeps_no_sum_reference.count(DECL_UID(callee)) != 0;
+    KeptFact fact = kept_fact_of(is_function ? callee : NULL_TREE);
     tree parameter = type != NULL_TREE ? TYPE_ARG_TYPES(type) : NULL_TREE;
     for (int index = 0; index < argument_count(node); ++index) {
         tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
         if (parameter != NULL_TREE) {
             parameter = TREE_CHAIN(parameter);
         }
-        bool is_reading = (is_method && index == 0) || keeps_nothing || !is_writing_parameter(parameter_type);
+        bool is_plain_read = (is_method && index == 0) || !is_writing_parameter(parameter_type);
+        bool is_reading = is_plain_read || fact != KeptFact::can_keep;
         tree argument = argument_at(node, index);
         for (int depth = 0; argument != NULL_TREE && depth < kTypeDepth; ++depth) {
             argument = tree_strip_any_location_wrapper(argument);
@@ -3898,6 +4278,11 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
         }
         if (argument == walk.parameter && is_reading) {
             ++walk.read_uses;
+            unsigned uid = is_function ? DECL_UID(callee) : 0;
+            if (!is_plain_read && fact == KeptFact::unknown
+                && std::find(walk.waits_for.begin(), walk.waits_for.end(), uid) == walk.waits_for.end()) {
+                walk.waits_for.push_back(uid);
+            }
         }
     }
     return NULL_TREE;
@@ -3905,13 +4290,23 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
 
 // Keeps the function FUNCTION when its body keeps no reference parameter that
 // names a linear sum: each use of each such parameter is a read (THE
-// SUMMARIES).  Complexity: linear in the nodes of the body, for each such
-// parameter.
+// SUMMARIES).  A body that passes such a parameter to a callee with no fact at
+// this point gets a fact that waits for the fact of that callee.  Complexity:
+// linear in the nodes of the body, for each such parameter.
 void note_kept_references(tree function) {
+    unsigned uid = DECL_UID(function);
+    summarized_functions.insert(uid);
     tree body = DECL_SAVED_TREE(function);
+    std::vector<unsigned> waits_for;
     for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
         tree type = TREE_TYPE(parameter);
-        if (!is_writing_parameter(type) || !is_linear_sum(TREE_TYPE(type))) {
+        // A body that only names a reference needs no complete class, so the
+        // class of the parameter can be an instance that the unit completes
+        // later, such as an Option.  Such a class can be a linear sum.
+        tree target = is_writing_parameter(type) ? TREE_TYPE(type) : NULL_TREE;
+        bool can_be_sum =
+            target != NULL_TREE && (is_linear_sum(target) || (CLASS_TYPE_P(target) && !COMPLETE_TYPE_P(target)));
+        if (!can_be_sum) {
             continue;
         }
         KeptReferenceWalk walk;
@@ -3920,8 +4315,17 @@ void note_kept_references(tree function) {
         if (walk.uses > walk.read_uses) {
             return;
         }
+        for (unsigned callee : walk.waits_for) {
+            if (std::find(waits_for.begin(), waits_for.end(), callee) == waits_for.end()) {
+                waits_for.push_back(callee);
+            }
+        }
     }
-    keeps_no_sum_reference.insert(DECL_UID(function));
+    if (waits_for.empty()) {
+        keeps_no_sum_reference.insert(uid);
+    } else {
+        waiting_kept_facts[uid] = std::move(waits_for);
+    }
 }
 
 void on_pre_genericize_linear(void* gcc_data, void*) {
@@ -3949,6 +4353,7 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
     if (linear_mode.checks_must_consume) {
         if (LAMBDA_FUNCTION_P(function)) {
             note_closure_fills(function);
+            note_closure_empties(function);
         }
         note_kept_references(function);
     }
@@ -3978,8 +4383,7 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
     if (!linear_mode.checks_must_consume || !has_linear) {
         return;
     }
-    Analysis analysis(function, is_door(function, place));
-    analysis.run();
+    analyze_body(function, is_door(function, place));
 }
 
 // PLUGIN_FINISH_TYPE: the class rules for each class that the unit defines
@@ -4206,6 +4610,9 @@ void report_self_move(const Finding& finding) {
 // The rule brand-reentry at the end of the unit (plugin.cpp, walk_unit): each
 // body of the unit gave its edges of the call graph by then.
 void finish_linear_rules() {
+    if (linear_mode.checks_must_consume) {
+        judge_deferred_findings();
+    }
     if (linear_mode.checks_shapes && !call_graph.was_reported && !seen_error()) {
         call_graph.was_reported = true;
         report_reentries();

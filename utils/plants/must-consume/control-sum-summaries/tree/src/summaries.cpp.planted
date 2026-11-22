@@ -22,19 +22,99 @@ struct [[= ::foundation::linear::linear{}]] Token {
 };
 
 void sink(Token&& token) noexcept;
+void fill_kept() noexcept;
+void look_at(Option<Token> const& held) noexcept;
+void touch(Option<Token>& held) noexcept;
 [[noreturn]] void stop() noexcept;
+template <class Body>
+void run_body(Body& body) noexcept {
+    (void)body();
+}
 
 // A callee whose body the unit reads first: it takes the sum by a reference
 // and keeps no reference, so its summary says so.
 bool inspect(Option<Token>& held) noexcept { return held.is_none(); }
 
-// The test after the call of the callee shows the Option empty.
+// The test after the call of the callee shows the Option empty, and no later
+// call can fill it.
 void callee_keeps_no_reference() {
     Option<Token> held{};
     (void)inspect(held);
     do {
         if (!(held.is_none())) stop();
     } while (0);
+    fill_kept();
+}
+
+// A function template callee that keeps no reference, with its body before
+// the caller, then a later call.
+template <class Sum>
+bool inspect_in_a_template(Sum& held) noexcept {
+    return held.is_none();
+}
+
+void template_callee_keeps_no_reference() {
+    Option<Token> held{};
+    (void)inspect_in_a_template(held);
+    do {
+        if (!(held.is_none())) stop();
+    } while (0);
+    fill_kept();
+}
+
+// A callee that keeps no reference, with its body after the caller, then a
+// later call.
+bool inspect_later(Option<Token>& held) noexcept;
+
+void later_callee_keeps_no_reference() {
+    Option<Token> held{};
+    (void)inspect_later(held);
+    do {
+        if (!(held.is_none())) stop();
+    } while (0);
+    fill_kept();
+}
+
+bool inspect_later(Option<Token>& held) noexcept { return held.is_none(); }
+
+// A callee with no body in the unit that takes the sum by a const reference:
+// it cannot fill the sum, so a later call cannot fill it.
+void const_borrow_then_a_call() {
+    Option<Token> held = Option<Token>::some(Token{6});
+    look_at(held);
+    sink(std::move(held).expect("the Option holds the token"));
+    fill_kept();
+}
+
+// A callee with no body in the unit that takes the sum by a mutable reference,
+// then the consume, and no later call.
+void mutable_borrow_then_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{7});
+    touch(held);
+    sink(std::move(held).expect("the Option holds the token"));
+}
+
+// A closure that consumes the sum itself.
+void closure_consumes_the_sum() {
+    Option<Token> held = Option<Token>::some(Token{8});
+    auto finish = [&held] { sink(std::move(held).expect("the Option holds the token")); };
+    finish();
+}
+
+// A generic closure that only reads the sum, called after the consume.
+void generic_reading_closure_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{9});
+    auto look = [&held](auto probe) { return held.is_none() == probe; };
+    sink(std::move(held).expect("the Option holds the token"));
+    (void)look(true);
+}
+
+// A closure that only reads the sum, passed to a callee after the consume.
+void reading_closure_passed_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{10});
+    auto look = [&held] { return held.is_none(); };
+    sink(std::move(held).expect("the Option holds the token"));
+    run_body(look);
 }
 
 // A closure that can fill the sum, which the function keeps and never calls.
@@ -70,5 +150,45 @@ void reading_closure_after_the_consume() {
     sink(std::move(held).expect("the Option holds the token"));
     (void)look();
 }
+
+// A callee that can keep the reference, a call before the consume, and the
+// consume as the last step.  No call after the consume can fill the sum.
+void kept_reference_then_a_call_then_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{11});
+    touch(held);
+    fill_kept();
+    sink(std::move(held).expect("the Option holds the token"));
+}
+
+// A reference member of a local names the sum, and the consume is the last
+// step.
+struct Keeper {
+    Option<Token>& held;
+};
+
+void member_reference_then_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{12});
+    Keeper keeper{held};
+    (void)keeper.held.is_none();
+    sink(std::move(held).expect("the Option holds the token"));
+}
+
+// Two callees with bodies after the caller, the first of which gives the sum
+// to the second.  Neither keeps a reference, so the fact of the first waits
+// for the fact of the second.
+bool inspect_inner(Option<Token>& held) noexcept;
+bool inspect_outer(Option<Token>& held) noexcept;
+
+void chain_of_later_callees_keeps_no_reference() {
+    Option<Token> held{};
+    (void)inspect_outer(held);
+    do {
+        if (!(held.is_none())) stop();
+    } while (0);
+    fill_kept();
+}
+
+bool inspect_outer(Option<Token>& held) noexcept { return inspect_inner(held); }
+bool inspect_inner(Option<Token>& held) noexcept { return held.is_none(); }
 
 }  // namespace planted

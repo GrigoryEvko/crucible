@@ -591,7 +591,9 @@
 //         (definition.cpp, THE READS)
 //       * a key that no collection reuses: a DECL_UID, a TYPE_UID, a location,
 //         a text, a FileEntry, or the file name of a line map, which libcpp
-//         keeps to the end of the compile
+//         keeps to the end of the compile.  The facts of THE ACCESSORS and THE
+//         SUMMARIES of linear.cpp and the findings that wait for the end of
+//         the unit hold only such keys
 //       * an identifier, which is a root to the end of the parse
 //         (ggc_protect_identifiers of toplev.cc), with each reader in the parse
 //       * a tree that a root keeps to the end of the parse, with each reader in

@@ -1,10 +1,19 @@
-# The summaries of a closure and of a callee (THE SUMMARIES of linear.cpp)
-# refuse the two routes that were known gaps of the rule: a capture by
-# reference that fills an Option after its consume (line 33), and a callee with
-# no body in the unit that can keep the reference and fill the Option after a
-# test (43).  Each one gives option-unconsumed, a compile error in each mode.
+# The summaries of a closure and of a callee (THE SUMMARIES of linear.cpp) and
+# the aliases that a call after the consume can fill (THE ALIASES) refuse each
+# route of this unit: a capture by reference that fills an Option after its
+# consume (line 38), a callee with no body in the unit that can keep the
+# reference and fill the Option after a test (48), a filling closure that a
+# callee takes after the consume (64), a kept reference that a call after the
+# consume fills (73), a reference member that fills the Option after the
+# consume (86), and a reference that a callee gives back, whose body sees no
+# complete Option (94).  Each one gives option-unconsumed, a compile error in
+# each mode.
 compile summaries src/summaries.cpp must-consume=on errors=summaries
 flag summaries -freflection
 exit summaries fail
-finding summaries must-consume option-unconsumed src/summaries.cpp:33:19 | planted::alias_fills_after_the_consume: held
-finding summaries must-consume option-unconsumed src/summaries.cpp:43:19 | planted::callee_keeps_the_reference: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:38:19 | planted::alias_fills_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:48:19 | planted::callee_keeps_the_reference: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:64:19 | planted::filling_closure_passed_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:73:19 | planted::kept_reference_fills_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:86:19 | planted::member_reference_fills_after_the_consume: held
+finding summaries must-consume option-unconsumed src/summaries.cpp:94:19 | planted::returned_reference_fills_after_the_consume: held

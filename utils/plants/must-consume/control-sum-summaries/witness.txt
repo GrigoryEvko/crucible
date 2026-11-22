@@ -1,8 +1,12 @@
 # The summaries of a closure and of a callee (THE SUMMARIES of linear.cpp)
 # admit each form of this unit: a callee whose body keeps no reference to the
-# sum, a closure that can fill the sum and that the function never calls, a
-# closure that fills the sum before its consume, and a closure that only reads
-# the sum after its fill or after its consume.  The unit compiles and gives no line of the sums.
+# sum, also a function template and a callee whose body comes after the
+# caller, and a chain of two such callees; a closure that can fill the sum and
+# that the function never calls; a closure that fills the sum before its
+# consume; a closure that only reads the sum after its fill or after its
+# consume, also a generic closure and a closure that a callee takes; a closure
+# that consumes the sum itself; and an alias of the sum (THE ALIASES) with no
+# call after the consume.  The unit compiles and gives no line of the sums.
 compile summaries src/summaries.cpp must-consume=on
 flag summaries -freflection
 exit summaries pass

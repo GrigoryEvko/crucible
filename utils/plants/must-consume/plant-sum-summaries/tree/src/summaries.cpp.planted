@@ -26,6 +26,11 @@ void keep(Option<Token>& held) noexcept;
 void fill_kept() noexcept;
 [[noreturn]] void stop() noexcept;
 
+// A callee that gives the reference back.  Its body names only a reference to
+// the Option, so the Option is not complete there, and the callee keeps the
+// reference all the same.
+Option<Token>& same_option(Option<Token>& held) noexcept { return held; }
+
 // A capture by reference fills the Option after the consume.  The summary of
 // the closure says that its body fills the sum, so the call of the closure
 // gives the sum a payload again.
@@ -46,6 +51,50 @@ void callee_keeps_the_reference() {
         if (!(held.is_none())) stop();
     } while (0);
     fill_kept();
+}
+
+// A closure that fills the sum, passed to a callee after the consume.  The
+// callee can call the closure, so the sum can hold a payload again.
+template <class Body>
+void run_body(Body& body) noexcept {
+    body();
+}
+
+void filling_closure_passed_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{3});
+    auto refill = [&held] { held.fill(Token{4}); };
+    sink(std::move(held).expect("the Option holds the first token"));
+    run_body(refill);
+}
+
+// A callee keeps the reference, and a call after the consume fills the Option
+// through it.
+void kept_reference_fills_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{5});
+    keep(held);
+    sink(std::move(held).expect("the Option holds the first token"));
+    fill_kept();
+}
+
+// A reference member of a local names the Option, and a fill through it after
+// the consume gives the Option a payload again.
+struct Keeper {
+    Option<Token>& held;
+};
+
+void member_reference_fills_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{6});
+    Keeper keeper{held};
+    sink(std::move(held).expect("the Option holds the first token"));
+    keeper.held.fill(Token{7});
+}
+
+// The reference that a callee gives back fills the Option after the consume.
+void returned_reference_fills_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{8});
+    Option<Token>& alias = same_option(held);
+    sink(std::move(held).expect("the Option holds the first token"));
+    alias.fill(Token{9});
 }
 
 }  // namespace planted
