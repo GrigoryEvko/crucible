@@ -30,6 +30,8 @@
 //                     copy or an elementwise loop into the run of a frame,
 //                     with restrict pointers when the brands prove that no
 //                     input overlaps the output
+//   fill(dst, value) of a ViewMut
+//                     the fill of a View into the run of a frame
 //   byte_view(run)    the bytes of a run of unsigned chars as std::byte, of
 //                     the same count and extent and the same const
 //   offset_of(whole, part)
@@ -618,7 +620,14 @@ public:
 //   get(position)            the element as an Option<Ref<T, Brand>>, with the
 //                            brand of the frame, or no value at or past the
 //                            count: one compare
+//   get_mut(position)        the element as an Option<RefMut<T, Brand>>, the
+//                            unique borrow of the element, which does not
+//                            copy, or no value at or past the count: one
+//                            compare
 //   view()                   the plain View of the run, with no brand
+//   reborrow(std::move(view), body)
+//                            body gets a ViewMut of the run, and the door
+//                            gives the ViewMut back after the body
 //   split_at(std::move(view), offset)
 //                            the parts [0, offset) and [offset, size()), each a
 //                            ViewMut of a dynamic extent, or no value when the
@@ -738,6 +747,24 @@ public:
     [[nodiscard]] constexpr auto get(std::size_t position) const& noexcept {
         return detail::element_at_<Brand>(static_cast<T const*>(first_), size(), position);
     }
+
+    // The element at position, as an Option<RefMut<T, Brand>> with the brand
+    // of the frame.  A RefMut does not copy, so the element has one writer
+    // for each call.  The brand keeps the RefMut out of the result of the
+    // frame.  The member is a template with a deduced return type for the
+    // reason of get(): the class of each frame names no Option type, and it
+    // checks no constraint of one until a body writes an element.  A const
+    // ViewMut writes nothing, so it gives no RefMut.
+    template <class... Refused>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr auto get_mut(std::size_t position) & noexcept {
+        if (position >= size()) [[unlikely]] {
+            return Option<RefMut<T, Brand>>{none};
+        }
+        return Option<RefMut<T, Brand>>::some(RefMut<T, Brand>{detail::FrameDoor::key(), first_[position]});
+    }
+    template <class... Refused>
+    void get_mut(std::size_t) const& = delete("a const ViewMut writes nothing, so it gives no writer of an element");
 
     // The plain View of the run, for an operation that takes a View, such as
     // fill().  The View has no brand, so it proves no difference of two runs.
@@ -901,6 +928,61 @@ concept FrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
 concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
                         && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>);
+
+// ── The reborrow ───────────────────────────────────────────────────────
+//
+// reborrow(std::move(view), body) gives body a ViewMut of the run of view,
+// and gives view back after the body: alone for a body that gives void, and
+// after the result in a Record for each other body.  The parent moves into
+// the frame of the door, so the caller holds no name for it while the body
+// runs, as a split takes its parent by move.  So the body holds the one
+// writer of the run, and it can give it to a door that takes a ViewMut by
+// value, such as fill, copy or write_each.  The result of the body leaves
+// the frame under the rule of each frame door (FrameResult of Choice.h).
+//
+// The ViewMut of the body has the brand of the parent, and not a fresh
+// brand.  A const reference to the parent can stay with the caller, and the
+// move leaves the parent with its run.  A fresh brand would make the doors
+// read the two as two runs, and a copy between them would take the memcpy
+// on one run.  One brand takes the memmove, which is correct for each pair.
+
+namespace detail {
+
+// The run of view as a plain View of its extent.  Only the doors of this
+// header use it, and each of them holds the ViewMut by move.
+template <class T, class Brand, std::size_t Extent>
+[[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept {
+    T* const first = first_of_(BaseLayerRead{}, view);
+    if constexpr (Extent == dynamic_extent) {
+        return View<T>{ViewDoor::key(), first, view.size()};
+    } else {
+        return View<T, Extent>{ViewDoor::key(), first};
+    }
+}
+
+}  // namespace detail
+
+template <class T, class Brand, std::size_t Extent, class Body>
+    requires FrameBody<Body, T, Brand, Extent>
+[[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>,
+                                               ViewMut<T, Brand, Extent>>
+reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept {
+    return detail::give_run_back_<Brand>(view, detail::run_of_(view), static_cast<Body&&>(body));
+}
+
+template <class T, class Brand, std::size_t Extent, class Body>
+    requires RefusedFrameBody<Body, T, Brand, Extent>
+void reborrow(ViewMut<T, Brand, Extent>&&, Body&&) = delete(
+    "the result of a reborrow leaves the frame: give a value with no reference, no address and no brand of the frame");
+
+// A named ViewMut stays with the caller, so the ViewMut of the body would be
+// a second writer of its run.  A const ViewMut writes nothing.
+template <class T, class Brand, std::size_t Extent, class Body>
+void reborrow(ViewMut<T, Brand, Extent>&,
+              Body&&) = delete("a reborrow takes the ViewMut by move: pass std::move(view)");
+template <class T, class Brand, std::size_t Extent, class Body>
+void reborrow(ViewMut<T, Brand, Extent> const&,
+              Body&&) = delete("a const ViewMut writes nothing, so it gives no writer to a body");
 
 // ── The position of a run inside a run ─────────────────────────────────
 
@@ -1913,6 +1995,15 @@ constexpr void fill(View<T, Extent> dst, std::type_identity_t<T> const& value) n
     for (T& element : dst) {
         element = value;
     }
+}
+
+// Writes value into each element of the run of dst, as fill(View, value)
+// does.  The door takes the ViewMut by value, as copy and write_each do, so
+// a body that writes more after the fill gives it through reborrow.
+template <class T, class Brand, std::size_t Extent>
+    requires RegionCopyElement<T>
+constexpr void fill(ViewMut<T, Brand, Extent> dst, std::type_identity_t<T> const& value) noexcept {
+    ::foundation::core::fill(detail::run_of_(dst), value);
 }
 
 // The bytes of a run of unsigned chars, as a View of std::byte of the same

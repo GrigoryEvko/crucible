@@ -467,6 +467,61 @@ void test_copy_between_frames() {
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(shorter, [](std::size_t) noexcept { return 1; }));
 }
 
+// get_mut gives the RefMut of one element with the brand of the frame, which
+// writes the element in place.  A position at or past the count gives no
+// value.  The Option of a RefMut moves its payload, as an owning Option does.
+void test_get_mut() {
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 4, 1);
+    run = with_mut(std::move(run), [](auto whole) noexcept {
+        using Whole = std::remove_cvref_t<decltype(whole)>;
+        auto element = std::move(whole.get_mut(2)).expect("the position is inside the run");
+        static_assert(std::is_same_v<typename decltype(element)::brand_type, typename Whole::brand_type>);
+        static_assert(!std::is_copy_constructible_v<decltype(element)>);
+        *element = 30;
+        CRUCIBLE_TEST_ASSERT(kTest, whole.get_mut(4).is_none());
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, [](std::size_t position) noexcept { return position == 2 ? 30 : 1; }));
+}
+
+// A reborrow gives the body a ViewMut of the run with the brand of the
+// parent, and gives the parent back after the body: alone for a body that
+// gives void, and after the result in a Record.  The body gives its ViewMut to
+// fill, and the parent writes the run again after the reborrow.
+void test_reborrow() {
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 6, 0);
+    run = with_mut(std::move(run), [](auto whole) noexcept {
+        using Whole = std::remove_cvref_t<decltype(whole)>;
+        whole = ::foundation::core::reborrow(std::move(whole), [](auto lent) noexcept {
+            static_assert(std::is_same_v<decltype(lent), Whole>);
+            ::foundation::core::fill(std::move(lent), 4);
+        });
+        auto [total, back] =
+            ::foundation::core::reborrow(std::move(whole), [](auto lent) noexcept { return sum_of(lent); });
+        CRUCIBLE_TEST_ASSERT(kTest, total == 24 && back.size() == 6);
+        auto first = std::move(back.get_mut(0)).expect("the run is not empty");
+        *first = 9;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, [](std::size_t position) noexcept { return position == 0 ? 9 : 4; }));
+}
+
+// The fill of a ViewMut writes each element of its run, for an element of one
+// byte through the memset of the fill of a View, and for a fixed extent too.
+void test_fill_of_view_mut() {
+    HeapArray<unsigned char> bytes =
+        ::foundation::core::mint_heap_array(allocation(), 33, static_cast<unsigned char>(0));
+    bytes = with_mut(std::move(bytes), [](auto whole) noexcept {
+        ::foundation::core::fill(std::move(whole), static_cast<unsigned char>(7));
+    });
+    bool is_each_seven = bytes.size() == 33;
+    for (unsigned char const byte : bytes) {
+        is_each_seven = is_each_seven && byte == 7;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, is_each_seven);
+    FixedArray<int, 3> fixed{};
+    fixed.with_mut([](auto whole) noexcept { ::foundation::core::fill(std::move(whole), 5); });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(fixed, [](std::size_t) noexcept { return 5; }));
+}
+
 }  // namespace
 
 int main() {
@@ -483,5 +538,8 @@ int main() {
     test_splits();
     test_write_each();
     test_copy_between_frames();
+    test_get_mut();
+    test_reborrow();
+    test_fill_of_view_mut();
     return 0;
 }

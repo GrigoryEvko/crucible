@@ -4312,6 +4312,24 @@ foundation_neg_compile_test(neg_core_view_mut_split_of_named
 foundation_neg_compile_test(neg_core_view_mut_split_of_const
   "use of deleted function .void foundation::core::split_chunks\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a part")
+# get_mut gives a RefMut, which does not copy, and a const ViewMut gives none.
+foundation_neg_compile_test(neg_core_view_mut_get_mut_copied
+  "neg_core_view_mut_get_mut_copied\\.cpp:16:[0-9]+: error: use of deleted function .foundation::core::RefMut<T, Brand>::RefMut\\(const foundation::core::RefMut<T, Brand>&\\)"
+  "a RefMut is the one writer of its object: a copy would be a second writer")
+foundation_neg_compile_test(neg_core_view_mut_get_mut_of_const
+  "neg_core_view_mut_get_mut_of_const\\.cpp:12:[0-9]+: error: use of deleted function .void foundation::core::ViewMut<T, Brand, Extent>::get_mut\\(std::size_t\\) const &"
+  "a const ViewMut writes nothing, so it gives no writer of an element")
+# A reborrow takes its ViewMut by move, and its result holds no borrow.  The
+# fill of a ViewMut takes it by value.
+foundation_neg_compile_test(neg_core_view_mut_reborrow_of_named
+  "neg_core_view_mut_reborrow_of_named\\.cpp:12:[0-9]+: error: use of deleted function .void foundation::core::reborrow\\(ViewMut<T, Brand, Extent>&, Body&&\\)"
+  "a reborrow takes the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_reborrow_borrow_result
+  "neg_core_view_mut_reborrow_borrow_result\\.cpp:12:[0-9]+: error: use of deleted function .void foundation::core::reborrow\\(ViewMut<T, Brand, Extent>&&, Body&&\\)"
+  "the result of a reborrow leaves the frame")
+foundation_neg_compile_test(neg_core_view_mut_fill_of_named
+  "neg_core_view_mut_fill_of_named\\.cpp:9:[0-9]+: error: use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
+  "a ViewMut is the one writer of its run: a copy would be a second writer")
 foundation_neg_compile_test(neg_core_with_mut_named_owner
   "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = .*HeapArray<int>&"
   "with_mut takes the owner into its frame and gives it back: pass std::move\\(owner\\)")
