@@ -353,7 +353,7 @@ that the axis does not apply to the row.
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | - | Y | Y | token | · | HS14: 10 |
 | `mint_static_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_strided_scope` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 7 |
+| `mint_strided_scope` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 17 |
 | `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 
@@ -384,7 +384,7 @@ that the axis does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_heap_scope` | `include/foundation/heap/HeapScope.h` | Y | - | Y | Y | token | · | HS14: 6 |
+| `mint_heap_scope` | `include/foundation/heap/HeapScope.h` | Y | - | Y | Y | token | · | HS14: 7 |
 
 ## include/foundation/os/
 
