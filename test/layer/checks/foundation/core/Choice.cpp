@@ -598,6 +598,17 @@ static_assert(std::is_nothrow_move_constructible_v<Result<BytesThatOnlyMove, Cod
 static_assert(std::is_copy_constructible_v<Option<BytesThatCopyOnce>>);
 static_assert(!std::is_copy_assignable_v<Option<BytesThatCopyOnce>>);
 
+// The plain slot of a payload with no assignment, as a closure with a capture
+// by reference has none, empties and fills in place: take and fill compile,
+// and the take leaves the source empty.
+static_assert([] consteval {
+    Option<BytesThatCopyOnce> held = Option<BytesThatCopyOnce>::some(BytesThatCopyOnce{3});
+    Option<BytesThatCopyOnce> taken = held.take();
+    bool const is_moved = held.is_none() && std::move(taken).expect("the take gives the payload").raw == 3;
+    held.fill(BytesThatCopyOnce{4});
+    return is_moved && held.is_some();
+}());
+
 // An Option of a payload that only moves moves its payload, and the source is
 // then empty.
 [[nodiscard]] consteval bool moves_a_payload_that_only_moves() {

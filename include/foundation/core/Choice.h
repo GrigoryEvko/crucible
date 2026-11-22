@@ -2409,13 +2409,30 @@ class OptionSlot<T, OptionForm::plain> {
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept { return tag_() == other.tag_(); }
     [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
-    constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
+
+    // A payload with no assignment, such as a closure or a class with a const
+    // member, gives a slot with no assignment.  The empty marker or the next
+    // payload then starts in place over the slot: each part of a plain sum
+    // ends with no action, so the old slot holds nothing to end.
+    static constexpr bool assigns_slot_ = std::is_move_assignable_v<SumSlot<NoPayload, T>>;
+
+    constexpr void clear_() noexcept {
+        if constexpr (assigns_slot_) {
+            sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}};
+        } else {
+            ::new(static_cast<void*>(&sum_)) SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}};
+        }
+    }
 
     // Builds the payload of an empty slot: the cells of the payload and the
     // tag 1, as the constructor of a full slot writes them.
     template <class U>
     constexpr void fill_(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
-        sum_ = SumSlot<NoPayload, T>{AlternativeAt<1>{}, static_cast<U&&>(value)};
+        if constexpr (assigns_slot_) {
+            sum_ = SumSlot<NoPayload, T>{AlternativeAt<1>{}, static_cast<U&&>(value)};
+        } else {
+            ::new(static_cast<void*>(&sum_)) SumSlot<NoPayload, T>{AlternativeAt<1>{}, static_cast<U&&>(value)};
+        }
     }
 
 public:
