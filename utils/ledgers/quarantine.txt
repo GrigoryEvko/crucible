@@ -197,14 +197,12 @@ include/fixy/collision/ | replace-pending:<array> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/concurrent/ | base-c-library-call | 4 | - | -
-include/fixy/concurrent/ | base-std-entity | 100 | - | -
-include/fixy/concurrent/ | base-std-object | 28 | - | -
-include/fixy/concurrent/ | replace-pending:<array> | 6 | - | -
-include/fixy/concurrent/ | replace-pending:<atomic> | 1 | - | -
-include/fixy/concurrent/ | replace-pending:<bit> | 3 | - | -
+include/fixy/concurrent/ | base-std-entity | 84 | - | -
+include/fixy/concurrent/ | base-std-object | 24 | - | -
+include/fixy/concurrent/ | replace-pending:<array> | 5 | - | -
+include/fixy/concurrent/ | replace-pending:<bit> | 2 | - | -
 include/fixy/concurrent/ | replace-pending:<cstring> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<limits> | 1 | - | -
-include/fixy/concurrent/ | replace-pending:<optional> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<span> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<string> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<string_view> | 1 | - | -
@@ -317,7 +315,7 @@ src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
-test/ | c-array-object | 52 | - | -
+test/ | c-array-object | 51 | - | -
 test/ | c-library-call | 91 | - | -
 test/ | c-library-object | 7 | - | -
 test/ | door-header | 3 | - | -
@@ -366,8 +364,8 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 413 | - | -
-test/ | std-object | 146 | - | -
+test/ | std-entity | 385 | - | -
+test/ | std-object | 130 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
