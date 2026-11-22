@@ -1,6 +1,7 @@
-// The writer of an Atomic is void, for a cell that each thread can write,
-// or a SoleWriter, for a cell of one writer.  Each other type names no
-// writer, so the cell refuses it.
+// The writer of an Atomic is void, for a cell that each thread can write, a
+// Counter, a SoleWriter, for a cell of one writer, or a SoleWriterProof, for
+// the cell of an owner.  Each other type names no writer, so the cell refuses
+// it.
 
 #include <foundation/core/Atomic.h>
 

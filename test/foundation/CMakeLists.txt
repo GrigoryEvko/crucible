@@ -3560,7 +3560,7 @@ foundation_neg_compile_test(neg_core_sole_writer_exchange
   ".class foundation::core::Atomic<long unsigned int, foundation::core::SoleWriter<.*HeadRole, .*> >. has no member named .exchange_acq_rel."
   "has no member named .exchange_acq_rel.")
 foundation_neg_compile_test(neg_core_atomic_writer_not_sole_writer
-  "the writer is void, for a cell that each thread can write, Counter, for a count that each thread adds to, or SoleWriter<Role, Brand>, for a cell of one writer"
+  "the writer is void, for a cell that each thread can write, Counter, for a count that each thread adds to, SoleWriter<Role, Brand>, for a cell of one writer, or SoleWriterProof<Owner, Role>, for the cell of an owner"
   "static assertion failed")
 # Only a count adds with relaxed order.  A count holds an integer that is
 # not bool, and it has no store, so no thread publishes data through it.
