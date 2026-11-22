@@ -97,6 +97,7 @@ void call_stage_(Handles&&... handles) noexcept {
     if constexpr (StageArity<FnPtr>::key_count == 0) {
         FnPtr(static_cast<Handles&&>(handles)...);
     } else {
+        // A function pointer holds no capture, so the entry takes a copy of it.
         auto function = FnPtr;
         ::foundation::core::detail::run_root_body_<sizeof...(Handles)>(function, static_cast<Handles&&>(handles)...);
     }

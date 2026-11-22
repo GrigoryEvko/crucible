@@ -19,6 +19,6 @@ int main() {
     ::foundation::core::TextView const built{"a probe"};
     auto body = []() noexcept {};
     [[maybe_unused]] auto started =
-        ::fixy::thread::run_joined_raw_probe(ctx, test, built, ::fixy::thread::ThreadOptions{}, body);
+        ::fixy::thread::run_joined_raw_probe(ctx, test, built, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

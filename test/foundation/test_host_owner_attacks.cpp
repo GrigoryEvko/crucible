@@ -128,7 +128,7 @@ enum class SecondThreadAnswer : std::uint8_t {
     ::fixy::TestRunnerCtx const test{fe::testing::test()};
     ::fixy::BgLoadCtx const ctx{fe::testing::bg()};
     ::fixy::thread::run_joined_raw_probe(ctx, test, "a second thread reads the claim of the calling thread",
-                                         ::fixy::thread::ThreadOptions{}, ask)
+                                         ::fixy::thread::ThreadOptions{}, std::move(ask))
         .expect("the thread door starts the second thread");
     return answer;
 }

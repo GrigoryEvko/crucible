@@ -221,7 +221,8 @@ void test_second_run_ends_the_process(::fixy::TestRunnerCtx const& test) {
             auto first = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
             auto second = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
             ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-            static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, first, second));
+            static_cast<void>(
+                ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(first), std::move(second)));
         },
         ::fixy::TextView{"a run of the pipeline while another run of it is active"});
     ::fixy::check::pass(test, "  second_run_ends_the_process:               PASSED\n");

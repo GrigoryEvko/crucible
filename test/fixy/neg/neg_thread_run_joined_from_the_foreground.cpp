@@ -12,7 +12,7 @@
 
 int main() {
     auto body = []() noexcept {};
-    [[maybe_unused]] auto started =
-        ::fixy::thread::run_joined(::foundation::effects::testing::foreground(), ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined(::foundation::effects::testing::foreground(),
+                                                               ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

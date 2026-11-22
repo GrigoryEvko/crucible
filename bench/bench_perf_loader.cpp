@@ -693,7 +693,8 @@ int main() {
             }
         };
         using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
-        ::fixy::thread::run_beside(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, releaser, waiter)
+        ::fixy::thread::run_beside(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, std::move(releaser),
+                                   waiter)
             .expect("the thread door starts the releaser of the gate");
     }
 

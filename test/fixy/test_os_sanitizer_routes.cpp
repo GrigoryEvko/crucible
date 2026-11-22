@@ -171,7 +171,7 @@ constexpr std::size_t kOpenTries = 64;
         int const first_number = static_cast<int>(closed.read_relaxed() - 1U);
         has_closed.store_release(open_again_and_close(thread_ctx, devices, first_number, kOpenTries));
     };
-    if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return 1;
+    if (::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(first), std::move(second)).is_err()) return 1;
     if (!has_read.load_acquire()) return 2;
     if (!has_closed.load_acquire()) return 3;
     return 0;
@@ -231,7 +231,7 @@ enum class RoundEnd : std::uint8_t {
         write_first_byte(region, 2);
         has_reused.store_release(true);
     };
-    if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) {
+    if (::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(first), std::move(second)).is_err()) {
         fixy::fatal("test_os_sanitizer_routes: the thread door did not start the two threads of the map case");
     }
     return has_reused.load_acquire() ? RoundEnd::reused : RoundEnd::range_taken;

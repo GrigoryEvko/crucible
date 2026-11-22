@@ -503,7 +503,7 @@ static void test_spsc_stress() {
     // the mirror before this.
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     ::fixy::thread::run_joined_raw_probe(bg, kTest, "the producer and the consumer share the ring on purpose",
-                                         ::fixy::thread::ThreadOptions{}, producer, consumer)
+                                         ::fixy::thread::ThreadOptions{}, std::move(producer), std::move(consumer))
         .expect("the thread door starts the producer and the consumer");
 
     CRUCIBLE_TEST_ASSERT(kTest, received == N);

@@ -12,6 +12,7 @@
 #include <optional>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -73,9 +74,9 @@ using RaceCount = ::fixy::Atomic<std::uint32_t, ::fixy::Counter>;
 // the raw probe of the thread door.  The door starts the threads in the order
 // of the bodies.
 template <typename... Bodies>
-void run_race(::fixy::BgLoadCtx const& bg, Bodies&... bodies) noexcept {
+void run_race(::fixy::BgLoadCtx const& bg, Bodies&&... bodies) noexcept {
     ::fixy::thread::run_joined_raw_probe(bg, kTest, "the threads of a race of the swapper share the swapper on purpose",
-                                         ::fixy::thread::ThreadOptions{}, bodies...)
+                                         ::fixy::thread::ThreadOptions{}, static_cast<Bodies&&>(bodies)...)
         .expect("the thread door starts each thread of the race");
 }
 
@@ -199,7 +200,7 @@ void test_concurrent_observer_sees_only_valid_states() {
         }
         writer_done.store_release(true);
     };
-    run_race(bg, observer, writer);
+    run_race(bg, std::move(observer), std::move(writer));
     CRUCIBLE_TEST_ASSERT(kTest, torn_observations.load_acquire() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, total_observations.load_acquire() > 0);
 
@@ -295,23 +296,10 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     // The opener starts after each racer, and it opens the gate at once.
     auto opener = [&start] noexcept { start.store_release(true); };
 
-    auto racer_01 = racer;
-    auto racer_02 = racer;
-    auto racer_03 = racer;
-    auto racer_04 = racer;
-    auto racer_05 = racer;
-    auto racer_06 = racer;
-    auto racer_07 = racer;
-    auto racer_08 = racer;
-    auto racer_09 = racer;
-    auto racer_10 = racer;
-    auto racer_11 = racer;
-    auto racer_12 = racer;
-    auto racer_13 = racer;
-    auto racer_14 = racer;
-    auto racer_15 = racer;
-    run_race(bg, racer, racer_01, racer_02, racer_03, racer_04, racer_05, racer_06, racer_07, racer_08, racer_09,
-             racer_10, racer_11, racer_12, racer_13, racer_14, racer_15, opener);
+    // Each racer is a copy of one body, so each thread runs its own object.
+    run_race(bg, auto{racer}, auto{racer}, auto{racer}, auto{racer}, auto{racer}, auto{racer}, auto{racer}, auto{racer},
+             auto{racer}, auto{racer}, auto{racer}, auto{racer}, auto{racer}, auto{racer}, auto{racer},
+             std::move(racer), std::move(opener));
 
     // Each racer of the list above took one index, so the list holds kRacers
     // racers.
@@ -375,7 +363,7 @@ void test_plan_reader_races_the_writer() {
         }
         writer_done.store_release(true);
     };
-    run_race(bg, reader, writer);
+    run_race(bg, std::move(reader), std::move(writer));
     CRUCIBLE_TEST_ASSERT(kTest, mixed_reads.load_acquire() == 0);
 
     ::fixy::check::pass(kTest, "  test_plan_reader_races_the_writer: PASSED\n");
@@ -410,7 +398,7 @@ void test_concurrent_begin_swap_keeps_the_winning_plan() {
             }
         };
         auto opener = [&start] noexcept { start.store_release(true); };
-        run_race(bg, left, right, opener);
+        run_race(bg, std::move(left), std::move(right), std::move(opener));
         CRUCIBLE_TEST_ASSERT(kTest, winners.load_acquire() == 1);
         cntp::PathSwapPlan const held = swapper.plan(bg).expect("one racer won the swap");
         CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 1);

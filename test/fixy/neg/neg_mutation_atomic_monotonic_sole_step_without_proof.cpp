@@ -28,8 +28,8 @@ int main() {
         std::uint64_t const current = counter.get();
         counter.advance_sole_writer_from(current, current + 1);
     };
-    auto second = first;
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-    [[maybe_unused]] auto joined = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, first, second);
+    [[maybe_unused]] auto joined =
+        ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, auto{first}, std::move(first));
     return 0;
 }

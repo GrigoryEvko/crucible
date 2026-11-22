@@ -111,6 +111,22 @@
 //     run_beside_each take the index of the thread only, so a body that names a
 //     key does not compile there.
 //
+// THE BODIES BY MOVE
+//     run_joined, run_joined_raw_probe and run_beside take each body as an
+//     rvalue, and they move each body into a parameter by value of the frame of
+//     the door before the first start.  So two bodies are two objects, also
+//     when the caller moves one object two times, and no two threads call one
+//     object.  A body that the caller names as an lvalue meets a deleted
+//     overload with the reason.  Without it, one keyed body given two times
+//     would mint a key on each thread and open two frames of one owner that it
+//     holds by value, and one mutable body given two times would write its own
+//     captures from two threads.  The thread of a body gives it to the once
+//     door call_once of foundation/Linear.h, which owns it, calls it one time
+//     and ends it.  A continuation goes through the once door too.  The door
+//     ends what stays in its own frame after the join, a linear part through
+//     the drop door.  A body that the caller reads after the call gives that
+//     value back as its result (THE RESULTS).
+//
 // THE RESULTS
 //     A body of run_joined gives a value, or gives nothing.  Each thread
 //     writes the value of its body into a slot of its own in the frame of
@@ -158,9 +174,10 @@
 //     on the calling thread at the same time, and joins the thread when the
 //     continuation returns.  So the body ends before the call returns, and it
 //     can borrow the locals of the caller.  The continuation gets no owner of
-//     the thread, so no thread leaves the call.  The door takes the body and
-//     the continuation by value, so the continuation cannot reach the object
-//     of the body while the thread calls it.  The body takes no argument
+//     the thread, so no thread leaves the call.  The body moves into the frame
+//     of the door (THE BODIES BY MOVE), and the door takes the continuation by
+//     value, so the continuation cannot reach the object of the body while
+//     the thread calls it.  The body takes no argument
 //     or the context of the call, as a body of run_joined does, and the
 //     values of the body and of the continuation come back as THE RESULTS
 //     tell.
@@ -365,10 +382,11 @@ void join_thread_task(std::uint64_t handle) noexcept;
 void name_calling_thread(ThreadName const& name) noexcept;
 
 // True when a body of run_joined takes the context of the call, and the
-// context is Shareable (THE CONTEXT OF A BODY).
+// context is Shareable (THE CONTEXT OF A BODY).  The door calls each body as
+// an rvalue (THE BODIES BY MOVE).
 template <typename Ctx, typename Body>
 inline constexpr bool takes_context_ =
-    std::is_nothrow_invocable_v<Body&, Ctx const&> && ::foundation::transfer::Shareable<Ctx>;
+    std::is_nothrow_invocable_v<Body, Ctx const&> && ::foundation::transfer::Shareable<Ctx>;
 
 // The forms of a body of run_joined and run_beside: no argument, the context,
 // the keys of a root door, or the context and the keys (THE KEYS OF A BODY).
@@ -397,7 +415,7 @@ consteval JoinedForm joined_form_() noexcept {
         }
     } else if constexpr (takes_context_<Ctx, Body>) {
         return JoinedForm::context;
-    } else if constexpr (std::is_nothrow_invocable_v<Body&>) {
+    } else if constexpr (std::is_nothrow_invocable_v<Body>) {
         return JoinedForm::bare;
     } else {
         return JoinedForm::none;
@@ -409,9 +427,9 @@ consteval JoinedForm joined_form_() noexcept {
 template <typename Ctx, typename Body, JoinedForm Form = joined_form_<Ctx, Body>()>
 struct joined_call_result_ {};
 template <typename Ctx, typename Body>
-struct joined_call_result_<Ctx, Body, JoinedForm::bare> : std::invoke_result<Body&> {};
+struct joined_call_result_<Ctx, Body, JoinedForm::bare> : std::invoke_result<Body> {};
 template <typename Ctx, typename Body>
-struct joined_call_result_<Ctx, Body, JoinedForm::context> : std::invoke_result<Body&, Ctx const&> {};
+struct joined_call_result_<Ctx, Body, JoinedForm::context> : std::invoke_result<Body, Ctx const&> {};
 template <typename Ctx, typename Body>
 struct joined_call_result_<Ctx, Body, JoinedForm::keys>
     : ::foundation::core::detail::root_body_result_<Body, ::foundation::core::root_key_brands_t<Body, 0>> {};
@@ -436,45 +454,57 @@ concept JoinedValue = ::foundation::transfer::Sendable<Value> && ::foundation::c
                    && ::foundation::core::HoldsNoBorrow<Value>;
 
 // The frame of one body of run_joined: the body, the context of the call and
-// the slot of the value of the body.  It lives in the frame of run_joined,
-// which waits for each thread (THE CONTEXT OF A BODY, THE RESULTS).
+// the slot of the value of the body.  The body and the slot live in the frame
+// of the door, which waits for each thread (THE CONTEXT OF A BODY, THE BODIES
+// BY MOVE, THE RESULTS).
 struct joined_body_ {
     void* body = nullptr;
     void const* ctx = nullptr;
     void* value = nullptr;
 };
 
-// Calls the body with the context that it takes, and gives its value.
+// Ends a body or a continuation that a door owns.  A linear one ends through
+// the drop door, after its one call, or with no call when the start failed.
+// Another one ends with the frame of the door.
+template <typename Part>
+constexpr void end_owned_part_(Part&& part) noexcept {
+    if constexpr (::foundation::linear::LinearValue<Part>) ::foundation::linear::drop(static_cast<Part&&>(part));
+}
+
+// Calls the body one time with the context that it takes, and gives its value.
+// The body moves from the frame of the door into the once door call_once of
+// foundation/Linear.h on the thread of the body, which calls it one time and
+// ends it, or into the entry of the root doors for a body with keys.
 template <typename Ctx, typename Body>
-[[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body& body, Ctx const& ctx) noexcept {
+[[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body&& body, Ctx const& ctx) noexcept {
     constexpr JoinedForm form = joined_form_<Ctx, Body>();
     if constexpr (form == JoinedForm::keys) {
         // The keys are minted here, on the thread of the body (THE KEYS OF A BODY).
         if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-            ::foundation::core::detail::run_root_body_<0>(body);
+            ::foundation::core::detail::run_root_body_<0>(static_cast<Body&&>(body));
             return ::foundation::core::Unit{};
         } else {
-            return ::foundation::core::detail::run_root_body_<0>(body);
+            return ::foundation::core::detail::run_root_body_<0>(static_cast<Body&&>(body));
         }
     } else if constexpr (form == JoinedForm::context_and_keys) {
         if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-            ::foundation::core::detail::run_root_body_<1>(body, ctx);
+            ::foundation::core::detail::run_root_body_<1>(static_cast<Body&&>(body), ctx);
             return ::foundation::core::Unit{};
         } else {
-            return ::foundation::core::detail::run_root_body_<1>(body, ctx);
+            return ::foundation::core::detail::run_root_body_<1>(static_cast<Body&&>(body), ctx);
         }
     } else if constexpr (form == JoinedForm::context) {
         if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-            body(ctx);
+            ::foundation::linear::call_once(static_cast<Body&&>(body), ctx);
             return ::foundation::core::Unit{};
         } else {
-            return body(ctx);
+            return ::foundation::linear::call_once(static_cast<Body&&>(body), ctx);
         }
     } else if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-        body();
+        ::foundation::linear::call_once(static_cast<Body&&>(body));
         return ::foundation::core::Unit{};
     } else {
-        return body();
+        return ::foundation::linear::call_once(static_cast<Body&&>(body));
     }
 }
 
@@ -482,8 +512,9 @@ template <typename Ctx, typename Body>
 void run_joined_body_(void* frame) noexcept {
     using Value = joined_result_t_<Ctx, Body>;
     joined_body_ const& joined = *static_cast<joined_body_ const*>(frame);
-    *static_cast<::foundation::core::Option<Value>*>(joined.value) = ::foundation::core::Option<Value>::some(
-        call_joined_body_<Ctx>(*static_cast<Body*>(joined.body), *static_cast<Ctx const*>(joined.ctx)));
+    *static_cast<::foundation::core::Option<Value>*>(joined.value) =
+        ::foundation::core::Option<Value>::some(call_joined_body_<Ctx, Body>(
+            static_cast<Body&&>(*static_cast<Body*>(joined.body)), *static_cast<Ctx const*>(joined.ctx)));
 }
 
 // Registers HOOK for the child of each fork (THE FORK HOOK).  The error is
@@ -507,11 +538,18 @@ run_in_fork_child(Ctx const& /*init*/, void (*hook)() noexcept) noexcept {
 }
 
 // A body of run_joined for a call with the context Ctx: an object that is not
-// const, that runs with no argument or with the context (THE CONTEXT OF A
-// BODY), and whose value can cross to the caller (THE RESULTS).
+// a reference and not const, that runs as an rvalue with no argument or with
+// the context (THE CONTEXT OF A BODY, THE BODIES BY MOVE), and whose value can
+// cross to the caller (THE RESULTS).
 template <typename Body, typename Ctx>
-concept JoinedBody = !std::is_const_v<Body> && (detail::joined_form_<Ctx, Body>() != detail::JoinedForm::none)
+concept JoinedBody = !std::is_reference_v<Body> && !std::is_const_v<Body>
+                  && (detail::joined_form_<Ctx, Body>() != detail::JoinedForm::none)
                   && detail::JoinedValue<detail::joined_result_t_<Ctx, Body>>;
+
+// True when a call names a body as an lvalue, which a root door refuses (THE
+// BODIES BY MOVE).
+template <typename... Bodies>
+concept NamesABodyAsAnLvalue = (std::is_lvalue_reference_v<Bodies> || ...);
 
 // The value of a call of run_joined (THE RESULTS): Unit when no body gives a
 // value, else a Record of the value of each body, in the order of the bodies.
@@ -522,10 +560,12 @@ using joined_values_t =
 
 namespace detail {
 
+// Each body is a parameter by value, so each body is an object of this frame,
+// also when the caller moves one object two times (THE BODIES BY MOVE).
 template <typename Ctx, std::size_t... Is, typename... Bodies>
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
 run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is...> /*order*/,
-            Bodies&... bodies) noexcept {
+            Bodies... bodies) noexcept {
     ::foundation::core::Record<::foundation::core::Option<joined_result_t_<Ctx, Bodies>>...> slots{};
     joined_body_ joined[sizeof...(Bodies)]{joined_body_{&bodies, &ctx, &slots.at(::foundation::core::index<Is>())}...};
     thread_task tasks[sizeof...(Bodies)]{thread_task{&joined[Is], &run_joined_body_<Ctx, Bodies>}...};
@@ -533,6 +573,7 @@ run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is
     using Joined = ::foundation::core::Result<Values, ::foundation::os::Errno>;
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
         run_thread_tasks(::foundation::core::detail::view_over_(tasks, sizeof...(Bodies)), options);
+    (end_owned_part_(static_cast<Bodies&&>(bodies)), ...);
     if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
         return started;
     } else {
@@ -581,42 +622,44 @@ consteval void check_raw_probe_body_() noexcept {
 }  // namespace detail
 
 // Runs each body on a thread of its own with the options, and joins each
-// thread before it returns.  Each body is an object of the caller, and the
-// call ends before the object does.  The bodies run at the same time, so
-// two bodies that share state need a synchronization of their own.  The
-// value of the call holds the value of each body (THE RESULTS).
+// thread before it returns.  Each body moves into the frame of the door, and
+// the call ends before the frame does (THE BODIES BY MOVE).  The bodies run at
+// the same time, so two bodies that share state need a synchronization of
+// their own.  The value of the call holds the value of each body (THE
+// RESULTS).
 template <typename Ctx, typename... Bodies>
-    requires CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0) && (JoinedBody<Bodies, Ctx> && ...)
+    requires(!NamesABodyAsAnLvalue<Bodies...>) && CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0)
+         && (JoinedBody<Bodies, Ctx> && ...)
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
-run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&... bodies) noexcept {
+run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&&... bodies) noexcept {
     constexpr ::foundation::closure::DoorPolicy policy =
         sizeof...(Bodies) == 1 ? joined_sole_policy : joined_concurrent_policy;
     (detail::check_joined_body_<policy, Bodies>(), ...);
-    return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
+    return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, static_cast<Bodies&&>(bodies)...);
 }
+
+// A body that the caller names as an lvalue stays an object of the caller, so
+// one object given two times would run on two threads (THE BODIES BY MOVE).
+template <typename Ctx, typename... Bodies>
+    requires NamesABodyAsAnLvalue<Bodies...>
+void run_joined(Ctx const& /*ctx*/, ThreadOptions const& /*options*/, Bodies&&... /*bodies*/) =
+    delete("run_joined takes each body by move, so that two bodies are two objects: write the lambda in the call, or "
+           "pass std::move(body)");
 
 namespace detail {
 
-// Ends a body or a continuation that run_beside owns.  A linear one ends
-// through the drop door, after its one call, or with no call when the start
-// failed.  Another one ends with the frame of the door.
-template <typename Part>
-constexpr void end_beside_part_(Part&& part) noexcept {
-    if constexpr (::foundation::linear::LinearValue<Part>) ::foundation::linear::drop(static_cast<Part&&>(part));
-}
-
 // The value of a continuation: what it gives, or Unit when it gives nothing.
 template <typename Continuation>
-using beside_result_t_ = std::conditional_t<std::is_void_v<std::invoke_result_t<Continuation&>>,
-                                            ::foundation::core::Unit, std::invoke_result_t<Continuation&>>;
+using beside_result_t_ = std::conditional_t<std::is_void_v<std::invoke_result_t<Continuation>>,
+                                            ::foundation::core::Unit, std::invoke_result_t<Continuation>>;
 
 }  // namespace detail
 
-// A continuation of run_beside: an object that is not const, that runs with
-// no argument on the calling thread, and whose value can sit in the result
-// (THE THREAD BESIDE THE CALLER).
+// A continuation of run_beside: an object that is not const, that runs one
+// time as an rvalue with no argument on the calling thread, and whose value
+// can sit in the result (THE THREAD BESIDE THE CALLER).
 template <typename Continuation>
-concept BesideContinuation = !std::is_const_v<Continuation> && std::is_nothrow_invocable_v<Continuation&>
+concept BesideContinuation = !std::is_const_v<Continuation> && std::is_nothrow_invocable_v<Continuation>
                           && ::foundation::core::RecordElement<detail::beside_result_t_<Continuation>>;
 
 // The value of a call of run_beside (THE RESULTS): Unit when neither the body
@@ -624,7 +667,7 @@ concept BesideContinuation = !std::is_const_v<Continuation> && std::is_nothrow_i
 // and the value of the continuation.
 template <typename Ctx, typename Body, typename Continuation>
 using beside_values_t = std::conditional_t<
-    std::is_void_v<detail::raw_joined_result_t_<Ctx, Body>> && std::is_void_v<std::invoke_result_t<Continuation&>>,
+    std::is_void_v<detail::raw_joined_result_t_<Ctx, Body>> && std::is_void_v<std::invoke_result_t<Continuation>>,
     ::foundation::core::Unit,
     ::foundation::core::Record<detail::joined_result_t_<Ctx, Body>, detail::beside_result_t_<Continuation>>>;
 
@@ -632,35 +675,30 @@ using beside_values_t = std::conditional_t<
 inline constexpr ::foundation::closure::DoorPolicy beside_caller_policy{::foundation::closure::Crossing::BesideCaller,
                                                                         ::foundation::closure::QttGrade::One, false};
 
-// Runs the body on a thread of its own with the options, runs the
-// continuation on the calling thread at the same time, and joins the thread
-// when the continuation returns (THE THREAD BESIDE THE CALLER).  A start that
-// fails is the error of the call, and the continuation does not run then.
+namespace detail {
+
+// run_beside with the body and the continuation by value, so each is an
+// object of this frame (THE BODIES BY MOVE).
 template <typename Ctx, typename Body, typename Continuation>
-    requires CtxStartsThreads<Ctx> && JoinedBody<Body, Ctx> && BesideContinuation<Continuation>
 [[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, ::foundation::os::Errno>
-run_beside(Ctx const& ctx, ThreadOptions const& options, Body body, Continuation continuation) noexcept {
-    constexpr ::foundation::closure::ClosureVerdict verdict =
-        ::foundation::closure::check_closure(^^Body, beside_caller_policy, "run_beside");
-    static_assert(verdict.is_admitted(), verdict);
+run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuation continuation) noexcept {
     using Values = beside_values_t<Ctx, Body, Continuation>;
     using Beside = ::foundation::core::Result<Values, ::foundation::os::Errno>;
-    ::foundation::core::Option<detail::joined_result_t_<Ctx, Body>> slot{};
-    detail::joined_body_ joined{&body, &ctx, &slot};
-    detail::thread_task task{&joined, &detail::run_joined_body_<Ctx, Body>};
-    ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> started =
-        detail::start_thread_task(task, options);
+    ::foundation::core::Option<joined_result_t_<Ctx, Body>> slot{};
+    joined_body_ joined{&body, &ctx, &slot};
+    thread_task task{&joined, &run_joined_body_<Ctx, Body>};
+    ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> started = start_thread_task(task, options);
     if (started.is_err()) {
-        detail::end_beside_part_(std::move(body));
-        detail::end_beside_part_(std::move(continuation));
+        end_owned_part_(static_cast<Body&&>(body));
+        end_owned_part_(static_cast<Continuation&&>(continuation));
         return Beside{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
     }
     std::uint64_t const handle = std::move(started).expect("a start that is no error holds its handle");
-    if constexpr (std::is_void_v<std::invoke_result_t<Continuation&>>) {
-        continuation();
-        detail::join_thread_task(handle);
-        detail::end_beside_part_(std::move(body));
-        detail::end_beside_part_(std::move(continuation));
+    // The once door owns the continuation, calls it one time and ends it.
+    if constexpr (std::is_void_v<std::invoke_result_t<Continuation>>) {
+        ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
+        join_thread_task(handle);
+        end_owned_part_(static_cast<Body&&>(body));
         if constexpr (std::same_as<Values, ::foundation::core::Unit>) {
             return Beside{::foundation::core::Unit{}};
         } else {
@@ -668,13 +706,38 @@ run_beside(Ctx const& ctx, ThreadOptions const& options, Body body, Continuation
                 Values{std::move(slot).expect("the body of the thread ran one time"), ::foundation::core::Unit{}}};
         }
     } else {
-        detail::beside_result_t_<Continuation> continued = continuation();
-        detail::join_thread_task(handle);
-        detail::end_beside_part_(std::move(body));
-        detail::end_beside_part_(std::move(continuation));
+        beside_result_t_<Continuation> continued =
+            ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
+        join_thread_task(handle);
+        end_owned_part_(static_cast<Body&&>(body));
         return Beside{Values{std::move(slot).expect("the body of the thread ran one time"), std::move(continued)}};
     }
 }
+
+}  // namespace detail
+
+// Runs the body on a thread of its own with the options, runs the
+// continuation on the calling thread at the same time, and joins the thread
+// when the continuation returns (THE THREAD BESIDE THE CALLER).  A start that
+// fails is the error of the call, and the continuation does not run then.
+template <typename Ctx, typename Body, typename Continuation>
+    requires(!NamesABodyAsAnLvalue<Body>)
+         && CtxStartsThreads<Ctx> && JoinedBody<Body, Ctx> && BesideContinuation<Continuation>
+[[nodiscard]] ::foundation::core::Result<beside_values_t<Ctx, Body, Continuation>, ::foundation::os::Errno>
+run_beside(Ctx const& ctx, ThreadOptions const& options, Body&& body, Continuation continuation) noexcept {
+    constexpr ::foundation::closure::ClosureVerdict verdict =
+        ::foundation::closure::check_closure(^^Body, beside_caller_policy, "run_beside");
+    static_assert(verdict.is_admitted(), verdict);
+    return detail::run_beside_(ctx, options, static_cast<Body&&>(body), static_cast<Continuation&&>(continuation));
+}
+
+// A body that the caller names as an lvalue stays an object of the caller
+// (THE BODIES BY MOVE).
+template <typename Ctx, typename Body, typename Continuation>
+    requires NamesABodyAsAnLvalue<Body>
+void run_beside(Ctx const& /*ctx*/, ThreadOptions const& /*options*/, Body&& /*body*/,
+                Continuation /*continuation*/) = delete("run_beside takes its body by move: write the lambda in the "
+                                                        "call, or pass std::move(body)");
 
 // The index of the thread of a body of run_beside_each, from 0 to the count
 // less one (THE THREAD BESIDE THE CALLER).
@@ -754,12 +817,13 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
     if (started.is_err()) {
         return Continued{::foundation::core::err(std::move(started).err().expect("a refused start holds its error"))};
     }
-    if constexpr (std::is_void_v<std::invoke_result_t<Continuation&>>) {
-        continuation();
+    if constexpr (std::is_void_v<std::invoke_result_t<Continuation>>) {
+        ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
         detail::join_thread_tasks(started_tasks);
         return Continued{::foundation::core::Unit{}};
     } else {
-        detail::beside_result_t_<Continuation> continued = continuation();
+        detail::beside_result_t_<Continuation> continued =
+            ::foundation::linear::call_once(static_cast<Continuation&&>(continuation));
         detail::join_thread_tasks(started_tasks);
         return Continued{std::move(continued)};
     }
@@ -788,13 +852,22 @@ concept CtxRunsRawProbes = ::foundation::effects::CtxOwnsCapability<TestCtx, ::f
 // probe (THE RAW PROBE).  The bodies, the values and the errors are those of
 // run_joined.
 template <typename Ctx, typename TestCtx, typename... Bodies>
-    requires CtxStartsThreads<Ctx> && CtxRunsRawProbes<TestCtx> && (sizeof...(Bodies) > 0)
-          && (JoinedBody<Bodies, Ctx> && ...)
+    requires(!NamesABodyAsAnLvalue<Bodies...>) && CtxStartsThreads<Ctx> && CtxRunsRawProbes<TestCtx>
+         && (sizeof...(Bodies) > 0) && (JoinedBody<Bodies, Ctx> && ...)
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
 run_joined_raw_probe(Ctx const& ctx, TestCtx const& /*test*/, RawProbeReason /*reason*/, ThreadOptions const& options,
-                     Bodies&... bodies) noexcept {
+                     Bodies&&... bodies) noexcept {
     (detail::check_raw_probe_body_<Bodies>(), ...);
-    return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
+    return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, static_cast<Bodies&&>(bodies)...);
 }
+
+// A body that the caller names as an lvalue stays an object of the caller
+// (THE BODIES BY MOVE).
+template <typename Ctx, typename TestCtx, typename... Bodies>
+    requires NamesABodyAsAnLvalue<Bodies...>
+void run_joined_raw_probe(Ctx const& /*ctx*/, TestCtx const& /*test*/, RawProbeReason /*reason*/,
+                          ThreadOptions const& /*options*/, Bodies&&... /*bodies*/) =
+    delete("run_joined_raw_probe takes each body by move, so that two bodies are two objects: write the lambda in "
+           "the call, or pass std::move(body)");
 
 }  // namespace fixy::thread

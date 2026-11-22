@@ -117,7 +117,8 @@ void test_a_store_ends_the_wait(SpinArm arm) {
             word.store_release(round + 1);
         }
     };
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, waiter, writer).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(waiter), std::move(writer)).is_ok());
     CRUCIBLE_FATAL_INVARIANT(lost_rounds.load_acquire() == 0);
 }
 

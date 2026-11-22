@@ -201,7 +201,7 @@ constexpr std::uint64_t kChildSteps = 10000000;
                         sum = sum + step;
                     }
                 };
-                fixy::thread::run_joined(ctx, fixy::thread::ThreadOptions{}, child)
+                fixy::thread::run_joined(ctx, fixy::thread::ThreadOptions{}, std::move(child))
                     .expect("the thread door starts the child thread");
                 return perf::read_count(ctx, counter.ref()).expect("the read of the counter gave its count");
             },

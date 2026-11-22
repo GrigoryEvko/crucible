@@ -9,5 +9,5 @@ struct HolderBrand final {};
 int main() {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     auto twice = [](::foundation::core::LoanKey<HolderBrand>&, ::foundation::core::LoanKey<HolderBrand>&) noexcept {};
-    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, twice).is_ok() ? 0 : 1;
+    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(twice)).is_ok() ? 0 : 1;
 }

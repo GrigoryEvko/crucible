@@ -33,7 +33,7 @@ using ::fixy::check::pass;
 template <class Body>
 [[nodiscard]] auto on_other_thread(Body body) {
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-    auto const values = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body)
+    auto const values = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body))
                             .expect("the host starts the thread of the test");
     return values.at(::fixy::index<0>());
 }

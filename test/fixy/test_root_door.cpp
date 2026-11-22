@@ -16,6 +16,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -41,7 +42,8 @@ void test_joined_body_owns_its_holder(::fixy::BgLoadCtx const& ctx) {
         moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<1>()) = 7; });
         return moved.array.at(fc::index<1>());
     };
-    fc::Result<fc::Record<int>, ::foundation::os::Errno> const joined = ft::run_joined(ctx, ft::ThreadOptions{}, body);
+    fc::Result<fc::Record<int>, ::foundation::os::Errno> const joined =
+        ft::run_joined(ctx, ft::ThreadOptions{}, std::move(body));
     CRUCIBLE_FATAL_INVARIANT(joined.is_ok());
     CRUCIBLE_FATAL_INVARIANT(
         joined.match([](fc::Record<int> const& values) noexcept { return values.at(fc::index<0>()); },
@@ -64,8 +66,32 @@ void test_context_and_two_brands(::fixy::BgLoadCtx const& ctx) {
         moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 5; });
         return moved.array.at(fc::index<0>());
     };
-    auto const joined = ft::run_joined(ctx, ft::ThreadOptions{}, first, second);
+    auto const joined = ft::run_joined(ctx, ft::ThreadOptions{}, std::move(first), std::move(second));
     CRUCIBLE_FATAL_INVARIANT(joined.is_ok());
+}
+
+// True when run_joined takes a body of the type that the caller names as an
+// lvalue.
+template <typename Body>
+concept JoinsAnLvalueBody =
+    requires(::fixy::BgLoadCtx const& ctx, Body& body) { ft::run_joined(ctx, ft::ThreadOptions{}, body); };
+
+// Two copies of one keyed body are two objects, each with its own holder, so
+// each thread opens a frame of its own holder with its own key.  One object
+// given two times as an lvalue does not compile: neg_root_door_same_body_twice.
+void test_two_copies_of_one_keyed_body(::fixy::BgLoadCtx const& ctx) {
+    Holder const holder{};
+    auto body = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
+        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<3>()) += 1; });
+        return moved.array.at(fc::index<3>());
+    };
+    static_assert(!JoinsAnLvalueBody<decltype(body)>);
+    auto const joined = ft::run_joined(ctx, ft::ThreadOptions{}, auto{body}, auto{body});
+    CRUCIBLE_FATAL_INVARIANT(joined.match(
+        [](fc::Record<int, int> const& values) noexcept {
+            return values.at(fc::index<0>()) == 1 && values.at(fc::index<1>()) == 1;
+        },
+        [](::foundation::os::Errno const&) noexcept { return false; }));
 }
 
 // run_beside mints the keys of its body.  The continuation gets no key.
@@ -74,7 +100,7 @@ void test_beside_body_owns_its_holder(::fixy::BgLoadCtx const& ctx) {
     auto body = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
         moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<2>()) = 9; });
     };
-    CRUCIBLE_FATAL_INVARIANT(ft::run_beside(ctx, ft::ThreadOptions{}, body, [] noexcept {}).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(ft::run_beside(ctx, ft::ThreadOptions{}, std::move(body), [] noexcept {}).is_ok());
 }
 
 // A body with no key reads a holder of the caller through a borrow: the door
@@ -82,7 +108,7 @@ void test_beside_body_owns_its_holder(::fixy::BgLoadCtx const& ctx) {
 void test_keyless_body_reads(::fixy::BgLoadCtx const& ctx) {
     Holder const holder{};
     auto read = [&holder]() noexcept { return holder.array.at(fc::index<0>()); };
-    CRUCIBLE_FATAL_INVARIANT(ft::run_joined(ctx, ft::ThreadOptions{}, read).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(ft::run_joined(ctx, ft::ThreadOptions{}, std::move(read)).is_ok());
 }
 
 // The brands of the trailing keys, after no parameter and after one.
@@ -125,6 +151,7 @@ int main() {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     test_joined_body_owns_its_holder(ctx);
     test_context_and_two_brands(ctx);
+    test_two_copies_of_one_keyed_body(ctx);
     test_beside_body_owns_its_holder(ctx);
     test_keyless_body_reads(ctx);
     return 0;

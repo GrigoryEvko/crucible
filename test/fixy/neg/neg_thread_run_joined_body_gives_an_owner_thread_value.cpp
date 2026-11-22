@@ -24,6 +24,6 @@ int main() {
     namespace eff = ::foundation::effects;
     eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>> const ctx{eff::testing::bg()};
     auto body = []() noexcept { return OwnerThreadValue{}; };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

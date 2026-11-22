@@ -15,6 +15,6 @@ int main() {
     auto sink = ::fixy::observe::mint_timing_sink<2>();
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     auto body = [&sink]() noexcept { sink.mark(::fixy::index<0>()); };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

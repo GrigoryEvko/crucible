@@ -6815,6 +6815,14 @@ endforeach()
 fixy_neg_compile_test(neg_root_door_two_of_one
   "static assertion failed: a body of a root door names two keys of one brand"
   "neg_root_door_two_of_one\\.cpp")
+# A root door takes each body by move into its own frame, so one body object
+# given two times as an lvalue does not compile, with a key or without one.
+fixy_neg_compile_test(neg_root_door_same_body_twice
+  "neg_root_door_same_body_twice\\.cpp:[0-9]+:[0-9]+: error: use of deleted function .void fixy::thread::run_joined"
+  "run_joined takes each body by move, so that two bodies are two objects")
+fixy_neg_compile_test(neg_thread_run_joined_one_body_two_times
+  "neg_thread_run_joined_one_body_two_times\\.cpp:[0-9]+:[0-9]+: error: use of deleted function .void fixy::thread::run_joined"
+  "run_joined takes each body by move, so that two bodies are two objects")
 fixy_neg_compile_test(neg_thread_run_beside_moves_a_box_of_a_declared_class
   "static assertion failed: run_beside: the body captures .engine. \\(field [_a-z]+, type Engine\\)"
   "its type is not SendableBeside.*The first part that refuses it: EngineImpl")

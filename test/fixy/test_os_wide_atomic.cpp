@@ -109,14 +109,11 @@ void run_on_four_threads(Body const& body) {
 // raw probe of the thread door (THE RAW PROBE of fixy/os/ThreadTasks.h).
 template <class Body>
 void probe_on_four_threads(Body const& body) {
-    auto first = [&body]() noexcept { body(); };
-    auto second = first;
-    auto third = first;
-    auto fourth = first;
+    auto each = [&body]() noexcept { body(); };
     ::fixy::thread::run_joined_raw_probe(
         WorkerCtx{eff::testing::bg()}, ::fixy::TestRunnerCtx{eff::testing::test()},
         "a probe of the memory orders of a wide atomic: the body shares a plain payload that the orders publish",
-        ::fixy::thread::ThreadOptions{}, first, second, third, fourth)
+        ::fixy::thread::ThreadOptions{}, auto{each}, auto{each}, auto{each}, std::move(each))
         .expect("the probe starts four threads with the default options");
 }
 

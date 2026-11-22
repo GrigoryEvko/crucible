@@ -352,11 +352,15 @@ int main() {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     ::fixy::thread::run_joined_raw_probe(
         ctx, kTest, "the race of a registration and the seal shares the rounds of each table on purpose",
-        ::fixy::thread::ThreadOptions{}, schema_reader_0, schema_sealer_0, schema_writer_00, schema_writer_01,
-        schema_writer_02, schema_writer_03, schema_reader_1, schema_sealer_1, schema_writer_10, schema_writer_11,
-        schema_writer_12, schema_writer_13, kernel_reader_0, kernel_sealer_0, kernel_writer_00, kernel_writer_01,
-        kernel_writer_02, kernel_writer_03, kernel_reader_1, kernel_sealer_1, kernel_writer_10, kernel_writer_11,
-        kernel_writer_12, kernel_writer_13)
+        ::fixy::thread::ThreadOptions{}, std::move(schema_reader_0), std::move(schema_sealer_0),
+        std::move(schema_writer_00), std::move(schema_writer_01), std::move(schema_writer_02),
+        std::move(schema_writer_03), std::move(schema_reader_1), std::move(schema_sealer_1),
+        std::move(schema_writer_10), std::move(schema_writer_11), std::move(schema_writer_12),
+        std::move(schema_writer_13), std::move(kernel_reader_0), std::move(kernel_sealer_0),
+        std::move(kernel_writer_00), std::move(kernel_writer_01), std::move(kernel_writer_02),
+        std::move(kernel_writer_03), std::move(kernel_reader_1), std::move(kernel_sealer_1),
+        std::move(kernel_writer_10), std::move(kernel_writer_11), std::move(kernel_writer_12),
+        std::move(kernel_writer_13))
         .expect("the thread door starts each thread of the four chains");
 
     // The split between refused and admitted writes depends on the

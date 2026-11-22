@@ -279,7 +279,7 @@ void test_loan_across_threads(::fixy::TestRunnerCtx const& test) {
         };
         ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
         ::fixy::thread::run_joined_raw_probe(ctx, test, "the reader takes the loan by reference on purpose",
-                                             ::fixy::thread::ThreadOptions{}, reader)
+                                             ::fixy::thread::ThreadOptions{}, std::move(reader))
             .expect("the thread door starts the reader");
         return reader_loan;
     }();

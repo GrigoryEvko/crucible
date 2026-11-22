@@ -463,7 +463,7 @@ template <class Pop>
         };
         ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
                                              "the bare ring is the state under test", ::fixy::thread::ThreadOptions{},
-                                             producer, consumer)
+                                             std::move(producer), std::move(consumer))
             .expect("the thread door starts the producer and the consumer of a turn");
         if (next_expected != first + kPerTurn) {
             fixy::report(fixy::Sink::Err, "SPSC lost item {} or gave it out of order after a move of the roles\n",
@@ -511,7 +511,7 @@ template <class Pop>
     };
     ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
                                          "the bare ring is the state under test", ::fixy::thread::ThreadOptions{},
-                                         producer, consumer)
+                                         std::move(producer), std::move(consumer))
         .expect("the thread door starts the producer and the consumer");
     if (next_expected != kItems) {
         fixy::report(fixy::Sink::Err, "SPSC deferred pops lost item {} or gave it out of order\n", next_expected);
@@ -611,7 +611,7 @@ struct ProvenOwner final {
     };
     ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
                                          "the bare ring is the state under test", ::fixy::thread::ThreadOptions{},
-                                         producer, consumer)
+                                         std::move(producer), std::move(consumer))
         .expect("the thread door starts the producer and the consumer");
     if (next_expected != kItems) {
         fixy::report(fixy::Sink::Err, "SPSC proven form lost item {} or gave it out of order\n", next_expected);

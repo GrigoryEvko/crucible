@@ -121,7 +121,7 @@ struct FirstValues {
         const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
         const ::fixy::BgLoadCtx ctx{::foundation::effects::testing::bg()};
         ::fixy::thread::run_joined_raw_probe(ctx, test, "the worker writes the values of this thread on purpose",
-                                             ::fixy::thread::ThreadOptions{}, worker)
+                                             ::fixy::thread::ThreadOptions{}, std::move(worker))
             .expect("the thread door starts the worker");
     }
     const bool isolated = seen_by_worker.counter == 0 && counter.peek() == 5;

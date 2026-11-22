@@ -200,7 +200,7 @@ void test_second_thread_cannot_claim_the_brand(::fixy::TestRunnerCtx const& test
 template <class Body>
 void run_on_another_thread(Body body) noexcept {
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-    bool const is_run = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body).is_ok();
+    bool const is_run = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body)).is_ok();
     if (!is_run) ::fixy::fatal("the host did not start the thread of the test");
 }
 

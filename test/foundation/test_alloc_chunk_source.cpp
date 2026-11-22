@@ -99,7 +99,8 @@ void eight_threads_claim_each_chunk_once(TestRunnerCtx const& test) {
     Claimer seven{alloc::HeapId{7}};
     Claimer eight{alloc::HeapId{8}};
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-    ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, one, two, three, four, five, six, seven, eight)
+    ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(one), std::move(two), std::move(three),
+                               std::move(four), std::move(five), std::move(six), std::move(seven), std::move(eight))
         .expect("the host starts the eight threads of the test");
     CRUCIBLE_TEST_ASSERT(test, shared_refusals.load_acquire() == 0);
     CRUCIBLE_TEST_ASSERT(test, shared_claims.load_acquire() == kOwnableChunks);

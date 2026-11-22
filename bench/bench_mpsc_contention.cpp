@@ -188,16 +188,15 @@ template <typename Worker, std::size_t Producers, std::size_t... Producer>
 void run_cycle(::fixy::thread::ThreadOptions const& options, std::index_sequence<Producer...> /*order*/) {
     ::fixy::Box<Ring> ring_box = ::fixy::mint_box<Ring>(kAlloc);
     StartGate gate{.threads = static_cast<std::uint32_t>(Producers + 1)};
-    ::fixy::FixedArray<Worker, Producers> producers{Worker{*ring_box, gate, Producer * kPerProducer}...};
-    DrainWorker drain{*ring_box, gate, Producers * kPerProducer};
+    Ring& ring = *ring_box;
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
-    // Each thread runs only its own worker, and the door joins each thread before the body returns.
-    producers.with_mut([&ctx, &options, &drain](auto run) noexcept {
-        ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-                                             "the bare MPSC ring is the state under test", options,
-                                             run.view().at(::fixy::index<Producer>())..., drain)
-            .expect("the thread door starts the producers and the consumer of a cycle");
-    });
+    // Each thread runs only its own worker, which moves into the frame of the door, and the door joins each thread
+    // before it returns.
+    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                         "the bare MPSC ring is the state under test", options,
+                                         Worker{ring, gate, Producer * kPerProducer}...,
+                                         DrainWorker{ring, gate, Producers * kPerProducer})
+        .expect("the thread door starts the producers and the consumer of a cycle");
 }
 
 // Prints the cores of the threads of a row, or that the threads keep the

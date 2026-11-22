@@ -35,6 +35,6 @@ int main() {
     auto body = [moved = std::move(bound)]() mutable noexcept {
         std::move(moved).detach(s::detach_reason::TestInstrumentation{});
     };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

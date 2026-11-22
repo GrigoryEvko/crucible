@@ -253,23 +253,30 @@ template <class Consumer>
     }
 }
 
+// The count of one drain: the items that it received, and its failures.
+struct DrainCount {
+    int received = 0;
+    int failures = 0;
+};
+
 // The consumer of one round, on a thread of its own: it receives each item
 // until Closed and checks the order of the items of each producer.  An Empty
-// after the end of each producer is a failure, and the drain then stops.
-// Brand is the fresh brand of the Ref of the count.
+// after the end of each producer is a failure, and the drain then stops.  It
+// gives back its count, which the caller reads after the join.  Brand is the
+// fresh brand of the Ref of the count.
 template <class Consumer, class Brand>
 struct RoundDrain {
     Consumer handle;
     ::fixy::Ref<Atomic<int>, Brand> ended_producers;
     int producers = 0;
     ::foundation::core::FixedArray<int, kMpscProducers> next_of_producer{};
-    int received = 0;
-    int failures = 0;
 
     RoundDrain(Consumer&& consumer, ::fixy::Ref<Atomic<int>, Brand> ended, int producer_count) noexcept
         : handle{std::move(consumer)}, ended_producers{ended}, producers{producer_count} {}
 
-    void operator()() noexcept {
+    [[nodiscard]] DrainCount operator()() noexcept {
+        int received = 0;
+        int failures = 0;
         bool is_draining = true;
         while (is_draining) {
             bool const had_ended = ended_producers->load_acquire() == producers;
@@ -293,13 +300,13 @@ struct RoundDrain {
                 ++received;
             }
         }
+        return DrainCount{.received = received, .failures = failures};
     }
 };
 
 // Zero when the drain received each item of each producer.  Else it reports
 // the count and gives the failures.
-template <class Drain>
-[[nodiscard]] int expect_drained(::fixy::TextView what, Drain const& drain, int producers) noexcept {
+[[nodiscard]] int expect_drained(::fixy::TextView what, DrainCount const& drain, int producers) noexcept {
     int failures = drain.failures;
     if (drain.received != producers * kItemsOfProducer) {
         ::fixy::report(::fixy::Sink::Err, "{}: the consumer received {} items before Closed, want {}\n", what,
@@ -320,12 +327,11 @@ template <class Drain>
     Atomic<int> ended_producers{0};
     RoundFeeder feed{channel.producer(std::move(producer_perm)), ::foundation::core::to(ended_producers), 0};
     RoundDrain drain{channel.consumer(std::move(consumer_perm)), ::foundation::core::to(ended_producers), 1};
-    ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, feed, drain)
-        .expect("the test starts the producer thread and the consumer thread");
-    int const failures = expect_drained("an SPSC round", drain, 1);
-    ::foundation::linear::drop(std::move(feed));
-    ::foundation::linear::drop(std::move(drain));
-    return failures;
+    // The door owns the bodies, and it ends each linear body after the join.
+    auto const joined = ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()},
+                                                   ::fixy::thread::ThreadOptions{}, std::move(feed), std::move(drain))
+                            .expect("the test starts the producer thread and the consumer thread");
+    return expect_drained("an SPSC round", joined.at(::fixy::index<1>()), 1);
 }
 
 // One MPSC round: three producers push their items and end, and the
@@ -342,12 +348,11 @@ template <class Drain>
     RoundFeeder third{lend(channel), ::foundation::core::to(ended_producers), 2 * kItemsOfProducer};
     RoundDrain drain{channel.consumer(std::move(consumer_perm)), ::foundation::core::to(ended_producers),
                      kMpscProducers};
-    ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, first, second,
-                               third, drain)
-        .expect("the test starts the producer threads and the consumer thread");
-    int const failures = expect_drained("an MPSC round", drain, kMpscProducers);
-    ::foundation::linear::drop(std::move(drain));
-    return failures;
+    auto const joined =
+        ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
+                                   std::move(first), std::move(second), std::move(third), std::move(drain))
+            .expect("the test starts the producer threads and the consumer thread");
+    return expect_drained("an MPSC round", joined.at(::fixy::index<3>()), kMpscProducers);
 }
 
 [[nodiscard]] int rounds_receive_each_item_before_closed() noexcept {

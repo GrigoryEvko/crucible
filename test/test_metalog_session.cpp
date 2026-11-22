@@ -354,8 +354,9 @@ void test_typed_session_round_trip() {
     };
 
     const ::fixy::BgLoadCtx bg{::foundation::effects::testing::bg()};
-    auto const [produced, consumed] = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, produce, consume)
-                                          .expect("the thread door starts the producer and the consumer");
+    auto const [produced, consumed] =
+        ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(produce), std::move(consume))
+            .expect("the thread door starts the producer and the consumer");
 
     CRUCIBLE_TEST_ASSERT(kTest, produced.is_done);
     CRUCIBLE_TEST_ASSERT(kTest, produced.has_handle_back);

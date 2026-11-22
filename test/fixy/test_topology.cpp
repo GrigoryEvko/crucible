@@ -152,7 +152,7 @@ void test_process_cpu_count_ignores_the_pin_of_the_reader(::fixy::TestRunnerCtx 
     std::size_t pinned_count = 0;
     auto reader = [&pinned_count]() noexcept { pinned_count = Topology::reprobe_snapshot().process_cpu_count; };
     ::fixy::thread::ThreadOptions const options{.affinity = AffinityMask::single(cpu)};
-    CRUCIBLE_TEST_ASSERT(test, ::fixy::thread::run_joined(ctx, options, reader).is_ok());
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::thread::run_joined(ctx, options, std::move(reader)).is_ok());
     CRUCIBLE_TEST_ASSERT(test, pinned_count == main_count);
     if (main_count < 2) {
         ::fixy::report(::fixy::Sink::Err, "the process has one CPU, so this host cannot show the fault\n");

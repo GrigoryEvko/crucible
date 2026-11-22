@@ -15,9 +15,11 @@
 //                       Body names one key or more after Leading parameters
 //   detail::run_root_body_<Leading>(body, leading...)
 //                       the one entry of the root doors of the base: it checks
-//                       the body for each brand, and it calls the body with the
-//                       leading arguments and one fresh key of each brand, as
-//                       lvalues that live for the call
+//                       the body for each brand, takes the body by value, and
+//                       calls it one time through the once door call_once of
+//                       foundation/Linear.h with the leading arguments and one
+//                       fresh key of each brand.  The keys are lvalues of one
+//                       local cell, which lives for the call
 //
 // THE CHECKS
 //   The brands are distinct key brands (IsKeyBrand), so no body gets two keys
@@ -162,31 +164,49 @@ consteval bool borrow_no_key_owner_(KeyBrands<Brands...> /*brands*/) {
     return (parts_borrow_no_key_owner_<Brands, Parts...>() && ...);
 }
 
-// Calls call with one fresh key of each brand, in the order of the brands.
-// Each key is a local of one level of the recursion, so it lives for the call.
-template <class Call, class... Keys>
-constexpr decltype(auto) call_with_root_keys_(KeyBrands<> /*brands*/, Call&& call, Keys&... keys) noexcept {
-    return static_cast<Call&&>(call)(keys...);
-}
-template <class First, class... Rest, class Call, class... Keys>
-constexpr decltype(auto) call_with_root_keys_(KeyBrands<First, Rest...> /*brands*/, Call&& call,
-                                              Keys&... keys) noexcept {
-    LoanKey<First> key{FrameDoor::key()};
-    return call_with_root_keys_(KeyBrands<Rest...>{}, static_cast<Call&&>(call), keys..., key);
+// One key of the key cell of a root door.
+template <class Brand>
+struct root_key_slot_ {
+    LoanKey<Brand> key;
+};
+
+// The keys of one call of a root door: one key of each brand that the body
+// names, each in a base of its own.  Two keys of one brand would be two bases
+// of one type, so the cell takes only distinct key brands.
+template <class... Brands>
+    requires(are_distinct_key_brands_<Brands...>())
+struct root_key_cell_ final : root_key_slot_<Brands>... {};
+
+// Calls the body with the leading arguments and one fresh key of each brand,
+// in the order of the brands.  The keys are a local of this frame, so they live
+// for the call.  A closure goes through the once door call_once of
+// foundation/Linear.h, which owns it, calls it one time and ends it.  A
+// function pointer holds no capture, so the entry calls it with no door.
+template <class... Brands, class Body, class... Args>
+constexpr decltype(auto) call_with_root_keys_(KeyBrands<Brands...> /*brands*/, Body&& body,
+                                              Args&&... leading) noexcept {
+    root_key_cell_<Brands...> cell{root_key_slot_<Brands>{LoanKey<Brands>{FrameDoor::key()}}...};
+    if constexpr (std::is_class_v<std::remove_cvref_t<Body>>) {
+        return ::foundation::linear::call_once(static_cast<Body&&>(body), static_cast<Args&&>(leading)...,
+                                               static_cast<root_key_slot_<Brands>&>(cell).key...);
+    } else {
+        return body(static_cast<Args&&>(leading)..., static_cast<root_key_slot_<Brands>&>(cell).key...);
+    }
 }
 
 template <class Body, class Brands, class... Args>
 struct root_body_result_;
 template <class Body, class... Brands, class... Args>
 struct root_body_result_<Body, KeyBrands<Brands...>, Args...> {
-    using type = decltype(std::declval<Body&>()(std::declval<Args>()..., std::declval<LoanKey<Brands>&>()...));
+    using type = decltype(std::declval<Body>()(std::declval<Args>()..., std::declval<LoanKey<Brands>&>()...));
 };
 
 // The one entry of the root doors (THE CHECKS): checks the body, and calls it
 // with the leading arguments and one fresh key of each brand that it names.
+// The body moves into the frame of the entry, and it runs one time.
 template <std::size_t Leading, class Body, class... Args>
     requires(sizeof...(Args) == Leading)
-constexpr decltype(auto) run_root_body_(Body& body, Args&&... leading) noexcept {
+constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
     using Brands = root_key_brands_t<Body, Leading>;
     using Result = typename root_body_result_<Body, Brands, Args&&...>::type;
     // A function pointer holds no state, and its type names its own key
@@ -203,9 +223,7 @@ constexpr decltype(auto) run_root_body_(Body& body, Args&&... leading) noexcept 
                       "the result of a body of a root door reaches a key of a brand of its keys, or an owner of such a "
                       "brand through a borrow");
     }
-    return call_with_root_keys_(Brands{}, [&body, &leading...](auto&... keys) noexcept -> decltype(auto) {
-        return body(static_cast<Args&&>(leading)..., keys...);
-    });
+    return call_with_root_keys_(Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
 }
 
 }  // namespace detail

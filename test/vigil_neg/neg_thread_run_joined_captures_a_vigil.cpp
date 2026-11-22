@@ -14,6 +14,6 @@ int main() {
     crucible::Vigil vigil{};
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     auto body = [&vigil]() noexcept { vigil.release_producer_claim(); };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

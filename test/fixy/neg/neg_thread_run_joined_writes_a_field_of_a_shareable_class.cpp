@@ -23,6 +23,7 @@ int main() {
     ReadMostly shared{};
     auto first = [&shared]() noexcept { ++shared.count; };
     auto second = [&shared]() noexcept { ++shared.count; };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, first, second);
+    [[maybe_unused]] auto started =
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(first), std::move(second));
     return shared.count;
 }

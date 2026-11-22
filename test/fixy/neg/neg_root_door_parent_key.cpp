@@ -16,7 +16,7 @@ int main() {
             static_cast<void>(parent);
             static_cast<void>(key);
         };
-        static_cast<void>(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, inner).is_ok());
+        static_cast<void>(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(inner)).is_ok());
     };
-    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, outer).is_ok() ? 0 : 1;
+    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(outer)).is_ok() ? 0 : 1;
 }

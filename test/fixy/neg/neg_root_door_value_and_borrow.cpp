@@ -20,5 +20,5 @@ int main() {
         moved.array.with_mut(key, [](auto run) noexcept { static_cast<void>(run.size()); });
         static_cast<void>(second);
     };
-    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, both).is_ok() ? 0 : 1;
+    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(both)).is_ok() ? 0 : 1;
 }

@@ -396,7 +396,8 @@ using BgWitness = fixy::BgObserveCtx;
             }
         }
     };
-    CRUCIBLE_FATAL_INVARIANT(fixy::thread::run_joined(ctx, fixy::thread::ThreadOptions{}, sleeper, signaller).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        fixy::thread::run_joined(ctx, fixy::thread::ThreadOptions{}, std::move(sleeper), std::move(signaller)).is_ok());
     CRUCIBLE_FATAL_INVARIANT(has_slept.load_acquire());
     CRUCIBLE_FATAL_INVARIANT(was_sent.load_acquire());
     CRUCIBLE_FATAL_INVARIANT(has_handler_run_asleep());

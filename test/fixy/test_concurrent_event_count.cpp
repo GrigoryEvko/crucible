@@ -154,7 +154,8 @@ void expect_no_lost_wake(::fixy::BgLoadCtx const& ctx, std::uint64_t seed) {
         }
     };
     CRUCIBLE_FATAL_INVARIANT(
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, producer, consumer).is_ok());
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(producer), std::move(consumer))
+            .is_ok());
     CRUCIBLE_FATAL_INVARIANT(late_rounds.load_acquire() == 0);
     CRUCIBLE_FATAL_INVARIANT(!has_waiters(ctx, events));
 }
@@ -188,8 +189,9 @@ void expect_no_lost_wake_of_two_waiters(::fixy::BgLoadCtx const& ctx, std::uint6
         }
     };
     auto second_consumer = consumer;
-    CRUCIBLE_FATAL_INVARIANT(
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, producer, consumer, second_consumer).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(producer),
+                                                        std::move(consumer), std::move(second_consumer))
+                                 .is_ok());
     CRUCIBLE_FATAL_INVARIANT(late_rounds.load_acquire() == 0);
     CRUCIBLE_FATAL_INVARIANT(!has_waiters(ctx, events));
 }

@@ -417,7 +417,8 @@ void run_threads(::fixy::BgLoadCtx const& ctx, Run<Ring>& run, Schedule schedule
     auto consumer = make_consumer(run, schedule);
     ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{eff::testing::test()},
                                          "the bare ring under test is the state of the run",
-                                         ::fixy::thread::ThreadOptions{}, first, second, third, fourth, consumer)
+                                         ::fixy::thread::ThreadOptions{}, std::move(first), std::move(second),
+                                         std::move(third), std::move(fourth), std::move(consumer))
         .expect("the thread door starts the producers and the consumer");
 }
 

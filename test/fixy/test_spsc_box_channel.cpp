@@ -171,36 +171,44 @@ struct ParcelFeeder {
     }
 };
 
+// The count of the bulk drain: the labels that it received, and the labels
+// that arrived out of order.
+struct ParcelCount {
+    std::uint64_t received = 0;
+    std::uint64_t out_of_order = 0;
+};
+
 // The consumer thread of the bulk test.  It owns its handle, pops each Box,
-// and counts the labels that arrive out of order.
+// and counts the labels that arrive out of order.  It gives back its count,
+// which the caller reads after the join.
 template <class Consumer>
 struct ParcelDrain {
     Consumer handle;
-    std::uint64_t received = 0;
-    std::uint64_t out_of_order = 0;
 
     explicit ParcelDrain(Consumer&& consumer) noexcept : handle{std::move(consumer)} {}
 
-    void operator()() noexcept {
-        while (received < kBulkParcels) {
+    [[nodiscard]] ParcelCount operator()() noexcept {
+        ParcelCount count{};
+        while (count.received < kBulkParcels) {
             fixy::Option<fixy::Box<Parcel>> const parcel = handle.try_pop();
             if (parcel.is_none()) {
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
-            if (label_of(parcel) != received) ++out_of_order;
-            ++received;
+            if (label_of(parcel) != count.received) ++count.out_of_order;
+            ++count.received;
         }
+        return count;
     }
 };
 
 // A producer thread moves many Boxes to a consumer thread through a small
 // ring.  The consumer reads each object that the producer wrote before its
-// push, so each label arrives in order.  The test ends the two thread
-// objects, and with them the two handles, at the drop door after the join.
+// push, so each label arrives in order.  The thread door owns the two thread
+// objects, and it ends them, and with them the two handles, at the drop door
+// after the join.
 void two_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
-    std::uint64_t received = 0;
-    std::uint64_t out_of_order = 0;
+    ParcelCount count{};
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, BulkTag>>();
         using BulkChannel = c::box_channel_t<Parcel, 64, decltype(root)>;
@@ -209,15 +217,14 @@ void two_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
             perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(std::move(root));
         ParcelFeeder feed{channel.producer(std::move(producer_perm))};
         ParcelDrain drain{channel.consumer(std::move(consumer_perm))};
-        ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, feed, drain)
-            .expect("the test starts the producer thread and the consumer thread");
-        received = drain.received;
-        out_of_order = drain.out_of_order;
-        ::foundation::linear::drop(std::move(feed));
-        ::foundation::linear::drop(std::move(drain));
+        auto const joined =
+            ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
+                                       std::move(feed), std::move(drain))
+                .expect("the test starts the producer thread and the consumer thread");
+        count = joined.at(::fixy::index<1>());
     }
-    CRUCIBLE_TEST_ASSERT(test, received == kBulkParcels);
-    CRUCIBLE_TEST_ASSERT(test, out_of_order == 0);
+    CRUCIBLE_TEST_ASSERT(test, count.received == kBulkParcels);
+    CRUCIBLE_TEST_ASSERT(test, count.out_of_order == 0);
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
 }
 

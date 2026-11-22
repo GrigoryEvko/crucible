@@ -51,7 +51,8 @@ int main() {
         }
     };
     auto second = first;
-    ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, first, second)
+    ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, std::move(first),
+                               std::move(second))
         .expect("the probe starts two threads");
     return counter.read() == 2 * kRounds ? 0 : 3;
 }

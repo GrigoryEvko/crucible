@@ -304,23 +304,30 @@ struct ParcelFeeder {
     }
 };
 
+// The count of the bulk drain: the labels that it received, and the labels
+// that arrived out of the order of their producer.
+struct ParcelCount {
+    std::uint64_t received = 0;
+    std::uint64_t out_of_order = 0;
+};
+
 // The consumer thread of the bulk test.  It owns its handle, receives each
 // Box until the end of the stream, and counts the labels that arrive out of
-// the order of their producer.
+// the order of their producer.  It gives back its count, which the caller
+// reads after the join.
 template <class Consumer>
 struct ParcelDrain {
     Consumer handle;
     fixy::FixedArray<std::uint64_t, kProducers> next_place{};
-    std::uint64_t received = 0;
-    std::uint64_t out_of_order = 0;
 
     explicit ParcelDrain(Consumer&& consumer) noexcept : handle{std::move(consumer)} {}
 
-    void operator()() noexcept {
+    [[nodiscard]] ParcelCount operator()() noexcept {
+        ParcelCount count{};
         for (;;) {
             fixy::Result<fixy::Box<Parcel>, c::NoItem> parcel = handle.try_receive(eff::testing::test().nondet);
             if (parcel.is_err()) {
-                if (std::move(parcel).err() == fixy::some(c::NoItem::Closed)) return;
+                if (std::move(parcel).err() == fixy::some(c::NoItem::Closed)) return count;
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
@@ -328,12 +335,12 @@ struct ParcelDrain {
             std::uint64_t const place = label & 0xFFFFFFFFu;
             bool is_known_producer = false;
             for (auto const producer : fixy::Index<kProducers>::check(label >> 32)) {
-                if (next_place.at(producer) != place) ++out_of_order;
+                if (next_place.at(producer) != place) ++count.out_of_order;
                 next_place.with_element(producer, [place](std::uint64_t& expected) noexcept { expected = place + 1; });
                 is_known_producer = true;
             }
-            if (!is_known_producer) ++out_of_order;
-            ++received;
+            if (!is_known_producer) ++count.out_of_order;
+            ++count.received;
         }
     }
 };
@@ -341,11 +348,11 @@ struct ParcelDrain {
 // Three producer threads move many Boxes to one consumer thread through a
 // small ring.  The consumer reads each object that its producer wrote before
 // the push, so the labels of each producer arrive in its order, and the end
-// of the last producer ends the stream.  The test ends the thread object of
-// the consumer, and with it the consumer handle, after the join.
+// of the last producer ends the stream.  The thread door owns the thread
+// object of the consumer, and it ends it, and with it the consumer handle,
+// after the join.
 void three_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
-    std::uint64_t received = 0;
-    std::uint64_t out_of_order = 0;
+    ParcelCount count{};
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, BulkTag>>();
         using BulkChannel = c::box_channel_t<Parcel, 64, decltype(root)>;
@@ -356,15 +363,14 @@ void three_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
         ParcelFeeder second{lend(channel), 1};
         ParcelFeeder third{lend(channel), 2};
         ParcelDrain drain{channel.consumer(std::move(consumer_perm))};
-        ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, first,
-                                   second, third, drain)
-            .expect("the test starts the three producer threads and the consumer thread");
-        received = drain.received;
-        out_of_order = drain.out_of_order;
-        ::foundation::linear::drop(std::move(drain));
+        auto const joined =
+            ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
+                                       std::move(first), std::move(second), std::move(third), std::move(drain))
+                .expect("the test starts the three producer threads and the consumer thread");
+        count = joined.at(::fixy::index<3>());
     }
-    CRUCIBLE_TEST_ASSERT(test, received == kProducers * kParcelsOfProducer);
-    CRUCIBLE_TEST_ASSERT(test, out_of_order == 0);
+    CRUCIBLE_TEST_ASSERT(test, count.received == kProducers * kParcelsOfProducer);
+    CRUCIBLE_TEST_ASSERT(test, count.out_of_order == 0);
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
 }
 

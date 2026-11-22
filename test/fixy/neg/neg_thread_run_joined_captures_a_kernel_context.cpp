@@ -25,6 +25,6 @@ int main() {
     ::fixy::Kernel<KernelBrand, core::kFpModeFlushToZero> const ctx = ::fixy::mint_kernel_context<KernelBrand>(scope);
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     auto body = [&ctx]() noexcept { static_cast<void>(ctx); };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

@@ -87,7 +87,7 @@ template <class Signature>
 template <class Body>
 [[nodiscard]] auto on_other_thread(Body body) {
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-    auto const values = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body)
+    auto const values = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body))
                             .expect("the host starts the thread of the test");
     return values.at(::fixy::index<0>());
 }
@@ -309,7 +309,7 @@ void test_the_reader_sees_the_claim(::fixy::TestRunnerCtx const& test, fo::Libra
         [claim_a_second_brand] noexcept {
             ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
             auto body = claim_a_second_brand;
-            static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body));
+            static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body)));
         },
         ::fixy::TextView{"foundation: fatal invariant failed: record != nullptr"});
 

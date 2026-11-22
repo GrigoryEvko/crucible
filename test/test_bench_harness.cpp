@@ -790,7 +790,7 @@ template <class Body>
 void run_on_own_thread(Body body) {
     namespace eff = ::foundation::effects;
     using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
-    ::fixy::thread::run_joined(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, body)
+    ::fixy::thread::run_joined(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, std::move(body))
         .expect("the thread door starts a thread with the default options");
 }
 
@@ -1465,7 +1465,8 @@ void test_planted_pause_is_caught() {
         is_hog_asked.store_release(true);
         return report;
     };
-    auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, hog, measure)
+    auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
+                                             std::move(hog), measure)
                       .expect("the thread door starts the thread of the planted pause");
     const bench::Report& paused = values.at(::fixy::index<1>());
     if (!paused.pinned_cpu.is_valid()) return;

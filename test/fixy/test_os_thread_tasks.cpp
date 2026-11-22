@@ -5,6 +5,8 @@
 
 #include <fixy/os/ThreadTasks.h>
 
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
@@ -17,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -109,7 +112,8 @@ void test_each_body_runs_on_a_thread_of_its_own() {
         while (!left_arrived.load_acquire())
             CRUCIBLE_SPIN_PAUSE;
     };
-    auto const started = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ThreadOptions{}, left, right);
+    auto const started =
+        ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ThreadOptions{}, std::move(left), std::move(right));
     CRUCIBLE_FATAL_INVARIANT(started.is_ok());
     CRUCIBLE_FATAL_INVARIANT(!left_on_main.load_acquire() && !right_on_main.load_acquire());
 }
@@ -125,7 +129,8 @@ void test_a_body_takes_the_context_of_the_call() {
         is_context_body_off_main.store_release(!is_main_thread);
     };
     auto plain = [&is_plain_body_off_main]() noexcept { is_plain_body_off_main.store_release(!is_main_thread); };
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, with_context, plain).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        ::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(with_context), std::move(plain)).is_ok());
     CRUCIBLE_FATAL_INVARIANT(is_context_body_off_main.load_acquire() && is_plain_body_off_main.load_acquire());
 }
 
@@ -138,8 +143,9 @@ void test_each_body_gives_its_value() {
     auto seven = []() noexcept { return std::uint32_t{7}; };
     auto nothing = []() noexcept {};
     auto is_off_main = [](WorkerCtx const& /*thread_ctx*/) noexcept { return !is_main_thread; };
-    auto [value, unit, was_off_main] = ::fixy::thread::run_joined(ctx, ThreadOptions{}, seven, nothing, is_off_main)
-                                           .expect("the door starts three threads with the default options");
+    auto [value, unit, was_off_main] =
+        ::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(seven), std::move(nothing), std::move(is_off_main))
+            .expect("the door starts three threads with the default options");
     static_assert(std::is_same_v<decltype(unit), ::foundation::core::Unit>);
     CRUCIBLE_FATAL_INVARIANT(value == 7 && was_off_main);
 
@@ -174,7 +180,7 @@ void test_a_body_runs_beside_the_continuation() {
         return is_main_thread;
     };
     auto [was_body_off_main, was_continuation_on_main] =
-        ::fixy::thread::run_beside(ctx, ThreadOptions{}, body, continuation)
+        ::fixy::thread::run_beside(ctx, ThreadOptions{}, std::move(body), continuation)
             .expect("the door starts a thread beside the caller with the default options");
     CRUCIBLE_FATAL_INVARIANT(was_body_off_main && was_continuation_on_main);
 
@@ -183,7 +189,7 @@ void test_a_body_runs_beside_the_continuation() {
     auto also_marks = [&has_run]() noexcept { has_run.store_release(true); };
     static_assert(std::is_same_v<::fixy::thread::beside_values_t<WorkerCtx, decltype(marks), decltype(also_marks)>,
                                  ::foundation::core::Unit>);
-    auto const refused = ::fixy::thread::run_beside(ctx, ThreadOptions{.guard_bytes = 0}, marks, also_marks);
+    auto const refused = ::fixy::thread::run_beside(ctx, ThreadOptions{.guard_bytes = 0}, std::move(marks), also_marks);
     CRUCIBLE_FATAL_INVARIANT(refused.err().value_or(Errno::eperm) == Errno::einval);
     CRUCIBLE_FATAL_INVARIANT(!has_run.load_acquire());
 }
@@ -235,7 +241,7 @@ void test_each_index_runs_beside_the_continuation() {
 void test_default_options() {
     ThreadFacts const main_facts = read_calling_thread_facts();
     auto worker = []() noexcept { return read_calling_thread_facts(); };
-    auto [worker_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ThreadOptions{}, worker)
+    auto [worker_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, ThreadOptions{}, std::move(worker))
                               .expect("the door starts a thread with the default options");
     CRUCIBLE_FATAL_INVARIANT(worker_facts.stack_bytes == ::fixy::thread::default_stack_bytes);
     CRUCIBLE_FATAL_INVARIANT(worker_facts.guard_bytes >= ::fixy::thread::default_guard_bytes);
@@ -268,8 +274,9 @@ void test_each_option_reaches_each_thread() {
     };
     auto first = []() noexcept { return read_calling_thread_facts(); };
     auto second = []() noexcept { return read_calling_thread_facts(); };
-    auto [first_facts, second_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, first, second)
-                                           .expect("the door starts two threads with the probe options");
+    auto [first_facts, second_facts] =
+        ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, std::move(first), std::move(second))
+            .expect("the door starts two threads with the probe options");
     expect_probe_options(first_facts, options, main_facts);
     expect_probe_options(second_facts, options, main_facts);
 }
@@ -294,7 +301,8 @@ void test_one_cpu_each() {
     auto second_task = []() noexcept { return read_calling_thread_facts(); };
     auto third_task = []() noexcept { return read_calling_thread_facts(); };
     auto [first_facts, second_facts, third_facts] =
-        ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, first_task, second_task, third_task)
+        ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, std::move(first_task),
+                                   std::move(second_task), std::move(third_task))
             .expect("the door starts three threads, one on each CPU");
     CRUCIBLE_FATAL_INVARIANT(first_facts.cpu_count == 1 && second_facts.cpu_count == 1 && third_facts.cpu_count == 1);
     CRUCIBLE_FATAL_INVARIANT(first_facts.first_cpu == first);
@@ -304,7 +312,7 @@ void test_one_cpu_each() {
     // SharedMask gives each thread both CPUs.
     ThreadOptions const shared{.affinity = options.affinity};
     auto shared_task = []() noexcept { return read_calling_thread_facts(); };
-    auto [shared_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, shared, shared_task)
+    auto [shared_facts] = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, shared, std::move(shared_task))
                               .expect("the door starts a thread on the shared mask");
     CRUCIBLE_FATAL_INVARIANT(shared_facts.cpu_count == 2);
 }
@@ -316,21 +324,75 @@ void test_refused_option_runs_no_thread() {
     auto body = [&]() noexcept { has_run.store_release(true); };
 
     ThreadOptions const no_guard{.guard_bytes = 0};
-    auto const refused_guard = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, no_guard, body);
+    auto const refused_guard = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, no_guard, auto{body});
     CRUCIBLE_FATAL_INVARIANT(refused_guard.is_err());
     CRUCIBLE_FATAL_INVARIANT(refused_guard.err().value_or(Errno::eperm) == Errno::einval);
 
     ThreadOptions const small_stack{.stack_bytes = 1};
-    auto const refused_stack = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, small_stack, body);
+    auto const refused_stack = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, small_stack, auto{body});
     CRUCIBLE_FATAL_INVARIANT(refused_stack.err().value_or(Errno::eperm) == Errno::einval);
 
     // The last CPU of a mask is past each CPU of the host, so the kernel
     // refuses the CPUs of the new thread.
     ThreadOptions const no_usable_cpu{.affinity = AffinityMask::single(AffinityMask::kMaxCore)};
-    auto const refused_cpus = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, no_usable_cpu, body);
+    auto const refused_cpus = ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, no_usable_cpu, std::move(body));
     CRUCIBLE_FATAL_INVARIANT(refused_cpus.err().value_or(Errno::eperm) == Errno::einval);
 
     CRUCIBLE_FATAL_INVARIANT(!has_run.load_acquire());
+}
+
+// True when run_joined takes a body of the type that the caller names as an
+// lvalue.
+template <typename Body>
+concept JoinsAnLvalueBody =
+    requires(WorkerCtx const& ctx, Body& body) { ::fixy::thread::run_joined(ctx, ThreadOptions{}, body); };
+
+// The door moves each body into its own frame, so two copies of one mutable
+// body are two objects, and each thread writes the capture of its own copy.
+// An lvalue body does not compile: neg_thread_run_joined_one_body_two_times.
+void test_each_body_is_an_object_of_the_door() {
+    WorkerCtx const ctx{eff::testing::bg()};
+    auto counting = [calls = std::uint32_t{0}]() mutable noexcept {
+        calls += 1;
+        return calls;
+    };
+    auto [first_calls, second_calls] = ::fixy::thread::run_joined(ctx, ThreadOptions{}, auto{counting}, auto{counting})
+                                           .expect("the door starts two copies of one body");
+    CRUCIBLE_FATAL_INVARIANT(first_calls == 1 && second_calls == 1);
+    static_assert(!JoinsAnLvalueBody<decltype(counting)>);
+}
+
+// A linear value of the test, which a body moves out of its capture.
+class[[= ::foundation::linear::linear{}]] LinearToken {
+public:
+    constexpr explicit LinearToken(std::uint32_t value) noexcept : value_{value} {}
+    LinearToken(LinearToken const&) = delete("a linear token has one owner");
+    LinearToken& operator=(LinearToken const&) = delete("a linear token has one owner");
+    constexpr LinearToken(LinearToken&&) noexcept = default;
+    constexpr LinearToken& operator=(LinearToken&&) noexcept = default;
+    constexpr ~LinearToken() = default;
+
+    [[nodiscard]] constexpr std::uint32_t consume() && noexcept { return value_; }
+
+private:
+    std::uint32_t value_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+// A body can move a linear capture out, because the thread of the body calls
+// it one time as an rvalue, and the frame of the door owns it.
+void test_a_body_moves_a_linear_capture_out() {
+    WorkerCtx const ctx{eff::testing::bg()};
+    auto joined = [owned = LinearToken{5}]() mutable noexcept { return std::move(owned).consume(); };
+    auto [joined_value] = ::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(joined))
+                              .expect("the door starts a body that moves its capture out");
+    CRUCIBLE_FATAL_INVARIANT(joined_value == 5);
+    auto beside = [owned = LinearToken{6}]() mutable noexcept { return std::move(owned).consume(); };
+    auto waits = []() noexcept {};
+    auto [beside_value, continued] = ::fixy::thread::run_beside(ctx, ThreadOptions{}, std::move(beside), waits)
+                                         .expect("the door starts a body beside the caller that moves its capture out");
+    static_assert(std::is_same_v<decltype(continued), ::foundation::core::Unit>);
+    CRUCIBLE_FATAL_INVARIANT(beside_value == 6);
 }
 
 }  // namespace
@@ -346,5 +408,7 @@ int main() {
     test_each_option_reaches_each_thread();
     test_one_cpu_each();
     test_refused_option_runs_no_thread();
+    test_each_body_is_an_object_of_the_door();
+    test_a_body_moves_a_linear_capture_out();
     return 0;
 }

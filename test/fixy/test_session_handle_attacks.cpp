@@ -1074,7 +1074,7 @@ volatile std::uint64_t overflow_limit = ~std::uint64_t{0};
     };
     BgCtx const ctx{eff::testing::bg()};
     fixy::thread::ThreadOptions const options{.stack_bytes = std::size_t{256} << 10};
-    static_cast<void>(fixy::thread::run_joined(ctx, options, overflow));
+    static_cast<void>(fixy::thread::run_joined(ctx, options, std::move(overflow)));
     fixy::unreachable();
 }
 

@@ -15,7 +15,7 @@ int main() {
     namespace eff = ::foundation::effects;
     eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>> const ctx{eff::testing::bg()};
     auto body = []() noexcept {};
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined_raw_probe(ctx, ctx, "a probe with no test authority",
-                                                                         ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined_raw_probe(
+        ctx, ctx, "a probe with no test authority", ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

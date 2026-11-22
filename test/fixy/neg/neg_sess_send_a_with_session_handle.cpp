@@ -42,7 +42,8 @@ int main() {
             auto body = [moved = std::move(head)]() mutable noexcept {
                 static_cast<void>(std::move(moved).send(1, write_value).close());
             };
-            [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body);
+            [[maybe_unused]] auto started =
+                ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
             ::fixy::unreachable();
         });
     return 0;

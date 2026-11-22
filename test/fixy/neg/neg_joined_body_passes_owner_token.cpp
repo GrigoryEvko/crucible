@@ -26,6 +26,6 @@ int main() {
     OwnerKey key{};
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     auto body = [&key]() noexcept { ++key.uses; };
-    [[maybe_unused]] auto joined = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto joined = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

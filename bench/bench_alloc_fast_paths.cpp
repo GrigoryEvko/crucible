@@ -587,7 +587,7 @@ void print_ratios(fixy::TextView name, RowSet const& base, RowSet const& referen
         bench::do_not_optimize(block);
         return end - start;
     };
-    auto const values = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, first_allocation)
+    auto const values = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(first_allocation))
                             .expect("the host starts the thread of the bench");
     return values.at(::fixy::index<0>());
 }

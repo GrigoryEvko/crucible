@@ -28,6 +28,6 @@ int main() {
         for (auto const& reached : cell.load_acquire())
             reached->mark(::fixy::index<0>());
     };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body);
+    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
     return 0;
 }

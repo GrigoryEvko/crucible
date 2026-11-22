@@ -19,7 +19,7 @@ int main() {
         auto inner = [&holder](::foundation::core::LoanKey<HolderBrand>& key) noexcept {
             holder.array.with_mut(key, [](auto run) noexcept { static_cast<void>(run.size()); });
         };
-        static_cast<void>(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, inner).is_ok());
+        static_cast<void>(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(inner)).is_ok());
     };
-    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, keyless).is_ok() ? 0 : 1;
+    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(keyless)).is_ok() ? 0 : 1;
 }

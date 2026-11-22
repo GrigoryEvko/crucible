@@ -212,11 +212,13 @@ template <std::size_t Threads>
                                    broadcast_row(bias, rows)};
         };
         [&]<std::size_t... Indexes>(std::index_sequence<Indexes...>) noexcept {
+            // A braced list makes the blocks in the order of the chunks, and each
+            // block then moves into the frame of the door.
             ::fixy::Record<decltype(make_block(Indexes))...> blocks{make_block(Indexes)...};
             ::fixy::BgLoadCtx const bg{eff::testing::bg()};
-            bool const is_run =
-                ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, blocks.at(::fixy::index<Indexes>())...)
-                    .is_ok();
+            bool const is_run = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{},
+                                                           std::move(blocks.at(::fixy::index<Indexes>()))...)
+                                    .is_ok();
             CRUCIBLE_TEST_ASSERT(kTest, is_run);
         }(std::make_index_sequence<Threads>{});
     });

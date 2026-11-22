@@ -39,10 +39,10 @@ enum class ReaderStart : std::uint8_t {
 // bodies share a histogram on purpose, so they go through the raw probe of
 // the thread door.
 template <typename... Bodies>
-void run_threads(Bodies&... bodies) noexcept {
+void run_threads(Bodies&&... bodies) noexcept {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     ::fixy::thread::run_joined_raw_probe(ctx, kTest, "the threads of the test share a histogram on purpose",
-                                         ::fixy::thread::ThreadOptions{}, bodies...)
+                                         ::fixy::thread::ThreadOptions{}, static_cast<Bodies&&>(bodies)...)
         .expect("the thread door starts each thread of the test");
 }
 
@@ -131,10 +131,12 @@ void check_published_buckets(ReaderStart reader_start) {
         stop_flag.store_release(true);
     };
     if (reader_start == ReaderStart::WithProducers) {
-        run_threads(producer_0, producer_1, producer_2, producer_3, read_until_stopped, conductor);
+        run_threads(std::move(producer_0), std::move(producer_1), std::move(producer_2), std::move(producer_3),
+                    std::move(read_until_stopped), std::move(conductor));
     } else {
-        run_threads(producer_0, producer_1, producer_2, producer_3, conductor);
-        run_threads(read_until_stopped);
+        run_threads(std::move(producer_0), std::move(producer_1), std::move(producer_2), std::move(producer_3),
+                    std::move(conductor));
+        run_threads(std::move(read_until_stopped));
     }
 
     CRUCIBLE_TEST_ASSERT(kTest, shared.total_count() == kProducerCount * kSamplesPerProducer);
@@ -303,7 +305,7 @@ int main() {
             CRUCIBLE_SPIN_PAUSE;
         }
     };
-    run_threads(t0, t1, waiter);
+    run_threads(std::move(t0), std::move(t1), std::move(waiter));
     CRUCIBLE_TEST_ASSERT(kTest, c.total_count() == 256);
 
     Hist snapshot;

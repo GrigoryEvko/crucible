@@ -179,12 +179,12 @@ void open_when_ready(RaceGate& gate) noexcept {
 // cache on purpose, so the race goes through the raw probe of the thread door.
 template <typename... Workers>
     requires(sizeof...(Workers) == kWorkerCount)
-void run_race(::fixy::TestRunnerCtx const& test, RaceGate& gate, Workers&... workers) noexcept {
-    auto opener = [&gate] noexcept { open_when_ready(gate); };
+void run_race(::fixy::TestRunnerCtx const& test, RaceGate& gate, Workers&&... workers) noexcept {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
-    ::fixy::thread::run_joined_raw_probe(ctx, test,
-                                         "the workers of a race of the cache share its gate and its slots on purpose",
-                                         ::fixy::thread::ThreadOptions{}, opener, workers...)
+    ::fixy::thread::run_joined_raw_probe(
+        ctx, test, "the workers of a race of the cache share its gate and its slots on purpose",
+        ::fixy::thread::ThreadOptions{}, [&gate] noexcept { open_when_ready(gate); },
+        static_cast<Workers&&>(workers)...)
         .expect("the thread door starts the opener and each worker of the race");
 }
 
@@ -355,7 +355,7 @@ void test_concurrent_inserts_disjoint_slots(::fixy::TestRunnerCtx const& test) {
 
     // Hold every thread at the gate and release them together, so
     // the inserts actually overlap.
-    run_race(test, gate, worker_0, worker_1, worker_2, worker_3);
+    run_race(test, gate, std::move(worker_0), std::move(worker_1), std::move(worker_2), std::move(worker_3));
 
     CRUCIBLE_TEST_ASSERT(
         test, holds(cipher::lookup_computation_cache<&ct_fn_t0, int>(), body_at(disjoint_bodies, ::fixy::index<0>())));
@@ -381,11 +381,8 @@ void test_concurrent_inserts_same_slot_first_wins(::fixy::TestRunnerCtx const& t
             cipher::insert_computation_cache<&test_fn_c, int>(lend_erased(body_at(contended_bodies, position)));
         };
     };
-    auto contender_0 = contender_of(::fixy::index<0>());
-    auto contender_1 = contender_of(::fixy::index<1>());
-    auto contender_2 = contender_of(::fixy::index<2>());
-    auto contender_3 = contender_of(::fixy::index<3>());
-    run_race(test, gate, contender_0, contender_1, contender_2, contender_3);
+    run_race(test, gate, contender_of(::fixy::index<0>()), contender_of(::fixy::index<1>()),
+             contender_of(::fixy::index<2>()), contender_of(::fixy::index<3>()));
 
     const Slot winner = cipher::lookup_computation_cache<&test_fn_c, int>();
     CRUCIBLE_TEST_ASSERT(test, winner.is_some());
@@ -474,7 +471,7 @@ void test_concurrent_inserts_disjoint_slots_in_row(::fixy::TestRunnerCtx const& 
         cipher::insert_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(
             lend_erased(body_at(disjoint_row_bodies, ::fixy::index<3>())));
     };
-    run_race(test, gate, worker_0, worker_1, worker_2, worker_3);
+    run_race(test, gate, std::move(worker_0), std::move(worker_1), std::move(worker_2), std::move(worker_3));
 
     CRUCIBLE_TEST_ASSERT(test, holds(cipher::lookup_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(),
                                      body_at(disjoint_row_bodies, ::fixy::index<0>())));
@@ -499,11 +496,8 @@ void test_concurrent_inserts_same_slot_first_wins_in_row(::fixy::TestRunnerCtx c
                 lend_erased(body_at(contended_row_bodies, position)));
         };
     };
-    auto contender_0 = contender_of(::fixy::index<0>());
-    auto contender_1 = contender_of(::fixy::index<1>());
-    auto contender_2 = contender_of(::fixy::index<2>());
-    auto contender_3 = contender_of(::fixy::index<3>());
-    run_race(test, gate, contender_0, contender_1, contender_2, contender_3);
+    run_race(test, gate, contender_of(::fixy::index<0>()), contender_of(::fixy::index<1>()),
+             contender_of(::fixy::index<2>()), contender_of(::fixy::index<3>()));
 
     const Slot winner = cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>();
     CRUCIBLE_TEST_ASSERT(test, winner.is_some());

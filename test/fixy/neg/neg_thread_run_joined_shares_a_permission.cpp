@@ -35,7 +35,8 @@ int main() {
     ::foundation::core::Atomic<int> cell{0};
     auto first = [&cell, &proof]() noexcept { write_region(proof, cell); };
     auto second = [&cell, &proof]() noexcept { write_region(proof, cell); };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, first, second);
+    [[maybe_unused]] auto started =
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(first), std::move(second));
     ::foundation::linear::drop(static_cast<decltype(token)&&>(token));
     return cell.load_acquire();
 }

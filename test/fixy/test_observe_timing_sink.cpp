@@ -93,7 +93,7 @@ void a_mark_from_another_thread() {
     auto body = [&address]() noexcept {
         ::crucible::test::thread_bound_at<Sink>(address.load_acquire()).mark(kMarkSlot);
     };
-    static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body));
+    static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body)));
 }
 
 void test_only_the_owner_writes(TestRunnerCtx const& test) {

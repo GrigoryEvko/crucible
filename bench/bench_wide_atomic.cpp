@@ -156,15 +156,15 @@ struct RowCores final {
     ::fixy::Option<bench::CpuId> second{};
 };
 
-// The thread of a shared load row that measures.  It keeps its report, which
-// the caller reads after the join.
+// The thread of a shared load row that measures.  It writes its report into
+// the report of the caller, which the caller reads after the join.
 template <class Cell>
 struct MeasureSharedLoad {
     Cell& cell;
     RowCores const& cores;
     ::fixy::Atomic<std::uint32_t> const& is_second_ready;
     ::fixy::Atomic<std::uint32_t>& is_done;
-    bench::Report measured{};
+    bench::Report& measured;
 
     void operator()() noexcept {
         pin_to(cores.measured);
@@ -186,8 +186,9 @@ template <class Cell>
     Cell& cell = *line;
     ::fixy::CacheLine<::fixy::Atomic<std::uint32_t>> is_second_ready{std::uint32_t{0}};
     ::fixy::CacheLine<::fixy::Atomic<std::uint32_t>> is_done{std::uint32_t{0}};
+    bench::Report measured{};
     MeasureSharedLoad<Cell> measuring{
-        .cell = cell, .cores = cores, .is_second_ready = *is_second_ready, .is_done = *is_done};
+        .cell = cell, .cores = cores, .is_second_ready = *is_second_ready, .is_done = *is_done, .measured = measured};
     auto second = [&cell, &cores, &is_second_ready, &is_done]() noexcept {
         pin_to(cores.second);
         is_second_ready->store_release(1);
@@ -196,9 +197,11 @@ template <class Cell>
             bench::do_not_optimize(value);
         }
     };
-    ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, measuring, second)
+    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                         "the measuring thread writes the report of the caller on purpose",
+                                         ::fixy::thread::ThreadOptions{}, std::move(measuring), std::move(second))
         .expect("the two threads of a shared load row start and join");
-    return std::move(measuring.measured);
+    return measured;
 }
 
 }  // namespace

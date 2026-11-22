@@ -34,6 +34,7 @@ int main() {
     eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>> const ctx{eff::testing::bg()};
     auto poll = [device = open_device()]() mutable noexcept { device.poll(); };
     auto idle = []() noexcept {};
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, poll, idle);
+    [[maybe_unused]] auto started =
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(poll), std::move(idle));
     return 0;
 }

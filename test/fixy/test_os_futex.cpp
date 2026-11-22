@@ -196,7 +196,8 @@ void test_a_wake_ends_the_wait() {
         word.store_release(1);
         static_cast<void>(futex::wake_all(thread_ctx, word).expect("a wake is valid"));
     };
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, waiter, waker).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        ::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(waiter), std::move(waker)).is_ok());
     CRUCIBLE_FATAL_INVARIANT(is_waiter_done.load_acquire());
 }
 
@@ -234,7 +235,8 @@ void test_a_signal_reaches_a_waiter() {
         word.store_release(1);
         static_cast<void>(futex::wake_all(thread_ctx, word).expect("a wake is valid"));
     };
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, waiter, signaler).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        ::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(waiter), std::move(signaler)).is_ok());
     CRUCIBLE_FATAL_INVARIANT(was_handler_seen.load_acquire());
 }
 
@@ -278,7 +280,8 @@ void test_a_signal_interrupts_a_waiter() {
         word.store_release(1);
         static_cast<void>(futex::wake_all(thread_ctx, word).expect("a wake is valid"));
     };
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ThreadOptions{}, waiter, signaler).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(
+        ::fixy::thread::run_joined(ctx, ThreadOptions{}, std::move(waiter), std::move(signaler)).is_ok());
     CRUCIBLE_FATAL_INVARIANT(was_interrupted.load_acquire());
     CRUCIBLE_FATAL_INVARIANT(interrupt_runs.load_acquire() != 0);
 }

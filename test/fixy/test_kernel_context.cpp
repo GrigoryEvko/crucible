@@ -178,7 +178,7 @@ void a_context_on_another_thread() {
             ::crucible::test::thread_bound_at<KernelCtx<core::kFpModeFlushToZero> const>(address.load_acquire());
         ::fixy::run_kernel(carried, [](KernelCall<core::kFpModeFlushToZero> const&) noexcept {});
     };
-    static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body));
+    static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body)));
 }
 
 // A function can return a context by prvalue while its scope ends.  The

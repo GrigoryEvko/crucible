@@ -22,9 +22,10 @@ int main() {
             auto joined = [&holder](::foundation::core::LoanKey<HolderBrand>& inner_key) noexcept {
                 holder.array.with_mut(inner_key, [](auto inner) noexcept { static_cast<void>(inner.size()); });
             };
-            static_cast<void>(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, joined).is_ok());
+            static_cast<void>(
+                ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(joined)).is_ok());
             static_cast<void>(run.size());
         });
     };
-    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, outer).is_ok() ? 0 : 1;
+    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(outer)).is_ok() ? 0 : 1;
 }

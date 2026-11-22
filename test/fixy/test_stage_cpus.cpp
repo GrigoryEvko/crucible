@@ -233,7 +233,7 @@ struct PipelineRun {
     AffinityMask const caller = ::fixy::sched::read_affinity(bg).expect("the test reads its own affinity mask");
     PipelineRun first{};
     PipelineRun second{};
-    ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, first, second)
+    ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(first), std::move(second))
         .expect("the test starts the two threads that run the two pipelines");
 
     int failures = 0;

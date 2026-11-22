@@ -168,18 +168,18 @@ struct StreamFeed {
 
 // The consumer of the stream, on a thread of its own.  It polls the channel.
 // After each empty poll it spins with its budget, and when the budget passes
-// it sleeps for kSleepNanos and polls again.  It keeps its result, which the
-// caller reads after the join.
+// it sleeps for kSleepNanos and polls again.  It gives back its result, which
+// the caller reads after the join.
 template <class Consumer>
 struct StreamDrain {
     Consumer handle;
     SpinBudget budget{};
-    Received received{};
 
     StreamDrain(Consumer&& consumer, SpinBudget spin_budget) noexcept
         : handle{std::move(consumer)}, budget{spin_budget} {}
 
-    void operator()(::fixy::BgLoadCtx const& thread_ctx) noexcept {
+    [[nodiscard]] Received operator()(::fixy::BgLoadCtx const& thread_ctx) noexcept {
+        Received received{};
         eff::cap::Nondet const nondet = eff::extract_bare_from_ctx<eff::Effect::Nondet>(thread_ctx);
         auto const sleeper = spin::mint_bounded_sleep<kSleepNanos>(thread_ctx);
         for (std::uint32_t index = 0; index < kValues; ++index) {
@@ -195,6 +195,7 @@ struct StreamDrain {
             }
             received.hash = fold(received.hash, std::move(item).expect("the loop ends with an item"));
         }
+        return received;
     }
 };
 
@@ -208,10 +209,11 @@ struct StreamDrain {
         perm::mint_permission_split<Stream::producer_tag, Stream::consumer_tag>(std::move(root));
     StreamFeed feed{channel.producer(std::move(producer_perm))};
     StreamDrain drain{channel.consumer(std::move(consumer_perm)), budget};
-    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, feed, drain).is_ok());
-    Received const received = drain.received;
-    ::foundation::linear::drop(std::move(feed));
-    ::foundation::linear::drop(std::move(drain));
+    // The door owns the two bodies, and it ends each linear body after the join.
+    auto [fed, received] =
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(feed), std::move(drain))
+            .expect("the test starts the producer thread and the consumer thread");
+    static_cast<void>(fed);
     return received;
 }
 

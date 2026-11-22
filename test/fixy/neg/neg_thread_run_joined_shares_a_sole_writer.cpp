@@ -27,6 +27,7 @@ int main() {
     Writer const& proof = writer;
     auto first = [&cell, &proof]() noexcept { cell.store_release(proof, cell.load_owned(proof) + 1); };
     auto second = [&cell, &proof]() noexcept { cell.store_release(proof, cell.load_owned(proof) + 1); };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, first, second);
+    [[maybe_unused]] auto started =
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(first), std::move(second));
     return static_cast<int>(cell.load_acquire());
 }

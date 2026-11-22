@@ -204,7 +204,7 @@ void a_second_thread_that_claims_the_key_ends_the_process() noexcept {
     static_cast<void>(key);
     auto second_claim = [&owner]() noexcept { static_cast<void>(owner.claim_starter()); };
     ::fixy::thread::run_joined(::fixy::BgLoadCtx{::foundation::effects::testing::bg()}, ::fixy::thread::ThreadOptions{},
-                               second_claim)
+                               std::move(second_claim))
         .expect("the test starts a second thread");
 }
 

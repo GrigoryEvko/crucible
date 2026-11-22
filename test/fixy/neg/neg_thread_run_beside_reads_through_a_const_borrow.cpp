@@ -19,6 +19,6 @@ int main() {
     auto body = [&read_limit]() noexcept { return read_limit; };
     auto continuation = [&limit]() noexcept { limit = 5; };
     [[maybe_unused]] auto started =
-        ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, body, continuation);
+        ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(body), continuation);
     return 0;
 }

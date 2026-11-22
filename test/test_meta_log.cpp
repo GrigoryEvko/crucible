@@ -288,7 +288,7 @@ static void test_spsc_concurrent_integrity() {
 
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     ::fixy::thread::run_joined_raw_probe(bg, kTest, "the producer and the consumer share the log on purpose",
-                                         ::fixy::thread::ThreadOptions{}, producer, consumer)
+                                         ::fixy::thread::ThreadOptions{}, std::move(producer), std::move(consumer))
         .expect("the thread door starts the producer and the consumer");
     ::fixy::check::pass(kTest,
                         "  test_spsc_integrity:            PASSED "
@@ -428,7 +428,7 @@ static void test_try_append_pure_concurrent() {
 
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     ::fixy::thread::run_joined_raw_probe(bg, kTest, "the producer and the consumer share the log on purpose",
-                                         ::fixy::thread::ThreadOptions{}, producer, consumer)
+                                         ::fixy::thread::ThreadOptions{}, std::move(producer), std::move(consumer))
         .expect("the thread door starts the producer and the consumer");
     ::fixy::check::pass(kTest,
                         "  test_try_append_pure_concurrent: "

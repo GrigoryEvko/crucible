@@ -275,15 +275,16 @@ struct FutexWake final {
     }
 };
 
-// The waiter of a wake row.  It waits for each round with FORM, and it keeps
-// the latency of each wake, which the caller reads after the join.
+// The waiter of a wake row.  It waits for each round with FORM, and it writes
+// the latency of each wake into the latencies of the caller, which the caller
+// reads after the join.
 template <class Form>
 struct MeasureWake {
     Line const& line;
     Handshake& handshake;
     RowCores const& cores;
     Form const& form;
-    HeapArray<std::uint64_t> latencies;
+    HeapArray<std::uint64_t>& latencies;
 
     // One frame of the latencies holds the whole loop of the rounds, so no
     // round opens a door.  Only this thread writes the latencies.
@@ -310,11 +311,9 @@ template <class Form, class Notify>
                                                     DelayWindow window) noexcept {
     Line line{};
     Handshake handshake{};
-    MeasureWake<Form> waiter{.line = line,
-                             .handshake = handshake,
-                             .cores = cores,
-                             .form = form,
-                             .latencies = core::mint_heap_array(kAlloc, kSamples, std::uint64_t{0})};
+    HeapArray<std::uint64_t> latencies = core::mint_heap_array(kAlloc, kSamples, std::uint64_t{0});
+    MeasureWake<Form> waiter{
+        .line = line, .handshake = handshake, .cores = cores, .form = form, .latencies = latencies};
     auto writer = [&line, &handshake, &cores, &after_store, window]() noexcept {
         pin_to(cores.writer);
         for (std::uint32_t number = 1; number <= kSamples; ++number) {
@@ -327,9 +326,11 @@ template <class Form, class Notify>
             after_store.notify(line);
         }
     };
-    ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, waiter, writer)
+    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                         "the waiter writes the latencies of the caller on purpose",
+                                         ::fixy::thread::ThreadOptions{}, std::move(waiter), std::move(writer))
         .expect("the two threads of a wake row start and join");
-    return std::move(waiter.latencies);
+    return latencies;
 }
 
 // The samples of a row in ascending order.
@@ -484,13 +485,13 @@ enum class ReaderPresence : std::uint8_t {
 };
 
 // The thread of a writer row that adds to the neighbor word and measures the
-// add.  With a reader, it waits until the reader waits first.  It keeps its
-// report, which the caller reads after the join.
+// add.  With a reader, it waits until the reader waits first.  It writes its
+// report into the report of the caller, which the caller reads after the join.
 struct MeasureWriter {
     Line& line;
     Handshake const& handshake;
+    bench::Report& measured;
     ReaderPresence presence = ReaderPresence::none;
-    bench::Report measured{};
 
     void operator()() noexcept {
         if (presence == ReaderPresence::waiting) {
@@ -512,16 +513,19 @@ struct MeasureWriter {
                                            ArmWait const& reader_form) noexcept {
     Line line{};
     Handshake handshake{};
-    MeasureWriter adder{.line = line, .handshake = handshake, .presence = presence};
+    bench::Report measured{};
+    MeasureWriter adder{.line = line, .handshake = handshake, .measured = measured, .presence = presence};
     auto reader = [&line, &handshake, &cores, &reader_form, presence]() noexcept {
         if (presence == ReaderPresence::none) return;
         pin_to(cores.writer);
         handshake.ready.store_release(1);
         reader_form.wait(line, Round{1});
     };
-    ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, adder, reader)
+    ::fixy::thread::run_joined_raw_probe(ctx, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                         "the writer writes the report of the caller on purpose",
+                                         ::fixy::thread::ThreadOptions{}, std::move(adder), std::move(reader))
         .expect("the two threads of a writer row start and join");
-    return std::move(adder.measured);
+    return measured;
 }
 
 // A writer row and the row with no reader.

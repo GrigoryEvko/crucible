@@ -205,14 +205,11 @@ void run_on_four_threads(Body const& body) {
 // raw probe of the thread door (THE RAW PROBE of fixy/os/ThreadTasks.h).
 template <class Body>
 void probe_on_four_threads(Body const& body) {
-    auto first = [&body]() noexcept { body(); };
-    auto second = first;
-    auto third = first;
-    auto fourth = first;
+    auto each = [&body]() noexcept { body(); };
     ::fixy::thread::run_joined_raw_probe(
         WorkerCtx{eff::testing::bg()}, ::fixy::TestRunnerCtx{eff::testing::test()},
         "a probe of the memory orders of an atomic: the body shares a plain payload that the orders publish",
-        ::fixy::thread::ThreadOptions{}, first, second, third, fourth)
+        ::fixy::thread::ThreadOptions{}, auto{each}, auto{each}, auto{each}, std::move(each))
         .expect("the probe starts four threads with the default options");
 }
 
@@ -1088,11 +1085,10 @@ void test_sole_writer_under_contention() {
             CRUCIBLE_SPIN_PAUSE;
         }
     };
-    auto read_second = read;
-    auto read_third = read;
     WorkerCtx const ctx{eff::testing::bg()};
-    auto read_on_three_threads = [&ctx, &read, &read_second, &read_third]() noexcept {
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, read, read_second, read_third)
+    // Each reader is a copy of one body, so each thread runs its own object.
+    auto read_on_three_threads = [&ctx, &read]() noexcept {
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, auto{read}, auto{read}, auto{read})
             .expect("the door starts the three readers with the default options");
     };
     ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(write), read_on_three_threads)
@@ -1163,7 +1159,7 @@ void test_sole_writer_comes_back_through_a_join() {
             head->store_release(writer, head->load_owned(writer) + 1);
         }
     };
-    ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, write_steps)
+    ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(write_steps))
         .expect("the door starts the writer with the default options");
     CRUCIBLE_FATAL_INVARIANT(head->load_owned(writer) == steps_per_worker);
     head->store_release(writer, 9);

@@ -20,5 +20,5 @@ struct Thief {
 int main() {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     Thief thief{};
-    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, thief).is_ok() ? 0 : 1;
+    return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(thief)).is_ok() ? 0 : 1;
 }
