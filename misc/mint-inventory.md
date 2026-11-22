@@ -231,12 +231,12 @@ that the axis does not apply to the row.
 | `mint_parallel_for` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 6 |
 | `mint_parallel_for_with_thread_options` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_permission_fork` | `include/fixy/concurrent/PermissionFork.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 11 |
+| `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 12 |
 | `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_spawn` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_spawn_on_host` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_spsc_split` | `include/fixy/concurrent/SpscEnds.h` | Y | - | Y | Y | token | · | HS14: 11 |
-| `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 23 |
+| `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 24 |
 | `mint_swmr_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/fixy/handle/
@@ -328,8 +328,8 @@ that the axis does not apply to the row.
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 25 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_fixed_array` | `include/foundation/core/Array.h` | Y | Y | Y | Y | token | · | HS14: 10 |
-| `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 5 |
+| `mint_fixed_array` | `include/foundation/core/Array.h` | Y | Y | Y | Y | token | · | HS14: 12 |
+| `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 7 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_foreign_text` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 2 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
