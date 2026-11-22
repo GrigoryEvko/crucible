@@ -12,15 +12,15 @@
 #   The weight is the share of the check file in a walk unit, in units of 10^9 instructions.
 #   test/layer/CMakeLists.txt divides the check files into units by weight.  --write keeps
 #   each weight, and --measure BUILD_DIR measures each weight again.
-crucible/BackgroundThread.cpp | unmeasured | unknown
+crucible/BackgroundThread.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
-crucible/MerkleDag.cpp | 3.9 | unknown
+crucible/MerkleDag.cpp | 3.9 | ::foundation::transfer::door_probe_contexts, unknown
 crucible/MetaLogSession.cpp | 0.5 | ::fixy::session::combinators, ::fixy::session::pole_tables
 crucible/Serialize.cpp | 8.4 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.0 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown
-crucible/TensorMeta.cpp | 2.5 | ::fixy::tags::admitted_retags, unknown
+crucible/TensorMeta.cpp | 2.5 | ::fixy::tags::admitted_retags, ::foundation::transfer::door_probe_contexts, unknown
 crucible/TraceRing.cpp | 0.5 | unknown
 crucible/Types.cpp | 0.3 | ::crucible
 crucible/cipher/CipherDurable.cpp | 0.0 | unknown
@@ -51,7 +51,7 @@ crucible/forge/_wip/Phases/Comm.cpp | 2.1 | ::fixy::tags::admitted_retags
 crucible/forge/recipes/Network.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/mimic/CogMimic.cpp | 0.8 | ::fixy::tags::admitted_retags
 crucible/mimic/_wip/network/Backend.cpp | 2.3 | ::fixy::tags::admitted_retags
-crucible/observe/Metrics.cpp | 0.2 | unknown
+crucible/observe/Metrics.cpp | 0.2 | ::foundation::transfer::door_probe_contexts, unknown
 crucible/perf/detail/BpfLoader.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/topology/CongestionTelemetry.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/topology/Discovery.cpp | 0.9 | ::fixy::tags::admitted_retags
@@ -92,16 +92,16 @@ fixy/atoms/Syscall.cpp | 2.8 | ::fixy::atom::syscall, unknown
 fixy/channels/Endpoint.cpp | 0.9 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
 fixy/channels/LazyEstablishedChannel.cpp | 0.1 | ::fixy::session::combinators
 fixy/channels/LocalLogSession.cpp | 0.3 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
-fixy/channels/StageEndpointBridge.cpp | 2.3 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
+fixy/channels/StageEndpointBridge.cpp | 2.3 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, ::foundation::transfer::door_probe_contexts, unknown
 fixy/channels/SubstrateSessionBridge.cpp | 0.3 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
-fixy/channels/SwmrSession.cpp | 0.4 | ::fixy::session::combinators, ::fixy::session::pole_tables, unknown
+fixy/channels/SwmrSession.cpp | 0.4 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::foundation::transfer::door_probe_contexts, unknown
 fixy/collision/Report.cpp | 3.9 | ::fixy::atom::detail, ::fixy::atom::dispatch, ::fixy::atom::spawn
-fixy/concurrent/PermissionedChannel.cpp | 0.8 | ::foundation::permissions::permission_rows, unknown
-fixy/concurrent/Pipeline.cpp | 1.2 | unknown
+fixy/concurrent/PermissionedChannel.cpp | 0.8 | ::foundation::permissions::permission_rows, ::foundation::transfer::door_probe_contexts, unknown
+fixy/concurrent/Pipeline.cpp | 1.2 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Spawn.cpp | 0.5 | unknown
-fixy/concurrent/Stage.cpp | 1.1 | unknown
-fixy/handle/OneShotFlag.cpp | unmeasured | unknown
-fixy/handle/Published.cpp | 0.1 | unknown
+fixy/concurrent/Stage.cpp | 1.1 | ::foundation::transfer::door_probe_contexts, unknown
+fixy/handle/OneShotFlag.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
+fixy/handle/Published.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/os/Fs.cpp | 0.1 | unknown
 fixy/os/Io.cpp | 0.1 | unknown
 fixy/os/Mmap.cpp | 0.1 | unknown
@@ -109,31 +109,31 @@ fixy/os/Path.cpp | 0.0 | ::fixy::tags::admitted_retags
 fixy/session/Checkpoint.cpp | 0.1 | ::fixy::session::combinators, unknown
 fixy/session/ContextNet.cpp | 7.4 | ::fixy::session::combinators
 fixy/session/Crash.cpp | 0.6 | ::fixy::session::combinators
-fixy/session/Delegate.cpp | 0.4 | ::fixy::session::combinators, unknown
+fixy/session/Delegate.cpp | 0.4 | ::fixy::session::combinators, ::foundation::transfer::door_probe_contexts, unknown
 fixy/session/Flow.cpp | 2.3 | ::fixy::session::combinators, ::foundation::permissions::permission_rows
 fixy/session/Handle.cpp | 0.2 | ::fixy::session::pole_tables
 fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.3 | ::fixy::session::combinators
 fixy/session/VigilMode.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Witnessed.cpp | 0.2 | ::foundation::permissions::permission_rows
-foundation/ChannelBinding.cpp | 0.1 | unknown
-foundation/Closure.cpp | 1.8 | unknown
-foundation/Transfer.cpp | 5.2 | unknown
+foundation/ChannelBinding.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown
+foundation/Closure.cpp | 1.8 | ::foundation::transfer::door_probe_contexts, unknown
+foundation/Transfer.cpp | 5.2 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/algebra/net/Reflect.cpp | 2.6 | unknown
-foundation/core/Array.cpp | 0.9 | unknown
-foundation/core/Atomic.cpp | unmeasured | unknown
-foundation/core/Link.cpp | 0.3 | unknown
+foundation/core/Array.cpp | 0.9 | ::foundation::transfer::door_probe_contexts, unknown
+foundation/core/Atomic.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
+foundation/core/Link.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Owner.cpp | 0.1 | unknown
-foundation/core/Region.cpp | 2.2 | unknown
-foundation/core/Strided.cpp | 0.2 | unknown
+foundation/core/Region.cpp | 2.2 | ::foundation::transfer::door_probe_contexts, unknown
+foundation/core/Strided.cpp | 0.2 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/diag/Catalog.cpp | 3.5 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
 foundation/effects/Capability.cpp | 0.2 | ::foundation::effects::cap
 foundation/effects/Concurrent.cpp | 2.6 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
-foundation/effects/Ctx.cpp | 0.3 | unknown
+foundation/effects/Ctx.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/effects/Effect.cpp | 0.1 | ::foundation::effects::cap
 foundation/effects/Resources.cpp | 2.4 | ::foundation::effects, ::foundation::effects::resource, ::foundation::permissions::permission_rows
 foundation/heap/HeapScope.cpp | unmeasured | ::foundation::permissions::permission_rows
-foundation/os/WideAtomic.cpp | 0.0 | unknown
-foundation/permissions/Permission.cpp | 1.6 | ::foundation::permissions::permission_rows, ::foundation::permissions::tag, unknown
+foundation/os/WideAtomic.cpp | 0.0 | ::foundation::transfer::door_probe_contexts, unknown
+foundation/permissions/Permission.cpp | 1.6 | ::foundation::permissions::permission_rows, ::foundation::permissions::tag, ::foundation::transfer::door_probe_contexts, unknown
 foundation/permissions/ReadView.cpp | 0.2 | ::foundation::permissions::permission_rows
