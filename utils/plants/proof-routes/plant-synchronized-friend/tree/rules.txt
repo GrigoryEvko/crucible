@@ -1,0 +1,5 @@
+# The rule table of the plant of the friends of a synchronized class.  The
+# unit of src/ is quarantined, and it can name the synchronized marker.
+
+admit foundation::transfer | the synchronized marker, which the planted code names
+quarantine src/

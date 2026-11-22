@@ -100,7 +100,20 @@
 //                       that holds a proof type.  The operand of the sizeof
 //                       is a type, or an expression with that type.  A cast of
 //                       that storage makes a proof with no call to its door
-//     GCC keeps no tree of the last two routes that a plugin can read.  At the
+//       synchronized-friend
+//                       a friend function or friend function template of a
+//                       class that states synchronized{} (foundation/Transfer.h,
+//                       PLUGIN_FINISH_TYPE).  The check of the statement reads
+//                       each door of the class through reflection, and a door
+//                       that writes plain state takes a proof.  GCC 16 gives no
+//                       friend of a class to reflection, so the check cannot read
+//                       a friend, and a friend that writes plain state would take
+//                       no proof.  The route retires when GCC gives the friends
+//                       of a class to reflection and the check reads them, or
+//                       when the base admits no friend function on a class that
+//                       states synchronized{}.  KEY is the class and the friend
+//     GCC keeps no tree of the explicit instantiations and of the sizeof of a
+//     raw allocation that a plugin can read.  At the
 //     end of the parse, an explicit instantiation of a class has the place of
 //     its template, and an explicit instantiation of a function is on no list.
 //     Outside a template, GCC folds each sizeof in the arguments of a call to
@@ -744,6 +757,29 @@ void note_route_templates(tree type, location_t location) {
         && TREE_TYPE(DECL_TEMPLATE_RESULT(template_decl)) == type && has_value_parameter(template_decl)
         && route_templates.value_parameters_seen.insert(template_decl).second) {
         route_templates.value_parameters.push_back(template_decl);
+    }
+}
+
+// Each friend function and each friend function template of a class that
+// states synchronized{}: the route synchronized-friend (THE PROOF ROUTES).  A
+// class with no friend function costs one test.
+void check_synchronized_friends(tree type, location_t location) {
+    static tree const synchronized = get_identifier("synchronized");
+    static tree const transfer = get_identifier("transfer");
+    tree decl = TYPE_MAIN_DECL(type);
+    if (decl == NULL_TREE || DECL_FRIENDLIST(decl) == NULL_TREE
+        || !carries_base_annotation(TYPE_ATTRIBUTES(type), synchronized, transfer)) {
+        return;
+    }
+    std::string const owner = qualified_name(decl);
+    for (tree friends = DECL_FRIENDLIST(decl); friends != NULL_TREE; friends = TREE_CHAIN(friends)) {
+        for (tree item = TREE_VALUE(friends); item != NULL_TREE; item = TREE_CHAIN(item)) {
+            tree friend_decl = TREE_VALUE(item);
+            if (friend_decl != NULL_TREE) {
+                record_route(Kind::route_synchronized_friend, location,
+                             owner + " befriends " + qualified_name(friend_decl));
+            }
+        }
     }
 }
 
@@ -1913,7 +1949,8 @@ void finish_grant(const GrantRow& row, GrantUnit& unit) {
 // specialization, and no implicit instantiation.  Each union definition is a
 // route.  The bases and the member aliases of a class can hold an allocator.
 // A class of include/ can befriend a class template, and a class template can
-// have a parameter that is no type.
+// have a parameter that is no type.  A class that states synchronized{} can
+// befriend a function.
 void on_finish_route_type(void* gcc_data, void*) {
     tree type = static_cast<tree>(gcc_data);
     if (type == NULL_TREE || type == error_mark_node || !CLASS_TYPE_P(type)) {
@@ -1939,6 +1976,7 @@ void on_finish_route_type(void* gcc_data, void*) {
     }
     note_route_templates(type, location);
     check_class_specialization(type);
+    check_synchronized_friends(type, location);
 }
 
 // PLUGIN_FINISH_DECL gives each declaration that cp_finish_decl finishes: a

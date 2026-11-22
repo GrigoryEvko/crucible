@@ -282,6 +282,9 @@
 //     raw-allocation        a call of operator new, malloc, calloc, realloc or
 //                           aligned_alloc with the sizeof of a proof type in its
 //                           arguments
+//     synchronized-friend   a friend function or friend function template of a
+//                           class that states synchronized{}, which the door
+//                           check of foundation/Transfer.h cannot read
 //     The rule witness-roster:
 //     unrostered-witness    a class of a base file with a door shape and no
 //                           witness row of the rule table
@@ -1038,6 +1041,7 @@ enum class Kind : std::uint8_t {
     route_friend_template_specialization,
     route_explicit_instantiation,
     route_raw_allocation,
+    route_synchronized_friend,
     padded_alias,
     padded_member,
     padded_return,
@@ -1348,6 +1352,8 @@ inline const char* kind_name(Kind kind) {
             return "explicit-instantiation";
         case Kind::route_raw_allocation:
             return "raw-allocation";
+        case Kind::route_synchronized_friend:
+            return "synchronized-friend";
         case Kind::padded_alias:
             return "padded-alias";
         case Kind::padded_member:
@@ -1578,6 +1584,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::route_friend_template_specialization:
         case Kind::route_explicit_instantiation:
         case Kind::route_raw_allocation:
+        case Kind::route_synchronized_friend:
             return Rule::proof_routes;
         case Kind::padded_alias:
         case Kind::padded_member:
@@ -1877,6 +1884,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"proof-routes", "friend-template-specialization"},
     {"proof-routes", "explicit-instantiation"},
     {"proof-routes", "raw-allocation"},
+    {"proof-routes", "synchronized-friend"},
     {"padded-list", "padded-alias"},
     {"padded-list", "padded-member"},
     {"padded-list", "padded-return"},

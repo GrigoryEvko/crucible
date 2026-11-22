@@ -23,6 +23,16 @@ THE RULE
       raw-allocation                  a call of operator new, malloc, calloc,
                                       realloc or aligned_alloc with the sizeof
                                       of a proof type in its arguments
+      synchronized-friend             a friend function or friend function
+                                      template of a class that states
+                                      synchronized{}.  The door check of
+                                      foundation/Transfer.h reads each member
+                                      door of such a class, but GCC 16 gives no
+                                      friend to reflection, so a friend that
+                                      writes plain state takes no proof.  The
+                                      kind retires when GCC gives friends to
+                                      reflection, or when no class that states
+                                      synchronized{} has a friend function
     A witness row of utils/rule-table.txt names a proof type.  A class of
     foundation or fixy with the shape of a proof is a proof type too.  The
     entity of a finding is `KIND: KEY`.  The plugin reads the last two shapes
@@ -61,6 +71,26 @@ DANGER = {
     "raw-allocation": "the call gives raw storage with the size of a proof type, and a cast of that storage makes a "
     "proof with no call to its door",
 }
+# The message of the kind synchronized-friend, which builds no proof type but
+# skips the door check of a class that states synchronized{}.
+SYNCHRONIZED_FRIEND = "synchronized-friend"
+
+
+def message_of(kind: str, entity: str) -> str:
+    """Give the message of one finding of the kind KIND with the entity ENTITY."""
+    if kind == SYNCHRONIZED_FRIEND:
+        return (
+            f"a friend function of a class that states synchronized{{}} ({entity}): the door check of "
+            "foundation/Transfer.h reads each member door of the class, and GCC 16 gives no friend to reflection, so "
+            "a friend that writes plain state takes no proof.  Make the friend a member door of the class, so the "
+            "check reads it.  The kind retires when GCC gives friends to reflection, or when no class that states "
+            "synchronized{} has a friend function"
+        )
+    return (
+        f"a shape that can build a proof type with no call to its door ({entity}): "
+        f"{DANGER.get(kind, 'the shape skips the door')}.  Build the proof only through its door, "
+        f"or give the site a reviewed row with its reason in the ledger"
+    )
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:
@@ -79,9 +109,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
                 item.file,
                 item.line,
                 RULE,
-                f"a shape that can build a proof type with no call to its door ({item.entity}): "
-                f"{DANGER.get(item.kind, 'the shape skips the door')}.  Build the proof only through its door, "
-                f"or give the site a reviewed row with its reason in the ledger",
+                message_of(item.kind, item.entity),
                 item.kind,
                 item.entity,
             )

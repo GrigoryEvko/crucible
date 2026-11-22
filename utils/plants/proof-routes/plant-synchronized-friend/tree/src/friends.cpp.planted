@@ -1,0 +1,27 @@
+// A class that states synchronized{} and befriends a function and a function
+// template.  The door check of foundation/Transfer.h reads each member door of
+// the class, but GCC 16 gives no friend to reflection, so a friend that writes
+// the plain count takes no proof.  A class that befriends a function and
+// states nothing gives no finding.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+class [[= ::foundation::transfer::synchronized{}]] Counter {
+    int count_ = 0;
+
+    friend void bump(Counter& counter) noexcept { ++counter.count_; }
+
+    template <class Step>
+    friend void bump_by(Counter& counter, Step step) noexcept {
+        counter.count_ += step;
+    }
+};
+
+class Plain {
+    int count_ = 0;
+
+    friend void reset(Plain& plain) noexcept { plain.count_ = 0; }
+};
+
+}  // namespace planted

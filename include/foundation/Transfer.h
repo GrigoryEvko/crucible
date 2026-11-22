@@ -187,7 +187,9 @@
 //     them: GCC 16 gives no friend of a class to reflection.  members_of of a
 //     class lists no friend, and members_of of a namespace lists a friend only
 //     when the namespace declares it too, with no query that tells a friend
-//     apart.  One class has its doors exempt (THE EXEMPTION).
+//     apart.  So the kind synchronized-friend of the rule proof-routes of the
+//     quarantine plugin refuses each friend function of a class that states
+//     synchronized{}.  One class has its doors exempt (THE EXEMPTION).
 //
 // THE PROOF OF A DOOR
 //     A parameter is a proof of the class when its bare type is a token and

@@ -1,0 +1,12 @@
+# Each friend function and each friend function template of a class that
+# states synchronized{} is the kind synchronized-friend (expression.cpp, THE
+# PROOF ROUTES), at the place of the class.  The door check of
+# foundation/Transfer.h cannot read a friend, so the kind refuses it.  The
+# friend of a class that states nothing gives no finding.
+
+compile friends src/friends.cpp stage=c
+flag friends -freflection
+exit friends pass
+judge friends
+finding friends proof-routes synchronized-friend src/friends.cpp:10:52 | synchronized-friend: planted::Counter befriends planted::bump
+finding friends proof-routes synchronized-friend src/friends.cpp:10:52 | synchronized-friend: planted::Counter befriends planted::bump_by
