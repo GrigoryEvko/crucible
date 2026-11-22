@@ -586,6 +586,53 @@ struct ProvenOwner final {
     return ring.empty_approx(kNondet) ? 0 : fail(fixy::TextView{"the ring is not empty at the end"});
 }
 
+// The proven deferred pop publishes the tail at each Interval pops, and the
+// proven publish publishes it at any time, as the checked forms do (THE
+// DEFERRED TAIL of fixy/concurrent/SpscRing.h).  The producer sees the free
+// cells only after a publish.  A checked pop after a proven publish finds the
+// published tail at the copy, so its check holds.
+[[nodiscard]] int spsc_proven_deferred_tail_follows_its_publishes() {
+    constexpr std::size_t kInterval = 4;
+    ProvenOwner::Ring ring{};
+    const auto fail = [](fixy::TextView what) {
+        fixy::report(fixy::Sink::Err, "SPSC proven deferred tail: {}\n", what);
+        return 1;
+    };
+    for (int i = 0; i < 8; ++i) {
+        if (!ring.try_push_proven(ProvenOwner::producer(), i)) {
+            return fail(fixy::TextView{"a push below capacity was refused"});
+        }
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (ring.try_pop_deferred_proven<kInterval>(ProvenOwner::consumer()).value_or(-1) != i) {
+            return fail(fixy::TextView{"a deferred pop"});
+        }
+    }
+    if (ring.try_push(99)) return fail(fixy::TextView{"a push saw a cell before the publish of the tail"});
+    if (ring.try_pop_deferred_proven<kInterval>(ProvenOwner::consumer()).value_or(-1) != 3) {
+        return fail(fixy::TextView{"the fourth deferred pop"});
+    }
+    for (int i = 8; i < 12; ++i) {
+        if (!ring.try_push(i)) return fail(fixy::TextView{"a push missed a cell of the publish at the interval"});
+    }
+    if (ring.try_pop_deferred_proven<kInterval>(ProvenOwner::consumer()).value_or(-1) != 4) {
+        return fail(fixy::TextView{"a deferred pop"});
+    }
+    ring.publish_tail_proven(ProvenOwner::consumer());
+    ring.publish_tail_proven(ProvenOwner::consumer());
+    if (!ring.try_push(12)) return fail(fixy::TextView{"a push missed the cell of the proven publish"});
+    if (ring.try_pop().value_or(-1) != 5) return fail(fixy::TextView{"a checked pop after the proven publish"});
+    for (int i = 6; i < 13; ++i) {
+        if (ring.try_pop_deferred_proven<kInterval>(ProvenOwner::consumer()).value_or(-1) != i) {
+            return fail(fixy::TextView{"a deferred pop after a checked pop"});
+        }
+    }
+    ring.publish_tail_proven(ProvenOwner::consumer());
+    return ring.empty_approx(kNondet) && ring.size_approx(kNondet) == 0
+             ? 0
+             : fail(fixy::TextView{"a snapshot after the proven publish counted an item"});
+}
+
 // The proven calls on two threads: one producer and one consumer, each with
 // the proof of its side.  The stream keeps its order and loses no item.
 // Under TSan, a publish that does not release the cell is a data race.
@@ -1174,6 +1221,7 @@ int main() {
     if (const int rc = spsc_roles_move_between_threads(); rc != 0) return rc;
     if (const int rc = spsc_deferred_two_threads(); rc != 0) return rc;
     if (const int rc = spsc_proven_and_checked_calls_share_one_ring(); rc != 0) return rc;
+    if (const int rc = spsc_proven_deferred_tail_follows_its_publishes(); rc != 0) return rc;
     if (const int rc = spsc_proven_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_single_threaded(); rc != 0) return rc;
     if (const int rc = mpsc_small_and_wide(); rc != 0) return rc;

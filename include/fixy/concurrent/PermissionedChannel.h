@@ -1021,7 +1021,10 @@ public:
     // Gives each item that the ring still holds to drop, the oldest first.
     // The claim holds the claims of the two roles, and a pooled form also
     // takes the exclusive of its pool here.  So a live handle of each role
-    // ends the process, and no handle starts while the drain runs.  A claim of
+    // ends the process, and no handle starts while the drain runs.  The claim
+    // holds the role of the consumer, so a wire drains with the proof of the
+    // one consumer of its ring (THE PROVEN FORM of fixy/concurrent/SpscRing.h).
+    // A claim of
     // another channel of the same type ends the process, because only the
     // identity of a channel tells two such channels apart.  Each producer
     // handle of a merge published the turn word of each of its items before
@@ -1043,7 +1046,7 @@ public:
         }
         if constexpr (Form == ChannelForm::wire) {
             for (;;) {
-                ::foundation::core::Option<T> item = side_.ring_.try_pop();
+                ::foundation::core::Option<T> item = side_.ring_.try_pop_proven(prove_consumer_());
                 if (item.is_none()) break;
                 drop(std::move(item).expect("the test above found an item"));
             }
@@ -1172,13 +1175,15 @@ private:
         return receive_after_close_(tag...);
     }
 
-    // A stream ends one time, so the pop after its end is cold.
+    // A stream ends one time, so the pop after its end is cold.  Only the
+    // consumer handle reaches it, so a wire pops with the proof of the one
+    // consumer of its ring.
     template <typename... PopTag>
     [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_close_(PopTag... tag) noexcept {
         if constexpr (Form == ChannelForm::merge) {
             return side_.ring_.try_pop(prove_consumer_(), tag...).ok_or(NoItem::Closed);
         } else {
-            return side_.ring_.try_pop(tag...).ok_or(NoItem::Closed);
+            return side_.ring_.try_pop_proven(prove_consumer_()).ok_or(NoItem::Closed);
         }
     }
 

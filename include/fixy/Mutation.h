@@ -865,7 +865,8 @@ template <class Owner, class Role>
 inline constexpr bool names_sole_writer_v<SoleWriterProof<Owner, Role>> = true;
 
 // The gate of the reads and the writes of the one writer of a counter:
-// peek_relaxed, advance_sole_writer_from and advance_sole_writer_by_proof.
+// peek_relaxed, advance_sole_writer_from, advance_sole_writer_by_proof and
+// advance_sole_writer_by_proof_from.
 // Each of the members asks for this one concept, so a stronger gate changes
 // one place.
 template <typename Writer>
@@ -1062,6 +1063,28 @@ public:
         requires(!SoleWriterCounter<Writer>)
     = delete("AtomicMonotonic::advance_sole_writer_by_proof: a counter of many writers has no one writer for a proof "
              "to name.  Use advance, or name the proof of the one writer as the writer of a counter of one writer");
+
+    // The publish of the one writer from a value of the counter that the
+    // writer knows from its own state, such as the consumer of a ring that
+    // defers the publish of its tail and keeps the count of the pops since the
+    // last one.  The proof names the one writer, as for
+    // advance_sole_writer_by_proof, so current is the stored value.  The step
+    // check compares current and new_value in registers, in each build and
+    // under each contract semantic.  The store is a plain release, and the call
+    // loads nothing from the counter.
+    void advance_sole_writer_by_proof_from(sole_writer_proof_ const& /*proof*/, T current, T new_value) noexcept
+        requires SoleWriterCounter<Writer>
+    {
+        CRUCIBLE_FATAL_INVARIANT(Cmp{}(current, new_value));
+        value_.store(new_value, std::memory_order_release);
+    }
+    template <class Owner, class Role>
+    void advance_sole_writer_by_proof_from(SoleWriterProof<Owner, Role> const& /*proof*/, T current,
+                                           T new_value) noexcept
+        requires(!SoleWriterCounter<Writer>)
+    = delete("AtomicMonotonic::advance_sole_writer_by_proof_from: a counter of many writers has no one writer for a "
+             "proof to name.  Use advance, or name the proof of the one writer as the writer of a counter of one "
+             "writer");
 
     // delta is a magnitude, not a signed step. Cmp fixes the direction:
     // std::less adds and std::greater subtracts. A negative delta would

@@ -353,9 +353,18 @@ private:
         return typename lane_type::ring_type::producer_proof{};
     }
 
+    // The proof of the one consumer of the SPSC ring of each lane.  Only this
+    // ring makes it, and only the consumer side calls it: a door that takes
+    // the proof of the consumer, and the cold paths of such a door (the
+    // writers).
+    [[nodiscard, gnu::always_inline]] static constexpr typename lane_type::ring_type::consumer_proof
+    prove_lane_consumer_() noexcept {
+        return typename lane_type::ring_type::consumer_proof{};
+    }
+
     // The deferred pop of the lane of the turn (THE ROOM).
     [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_lane_of_turn_() noexcept {
-        return lane_of_turn_().ring.template try_pop_deferred<tail_interval>();
+        return lane_of_turn_().ring.template try_pop_deferred_proven<tail_interval>(prove_lane_consumer_());
     }
 
     // The turn moves to the next lane of the turn, and from the last lane to
@@ -373,7 +382,7 @@ private:
     // Complexity: linear in the lanes of the turn.
     CRUCIBLE_COLD void publish_each_tail_() noexcept {
         for (std::size_t position = 0; position < turn_.live(); ++position) {
-            lane_at_(position_(position)).ring.publish_tail();
+            lane_at_(position_(position)).ring.publish_tail_proven(prove_lane_consumer_());
         }
         tails_ = LaneTails::published;
     }
@@ -382,7 +391,7 @@ private:
     // leaves the turn.  The lanes after it keep their order, and the turn then
     // names the next lane.  Complexity: linear in the lanes.
     CRUCIBLE_COLD void leave_turn_() noexcept {
-        lane_of_turn_().ring.publish_tail();
+        lane_of_turn_().ring.publish_tail_proven(prove_lane_consumer_());
         for (std::size_t position = turn_.at().raw() + 1; position < turn_.live(); ++position) {
             TurnLane const next = live_.at(position_(position));
             live_.with_element(position_(position - 1), [next](TurnLane& lane) noexcept { lane = next; });

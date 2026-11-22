@@ -63,6 +63,11 @@
 //   the tail as the published tail.  So after a deferred pop, publish_tail
 //   runs before each pop of another form, or the check of that pop ends the
 //   process.  A deferred pop can follow a pop of another form.
+//
+//   A ring with an Owner also gives try_pop_deferred_proven and
+//   publish_tail_proven, which take the proof of the consumer (THE PROVEN
+//   FORM).  Each publish of the proven form stores the tail from the copy and
+//   the count, and it loads nothing from the published tail.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -185,34 +190,30 @@ public:
     // 1 publishes at each pop, as try_pop does.
     template <std::size_t Interval>
     [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop_deferred() noexcept {
-        static_assert(Interval > 0 && Interval <= Capacity,
-                      "fixy::concurrent::SpscRing::try_pop_deferred: the interval of the publish is at least one pop "
-                      "and at most the capacity.  A larger interval would hold free cells of a full ring until the "
-                      "ring is empty.");
-        const std::uint64_t t = own_tail_.get();
-        if (cached_head_.get() <= t) [[unlikely]] {
-            if (items_after_head_load_() == 0) return ::foundation::core::none;
-        }
-        const T result = buffer_[t & MASK];
-        own_tail_.advance(t + 1);
-        const std::uint64_t deferred = deferred_pops_ + 1;
-        if (deferred >= Interval) [[unlikely]] {
-            tail_.advance_sole_writer_from(prove_tail_writer_(), t + 1 - deferred, t + 1);
-            deferred_pops_ = 0;
-        } else {
-            deferred_pops_ = deferred;
-        }
-        return ::foundation::core::Option<T>::some(result);
+        return pop_deferred_<Interval, TailPublish::checked>();
+    }
+
+    // The deferred pop of the one consumer that the proof names (THE PROVEN
+    // FORM and THE DEFERRED TAIL).
+    template <std::size_t Interval>
+    [[nodiscard]] CRUCIBLE_HOT ::foundation::core::Option<T>
+    try_pop_deferred_proven(consumer_proof const& /*proof*/) noexcept
+        requires(!std::is_void_v<Owner>)
+    {
+        return pop_deferred_<Interval, TailPublish::proven>();
     }
 
     // Publishes the copy of the tail, when a deferred pop moved it since the
     // last publish (THE DEFERRED TAIL).  The producer then sees each cell that
     // the consumer freed.  Only the consumer calls it.
-    void publish_tail() noexcept {
-        if (deferred_pops_ == 0) return;
-        const std::uint64_t t = own_tail_.get();
-        tail_.advance_sole_writer_from(prove_tail_writer_(), t - deferred_pops_, t);
-        deferred_pops_ = 0;
+    void publish_tail() noexcept { publish_deferred_<TailPublish::checked>(); }
+
+    // The publish of the tail of the one consumer that the proof names (THE
+    // PROVEN FORM and THE DEFERRED TAIL).
+    void publish_tail_proven(consumer_proof const& /*proof*/) noexcept
+        requires(!std::is_void_v<Owner>)
+    {
+        publish_deferred_<TailPublish::proven>();
     }
 
     // The bulk copies go through std::memcpy rather than a std::simd
@@ -327,6 +328,56 @@ private:
     [[nodiscard]] static constexpr head_writer_ prove_head_writer_() noexcept { return {}; }
 
     [[nodiscard]] static constexpr tail_writer_ prove_tail_writer_() noexcept { return {}; }
+
+    // How a deferred publish stores the tail: checked against the published
+    // tail, or from the copy alone, after the proof of the consumer (THE
+    // DEFERRED TAIL).
+    enum class TailPublish : unsigned char {
+        checked = 0,
+        proven = 1,
+    };
+
+    // Stores the tail from the copy minus the count of the deferred pops.
+    template <TailPublish Publish>
+    [[gnu::always_inline]] void store_tail_(std::uint64_t published, std::uint64_t tail) noexcept {
+        if constexpr (Publish == TailPublish::proven) {
+            tail_.advance_sole_writer_by_proof_from(prove_tail_writer_(), published, tail);
+        } else {
+            tail_.advance_sole_writer_from(prove_tail_writer_(), published, tail);
+        }
+    }
+
+    // The body of the two deferred pops (THE DEFERRED TAIL).
+    template <std::size_t Interval, TailPublish Publish>
+    [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_deferred_() noexcept {
+        static_assert(Interval > 0 && Interval <= Capacity,
+                      "fixy::concurrent::SpscRing::try_pop_deferred: the interval of the publish is at least one pop "
+                      "and at most the capacity.  A larger interval would hold free cells of a full ring until the "
+                      "ring is empty.");
+        const std::uint64_t t = own_tail_.get();
+        if (cached_head_.get() <= t) [[unlikely]] {
+            if (items_after_head_load_() == 0) return ::foundation::core::none;
+        }
+        const T result = buffer_[t & MASK];
+        own_tail_.advance(t + 1);
+        const std::uint64_t deferred = deferred_pops_ + 1;
+        if (deferred >= Interval) [[unlikely]] {
+            store_tail_<Publish>(t + 1 - deferred, t + 1);
+            deferred_pops_ = 0;
+        } else {
+            deferred_pops_ = deferred;
+        }
+        return ::foundation::core::Option<T>::some(result);
+    }
+
+    // The body of the two publishes of the tail (THE DEFERRED TAIL).
+    template <TailPublish Publish>
+    [[gnu::always_inline]] void publish_deferred_() noexcept {
+        if (deferred_pops_ == 0) return;
+        const std::uint64_t t = own_tail_.get();
+        store_tail_<Publish>(t - deferred_pops_, t);
+        deferred_pops_ = 0;
+    }
 
     // The free slots of the ring after a fresh acquire load of the tail into
     // the cached tail: the path of a push whose cache says that the ring has
