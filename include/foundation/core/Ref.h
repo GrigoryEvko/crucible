@@ -148,6 +148,13 @@ public:
 template <class T, class Brand>
 using WidenedFrom = std::conditional_t<std::is_const_v<T>, Ref<std::remove_const_t<T>, Brand>, NoWidening>;
 
+// The tag of the null value of a Ref.  Each caller can build the tag, but the
+// constructor of a Ref from it is private, and only the niche door of a Ref
+// calls it.  The tag stands outside Ref, so the walk of the niche statement
+// reads no nested class for each brand of a Ref, which costs a list of
+// members for each brand.
+struct RefNullTag final {};
+
 // The door of an owner of the base that lends one of its objects with the
 // fresh brand of its own call, as get() of the Region family does.  The
 // definition is after Ref.
@@ -198,17 +205,20 @@ class[[= ::foundation::transfer::refers{}]] Ref {
     // build a Ref from the bytes of an address.
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    // The tag of the null value.  Only the two hidden friends below build a
-    // Ref from it, because Ref has no other friend.
-    struct NullTag {};
-    constexpr explicit Ref(NullTag) noexcept {}
+    // The null value, from the tag of the null value.  Only the two hidden
+    // friends below build a Ref from it, because Ref has no other friend.  The
+    // tag is detail::RefNullTag, outside the class, for the compile cost of
+    // the walk of the niche statement.
+    constexpr explicit Ref(detail::RefNullTag /*tag*/) noexcept {}
 
     // The null value of an Option of a Ref, and its test.  Each one takes the
     // key that only the storage of an Option builds, and the storage gives
     // the key only to the niche that it calls.  A niche gets no friend, so
     // the niche of a Ref reaches the null value only through these two doors.
     // The rule specialization-home refuses a niche of a Ref outside this header.
-    [[nodiscard]] friend constexpr Ref niche_null_(niche_key<Ref> const& /*key*/) noexcept { return Ref{NullTag{}}; }
+    [[nodiscard]] friend constexpr Ref niche_null_(niche_key<Ref> const& /*key*/) noexcept {
+        return Ref{detail::RefNullTag{}};
+    }
     [[nodiscard]] friend constexpr bool niche_is_null_(niche_key<Ref> const& /*key*/, Ref const& ref) noexcept {
         return ref.object_ == nullptr;
     }

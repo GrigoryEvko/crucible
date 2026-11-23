@@ -2874,7 +2874,7 @@ foundation_neg_compile_test(neg_core_ref_door_forges_null
   "foundation/core/Ref.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_niche_ref_outside_specialization
   "no matching function for call to .foundation::core::Ref<Forged, ForgeBrand>::Ref\\(<brace-enclosed initializer list>\\)."
-  "no known conversion for argument 1 from .Forged\\*. to .foundation::core::Ref<Forged, ForgeBrand>::NullTag.")
+  "no known conversion for argument 1 from .Forged\\*. to .foundation::core::detail::RefNullTag.")
 foundation_neg_compile_test(neg_core_option_niche_lifetime_start
   "no matching function for call to .start_as_array<foundation::core::Option<SlotNumber> >"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Option<SlotNumber>\\]")

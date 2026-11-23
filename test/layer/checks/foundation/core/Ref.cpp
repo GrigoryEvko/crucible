@@ -124,10 +124,14 @@ static_assert(sizeof(Option<Ref<Abstract, CheckBrand>>) == sizeof(void*));
 // statement passes the three checks of the statement of
 // foundation/core/Choice.h: the constructor from a reference takes the key,
 // and the widening constructor takes a Ref, a stated payload, or NoWidening,
-// which no code builds.  The members of Ref read the object and write no
-// Ref, and the statement stands in this header.
+// which no code builds.  The constructor from the tag of the null value is
+// private, so the walk does not judge it, and no caller builds a Ref from
+// the tag.  The members of Ref read the object and write no Ref, and the
+// statement stands in this header.
 static_assert(detail::BuildsNoEmptyValue<Ref<int, CheckBrand>>
               && detail::BuildsNoEmptyValue<Ref<int const, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, detail::RefNullTag>
+              && std::is_default_constructible_v<detail::RefNullTag>);
 static_assert(detail::BuildsNoEmptyValue<Ref<Abstract, CheckBrand>>);
 static_assert(detail::WritesNoEmptyValue<Ref<int, CheckBrand>> && detail::StatedInBase<Ref<int, CheckBrand>>);
 static_assert(niche<Ref<int, CheckBrand>>::is_empty_never_built.is_in_base());
