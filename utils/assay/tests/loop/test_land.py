@@ -330,7 +330,7 @@ def word_cases(expect: testing.Expect) -> None:
             and request.patches == ((scratch / "change.patch").resolve(),)
             and request.paths == ("own.txt",)
             and request.message == "-x is a subject\n\nbody\n"
-            and parsed == land.Options(False, False, False, False, True, 3),
+            and parsed == land.Options(False, False, False, False, True, 3, budget_reason=land.PLAIN_BUDGET_REASON),
         )
         check_request, check_options = land.parse(["--check", "--here", "--"], scratch)
         expect(
@@ -397,6 +397,33 @@ def word_cases(expect: testing.Expect) -> None:
             and per_row.budget_rows == (("include/a.h", "the cause of a.h"), ("@build/b.o", "the cause of b.o"))
             and only_rows.budget_reason == ""
             and only_rows.budget_rows == (("a.o", "the cause of a.o"),),
+        )
+        reason_cases = {
+            "a series": ["--series", "wt/a", "--"],
+            "a series with all configurations": ["--series", "wt/a", "--all-configurations", "--right-of-way", "--"],
+            "a check": ["--series", "wt/a", "--check", "--"],
+            "a request of -m": ["-m", "s", "--patch", "p", "--"],
+            "a dry run": ["--series", "wt/a", "--dry-run", "--"],
+            "a tree": ["-m", "s", "--patch", "p", "--tree", "--"],
+            "an own text": ["--series", "wt/a", "--budget-reason", "the own cause", "--"],
+            "only ITEM=TEXT": ["--series", "wt/a", "--budget-reason", "a.o=the cause of a.o", "--"],
+        }
+        defaults = {name: land.parse(words, scratch)[1].budget_reason for name, words in reason_cases.items()}
+        plain = land.PLAIN_BUDGET_REASON
+        expect(
+            f"a run of the gate with no --budget-reason gets the owner decision, a dry run and a tree get no text, "
+            f"and an own text and a request of only ITEM=TEXT keep their own: {defaults}",
+            defaults
+            == {
+                "a series": plain,
+                "a series with all configurations": plain,
+                "a check": plain,
+                "a request of -m": plain,
+                "a dry run": "",
+                "a tree": "",
+                "an own text": "the own cause",
+                "only ITEM=TEXT": "",
+            },
         )
         lower_words = ["--lower", "step-cost", "a.o", "--lower", "object-size", "b.o", "--lower", "step-cost"]
         _request, lowering = land.parse(

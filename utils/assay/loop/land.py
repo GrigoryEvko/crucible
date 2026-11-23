@@ -10,7 +10,8 @@ Request
       --series BRANCH           Each commit of BRANCH that HEAD does not hold, as one request (the series)
       --jobs N                 The slice of the lease of one configuration of the gate, with SLICE as the most
       --all-configurations      The gate runs each configuration (assay.loop.gate, the selection)
-      --budget-reason TEXT      The gate raises each crossed row of a budget with this reason (the budget reason)
+      --budget-reason TEXT      The gate raises each crossed row of a budget with this reason, else with the owner
+                                decision of 2026-11-15 (the budget reason)
       --budget-reason ITEM=TEXT The gate raises the crossed row of ITEM with this reason (the budget reason)
       --lower RULE ITEM        The gate lowers the row of ITEM of RULE to the largest measure of its builds (the lower)
       --lower-reason TEXT       The reason of the cut, which each lowered row of the request gets (the lower)
@@ -426,7 +427,10 @@ Budget reason
     measured value and a reason (the owner decision of 2026-11-15).  With
     --budget-reason TEXT, the gate makes that raise in the run of the
     request, and it folds the raised ledgers into the last commit (the raise
-    of a budget of assay.loop.gate).  The request file holds the reason
+    of a budget of assay.loop.gate).  Each request that runs the gate and
+    gives no --budget-reason gets PLAIN_BUDGET_REASON, the text of that
+    owner decision (checked_options()).  This holds for a series, a request
+    of -m and --check alike.  The request file holds the reason
     (encoded_request()).  The candidate of a chain gets a reason only when
     each request of the chain gives one, and the reason of a chain of more
     requests holds the reason of each (chain_budget_reason()).  A request
@@ -442,7 +446,7 @@ Budget reason
     @build/ mark, or its entity.  One value with no ITEM gives the text of
     each other crossed row.  A request with only ITEM=TEXT values gives no
     text to a row that it does not name, so such a crossed row refuses the
-    request.  An ITEM that names no crossed row refuses it too, with a line
+    request.  That form is the strict form: it raises only the named rows.  An ITEM that names no crossed row refuses it too, with a line
     that names the item (the raise of a budget of assay.loop.gate).  The
     text of an item in a chain holds the text of each request for the
     item: its own text, else its plain text (chain_budget_rows()).  A
@@ -1338,16 +1342,20 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
     """Return the options of the flags and of the options with values, and refuse a combination that does not apply.
 
     A series takes its messages and its changes from its commits, so it takes no -m, no patch, no edit and no own path
-    (the series).  --dry-run and --tree run no gate, so they take no --budget-reason and no --lower.  --check,
-    --dry-run and --tree land nothing, so they take no --right-of-way (the right of way).
+    (the series).  --dry-run and --tree run no gate, so they take no --budget-reason and no --lower.  A run of the gate
+    with no --budget-reason gets PLAIN_BUDGET_REASON (the budget reason).  --check, --dry-run and --tree land nothing,
+    so they take no --right-of-way (the right of way).
 
     Raises:
         LandError: If the options do not apply together
     """
     jobs_values, series_values = values["--jobs"], values["--series"]
     budget_reason, budget_rows = budget_reasons_of(values["--budget-reason"])
-    if (budget_reason or budget_rows) and (flags[FLAG_DRY_RUN] or flags[FLAG_TREE]):
+    is_gate_run = not (flags[FLAG_DRY_RUN] or flags[FLAG_TREE])
+    if (budget_reason or budget_rows) and not is_gate_run:
         raise LandError("--budget-reason applies to a run of the gate, so give it no --dry-run and no --tree")
+    if is_gate_run and not values["--budget-reason"]:
+        budget_reason = PLAIN_BUDGET_REASON
     lowers = lowers_of(values["--lower"])
     lower_reason = reason_of(LOWER_REASON, values["--lower-reason"])
     if bool(lowers) != bool(lower_reason):

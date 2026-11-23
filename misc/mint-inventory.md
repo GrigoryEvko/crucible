@@ -350,7 +350,8 @@ that the axis does not apply to the row.
 | `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 2 |
 | `mint_masked_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_member_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_run_address` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_run_address(const foundation::core::ViewMut<T0_0, T0_1, T0_2>&, std::size_t)` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_run_address(foundation::core::View<T0_0, T0_1>, std::size_t)` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_seat` | `include/foundation/core/Seat.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 | `mint_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 8 |
 | `mint_small_list` | `include/foundation/core/SmallList.h` | Y | Y | Y | Y | token | · | HS14: 8 |
@@ -418,4 +419,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 178 | 62 | 112 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 179 | 62 | 113 | 4 | 0 | 3 |
