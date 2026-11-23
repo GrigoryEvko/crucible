@@ -452,6 +452,19 @@ template <std::size_t Count, class T, ::foundation::brand::IsBrand Brand, std::s
     requires ViewExtent<T, Count> && (Count != dynamic_extent)
 [[nodiscard]] constexpr Option<ViewMut<T, Brand, Count>> take_window(ViewMut<T, Brand, Extent>&& whole,
                                                                      std::size_t offset) noexcept;
+
+// A body of for_each_chunk: it takes the ViewMut of one part of Width
+// elements with the brand of the run, gives void, does not throw, and holds
+// no linear value by value.
+template <class Body, class T, class Brand, std::size_t Width>
+concept ChunkBody = std::is_nothrow_invocable_v<Body&, ViewMut<T, Brand, Width>>
+                 && std::is_void_v<detail::body_result_t<Body&, ViewMut<T, Brand, Width>>>
+                 && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
+    requires ViewExtent<T, Width> && (Width != dynamic_extent) && ChunkBody<Body, T, Brand, Width>
+[[nodiscard]] constexpr ViewMut<T, Brand, dynamic_extent> for_each_chunk(ViewMut<T, Brand, Extent>&& whole,
+                                                                         Body body) noexcept;
 template <class T, class Brand, std::size_t Extent, class Body>
     requires FrameBody<Body, T, Brand, Extent>
 [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>,
@@ -466,9 +479,9 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 // invariant: each friend holds a ViewMut by move or by a reference, and it
 // builds a ViewMut or a RefMut only over a part of the run of that ViewMut,
 // with its brand.  ViewMut, ViewMutChunks, the two forms of split_at,
-// split_chunks, the two forms of take_window, reborrow and the byte_view of a
-// ViewMut are its friends.  A home owner row of utils/rule-table.txt keeps
-// this definition in this header.
+// split_chunks, the two forms of take_window, for_each_chunk, reborrow and
+// the byte_view of a ViewMut are its friends.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
 class RegionFrameKeyDoor final : ::foundation::NoObject<RegionFrameKeyDoor> {
     template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
         requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
@@ -494,6 +507,10 @@ class RegionFrameKeyDoor final : ::foundation::NoObject<RegionFrameKeyDoor> {
     friend constexpr auto ::foundation::core::take_window(ViewMut<T, Brand, Extent>&& whole,
                                                           std::size_t offset) noexcept
         -> Option<ViewMut<T, Brand, Count>>;
+    template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
+        requires ViewExtent<T, Width> && (Width != dynamic_extent) && ChunkBody<Body, T, Brand, Width>
+    friend constexpr auto ::foundation::core::for_each_chunk(ViewMut<T, Brand, Extent>&& whole, Body body) noexcept
+        -> ViewMut<T, Brand, dynamic_extent>;
     template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
         requires std::same_as<T, unsigned char>
     friend auto ::foundation::core::byte_view(ViewMut<T, Brand, Extent>&& run) noexcept
@@ -1108,6 +1125,10 @@ public:
 //   take_window<Count>(std::move(view), offset)
 //                            the same part of Count elements, a ViewMut of
 //                            the fixed extent Count
+//   for_each_chunk<Width>(std::move(view), body)
+//                            body gets each whole part of Width elements, a
+//                            ViewMut of the fixed extent Width, and the door
+//                            gives the rest as a ViewMut
 //
 // The splits and the windows are free functions.  A member function whose return type names
 // ViewMut would be part of the members that the walk of a linear payload
@@ -1380,6 +1401,23 @@ template <std::size_t Count, class T, ::foundation::brand::IsBrand Brand, std::s
         ViewMut<T, Brand, Count>{RegionFrameKeyDoor::key_(), std::move(part).expect("the test above")});
 }
 
+// Calls body with the ViewMut of each whole part of Width elements of the run
+// of whole, from the first element, and gives the ViewMut of the last
+// size() % Width elements.  Each part and the rest have the brand of whole.
+// The door takes whole by move, as a split does, and body gets each part one
+// time, so each part has one writer.  The loop is the loop of chunks<Width>()
+// of a View, with no check.  Complexity: one call of body for each whole part.
+template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
+    requires ViewExtent<T, Width> && (Width != dynamic_extent) && ChunkBody<Body, T, Brand, Width>
+[[nodiscard]] constexpr ViewMut<T, Brand> for_each_chunk(ViewMut<T, Brand, Extent>&& whole, Body body) noexcept {
+    View<T> const run{detail::run_of_(whole)};
+    auto const parts = run.template chunks<Width>();
+    for (View<T, Width> const part : parts) {
+        body(ViewMut<T, Brand, Width>{RegionFrameKeyDoor::key_(), part});
+    }
+    return ViewMut<T, Brand>{RegionFrameKeyDoor::key_(), parts.rest()};
+}
+
 // A named ViewMut stays with the caller, so the parts of its split would be
 // second writers of its run.  A const ViewMut writes nothing, so it gives no
 // writer of a part.  The same holds for a window.
@@ -1412,6 +1450,12 @@ void take_window(ViewMut<T, Brand, Extent>&,
 template <std::size_t Count, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 void take_window(ViewMut<T, Brand, Extent> const&,
                  std::size_t) = delete("a const ViewMut writes nothing, so it gives no writer of a window");
+template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
+void for_each_chunk(ViewMut<T, Brand, Extent>&,
+                    Body) = delete("the parts take the ViewMut by move: pass std::move(view)");
+template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
+void for_each_chunk(ViewMut<T, Brand, Extent> const&,
+                    Body) = delete("a const ViewMut writes nothing, so it gives no writer of a part");
 
 namespace detail {
 

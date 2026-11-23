@@ -551,6 +551,28 @@ void test_take_window() {
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, expected));
 }
 
+// for_each_chunk gives the body each whole part of a fixed width, with the
+// brand of the run, and gives the rest as a ViewMut.
+void test_for_each_chunk() {
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 10, 0);
+    run = with_mut(std::move(run), [](auto whole) noexcept {
+        using Whole = std::remove_cvref_t<decltype(whole)>;
+        int part_number = 0;
+        auto rest = ::foundation::core::for_each_chunk<4>(std::move(whole), [&part_number](auto part) noexcept {
+            static_assert(std::is_same_v<typename decltype(part)::brand_type, typename Whole::brand_type>);
+            static_assert(decltype(part)::extent == 4);
+            ++part_number;
+            ::foundation::core::fill(std::move(part), part_number);
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, part_number == 2 && rest.size() == 2);
+        ::foundation::core::fill(std::move(rest), 9);
+    });
+    auto const expected = [](std::size_t position) noexcept {
+        return position < 8 ? 1 + static_cast<int>(position / 4) : 9;
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, expected));
+}
+
 // The copy of a View into a ViewMut of the same fixed extent gives no
 // Result, because the type gives the two the same count.  The copy has no
 // result to discard, so the call needs no cast to void.
@@ -588,6 +610,7 @@ int main() {
     test_reborrow();
     test_fill_of_view_mut();
     test_take_window();
+    test_for_each_chunk();
     test_copy_of_fixed_extent();
     return 0;
 }

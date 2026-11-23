@@ -222,6 +222,7 @@ using ::foundation::core::fill;
 using ::foundation::core::find;
 using ::foundation::core::find_if;
 using ::foundation::core::find_lower_bound_by_key;
+using ::foundation::core::for_each_chunk;
 using ::foundation::core::FixedArray;
 using ::foundation::core::FixedHeapArray;
 using ::foundation::core::FixedList;

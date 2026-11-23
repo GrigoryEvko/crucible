@@ -4822,6 +4822,15 @@ foundation_neg_compile_test(neg_core_view_mut_take_window_of_named
 foundation_neg_compile_test(neg_core_view_mut_take_window_of_const
   "neg_core_view_mut_take_window_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a window")
+# The parts of a fixed width of a ViewMut take it by move, so each part is
+# the one writer of its elements.  The parts of a named ViewMut and of a const
+# one do not compile.
+foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_of_named
+  "neg_core_view_mut_for_each_chunk_of_named\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::for_each_chunk\\(ViewMut<T, Brand, Extent>&, Body\\)"
+  "the parts take the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_of_const
+  "neg_core_view_mut_for_each_chunk_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::for_each_chunk\\(const ViewMut<T, Brand, Extent>&, Body\\)"
+  "a const ViewMut writes nothing, so it gives no writer of a part")
 # The bytes of a ViewMut take it by move, so the bytes are the one writer of
 # the run.  The bytes of a named ViewMut and of a const one do not compile.
 foundation_neg_compile_test(neg_core_view_mut_byte_view_of_named

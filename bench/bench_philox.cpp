@@ -92,18 +92,21 @@ int main() {
                        std::uint64_t word = 0;
                        // The capture by reference keeps the volatile read of the key in each call.
                        scratch.with_mut([&word, &key](auto run) noexcept {
-                           for (std::size_t first = 0; first + 4 <= run.size(); first += 4) {
+                           // A write of each lane keeps the loop that GCC
+                           // vectorizes, which a copy of the four lanes does not.
+                           auto rest = ::fixy::for_each_chunk<4>(std::move(run), [&word, &key](auto four) noexcept {
                                auto c = Philox4x32::generate(word, key);
-                               auto lane0 = run.get_mut(first).expect("a chunk of four lies inside the buffer");
+                               auto lane0 = four.get_mut(0).expect("a part holds four lanes");
                                *lane0 = c.at(::fixy::index<0>());
-                               auto lane1 = run.get_mut(first + 1).expect("a chunk of four lies inside the buffer");
+                               auto lane1 = four.get_mut(1).expect("a part holds four lanes");
                                *lane1 = c.at(::fixy::index<1>());
-                               auto lane2 = run.get_mut(first + 2).expect("a chunk of four lies inside the buffer");
+                               auto lane2 = four.get_mut(2).expect("a part holds four lanes");
                                *lane2 = c.at(::fixy::index<2>());
-                               auto lane3 = run.get_mut(first + 3).expect("a chunk of four lies inside the buffer");
+                               auto lane3 = four.get_mut(3).expect("a part holds four lanes");
                                *lane3 = c.at(::fixy::index<3>());
                                word += 4;
-                           }
+                           });
+                           static_cast<void>(rest);
                        });
                        // The sink reads each byte of the buffer, so each store
                        // of the fill stays.
@@ -154,19 +157,18 @@ int main() {
                 const u32x8 lane_offsets = foundation::simd::iota_v<u32x8>();
                 std::uint32_t call_idx = 0;
                 scratch.with_mut([&call_idx, &lane_offsets, &key0, &key1](auto run) noexcept {
-                    for (std::size_t first = 0; first + 32 <= run.size(); first += 32) {
-                        const u32x8 base(call_idx * 8u);
-                        const u32x8 ctr0 = base + lane_offsets;
-                        const u32x8 ctr1(0u);
-                        const u32x8 ctr2(0u);
-                        const u32x8 ctr3(0u);
-                        auto out = crucible::detail::philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
-                        // Four vector stores — 32 u32 per call in 4
-                        // instructions instead of 32.  Each split of the
-                        // window of 32 lanes has a fixed offset and a fixed
-                        // extent, so the splits have no check.
-                        run = ::fixy::reborrow(std::move(run), [&out, first](auto lent) noexcept {
-                            auto call = ::fixy::take_window<32>(std::move(lent), first).expect("a call fills 32 lanes");
+                    auto rest = ::fixy::for_each_chunk<32>(
+                        std::move(run), [&call_idx, &lane_offsets, &key0, &key1](auto call) noexcept {
+                            const u32x8 base(call_idx * 8u);
+                            const u32x8 ctr0 = base + lane_offsets;
+                            const u32x8 ctr1(0u);
+                            const u32x8 ctr2(0u);
+                            const u32x8 ctr3(0u);
+                            auto out = crucible::detail::philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
+                            // Four vector stores — 32 u32 per call in 4
+                            // instructions instead of 32.  Each split of the
+                            // part of 32 lanes has a fixed offset and a fixed
+                            // extent, so the splits have no check.
                             auto [low, high] = ::fixy::split_at<16>(std::move(call));
                             auto [first_lanes, second_lanes] = ::fixy::split_at<8>(std::move(low));
                             auto [third_lanes, fourth_lanes] = ::fixy::split_at<8>(std::move(high));
@@ -174,9 +176,9 @@ int main() {
                             foundation::simd::store(out.r1, std::move(second_lanes));
                             foundation::simd::store(out.r2, std::move(third_lanes));
                             foundation::simd::store(out.r3, std::move(fourth_lanes));
+                            ++call_idx;
                         });
-                        ++call_idx;
-                    }
+                    static_cast<void>(rest);
                 });
                 bench::mark_changed(scratch);
             });
