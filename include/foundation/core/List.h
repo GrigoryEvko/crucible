@@ -125,16 +125,32 @@ namespace detail {
 // an append and ends it at a take or at the end of the list.  For an element
 // that is trivially default constructible, the union value-initializes each
 // slot, so no read of a slot past the count can see an indeterminate value.
-// For each other element the union starts no element, so its constructor
-// and its destructor touch no slot.  It is trivially copyable and trivially
-// destructible when its element is, and the list then copies its bytes.  For
-// each other element the list copies, moves and ends each element below its
-// count itself.  The count of the list is the tag of the union: no code
-// reads a slot at or past it.
+// For each other element the union starts its empty member and no element,
+// so its constructor and its destructor touch no slot.  The empty member is
+// the active member of the union, so a list of such an element is a constant
+// expression: a static list is constant-initialized, its bytes stay zero,
+// and no page of its slots is written before the first append.  An append
+// starts an element of the array, and the array is then the active member.
+// It is trivially copyable and trivially destructible when its element is,
+// and the list then copies its bytes.  For each other element the list
+// copies, moves and ends each element below its count itself.  The count of
+// the list is the tag of the union: no code reads a slot at or past it.
 template <class T, std::size_t N>
 union ListSlots {
 private:
+    // The active member before the first append of an element that is not
+    // trivially default constructible.  It holds no value.
+    struct NoElement final {};
+
+    NoElement no_element_;
     T elements_[N];
+    // The bytes of the array.  No code reads or writes them.  GCC 16 treats a
+    // byte of a union as padding when the byte is padding in each member, so
+    // with this member the union has no padding byte.  Then a
+    // value-initialization, such as `FixedList<T, N> list{}`, writes no slot.
+    // Without this member, GCC 16 clears each padding byte of each element of
+    // such a list at its own store.
+    unsigned char bytes_[sizeof(T) * N];
 
     // Only the list of the same element and capacity reaches a slot.
     friend class FixedList<T, N>;
@@ -147,7 +163,7 @@ public:
     constexpr ListSlots() noexcept
         requires std::is_trivially_default_constructible_v<T>
         : elements_{} {}
-    constexpr ListSlots() noexcept {}
+    constexpr ListSlots() noexcept : no_element_{} {}
 
     constexpr ListSlots(ListSlots const&) noexcept
         requires std::is_trivially_copy_constructible_v<T>

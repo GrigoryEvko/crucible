@@ -164,6 +164,30 @@ concept EqualsLists = requires(List const& list) { list == list; };
 static_assert(OrdersLists<FixedList<int, 2>> && EqualsLists<FixedList<int, 2>>);
 static_assert(EqualsLists<FixedList<EqualOnly, 2>> && !OrdersLists<FixedList<EqualOnly, 2>>);
 
+// A list of an element that is not trivially default constructible is a
+// constant expression: the empty member of its slots is active, so a static
+// list is constant-initialized, its bytes stay zero, and no constructor
+// writes a page of its slots.  A constexpr variable asks for the same
+// constant initialization as constinit, and for a constant end.  The two
+// statics of crucible/SchemaTable.h are constinit lists of such an element.
+inline constexpr FixedList<Owner, 4> kConstantListOfOwners{};
+static_assert(kConstantListOfOwners.size() == 0);
+static_assert(!std::is_trivially_default_constructible_v<Owner>);
+
+// A constant evaluation appends into a list that starts with the empty member
+// active, and reads each element.
+[[nodiscard]] consteval int append_after_the_empty_member() noexcept {
+    FixedList<Owner, 2> list{};
+    static_cast<void>(list.append(Owner{5}).expect("the list has room"));
+    static_cast<void>(list.append(Owner{6}).expect("the list has room"));
+    int total = 0;
+    for (Owner const& element : list) {
+        total += element.value;
+    }
+    return total + static_cast<int>(list.take_last().expect("the list holds an element").value);
+}
+static_assert(append_after_the_empty_member() == 5 + 6 + 6);
+
 }  // namespace detail::list_checks
 
 }  // namespace foundation::core

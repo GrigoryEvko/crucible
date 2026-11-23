@@ -27,8 +27,10 @@ inline constexpr uint32_t SCHEMA_TABLE_CAP = 512;
 // The most names of the late schema table.  An adapter learns the name of an
 // operator when the operator first runs, and a library can define operators
 // at run time, so the late table holds many more names than the global one.
-// Its entries sit in its static object, so a page of entries costs memory
-// only when a name first writes it.
+// Its entries sit in its static object, which is constant-initialized
+// (constinit of late_schema_table()), so the bytes of the object stay zero
+// and no constructor writes them.  So a page of entries costs memory only
+// when a name first writes it.
 inline constexpr uint32_t LATE_SCHEMA_TABLE_CAP = 65536;
 
 // The longest name that the tables hold, in characters: the most that the
@@ -910,7 +912,7 @@ using LateSchemaTable = SchemaTableOf<LATE_SCHEMA_TABLE_CAP>;
 // read in another, and the seal that one library puts on the table holds in
 // every library.
 CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline SchemaTable& global_schema_table() {
-    static SchemaTable table;
+    static constinit SchemaTable table;
     return table;
 }
 
@@ -920,8 +922,10 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline SchemaTable& global_schema_table() {
 // seals this table, and it takes writes only from the thread that holds the
 // producer claim of a Vigil.  So only that thread reads its entries while
 // the Vigil records.  One table for the process, as for the global table.
+// The table is constant-initialized, so its first call writes no entry, and
+// a process that registers no late name holds no page of its entries.
 CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline LateSchemaTable& late_schema_table() {
-    static LateSchemaTable table;
+    static constinit LateSchemaTable table;
     return table;
 }
 

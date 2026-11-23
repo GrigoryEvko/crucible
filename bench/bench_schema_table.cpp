@@ -172,7 +172,17 @@ int main() {
     bench::print("=== schema_table ===\n");
     bench::print("  table entries: {} (log2 = ~8 probes)\n\n", N);
 
-    ::fixy::FixedArray<bench::Report, 3> reports{
+    ::fixy::FixedArray<bench::Report, 4> reports{
+        [&] {
+            // The lookup of the record path: the global table, then the late
+            // table, each a static of its door.  No name is in the two tables.
+            uint64_t miss_key = 0x5DEECE66DULL;
+            return bench::run("schema_name miss (the two static tables)", [&] {
+                miss_key = miss_key * 6364136223846793005ULL + 1442695040888963407ULL;
+                const bool is_found = crucible::schema_name(SchemaHash{miss_key}).is_some();
+                bench::do_not_optimize(is_found);
+            });
+        }(),
         [&] {
             // The rotation (idx + 1) % N stays below N, so the compiler folds
             // the check of the index and the body holds no branch for it.
