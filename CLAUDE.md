@@ -136,7 +136,7 @@ Other entries:
 | A `static_assert` at namespace scope in a header | Move it to the check file of the header in `test/layer/checks/` |
 | A mint with fewer than two fixtures | Add two fixtures that must not compile |
 | A ledger or a generated file is different | Run `python3 utils/bin/guard write --rule RULE --build-dir build` or `python3 utils/bin/loop derive`. Do not edit such a file by hand |
-| The patch does not apply | Merge main into your branch, and make the patch again |
+| The series does not apply | Rebase the branch onto main, and run `loop land` again. Do not merge main into the branch |
 
 `python3 utils/bin/guard explain RULE` prints one rule. `python3 utils/bin/guard list --build-dir build --path PATH` prints the findings of a file or a directory.
 
