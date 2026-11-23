@@ -1933,6 +1933,24 @@ foundation_neg_compile_test(neg_synchronized_template_door_unreadable
   "has no specialization for the probe body"
   "failed: .anonymous.::Counter"
   "Counter::set\\(Value\\)")
+# A deleted member template is unreadable, so the check fails closed and names
+# the route of a deleted overload that is no template.
+foundation_neg_compile_test(neg_synchronized_deleted_template_door
+  "has no specialization for the probe body"
+  "write its deleted form as a deleted overload"
+  "failed: .anonymous.::Counter"
+  "Counter::drain\\(Body&&\\)")
+# A nested class template counts through its instance for the probe brand, and
+# a template with no instance for a probe fails closed.
+foundation_neg_compile_test(neg_synchronized_nested_template_door
+  "and a door of a nested class of it can write the class"
+  "failed: .anonymous.::Counter"
+  "Counter::Handle<Scope>::bump\\(\\) \\[with Scope = foundation::transfer::detail::door_probe_brand\\]"
+  "Counter::count_")
+foundation_neg_compile_test(neg_synchronized_nested_template_unreadable
+  "and a nested class template of it has no specialization for the probe brand"
+  "failed: .anonymous.::Counter"
+  "template<int Lane> class .anonymous.::Counter::Handle")
 # A door of a nested class that can write a synchronized class takes a proof
 # of the class, or its class holds one by value: the guard of another tag, a
 # token by reference, a const door and a public constructor each refuse.

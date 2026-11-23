@@ -257,9 +257,23 @@
 //     as the claim of a drain is, or when it holds one by value as its own
 //     member.  A member counts exactly when a door parameter of the same type
 //     would count, and a reference member counts never.  A nested class
-//     template and a base class of a nested class that reaches the class only
+//     template counts through one instance: its specialization for the probe
+//     brand, an empty class, or else for the probe body or a probe context.
+//     A template with no such instance stops the build, so the check fails
+//     closed.  A base class of a nested class that reaches the class only
 //     through a downcast, such as the base of the pops of a consumer handle,
-//     are not read.
+//     is not read.
+//
+//     Three member templates are unreadable, so each one stops the build:
+//       - a template with a pack before a defaulted brand.  substitute takes
+//         explicit arguments only, and a pack that is not last takes no
+//         default of the parameter after it;
+//       - a template whose constraint names a form of its class, which is
+//         false on each other form, such as requires(Form == wire) of a
+//         channel of the form merge;
+//       - a deleted template.  GCC 16 gives no is_deleted of a template, and
+//         can_substitute gives no specialization of a deleted one, so a
+//         deleted twin cannot stand on a class whose doors the check reads.
 //
 // Share
 //     Many holders hold a share of one pool at one time, so a share proves no
@@ -756,10 +770,11 @@ consteval bool refuse_unreadable_door() {
                   "template of it has no specialization for the probe body, a class whose call takes each argument "
                   "list, and none for a probe context of foundation/effects/Ctx.h.  GCC 16 gives no parameters of a "
                   "template itself, so the check cannot read the proof of the door, and it refuses the door.  Give "
-                  "the template one type parameter that a callable class or a context can fill, include "
-                  "foundation/effects/Ctx.h for a context, or make the door a function (THE DOORS OF A SYNCHRONIZED "
-                  "CLASS and the probe of a context door of foundation/Transfer.h).  "
-                  "The next two messages name the class and the template");
+                  "the template one type parameter that a callable class or a context can fill, and a constraint "
+                  "that the probe fills, include foundation/effects/Ctx.h for a context, or make the door a "
+                  "function.  A deleted template is unreadable too: write its deleted form as a deleted overload "
+                  "that is no template (the doors of a synchronized class and the probe of a context door of "
+                  "foundation/Transfer.h).  The next two messages name the class and the template");
     static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
     static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
     return false;
@@ -767,6 +782,27 @@ consteval bool refuse_unreadable_door() {
 
 template <std::meta::info Class, std::meta::info Door>
 inline constexpr bool unreadable_door_refusal = refuse_unreadable_door<Class, Door>();
+
+// The refusal of a nested class template with no specialization for the
+// probe brand, the probe body or a probe context (the nested classes): the
+// check cannot read the doors of the template, so it fails closed.
+template <std::meta::info Class, std::meta::info Nested>
+consteval bool refuse_unreadable_nested_template() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states synchronized{} and holds a plain private part, and a nested class "
+                  "template of it has no specialization for the probe brand, an empty class, none for the probe "
+                  "body, and none for a probe context of foundation/effects/Ctx.h.  A door of an instance of the "
+                  "template can write the class, so the check must read the doors of one instance, and it refuses "
+                  "the template.  Give the template one type parameter that a brand, a callable class or a context "
+                  "can fill, or make the nested class a class (the nested classes of foundation/Transfer.h).  "
+                  "The next two messages name the class and the template");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Nested));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Nested>
+inline constexpr bool unreadable_nested_template_refusal = refuse_unreadable_nested_template<Class, Nested>();
 
 // The refusal of a door whose one token another thread can build (the build
 // of a token).
@@ -795,6 +831,11 @@ struct door_probe_body final {
     template <class... Arguments>
     constexpr void operator()(Arguments&&... /*arguments*/) const noexcept {}
 };
+
+// The probe brand of a nested class template (the nested classes): an empty
+// class, as a brand or a scope of a handle is.  It is no token, so a part of
+// its type proves nothing.
+struct door_probe_brand final {};
 
 // Each function below has no constant definition.  A call to one stops the
 // constant evaluation, and the diagnostic names it (the probe of a context
@@ -1351,21 +1392,48 @@ consteval void refuse_door(std::meta::info type, std::meta::info door, DoorFindi
     static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^unproven_door_refusal, arguments)));
 }
 
+// The instance of a nested class template that the walk reads (the nested
+// classes): the specialization for the probe brand, or else for the probe
+// body, or else for the first probe context that substitutes, or a null
+// reflection.  A handle template of a scope takes the probe brand, and a
+// template of a body or of a context takes the probes of a door.
+[[nodiscard]] consteval std::meta::info specialize_nested_template(std::meta::info nested, std::meta::info probes) {
+    const std::meta::info brand[] = {^^door_probe_brand};
+    if (std::meta::can_substitute(nested, brand)) return std::meta::substitute(nested, brand);
+    return specialize_door(nested, probes);
+}
+
 // Stops the build at the first door of a nested class of the owner, at each
-// depth, that does not hold the rule (the nested classes).  The walk is
-// unchecked, as the walk of the doors of the owner is.  Complexity: linear in
-// the members of each nested class, times the parameters of each door.
+// depth, that does not hold the rule (the nested classes).  A nested class
+// template counts through its instance for a probe (specialize_nested_template),
+// and a template with no such instance stops the build, so the check fails
+// closed.  The walk is unchecked, as the walk of the doors of the owner is.
+// Complexity: linear in the members of each nested class, times the
+// parameters of each door.
 consteval void check_nested_doors(std::meta::info scope, std::meta::info owner, std::meta::info plain, int depth) {
     namespace refl = ::foundation::reflect;
     if (depth <= 0) return;
     static_cast<void>(refl::find_member(
         scope, std::meta::access_context::unchecked(), [scope, owner, plain, depth](std::meta::info member) {
-            // An alias names a class of another scope, so only a class that
-            // the scope defines is a nested class.
-            if (!std::meta::is_type(member) || std::meta::is_type_alias(member)) return false;
-            const std::meta::info nested = member;
-            if (nested == owner || !is_class_or_union(nested) || !std::meta::is_complete_type(nested)
-                || std::meta::parent_of(nested) != scope) {
+            // An alias names a class of another scope, so only a class or a
+            // class template that the scope defines is a nested class.
+            const bool is_template = std::meta::is_class_template(member);
+            if ((!std::meta::is_type(member) && !is_template) || std::meta::is_type_alias(member)
+                || std::meta::parent_of(member) != scope) {
+                return false;
+            }
+            std::meta::info nested = member;
+            if (is_template) {
+                nested = specialize_nested_template(member, ^^door_probe_contexts);
+                if (nested == std::meta::info{}) {
+                    const std::meta::info arguments[] = {std::meta::reflect_constant(owner),
+                                                         std::meta::reflect_constant(member)};
+                    static_cast<void>(std::meta::extract<bool>(
+                        std::meta::substitute(^^unreadable_nested_template_refusal, arguments)));
+                    return false;
+                }
+            }
+            if (nested == owner || !is_class_or_union(nested) || !std::meta::is_complete_type(nested)) {
                 return false;
             }
             // Each door of a proof holder holds the rule, so the walk reads

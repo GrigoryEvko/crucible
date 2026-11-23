@@ -282,6 +282,52 @@ private:
 };
 static_assert(Synchronized<KeyedCount>);
 
+// Nested classes, the control of a template.  A nested class template
+// counts through its instance for the probe brand, and its door that takes
+// the key of the class holds the rule.  The deleted form of a drain is an
+// overload that is no template, which the check skips.  The fixture
+// neg_synchronized_deleted_template_door refuses the template form, and
+// neg_synchronized_nested_template_door refuses a lane with no key.
+class[[= synchronized{}]] KeyedLanes {
+public:
+    class[[= thread_bound{}]][[= not_shareable{}]] Key final {
+        Key() noexcept {}
+        friend class KeyedLanes;
+
+    public:
+        Key(Key const&) = delete("a key names the one holder of the lanes");
+        Key& operator=(Key const&) = delete("a key names the one holder of the lanes");
+        ~Key() = default;
+    };
+
+    template <class Scope>
+    class Lane {
+        int& count_;
+
+        explicit Lane(int& count) noexcept : count_{count} {}
+        friend class KeyedLanes;
+
+    public:
+        void bump(Key& /*key*/) noexcept { ++count_; }
+    };
+
+    KeyedLanes() = default;
+    KeyedLanes(KeyedLanes const&) = delete("lanes of two threads do not copy");
+    KeyedLanes& operator=(KeyedLanes const&) = delete("lanes of two threads do not copy");
+
+    void drain(Key const&) = delete("a drain of the lanes takes the key of the lanes by a reference that is not const");
+
+    [[nodiscard]] Key claim() noexcept {
+        if (is_key_claimed_.exchange_acq_rel(true)) ::foundation::core::fatal("a second claim of the key of lanes");
+        return Key{};
+    }
+
+private:
+    ::foundation::core::Atomic<bool> is_key_claimed_{false};
+    int count_ = 0;
+};
+static_assert(Synchronized<KeyedLanes>);
+
 // Nested classes, the control of a borrow.  A nested probe holds a
 // reference to the count of hits, which two threads can write, so its door
 // needs no proof, also beside the plain part of the class.  A reference to
