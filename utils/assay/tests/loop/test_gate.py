@@ -533,6 +533,14 @@ def select_cases(expect: testing.Expect) -> None:
         == ["default", "release", "release-v3", "tsan", "bench-fuzz"],
     )
     expect(
+        "a change of the probe of loop fuzz, of the install of AFL++ or of the pins adds the bench and fuzz build, "
+        "the one build that holds the test fuzz_afl_probe",
+        all(
+            names_of(gate.select([path], [], False)) == ["default", "bench-fuzz"]
+            for path in ("utils/assay/loop/fuzz.py", "utils/assay/setup/install.py", "utils/pins.txt")
+        ),
+    )
+    expect(
         "the parse presets of an arm join, in the sequence of the table",
         names_of(gate.select(["notes.txt"], ["syntax-aarch64"], False)) == ["syntax-aarch64", "default"],
     )

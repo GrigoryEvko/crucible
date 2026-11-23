@@ -38,7 +38,9 @@ Selection
             selects release-v3
           - tsan and ubsan-strict for a change of include/, src/ or cmake/,
             or of a build file at the top of the tree
-          - bench-fuzz for a change of bench/ or test/fuzz/
+          - bench-fuzz for a change of bench/ or test/fuzz/, and for a change
+            of an input of the test fuzz_afl_probe (AFL_PROBE_INPUTS), which
+            only that build holds
           - each configuration for a change of the quarantine plugin or of
             the rule table, and for --all-configurations.  Also for a
             candidate whose composition summed two changes of one count of a
@@ -766,6 +768,11 @@ BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
 BUILD_FILE_SUFFIX = ".cmake"
 SANITIZED_PREFIXES = ("include/", "src/", "cmake/")
 BENCH_PREFIXES = ("bench/", "test/fuzz/")
+# The inputs of the test fuzz_afl_probe of test/fuzz/CMakeLists.txt that are no file of BENCH_PREFIXES: the probe of
+# assay.loop.fuzz, the install of the pin aflplusplus, and the pin table.  Only the build of bench-fuzz holds the test,
+# and the touched tests of a change come from the build of default, so such a change selects bench-fuzz (the
+# selection).
+AFL_PROBE_INPUTS = ("utils/assay/loop/fuzz.py", "utils/assay/setup/install.py", "utils/pins.txt")
 EVERY_PREFIXES = ("utils/tools/quarantine/", "utils/rule-table.txt")
 LEDGER_PREFIX = "utils/ledgers/"
 # The sentence that the gate adds to the message of a commit with a written file (the built files).
@@ -1160,7 +1167,7 @@ def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool)
         is_top_build_file = is_build_file(path) and "/" not in path
         if path.startswith(SANITIZED_PREFIXES) or is_top_build_file:
             names.update(("tsan", "ubsan-strict"))
-        if path.startswith(BENCH_PREFIXES):
+        if path.startswith(BENCH_PREFIXES) or path in AFL_PROBE_INPUTS:
             names.add("bench-fuzz")
         if path.startswith(EVERY_PREFIXES):
             is_every = True
