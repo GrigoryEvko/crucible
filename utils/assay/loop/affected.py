@@ -560,6 +560,11 @@ KIND_TRACED = "traced"
 KIND_UNNAMED = "unnamed"
 # The kind of a test with no label that --labels matches.  The script skips it, and it reads no input of it.
 KIND_UNLABELED = "unlabeled"
+# The kinds of a test that an option of the call leaves out.  The script reads no input of such a test, and the test
+# keeps its record (record_results()).
+LEFT_OUT_KINDS = (KIND_UNNAMED, KIND_UNLABELED)
+# The sequence of the kinds in the plan that the script prints (print_plan()).  It names each kind of a decision.
+PLAN_ORDER = (KIND_FIXTURE, KIND_SCRIPT, KIND_TRACED, KIND_ALWAYS, KIND_GUARD, KIND_EXECUTABLE, *LEFT_OUT_KINDS)
 # The kinds of a test that a fingerprint judges.
 FINGERPRINTED = (KIND_GUARD, KIND_EXECUTABLE, KIND_TRACED)
 
@@ -1474,8 +1479,7 @@ def print_plan(decisions: list[Decision], build_dir: Path) -> None:
     groups = Counter(("skip" if decision.is_skipped else "run", decision.kind, decision.reason)
                      for decision in decisions)
     print(f"loop test: {len(decisions)} tests in {build_dir}")
-    order = {KIND_FIXTURE: 0, KIND_SCRIPT: 1, KIND_TRACED: 2, KIND_ALWAYS: 3, KIND_GUARD: 4, KIND_EXECUTABLE: 5,
-             KIND_UNNAMED: 6}
+    order = {kind: index for index, kind in enumerate(PLAN_ORDER)}
     for (action, kind, reason), count in sorted(groups.items(), key=lambda item: (item[0][0], order[item[0][1]])):
         print(f"  {action:4} {count:5}  {kind}: {reason}")
 
@@ -1860,8 +1864,8 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
 
     A run with the status 0 and with unchanged inputs gives the fingerprint to the state and the entry to the store.
     A failure gives the fingerprint to the failures of the state, and it removes the entry of the store (the record,
-    the shared store).  A test of the kind KIND_UNNAMED keeps its record, and the state keeps the scans that this call
-    did not read.
+    the shared store).  A test of a kind of LEFT_OUT_KINDS keeps its record, and the state keeps the scans that this
+    call did not read.
     """
     passed, failed = state["passed"], state["failed"]
     assert isinstance(passed, dict) and isinstance(failed, dict)
@@ -1870,10 +1874,10 @@ def update_state(state: dict[str, object], planner: Planner, decisions: list[Dec
         for name in [name for name in part if name not in names]:
             del part[name]
     planner.forget()
-    is_partial = any(decision.kind == KIND_UNNAMED for decision in decisions)
+    is_partial = any(decision.kind in LEFT_OUT_KINDS for decision in decisions)
     for decision in decisions:
         name = decision.test.name
-        if decision.kind == KIND_UNNAMED:
+        if decision.kind in LEFT_OUT_KINDS:
             continue
         if decision.kind not in FINGERPRINTED and not decision.static:
             passed.pop(name, None)
@@ -2340,6 +2344,20 @@ def guard_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
                ran == {"guard_alpha", "guard_alpha_witness", "guard_gamma"}, output)
         store_cases(fake, expect)
         only_cases(fake, expect)
+        labels_cases(fake, expect)
+
+
+def labels_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
+    """Check --labels on the fake tree: the plan, the checks that read the build, and the record of a skipped test."""
+    fake.ran()
+    ran, output = fake.ran("--labels", "no_such_label", "--all")
+    expect("--labels with no matching label prints the plan, runs each check that reads the build also with --all, "
+           "and skips the witness and the self-test as unlabeled",
+           ran == {"guard_alpha", "guard_beta", "guard_gamma", "guard_delta"} and f"{KIND_UNLABELED}:" in output,
+           output)
+    ran, output = fake.ran()
+    expect("a test that --labels skipped keeps its record, so a call with no option and no change does not run it",
+           not ran & {"guard_alpha_witness", "selftest_fakegroup"}, output)
 
 
 def only_cases(fake: GuardFake, expect: Callable[[str, bool, str], None]) -> None:
