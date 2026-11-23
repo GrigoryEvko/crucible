@@ -22,17 +22,31 @@ using ::fixy::Saturated;
 using ::fixy::sub_sat_checked;
 
 static_assert(sizeof(Saturated<std::uint8_t>) == 2);
-static_assert(std::is_trivially_copyable_v<Saturated<std::uint64_t>>);
+// The seal refuses a byte image, and the copy constructor stays trivial.
+static_assert(!std::is_trivially_copyable_v<Saturated<std::uint64_t>>);
+static_assert(std::is_trivially_copy_constructible_v<Saturated<std::uint64_t>>);
 
-// A plain value converts in, because that can only mean no clamping was
-// observed.  Unwrapping drops the observation and stays explicit.
-static_assert(std::is_convertible_v<std::uint64_t, Saturated<std::uint64_t>>);
+// No plain value converts in: exact() states the claim that no clamp made
+// the value, at the call.  No caller states the flag, because only the
+// checked doors and the two clamped doors build a clamped value.
+// Unwrapping drops the observation and stays explicit.
+static_assert(!std::is_convertible_v<std::uint64_t, Saturated<std::uint64_t>>);
+static_assert(!std::is_constructible_v<Saturated<std::uint64_t>, std::uint64_t>);
+static_assert(!std::is_constructible_v<Saturated<std::uint64_t>, std::uint64_t, bool>);
 static_assert(!std::is_convertible_v<Saturated<std::uint64_t>, std::uint64_t>);
 
 // The flag takes part in equality: the same number reached two ways is
 // two different values.
-static_assert(Saturated<int>{5} == Saturated<int>{5});
-static_assert(!(Saturated<int>{5} == Saturated<int>{5, true}));
+static_assert(Saturated<int>::exact(5) == Saturated<int>::exact(5));
+static_assert(!(Saturated<int>::exact(::foundation::core::max_of<int>) == Saturated<int>::clamped_at_max()));
+static_assert(Saturated<std::int8_t>::clamped_at_min().value() == ::foundation::core::min_of<std::int8_t>);
+
+// A later step keeps the flag of an earlier clamp, and a step of a value
+// that no clamp made keeps the flag of its own result.
+static_assert(Saturated<std::uint8_t>::clamped_at_max().then(Saturated<std::uint8_t>::exact(3)).was_clamped());
+static_assert(Saturated<std::uint8_t>::clamped_at_max().then(Saturated<std::uint8_t>::exact(3)).value() == 3);
+static_assert(!Saturated<std::uint8_t>::exact(1).then(Saturated<std::uint8_t>::exact(3)).was_clamped());
+static_assert(Saturated<std::uint8_t>::exact(1).then(add_sat_checked<std::uint8_t>(250, 10)).was_clamped());
 
 // The flag describes the value that the operation gave.  No accessor
 // gives a mutable reference, so a caller cannot change the value and
@@ -130,11 +144,11 @@ int check_carrier_shape() {
     Sat64 empty{};
     if (empty.value() != 0u || empty.was_clamped()) return 20;
 
-    Sat64 converted = std::uint64_t{777};
+    Sat64 const converted = Sat64::exact(std::uint64_t{777});
     if (converted.value() != 777u || converted.was_clamped()) return 21;
 
-    Sat64 flagged{std::uint64_t{888}, true};
-    if (flagged.value() != 888u || !flagged.was_clamped()) return 22;
+    Sat64 const flagged = Sat64::clamped_at_max();
+    if (flagged.value() != ::foundation::core::max_of<std::uint64_t> || !flagged.was_clamped()) return 22;
 
     const auto add_ok = add_sat_checked<std::uint64_t>(10, 20);
     if (add_ok.value() != 30u || add_ok.was_clamped()) return 23;
@@ -147,13 +161,13 @@ int check_carrier_shape() {
 
     // The flag is part of the identity, so two carriers holding the same
     // value but a different flag are not equal.
-    if (!(Sat64{std::uint64_t{5}, false} == Sat64{std::uint64_t{5}, false})) return 26;
-    if (Sat64{std::uint64_t{5}, false} == Sat64{std::uint64_t{5}, true}) return 27;
+    if (!(Sat64::exact(std::uint64_t{5}) == Sat64::exact(std::uint64_t{5}))) return 26;
+    if (Sat64::exact(::foundation::core::max_of<std::uint64_t>) == Sat64::clamped_at_max()) return 27;
 
     // The explicit conversion releases the value and drops the flag.
-    if (static_cast<std::uint64_t>(Sat64{std::uint64_t{5}, true}) != 5u) return 28;
+    if (static_cast<std::uint64_t>(Sat64::clamped_at_max()) != ::foundation::core::max_of<std::uint64_t>) return 28;
 
-    const Sat64 src{std::uint64_t{0xDEADBEEFCAFEBABEull}, true};
+    const Sat64 src = Sat64::clamped_at_max();
     Sat64 dst;
     dst = src;
     if (dst.value() != src.value() || dst.was_clamped() != src.was_clamped()) return 29;

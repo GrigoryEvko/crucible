@@ -6,13 +6,14 @@
 // saturating_mul of the Scalar family (foundation/core/Arithmetic.h).
 // The checked forms that return a Saturated<T> are add_sat_checked,
 // sub_sat_checked and mul_sat_checked of fixy/Saturated.h.  The six below
-// return a fixy wrapper too, and the layer line keeps a fixy type out of
-// foundation.  So the six live here.
+// return or step a fixy wrapper too, and the layer line keeps a fixy type
+// out of foundation.  So the six live here.
 //
 //   *_sat_det   the checked result inside DetSafe<Pure, ...>: the value
 //               is a function of its operands alone, and the pin says so
-//   *_sat_into  the checked result of a counter and a step, written back
-//               into the counter
+//   *_sat_into  the checked result of a Saturated counter and a step,
+//               written back into the counter.  The flag of the counter
+//               stays set after a clamp
 //
 // Each *_sat_det wraps the checked operation of Saturated.h in the band.
 // Each *_sat_into is that checked operation followed by the write-back.
@@ -45,25 +46,23 @@ CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
     return mint_band<DetSatPure<T>>(mul_sat_checked(a, b));
 }
 
+// Each *_sat_into steps a counter: the checked result of the counter and the
+// step goes back into the counter through then(), so the flag of a counter
+// that clamped one time stays set after each later step.
+
 template <::foundation::core::Integer T>
-[[nodiscard]] constexpr Saturated<T> add_sat_into(T& dest, T value) noexcept {
-    auto result = add_sat_checked(dest, value);
-    dest = result.value();
-    return result;
+constexpr void add_sat_into(Saturated<T>& counter, T step) noexcept {
+    counter = counter.then(add_sat_checked(counter.value(), step));
 }
 
 template <::foundation::core::Integer T>
-[[nodiscard]] constexpr Saturated<T> sub_sat_into(T& dest, T value) noexcept {
-    auto result = sub_sat_checked(dest, value);
-    dest = result.value();
-    return result;
+constexpr void sub_sat_into(Saturated<T>& counter, T step) noexcept {
+    counter = counter.then(sub_sat_checked(counter.value(), step));
 }
 
 template <::foundation::core::Integer T>
-[[nodiscard]] constexpr Saturated<T> mul_sat_into(T& dest, T value) noexcept {
-    auto result = mul_sat_checked(dest, value);
-    dest = result.value();
-    return result;
+constexpr void mul_sat_into(Saturated<T>& counter, T step) noexcept {
+    counter = counter.then(mul_sat_checked(counter.value(), step));
 }
 
 }  // namespace fixy::sat

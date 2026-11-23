@@ -4,7 +4,7 @@
 // foundation/core/Arithmetic.h through fixy/Core.h. Each one gives the
 // exact result when no overflow occurs, and the nearest limit of the type
 // on overflow. The *_sat_checked forms of fixy/Saturated.h give the result
-// in a Saturated<T>, and the *_sat_into forms also write it back.
+// in a Saturated<T>, and the *_sat_into forms step a Saturated counter.
 
 #include <cstdint>
 
@@ -51,9 +51,9 @@ int main() {
     volatile size_t n = 10000;
     volatile size_t elt_sz = 168;
 
-    uint32_t counter_add = 0x12340000u;
-    uint32_t counter_sub = 0x12340000u;
-    uint32_t counter_mul = 0x00001000u;
+    auto counter_add = fixy::Saturated<uint32_t>::exact(0x12340000u);
+    auto counter_sub = fixy::Saturated<uint32_t>::exact(0x12340000u);
+    auto counter_mul = fixy::Saturated<uint32_t>::exact(0x00001000u);
 
     bench::print("=== saturate ===\n\n");
 
@@ -124,34 +124,34 @@ int main() {
 
         bench::run("add_sat_checked<u32> counter",
                    [&] {
-                       auto r = add_sat_checked(counter_add, uint32_t{u_b});
+                       auto r = add_sat_checked(counter_add.value(), uint32_t{u_b});
                        bench::do_not_optimize(r);
                    }),
         bench::run("sub_sat_checked<u32> counter",
                    [&] {
-                       auto r = sub_sat_checked(counter_sub, uint32_t{u_b});
+                       auto r = sub_sat_checked(counter_sub.value(), uint32_t{u_b});
                        bench::do_not_optimize(r);
                    }),
         bench::run("mul_sat_checked<u32> counter",
                    [&] {
-                       auto r = mul_sat_checked(counter_mul, uint32_t{3});
+                       auto r = mul_sat_checked(counter_mul.value(), uint32_t{3});
                        bench::do_not_optimize(r);
                    }),
 
         bench::run("add_sat_into<u32> counter",
                    [&] {
-                       auto r = add_sat_into(counter_add, uint32_t{1});
-                       bench::do_not_optimize(r);
+                       add_sat_into(counter_add, uint32_t{1});
+                       bench::do_not_optimize(counter_add);
                    }),
         bench::run("sub_sat_into<u32> counter",
                    [&] {
-                       auto r = sub_sat_into(counter_sub, uint32_t{1});
-                       bench::do_not_optimize(r);
+                       sub_sat_into(counter_sub, uint32_t{1});
+                       bench::do_not_optimize(counter_sub);
                    }),
         bench::run("mul_sat_into<u32> counter",
                    [&] {
-                       auto r = mul_sat_into(counter_mul, uint32_t{1});
-                       bench::do_not_optimize(r);
+                       mul_sat_into(counter_mul, uint32_t{1});
+                       bench::do_not_optimize(counter_mul);
                    }),
     };
 

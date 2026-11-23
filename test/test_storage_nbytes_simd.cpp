@@ -94,6 +94,9 @@ static_assert(
                    StorageNbytesDet>);
 static_assert(sizeof(StorageNbytesDet) == sizeof(::fixy::Saturated<uint64_t>));
 
+// A span that no clamp made.
+using ExactSpan = ::fixy::Saturated<uint64_t>;
+
 [[nodiscard]] static TensorMeta make_meta(std::initializer_list<int64_t> sizes, std::initializer_list<int64_t> strides,
                                           ScalarType dtype = ScalarType::Float) noexcept {
     CRUCIBLE_TEST_ASSERT(kTest, sizes.size() == strides.size());
@@ -158,8 +161,8 @@ static void test_scalar_tensor() {
     meta.ndim = 0;
     meta.dtype = ScalarType::Float;
     check_equiv(meta, "scalar-float");
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         compute_storage_nbytes_simd(external_meta(meta)) == element_size(ScalarType::Float).raw());
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(meta))
+                                    == ExactSpan::exact(element_size(ScalarType::Float).raw()));
 
     meta.dtype = ScalarType::Double;
     check_equiv(meta, "scalar-double");
@@ -174,7 +177,7 @@ static void test_zero_size_tensor() {
     // A zero in any dimension takes the whole tensor to zero bytes.  The
     // lambda keeps one copy of the inlined vector path in this test.
     const auto expect_zero_bytes = [](const TensorMeta& meta) {
-        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(meta)) == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(meta)) == ExactSpan::exact(0));
     };
 
     auto m1 = make_meta({0}, {1});
@@ -196,13 +199,13 @@ static void test_common_shapes() {
     // 4096 floats at four bytes each make 16384 bytes.
     auto m1d = make_meta({4096}, {1});
     check_equiv(m1d, "1D-contig");
-    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m1d)) == 16384);
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m1d)) == ExactSpan::exact(16384));
 
     // 128 by 256 is 32768 elements, which at four bytes each make
     // 131072 bytes.
     auto m2d = make_meta({128, 256}, {256, 1});
     check_equiv(m2d, "2D-matrix");
-    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m2d)) == 131072);
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m2d)) == ExactSpan::exact(131072));
 
     auto mnchw = make_meta({32, 64, 224, 224}, {64 * 224 * 224, 224 * 224, 224, 1});
     check_equiv(mnchw, "4D-NCHW");
@@ -282,7 +285,7 @@ static void test_dtype_variations() {
         m.dtype = dt;
         check_equiv(m, "dtype-variation");
         const uint64_t expected = element_size(dt).times(uint64_t{12});
-        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m)) == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m)) == ExactSpan::exact(expected));
     }
 
     ::fixy::check::pass(kTest, "  test_dtype_variations: PASSED\n");

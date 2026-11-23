@@ -87,23 +87,25 @@ void test_det_wrappers() {
 }
 
 void test_memory_counter_wrappers() {
-    uint32_t add_counter = MAX<uint32_t> - 1u;
-    auto add = add_sat_into(add_counter, 10u);
-    EXPECT(add_counter == MAX<uint32_t>);
-    EXPECT(add.value() == MAX<uint32_t>);
-    EXPECT(add.was_clamped());
+    auto add_counter = fixy::Saturated<uint32_t>::exact(MAX<uint32_t> - 1u);
+    add_sat_into(add_counter, 10u);
+    EXPECT(add_counter.value() == MAX<uint32_t>);
+    EXPECT(add_counter.was_clamped());
 
-    uint32_t sub_counter = 3u;
-    auto sub = sub_sat_into(sub_counter, 10u);
-    EXPECT(sub_counter == 0u);
-    EXPECT(sub.value() == 0u);
-    EXPECT(sub.was_clamped());
+    auto sub_counter = fixy::Saturated<uint32_t>::exact(3u);
+    sub_sat_into(sub_counter, 10u);
+    EXPECT(sub_counter.value() == 0u);
+    EXPECT(sub_counter.was_clamped());
 
-    uint16_t mul_counter = 1000u;
-    auto mul = mul_sat_into<uint16_t>(mul_counter, uint16_t{70});
-    EXPECT(mul_counter == MAX<uint16_t>);
-    EXPECT(mul.value() == MAX<uint16_t>);
-    EXPECT(mul.was_clamped());
+    auto mul_counter = fixy::Saturated<uint16_t>::exact(1000u);
+    mul_sat_into<uint16_t>(mul_counter, uint16_t{70});
+    EXPECT(mul_counter.value() == MAX<uint16_t>);
+    EXPECT(mul_counter.was_clamped());
+
+    auto clean_counter = fixy::Saturated<uint32_t>::exact(40u);
+    add_sat_into(clean_counter, 2u);
+    EXPECT(clean_counter.value() == 42u);
+    EXPECT(!clean_counter.was_clamped());
 
     uint32_t read_only = 9u;
     auto projected = mul_sat_checked(read_only, 9u);
@@ -112,15 +114,34 @@ void test_memory_counter_wrappers() {
     EXPECT(!projected.was_clamped());
 }
 
+// The flag of a counter stays set after a clamp.  A step that fits, after
+// a step that clamped, gives a value that a clamp made, so the counter
+// still reads as clamped.  The old form wrote only the value back into a
+// plain counter, and the next step then gave a false flag.
+void test_counter_keeps_its_clamp() {
+    auto stepped = fixy::Saturated<uint32_t>::exact(MAX<uint32_t> - 50u);
+    add_sat_into(stepped, 100u);
+    EXPECT(stepped.value() == MAX<uint32_t>);
+    EXPECT(stepped.was_clamped());
+    sub_sat_into(stepped, 5u);
+    EXPECT(stepped.value() == MAX<uint32_t> - 5u);
+    EXPECT(stepped.was_clamped());
+    mul_sat_into(stepped, 1u);
+    EXPECT(stepped.was_clamped());
+    stepped = fixy::Saturated<uint32_t>::exact(7u);
+    EXPECT(!stepped.was_clamped());
+}
+
 }  // namespace
 
 int main() {
     test_det_wrappers();
     test_memory_counter_wrappers();
+    test_counter_keeps_its_clamp();
     if (g_failures != 0) {
         std::fprintf(stderr, "test_saturate: %d failure(s)\n", g_failures);
         return 1;
     }
-    ::fixy::check::pass(kTest, "test_saturate: both wrapped groups passed\n");
+    ::fixy::check::pass(kTest, "test_saturate: each wrapped group passed\n");
     return 0;
 }

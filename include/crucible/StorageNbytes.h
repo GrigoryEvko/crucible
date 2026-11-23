@@ -70,31 +70,31 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
     using Sat = ::fixy::Saturated<uint64_t>;
     const TensorMeta& raw = meta.value();
     if (raw.ndim == 0) {
-        return Sat{element_size(raw.dtype).raw()};
+        return Sat::exact(element_size(raw.dtype).raw());
     }
     int64_t max_offset = 0;
     int64_t min_offset = 0;
     for (uint8_t d = 0; d < raw.ndim; ++d) {
         const int64_t size = raw_tensor_dim(raw.sizes[d]);
         const int64_t stride = raw_tensor_dim(raw.strides[d]);
-        if (size == 0) return Sat{uint64_t{0}};
+        if (size == 0) return Sat::exact(uint64_t{0});
         // A hostile descriptor can hold a negative size. The subtraction is
         // modular, so it is defined for every size: INT64_MIN gives INT64_MAX.
         // The product can still overflow.
         const int64_t size_minus_one = static_cast<int64_t>(static_cast<uint64_t>(size) - uint64_t{1});
         int64_t dim_extent_bytes = 0;
         if (!take_checked_(::foundation::core::checked_mul(size_minus_one, stride), dim_extent_bytes)) [[unlikely]] {
-            return Sat{UINT64_MAX, true};
+            return Sat::clamped_at_max();
         }
         if (dim_extent_bytes > 0) {
             if (!take_checked_(::foundation::core::checked_add(max_offset, dim_extent_bytes), max_offset))
                 [[unlikely]] {
-                return Sat{UINT64_MAX, true};
+                return Sat::clamped_at_max();
             }
         } else {
             if (!take_checked_(::foundation::core::checked_add(min_offset, dim_extent_bytes), min_offset))
                 [[unlikely]] {
-                return Sat{UINT64_MAX, true};
+                return Sat::clamped_at_max();
             }
         }
     }
@@ -102,10 +102,10 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
     // of the int64 range.
     int64_t span_signed = 0;
     if (!take_checked_(::foundation::core::checked_sub(max_offset, min_offset), span_signed)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
+        return Sat::clamped_at_max();
     }
     if (!take_checked_(::foundation::core::checked_add(span_signed, int64_t{1}), span_signed)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
+        return Sat::clamped_at_max();
     }
     // The span is non-negative, because the running maximum never falls
     // below zero and the running minimum never rises above it. That is what
@@ -114,9 +114,9 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
     if (!take_checked_(::foundation::core::checked_mul(static_cast<uint64_t>(span_signed),
                                                        static_cast<uint64_t>(element_size(raw.dtype).raw())),
                        total_bytes)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
+        return Sat::clamped_at_max();
     }
-    return Sat{total_bytes};
+    return Sat::exact(total_bytes);
 }
 
 [[nodiscard, gnu::const]]
@@ -173,7 +173,7 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     using Sat = ::fixy::Saturated<uint64_t>;
     const TensorMeta& raw = meta.value();
     if (raw.ndim == 0) {
-        return Sat{element_size(raw.dtype).raw()};
+        return Sat::exact(element_size(raw.dtype).raw());
     }
 
     using ::foundation::simd::i64x8;
@@ -186,7 +186,7 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
 
     auto zero_size_mask = (sizes == i64x8(0)) && valid_mask;
     if (any_of(zero_size_mask)) [[unlikely]] {
-        return Sat{uint64_t{0}};
+        return Sat::exact(uint64_t{0});
     }
 
     if (!storage_nbytes_simd_safe_(meta)) [[unlikely]] {
@@ -212,29 +212,29 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
         const int64_t e = extents_buf.at(::fixy::Index<8>::check(d).expect("a TensorMeta holds at most 8 dimensions"));
         if (e > 0) {
             if (!take_checked_(::foundation::core::checked_add(max_offset, e), max_offset)) [[unlikely]] {
-                return Sat{UINT64_MAX, true};
+                return Sat::clamped_at_max();
             }
         } else {
             if (!take_checked_(::foundation::core::checked_add(min_offset, e), min_offset)) [[unlikely]] {
-                return Sat{UINT64_MAX, true};
+                return Sat::clamped_at_max();
             }
         }
     }
 
     int64_t span_signed = 0;
     if (!take_checked_(::foundation::core::checked_sub(max_offset, min_offset), span_signed)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
+        return Sat::clamped_at_max();
     }
     if (!take_checked_(::foundation::core::checked_add(span_signed, int64_t{1}), span_signed)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
+        return Sat::clamped_at_max();
     }
     uint64_t total_bytes = 0;
     if (!take_checked_(::foundation::core::checked_mul(static_cast<uint64_t>(span_signed),
                                                        static_cast<uint64_t>(element_size(raw.dtype).raw())),
                        total_bytes)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
+        return Sat::clamped_at_max();
     }
-    return Sat{total_bytes};
+    return Sat::exact(total_bytes);
 }
 
 [[nodiscard, gnu::pure]]

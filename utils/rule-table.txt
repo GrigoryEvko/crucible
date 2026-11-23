@@ -637,6 +637,9 @@ witness <fixy/os/SpinBudget.h> private | fixy::time::SpinDeadline | fixy::time::
 # The shared words of a mapping come only from shared_words_at of a shared
 # mapping, which checks the fit and the alignment and starts their lifetime.
 witness <fixy/os/OwnedMmap.h> private | fixy::mmap::SharedWords<std::uint64_t, 4> | fixy::mmap::SharedWords<std::uint64_t, 4>{forge::lvalue<std::uint64_t const*>()}
+# A Saturated value with the flag of a clamp comes only from the three checked
+# doors and the two clamped doors, so no caller states the flag.
+witness <fixy/Saturated.h> no-match | fixy::Saturated<unsigned int> | fixy::Saturated<unsigned int>{forge::rvalue<unsigned int>(), forge::rvalue<bool>()}
 # The entry of a waiter in an event count comes only from prepare_wait, which
 # enters the waiter in the count before it gives the entry.
 witness <fixy/concurrent/EventCount.h> private | fixy::concurrent::EventWait | fixy::concurrent::EventWait{forge::lvalue<fixy::concurrent::EventCount>(), std::uint32_t{0}}

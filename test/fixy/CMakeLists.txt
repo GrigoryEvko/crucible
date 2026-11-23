@@ -2235,8 +2235,8 @@ fixy_test(test_saturate)
 # on the qualified type or signature that the compiler prints, and the
 # source of the fixture never spells that form.
 fixy_neg_compile_test(neg_sat_into_const_dest
-  "no matching function for call to .add_sat_into\\(const unsigned int&, unsigned int\\)."
-  "add_sat_into\\(const unsigned int&, unsigned int\\)")
+  "no matching function for call to .add_sat_into\\(const fixy::Saturated<unsigned int>&, unsigned int\\)."
+  "add_sat_into\\(const fixy::Saturated<unsigned int>&, unsigned int\\)")
 fixy_neg_compile_test(neg_sat_checked_raw_escape
   "cannot convert .fixy::Saturated<unsigned int>. to .unsigned int. in initialization"
   "fixy::Saturated<unsigned int>")
@@ -2328,6 +2328,13 @@ fixy_neg_compile_test(neg_saturated_checked_op_on_float
 fixy_neg_compile_test(neg_saturated_value_write_after_clamp
   "assignment of read-only location"
   "fixy::Saturated<unsigned char>::value\\(\\)")
+
+# No plain value converts into a Saturated.  exact() states that no clamp
+# made a value.  The witness fixture of fixy::Saturated refuses a flag that a
+# caller states.
+fixy_neg_compile_test(neg_saturated_implicit_from_value
+  "conversion from .uint32_t. \\{aka .unsigned int.\\} to non-scalar type .const fixy::Saturated<unsigned int>. requested"
+  "fixy::Saturated<unsigned int>")
 
 # The ninth value-wrapper header.  fixy/os/Path.h holds the declarations
 # and, after them, the sanitizer that reads them.

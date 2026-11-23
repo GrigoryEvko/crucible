@@ -17,13 +17,16 @@ static_assert(sizeof(Saturated<int64_t>) == 16);
 static_assert(alignof(Saturated<uint64_t>) == alignof(uint64_t));
 static_assert(alignof(Saturated<uint32_t>) == alignof(uint32_t));
 
-static_assert(std::is_trivially_copyable_v<Saturated<uint64_t>>);
-static_assert(std::is_trivially_copyable_v<Saturated<int64_t>>);
+static_assert(!std::is_trivially_copyable_v<Saturated<uint64_t>>);
+static_assert(std::is_trivially_copy_constructible_v<Saturated<uint64_t>>);
+static_assert(std::is_trivially_copy_constructible_v<Saturated<int64_t>>);
 static_assert(std::is_trivially_destructible_v<Saturated<uint64_t>>);
 static_assert(std::is_standard_layout_v<Saturated<uint64_t>>);
 
 static_assert(!std::is_same_v<Saturated<uint64_t>, uint64_t>);
-static_assert(std::is_convertible_v<uint64_t, Saturated<uint64_t>>);
+static_assert(!std::is_convertible_v<uint64_t, Saturated<uint64_t>>);
+static_assert(!std::is_constructible_v<Saturated<uint64_t>, uint64_t>);
+static_assert(!std::is_constructible_v<Saturated<uint64_t>, uint64_t, bool>);
 static_assert(!std::is_convertible_v<Saturated<uint64_t>, uint64_t>);
 
 namespace detail::saturated_self_test {
@@ -43,33 +46,43 @@ using SatI32 = Saturated<int32_t>;
 }
 static_assert(default_zeroes());
 
-[[nodiscard]] consteval bool implicit_from_value() noexcept {
-    Sat64 s = uint64_t{42};
+[[nodiscard]] consteval bool exact_value() noexcept {
+    Sat64 const s = Sat64::exact(uint64_t{42});
     return s.value() == 42 && !s.was_clamped();
 }
-static_assert(implicit_from_value());
+static_assert(exact_value());
 
-[[nodiscard]] consteval bool explicit_two_arg() noexcept {
-    Sat64 s{uint64_t{99}, true};
-    return s.value() == 99 && s.was_clamped();
+[[nodiscard]] consteval bool clamped_limits() noexcept {
+    SatI32 const high = SatI32::clamped_at_max();
+    SatI32 const low = SatI32::clamped_at_min();
+    return high.value() == ::foundation::core::max_of<int32_t> && high.was_clamped()
+        && low.value() == ::foundation::core::min_of<int32_t> && low.was_clamped();
 }
-static_assert(explicit_two_arg());
+static_assert(clamped_limits());
 
 [[nodiscard]] consteval bool explicit_t_conversion() noexcept {
-    Sat64 s{uint64_t{123}, true};
+    Sat64 const s = Sat64::clamped_at_max();
     auto v = static_cast<uint64_t>(s);
-    return v == 123;
+    return v == ::foundation::core::max_of<uint64_t>;
 }
 static_assert(explicit_t_conversion());
 
 [[nodiscard]] consteval bool equality_pair_compare() noexcept {
-    Sat64 a{uint64_t{5}, false};
-    Sat64 b{uint64_t{5}, false};
-    Sat64 c{uint64_t{5}, true};
-    Sat64 d{uint64_t{6}, false};
+    Sat64 const a = Sat64::exact(::foundation::core::max_of<uint64_t>);
+    Sat64 const b = Sat64::exact(::foundation::core::max_of<uint64_t>);
+    Sat64 const c = Sat64::clamped_at_max();
+    Sat64 const d = Sat64::exact(uint64_t{6});
     return (a == b) && !(a == c) && !(a == d);
 }
 static_assert(equality_pair_compare());
+
+// A clamp stays in a chain of steps: then() keeps the flag of each step.
+[[nodiscard]] consteval bool chain_keeps_the_clamp() noexcept {
+    Sat64 const clamped = add_sat_checked<uint64_t>(::foundation::core::max_of<uint64_t>, 1);
+    Sat64 const stepped = clamped.then(sub_sat_checked<uint64_t>(clamped.value(), 5));
+    return stepped.was_clamped() && stepped.value() == ::foundation::core::max_of<uint64_t> - 5;
+}
+static_assert(chain_keeps_the_clamp());
 
 [[nodiscard]] consteval bool add_sat_no_overflow() noexcept {
     auto s = add_sat_checked<uint64_t>(100, 200);
