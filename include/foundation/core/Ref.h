@@ -125,12 +125,28 @@ class Ref;
 
 namespace detail {
 
-// A Ref<From, Brand> converts to a Ref<From const, Brand>: the conversion
-// adds a const and keeps the brand.  No conversion removes a const, and no
-// conversion changes a brand.  erase_brand is the one door to the erased
-// brand.
-template <class From, class FromBrand, class To, class ToBrand>
-concept RefWidens = std::same_as<From const, To> && !std::same_as<From, To> && std::same_as<FromBrand, ToBrand>;
+// The source of the widening constructor of a Ref<T, Brand>.  A Ref<From,
+// Brand> converts to a Ref<From const, Brand>: the conversion adds a const
+// and keeps the brand.  A Ref of a target with no const widens from nothing,
+// so its source is NoWidening, a class that no code builds.  No conversion
+// removes a const, and no conversion changes a brand.  erase_brand is the one
+// door to the erased brand.  The constructor is not a template, so the walk
+// of the doors of the niche statement reads its parameter (the check of the
+// statement of foundation/core/Choice.h).
+//
+// The two constructors are private and user-provided, and the class has no
+// friend.  So std::bit_cast and a lifetime start over bytes build no
+// NoWidening either.
+class NoWidening final {
+    constexpr NoWidening() noexcept {}
+    constexpr NoWidening(NoWidening const&) noexcept {}
+
+public:
+    NoWidening& operator=(NoWidening const&) = delete("a Ref of a target with no const widens from nothing");
+};
+
+template <class T, class Brand>
+using WidenedFrom = std::conditional_t<std::is_const_v<T>, Ref<std::remove_const_t<T>, Brand>, NoWidening>;
 
 // The door of an owner of the base that lends one of its objects with the
 // fresh brand of its own call, as get() of the Region family does.  The
@@ -212,10 +228,12 @@ public:
     // (cmake/CodeFlags.cmake).
     constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {}
 
-    // Adds a const to the target, and keeps the brand.
-    template <class U, class UBrand>
-        requires detail::RefWidens<U, UBrand, T, Brand>
-    constexpr Ref(Ref<U, UBrand> other) noexcept : object_{__builtin_addressof(*other)} {}
+    // Adds a const to the target, and keeps the brand.  For a target with no
+    // const the constraint fails, so members_of lists no such constructor,
+    // and NoWidening needs no mark of a key for the check of the statement.
+    constexpr Ref(detail::WidenedFrom<T, Brand> other) noexcept
+        requires std::is_const_v<T>
+        : object_{__builtin_addressof(*other)} {}
 
     [[nodiscard]] constexpr T& operator*() const noexcept { return *object_; }
     [[nodiscard]] constexpr T* operator->() const noexcept { return object_; }

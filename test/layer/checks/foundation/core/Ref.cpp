@@ -123,8 +123,9 @@ static_assert(sizeof(Option<Ref<Abstract, CheckBrand>>) == sizeof(void*));
 // The niche of a Ref states that no door builds the null pointer, and the
 // statement passes the three checks of the statement of
 // foundation/core/Choice.h: the constructor from a reference takes the key,
-// and the widening is a constructor template.  The members of Ref read the
-// object and write no Ref, and the statement stands in this header.
+// and the widening constructor takes a Ref, a stated payload, or NoWidening,
+// which no code builds.  The members of Ref read the object and write no
+// Ref, and the statement stands in this header.
 static_assert(detail::BuildsNoEmptyValue<Ref<int, CheckBrand>>
               && detail::BuildsNoEmptyValue<Ref<int const, CheckBrand>>);
 static_assert(detail::BuildsNoEmptyValue<Ref<Abstract, CheckBrand>>);
@@ -132,6 +133,17 @@ static_assert(detail::WritesNoEmptyValue<Ref<int, CheckBrand>> && detail::Stated
 static_assert(niche<Ref<int, CheckBrand>>::is_empty_never_built.is_in_base());
 static_assert(detail::CheckedStatement<Ref<Abstract, CheckBrand>>
               && detail::CheckedStatement<Ref<OverAligned const, CheckBrand>>);
+
+// The widening adds a const and keeps the brand.  It removes no const, it
+// changes no brand, and it takes no Ref of a different target.
+static_assert(std::is_nothrow_convertible_v<Ref<int, CheckBrand>, Ref<int const, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, Ref<int const, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int const, CheckBrand>, Ref<int, OtherBrand>>);
+static_assert(!std::is_constructible_v<Ref<long const, CheckBrand>, Ref<int, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, detail::NoWidening>);
+static_assert(!std::is_default_constructible_v<detail::NoWidening>);
+static_assert(!std::is_copy_constructible_v<detail::NoWidening>);
+static_assert(!std::is_trivially_copyable_v<detail::NoWidening>);
 
 // The statement gives an Option of a Ref the frame door that writes the Ref
 // in place.

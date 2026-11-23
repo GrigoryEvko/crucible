@@ -1,9 +1,9 @@
 // A class outside the base states that no door builds its empty value.  Its
 // public constructor template takes two values, and a reflection reads no
-// parameter of a constructor template, so TemplateDoorSlot{0u, 0u} builds the empty
-// value.  The statement is open to a type of the base only (the check of the
-// statement of foundation/core/Choice.h), so the Option of the class does not
-// compile.
+// parameter of a constructor template, so TemplateDoorSlot{0u, 0u} builds the
+// empty value.  The walk of the doors refuses each public constructor
+// template of a stated type (the check of the statement of
+// foundation/core/Choice.h), so the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>
 

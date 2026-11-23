@@ -492,9 +492,10 @@ public:
 //      - A member function that is not static is no door.  Its object is a
 //        valid T, so it is a voucher, and its body has the trust of the body
 //        of a constructor that takes a voucher.
-//      - A reflection reads no parameter of a constructor template, so T
-//        builds no value from std::nullptr_t, a pointer, an int or an
-//        unsigned long long at all.
+//      - T has no constructor template that is not private, because a
+//        reflection reads no parameter of a template.  T builds no value
+//        from std::nullptr_t, a pointer, an int or an unsigned long long at
+//        all.
 //   2. No member that is not private writes the payload
 //      (WritesNoEmptyValue).  The frame door with_mut gives the payload in
 //      place, and a local can change before some(), so a member that writes
@@ -855,6 +856,10 @@ struct StatementWalks final {
 //       instance.
 //     - Each nested class of each access passes the same arms, and the arms
 //       of the members (admits_nested_class).
+//     - A constructor template that is not private is refused, because the
+//       walk cannot read its parameters before an instance.  A constructor
+//       that a family of the type needs, such as the widening of a Ref, is a
+//       constrained constructor that is not a template.
 //     A member function that is not static is no door: its object is a
 //     valid value of the type, so it is a voucher, with the trust of a
 //     constructor that takes a voucher.
@@ -894,8 +899,12 @@ consteval StatementWalks walk_statement(std::meta::info type) {
             continue;
         }
         if (std::meta::is_private(member)) continue;
+        if (std::meta::is_constructor_template(member)) {
+            is_door_admitted = false;
+            continue;
+        }
         if (std::meta::is_function_template(member)) {
-            is_member_admitted = is_member_admitted && std::meta::is_constructor_template(member);
+            is_member_admitted = false;
             continue;
         }
         if (!std::meta::is_function(member) || std::meta::is_deleted(member)) continue;

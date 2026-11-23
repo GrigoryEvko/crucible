@@ -2819,8 +2819,8 @@ foundation_neg_compile_test(neg_core_option_niche_statement_nested_incomplete
   "In instantiation of .struct foundation::core::detail::IncompleteCheckedClass<NestedLaterSlot::Later>."
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option.")
 foundation_neg_compile_test(neg_core_option_niche_statement_constructor_template
-  "required for the satisfaction of .StatedInBase<T>. \\[with T = TemplateDoorSlot\\]"
-  "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = TemplateDoorSlot\\]. evaluated to .false.")
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = TemplateDoorSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = TemplateDoorSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_constructor_template APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 # A class template outside the base, which the gate forms first, and a niche
@@ -3506,10 +3506,10 @@ foundation_neg_compile_test(neg_core_link_const_writes
   "neg_core_link_const_writes.cpp:[0-9]+:[0-9]+: error")
 foundation_neg_compile_test(neg_core_ref_drops_const
   "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
-  "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = const int; UBrand = [^;]+; T = int; ")
+  "the expression .is_const_v<T> \\[with T = int\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_ref_changes_brand
-  "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
-  "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = int; UBrand = [^;]+; T = int; ")
+  "no matching function for call to .foundation::core::Ref<const int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
+  "no known conversion for argument 1 from .Ref<\\[\\.\\.\\.\\],foundation::core::<lambda\\(\\)>>. to .Ref<\\[\\.\\.\\.\\],foundation::core::<lambda\\(\\)>>.")
 # The erase door refuses a scope brand, so no Ref of a scope leaves it on the
 # erased brand.
 foundation_neg_compile_test(neg_core_ref_erase_scope_brand

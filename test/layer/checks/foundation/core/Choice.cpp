@@ -1571,6 +1571,40 @@ static_assert(!vouches_each_door(^^StaticValueSlot) && !BuildsNoEmptyValue<Stati
 // A friend or a nested class copies a private static value of the slot.
 static_assert(!vouches_each_door(^^PrivateValueSlot) && !BuildsNoEmptyValue<PrivateValueSlot>);
 static_assert(!vouches_each_door(^^VariableTemplateSlot) && vouches_each_door(^^StatementValueSlot));
+
+// A public constructor template is refused, because the walk reads no
+// parameter of a template.  A constrained constructor that is not a template
+// is read, as the widening constructor of a Ref is.  members_of lists no
+// constructor whose constraint fails, so the walk reads such a constructor
+// only in an instance where it can be called.
+class ConstructorTemplateSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    template <class Tag>
+    constexpr explicit ConstructorTemplateSlot(Tag /*tag*/) noexcept {}
+};
+template <class Tag>
+class ConstrainedSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    constexpr ConstrainedSlot(Tag /*tag*/, niche_key<ConstrainedSlot> const& /*key*/) noexcept
+        requires std::is_empty_v<Tag>
+    {}
+};
+template <class Tag>
+class ConstrainedTagSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    constexpr explicit ConstrainedTagSlot(Tag /*tag*/) noexcept
+        requires std::is_empty_v<Tag>
+    {}
+};
+static_assert(!vouches_each_door(^^ConstructorTemplateSlot) && !BuildsNoEmptyValue<ConstructorTemplateSlot>);
+static_assert(vouches_each_door(^^ConstrainedSlot<EmptyTag>) && BuildsNoEmptyValue<ConstrainedSlot<EmptyTag>>);
+static_assert(!vouches_each_door(^^ConstrainedTagSlot<EmptyTag>) && vouches_each_door(^^ConstrainedTagSlot<RawWord>));
 static_assert(names_class(^^StaticValueSlot const[2], ^^StaticValueSlot));
 
 // The walk of the members (2 of the check of the statement).  Each class
