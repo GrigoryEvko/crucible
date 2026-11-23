@@ -1,6 +1,7 @@
-"""banned — no reserve call on a std container, no file stream or process start, no reinterpret_cast, no line directive.
+"""banned — no reserve call on a std container, no file stream or process start, no reinterpret_cast or const_cast,
+no line directive.
 
-Five kinds
+Six kinds
     vector-reserve  CLAUDE.md section IV bans `std::vector::reserve`.  The
                     kind reads each call with a member access named `reserve`
                     as its callee: `v.reserve(n)`, `p->reserve(n)`,
@@ -46,6 +47,15 @@ Five kinds
                     finding.  The kind finds a cast on more than one line,
                     and a cast with a space before its `<`.  It reads
                     include/, src/ and vessel/.
+    const-cast      CLAUDE.md section 3 bans `const_cast`.  A const_cast of
+                    a pointer to const bytes gives a pointer that can write
+                    the bytes of the object, and the view of bytes of the
+                    quarantine plugin reads such a pointer only in the
+                    expression that converts the pointer to the object
+                    (utils/tools/quarantine/library.cpp, the byte views).
+                    The kind reads each identifier token spelled
+                    `const_cast`, as reinterpret-cast reads its keyword, in
+                    include/, src/ and vessel/.
     line-directive  A `#line` directive or a GNU line marker, such as
                     `# 12 "include/fixy/atoms/Os.h"`, changes the file that
                     the compiler gives each declaration after it.  The
@@ -72,8 +82,9 @@ Five kinds
 
 Refused kinds
     No ledger row admits a cast or a line directive.  REFUSED_KINDS names the
-    kinds reinterpret-cast and line-directive (assay.guard.engines.meta.runner,
-    the refused kinds), so a row of such a kind admits no finding, and a write
+    kinds reinterpret-cast, const-cast and line-directive
+    (assay.guard.engines.meta.runner, the refused kinds), so a row of such a
+    kind admits no finding, and a write
     of the rule refuses each such site.  A row of each other kind admits its
     sites.
 
@@ -87,7 +98,7 @@ Macro bodies
     counts after a `.` or `->` and before `(` or `<`.  A file stream counts
     when no `.` or `->` is before it.  A name of a process start counts only
     when no `.` or `->` and no namespace other than std or an alias of std is
-    before it.  Each token `reinterpret_cast` counts.
+    before it.  Each token `reinterpret_cast` and `const_cast` counts.
 
 Receiver types
     The receiver of a reserve call is a name, a name in parentheses, or
@@ -121,12 +132,13 @@ What the rule cannot see
 Entity
     The entity of a finding is `HOLDER: CALLEE` for vector-reserve,
     `HOLDER: NAME` for file-stream and process-start, and
-    `HOLDER: reinterpret_cast<TYPE>` for reinterpret-cast, with the spelling
-    of the source (`tsast.spelled()`).  It is `HOLDER: DIRECTIVE` for
+    `HOLDER: reinterpret_cast<TYPE>` for reinterpret-cast and
+    `HOLDER: const_cast<TYPE>` for const-cast, with the spelling of the
+    source (`tsast.spelled()`).  It is `HOLDER: DIRECTIVE` for
     line-directive, with the preprocessing tokens of the directive.  An
     include of `<fstream>` has the
     name `#include <fstream>`.  When the tree shows no target type of a cast,
-    as in a body that does not parse, the entity has `reinterpret_cast`
+    as in a body that does not parse, the entity has the keyword of the cast
     alone.  HOLDER is the signature of the function that holds the site
     (`tsast.function_signature`).  For a site in no function, HOLDER is the
     scope of the site: the names of its namespaces and its classes.  For a
@@ -160,10 +172,14 @@ RESERVE_KIND = "vector-reserve"
 STREAM_KIND = "file-stream"
 START_KIND = "process-start"
 CAST_KIND = "reinterpret-cast"
+CONST_CAST_KIND = "const-cast"
 LINE_KIND = "line-directive"
 # The kinds that no ledger row admits (the refused kinds).
-REFUSED_KINDS = frozenset({CAST_KIND, LINE_KIND})
+REFUSED_KINDS = frozenset({CAST_KIND, CONST_CAST_KIND, LINE_KIND})
 CAST_KEYWORD = "reinterpret_cast"
+CONST_CAST_KEYWORD = "const_cast"
+# The kind of each keyword of a banned cast.
+CAST_KINDS = {CAST_KEYWORD: CAST_KIND, CONST_CAST_KEYWORD: CONST_CAST_KIND}
 # The name of a #line directive after `#`.  A GNU line marker has a number in place of the name.
 LINE_NAME = "line"
 DIGITS = frozenset("0123456789")
@@ -278,6 +294,10 @@ STREAM_MESSAGE = (
 CAST_MESSAGE = (
     "`{entity}` spells the keyword reinterpret_cast, which CLAUDE.md section III bans.  Use std::bit_cast with "
     "the limits of section IV, or std::start_lifetime_as for the objects of an arena.  No ledger row admits a cast"
+)
+CONST_CAST_MESSAGE = (
+    "`{entity}` spells the keyword const_cast, which CLAUDE.md section 3 bans.  A const object stays const: take a "
+    "reference that can write from the owner of the object, or change the parameter.  No ledger row admits a cast"
 )
 LINE_MESSAGE = (
     "`{entity}` is a line directive.  It changes the file that the compiler gives each declaration after it.  The "
@@ -882,16 +902,17 @@ def is_stream_token(tokens: Sequence[tsast.Token], index: int) -> bool:
 
 
 def cast_of(keyword: tsast.Node) -> str:
-    """Return `reinterpret_cast<TYPE>` of the cast that holds a keyword node, or the keyword alone."""
+    """Return `KEYWORD<TYPE>` of the cast that holds a keyword node, or the keyword alone."""
     owner = keyword.parent
     arguments = owner.child_by_field("arguments") if owner is not None and owner.type == "template_function" else None
-    return f"{CAST_KEYWORD}{tsast.spelled(arguments)}" if arguments is not None else CAST_KEYWORD
+    return f"{keyword.text}{tsast.spelled(arguments)}" if arguments is not None else keyword.text
 
 
-def cast_references(root: tsast.Node) -> Iterator[tuple[tsast.Node, str]]:
-    """Yield the keyword node and the spelling of each cast in a root, in the sequence of the source."""
-    for node in root.descendants_named(frozenset({CAST_KEYWORD}), "identifier"):
-        yield node, cast_of(node)
+def cast_references(root: tsast.Node) -> Iterator[tuple[str, tsast.Node, str]]:
+    """Yield the kind, the keyword node and the spelling of each banned cast in a root, in the sequence of the
+    source."""
+    for node in root.descendants_named(frozenset(CAST_KINDS), "identifier"):
+        yield CAST_KINDS[node.text], node, cast_of(node)
 
 
 def line_directive(text: str) -> str | None:
@@ -951,6 +972,7 @@ def finding(kind: str, path: str, line: int, entity: str, why: str = "") -> chec
         STREAM_KIND: STREAM_MESSAGE,
         START_KIND: START_MESSAGE,
         CAST_KIND: CAST_MESSAGE,
+        CONST_CAST_KIND: CONST_CAST_MESSAGE,
         LINE_KIND: LINE_MESSAGE,
     }[kind]
     return check_report.Finding("error", path, line, RULE, message.format(entity=entity, why=why), kind, entity)
@@ -996,8 +1018,8 @@ def file_findings(tree: tsast.Tree, kinds: Kinds, types: TypeIndex) -> Iterator[
         for node, spelling in start_references(tree.root, types.std_names(tree), False):
             yield finding(START_KIND, path, node.line, f"{holder_of(node)}: {spelling}")
     if kinds.cast:
-        for node, spelling in cast_references(tree.root):
-            yield finding(CAST_KIND, path, node.line, f"{holder_of(node)}: {spelling}")
+        for kind, node, spelling in cast_references(tree.root):
+            yield finding(kind, path, node.line, f"{holder_of(node)}: {spelling}")
 
 
 def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iterator[check_report.Finding]:
@@ -1016,7 +1038,7 @@ def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iter
                 (START_KIND, node, spelling, "") for node, spelling in start_references(body.tree.root, names, True)
             ]
         if kinds.cast:
-            sites += [(CAST_KIND, node, spelling, "") for node, spelling in cast_references(body.tree.root)]
+            sites += [(kind, node, spelling, "") for kind, node, spelling in cast_references(body.tree.root)]
         for kind, node, spelling, why in sites:
             yield finding(kind, path, body.origin(node)[0] + 1, f"{holder}: {spelling}", why)
         return
@@ -1031,13 +1053,13 @@ def body_findings(body: tsast.MacroBody, kinds: Kinds, types: TypeIndex) -> Iter
             yield finding(STREAM_KIND, path, token.row + 1, entity)
         if kinds.start and is_start_token(tokens, index, names):
             yield finding(START_KIND, path, token.row + 1, entity)
-        if kinds.cast and tsast.lexeme(token) == CAST_KEYWORD:
-            yield finding(CAST_KIND, path, token.row + 1, entity)
+        if kinds.cast and tsast.lexeme(token) in CAST_KINDS:
+            yield finding(CAST_KINDS[tsast.lexeme(token)], path, token.row + 1, entity)
 
 
 def findings(context: TsastContext) -> list[check_report.Finding]:
     """Give an error for each line directive of the scope, and for each site of each other kind in the files of its
-    directories (the five kinds, the scope)."""
+    directories (the six kinds, the scope)."""
     found: list[check_report.Finding] = []
     kept: list[tsast.Tree] = []
     for tree in context.trees(context.scope_files()):

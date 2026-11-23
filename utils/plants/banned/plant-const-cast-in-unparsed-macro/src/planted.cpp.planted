@@ -1,0 +1,1 @@
+#define CRUCIBLE_PLANTED_WRITABLE(type, pointer) const_cast<type##_word*>(pointer)

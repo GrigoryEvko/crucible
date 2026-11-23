@@ -1,0 +1,7 @@
+namespace crucible::planted {
+
+void* bench_writable(void const* view) {
+    return const_cast<void*>(view);
+}
+
+}  // namespace crucible::planted

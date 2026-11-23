@@ -1,0 +1,9 @@
+#pragma once
+
+namespace crucible::planted {
+
+inline void* writable(void const* view) {
+    return const_cast<void*>(view);
+}
+
+}  // namespace crucible::planted
