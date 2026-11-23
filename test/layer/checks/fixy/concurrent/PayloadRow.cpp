@@ -84,6 +84,25 @@ struct borrowed_brand {};
 static_assert(!payload_row_is_classified<::foundation::core::Option<::foundation::core::Ref<int, borrowed_brand>>>(),
               "an Option of a Ref holds a borrow of an object that no part of the payload owns");
 
+// ── a run of an arena hides its elements, as a RunSet does ──────────
+//
+// A run reports the row of its element.  It opens the walk no wider than a
+// RunSet: the walk refuses an element that it refuses alone, such as a
+// borrow, also through a run and through a class that holds the run, as a
+// BuiltRegion holds its runs.
+struct run_brand {};
+static_assert(
+    std::is_same_v<payload_row_t<::foundation::core::ArenaRun<BgComp, run_brand>>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<::foundation::core::ArenaRun<int const, run_brand>>, eff::Row<>>);
+using RunOfBorrows = ::foundation::core::ArenaRun<::foundation::core::Ref<int, run_brand>, run_brand>;
+static_assert(!payload_row_is_classified<RunOfBorrows>(),
+              "a run of Refs holds borrows of objects that no part of the payload owns");
+struct HoldsRunOfBorrows {
+    RunOfBorrows run{};
+};
+static_assert(!payload_row_is_classified<HoldsRunOfBorrows>(),
+              "a class that holds a run of Refs holds borrows of objects that no part of the payload owns");
+
 // ── a rostered leaf reports nothing, and says so deliberately ───────
 static_assert(std::is_same_v<payload_row_t<::fixy::Saturated<unsigned>>, eff::Row<>>);
 

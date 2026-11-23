@@ -140,6 +140,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::foundation::core::FixedArray,  // the elements; the count holds no row
     ^^::foundation::core::HeapArray,  // the elements; the alignment holds no row
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row
+    ^^::foundation::core::ArenaRun,  // the elements of one run of an arena; the brand holds no row
     ^^::foundation::core::Box,  // the one object that the Box owns
     ^^::foundation::core::Option,  // the payload, held by value; an Option of an address is refused
     ^^std::vector,  // the elements; the allocator holds no row
@@ -219,8 +220,8 @@ inline constexpr std::meta::info leaf_payload_families[] = {
 // The payload a transparent family hides.  Reading the member alias
 // instantiates the wrapper, which each rostered family permits.  A
 // FixedArray and a HeapArray of the Region family name their element
-// element_type, a Box and an Option hide the type of their payload, and each
-// other family names it value_type.
+// element_type, a Box, an Option and an ArenaRun hide the type of their
+// payload, and each other family names it value_type.
 template <class T>
 struct hidden_payload {
     using type = typename T::value_type;
@@ -238,6 +239,11 @@ struct hidden_payload<::foundation::core::HeapArray<T, Align>> {
 
 template <::foundation::core::BoxPayload T>
 struct hidden_payload<::foundation::core::Box<T>> {
+    using type = T;
+};
+
+template <::foundation::core::ViewElement T, ::foundation::brand::IsBrand Brand>
+struct hidden_payload<::foundation::core::ArenaRun<T, Brand>> {
     using type = T;
 };
 

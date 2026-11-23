@@ -46,9 +46,9 @@ static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "
               "and a Capability conveys the effect it authorizes.  A third means a new kind of payload "
               "whose rule has to be written beside its roster entry.");
-static_assert(sizeof(c::detail::transparent_payload_families) == 15 * sizeof(std::meta::info),
-              "Fifteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
-              "The five containers (WriteOnce, FixedArray, HeapArray, RunSet, std::vector) hide their "
+static_assert(sizeof(c::detail::transparent_payload_families) == 16 * sizeof(std::meta::info),
+              "Sixteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
+              "The six containers (WriteOnce, FixedArray, HeapArray, RunSet, ArenaRun, std::vector) hide their "
               "elements, a Box hides its object, and an Option hides its payload.  A new wrapper that unwraps "
               "is one line here.");
 static_assert(std::size(c::detail::leaf_payload_families) == 3,
