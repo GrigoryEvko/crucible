@@ -1,5 +1,5 @@
 // The objects of static or thread storage duration that hold no linear sum by
-// value (THE SUM HOLDERS of linear.cpp): a token, and a reference to an
+// value (the sum holders of linear.cpp): a token, and a reference to an
 // Option.  The kind option-static names none of them: a static token ends with
 // the process too, but no run-time end of a sum is at stake there.
 #include <foundation/Linear.h>

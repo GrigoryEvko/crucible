@@ -1,4 +1,4 @@
-# No door ends a linear sum (THE SUM HOLDERS of linear.cpp): a door that ends
+# No door ends a linear sum (the sum holders of linear.cpp): a door that ends
 # a holder of a sum in its body (line 33), a door that ends a sum in its body
 # (39), a class with scope_end_door that holds a sum (54), and such a class
 # that marks its own end too (59).  The run-time end of a full Option of a

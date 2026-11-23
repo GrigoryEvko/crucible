@@ -1,5 +1,5 @@
 # Each object of static or thread storage duration that is or holds a linear
-# sum is an error in each mode (THE SUM HOLDERS of linear.cpp): a variable at
+# sum is an error in each mode (the sum holders of linear.cpp): a variable at
 # namespace scope (line 31), a static data member (33), a Result at namespace
 # scope (35), a static local (40), a thread_local local (41), a static holder
 # of a sum (42) and a static closure that holds one (43).  Only the run-time

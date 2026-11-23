@@ -1,4 +1,4 @@
-// The doors that end a linear sum through its consumer (THE SUM HOLDERS of
+// The doors that end a linear sum through its consumer (the sum holders of
 // linear.cpp): an rvalue match takes the token in the arm of a payload, and
 // the arm of no payload does nothing.  So no sum ends with its payload.
 #include <foundation/Linear.h>

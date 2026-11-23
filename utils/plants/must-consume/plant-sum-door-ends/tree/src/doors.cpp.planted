@@ -1,5 +1,5 @@
 // The ends of a linear sum in a door that the code writes, and at the end of
-// the scope of a class with scope_end_door (THE SUM HOLDERS of linear.cpp).
+// the scope of a class with scope_end_door (the sum holders of linear.cpp).
 // No door ends a sum, so each end gives a line.
 #include <foundation/Linear.h>
 #include <foundation/core/Choice.h>

@@ -1,6 +1,6 @@
 // A class with scope_end_door whose destructor consumes its sum by a match.
 // The rule reads no destructor, so the end of the scope of the class is no
-// door, and the end gives a line (THE SUM HOLDERS of linear.cpp).
+// door, and the end gives a line (the sum holders of linear.cpp).
 #include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
 

@@ -11,7 +11,7 @@
 #              change that closes this gap makes the two lines appear here.
 # scoped.cpp:37  a class with scope_end_door whose destructor consumes its
 #              sum by a match: the rule reads no destructor, so the end of the
-#              scope of a class that holds a sum is no door (THE SUM HOLDERS of
+#              scope of a class that holds a sum is no door (the sum holders of
 #              linear.cpp).
 
 compile gaps src/gaps.cpp must-consume=on

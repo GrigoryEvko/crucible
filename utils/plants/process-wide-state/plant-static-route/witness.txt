@@ -5,7 +5,7 @@
 # holds one, in each mode (declaration.cpp, THE THREAD-BOUND STATICS).  This
 # unit was the known gap of the route in the control control-known-gaps of
 # must-consume.  Each global holds a linear sum too, so the kind option-static
-# of must-consume refuses each one in each mode (linear.cpp, THE SUM HOLDERS).
+# of must-consume refuses each one in each mode (linear.cpp, the sum holders).
 compile static_route src/static_route.cpp must-consume=on errors=static_route
 flag static_route -freflection
 exit static_route fail

@@ -1,5 +1,5 @@
 // The objects of static or thread storage duration that hold a linear sum
-// (THE SUM HOLDERS of linear.cpp).  The end of the process or of the thread
+// (the sum holders of linear.cpp).  The end of the process or of the thread
 // ends each one with no consume, so each one is an error.
 #include <foundation/Linear.h>
 #include <foundation/core/Choice.h>

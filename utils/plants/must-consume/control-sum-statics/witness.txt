@@ -1,5 +1,5 @@
 # An object of static or thread storage duration that holds no linear sum by
-# value gives no line of the kind option-static (THE SUM HOLDERS of
+# value gives no line of the kind option-static (the sum holders of
 # linear.cpp): a token at namespace scope, a thread_local token, and a static
 # reference to an Option.  The rule process-wide-state names each object that
 # can change and has no marker.
