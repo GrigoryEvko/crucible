@@ -228,6 +228,7 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_chase_lev_ends` | `include/fixy/concurrent/ChaseLevDeque.h` | Y | - | Y | Y | token | · | HS14: 2 |
+| `mint_held_spsc_split` | `include/fixy/concurrent/SpscEnds.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_mpmc_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_parallel_for` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 7 |
 | `mint_parallel_for_with_thread_options` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -412,4 +413,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 82 | 46 | 27 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 171 | 62 | 105 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 172 | 62 | 106 | 4 | 0 | 3 |

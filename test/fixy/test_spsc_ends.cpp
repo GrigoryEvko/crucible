@@ -170,10 +170,81 @@ int check_split() {
     return 0;
 }
 
+// The proofs of the two sides of a held split, and the door that makes them.
+// A test makes each proof where it needs one.
+class ProducerProof final {
+    ProducerProof() noexcept = default;
+    friend struct ProofDoor;
+
+public:
+    ProducerProof(ProducerProof const&) = delete("a proof of a side lives for the call that made it");
+    ~ProducerProof() = default;
+};
+class ConsumerProof final {
+    ConsumerProof() noexcept = default;
+    friend struct ProofDoor;
+
+public:
+    ConsumerProof(ConsumerProof const&) = delete("a proof of a side lives for the call that made it");
+    ~ConsumerProof() = default;
+};
+struct ProofDoor final {
+    [[nodiscard]] static ProducerProof producer() noexcept { return ProducerProof{}; }
+    [[nodiscard]] static ConsumerProof consumer() noexcept { return ConsumerProof{}; }
+};
+
+// A brand of a split that a class holds: it names the proof of each side.
+struct HeldBrand final {
+    using producer_proof = ProducerProof;
+    using consumer_proof = ConsumerProof;
+};
+
+// A class that holds a split of the held brand as a member, built in place by
+// the mint.  Each door of the class opens one side with its proof.
+class LogHolder final {
+public:
+    explicit LogHolder(std::uint64_t capacity) noexcept
+        : split_{::fixy::concurrent::mint_held_spsc_split<CountLog, HeldBrand>(
+              ::foundation::effects::testing::test().alloc, capacity)} {}
+
+    // Writes items until the log is full, and gives their count.
+    [[nodiscard]] std::uint64_t write_all(ProducerProof const& proof) noexcept {
+        return split_.with_producer(proof, [](ProducerEnd<CountLog>& end) noexcept {
+            std::uint64_t count = 0;
+            while (CountLog::try_write(end))
+                ++count;
+            return count;
+        });
+    }
+
+    // Reads each item that the log holds, and gives their count.
+    [[nodiscard]] std::uint64_t read_each(ConsumerProof const& proof) noexcept {
+        return split_.with_consumer(proof, [](ConsumerEnd<CountLog>& end) noexcept { return read_all(end); });
+    }
+
+    [[nodiscard]] std::uint64_t held() const noexcept { return held_of(split_); }
+
+private:
+    ::fixy::concurrent::SpscSplit<CountLog, HeldBrand> split_;
+};
+
+int check_held_split() {
+    LogHolder holder{std::uint64_t{2}};
+    if (holder.write_all(ProofDoor::producer()) != 2) return 1;
+    if (holder.held() != 2) return 2;
+
+    // The ends keep their state across two frames of each side.
+    if (holder.read_each(ProofDoor::consumer()) != 2 || holder.held() != 0) return 3;
+    if (holder.write_all(ProofDoor::producer()) != 2) return 4;
+    if (holder.read_each(ProofDoor::consumer()) != 2 || holder.held() != 0) return 5;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (int rc = check_split(); rc != 0) return rc;
     if (int rc = check_the_ends_end_before_the_owner(); rc != 0) return 10 + rc;
+    if (int rc = check_held_split(); rc != 0) return 20 + rc;
     return 0;
 }

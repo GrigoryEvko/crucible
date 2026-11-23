@@ -42,6 +42,50 @@ static_assert(!::foundation::core::BorrowsNoKeyOwner<BorrowsTheSplit, ProducerBr
 static_assert(::foundation::core::BorrowsNoKeyOwner<BorrowsAnotherSplit, ConsumerBrand>);
 static_assert(::foundation::core::BorrowsNoKeyOwner<BorrowsAnotherSplit, ProducerBrand>);
 
+// The held split.  A proof is an empty class that no code builds with no
+// argument and that does not copy.  A held brand names one proof for each
+// side, and the two proofs are two types.
+class ProducerProof final {
+    ProducerProof() noexcept = default;
+
+public:
+    ProducerProof(ProducerProof const&) = delete("a proof of a side lives for the call that made it");
+    ~ProducerProof() = default;
+};
+class ConsumerProof final {
+    ConsumerProof() noexcept = default;
+
+public:
+    ConsumerProof(ConsumerProof const&) = delete("a proof of a side lives for the call that made it");
+    ~ConsumerProof() = default;
+};
+struct HeldBrand final {
+    using producer_proof = ProducerProof;
+    using consumer_proof = ConsumerProof;
+};
+struct OneProofBrand final {
+    using producer_proof = ProducerProof;
+    using consumer_proof = ProducerProof;
+};
+static_assert(SpscSideProof<ProducerProof> && !SpscSideProof<CheckBrand> && !SpscSideProof<int>);
+static_assert(SpscHeldBrand<HeldBrand> && !SpscHeldBrand<CheckBrand> && !SpscHeldBrand<OneProofBrand>);
+
+// A held split opens each side with the proof of that side, and with no key
+// and no proof of the other side.  A split of a brand that is not held opens
+// with no proof.
+struct WritesNothing final {
+    void operator()(ProducerEnd<CheckOwner>& /*end*/) const noexcept {}
+};
+using HeldSplit = SpscSplit<CheckOwner, HeldBrand>;
+template <class Split, class Opener>
+constexpr bool opens_producer =
+    requires(Split& split, Opener& opener) { split.with_producer(opener, WritesNothing{}); };
+static_assert(opens_producer<HeldSplit, ProducerProof const>);
+static_assert(!opens_producer<HeldSplit, ConsumerProof const>);
+static_assert(!opens_producer<HeldSplit, ProducerKey<HeldBrand>>);
+static_assert(opens_producer<SpscSplit<CheckOwner, CheckBrand>, ProducerKey<CheckBrand>>);
+static_assert(!opens_producer<SpscSplit<CheckOwner, CheckBrand>, SpscNoSideProof const>);
+
 // The same refusal for the fresh brand of mint_spsc_split.  GCC 16 lists no
 // member alias of a specialization whose argument is a fresh brand, so the
 // statement of the side brand is a base (states_owner_brand of

@@ -4735,7 +4735,7 @@ fixy_neg_compile_test(neg_spsc_ends_called_closure
   "a body of a frame door of a split reaches the key of its side")
 fixy_neg_compile_test(neg_spsc_ends_ref_alias
   "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(Body&&\\) &"
-  "a split lends its producer end only with the producer key: call with_producer")
+  "a split lends its producer end only with the producer key, or with the producer proof of a held brand: call with_producer")
 fixy_neg_compile_test(neg_spsc_ends_body_gives_its_end_out
   "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(fixy::concurrent::ProducerKey<Brand>&, Body&&\\) &"
   "the result of a frame door of a split leaves the frame, so it holds no reference and no address")
@@ -4745,6 +4745,17 @@ fixy_neg_compile_test(neg_spsc_ends_split_of_an_owner_that_exists
 fixy_neg_compile_test(neg_spsc_ends_owner_that_moves
   "no matching function for call to .mint_spsc_split<.*MovableOwner>\\("
   "the expression .!\\(is_move_constructible_v<Owner>\\) \\[with Owner = <unnamed>::MovableOwner\\]. evaluated to .false.")
+# A held split names a proof for each side in its brand, opens a side only
+# with the proof of that side, and refuses a body that reaches the split.
+fixy_neg_compile_test(neg_spsc_ends_held_brand_without_proofs
+  "no matching function for call to .mint_held_spsc_split<.*Owner, .*PlainBrand>\\("
+  "SpscHeldBrand")
+fixy_neg_compile_test(neg_spsc_ends_held_proof_of_the_other_side
+  "no matching function for call to .fixy::concurrent::SpscSplit<.*Owner, .*HeldBrand>::with_producer\\("
+  "ConsumerProof")
+fixy_neg_compile_test(neg_spsc_ends_held_nested_door
+  "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\("
+  "a body of a frame door of a held split reaches a split of its brand through a borrow")
 # The end of the channel ends each object that its ring holds, so the channel
 # holds no linear payload.
 fixy_neg_compile_test(neg_spsc_box_channel_of_linear_payload
