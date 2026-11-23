@@ -2,6 +2,9 @@
 
 #include <foundation/effects/Row.h>
 
+#include <foundation/Lifetime.h>
+#include <foundation/core/Scalar.h>
+
 #include <foundation/reflect/ReflectionList.h>
 
 #include <vector>
@@ -383,9 +386,20 @@ static_assert(L::leq(row_descriptor(^^Row<Effect::IO>), row_descriptor(^^Row<Eff
 
 }  // namespace detail::effect_row_lattice_self_test
 
+// The seal costs no byte, and it refuses each route from bytes to a mask:
+// decode, std::bit_cast, which asks for a trivially copyable type, and the
+// checked lifetime start.  The compare of two masks reads their bits.
 static_assert(sizeof(EffectMask) == sizeof(EffectRowLattice::element_type));
-static_assert(std::is_trivially_copyable_v<EffectMask>);
+static_assert(!std::is_trivially_copyable_v<EffectMask>);
 static_assert(std::is_standard_layout_v<EffectMask>);
+static_assert(!::foundation::core::DecodableFrom<EffectMask, EffectMask::underlying_type>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<EffectMask>);
+static_assert(EffectMask::from_raw(3) == EffectMask::from_raw(3) && EffectMask::from_raw(3) != EffectMask::from_raw(5));
+
+// The last enumerator of Effect closes the atoms: the atoms are the
+// positions 0 thru it, so single() takes each value at or below it.
+static_assert(std::size_t{detail::last_enumerator_value_of<Effect>} + 1 == effect_count);
+static_assert(EffectRowLattice::single(Effect::Div) == (std::uint64_t{1} << detail::last_enumerator_value_of<Effect>));
 
 namespace detail::effect_row_projection_self_test {
 

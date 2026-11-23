@@ -7,6 +7,7 @@
 // process, in a child through expect_dies of the Check family:
 //
 //   EffectMask::from_raw                 a mask with a bit above the atoms
+//   EffectMask::set                      an atom past the last enumerator
 //   AtomicMonotonic::advance_sole_writer_from
 //                                        a current value that is not the
 //                                        stored value
@@ -54,6 +55,26 @@ void test_poisoned_effect_mask_ends_the_process(TestRunnerCtx const& test) {
     (void)fe::EffectMask::from_raw(clean);
 }
 
+// A cast of a number past the last enumerator of Effect names no atom.  set()
+// refuses it through EffectRowLattice::single, so no mask holds a bit past the
+// top of the lattice.  The old set() made bit 14 from the cast of 14, and
+// raw() gave the bit out again.  The last atom is the control, in the test
+// process.
+void test_atom_past_the_last_ends_the_process(TestRunnerCtx const& test) {
+    fe::Effect const past = opaque(static_cast<fe::Effect>(14));
+    expect_dies(
+        test,
+        [past] noexcept {
+            fe::EffectMask mask{};
+            mask.set(past);
+            (void)opaque(mask.raw());
+        },
+        ::fixy::TextView{"static_cast<std::uint8_t>(atom) <= detail::last_enumerator_value_of<Effect>"});
+    fe::EffectMask mask{};
+    mask.set(opaque(fe::Effect::Div));
+    CRUCIBLE_FATAL_INVARIANT(mask.test(fe::Effect::Div) && mask.raw() == fe::EffectRowLattice::single(fe::Effect::Div));
+}
+
 void test_stale_current_of_a_sole_writer_ends_the_process(TestRunnerCtx const& test) {
     auto counter =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::SoleWriterProof<CounterOwner, CounterOwner::Role>>(5);
@@ -78,6 +99,7 @@ void test_read_of_an_empty_slot_ends_the_process(TestRunnerCtx const& test) {
 int main() {
     TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_poisoned_effect_mask_ends_the_process(test);
+    test_atom_past_the_last_ends_the_process(test);
     test_stale_current_of_a_sole_writer_ends_the_process(test);
     test_read_of_an_empty_slot_ends_the_process(test);
     return 0;

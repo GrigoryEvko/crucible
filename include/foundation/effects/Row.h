@@ -20,10 +20,13 @@
 // the second.  Code that must keep the atom pack itself keeps naming
 // Row<Es...>.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Lattice.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <bit>
@@ -161,6 +164,20 @@ inline constexpr std::size_t row_unique_size_v = row_pack_size_v<canonical_row_t
     return std::meta::template_arguments_of(std::meta::dealias(row)).size();
 }
 
+namespace detail {
+
+// The value of the last enumerator of the enumeration Atom, which reflection
+// reads.  It is a variable template, so only a unit that names it runs the
+// walk.  The enumerators of Effect are the positions 0 thru this value, one
+// for each atom, so a value at or below it names an enumerator, and a value
+// above it names none (the check file of this header pins effect_count to
+// it).
+template <::foundation::reflect::ScopedEnum Atom>
+inline constexpr std::underlying_type_t<Atom> last_enumerator_value_of = static_cast<std::underlying_type_t<Atom>>(
+    ::foundation::reflect::detail::enumerator_at<Atom>(::foundation::reflect::enum_count<Atom> - 1));
+
+}  // namespace detail
+
 struct EffectRowLattice {
     using element_type = std::uint64_t;
     using atom_type = Effect;
@@ -185,8 +202,13 @@ struct EffectRowLattice {
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a & b; }
 
     // The row containing one atom, and the membership test.  These two
-    // are what make the mask a Row and not just a bounded lattice.
+    // are what make the mask a Row and not just a bounded lattice.  The atom
+    // is a named enumerator of Effect: a cast of a number past the last one
+    // names no atom, and its shift sets a bit past the top of the lattice, or
+    // shifts past the width of the word.  A constant atom folds the check
+    // away.
     [[nodiscard]] static constexpr element_type single(Effect atom) noexcept {
+        CRUCIBLE_PRE(static_cast<std::uint8_t>(atom) <= detail::last_enumerator_value_of<Effect>);
         return element_type{1} << static_cast<std::uint8_t>(atom);
     }
     [[nodiscard]] static constexpr bool contains(element_type row, Effect atom) noexcept {
@@ -371,12 +393,18 @@ using effect_row_to_at_t = typename detail::effect_row_to_at<R>::type;
 //
 // IsEffectRow strips cv-qualifiers and references, so the projections
 // below take a qualified Row type as well as a bare one.
+//
+// The seal refuses each route from bytes to a mask: decode, std::bit_cast
+// and the checked lifetime start.  A mask from bytes could hold a bit past
+// the last atom, which from_raw refuses, and raw() would give it out again.
+// So each mask comes from a door that holds the valid bits.
 class [[nodiscard]] EffectMask {
 public:
     using underlying_type = EffectRowLattice::element_type;
 
 private:
     underlying_type bits_{0};
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     struct from_raw_tag_t {};
     constexpr EffectMask(from_raw_tag_t, underlying_type b) noexcept : bits_{b} {}
@@ -419,6 +447,7 @@ public:
         return EffectMask{from_raw_tag_t{}, sanitized};
     }
 
+    // The atom is a named enumerator of Effect (EffectRowLattice::single).
     constexpr void set(Effect e) noexcept { bits_ = bits_ | bit_for(e); }
     constexpr void unset(Effect e) noexcept { bits_ = bits_ & ~bit_for(e); }
     constexpr void clear() noexcept { bits_ = 0; }
@@ -429,7 +458,11 @@ public:
     [[nodiscard]] constexpr int popcount() const noexcept { return std::popcount(bits_); }
     [[nodiscard]] constexpr underlying_type raw() const noexcept { return bits_; }
 
-    [[nodiscard]] friend constexpr bool operator==(EffectMask, EffectMask) noexcept = default;
+    // The bits alone compare.  The seal holds no value, and its type has no
+    // compare, so a defaulted compare would be deleted.
+    [[nodiscard]] friend constexpr bool operator==(EffectMask left, EffectMask right) noexcept {
+        return left.bits_ == right.bits_;
+    }
 
     [[nodiscard]] friend constexpr EffectMask operator|(EffectMask a, EffectMask b) noexcept {
         return EffectMask{from_raw_tag_t{}, a.bits_ | b.bits_};

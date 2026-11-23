@@ -420,6 +420,15 @@ foundation_neg_compile_test(neg_resource_tag_template_without_an_alias
 foundation_neg_compile_test(neg_effect_mask_from_raw_refuses_a_high_bit
   "is not a constant expression"
   "foundation/effects/Row\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\).")
+# The byte seal of a mask refuses each route from bytes to a mask, which calls
+# no constructor and so could build a mask with a bit that names no atom:
+# decode, and the checked lifetime start.
+foundation_neg_compile_test(neg_effect_mask_decode
+  "no matching function for call to .decode<Mask>"
+  "EffectMask")
+foundation_neg_compile_test(neg_effect_mask_lifetime_start
+  "no matching function for call to .start_as_array<foundation::effects::EffectMask>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::effects::EffectMask\\]")
 foundation_neg_compile_test(neg_strong_counter_bit_cast_retag
   "no matching function for call to .bit_cast<foundation::algebra::lattices::Generation>"
   "the expression .is_trivially_copyable_v<_To> .with _To = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::generation>::element_type.. evaluated to .false.")
