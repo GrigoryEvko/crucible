@@ -711,6 +711,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     }
     const size_t free_position = std::move(free_slot).expect("the test above found a free slot");
 
+    // Each caller gives a region of a build, which holds its arena.  A sum type of the publish message will prove it.
     ::fixy::Box<::fixy::BumpArena<DagArena>> arena =
         std::move(parts.arena_).expect("a built region holds the arena of its runs");
     const DagRef<RegionNode> region = mint_dag_node<RegionNode>(bg.alloc, arena);
