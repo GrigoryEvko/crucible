@@ -17,7 +17,7 @@
 int main() {
     auto test = ::foundation::effects::testing::test();
     auto init = ::foundation::effects::testing::init();
-    ::fixy::BumpArena arena{};
+    auto arena = ::fixy::mint_bump_arena<crucible::RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{1 << 20});
     crucible::RecipePool pool{::fixy::to(arena), init};
     crucible::RecipeRegistry registry{::fixy::to(pool), test.alloc};
 

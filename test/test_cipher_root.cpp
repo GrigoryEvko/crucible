@@ -324,9 +324,11 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     }
     crucible::Cipher cipher = open_below(scratch, "/escape_root").expect("a root whose objects is a link still opens");
     const auto view = cipher.mint_open_view(ctx);
-    fixy::BumpArena arena{1 << 12};
-    const fixy::View<crucible::TraceEntry> ops =
-        arena.array<crucible::TraceEntry>(ctx.cap().alloc, 1, crucible::TraceEntry{});
+    fixy::BumpArena<crucible::DagArena> arena =
+        fixy::mint_bump_arena<crucible::DagArena>(fixy::Quantity<fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
+    const auto ops_run = arena.array<crucible::TraceEntry>(ctx.cap().alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const fixy::View<crucible::TraceEntry> ops = ops_run.view();
     ops.get(0).expect("the region holds one op")->schema_hash = crucible::SchemaHash{0xE5C};
     const crucible::ContentHash stored = cipher.store(
         ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops)));

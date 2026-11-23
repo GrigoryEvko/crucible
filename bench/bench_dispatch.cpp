@@ -251,15 +251,19 @@ void check_cpu_slot(const TensorSlot& slot) {
 // shape hashes have the same count.
 struct BenchRegion {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{1 << 16};
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
+    ::fixy::BumpArena<DagArena> dag_arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
     ::fixy::Ref<RegionNode> region;
     ::fixy::Ref<MemoryPlan> plan;
 
     BenchRegion(::fixy::View<const SchemaHash> schemas, ::fixy::View<const ShapeHash> shapes)
         : region{make_ops_region_(schemas, shapes)}, plan{::fixy::erase_brand(arena.make<MemoryPlan>(test.alloc))} {
         const auto n_ops = static_cast<uint32_t>(schemas.size());
-        const ::fixy::View<TensorSlot> slots = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
+        const auto slots_run = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorSlot> slots = slots_run.view();
         uint32_t i = 0;
         for (TensorSlot& slot : slots) {
             slot.offset_bytes = i * 4096;
@@ -287,7 +291,9 @@ private:
                                                            ::fixy::View<const ShapeHash> shapes) {
         CRUCIBLE_BENCH_CHECK(schemas.size() == shapes.size());
         const auto n_ops = static_cast<uint32_t>(schemas.size());
-        const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
+        const auto ops_run = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
         for (uint32_t i = 0; i < n_ops; i++) {
             TraceEntry& op = *ops.get(i).expect("i is below n_ops");
             op.schema_hash = *schemas.get(i).expect("i is below the count of the schema hashes");
@@ -298,10 +304,16 @@ private:
             meta.strides[0] = tensor_dim(1);
             meta.dtype = ScalarType::Float;
             if (i > 0) {
-                op.set_inputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, OpIndex{}),
-                              dag_arena.array(test.alloc, 1, SlotId{i - 1}));
+                const auto input_metas_run = dag_arena.array(test.alloc, 1, meta);
+                const auto producers_run = dag_arena.array(test.alloc, 1, OpIndex{});
+                const auto input_slots_run = dag_arena.array(test.alloc, 1, SlotId{i - 1});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                op.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
             }
-            op.set_outputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, SlotId{i}));
+            const auto output_metas_run = dag_arena.array(test.alloc, 1, meta);
+            const auto output_slots_run = dag_arena.array(test.alloc, 1, SlotId{i});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            op.set_outputs(output_metas_run.view(), output_slots_run.view());
         }
         return make_region(test.alloc, dag_arena, ops);
     }
@@ -365,10 +377,14 @@ int main() {
 
     bench::add_report(reports, [&] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena arena{1 << 16};
-        ::fixy::BumpArena slot_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> arena =
+            ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
+        ::fixy::BumpArena<DagArena> slot_arena =
+            ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
         constexpr uint32_t NSLOTS = 16;
-        const ::fixy::View<TensorSlot> slots = slot_arena.array<TensorSlot>(test.alloc, NSLOTS, TensorSlot{});
+        const auto slots_run = slot_arena.array<TensorSlot>(test.alloc, NSLOTS, TensorSlot{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorSlot> slots = slots_run.view();
         uint32_t i = 0;
         for (TensorSlot& slot : slots) {
             slot.offset_bytes = i * 256;
@@ -688,11 +704,14 @@ int main() {
 
     bench::add_report(reports, [&] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena arena{1 << 16};
+        ::fixy::BumpArena<DagArena> arena =
+            ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
         constexpr uint32_t NR = 4;
         ::fixy::FixedList<::fixy::Ref<RegionNode>, NR> regions{};
         for (uint32_t r = 0; r < NR; r++) {
-            const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
+            const auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TraceEntry> ops = ops_run.view();
             for (OpSlot const i : ::fixy::IndexRange<NUM_OPS>{}) {
                 TraceEntry& op = *ops.get(i.raw()).expect("i is below NUM_OPS");
                 op.schema_hash = SCHEMA.at(i);

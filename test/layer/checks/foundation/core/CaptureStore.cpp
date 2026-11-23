@@ -127,8 +127,10 @@ static_assert(are_plain_captures_admitted());
 struct OwnerOfInts {
     HeapArray<int>& values;
 };
+// The family tag of the arena that a capture below names.
+struct[[= ::foundation::brand::arena_family_brand{}]] CheckArena final {};
 struct ArenaOfEpoch {
-    BumpArena& arena;
+    BumpArena<CheckArena>& arena;
 };
 template <class Brand>
 struct OuterRun {

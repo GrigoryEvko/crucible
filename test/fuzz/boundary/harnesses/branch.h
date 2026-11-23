@@ -18,20 +18,22 @@ namespace crucible::fuzz::boundary {
 
 // The image of a branch whose arms hold the given values, in that order.
 [[nodiscard]] inline SeedBytes branch_image(::fixy::View<std::int64_t const> values) noexcept {
-    ::fixy::BumpArena arena{};
+    ::fixy::BumpArena<DagArena> arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 20});
     const auto alloc = test_alloc();
     const auto arms = static_cast<std::uint32_t>(values.size());
     const auto branch = arena.make<BranchNode>(alloc);
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
-    branch->set_arms(arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{}));
+    const auto arms_run = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    branch->set_arms(arms_run.view());
     for (std::uint32_t i = 0; i < arms; ++i)
         *branch->arms().get(i).expect("i is below the count of arms") =
             BranchNode::Arm{*values.get(i).expect("i is below the count of values"), TraceLink{}};
     ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
-    // The body takes the node by reference, because the Ref of the arena has
-    // the brand of this call, and a capture of it would give the closure that
-    // brand of internal linkage.
+    // The body takes the node by reference, and the serializer reads it as
+    // const.
     const auto [written, image] = ::fixy::with_mut(std::move(blank), [&node = *branch](auto run) noexcept {
         return serialize_branch(::fixy::to(node), run.view());
     });
@@ -69,7 +71,8 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
     const ::fixy::View<std::byte const> input =
         bytes.size() > kMaxInputBytes ? bytes.window(0, kMaxInputBytes).expect("the cap is inside the input") : bytes;
 
-    ::fixy::BumpArena arena{};
+    ::fixy::BumpArena<DagArena> arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 20});
     const auto alloc = test_alloc();
     const ::fixy::Option<::fixy::Ref<BranchNode>> loaded = deserialize_branch(alloc, input, arena).ok();
     for (const ::fixy::Ref<BranchNode> branch : loaded) {

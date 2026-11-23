@@ -22,8 +22,8 @@
 
 namespace crucible {
 
-void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a,
-                                              ::fixy::Quantity<::fixy::unit::Element, uint32_t> total_outputs) {
+void BackgroundThread::TraceBuildState::ensure_scratch_buffers(
+    ::foundation::effects::Alloc a, ::fixy::Quantity<::fixy::unit::Element, uint32_t> total_outputs) {
     const uint32_t outputs = total_outputs.raw();
     // Power-of-two capacity at a load factor below one half.  The unique
     // pointer count is the output count plus a small external fraction.
@@ -49,13 +49,12 @@ void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a,
     }
 }
 
-BackgroundThread::TraceBuild BackgroundThread::build_trace_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
-                                                            ::fixy::View<const TraceRing::Entry> trace,
-                                                            ::fixy::View<const MetaIndex> meta_starts,
-                                                            ::fixy::View<const ScopeHash> scope_hashes,
-                                                            ::fixy::View<const CallsiteHash> callsite_hashes,
-                                                            ::fixy::View<const OpDepth> depths,
-                                                            NumericsHash numerics) noexcept {
+BackgroundThread::TraceBuild
+BackgroundThread::build_trace_(TraceBuildState& state, MetaLog const& meta_log, ::foundation::effects::Alloc a,
+                               TraceScratch::Epoch& scratch, ::fixy::View<const TraceRing::Entry> trace,
+                               ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
+                               ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths,
+                               NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(meta_starts.size() == trace.size());
     CRUCIBLE_PRE(scope_hashes.size() == trace.size());
     CRUCIBLE_PRE(callsite_hashes.size() == trace.size());
@@ -67,7 +66,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_(::foundation::effect
     // ends the process for more than 0xFFFFFFFF ops.
     return ::fixy::mint_branded_scope(trace, [&](auto trace_data) noexcept -> TraceBuild {
         return build_trace_columns_(
-            a, scratch, trace_data,
+            state, meta_log, a, scratch, trace_data,
             trace_data.parallel(meta_starts).expect("the metadata starts are parallel to the ops"),
             trace_data.parallel(scope_hashes).expect("the scope hashes are parallel to the ops"),
             trace_data.parallel(callsite_hashes).expect("the callsite hashes are parallel to the ops"),
@@ -76,9 +75,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_(::foundation::effect
 }
 
 template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
-BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
-    ::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, TraceColumn trace_data, MetaColumn meta_data,
-    ScopeColumn scope_data, CallsiteColumn callsite_data, DepthColumn depth_data, NumericsHash numerics) noexcept {
+BackgroundThread::TraceBuild
+BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& meta_log, ::foundation::effects::Alloc a,
+                                       TraceScratch::Epoch& scratch, TraceColumn trace_data, MetaColumn meta_data,
+                                       ScopeColumn scope_data, CallsiteColumn callsite_data, DepthColumn depth_data,
+                                       NumericsHash numerics) noexcept {
     // An op index has 32 bits, and a branded scope holds at most 0xFFFFFFFF
     // ops.
     const uint32_t count = ::fixy::narrow<uint32_t>(trace_data.size()).expect("a branded count fits in 32 bits");
@@ -118,7 +119,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         return ::fixy::err(BuildRefusal::UnrecordedNest);
     }
 
-    ensure_scratch_buffers(a, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
+    state.ensure_scratch_buffers(a, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
 
     // The ops keep their tensor metadata in a run of the region, beside
     // their other runs.  A published region lives as long as its memory.
@@ -142,7 +143,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     // The slots of this call: at most slot_cap slots, and at most one slot
     // for each input and each output, because each new slot comes from one.
     const uint32_t slot_cap =
-        ::fixy::min(slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
+        ::fixy::min(state.slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
     const uint32_t most_slots = ::fixy::min(slot_cap, total_inputs + total_outputs);
 
     // The arena of the region holds each run of the region in its first
@@ -154,39 +155,50 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                               + (size_t{total_inputs} + total_outputs) * sizeof(SlotId)
                               + size_t{most_slots} * sizeof(TensorSlot) + alignof(TraceEntry) + alignof(TensorMeta)
                               + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId) + alignof(TensorSlot);
-    ::fixy::Box<::fixy::BumpArena> region_arena = ::fixy::mint_box<::fixy::BumpArena>(a, region_bytes);
+    ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
+        ::fixy::mint_box<::fixy::BumpArena<DagArena>>(a, ::fixy::Quantity<::fixy::unit::Byte, size_t>{region_bytes});
 
     // The ops of the region, one for each entry of the trace.  The column of
     // the ops takes the brand of the scope, so one index of an op reads it
     // with no check.
-    const ::fixy::View<TraceEntry> op_run = region_arena->array(a, count, TraceEntry{});
+    const auto op_arena_run = region_arena->array(a, count, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> op_run = op_arena_run.view();
     const auto op_data = trace_data.parallel(op_run).expect("the op run holds one op for each entry");
 
-    const ::fixy::View<TensorMeta> meta_run = region_arena->array(a, total_metas, TensorMeta{});
+    const auto meta_arena_run = region_arena->array(a, total_metas, TensorMeta{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TensorMeta> meta_run = meta_arena_run.view();
     if (first_meta.is_valid()) {
-        meta_log_.get()->copy_run(first_meta.raw(), meta_run);
+        meta_log.copy_run(first_meta.raw(), meta_run);
     }
 
     // The other runs of the ops: the scalars, the producer of each input,
     // and the slot ids of the inputs and then the outputs of each op.  Each
     // op takes its windows in order, so a cursor for each run gives the
     // start of the next window.
-    const ::fixy::View<int64_t> scalar_run = region_arena->array(a, total_scalars, int64_t{0});
-    const ::fixy::View<OpIndex> producer_run = region_arena->array(a, total_inputs, OpIndex{});
-    const ::fixy::View<SlotId> slot_run = region_arena->array(a, total_inputs + total_outputs, SlotId{});
+    const auto scalar_arena_run = region_arena->array(a, total_scalars, int64_t{0});
+    const auto producer_arena_run = region_arena->array(a, total_inputs, OpIndex{});
+    const auto slot_arena_run = region_arena->array(a, total_inputs + total_outputs, SlotId{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<int64_t> scalar_run = scalar_arena_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<OpIndex> producer_run = producer_arena_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<SlotId> slot_run = slot_arena_run.view();
     size_t scalar_cursor = 0;
     size_t producer_cursor = 0;
     size_t slot_cursor = 0;
 
-    map_gen_++;
-    if (map_gen_ == 0) [[unlikely]] {
+    state.map_gen_++;
+    if (state.map_gen_ == 0) [[unlikely]] {
         // Generation wrapped, so stale slots would read as current.
-        scratch_map_ = ::fixy::with_mut(std::move(scratch_map_), [](auto map) noexcept {
+        state.scratch_map_ = ::fixy::with_mut(std::move(state.scratch_map_), [](auto map) noexcept {
             for (PtrSlot& slot : map.view()) {
                 slot = PtrSlot{};
             }
         });
-        map_gen_ = 1;
+        state.map_gen_ = 1;
     }
 
     // The slots and the edges of the build are runs of the scratch arena,
@@ -194,15 +206,19 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     // slot_cap slots of this call, so a slot id below slot_cap reads its slot
     // with the one compare of the run.  Each input and each output adds at
     // most one edge, and num_edges bounds every read of the edges.
-    const ::fixy::View<SlotInfo> local_slots = scratch.array(a, slot_cap, SlotInfo{});
+    const auto local_slots_run = scratch.array(a, slot_cap, SlotInfo{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<SlotInfo> local_slots = local_slots_run.view();
     uint32_t next_slot_raw = 0;
-    const ::fixy::View<Edge> local_edges = scratch.array(a, total_inputs + total_outputs, Edge{});
+    const auto local_edges_run = scratch.array(a, total_inputs + total_outputs, Edge{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<Edge> local_edges = local_edges_run.view();
     uint32_t num_edges = 0;
 
     // Hoisted into a local because the compiler cannot prove the writes
-    // below into the runs of the region do not alias *this, and would
+    // below into the runs of the region do not alias the state, and would
     // otherwise reload the member on every access.
-    const uint8_t local_gen = map_gen_;
+    const uint8_t local_gen = state.map_gen_;
 
     // The ops whose nest is open, for the rule of the same storage below.
     // Each op pushes one mark, so the stack holds at most count marks.
@@ -210,7 +226,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         uint32_t op = 0;
         OpDepth depth{};
     };
-    const ::fixy::View<NestMark> nest_stack = scratch.array(a, count, NestMark{});
+    const auto nest_stack_run = scratch.array(a, count, NestMark{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<NestMark> nest_stack = nest_stack_run.view();
     uint32_t nest_top = 0;
 
     // The fold object owns the seed, the per-op mix and the finalizer,
@@ -313,13 +331,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                         const TensorMeta& next_input =
                             *meta_run.get(next_off).expect("the copied run holds the metadata of each op");
                         ::fixy::prefetch<::fixy::PrefetchAccess::read, 1>(
-                            scratch_map_.at_masked(hash_ptr(storage_key(next_input))));
+                            state.scratch_map_.at_masked(hash_ptr(storage_key(next_input))));
                     }
                     if (next_re.num_outputs > 0) {
                         const TensorMeta& next_output = *meta_run.get(next_off + next_re.num_inputs)
                                                              .expect("the copied run holds the metadata of each op");
                         ::fixy::prefetch<::fixy::PrefetchAccess::write, 1>(
-                            scratch_map_.at_masked(hash_ptr(storage_key(next_output))));
+                            state.scratch_map_.at_masked(hash_ptr(storage_key(next_output))));
                     }
                 },
                 [] noexcept {});
@@ -346,7 +364,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             if (input_meta.data_ptr.value() == nullptr) continue;
             const PtrMapKey input_key = storage_key(input_meta);
             const uint64_t input_span = span_bytes_of_(input_meta);
-            const PtrSlotPosition found = ptr_map_find(scratch_map_, local_gen, input_key);
+            const PtrSlotPosition found = ptr_map_find(state.scratch_map_, local_gen, input_key);
             if (found.is_some()) {
                 // A storage that an op of the region wrote, or an external
                 // storage that an op read before.  The op is a reader of the
@@ -354,8 +372,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 // The build reads a copy of the entry, and the element door
                 // writes the reader in place.
                 const uint64_t position = PtrSlotPosition{found}.expect("the test above found the entry");
-                const PtrSlot entry = scratch_map_.at_masked(position);
-                scratch_map_.with_masked(position, [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
+                const PtrSlot entry = state.scratch_map_.at_masked(position);
+                state.scratch_map_.with_masked(position, [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
                 producer = entry.op_index;
                 input_slot = entry.slot_id;
                 if (entry.op_index.is_valid()) {
@@ -397,10 +415,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 slot_info.device_idx = input_meta.device_idx;
                 slot_info.layout = input_meta.layout;
                 const InsertResult inserted =
-                    ptr_map_insert(scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
+                    ptr_map_insert(state.scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
                 inserted.slot.match(
-                    [this, i](uint64_t claimed) noexcept {
-                        scratch_map_.with_masked(claimed, [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
+                    [&state, i](uint64_t claimed) noexcept {
+                        state.scratch_map_.with_masked(claimed,
+                                                       [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
                     },
                     [] noexcept {});
             }
@@ -413,7 +432,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             if (output_meta.data_ptr.value() == nullptr) continue;
             const PtrMapKey output_key = storage_key(output_meta);
             const uint64_t output_span = span_bytes_of_(output_meta);
-            const PtrSlotPosition found = ptr_map_find(scratch_map_, local_gen, output_key);
+            const PtrSlotPosition found = ptr_map_find(state.scratch_map_, local_gen, output_key);
 
             // A key with a known generation names one storage of the process,
             // so a key of the map with a known generation is the same storage.
@@ -439,12 +458,12 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             // does so only in the period of the dead storage, and in one
             // period the front end records no new storage with no generation
             // at the address of a dead one.
-            const bool is_written_in_the_nest = found.is_some_and([this, nest_start](uint64_t position) noexcept {
-                const PtrSlot& entry = scratch_map_.at_masked(position);
+            const bool is_written_in_the_nest = found.is_some_and([&state, nest_start](uint64_t position) noexcept {
+                const PtrSlot& entry = state.scratch_map_.at_masked(position);
                 return entry.op_index.is_valid() && entry.op_index.raw() >= nest_start;
             });
             const bool is_same_storage = found.is_some_and([&](uint64_t position) noexcept {
-                const PtrSlot& entry = scratch_map_.at_masked(position);
+                const PtrSlot& entry = state.scratch_map_.at_masked(position);
                 return entry.slot_id.is_valid()
                     && (output_key.generation.is_known() || entry.reader == OpIndex{i}
                         || (output_meta.flags & meta_flags::IS_VIEW) != 0 || is_written_in_the_nest);
@@ -453,7 +472,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 // The build reads a copy of the entry, and the element door
                 // writes the op and the port in place.
                 const uint64_t position = PtrSlotPosition{found}.expect("the test above found the entry");
-                const PtrSlot entry = scratch_map_.at_masked(position);
+                const PtrSlot entry = state.scratch_map_.at_masked(position);
                 output_slot = entry.slot_id;
                 // A slot id at or past slot_cap names no slot of this call.
                 for (auto slot_info : local_slots.get(entry.slot_id.raw())) {
@@ -483,7 +502,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                              .pad = 0};
                     ++num_edges;
                 }
-                scratch_map_.with_masked(position, [i, j](PtrSlot& slot) noexcept {
+                state.scratch_map_.with_masked(position, [i, j](PtrSlot& slot) noexcept {
                     slot.op_index = OpIndex{i};
                     slot.port = static_cast<uint8_t>(j);
                 });
@@ -504,15 +523,15 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                 output_slot = new_slot;
             }
             if (found.is_some()) {
-                scratch_map_.with_masked(PtrSlotPosition{found}.expect("the test above found the entry"),
-                                         [i, j, new_output = output_slot](PtrSlot& slot) noexcept {
-                                             slot.op_index = OpIndex{i};
-                                             slot.port = static_cast<uint8_t>(j);
-                                             slot.slot_id = new_output;
-                                             slot.reader = OpIndex{};
-                                         });
+                state.scratch_map_.with_masked(PtrSlotPosition{found}.expect("the test above found the entry"),
+                                               [i, j, new_output = output_slot](PtrSlot& slot) noexcept {
+                                                   slot.op_index = OpIndex{i};
+                                                   slot.port = static_cast<uint8_t>(j);
+                                                   slot.slot_id = new_output;
+                                                   slot.reader = OpIndex{};
+                                               });
             } else {
-                (void)ptr_map_insert(scratch_map_, local_gen, output_key, OpIndex{i}, static_cast<uint8_t>(j),
+                (void)ptr_map_insert(state.scratch_map_, local_gen, output_key, OpIndex{i}, static_cast<uint8_t>(j),
                                      output_slot);
             }
         }
@@ -531,7 +550,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     const uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
     const ::fixy::View<SlotInfo const> built_slots =
         local_slots.window(0, num_slots).expect("the slots of the build are below slot_cap");
-    const ::fixy::View<TensorSlot> tensor_slots = region_arena->array(a, num_slots, TensorSlot{});
+    const auto tensor_slots_run = region_arena->array(a, num_slots, TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TensorSlot> tensor_slots = tensor_slots_run.view();
     uint32_t slot_idx = 0;
     for (const auto [info, slot] :
          built_slots.walk().try_zip(tensor_slots.walk()).expect("the run of the slots holds each slot of the build")) {
@@ -574,12 +595,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     runs.set<BuiltRegion::kSlotIds>(slot_run);
     runs.set_count<BuiltRegion::kSlots>(num_slots);
     runs.set<BuiltRegion::kSlots>(tensor_slots);
-    return BuiltTrace{.graph = graph,
-                      .region = BuiltRegion{BuiltRegion::Parts{
-                          .arena = ::fixy::Option<::fixy::Box<::fixy::BumpArena>>::some(std::move(region_arena)),
-                          .runs = runs,
-                          .content_hash = graph->content_hash,
-                          .numerics = numerics}}};
+    return BuiltTrace{
+        .graph = graph,
+        .region = BuiltRegion{BuiltRegion::Parts{
+            .arena = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>::some(std::move(region_arena)),
+            .runs = runs,
+            .content_hash = graph->content_hash,
+            .numerics = numerics}}};
 }
 
 }  // namespace crucible

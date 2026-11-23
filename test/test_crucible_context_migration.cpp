@@ -84,11 +84,14 @@ MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
 // arena, which lives as long as the process.  The first block holds the 2048
 // slots of the wide plan.
 auto g_test = ::foundation::effects::testing::test();
-::fixy::BumpArena g_runs{std::size_t{1} << 17};
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, std::size_t>;
+::fixy::BumpArena<crucible::DagArena> g_runs = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{std::size_t{1} << 17});
 
 // The zero metadata of the outputs of the test ops.  The switch reads no
 // metadata, so the ops of each region share it.
-::fixy::View<TensorMeta> const output_metas = g_runs.array(g_test.alloc, 2, TensorMeta{});
+::fixy::ArenaRun<TensorMeta, crucible::DagArena> const output_metas_run = g_runs.array(g_test.alloc, 2, TensorMeta{});
+// A plain View of an arena run: the View carries no brand of its arena.
+::fixy::View<TensorMeta> const output_metas = output_metas_run.view();
 
 // Two operations with the same hashes in each region, so the first one is
 // the shared prefix of a switch at position 1.
@@ -111,17 +114,24 @@ void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, crucible::Pla
 
 // The slots of the plans are runs of g_runs: the wide plan has 2048 slots of
 // 48 bytes, too many for the stack of a test.
-::fixy::View<TensorSlot> const old_slots = g_runs.array(g_test.alloc, 2, TensorSlot{});
-::fixy::View<TensorSlot> const new_slots = g_runs.array(g_test.alloc, kWideSlots, TensorSlot{});
+::fixy::ArenaRun<TensorSlot, crucible::DagArena> const old_slots_run = g_runs.array(g_test.alloc, 2, TensorSlot{});
+::fixy::ArenaRun<TensorSlot, crucible::DagArena> const new_slots_run =
+    g_runs.array(g_test.alloc, kWideSlots, TensorSlot{});
+// A plain View of an arena run: the View carries no brand of its arena.
+::fixy::View<TensorSlot> const old_slots = old_slots_run.view();
+// A plain View of an arena run: the View carries no brand of its arena.
+::fixy::View<TensorSlot> const new_slots = new_slots_run.view();
 
 // Activates a region of two slots, then switches at position 1 to a region
 // whose plan has new_count slots.  The first operation of the new region
 // writes slot new_slot.  Returns the result of the switch.
 bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
     ::fixy::View<SlotId> const old_outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{1});
-    ::fixy::View<TraceEntry> const old_ops = arena.array(test.alloc, 2, TraceEntry{});
+    auto const old_ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry> const old_ops = old_ops_run.view();
     make_ops(old_ops, old_outputs);
     MemoryPlan old_plan = make_plan(old_slots);
     RegionNode old_region{};
@@ -129,7 +139,9 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
 
     ::fixy::View<SlotId> const new_outputs =
         ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{new_slot}, SlotId{0});
-    ::fixy::View<TraceEntry> const new_ops = arena.array(test.alloc, 2, TraceEntry{});
+    auto const new_ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry> const new_ops = new_ops_run.view();
     make_ops(new_ops, new_outputs);
     MemoryPlan new_plan =
         make_plan(new_slots.window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
@@ -172,22 +184,29 @@ void test_slot_past_the_bitset_is_refused(::fixy::TestRunnerCtx const& test) {
 // new pool, which AddressSanitizer reports in a Debug build.
 void test_smaller_new_slot_takes_its_own_size() {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
     ::fixy::View<SlotId> const outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{0});
 
-    ::fixy::View<TensorSlot, 1> const wide_slot =
-        arena.array(test.alloc, 1, TensorSlot{}).window<1>(0).expect("the run holds one slot");
+    auto const wide_slot_run = arena.array(test.alloc, 1, TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TensorSlot, 1> const wide_slot = wide_slot_run.view().window<1>(0).expect("the run holds one slot");
     MemoryPlan old_plan = make_plan(wide_slot);
     wide_slot.at(::fixy::index<0>()).nbytes = 2 * kSlotBytes;
     old_plan.pool_bytes = 2 * kSlotBytes;
-    ::fixy::View<TraceEntry> const old_ops = arena.array(test.alloc, 2, TraceEntry{});
+    auto const old_ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry> const old_ops = old_ops_run.view();
     make_ops(old_ops, outputs);
     RegionNode old_region{};
     init_region(&old_region, old_ops, crucible::make_plan_link(old_plan));
 
-    ::fixy::View<TensorSlot> const narrow_slot = arena.array(test.alloc, 1, TensorSlot{});
+    auto const narrow_slot_run = arena.array(test.alloc, 1, TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TensorSlot> const narrow_slot = narrow_slot_run.view();
     MemoryPlan new_plan = make_plan(narrow_slot);
-    ::fixy::View<TraceEntry> const new_ops = arena.array(test.alloc, 2, TraceEntry{});
+    auto const new_ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry> const new_ops = new_ops_run.view();
     make_ops(new_ops, outputs);
     RegionNode new_region{};
     init_region(&new_region, new_ops, crucible::make_plan_link(new_plan));

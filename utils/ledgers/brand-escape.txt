@@ -13,7 +13,7 @@ include/fixy/concurrent/ | escaped-static | 3 | - | -
 include/fixy/session/ | escaped-return | 1 | - | -
 src/ | escaped-alias | 8 | - | -
 src/ | escaped-return | 4 | - | -
-test/ | escaped-alias | 6 | - | -
+test/ | escaped-alias | 5 | - | -
 test/ | escaped-return | 6 | - | -
 test/ | escaped-static | 1 | - | -
 test/fixy/ | escaped-alias | 27 | - | -

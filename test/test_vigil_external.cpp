@@ -33,15 +33,20 @@ namespace {
 using divrig::K;
 using divrig::NUM_OPS;
 
+// The family tag of the arena of the memory below.
+struct[[= ::foundation::brand::arena_family_brand{}]] MemoryArena final {};
+
 // The memory that the data addresses of the tensors point into.  The Vigil
 // reads an address as a key, and gives it back through input_ptr, and never
 // reads through it.  The memory is a run of an arena that lives until the end
 // of the process, so each call gives the same run.
 [[nodiscard]] ::fixy::View<std::byte> memory() {
-    static ::fixy::BumpArena arena{16384};
-    static ::fixy::View<std::byte> const run =
+    static ::fixy::BumpArena<MemoryArena> arena =
+        ::fixy::mint_bump_arena<MemoryArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{16384});
+    static ::fixy::ArenaRun<std::byte, MemoryArena> const run =
         arena.array(::foundation::effects::testing::test().alloc, 16384, std::byte{0});
-    return run;
+    // A plain View of an arena run: the View carries no brand of its arena.
+    return run.view();
 }
 
 // The offset of the batch of iteration iter, at an address of its own.

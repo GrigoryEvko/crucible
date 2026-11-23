@@ -52,7 +52,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             return recipes;
         },
         [](const Recipes& recipes) {
-            ::fixy::BumpArena arena{};
+            ::fixy::BumpArena<crucible::RecipeArena> arena = ::fixy::mint_bump_arena<crucible::RecipeArena>(
+                ::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
             // The test context comes from foundation::effects::testing.
             // RecipePool takes an Init context, because it allocates its
             // slot table at construction.  Each intern() call takes an

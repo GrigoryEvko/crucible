@@ -37,14 +37,41 @@ struct Throws {
     explicit Throws(int /*value*/) noexcept(false) {}
 };
 
-// The fields of an arena come first and fit in one cache line, and the table
-// of blocks follows them.  Each bump reads only the first three fields.
-static_assert(sizeof(BumpArena) <= 64 + BumpArena::max_blocks * (sizeof(std::byte*) + sizeof(std::size_t)));
+using Bytes = Quantity<unit::Byte, std::size_t>;
 
-// An arena does not copy and does not move, because an epoch names it.
-static_assert(!std::is_copy_constructible_v<BumpArena> && !std::is_copy_assignable_v<BumpArena>);
-static_assert(!std::is_move_constructible_v<BumpArena> && !std::is_move_assignable_v<BumpArena>);
-static_assert(std::is_nothrow_constructible_v<BumpArena, std::size_t>);
+// The tags of the checks: a member tag nested in its owner, a family tag, a
+// tag with no mark, and a tag with both marks.
+struct Owner {
+    struct[[= ::foundation::brand::arena_member_brand{}]] Member final {};
+    EpochArena<Member> arena = mint_epoch_arena<Member>(Bytes{4096});
+};
+struct[[= ::foundation::brand::arena_family_brand{}]] Family final {};
+struct Unmarked final {};
+struct[[= ::foundation::brand::arena_member_brand{}]][[= ::foundation::brand::arena_family_brand{}]] Both final {};
+
+static_assert(ArenaMemberTag<Owner::Member> && !ArenaFamilyTag<Owner::Member>);
+static_assert(ArenaFamilyTag<Family> && !ArenaMemberTag<Family>);
+static_assert(!NamedArenaTag<Unmarked> && !NamedArenaTag<Both>);
+static_assert(!ArenaBrand<Unmarked> && !ArenaBrand<::foundation::brand::DefaultBrand>);
+static_assert(EpochBrand<EpochOf<Owner::Member>> && !EpochBrand<Owner::Member>);
+
+// The core of an arena keeps its fields first, in one cache line, and the
+// table of blocks follows them.  Each bump reads only the first three
+// fields.  An arena of each kind is its core and nothing more.
+static_assert(sizeof(BumpArenaCore) <= 64 + BumpArenaCore::max_blocks * (sizeof(std::byte*) + sizeof(std::size_t)));
+static_assert(sizeof(BumpArena<Family>) == sizeof(BumpArenaCore));
+static_assert(sizeof(EpochArena<Owner::Member>) == sizeof(BumpArenaCore));
+static_assert(sizeof(Epoch<EpochOf<Owner::Member>>) == sizeof(void*));
+static_assert(sizeof(ArenaRun<int, Family>) == sizeof(View<int>));
+
+// An arena does not copy, does not move, and has no public constructor.
+static_assert(!std::is_copy_constructible_v<BumpArena<Family>> && !std::is_copy_assignable_v<BumpArena<Family>>);
+static_assert(!std::is_move_constructible_v<BumpArena<Family>> && !std::is_move_assignable_v<BumpArena<Family>>);
+static_assert(!std::is_constructible_v<BumpArena<Family>, Bytes> && !std::is_constructible_v<BumpArena<Family>>);
+static_assert(!std::is_constructible_v<EpochArena<Owner::Member>, Bytes>);
+static_assert(!std::is_move_constructible_v<EpochArena<Owner::Member>>);
+static_assert(!std::is_move_constructible_v<Epoch<EpochOf<Owner::Member>>>);
+static_assert(!std::is_constructible_v<ArenaRun<int, Family>, View<int>>);
 
 // make takes a type with a trivial destructor that the arguments build with
 // no throw, and the allocation tag only.
@@ -65,60 +92,82 @@ static_assert(!CanFillArenaArray<Ended, Alloc>);
 static_assert(!CanFillArenaArray<MoveOnly, Alloc>);
 static_assert(!CanFillArenaArray<int const, Alloc>);
 
-// The body of an epoch takes no argument and does not throw.
-inline constexpr auto silent_body = []() noexcept { return 3; };
-inline constexpr auto throwing_body = [] { return 3; };
-inline constexpr auto body_with_argument = [](int value) noexcept { return value; };
-static_assert(EpochBody<decltype(silent_body) const&>);
-static_assert(!EpochBody<decltype(throwing_body) const&>);
-static_assert(!EpochBody<decltype(body_with_argument) const&>);
-
-// make gives a Ref, array gives a View, and with_epoch gives the result of
-// its body.
+// make gives a Ref of the brand of the arena, array gives a run of it, and
+// an arena of a temporary is refused.
 template <class Arena>
 concept MakesInt = requires { std::declval<Arena>().template make<int>(std::declval<Alloc>(), 5); };
 template <class Arena>
 concept FillsInts = requires { std::declval<Arena>().array(std::declval<Alloc>(), std::size_t{4}, 0); };
-template <class Arena>
-concept RunsEpoch = requires { std::declval<Arena>().with_epoch(silent_body); };
-static_assert(MakesInt<BumpArena&> && FillsInts<BumpArena&> && RunsEpoch<BumpArena&>);
+static_assert(MakesInt<BumpArena<Family>&> && FillsInts<BumpArena<Family>&>);
+static_assert(!MakesInt<BumpArena<Family>&&> && !FillsInts<BumpArena<Family>&&>);
 static_assert(
-    std::is_same_v<decltype(std::declval<BumpArena&>().array(std::declval<Alloc>(), std::size_t{4}, 0)), View<int>>);
-static_assert(std::is_same_v<decltype(std::declval<BumpArena&>().with_epoch(silent_body)), int>);
+    std::is_same_v<decltype(std::declval<BumpArena<Family>&>().make<int>(std::declval<Alloc>(), 5)), Ref<int, Family>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<BumpArena<Family>&>().array(std::declval<Alloc>(), std::size_t{4}, 0)),
+                   ArenaRun<int, Family>>);
 
-// An allocation and an epoch of a temporary arena are refused, because the
-// arena gives back its blocks at the end of the statement.
-static_assert(!MakesInt<BumpArena&&> && !FillsInts<BumpArena&&> && !RunsEpoch<BumpArena&&>);
+// An epoch arena has no make and no array.  Its epoch gives them with the
+// epoch brand.
+static_assert(!MakesInt<EpochArena<Owner::Member>&> && !FillsInts<EpochArena<Owner::Member>&>);
+static_assert(MakesInt<Epoch<EpochOf<Owner::Member>>&> && !MakesInt<Epoch<EpochOf<Owner::Member>>&&>);
+static_assert(
+    std::is_same_v<decltype(std::declval<Epoch<EpochOf<Owner::Member>>&>().make<int>(std::declval<Alloc>(), 5)),
+                   Ref<int, EpochOf<Owner::Member>>>);
 
-// The result of an epoch holds no borrow: a View is refused, and a value and
-// no value pass.
-inline constexpr auto view_body = []() noexcept { return View<int>{}; };
-inline constexpr auto silent_void_body = []() noexcept {};
-template <class Body>
-concept RunsEpochOf = requires(BumpArena& arena, Body const& body) { arena.with_epoch(body); };
-static_assert(!RunsEpochOf<decltype(view_body)>);
-static_assert(RunsEpochOf<decltype(silent_body)> && RunsEpochOf<decltype(silent_void_body)>);
+// A Ref of a family arena converts to no Ref of a different family, and
+// erase_brand admits a named tag and an epoch brand.
+static_assert(!std::is_convertible_v<Ref<int, Family>, Ref<int, Owner::Member>>);
+static_assert(ErasableBrand<Family> && ErasableBrand<EpochOf<Owner::Member>>);
 
-// The target of a Ref of each brand.
-template <class R>
-struct RefTargetOf;
-template <class T, class Brand>
-struct RefTargetOf<Ref<T, Brand>> {
-    using type = T;
-};
+// The view of a run of a temporary is refused.
+template <class Run>
+concept GivesView = requires { std::declval<Run>().view(); };
+static_assert(GivesView<ArenaRun<int, Family> const&> && !GivesView<ArenaRun<int, Family>&&>);
 
-// make gives a Ref to a T.  Two calls give two fresh brands.
-[[nodiscard]] consteval bool make_gives_fresh_refs() noexcept {
-    using First = decltype(std::declval<BumpArena&>().make<Plain>(std::declval<Alloc>()));
-    using Second = decltype(std::declval<BumpArena&>().make<Plain>(std::declval<Alloc>()));
-    return std::is_same_v<typename RefTargetOf<First>::type, Plain> && !std::is_same_v<First, Second>;
-}
-static_assert(make_gives_fresh_refs());
+// The gate of an epoch: a body with no capture, a capture by value and a
+// capture by a const reference of the owner pass.  A capture by a reference
+// that is not const of the owner reaches the arena, and a capture by such a
+// reference of an Option of a Ref of the epoch can keep a value of it.
+using Member = Owner::Member;
+using MemberEpoch = Epoch<EpochOf<Member>>;
+using KeptRef = Option<Ref<int, EpochOf<Member>>>;
+inline constexpr auto silent_body = [](MemberEpoch& /*epoch*/) noexcept { return 3; };
+static_assert(EpochBody<decltype(silent_body) const&, Member>);
+using ConstOwnerBody = decltype([](Owner const& owner) noexcept {
+    return [&owner](MemberEpoch&) noexcept { return owner.arena.retained_bytes(); };
+}(std::declval<Owner const&>()));
+static_assert(EpochCaptures<ConstOwnerBody, Member>);
+using OwnerBody = decltype([](Owner& owner) noexcept {
+    return [&owner](MemberEpoch&) noexcept { return owner.arena.retained_bytes(); };
+}(std::declval<Owner&>()));
+static_assert(!EpochCaptures<OwnerBody, Member>);
+using KeepingBody = decltype([](KeptRef& kept, Alloc alloc) noexcept {
+    return [&kept, alloc](MemberEpoch& epoch) noexcept { kept = some(epoch.make<int>(alloc, 1)); };
+}(std::declval<KeptRef&>(), std::declval<Alloc>()));
+static_assert(!EpochCaptures<KeepingBody, Member>);
 
-// The closed surface of the arena.
-inline constexpr TextView bump_arena_names{"BumpArena make array with_epoch retained_bytes set_retained_limit "
-                                           "retained_limit default_retained_bytes_limit max_blocks block_alignment"};
-CRUCIBLE_CLOSED_SURFACE(bump_arena_names, BumpArena);
+// C++ const is shallow: a const Ref of the owner and a const reference to a
+// Ref of an Option still reach a place that is not const.
+using ConstRefOwnerBody = decltype([](Ref<Owner, Family> const owner) noexcept {
+    return [owner](MemberEpoch&) noexcept { return owner->arena.retained_bytes(); };
+}(std::declval<Ref<Owner, Family>>()));
+static_assert(!EpochCaptures<ConstRefOwnerBody, Member>);
+using ConstRefKeepingBody = decltype([](Ref<KeptRef, Family> const& kept, Alloc alloc) noexcept {
+    return [&kept, alloc](MemberEpoch& epoch) noexcept { *kept = some(epoch.make<int>(alloc, 1)); };
+}(std::declval<Ref<KeptRef, Family> const&>(), std::declval<Alloc>()));
+static_assert(!EpochCaptures<ConstRefKeepingBody, Member>);
+
+// The result of an epoch holds no borrow and names no epoch brand.
+using RefResult = decltype(std::declval<MemberEpoch&>().make<int>(std::declval<Alloc>(), 1));
+static_assert(!EpochResult<RefResult, Member> && !EpochResult<ArenaRun<int, EpochOf<Member>>, Member>);
+static_assert(EpochResult<int, Member> && EpochResult<void, Member>);
+
+// The closed surface of each arena.
+inline constexpr TextView bump_arena_names{"BumpArena make array retained_bytes max_blocks block_alignment brand_type"};
+CRUCIBLE_CLOSED_SURFACE(bump_arena_names, BumpArena<Family>);
+inline constexpr TextView epoch_arena_names{"EpochArena with_epoch retained_bytes set_retained_limit retained_limit "
+                                            "default_retained_bytes_limit max_blocks block_alignment brand_type"};
+CRUCIBLE_CLOSED_SURFACE(epoch_arena_names, EpochArena<Member>);
 
 }  // namespace detail::bump_arena_checks
 

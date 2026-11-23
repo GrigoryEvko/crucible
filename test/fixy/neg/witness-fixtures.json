@@ -282,6 +282,11 @@
       "constructor": "(?<!~)\\bArenaArrayDoor\\("
     },
     {
+      "name": "neg_witness_core_arenarun_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bArenaRun\\("
+    },
+    {
       "name": "neg_witness_core_atomic_word_key_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\batomic_word_key\\("
@@ -2051,6 +2056,10 @@
     },
     {
       "type": "foundation::core::ArenaArrayDoor",
+      "header": "foundation/core/BumpArena.h"
+    },
+    {
+      "type": "foundation::core::ArenaRun<int, forge::brand>",
       "header": "foundation/core/BumpArena.h"
     },
     {

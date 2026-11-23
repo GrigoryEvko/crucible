@@ -325,10 +325,13 @@ that the axis does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_address_key` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_bit_set_from_bits` | `include/foundation/core/BitSet.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_box` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 28 |
 | `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 28 |
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 28 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 8 |
+| `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 6 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
+| `mint_epoch_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 10 |
 | `mint_fixed_array` | `include/foundation/core/Array.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 | `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 7 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
@@ -413,4 +416,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 82 | 46 | 27 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 172 | 62 | 106 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 175 | 62 | 109 | 4 | 0 | 3 |

@@ -46,9 +46,13 @@ using crucible::TraceRing;
 // The memory that the data addresses of the tensors point into: a run of
 // 4096 bytes of this arena.  The build reads an address as a key and never
 // through it.
-::fixy::BumpArena g_memory_arena{size_t{1} << 13};
-::fixy::View<std::byte> const g_memory =
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+::fixy::BumpArena<crucible::DagArena> g_memory_arena =
+    ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 13});
+::fixy::ArenaRun<std::byte, crucible::DagArena> const g_memory_run =
     g_memory_arena.array(::foundation::effects::testing::test().alloc, 4096, std::byte{});
+// A plain View of an arena run: the View carries no brand of its arena.
+::fixy::View<std::byte> const g_memory = g_memory_run.view();
 
 // Four known generations, and the unknown generations of two periods of the
 // allocator.
@@ -149,12 +153,23 @@ struct Work {
     void first_ops(::fixy::FixedArray<T, CAPACITY> const&&) const =
         delete("the View borrows the column, and a temporary ends with the full expression");
 
-    [[nodiscard]] BackgroundThread::BuiltRegion build(BackgroundThread& bt) const {
-        ::fixy::BumpArena scratch{size_t{1} << 16};
-        auto built = bt.build_trace_from(bt.prove_quiescence(), ::foundation::effects::testing::test().alloc, scratch,
-                                         first_ops(trace), first_ops(meta_starts), first_ops(scope_hashes),
-                                         first_ops(callsite_hashes), first_ops(depths), bt.numerics());
-        return std::move(built).expect("a work with the metadata of each op builds").region;
+    // The region of the work.  The body of the epoch captures the state of
+    // the build and the log by a const reference, and not the thread.
+    [[nodiscard]] BackgroundThread::BuiltRegion build(BackgroundThread& bt, MetaLog const& meta_log) const {
+        crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
+        BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
+        crucible::NumericsHash const numerics = bt.numerics();
+        ::fixy::Option<BackgroundThread::BuiltRegion> region{};
+        scratch.arena.with_epoch([this, &state, &meta_log, numerics,
+                                  &region](crucible::TraceScratch::Epoch& epoch) noexcept {
+            auto built =
+                BackgroundThread::build_trace_from(state, meta_log, ::foundation::effects::testing::test().alloc, epoch,
+                                                   first_ops(trace), first_ops(meta_starts), first_ops(scope_hashes),
+                                                   first_ops(callsite_hashes), first_ops(depths), numerics);
+            region = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                std::move(built).expect("a work with the metadata of each op builds").region);
+        });
+        return std::move(region).expect("the epoch built the region");
     }
 };
 
@@ -174,7 +189,7 @@ struct Rig {
     Rig(const Rig&) = delete("the thread holds the address of the log");
     Rig& operator=(const Rig&) = delete("the thread holds the address of the log");
 
-    [[nodiscard]] BackgroundThread::BuiltRegion build() { return work.build(bt); }
+    [[nodiscard]] BackgroundThread::BuiltRegion build() { return work.build(bt, *log); }
 };
 
 [[nodiscard]] crucible::SlotId input_slot(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t input) {

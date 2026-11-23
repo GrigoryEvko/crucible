@@ -34,7 +34,8 @@ struct BenchRegion {
     // output and input, and no producer for each input.  Each op keeps a View
     // that writes them, so they are runs of the arena.  The replay reads only
     // the slot ids.
-    ::fixy::BumpArena arena{};
+    ::fixy::BumpArena<DagArena> arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
     ::fixy::HeapArray<TraceEntry> ops{};
     ::fixy::HeapArray<TensorSlot> slots{};
     MemoryPlan plan{};
@@ -43,11 +44,21 @@ struct BenchRegion {
 
     explicit BenchRegion(uint32_t n) : num_ops{n} {
         auto const alloc = ::foundation::effects::testing::test().alloc;
-        const ::fixy::View<SlotId> out_slots = arena.array(alloc, n, SlotId{});
-        const ::fixy::View<SlotId> in_slots = arena.array(alloc, n, SlotId{});
-        const ::fixy::View<TensorMeta> out_metas = arena.array(alloc, n, TensorMeta{});
-        const ::fixy::View<TensorMeta> in_metas = arena.array(alloc, n, TensorMeta{});
-        const ::fixy::View<OpIndex> in_producers = arena.array(alloc, n, OpIndex{});
+        const auto out_slots_run = arena.array(alloc, n, SlotId{});
+        const auto in_slots_run = arena.array(alloc, n, SlotId{});
+        const auto out_metas_run = arena.array(alloc, n, TensorMeta{});
+        const auto in_metas_run = arena.array(alloc, n, TensorMeta{});
+        const auto in_producers_run = arena.array(alloc, n, OpIndex{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<SlotId> out_slots = out_slots_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<SlotId> in_slots = in_slots_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorMeta> out_metas = out_metas_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorMeta> in_metas = in_metas_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<OpIndex> in_producers = in_producers_run.view();
         ops = ::fixy::mint_heap_array(alloc, n, TraceEntry{});
 
         // One frame of the ops writes each op.

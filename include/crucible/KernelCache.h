@@ -504,7 +504,7 @@ private:
 // would hand the first one a wrong-kernel path it never had to think about.
 [[nodiscard]] inline ::fixy::Ref<BranchNode> add_branch(::foundation::effects::Alloc a,
                                                         ::foundation::effects::cap::Nondet nondet,
-                                                        ::fixy::BumpArena& arena, KernelCache& kernel_cache,
+                                                        ::fixy::BumpArena<DagArena>& arena, KernelCache& kernel_cache,
                                                         TraceNode& divergence_point, ::fixy::View<TraceEntry> new_ops,
                                                         int64_t old_guard_value, int64_t new_guard_value, Guard guard,
                                                         TraceLink existing_suffix, RecipeChoice const& recipe) {
@@ -539,7 +539,9 @@ private:
     const BranchNode::Arm old_arm{old_guard_value, make_link(divergence_point)};
     const BranchNode::Arm new_arm{new_guard_value, make_link(*new_region)};
     const bool is_old_first = old_guard_value <= new_guard_value;
-    branch->set_arms(arena.array<BranchNode::Arm>(a, 2, old_arm));
+    const auto arms_run = arena.array<BranchNode::Arm>(a, 2, old_arm);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    branch->set_arms(arms_run.view());
     BranchNode::Arm& first_arm = *branch->arms().get(0).expect("a branch of two arms holds arm 0");
     BranchNode::Arm& second_arm = *branch->arms().get(1).expect("a branch of two arms holds arm 1");
     first_arm = is_old_first ? old_arm : new_arm;

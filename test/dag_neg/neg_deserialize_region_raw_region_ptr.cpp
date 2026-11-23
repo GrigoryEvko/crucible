@@ -15,7 +15,7 @@
 #include <foundation/Quarantine.h>
 
 int main() {
-    ::fixy::BumpArena arena{1024};
+    auto arena = ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{1024});
     ::fixy::View<const std::byte> bytes{};
 
     // Must fail: the region of the Result is a LoadedRegionNode.

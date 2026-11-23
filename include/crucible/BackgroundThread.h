@@ -40,6 +40,19 @@
 
 namespace crucible {
 
+// The owner of the epoch arena of the sweep of a memory plan.  The background
+// thread holds one for its publish epoch, and each test or bench that
+// computes a memory plan holds its own.  Two objects of the class share the
+// brand of the arena, which no type tells apart.
+class PlanScratch {
+public:
+    struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
+    using Epoch = ::foundation::core::Epoch<::fixy::EpochOf<Arena>>;
+    explicit PlanScratch(::fixy::Quantity<::fixy::unit::Byte, size_t> block_size) noexcept
+        : arena{::fixy::mint_epoch_arena<Arena>(block_size)} {}
+    ::fixy::EpochArena<Arena> arena;
+};
+
 // The limits of the memory of a background pipeline.  The owner gives them at
 // construction, and they stay for the life of the pipeline.  Vigil::Config
 // holds one, with these defaults.
@@ -47,7 +60,7 @@ namespace crucible {
 //   scratch_retained  the bytes of blocks that each of the two scratch arenas
 //                     keeps when an epoch ends.  An arena that holds more
 //                     gives back each block but the first
-//                     (BumpArena::set_retained_limit)
+//                     (EpochArena::set_retained_limit)
 //   region_store      the count of regions that the region store holds.  A
 //                     publish into a full store discards its region and
 //                     counts it.  A store of zero regions discards each region
@@ -64,7 +77,8 @@ struct PipelineLimits {
     static constexpr uint32_t DEFAULT_REGION_STORE = 128;
     static constexpr uint32_t DEFAULT_UNCOMPILED_QUEUE = 64;
 
-    ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_retained{::fixy::BumpArena::default_retained_bytes_limit};
+    ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_retained{
+        ::fixy::EpochArena<TraceScratch::Arena>::default_retained_bytes_limit};
     ::fixy::Quantity<::fixy::unit::Element, uint32_t> region_store{DEFAULT_REGION_STORE};
     ::fixy::Quantity<::fixy::unit::Element, uint32_t> uncompiled_queue{DEFAULT_UNCOMPILED_QUEUE};
 };
@@ -104,15 +118,16 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // can write it at the same time.
 //
 // Each public door that writes or reads the state of a stage from outside
-// the pipeline takes a proof.  run_in_row, build_trace_from, pending_op_count
+// the pipeline takes a proof.  run_in_row, trace_build_state, pending_op_count
 // and detector_history_count take the proof that no pipeline runs
 // (prove_quiescence), and at() of the uncompiled queue takes the
 // publish-stage proof.  The mailbox of the publish stage and its two
 // sentinels are private.  The requests, the flush and rearm_stop write only
-// atomic cells, so they are const.  Nine doors take no proof that the check
+// atomic cells, so they are const.  Eight doors take no proof that the check
 // of the statement reads: bind_ring, bind_meta_log, set_numerics, start,
-// stop, run_on_publish_stage, compute_memory_plan, run_in_row and
-// build_trace_from.  The check exempts this one class until the keyed doors
+// stop, run_on_publish_stage, run_in_row and trace_build_state.
+// compute_memory_plan is static and takes no BackgroundThread, so it is no
+// door.  The check exempts this one class until the keyed doors
 // of the owner-key member series replace those doors (the exemption of
 // foundation/Transfer.h).
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
@@ -648,7 +663,7 @@ public:
               runs_{other.runs_},
               content_hash_{other.content_hash_},
               numerics_{other.numerics_} {
-            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena>>{::fixy::none};
+            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
             other.runs_ = Runs{};
         }
         BuiltRegion& operator=(BuiltRegion&& other) noexcept {
@@ -656,7 +671,7 @@ public:
             runs_ = other.runs_;
             content_hash_ = other.content_hash_;
             numerics_ = other.numerics_;
-            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena>>{::fixy::none};
+            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
             other.runs_ = Runs{};
             return *this;
         }
@@ -694,7 +709,7 @@ public:
         // The parts of one build: the arena of the region, and the runs that
         // the arena gave.
         struct Parts {
-            ::fixy::Option<::fixy::Box<::fixy::BumpArena>> arena{};
+            ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena{};
             Runs runs{};
             ContentHash content_hash{};
             NumericsHash numerics{};
@@ -708,7 +723,7 @@ public:
 
         // The arena that owns each run below: a Box in the region of a build,
         // and none in the default region.
-        ::fixy::Option<::fixy::Box<::fixy::BumpArena>> arena_{};
+        ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena_{};
         Runs runs_{};
         ContentHash content_hash_{};
         // The numerics hash that the content hash folds.
@@ -787,12 +802,12 @@ private:
     // uses it, and an epoch covers one work item: the build stage ends it
     // after it moves the parts of the region into the message.  The
     // constructor sets its retained limit (PipelineLimits::scratch_retained).
-    ::fixy::BumpArena build_scratch_{size_t{1} << 20};
+    TraceScratch build_scratch_{::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20}};
 
     // The arena of the sweep of each memory plan.  Only the publish stage
     // uses it, and an epoch covers one publish.  The constructor sets its
     // retained limit.
-    ::fixy::BumpArena publish_scratch_{size_t{1} << 20};
+    PlanScratch publish_scratch_{::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20}};
 
     // The memory of each live region, in the slots of a table of
     // PipelineLimits::region_store slots, which the constructor allocates.
@@ -1170,23 +1185,24 @@ private:
         }
     }
 
-    // The holder of a stage: a background thread as const, or no value.  A
-    // thread holds the stage of a background thread for less time than the
-    // background thread lives, so the holder takes the erased brand.
-    using StageHolder = ::fixy::Option<::fixy::Ref<const BackgroundThread>>;
+    // The holder of a stage: the address key of a background thread, or no
+    // value.  The key only compares for identity, and it reaches no object.
+    // So a key that a thread keeps past the end of its background thread
+    // reads nothing.
+    using StageHolder = ::fixy::Option<::fixy::AddressKey>;
 
-    // This background thread as the holder of its stage.
+    // The key of this background thread as the holder of its stage.
     [[nodiscard]] StageHolder stage_holder_() const noexcept {
-        return ::fixy::some(::fixy::erase_brand(::fixy::to(*this)));
+        return StageHolder::some(::fixy::mint_address_key(this));
     }
 
     // True when this thread holds the stage of this background thread.
     [[nodiscard]] bool holds_stage_on_this_thread_() const noexcept {
-        return ::fixy::same_target(stage_held_by_this_thread_(), stage_holder_());
+        return stage_held_by_this_thread_() == stage_holder_();
     }
 
-    // The background thread whose stage this thread holds, or an empty
-    // reference.  Read only by the contracts of run_on_publish_stage and of
+    // The key of the background thread whose stage this thread holds, or no
+    // value.  Read only by the contracts of run_on_publish_stage and of
     // flush, on the cold path.  It is one object for each thread of the
     // process, so each shared library reads the same copy on a thread.  It is
     // a static local of its function, so it is no member, and no splice of a
@@ -1406,13 +1422,13 @@ public:
     // and the publish stage write the arenas, so read the value only when no
     // pipeline thread runs: before start() or after stop().
     [[nodiscard]] size_t scratch_retained_bytes() const noexcept {
-        return ::fixy::saturating_add(build_scratch_.retained_bytes(), publish_scratch_.retained_bytes());
+        return ::fixy::saturating_add(build_scratch_.arena.retained_bytes(), publish_scratch_.arena.retained_bytes());
     }
 
     // The retained limit of each of the two scratch arenas
     // (PipelineLimits::scratch_retained).
     [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_retained_limit() const noexcept {
-        return build_scratch_.retained_limit();
+        return build_scratch_.arena.retained_limit();
     }
 
     // Gives the regions that the owner holds to the sweep of this publish.
@@ -1547,25 +1563,49 @@ public:
         SlotId old_slot;
     };
 
+    // The state of the trace build that outlives one build: the pointer map
+    // of the build stage, its generation and its capacity, and the cap of the
+    // slots of one build.  The build stage is its one writer, or a caller
+    // that holds the proof that no stage runs (trace_build_state).  It holds
+    // no arena, so the body of an epoch of the build scratch can capture it
+    // by a reference that is not const.
+    class TraceBuildState {
+    public:
+        TraceBuildState(TraceBuildState const&) = delete("the state of the trace build has one owner");
+        TraceBuildState& operator=(TraceBuildState const&) = delete("the state of the trace build has one owner");
+        TraceBuildState(TraceBuildState&&) = delete("the build stage holds the state of the trace build in place");
+        TraceBuildState& operator=(TraceBuildState&&) = delete("the build stage holds the state of the trace build "
+                                                               "in place");
+        ~TraceBuildState() = default;
+
+    private:
+        friend struct BackgroundThread;
+        friend struct BuildScratchOfBench;
+
+        TraceBuildState() noexcept = default;
+
+        // build_trace_ calls this after its scan of the trace, which supplies
+        // exact counts: total_outputs is the count of the outputs of the ops
+        // of the trace.  The map and the cap of the slots grow and never
+        // shrink, so the cost amortizes across iterations.
+        void ensure_scratch_buffers(::foundation::effects::Alloc a,
+                                    ::fixy::Quantity<::fixy::unit::Element, uint32_t> total_outputs);
+
+        // The map of the build stage, which is its one user.  The map has a
+        // power-of-two capacity, so its mask wraps each probe.  The slots and
+        // the edges of one build are runs of the build scratch.
+        ::fixy::MaskedArray<PtrSlot> scratch_map_{};
+        uint8_t map_gen_ = 0;
+
+        // Zero means not yet allocated.  The cap of the slots bounds the
+        // slots of one build.
+        ::fixy::Monotonic<uint32_t> map_cap_ = ::fixy::mint_monotonic<uint32_t>(0);
+        ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
+    };
+
 private:
-    // The map of the build stage, which is its one user.  The map has a
-    // power-of-two capacity, so its mask wraps each probe.  The slots and
-    // the edges of one build are runs of the build arena.
-    ::fixy::MaskedArray<PtrSlot> scratch_map_;
-    uint8_t map_gen_ = 0;
-
-    // Zero means not yet allocated.  The cap of the slots bounds the slots
-    // of one build.
-    ::fixy::Monotonic<uint32_t> map_cap_ = ::fixy::mint_monotonic<uint32_t>(0);
-    ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
-
-    // build_trace_ calls this after its scan of the trace, which supplies
-    // exact counts: total_outputs is the count of the outputs of the ops of
-    // the trace.  The map and the cap of the slots grow and never shrink, so
-    // the cost amortizes across iterations.  It writes the scratch of the
-    // build stage, as build_trace_ does.
-    void ensure_scratch_buffers(::foundation::effects::Alloc a,
-                                ::fixy::Quantity<::fixy::unit::Element, uint32_t> total_outputs);
+    // The state of the trace build of the build stage.
+    TraceBuildState build_state_{};
 
 public:
     // The bytes of the storage of a slot that the tensor reaches: from the
@@ -1756,35 +1796,45 @@ public:
     // made none.
     using TraceBuild = ::fixy::Result<BuiltTrace, BuildRefusal>;
 
+    // The state of the trace build, for a test or a bench that builds a
+    // trace with no pipeline (build_trace_from).  The proof shows that no
+    // stage writes the state (prove_quiescence).
+    [[nodiscard]] TraceBuildState&
+    trace_build_state(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        expect_quiescent_(proof);
+        return build_state_;
+    }
+
     // Turns the ring entries of trace and their tensor metadata into a CSR
-    // property graph in scratch, and the parts of its region, with the
-    // scratch buffers of the build stage.  A test or a bench builds a trace
-    // with no pipeline, and the proof shows that no stage writes those
-    // buffers (prove_quiescence).  The build stage calls build_trace_
-    // itself, on each work item.  The caller owns the five arrays, which
-    // hold one element for each op: meta_starts, scope_hashes,
-    // callsite_hashes and depths are parallel to trace.  meta_starts holds
-    // MetaIndex::none() for an op with no tensor arguments.  The build reads
-    // the metadata log and never writes its tail.  The graph and its CSR
-    // arrays go into scratch.  The ops, their tensor metadata, their side
-    // arrays and their slots go into the parts of the region, which own
-    // their memory.  The content hash of the region folds numerics, the
-    // numerics of the stream at the cut of the ops (BgBuildWork::numerics).
-    [[nodiscard]] TraceBuild
-    build_trace_from(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof, ::foundation::effects::Alloc a,
-                     ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
+    // property graph in scratch, and the parts of its region, with the state
+    // of the trace build.  A test or a bench takes the state from
+    // trace_build_state, and the build stage gives its own state on each work
+    // item.  The caller owns the five arrays, which hold one element for each
+    // op: meta_starts, scope_hashes, callsite_hashes and depths are parallel
+    // to trace.  meta_starts holds MetaIndex::none() for an op with no tensor
+    // arguments.  The build reads meta_log and never writes its tail.  The
+    // graph and its CSR arrays go into scratch.  The ops, their tensor
+    // metadata, their side arrays and their slots go into the parts of the
+    // region, which own their memory.  The content hash of the region folds
+    // numerics, the numerics of the stream at the cut of the ops
+    // (BgBuildWork::numerics).
+    [[nodiscard]] static TraceBuild
+    build_trace_from(TraceBuildState& state, MetaLog const& meta_log, ::foundation::effects::Alloc a,
+                     TraceScratch::Epoch& scratch, ::fixy::View<const TraceRing::Entry> trace,
                      ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
                      ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths,
                      NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        expect_quiescent_(proof);
-        return build_trace_(a, scratch, trace, meta_starts, scope_hashes, callsite_hashes, depths, numerics);
+        return build_trace_(state, meta_log, a, scratch, trace, meta_starts, scope_hashes, callsite_hashes, depths,
+                            numerics);
     }
 
 private:
     // The build of build_trace_from, which the build stage calls on its own
     // thread, in src/BackgroundThreadTraceBuild.cpp.
-    [[nodiscard]] TraceBuild
-    build_trace_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
+    [[nodiscard]] static TraceBuild
+    build_trace_(TraceBuildState& state, MetaLog const& meta_log, ::foundation::effects::Alloc a,
+                 TraceScratch::Epoch& scratch, ::fixy::View<const TraceRing::Entry> trace,
                  ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
                  ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths,
                  NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
@@ -1796,10 +1846,11 @@ private:
     // noexcept too, so a Release inline of it in that lambda needs no
     // terminate pad for its contract checks and its arrays.
     template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
-    build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, TraceColumn trace_data,
-                         MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data,
-                         DepthColumn depth_data, NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] static TraceBuild
+    build_trace_columns_(TraceBuildState& state, MetaLog const& meta_log, ::foundation::effects::Alloc a,
+                         TraceScratch::Epoch& scratch, TraceColumn trace_data, MetaColumn meta_data,
+                         ScopeColumn scope_data, CallsiteColumn callsite_data, DepthColumn depth_data,
+                         NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 public:
     // Why a memory plan refuses the slots of a region.  The region then has
@@ -1818,6 +1869,21 @@ public:
         SlotOutOfPlace,
     };
 
+    // The device that a memory plan is for: the rank, the size of the world
+    // and the capability of the device.  start() writes the three of this
+    // background thread before it starts the pipeline thread.  A plan body
+    // captures this value, and not the background thread.
+    struct PlanTarget {
+        int32_t rank = -1;
+        int32_t world_size = 0;
+        DeviceCapability device_capability{};
+    };
+
+    // The device of the plans of this background thread.
+    [[nodiscard]] PlanTarget plan_target() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return PlanTarget{.rank = rank_, .world_size = world_size_, .device_capability = device_capability_};
+    }
+
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU
     // needs for coalesced access.  The birth_op of each internal slot is at
@@ -1827,10 +1893,10 @@ public:
     // the arrays of the sweep go into scratch, and the result is a Ref of
     // plan_storage, or a PlanRefusal: a slot whose id is not its position,
     // or a span or an end of the pool that does not fit in 64 bits.  The plan
-    // borrows the slots.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] ::fixy::Result<::fixy::Ref<MemoryPlan>, PlanRefusal>
-    compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
-                        ::fixy::View<TensorSlot> slots) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    // borrows the slots, and it copies the device of target.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] static ::fixy::Result<::fixy::Ref<MemoryPlan>, PlanRefusal>
+    compute_memory_plan(::foundation::effects::Alloc a, PlanTarget target, MemoryPlan& plan_storage,
+                        PlanScratch::Epoch& scratch, ::fixy::View<TensorSlot> slots) noexcept;
 
 private:
     // The stop hook of the pipeline thread (the thread of an owner of

@@ -1,0 +1,7 @@
+# The ledger of the rule witness-roster.  `python3 utils/bin/guard explain witness-roster` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule witness-roster` writes this file.
+format 1
+rule witness-roster
+include/foundation/core/BumpArena.h | unrostered-witness | admit | foundation::core::BumpArena | the brand of a witness row, forge::brand, is no arena tag, so no witness row can spell the class.  Its constructor is private, and neg_core_bump_arena_public_constructor holds it
+include/foundation/core/BumpArena.h | unrostered-witness | admit | foundation::core::Epoch | the brand of a witness row, forge::brand, is no epoch brand, so no witness row can spell the class.  Its constructor is private, and neg_core_epoch_handle_from_arena holds it
+include/foundation/core/BumpArena.h | unrostered-witness | admit | foundation::core::EpochArena | the brand of a witness row, forge::brand, is no member arena tag, so no witness row can spell the class.  Its constructor is private, and neg_core_epoch_arena_public_constructor holds it

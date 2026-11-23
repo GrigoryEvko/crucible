@@ -67,15 +67,21 @@ enum class SeedSlotFault : std::uint8_t {
     misaligned
 };
 
+// The block size of each arena of the seeds and of each load.
+inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaBlock{std::size_t{1} << 20};
+
 // The ops, their arrays, the region and the slots of the plan are in
-// dag_arena.
-[[nodiscard]] inline ::fixy::Ref<RegionNode> build_seed_region(::fixy::BumpArena& arena, ::fixy::BumpArena& dag_arena,
+// dag_arena.  The plan is in arena.
+[[nodiscard]] inline ::fixy::Ref<RegionNode> build_seed_region(::fixy::BumpArena<DagArena>& arena,
+                                                               ::fixy::BumpArena<DagArena>& dag_arena,
                                                                SeedPlan seed_plan,
                                                                SeedSlotFault fault = SeedSlotFault::none) noexcept {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
     const bool has_plan = seed_plan == SeedPlan::two_slots;
-    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
+    const auto ops_run = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> ops = ops_run.view();
     for (std::uint32_t i = 0; i < kOps; ++i) {
         TraceEntry& op = *ops.get(i).expect("i is below kOps");
         op.schema_hash = SchemaHash{0xCAFE0000u + i};
@@ -84,9 +90,15 @@ enum class SeedSlotFault : std::uint8_t {
         meta.sizes[0] = tensor_dim(16);
         meta.strides[0] = tensor_dim(1);
         meta.dtype = ScalarType::Float;
-        op.set_inputs(dag_arena.array(alloc, 1, meta), dag_arena.array(alloc, 1, OpIndex{}),
-                      dag_arena.array(alloc, 1, has_plan ? SlotId{0} : SlotId{}));
-        op.set_outputs(dag_arena.array(alloc, 1, meta), dag_arena.array(alloc, 1, SlotId{i}));
+        const auto input_metas_run = dag_arena.array(alloc, 1, meta);
+        const auto producers_run = dag_arena.array(alloc, 1, OpIndex{});
+        const auto input_slots_run = dag_arena.array(alloc, 1, has_plan ? SlotId{0} : SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        op.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
+        const auto output_metas_run = dag_arena.array(alloc, 1, meta);
+        const auto output_slots_run = dag_arena.array(alloc, 1, SlotId{i});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        op.set_outputs(output_metas_run.view(), output_slots_run.view());
     }
     const ::fixy::Ref<RegionNode> region = make_region(alloc, dag_arena, ops);
     if (has_plan) {
@@ -94,7 +106,9 @@ enum class SeedSlotFault : std::uint8_t {
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
-        const ::fixy::View<TensorSlot> slots = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
+        const auto slots_run = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorSlot> slots = slots_run.view();
         std::uint32_t slot_index = 0;
         for (TensorSlot& slot : slots) {
             slot.offset_bytes = slot_index * PoolAllocator::ALIGNMENT;
@@ -131,8 +145,8 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 // region type.  The loader must refuse each one.  They go after the seeds of
 // seeds.
 inline void add_region_regressions(SeedList& seeds) noexcept {
-    ::fixy::BumpArena arena{};
-    ::fixy::BumpArena dag_arena{};
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
 
     // The header states a content hash that is not the hash of the ops.
     SeedBytes wrong_hash = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
@@ -158,8 +172,8 @@ inline void add_region_regressions(SeedList& seeds) noexcept {
 }
 
 [[nodiscard]] inline SeedList seeds_region() noexcept {
-    ::fixy::BumpArena arena{};
-    ::fixy::BumpArena dag_arena{};
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     SeedList seeds = empty_seed_list();
     add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::none)));
     add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::two_slots)));
@@ -174,7 +188,7 @@ inline void run_region(::fixy::View<std::byte const> bytes) noexcept {
     const ::fixy::View<std::byte const> input =
         bytes.size() > kMaxInputBytes ? bytes.window(0, kMaxInputBytes).expect("the cap is inside the input") : bytes;
 
-    ::fixy::BumpArena arena{};
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     const auto alloc = test_alloc();
     const ::fixy::Option<LoadedRegionNode> loaded = deserialize_region(alloc, input, arena).ok();
     for (const LoadedRegionNode& loaded_region : loaded) {

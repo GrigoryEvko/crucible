@@ -30,6 +30,9 @@ struct FakeKernel {
     std::uint64_t id = 0;
 };
 
+// The family tag of the arena of the fake kernels.
+struct[[= ::foundation::brand::arena_family_brand{}]] KernelArena final {};
+
 // The cache never reads a kernel, so the address of a fake object stands
 // for one.
 [[nodiscard]] KernelCache::KernelRef kernel_ref(FakeKernel& kernel) noexcept {
@@ -243,11 +246,13 @@ int main() {
     KernelCache typed{::foundation::effects::testing::test().alloc, 4096};
 
     // The caches keep the address of each kernel, so each seed takes its kernels from a run of the arena.
-    ::fixy::BumpArena arena{1 << 16};
+    // The arena lives until the end of the bench.
+    ::fixy::BumpArena<KernelArena> arena =
+        ::fixy::mint_bump_arena<KernelArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
     auto const take_kernels = [&arena]() noexcept {
-        return arena.array(::foundation::effects::testing::test().alloc, kSeedKernels, FakeKernel{})
-            .window<kSeedKernels>(0)
-            .expect("the run holds the kernels of a seed");
+        auto const kernels_run = arena.array(::foundation::effects::testing::test().alloc, kSeedKernels, FakeKernel{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        return kernels_run.view().window<kSeedKernels>(0).expect("the run holds the kernels of a seed");
     };
     ::fixy::View<FakeKernel, kSeedKernels> const raw_hot = take_kernels();
     ::fixy::View<FakeKernel, kSeedKernels> const typed_hot = take_kernels();

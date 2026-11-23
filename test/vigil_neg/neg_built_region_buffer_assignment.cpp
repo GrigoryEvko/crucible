@@ -11,6 +11,6 @@
 
 int main() {
     crucible::BackgroundThread::BuiltRegion region{};
-    region.arena_ = ::fixy::HeapArray<::fixy::Box<::fixy::BumpArena>>{};
+    region.arena_ = ::fixy::HeapArray<::fixy::Box<::fixy::BumpArena<crucible::DagArena>>>{};
     return 0;
 }

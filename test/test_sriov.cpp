@@ -105,9 +105,10 @@ void test_admission() {
     ::fixy::check::pass(kTest, "  test_admission: PASSED\n");
 }
 
-void test_mint_and_handles() {
+// The body of test_mint_and_handles, with an arena of the scope of the test.
+template <class Arena>
+void check_mint_and_handles(Arena& arena) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
     sriov::VfConfig config{};
     config.mac = sriov::admit_mac(sriov::MacAddress::locally_administered(9)).expect("the address is unicast");
     config.vlan = sriov::admit_vlan(42).expect("42 is a VLAN id");
@@ -124,8 +125,10 @@ void test_mint_and_handles() {
 
     // Six slots hold the four handles, so the View of the handles is the
     // first four slots.
+    auto const handles_run = arena.array(test.alloc, 6, sriov::VfHandle{});
+    // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<sriov::VfHandle, 6> const handles =
-        arena.array(test.alloc, 6, sriov::VfHandle{}).window<6>(0).expect("the run holds six handles");
+        handles_run.view().template window<6>(0).expect("the run holds six handles");
     auto materialized = sriov::materialize_vf_handles(plan, handles).expect("six slots hold four handles");
     CRUCIBLE_TEST_ASSERT(kTest, materialized.size() == 4);
     sriov::VfHandle const& first = handles.at(::fixy::index<0>());
@@ -149,7 +152,9 @@ void test_mint_and_handles() {
     auto out_of_range = sriov::vf_handle_at(plan, sriov::admit_vf_index(4).expect("4 is a function index"));
     CRUCIBLE_TEST_ASSERT(kTest, out_of_range.err() == ::fixy::some(sriov::SrIovError::VfIndexOutOfRange));
 
-    ::fixy::View<sriov::VfHandle> const small = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto const small_run = arena.array(test.alloc, 2, sriov::VfHandle{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<sriov::VfHandle> const small = small_run.view();
     auto too_small = sriov::materialize_vf_handles(plan, small);
     CRUCIBLE_TEST_ASSERT(kTest, too_small.err() == ::fixy::some(sriov::SrIovError::InsufficientHandleCapacity));
 
@@ -188,12 +193,16 @@ void test_identity_and_capability_gates() {
     ::fixy::check::pass(kTest, "  test_identity_and_capability_gates: PASSED\n");
 }
 
-void test_privileged_boundaries() {
+// The body of test_privileged_boundaries, with an arena of the scope of the
+// test.
+template <class Arena>
+void check_privileged_boundaries(Arena& arena) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
     auto plan = two_vf_plan();
 
-    ::fixy::View<sriov::VfHandle> const handles = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto const handles_run = arena.array(test.alloc, 2, sriov::VfHandle{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<sriov::VfHandle> const handles = handles_run.view();
     auto enable = sriov::enable(plan, handles);
     CRUCIBLE_TEST_ASSERT(kTest, enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
@@ -219,9 +228,11 @@ void test_privileged_boundaries() {
 // The distinction these assertions defend is between a substrate that reports
 // "not attempted" and one that silently admits the request and does nothing.
 // Each privileged surface must name which of the two it is.
-void test_apply_paths_are_stubbed() {
+// The body of test_apply_paths_are_stubbed, with an arena of the scope of
+// the test.
+template <class Arena>
+void check_apply_paths_are_stubbed(Arena& arena) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
     static_assert(sriov::privileged_apply_implemented == false,
                   "the SR-IOV apply paths are stubs. privileged_apply_implemented "
                   "turns true only alongside a CAP_NET_ADMIN backend and live-NIC "
@@ -231,7 +242,9 @@ void test_apply_paths_are_stubbed() {
 
     auto plan = two_vf_plan();
 
-    ::fixy::View<sriov::VfHandle> const handles = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto const handles_run = arena.array(test.alloc, 2, sriov::VfHandle{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<sriov::VfHandle> const handles = handles_run.view();
     auto deferred = sriov::enable(plan, handles);
     CRUCIBLE_TEST_ASSERT(kTest, deferred.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
@@ -262,6 +275,25 @@ void test_enumerator_names() {
                                     == ::fixy::TextView{"<unknown SrIovError>"});
 
     ::fixy::check::pass(kTest, "  test_enumerator_names: PASSED\n");
+}
+
+// The tests whose handles are runs of an arena of the scope of the test.
+void test_mint_and_handles() {
+    ::fixy::with_bump_arena(::foundation::effects::testing::test().alloc,
+                            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096},
+                            [](auto& arena) noexcept { check_mint_and_handles(arena); });
+}
+
+void test_privileged_boundaries() {
+    ::fixy::with_bump_arena(::foundation::effects::testing::test().alloc,
+                            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096},
+                            [](auto& arena) noexcept { check_privileged_boundaries(arena); });
+}
+
+void test_apply_paths_are_stubbed() {
+    ::fixy::with_bump_arena(::foundation::effects::testing::test().alloc,
+                            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096},
+                            [](auto& arena) noexcept { check_apply_paths_are_stubbed(arena); });
 }
 
 }  // namespace

@@ -29,9 +29,16 @@
 
 namespace crucible {
 
+// The family tag of each arena that holds the recipes of a pool.  No product
+// class owns such an arena, and a test makes its own, so the tag is no member
+// tag.  Two arenas of the family share the brand, so a Ref of one fits a field
+// that names the other.  That instance identity needs a run-time id, or a pool
+// type that takes the brand of its own arena.
+struct[[= ::foundation::brand::arena_family_brand{}]] RecipeArena final {};
+
 class CRUCIBLE_OWNER RecipePool {
 public:
-    using ArenaBorrow = ::fixy::Ref<::fixy::BumpArena>;
+    using ArenaBorrow = ::fixy::Ref<::fixy::BumpArena<RecipeArena>>;
     using Capacity = ::fixy::PowerOfTwo<uint32_t>;
     using Size = ::fixy::Monotonic<uint32_t>;
     using init_required_row = ::foundation::effects::Row<::foundation::effects::Effect::Init>;
@@ -46,8 +53,9 @@ public:
     // body below does the work out of line.
     template <typename Brand, typename CallerRow = init_required_row>
         requires ::fixy::ErasableBrand<Brand> && ::foundation::effects::Subrow<init_required_row, CallerRow>
-    [[gnu::cold]] explicit RecipePool(::fixy::Ref<::fixy::BumpArena, Brand> arena, ::foundation::effects::Init init,
-                                      uint32_t initial_capacity = 32, std::type_identity<CallerRow> = {}) noexcept
+    [[gnu::cold]] explicit RecipePool(::fixy::Ref<::fixy::BumpArena<RecipeArena>, Brand> arena,
+                                      ::foundation::effects::Init init, uint32_t initial_capacity = 32,
+                                      std::type_identity<CallerRow> = {}) noexcept
         : RecipePool{erased_door_{}, ::fixy::erase_brand(arena), init, admitted_capacity_(initial_capacity)} {}
 
     RecipePool(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");

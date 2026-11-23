@@ -608,6 +608,8 @@ struct LinearNames {
     tree refers = NULL_TREE;
     tree refers_unique = NULL_TREE;
     tree refers_deep = NULL_TREE;
+    tree by_arguments = NULL_TREE;
+    tree payload_cell = NULL_TREE;
     tree drop_door = NULL_TREE;
     tree detach_door = NULL_TREE;
     tree scope_end_door = NULL_TREE;
@@ -4425,32 +4427,47 @@ void collect_epoch_brands(tree type, std::vector<tree>& out, int depth = 0) {
     out.insert(out.end(), found->second.begin(), found->second.end());
 }
 
-// The first arena of a member tag that a value of TYPE reaches through a
-// path that is not const: TYPE itself, a base, a member, a type argument, and
-// the target of a reference or a pointer, at each depth.  A const part ends
-// the path, because a const arena gives nothing and opens no epoch.  A body
-// with no capture reaches each object of static or thread storage duration,
-// so such an object that reaches an epoch arena would let a body open a
-// second epoch of it.  Complexity: each class one time for each walk.
-tree reached_member_arena(tree type, std::unordered_set<tree>& seen, int depth = 0) {
-    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth || TYPE_READONLY(type)) {
+// The first arena of a member tag that a value of TYPE reaches in a place
+// that is not const: TYPE itself, a base, a member, a type argument, and the
+// target of a reference or a pointer, at each depth.  A const arena gives
+// nothing and opens no epoch.  C++ const is shallow, so IN_CONST, the const of
+// the place, goes on only to the parts that the place holds by value, and not
+// to a mutable member.  The target of a pointer, of a reference and of a
+// borrow, such as a Ref, keeps its own const.  A body with no capture reaches
+// each object of static or thread storage duration, so such an object that
+// reaches an epoch arena would let a body open a second epoch of it.
+// Complexity: each pair of a class and its const one time for each walk.
+tree reached_member_arena(tree type, std::set<std::pair<tree, bool>>& seen, bool in_const, int depth = 0) {
+    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth) {
         return NULL_TREE;
     }
-    if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == ARRAY_TYPE) {
-        return reached_member_arena(TREE_TYPE(type), seen, depth + 1);
+    if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE) {
+        return reached_member_arena(TREE_TYPE(type), seen, TYPE_READONLY(TREE_TYPE(type)), depth + 1);
     }
+    if (TREE_CODE(type) == ARRAY_TYPE) {
+        return reached_member_arena(TREE_TYPE(type), seen, in_const || TYPE_READONLY(type), depth + 1);
+    }
+    bool const is_const = in_const || TYPE_READONLY(type);
     type = TYPE_MAIN_VARIANT(type);
-    if (!CLASS_TYPE_P(type) || !seen.insert(type).second) {
+    if (!CLASS_TYPE_P(type) || !seen.insert({type, is_const}).second) {
         return NULL_TREE;
     }
     if (member_arena_tag(type) != NULL_TREE) {
-        return type;
+        return is_const ? NULL_TREE : type;
     }
+    // A class holds what its fields show, so the walk reads the type arguments
+    // only of a class that states that it holds their values in its own bytes
+    // (by_arguments{} or payload_cell{} of include/foundation/Transfer.h).  An
+    // argument of each other class can be a phantom type, such as the owner of
+    // a context, of which the class holds no value.
     tree found = NULL_TREE;
-    if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+    tree attributes = TYPE_ATTRIBUTES(type);
+    bool const holds_arguments = carries_annotation(attributes, linear_names.by_arguments, linear_names.transfer)
+                              || carries_annotation(attributes, linear_names.payload_cell, linear_names.transfer);
+    if (holds_arguments && CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
         each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
             if (found == NULL_TREE && TYPE_P(argument)) {
-                found = reached_member_arena(argument, seen, depth + 1);
+                found = reached_member_arena(argument, seen, is_const || TYPE_READONLY(argument), depth + 1);
             }
         });
     }
@@ -4459,7 +4476,8 @@ tree reached_member_arena(tree type, std::unordered_set<tree>& seen, int depth =
     }
     for (tree field = TYPE_FIELDS(type); found == NULL_TREE && field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE) {
-            found = reached_member_arena(TREE_TYPE(field), seen, depth + 1);
+            bool const field_const = is_const && !DECL_MUTABLE_P(field);
+            found = reached_member_arena(TREE_TYPE(field), seen, field_const, depth + 1);
         }
     }
     return found;
@@ -4488,8 +4506,8 @@ void check_arena_object(tree decl, const std::string& entity, location_t locatio
     if (!is_static) {
         return;
     }
-    std::unordered_set<tree> seen;
-    tree reached = held_member_arena(type) == NULL_TREE ? reached_member_arena(type, seen) : NULL_TREE;
+    std::set<std::pair<tree, bool>> seen;
+    tree reached = held_member_arena(type) == NULL_TREE ? reached_member_arena(type, seen, false) : NULL_TREE;
     if (reached != NULL_TREE) {
         record_shape(Kind::brand_arena_member, location,
                      entity + ", an object of static or thread storage duration that reaches the arena "
@@ -6067,6 +6085,8 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.refers = get_identifier("refers");
     linear_names.refers_unique = get_identifier("refers_unique");
     linear_names.refers_deep = get_identifier("refers_deep");
+    linear_names.by_arguments = get_identifier("by_arguments");
+    linear_names.payload_cell = get_identifier("payload_cell");
     linear_names.drop_door = get_identifier("drop_door");
     linear_names.detach_door = get_identifier("detach_door");
     linear_names.scope_end_door = get_identifier("scope_end_door");

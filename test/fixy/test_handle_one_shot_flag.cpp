@@ -134,10 +134,14 @@ public:
     }
 
     // The proof of the OwnerThread of this owner, for the owner that the
-    // caller names.  A test names another owner to show the refusal.
-    [[nodiscard]] ::fixy::thread::QuiescenceProof<SignalOwner> quiescence_for(SignalOwner const& owner) const noexcept {
+    // caller names.  A test names another owner to show the refusal.  The
+    // proof borrows the owner, so a temporary owner is refused.
+    [[nodiscard]] ::fixy::thread::QuiescenceProof<SignalOwner> quiescence_for(SignalOwner const& owner
+                                                                              CRUCIBLE_LIFETIMEBOUND) const noexcept {
         return thread_.quiescence(owner);
     }
+    void quiescence_for(SignalOwner const&& owner) const =
+        delete("the proof borrows the owner, and a temporary owner ends at the end of the full expression");
 
     // Starts the thread of the owner.  The body waits for the stop that the
     // end of the OwnerThread signals.

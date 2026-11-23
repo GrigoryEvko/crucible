@@ -16,7 +16,7 @@
 #include <fixy/Tagged.h>
 
 int main() {
-    ::fixy::BumpArena arena{1024};
+    auto arena = ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{1024});
     ::fixy::View<const std::byte> bytes{};
 
     // The payload is the payload of a loaded region, so only the tag differs.

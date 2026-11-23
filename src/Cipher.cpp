@@ -837,7 +837,7 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
 
 Cipher::LoadResult Cipher::load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
                                                    ::foundation::effects::Alloc a, ContentHash content_hash,
-                                                   ::fixy::BumpArena& arena) const {
+                                                   ::fixy::BumpArena<DagArena>& arena) const {
     if (!content_hash) return ::fixy::err(LoadError::none_hash);
 
     // A cached image that gives no region of the hash falls through to the

@@ -17,7 +17,7 @@
 namespace eff = ::foundation::effects;
 
 int main() {
-    ::fixy::BumpArena arena{};
+    auto arena = ::fixy::mint_bump_arena<crucible::RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{1 << 20});
     auto init = eff::testing::init();
     crucible::RecipePool pool{::fixy::to(arena), init, 32u, std::type_identity<eff::Row<>>{}};
     return pool.capacity() == 0;

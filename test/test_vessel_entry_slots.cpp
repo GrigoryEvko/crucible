@@ -214,7 +214,8 @@ void test_input_past_the_limit_reaches_the_digest() {
 // The content hash of a region of one op whose one input is meta.
 [[nodiscard]] crucible::ContentHash content_hash_of(crucible::TensorMeta const& meta) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
+    ::fixy::BumpArena<crucible::DagArena> arena =
+        ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
     ::fixy::View<crucible::TensorMeta> const metas = ::fixy::check::run_of(kTest, test.alloc, arena, meta);
     ::fixy::View<crucible::OpIndex> const producers =
         ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
@@ -231,7 +232,8 @@ void test_input_past_the_limit_reaches_the_digest() {
 // the word of the tags and the data slots of the scalars.
 [[nodiscard]] crucible::ContentHash content_hash_of_scalar(uint16_t scalar_kinds, int64_t bits = 1) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
+    ::fixy::BumpArena<crucible::DagArena> arena =
+        ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
     ::fixy::View<int64_t> const scalars = ::fixy::check::run_of(kTest, test.alloc, arena, bits);
     const crucible::ScalarSlotKinds kinds =
         crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
@@ -308,9 +310,9 @@ void test_content_hash_reads_no_data_value() {
 // equality of a device, the content hash of a region and the overflow digest
 // of the vessel give one answer for the two names.  A device of a different
 // type keeps its index, so two such devices stay two devices.
-void test_host_index_is_one_device() {
+template <class Arena>
+void check_host_index_is_one_device(Arena& arena) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
     crucible::TensorMeta const host = meta_on(crucible::DeviceType::CPU, -1);
     crucible::TensorMeta const host_zero = meta_on(crucible::DeviceType::CPU, 0);
     crucible::TensorMeta const cuda_zero = meta_on(crucible::DeviceType::CUDA, 0);
@@ -322,7 +324,9 @@ void test_host_index_is_one_device() {
     CRUCIBLE_FATAL_INVARIANT(crucible::device_of(cuda_zero).index() == 0);
 
     // Two data addresses of one run on the two names of the host are equal.
-    ::fixy::View<uint8_t> const bytes = arena.array(test.alloc, 8, uint8_t{0});
+    auto const bytes_run = arena.array(test.alloc, 8, uint8_t{0});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<uint8_t> const bytes = bytes_run.view();
     ::fixy::RunAddress const address = ::fixy::mint_run_address(bytes, 0).expect("the run holds a byte");
     crucible::TensorData const on_host(address, crucible::device_of(host));
     crucible::TensorData const on_host_zero(address, crucible::device_of(host_zero));
@@ -349,6 +353,14 @@ void test_host_index_is_one_device() {
             .expect("the fields of a CUDA tensor decode");
     CRUCIBLE_FATAL_INVARIANT(decoded_host.device_idx == -1);
     CRUCIBLE_FATAL_INVARIANT(decoded_cuda.device_idx == 1);
+}
+
+// The two names of the host, with the bytes of the data addresses in an
+// arena of the scope of the test.
+void test_host_index_is_one_device() {
+    ::fixy::with_bump_arena(::foundation::effects::testing::test().alloc,
+                            ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096},
+                            [](auto& arena) noexcept { check_host_index_is_one_device(arena); });
 }
 
 // A device that a caller builds from its two parts has one index for the

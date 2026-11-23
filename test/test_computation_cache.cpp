@@ -117,13 +117,18 @@ cipher::CompiledBody bg_io_body{};
 // The bodies of the races are runs of this arena, which lives as long as the
 // process.
 auto g_test = ::foundation::effects::testing::test();
-::fixy::BumpArena g_runs{4096};
+
+// The family tag of the arena of the bodies of the races.
+struct[[= ::foundation::brand::arena_family_brand{}]] BodyArena final {};
+
+::fixy::BumpArena<BodyArena> g_runs =
+    ::fixy::mint_bump_arena<BodyArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
 
 // A run of one body for each worker of a race.
 [[nodiscard]] Bodies make_bodies() noexcept {
-    return g_runs.array(g_test.alloc, kWorkerCount, cipher::CompiledBody{})
-        .window<kWorkerCount>(0)
-        .expect("the run holds one body for each worker");
+    auto const run = g_runs.array(g_test.alloc, kWorkerCount, cipher::CompiledBody{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    return run.view().window<kWorkerCount>(0).expect("the run holds one body for each worker");
 }
 
 Bodies const disjoint_bodies = make_bodies();

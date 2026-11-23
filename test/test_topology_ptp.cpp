@@ -299,9 +299,9 @@ static void test_linux_boundaries_if_available() {
 // interface has no hardware clock, so the kernel refuses its hardware
 // stamps.  A socket with no data gives RecvFailed, and the receive does not
 // wait.
-static void test_socket_calls() {
+template <class Arena>
+static void check_socket_calls(Arena& arena) {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
     BgFsCtx const bg_fs{::foundation::effects::testing::bg()};
     using TcpSocket = ::fixy::net::SocketHandle<::fixy::net::socket_kind::TcpStream>;
     TcpSocket const tcp = ::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(bg_fs).match(
@@ -331,10 +331,19 @@ static void test_socket_calls() {
     auto const empty = topology::recv_with_hw_timestamp(bg_fs, sock_fd, ::fixy::View<std::byte>{});
     CRUCIBLE_TEST_ASSERT(kTest, error_of(empty) == topology::PtpError::InvalidReceiveBuffer);
 
-    ::fixy::View<std::byte> const buffer = arena.array(test.alloc, 16, std::byte{0});
+    auto const buffer_run = arena.array(test.alloc, 16, std::byte{0});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<std::byte> const buffer = buffer_run.view();
     auto const idle = topology::recv_with_hw_timestamp(bg_fs, sock_fd, buffer);
     CRUCIBLE_TEST_ASSERT(kTest, error_of(idle) == topology::PtpError::RecvFailed);
     ::fixy::check::pass(kTest, "  test_socket_calls:          PASSED\n");
+}
+
+// The socket calls, with the buffer in an arena of the scope of the test.
+static void test_socket_calls() {
+    ::fixy::with_bump_arena(::foundation::effects::testing::test().alloc,
+                            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096},
+                            [](auto& arena) noexcept { check_socket_calls(arena); });
 }
 
 // A receive of count bytes with the two stamps.
@@ -350,12 +359,14 @@ static ::fixy::net::TimestampedReceive stamped_receive(std::size_t count, ::foun
 // stamp, a stamp of zero is no stamp, and a stamp past 64 bits of
 // nanoseconds stays apart from a malformed stamp.  The cases need no socket,
 // because the loopback interface gives no hardware stamp and no overflow.
-static void test_packet_of_receive() {
+template <class Arena>
+static void check_packet_of_receive(Arena& arena) {
     using ::foundation::os::KernelTimespec;
     using topology::PtpError;
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{4096};
-    ::fixy::View<std::byte> const buffer = arena.array(test.alloc, 16, std::byte{0});
+    auto const buffer_run = arena.array(test.alloc, 16, std::byte{0});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<std::byte> const buffer = buffer_run.view();
     KernelTimespec const zero{};
     KernelTimespec const software{.seconds = 3, .nanoseconds = 4};
     KernelTimespec const hardware{.seconds = 5, .nanoseconds = 6};
@@ -402,6 +413,14 @@ static void test_packet_of_receive() {
     auto const bad_hardware = topology::detail::packet_of_receive(buffer, stamped_receive(8, software, negative));
     CRUCIBLE_TEST_ASSERT(kTest, error_of(bad_hardware) == PtpError::ClockReadFailed);
     ::fixy::check::pass(kTest, "  test_packet_of_receive:     PASSED\n");
+}
+
+// The packet of a receive, with the buffer in an arena of the scope of the
+// test.
+static void test_packet_of_receive() {
+    ::fixy::with_bump_arena(::foundation::effects::testing::test().alloc,
+                            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096},
+                            [](auto& arena) noexcept { check_packet_of_receive(arena); });
 }
 
 int main() {

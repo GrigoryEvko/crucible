@@ -50,7 +50,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             return random_recipe(rng);
         },
         [](const NumericalRecipe& extra) {
-            ::fixy::BumpArena arena{};
+            ::fixy::BumpArena<crucible::RecipeArena> arena = ::fixy::mint_bump_arena<crucible::RecipeArena>(
+                ::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
             // The test context comes from foundation::effects::testing.
             // RecipePool takes an Init context at construction.
             // RecipeRegistry takes an Alloc capability, because it

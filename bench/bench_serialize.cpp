@@ -22,8 +22,10 @@ static constexpr auto A = BG.alloc;
 // Avoids collision with crucible::make_region — this one builds a region
 // populated with realistic (schema/shape/scope/callsite, 2-input GEMM)
 // op rows.  The ops, their arrays and the region are in dag_arena.
-static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops) {
-    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
+static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops) {
+    const auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> ops = ops_run.view();
 
     // Each input and the output of each op have one metadata.
     TensorMeta meta{};
@@ -42,12 +44,21 @@ static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena& dag_arena, uint32
         te.callsite_hash = CallsiteHash{0xDDDD000000000000ULL + i};
         te.kernel_id = CKernelId::GEMM_MM;
 
-        const ::fixy::View<OpIndex> producers = dag_arena.array(A, 2, OpIndex::none());
+        const auto producers_run = dag_arena.array(A, 2, OpIndex::none());
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<OpIndex> producers = producers_run.view();
         if (i >= 1) *producers.get(0).expect("the op has two inputs") = OpIndex{i - 1};
-        const ::fixy::View<SlotId> input_slots = dag_arena.array(A, 2, SlotId{i});
+        const auto input_slots_run = dag_arena.array(A, 2, SlotId{i});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<SlotId> input_slots = input_slots_run.view();
         *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};
-        te.set_inputs(dag_arena.array(A, 2, meta), producers, input_slots);
-        te.set_outputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, SlotId{200 + i}));
+        const auto input_metas_run = dag_arena.array(A, 2, meta);
+        // A plain View of an arena run: the View carries no brand of its arena.
+        te.set_inputs(input_metas_run.view(), producers, input_slots);
+        const auto output_metas_run = dag_arena.array(A, 1, meta);
+        const auto output_slots_run = dag_arena.array(A, 1, SlotId{200 + i});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        te.set_outputs(output_metas_run.view(), output_slots_run.view());
     }
 
     return make_region(A, dag_arena, ops);
@@ -80,7 +91,8 @@ int main() {
         // Per-size fixture: one arena, one region, one wire buffer sized
         // generously for the worst-case row shape. Lives across both
         // (ser, deser) Runs.
-        ::fixy::BumpArena dag_arena{1 << 20};
+        ::fixy::BumpArena<DagArena> dag_arena =
+            ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
         const ::fixy::Ref<RegionNode> region = synth_region(dag_arena, num_ops);
 
         const size_t wire_cap =
@@ -109,7 +121,8 @@ int main() {
             buf.view().window(0, serial_len).expect("the writer writes inside its buffer");
 
         bench::add_report(reports, bench::run(label_des, [&, image] {
-                              ::fixy::BumpArena read_arena{1 << 20};
+                              ::fixy::BumpArena<DagArena> read_arena = ::fixy::mint_bump_arena<DagArena>(
+                                  ::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
                               const ::fixy::Result<LoadedRegionNode, LoadError> loaded_region =
                                   deserialize_region(A, image, read_arena);
                               const bool is_loaded = loaded_region.is_ok();

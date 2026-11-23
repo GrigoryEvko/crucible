@@ -35,11 +35,11 @@ uint32_t TraceGraph::offset_(::fixy::View<const uint32_t> offsets, uint32_t inde
         .expect("the offsets of an op bound a run of its CSR edges");
 }
 
-::fixy::Ref<TraceGraph> alloc_trace_graph(::foundation::effects::Alloc a, ::fixy::BumpArena& arena) noexcept {
-    return ::fixy::erase_brand(arena.make<TraceGraph>(a));
+::fixy::Ref<TraceGraph> alloc_trace_graph(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch) noexcept {
+    return ::fixy::erase_brand(epoch.make<TraceGraph>(a));
 }
 
-void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph& graph,
+void build_csr(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch, TraceGraph& graph,
                ::fixy::View<const Edge> edges, uint32_t num_ops) {
     const uint32_t num_edges =
         ::fixy::narrow<uint32_t>(edges.size()).expect("the build of a trace gives at most 2^32 - 1 edges");
@@ -49,10 +49,18 @@ void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGr
     // A graph with no ops has no offset arrays.
     if (num_ops == 0) return;
 
-    graph.fwd_edges = arena.array(a, num_edges, Edge{});
-    graph.fwd_offsets = arena.array<uint32_t>(a, num_ops + 1, 0);
-    graph.rev_edges = arena.array(a, num_edges, Edge{});
-    graph.rev_offsets = arena.array<uint32_t>(a, num_ops + 1, 0);
+    const auto fwd_edges_run = epoch.array(a, num_edges, Edge{});
+    const auto fwd_offsets_run = epoch.array<uint32_t>(a, num_ops + 1, 0);
+    const auto rev_edges_run = epoch.array(a, num_edges, Edge{});
+    const auto rev_offsets_run = epoch.array<uint32_t>(a, num_ops + 1, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    graph.fwd_edges = fwd_edges_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    graph.fwd_offsets = fwd_offsets_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    graph.rev_edges = rev_edges_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    graph.rev_offsets = rev_offsets_run.view();
 
     for (const Edge& edge : edges) {
         ++detail::csr_element_(graph.fwd_offsets, edge.src.raw() + 1);
@@ -66,8 +74,12 @@ void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGr
 
     // The cursor of each op starts at its offset.  The last offset is the
     // edge count, which no cursor needs.
-    const ::fixy::View<uint32_t> fwd_cursor = arena.array<uint32_t>(a, num_ops, 0);
-    const ::fixy::View<uint32_t> rev_cursor = arena.array<uint32_t>(a, num_ops, 0);
+    const auto fwd_cursor_run = epoch.array<uint32_t>(a, num_ops, 0);
+    const auto rev_cursor_run = epoch.array<uint32_t>(a, num_ops, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> fwd_cursor = fwd_cursor_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> rev_cursor = rev_cursor_run.view();
     ::fixy::copy(fwd_cursor, graph.fwd_offsets.window(0, num_ops).expect("the offsets hold one entry for each op"))
         .expect("the cursors hold one entry for each op");
     ::fixy::copy(rev_cursor, graph.rev_offsets.window(0, num_ops).expect("the offsets hold one entry for each op"))

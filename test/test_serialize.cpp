@@ -14,7 +14,11 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
 }  // namespace
+
+using crucible::DagArena;
 
 // A drift in this hash means the wire format changed, which requires a
 // CDAG_VERSION bump.
@@ -62,9 +66,10 @@ template <class Loaded>
 // whose id is not its position.
 template <std::uint32_t Count>
 [[nodiscard]] static ::fixy::View<crucible::TensorSlot> make_slots_in_place(::foundation::effects::Alloc alloc,
-                                                                            ::fixy::BumpArena& arena) {
-    const ::fixy::View<crucible::TensorSlot> slots =
-        arena.array<crucible::TensorSlot>(alloc, Count, crucible::TensorSlot{});
+                                                                            ::fixy::BumpArena<DagArena>& arena) {
+    const auto slots_run = arena.array<crucible::TensorSlot>(alloc, Count, crucible::TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<crucible::TensorSlot> slots = slots_run.view();
     std::uint32_t position = 0;
     for (crucible::TensorSlot& slot : slots) {
         slot.slot_id = crucible::SlotId{position};
@@ -147,14 +152,15 @@ static void check_descriptor_images_agree() {
 
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     check_descriptor_images_agree();
 
     constexpr uint32_t NUM_OPS = 3;
     // A storage of more than 4 GiB, which a size of 32 bits cannot hold.
     constexpr uint64_t kLargeStorageBytes = 98000000000ULL;
-    const ::fixy::View<crucible::TraceEntry> ops =
-        dag_arena.array<crucible::TraceEntry>(test.alloc, NUM_OPS, crucible::TraceEntry{});
+    const auto ops_run = dag_arena.array<crucible::TraceEntry>(test.alloc, NUM_OPS, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
@@ -204,7 +210,7 @@ static void check_descriptor_images_agree() {
     CRUCIBLE_TEST_ASSERT(kTest, n > 0 && "serialize_region returned 0 — buffer too small or bad region");
     const ::fixy::View<const std::byte> wire = buf.view().window(0, n).expect("the writer writes inside its image");
 
-    ::fixy::BumpArena arena2{1 << 16};
+    ::fixy::BumpArena<DagArena> arena2 = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const crucible::RegionNode& loaded =
         *crucible::deserialize_region(test.alloc, wire, arena2).expect("deserialize_region returns the region").value();
 
@@ -366,7 +372,7 @@ static void check_descriptor_images_agree() {
         });
     CRUCIBLE_TEST_ASSERT(kTest, n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
 
-    ::fixy::BumpArena arena3{1 << 16};
+    ::fixy::BumpArena<DagArena> arena3 = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     auto bad_region =
         crucible::deserialize_region(test.alloc, wire.window(0, 10).expect("the image holds ten bytes"), arena3);
     CRUCIBLE_TEST_ASSERT(kTest, reason_of(bad_region) == crucible::LoadError::truncated
@@ -377,7 +383,7 @@ static void check_descriptor_images_agree() {
     // 4..7 the version, 8 the kind, 9..15 the pad, 24..31 the content hash,
     // 32..35 the count of ops, 36..43 the schema of the first op.
     {
-        ::fixy::BumpArena reason_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> reason_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         // The byte at at with its low bit changed, so it differs from the
         // byte of the image.
         const auto flipped_at = [&wire](size_t at) {
@@ -426,10 +432,12 @@ static void check_descriptor_images_agree() {
     // and the same image with a count of arms above its ceiling.  The count
     // is at 44..47, after the header and the 12 bytes of the guard.
     {
-        ::fixy::BumpArena branch_arena{1 << 12};
+        ::fixy::BumpArena<DagArena> branch_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
         crucible::BranchNode& branch = *branch_arena.make<crucible::BranchNode>(test.alloc);
         branch.kind = crucible::TraceNodeKind::BRANCH;
-        branch.set_arms(branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{}));
+        const auto arms_run = branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        branch.set_arms(arms_run.view());
         branch.arms().get(0).expect("the branch holds two arms")->value = 2;
         branch.arms().get(1).expect("the branch holds two arms")->value = 1;
         auto [branch_bytes, branch_buf] =
@@ -466,7 +474,7 @@ static void check_descriptor_images_agree() {
                 CRUCIBLE_TEST_ASSERT(kTest, adv_writer.has_room && adv_writer.pos == 36);
             });
 
-        ::fixy::BumpArena arena4{1 << 16};
+        ::fixy::BumpArena<DagArena> arena4 = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto adversarial_region = crucible::deserialize_region(test.alloc, adv.view(), arena4);
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(adversarial_region) == crucible::LoadError::count_above_limit
                                         && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
@@ -479,7 +487,7 @@ static void check_descriptor_images_agree() {
     // them and num_slots 3 rejects two.  A plan-less region has no pool
     // to bound against and is exempt.
     {
-        ::fixy::BumpArena slot_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         crucible::MemoryPlan ok_plan{};
         ok_plan.slots = make_slots_in_place<21>(test.alloc, slot_arena);
         region->plan = crucible::make_plan_link(ok_plan);
@@ -489,7 +497,7 @@ static void check_descriptor_images_agree() {
                 return crucible::serialize_region(::fixy::to(*region), run.view());
             });
         CRUCIBLE_TEST_ASSERT(kTest, pn > 0 && "plan-bearing serialize failed");
-        ::fixy::BumpArena parena{1 << 16};
+        ::fixy::BumpArena<DagArena> parena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto ok_loaded = crucible::deserialize_region(
             test.alloc, pbuf.view().window(0, pn).expect("the writer writes inside its image"), parena);
         CRUCIBLE_TEST_ASSERT(kTest, ok_loaded.is_ok() && "plan-bearing region with in-range slot_ids must load");
@@ -503,7 +511,7 @@ static void check_descriptor_images_agree() {
                 return crucible::serialize_region(::fixy::to(*region), run.view());
             });
         CRUCIBLE_TEST_ASSERT(kTest, nn > 0 && "plan-bearing (oob) serialize failed");
-        ::fixy::BumpArena narena{1 << 16};
+        ::fixy::BumpArena<DagArena> narena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto bad_loaded = crucible::deserialize_region(
             test.alloc, nbuf.view().window(0, nn).expect("the writer writes inside its image"), narena);
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(bad_loaded) == crucible::LoadError::slot_out_of_range
@@ -526,14 +534,14 @@ static void check_descriptor_images_agree() {
                 ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0}),
                 [&region](auto run) noexcept { return crucible::serialize_region(::fixy::to(*region), run.view()); });
             CRUCIBLE_TEST_ASSERT(kTest, placed_bytes > 0 && "the serialize of a plan of 21 slots fits");
-            ::fixy::BumpArena placed_load{1 << 16};
+            ::fixy::BumpArena<DagArena> placed_load = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
             const crucible::LoadError reason = reason_of(crucible::deserialize_region(
                 test.alloc, placed_buf.view().window(0, placed_bytes).expect("the writer writes inside its image"),
                 placed_load));
             region->plan = ::fixy::none;
             return reason;
         };
-        ::fixy::BumpArena slot_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const ::fixy::View<crucible::TensorSlot> swapped = make_slots_in_place<21>(test.alloc, slot_arena);
         swapped.get(4).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{5};
         swapped.get(5).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{4};
@@ -551,7 +559,7 @@ static void check_descriptor_images_agree() {
     // slot-id gate cannot fire, leaving pool_bytes the only rejector.
     // The bound is inclusive.
     {
-        ::fixy::BumpArena slot_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         crucible::MemoryPlan over_plan{};
         over_plan.slots = make_slots_in_place<21>(test.alloc, slot_arena);
         over_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes + 1;
@@ -562,7 +570,7 @@ static void check_descriptor_images_agree() {
                 return crucible::serialize_region(::fixy::to(*region), run.view());
             });
         CRUCIBLE_TEST_ASSERT(kTest, on > 0 && "over-pool_bytes serialize failed");
-        ::fixy::BumpArena oarena{1 << 16};
+        ::fixy::BumpArena<DagArena> oarena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto over_loaded = crucible::deserialize_region(
             test.alloc, obuf.view().window(0, on).expect("the writer writes inside its image"), oarena);
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(over_loaded) == crucible::LoadError::plan_unservable
@@ -578,7 +586,7 @@ static void check_descriptor_images_agree() {
                 return crucible::serialize_region(::fixy::to(*region), run.view());
             });
         CRUCIBLE_TEST_ASSERT(kTest, an > 0 && "at-cap pool_bytes serialize failed");
-        ::fixy::BumpArena aarena{1 << 16};
+        ::fixy::BumpArena<DagArena> aarena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto at_loaded = crucible::deserialize_region(
             test.alloc, abuf.view().window(0, an).expect("the writer writes inside its image"), aarena);
         CRUCIBLE_TEST_ASSERT(kTest, at_loaded.is_ok() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
@@ -595,7 +603,7 @@ static void check_descriptor_images_agree() {
         constexpr uint32_t kMarkerDeathOp = 0x5A5A5A5Au;
         constexpr size_t kPadAfterDeathOp = 29 - 20;
         constexpr size_t kPad2AfterDeathOp = 36 - 20;
-        ::fixy::BumpArena slot_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         crucible::MemoryPlan pad_plan{};
         const ::fixy::View<crucible::TensorSlot> pad_slots = make_slots_in_place<21>(test.alloc, slot_arena);
         pad_slots.get(20).expect("the pad plan holds 21 slots")->death_op = crucible::OpIndex{kMarkerDeathOp};
@@ -635,7 +643,7 @@ static void check_descriptor_images_agree() {
         const size_t pad_at = marker_at + kPadAfterDeathOp;
         const size_t pad2_at = marker_at + kPad2AfterDeathOp;
 
-        ::fixy::BumpArena clean_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> clean_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto clean = crucible::deserialize_region(test.alloc, image, clean_arena);
         CRUCIBLE_TEST_ASSERT(kTest, clean.is_ok() && "the unmodified pad-probe image must load");
 
@@ -644,7 +652,7 @@ static void check_descriptor_images_agree() {
             corrupt.with_element(
                 at, [](std::byte& element) noexcept { element = std::byte{1}; },
                 [] noexcept { ::fixy::fatal("the pad is inside the image"); });
-            ::fixy::BumpArena corrupt_arena{1 << 16};
+            ::fixy::BumpArena<DagArena> corrupt_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
             return reason_of(crucible::deserialize_region(test.alloc, corrupt.view(), corrupt_arena))
                 == crucible::LoadError::field_out_of_range;
         };
@@ -664,9 +672,10 @@ static void check_descriptor_images_agree() {
     // holds its count, so the image of such a region loads back, and the
     // loaded op holds the same scalars.
     {
-        ::fixy::BumpArena scalar_arena{1 << 16};
-        const ::fixy::View<crucible::TraceEntry> scalar_ops =
-            scalar_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        ::fixy::BumpArena<DagArena> scalar_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
+        const auto scalar_ops_run = scalar_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<crucible::TraceEntry> scalar_ops = scalar_ops_run.view();
         crucible::TraceEntry& scalar_op = *scalar_ops.get(0).expect("the region holds one op");
         scalar_op.schema_hash = crucible::SchemaHash{0x77};
         scalar_op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, scalar_arena, int64_t{5}, int64_t{6}));
@@ -678,7 +687,7 @@ static void check_descriptor_images_agree() {
             });
         CRUCIBLE_TEST_ASSERT(kTest,
                              scalar_bytes > 0 && "the region of an op with scalars and no tensors must serialize");
-        ::fixy::BumpArena load_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> load_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const crucible::RegionNode& loaded_scalars =
             *crucible::deserialize_region(
                  test.alloc, scalar_buf.view().window(0, scalar_bytes).expect("the writer writes inside its image"),
@@ -694,9 +703,10 @@ static void check_descriptor_images_agree() {
     // content hash folds.  The image keeps the hash, the load folds the ops
     // under it, and an image whose hash names a different policy is refused.
     {
-        ::fixy::BumpArena policy_arena{1 << 16};
-        const ::fixy::View<crucible::TraceEntry> policy_ops =
-            policy_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        ::fixy::BumpArena<DagArena> policy_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
+        const auto policy_ops_run = policy_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<crucible::TraceEntry> policy_ops = policy_ops_run.view();
         crucible::TraceEntry& policy_op = *policy_ops.get(0).expect("the region holds one op");
         policy_op.schema_hash = crucible::SchemaHash{0x78};
         policy_op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, policy_arena, int64_t{7}));
@@ -712,7 +722,7 @@ static void check_descriptor_images_agree() {
                 return crucible::serialize_region(::fixy::to(policy_region), run.view());
             });
         CRUCIBLE_TEST_ASSERT(kTest, policy_bytes > 0);
-        ::fixy::BumpArena policy_load{1 << 16};
+        ::fixy::BumpArena<DagArena> policy_load = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const crucible::RegionNode& loaded_policy =
             *crucible::deserialize_region(
                  test.alloc, policy_buf.view().window(0, policy_bytes).expect("the writer writes inside its image"),
@@ -738,7 +748,7 @@ static void check_descriptor_images_agree() {
                                          static_cast<std::byte>((ordered.raw() >> (8 * byte)) & 0xFF);
                                  }
                              });
-        ::fixy::BumpArena other_load{1 << 16};
+        ::fixy::BumpArena<DagArena> other_load = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(test.alloc, other.view(), other_load))
                                             == crucible::LoadError::content_hash_mismatch
                                         && "the ops of the image do not hash to its content hash under another policy");
@@ -751,9 +761,10 @@ static void check_descriptor_images_agree() {
     // old loader took most of those flips, and a replay of such a plan puts
     // two tensors on wrong or overlapping memory.
     {
-        ::fixy::BumpArena flip_dag{1 << 16};
-        const ::fixy::View<crucible::TraceEntry> flip_ops =
-            flip_dag.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        ::fixy::BumpArena<DagArena> flip_dag = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
+        const auto flip_ops_run = flip_dag.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<crucible::TraceEntry> flip_ops = flip_ops_run.view();
         crucible::TraceEntry& flip_op = *flip_ops.get(0).expect("the region holds one op");
         flip_op.schema_hash = crucible::SchemaHash{0x79};
         flip_op.set_inputs(::fixy::check::run_of(kTest, test.alloc, flip_dag, make_meta(16)),
@@ -764,8 +775,9 @@ static void check_descriptor_images_agree() {
         crucible::RegionNode& flip_region = *crucible::make_region(test.alloc, flip_dag, flip_ops);
         crucible::MemoryPlan flip_plan{};
         flip_plan.pool_bytes = 2 * crucible::PoolAllocator::ALIGNMENT;
-        const ::fixy::View<crucible::TensorSlot> flip_slots =
-            flip_dag.array<crucible::TensorSlot>(test.alloc, 2, crucible::TensorSlot{});
+        const auto flip_slots_run = flip_dag.array<crucible::TensorSlot>(test.alloc, 2, crucible::TensorSlot{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<crucible::TensorSlot> flip_slots = flip_slots_run.view();
         std::uint32_t slot_index = 0;
         for (crucible::TensorSlot& slot : flip_slots) {
             slot.offset_bytes = slot_index * crucible::PoolAllocator::ALIGNMENT;
@@ -784,7 +796,7 @@ static void check_descriptor_images_agree() {
         CRUCIBLE_TEST_ASSERT(kTest, flip_bytes > 0);
         const ::fixy::View<const std::byte> flip_image =
             flip_buf.view().window(0, flip_bytes).expect("the writer writes inside its image");
-        ::fixy::BumpArena clean_load{1 << 16};
+        ::fixy::BumpArena<DagArena> clean_load = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         CRUCIBLE_TEST_ASSERT(kTest, crucible::deserialize_region(test.alloc, flip_image, clean_load).is_ok()
                                         && "the image with a plan loads before a flip");
         size_t accepted_flips = 0;
@@ -793,7 +805,7 @@ static void check_descriptor_images_agree() {
             for (uint32_t bit = 0; bit < 8; ++bit) {
                 const ::fixy::HeapArray<std::byte> flipped =
                     with_byte(test.alloc, flip_image, at, std::byte{static_cast<uint8_t>(original ^ (1u << bit))});
-                ::fixy::BumpArena flip_load{1 << 12};
+                ::fixy::BumpArena<DagArena> flip_load = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
                 if (crucible::deserialize_region(test.alloc, flipped.view(), flip_load).is_ok()) ++accepted_flips;
             }
         }

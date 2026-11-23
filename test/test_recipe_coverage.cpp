@@ -46,7 +46,11 @@ using crucible::RecipeRegistry;
 using crucible::ReductionDeterminism;
 using crucible::ScalarType;
 using fixy::BumpArena;
+using crucible::RecipeArena;
 namespace names = crucible::recipe_names;
+
+// The block size of each arena of the test.
+constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> kArenaBlock{size_t{1} << 20};
 
 auto g_test = ::foundation::effects::testing::test();
 auto g_init = ::foundation::effects::testing::init();
@@ -412,7 +416,7 @@ int main() {
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 

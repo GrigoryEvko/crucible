@@ -22,7 +22,7 @@
 using namespace crucible;
 
 int main() {
-    ::fixy::BumpArena arena{};
+    auto arena = ::fixy::mint_bump_arena<crucible::RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{1 << 20});
     auto test_ctx = ::foundation::effects::testing::test();
     auto init_ctx = ::foundation::effects::testing::init();
     RecipePool pool{::fixy::to(arena), init_ctx};

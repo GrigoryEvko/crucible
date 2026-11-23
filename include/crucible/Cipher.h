@@ -25,6 +25,7 @@
 // keeps the members that a context parameterizes, and the small members.
 
 #include <crucible/LoadError.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/Types.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <fixy/Bands.h>
@@ -405,7 +406,7 @@ public:
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard]] LoadResult load_content_addressed(Ctx const& ctx, OpenView const& view,
                                                     ::foundation::effects::Alloc a, ContentHash content_hash,
-                                                    ::fixy::BumpArena& arena) const {
+                                                    ::fixy::BumpArena<DagArena>& arena) const {
         return load_content_addressed_(file_ctx_(ctx), view, a, content_hash, arena);
     }
 
@@ -645,7 +646,7 @@ private:
 
     [[nodiscard]] LoadResult load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
                                                      ::foundation::effects::Alloc a, ContentHash content_hash,
-                                                     ::fixy::BumpArena& arena) const;
+                                                     ::fixy::BumpArena<DagArena>& arena) const;
 
     [[nodiscard]] SessionEventLoad load_session_events_(FileCtx const& file_ctx, OpenView const&,
                                                         ::foundation::effects::Alloc a,

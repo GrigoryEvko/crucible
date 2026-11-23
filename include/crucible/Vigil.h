@@ -590,7 +590,8 @@ public:
             [this, &ctx, a](auto cipher) noexcept {
                 const VigilFgCtx fg = assert_producer_thread_();
                 release_unheld_loads_();
-                ::fixy::Box<::fixy::BumpArena> arena = ::fixy::mint_box<::fixy::BumpArena>(a, LOAD_BLOCK_BYTES);
+                ::fixy::Box<::fixy::BumpArena<DagArena>> arena =
+                    ::fixy::mint_box<::fixy::BumpArena<DagArena>>(a, LOAD_BLOCK_BYTES);
                 const ::fixy::Option<::fixy::Ref<RegionNode>> loaded = load_head_(ctx, a, **cipher, *arena);
                 for (const ::fixy::Ref<RegionNode> region : loaded) {
                     // Each region cut before the load holds ops that ran before it.
@@ -855,7 +856,7 @@ private:
 
     template <class Ctx, class Store>
     [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> load_head_(Ctx const& ctx, ::foundation::effects::Alloc a,
-                                                                     Store& store, ::fixy::BumpArena& arena) {
+                                                                     Store& store, ::fixy::BumpArena<DagArena>& arena) {
         if (store.empty()) return ::fixy::none;
         auto open_view = store.mint_open_view(ctx);
         // A refusal gives no region, and the report tells the person why the
@@ -967,7 +968,7 @@ private:
     // holders name at most HeldRegions::CAP regions, and the release before
     // the load left a slot only for a region that a holder names.  So one
     // slot of LOAD_SLOTS is free for the new load.
-    [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena>&& arena, ConstRegionLink region) noexcept {
+    [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena<DagArena>>&& arena, ConstRegionLink region) noexcept {
         const bool is_kept = loads_.with_mut([&arena, region](auto slots) noexcept {
             for (::fixy::Option<LoadedRegion>& load : slots) {
                 if (load.is_some()) continue;
@@ -1575,12 +1576,12 @@ private:
     // The arena of one load, and the region that the load put in it.  The
     // arena holds each byte of the region.
     struct LoadedRegion {
-        ::fixy::Box<::fixy::BumpArena> arena;
+        ::fixy::Box<::fixy::BumpArena<DagArena>> arena;
         ConstRegionLink region{};
     };
     // The bytes of the first block of the arena of a load.  A larger region
     // takes a block of its own size.
-    static constexpr size_t LOAD_BLOCK_BYTES = size_t{1} << 16;
+    static constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> LOAD_BLOCK_BYTES{size_t{1} << 16};
     // The holders of the foreground (HeldRegions below) name at most this
     // count minus one regions, so a load always finds a free slot.
     static constexpr uint32_t LOAD_SLOTS = 3 + RegionCache::CAP + 1;

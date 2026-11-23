@@ -67,8 +67,10 @@ TensorMeta make_synthetic_meta(uint8_t ndim) {
     return m;
 }
 
-TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, uint16_t n_in, uint16_t n_out,
-                                uint16_t n_scalar, uint8_t ndim) {
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
+TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena, uint16_t n_in,
+                                uint16_t n_out, uint16_t n_scalar, uint8_t ndim) {
     TraceEntry te{};
     te.schema_hash = SchemaHash{bench_rand()};
     te.shape_hash = ShapeHash{bench_rand()};
@@ -77,15 +79,26 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpAren
     te.grad_enabled = true;
     te.kernel_id = CKernelId::OPAQUE;
 
-    const ::fixy::View<TensorMeta> input_metas = arena.array(a, n_in, TensorMeta{});
+    const auto input_metas_run = arena.array(a, n_in, TensorMeta{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TensorMeta> input_metas = input_metas_run.view();
     for (TensorMeta& m : input_metas)
         m = make_synthetic_meta(ndim);
-    te.set_inputs(input_metas, arena.array(a, n_in, OpIndex{}), arena.array(a, n_in, SlotId{}));
-    const ::fixy::View<TensorMeta> output_metas = arena.array(a, n_out, TensorMeta{});
+    const auto producers_run = arena.array(a, n_in, OpIndex{});
+    const auto input_slots_run = arena.array(a, n_in, SlotId{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    te.set_inputs(input_metas, producers_run.view(), input_slots_run.view());
+    const auto output_metas_run = arena.array(a, n_out, TensorMeta{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TensorMeta> output_metas = output_metas_run.view();
     for (TensorMeta& m : output_metas)
         m = make_synthetic_meta(ndim);
-    te.set_outputs(output_metas, arena.array(a, n_out, SlotId{}));
-    const ::fixy::View<int64_t> scalars = arena.array(a, n_scalar, int64_t{0});
+    const auto output_slots_run = arena.array(a, n_out, SlotId{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    te.set_outputs(output_metas, output_slots_run.view());
+    const auto scalars_run = arena.array(a, n_scalar, int64_t{0});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<int64_t> scalars = scalars_run.view();
     for (int64_t& value : scalars)
         value = static_cast<int64_t>(bench_rand());
     te.set_scalar_args(scalars);
@@ -112,7 +125,7 @@ int run_bench(::fixy::os::Args const& arguments) {
     // ── compute_content_hash at three region sizes ───────────────────
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena arena{1 << 16};
+        ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         constexpr uint32_t N = 8;
         ::foundation::core::FixedArray<TraceEntry, N> ops{};
         bench_rng_state = 0xDEADBEEFCAFEBABEULL;
@@ -128,10 +141,12 @@ int run_bench(::fixy::os::Args const& arguments) {
 
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena arena{1 << 20};
-        ::fixy::BumpArena ops_arena{1 << 20};
+        ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
+        ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        const auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0x12345678ABCDEF01ULL;
         for (uint32_t i = 0; i < N; i++) {
             const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 3));
@@ -146,10 +161,12 @@ int run_bench(::fixy::os::Args const& arguments) {
 
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena arena{1 << 20};
-        ::fixy::BumpArena ops_arena{1 << 20};
+        ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
+        ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 1110;
-        const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        const auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0xABCDEF0123456789ULL;
         for (uint32_t i = 0; i < N; i++) {
             const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 4));
@@ -165,15 +182,17 @@ int run_bench(::fixy::os::Args const& arguments) {
     // ── make_region (481 ops) ────────────────────────────────────────
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena data_arena{1 << 20};
-        ::fixy::BumpArena ops_arena{1 << 20};
+        ::fixy::BumpArena<DagArena> data_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
+        ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        const auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0x12345678ABCDEF01ULL;
         for (uint32_t i = 0; i < N; i++)
             *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
         return bench::run("make_region (481 ops)", [&] {
-            ::fixy::BumpArena region_arena{1 << 20};
+            ::fixy::BumpArena<DagArena> region_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
             const ::fixy::Ref<RegionNode> r = make_region(test.alloc, region_arena, ops);
             bench::do_not_optimize(r);
         });
@@ -182,10 +201,12 @@ int run_bench(::fixy::os::Args const& arguments) {
     // ── compute_merkle_hash ──────────────────────────────────────────
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena arena{1 << 20};
-        ::fixy::BumpArena dag_arena{1 << 20};
+        ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
+        ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        const auto ops_run = dag_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
         for (uint32_t i = 0; i < N; i++)
             *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
@@ -199,27 +220,36 @@ int run_bench(::fixy::os::Args const& arguments) {
     // ── build_csr (481 ops, 900 edges) ────────────────────────────────
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena arena{1 << 20};
         constexpr uint32_t NUM_OPS = 481;
         constexpr uint32_t NUM_EDGES = 900;
-        const ::fixy::View<Edge> edges = arena.array(test.alloc, NUM_EDGES, Edge{});
-        bench_rng_state = 0x5555666677778888ULL;
-        for (Edge& edge : edges) {
-            const uint32_t src = static_cast<uint32_t>(bench_rand() % NUM_OPS);
-            const uint32_t dst = ::fixy::min(src + 1 + static_cast<uint32_t>(bench_rand() % 5), NUM_OPS - 1);
-            edge = Edge{.src = OpIndex{src},
-                        .dst = OpIndex{dst},
-                        .src_port = 0,
-                        .dst_port = 0,
-                        .kind = EdgeKind::DATA_FLOW,
-                        .pad = 0};
-        }
-        return bench::run("build_csr (481 ops, 900 edges)", [&] {
-            ::fixy::BumpArena csr_arena{1 << 16};
-            const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(test.alloc, csr_arena);
-            build_csr(test.alloc, csr_arena, *graph, edges, NUM_OPS);
-            bench::do_not_optimize(graph);
+        // The arena of the edges ends with this scope, so the report leaves
+        // the scope through a variable.
+        ::fixy::Option<bench::Report> report{};
+        ::fixy::with_bump_arena(test.alloc, Bytes{size_t{1} << 20}, [&](auto& arena) noexcept {
+            const auto edges_run = arena.array(test.alloc, NUM_EDGES, Edge{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<Edge> edges = edges_run.view();
+            bench_rng_state = 0x5555666677778888ULL;
+            for (Edge& edge : edges) {
+                const uint32_t src = static_cast<uint32_t>(bench_rand() % NUM_OPS);
+                const uint32_t dst = ::fixy::min(src + 1 + static_cast<uint32_t>(bench_rand() % 5), NUM_OPS - 1);
+                edge = Edge{.src = OpIndex{src},
+                            .dst = OpIndex{dst},
+                            .src_port = 0,
+                            .dst_port = 0,
+                            .kind = EdgeKind::DATA_FLOW,
+                            .pad = 0};
+            }
+            report = ::fixy::Option<bench::Report>::some(bench::run("build_csr (481 ops, 900 edges)", [&] {
+                TraceScratch csr_scratch{Bytes{size_t{1} << 16}};
+                csr_scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
+                    const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(test.alloc, epoch);
+                    build_csr(test.alloc, epoch, *graph, edges, NUM_OPS);
+                    bench::do_not_optimize(graph);
+                });
+            }));
         });
+        return std::move(report).expect("the scope of the edges ran the bench");
     }());
 
     // ── compute_memory_plan (300 slots) ──────────────────────────────
@@ -247,22 +277,24 @@ int run_bench(::fixy::os::Args const& arguments) {
         });
         BackgroundThread bg{::foundation::effects::testing::test().alloc};
         // The planner writes the offsets into the slots, so each run plans a
-        // copy of them in scratch.  The arrays of the sweep are in
+        // copy of them in an arena of its own.  The arrays of the sweep are in
         // sweep_scratch.
-        ::fixy::BumpArena scratch{1 << 20};
-        ::fixy::BumpArena sweep_scratch{1 << 20};
+        PlanScratch sweep_scratch{Bytes{size_t{1} << 20}};
         return bench::run("compute_memory_plan (300 slots)", [&] {
-            scratch.with_epoch([&]() noexcept {
-                const ::fixy::View<TensorSlot> copy = scratch.array<TensorSlot>(test.alloc, NUM_SLOTS, TensorSlot{});
-                ::fixy::copy(copy, slots.view()).expect("the copy holds one entry for each slot");
-                MemoryPlan plan_storage{};
-                sweep_scratch.with_epoch([&]() noexcept {
+            ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
+            const auto copy_run = slot_arena.array<TensorSlot>(test.alloc, NUM_SLOTS, TensorSlot{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TensorSlot> copy = copy_run.view();
+            ::fixy::copy(copy, slots.view()).expect("the copy holds one entry for each slot");
+            MemoryPlan plan_storage{};
+            BackgroundThread::PlanTarget const target = bg.plan_target();
+            sweep_scratch.arena.with_epoch(
+                [target, alloc = test.alloc, &plan_storage, copy](PlanScratch::Epoch& epoch) noexcept {
                     const ::fixy::Ref<MemoryPlan> plan =
-                        bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, copy)
+                        BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, copy)
                             .expect("the slots of the bench fit in 64 bits");
                     bench::do_not_optimize(plan);
                 });
-            });
         });
     }());
 
@@ -377,15 +409,21 @@ int run_bench(::fixy::os::Args const& arguments) {
         const ::fixy::View<const OpDepth> drained_depths =
             depth_batch.view().window(0, n).expect("the drain fills at most the batch");
 
-        ::fixy::BumpArena scratch{1 << 20};
+        TraceScratch scratch{Bytes{size_t{1} << 20}};
         // No pipeline of the bench runs, so the proof stays valid for each
-        // iteration.
-        ::fixy::thread::QuiescenceProof<BackgroundThread> const quiescent = bg.prove_quiescence();
+        // iteration.  The body captures the state of the build and the
+        // metadata log by a const reference, and not the BackgroundThread.
+        BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
+        MetaLog const& log = meta_log;
+        NumericsHash const numerics = bg.numerics();
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
-            scratch.with_epoch([&]() noexcept {
-                repopulate_meta_log();
-                auto built = bg.build_trace_from(quiescent, test.alloc, scratch, drained, drained_metas, drained_scopes,
-                                                 drained_callsites, drained_depths, bg.numerics());
+            repopulate_meta_log();
+            scratch.arena.with_epoch([&state, &log, alloc = test.alloc, drained, drained_metas, drained_scopes,
+                                      drained_callsites, drained_depths,
+                                      numerics](TraceScratch::Epoch& epoch) noexcept {
+                auto built =
+                    BackgroundThread::build_trace_from(state, log, alloc, epoch, drained, drained_metas, drained_scopes,
+                                                       drained_callsites, drained_depths, numerics);
                 bench::do_not_optimize(built);
             });
         });
@@ -422,18 +460,23 @@ int run_bench(::fixy::os::Args const& arguments) {
             BackgroundThread bg{::foundation::effects::testing::test().alloc};
             bg.bind_meta_log(meta_log);
             const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
-            ::fixy::BumpArena scratch{arena_bytes};
-            ::fixy::thread::QuiescenceProof<BackgroundThread> const quiescent = bg.prove_quiescence();
+            TraceScratch scratch{Bytes{arena_bytes}};
+            // The body captures the state of the build and the metadata log
+            // by a const reference, and not the BackgroundThread.
+            BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
+            MetaLog const& log = meta_log;
+            NumericsHash const numerics = bg.numerics();
 
             return bench::run(bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view), [&] {
                 const LoadedTrace& loaded = trace;
-                scratch.with_epoch([&]() noexcept {
-                    bench::refill_meta_log(meta_log, loaded);
-                    auto built = bg.build_trace_from(
-                        quiescent, test.alloc, scratch, loaded.entries.view(), loaded.meta_starts.view(),
-                        loaded.scope_hashes.view(), loaded.callsite_hashes.view(), loaded.depths.view(), bg.numerics());
-                    bench::do_not_optimize(built);
-                });
+                bench::refill_meta_log(meta_log, loaded);
+                scratch.arena.with_epoch(
+                    [&state, &log, alloc = test.alloc, &loaded, numerics](TraceScratch::Epoch& epoch) noexcept {
+                        auto built = BackgroundThread::build_trace_from(
+                            state, log, alloc, epoch, loaded.entries.view(), loaded.meta_starts.view(),
+                            loaded.scope_hashes.view(), loaded.callsite_hashes.view(), loaded.depths.view(), numerics);
+                        bench::do_not_optimize(built);
+                    });
             });
         }());
     }

@@ -87,7 +87,9 @@ enum class TableState : std::uint8_t {
 // clear of each input opens it again.  No thread of the Vigil reads a schema
 // table.
 [[nodiscard]] inline Vigil& harness_vigil() noexcept {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the harness keeps one Vigil of its thread for each input, as the vessel does")
     thread_local Vigil vigil{};
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return vigil;
 }
 

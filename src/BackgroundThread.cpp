@@ -532,8 +532,8 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, Pipe
                                                                [](size_t) noexcept { return RegionMemory{}; })},
       uncompiled_regions_{allocation, limits.uncompiled_queue},
       pipeline_{::fixy::mint_box<Pipeline>(allocation)} {
-    build_scratch_.set_retained_limit(limits.scratch_retained);
-    publish_scratch_.set_retained_limit(limits.scratch_retained);
+    build_scratch_.arena.set_retained_limit(limits.scratch_retained);
+    publish_scratch_.arena.set_retained_limit(limits.scratch_retained);
 }
 
 BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready,
@@ -543,8 +543,8 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, Regi
                                                                [](size_t) noexcept { return RegionMemory{}; })},
       uncompiled_regions_{allocation, limits.uncompiled_queue},
       pipeline_{::fixy::mint_box<Pipeline>(allocation)} {
-    build_scratch_.set_retained_limit(limits.scratch_retained);
-    publish_scratch_.set_retained_limit(limits.scratch_retained);
+    build_scratch_.arena.set_retained_limit(limits.scratch_retained);
+    publish_scratch_.arena.set_retained_limit(limits.scratch_retained);
 }
 
 ::fixy::Box<BackgroundThread::BgBuildWork> BackgroundThread::make_commit_work(::foundation::effects::Alloc alloc,
@@ -724,7 +724,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     const ::fixy::View<TensorSlot> slots = parts.runs_.view<BuiltRegion::kSlots>();
     const ContentHash content_hash = parts.content_hash();
     const NumericsHash numerics = parts.numerics();
-    ::fixy::BumpArena& scratch = publish_scratch_;
+    PlanScratch& scratch = publish_scratch_;
     RegionLink published{};
     ConstRegionLink const_published{};
     node.with_element(
@@ -732,17 +732,21 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         [this, &bg, &plan, &scratch, &published, &const_published, ops, slots, content_hash,
          numerics](RegionNode& region) noexcept {
             init_region_node(region, ops, content_hash, numerics);
-            // The plan lives in the memory of the region, outside the epoch,
-            // so the body writes its link and the result of the epoch holds
-            // none.  The sweep gives a Ref of the storage of the plan.  A
-            // refused plan leaves the region with no plan, so the region
-            // stays on eager.  A region with no slot has no plan.
+            // The plan lives in the memory of the region, outside the epoch.
+            // The body of the epoch captures the device of the plan by value,
+            // and not the owner or the region, so it reaches no arena.  The
+            // body gives only whether the sweep wrote a plan into its storage,
+            // and then the region links that storage.  A refused plan leaves
+            // the region with no plan, so the region stays on eager.  A region
+            // with no slot has no plan.
             plan.with_element(
                 0,
-                [this, &bg, &scratch, &region, slots](MemoryPlan& plan_storage) noexcept {
-                    scratch.with_epoch([&]() noexcept {
-                        region.plan = make_plan_link(compute_memory_plan(bg.alloc, plan_storage, scratch, slots).ok());
+                [target = plan_target(), &bg, &scratch, &region, slots](MemoryPlan& plan_storage) noexcept {
+                    const bool is_planned = scratch.arena.with_epoch([target, alloc = bg.alloc, &plan_storage,
+                                                                      slots](PlanScratch::Epoch& epoch) noexcept {
+                        return BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots).is_ok();
                     });
+                    if (is_planned) region.plan = make_plan_link(plan_storage);
                 },
                 [] noexcept {});
             recompute_merkle(region);
@@ -1007,18 +1011,26 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         // (BuildRefusal) builds no region.  The local holds the Box of the
         // message, not the region, so the region and the Option of its arena
         // lie only in the heap object of the Box.
+        //
+        // The body captures the state of the build, the metadata log by a
+        // const reference and the work, and not the owner, so it reaches no
+        // arena of the owner.  A work reaches this stage only with a bound
+        // metadata log (the detect stage).
         ::fixy::Option<::fixy::Box<BgGraphPublish>> publish{::fixy::none};
-        owner.build_scratch_.with_epoch([&]() noexcept {
-            owner
-                .build_trace_(ctx.cap().alloc, owner.build_scratch_, work->trace.view(), work->meta_starts.view(),
-                              work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view(),
-                              work->numerics)
+        TraceBuildState& build_state = owner.build_state_;
+        MetaLog const& meta_log = *owner.meta_log_.get();
+        ::foundation::effects::Alloc const alloc = ctx.cap().alloc;
+        owner.build_scratch_.arena.with_epoch([&build_state, &meta_log, alloc, &work,
+                                               &publish](TraceScratch::Epoch& epoch) noexcept {
+            BackgroundThread::build_trace_(build_state, meta_log, alloc, epoch, work->trace.view(),
+                                           work->meta_starts.view(), work->scope_hashes.view(),
+                                           work->callsite_hashes.view(), work->depths.view(), work->numerics)
                 .match(
                     [&](BuiltTrace trace) noexcept {
-                        publish = ::fixy::some(::fixy::mint_box<BgGraphPublish>(
-                            ctx.cap().alloc, BgGraphPublish{.kind = BgGraphPublish::Kind::Region,
-                                                            .region = std::move(trace.region),
-                                                            .reset_point = work->reset_point}));
+                        publish = ::fixy::some(
+                            ::fixy::mint_box<BgGraphPublish>(alloc, BgGraphPublish{.kind = BgGraphPublish::Kind::Region,
+                                                                                   .region = std::move(trace.region),
+                                                                                   .reset_point = work->reset_point}));
                     },
                     [](BuildRefusal /*refusal*/) noexcept {});
         });

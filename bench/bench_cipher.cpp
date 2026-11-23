@@ -32,20 +32,32 @@ using namespace crucible;
 static const auto BG = ::foundation::effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
+// The block size of each arena of the bench.
+static constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> kArenaBlock{size_t{1} << 18};
+
 // The ops, their arrays and the region are in dag_arena.
-static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops, uint64_t salt) {
+static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops, uint64_t salt) {
     TensorMeta meta{};
     meta.ndim = 1;
     meta.sizes[0] = tensor_dim(64);
     meta.strides[0] = tensor_dim(1);
     meta.dtype = ScalarType::Float;
-    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
+    const auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> ops = ops_run.view();
     for (uint32_t i = 0; i < num_ops; i++) {
         auto& te = *ops.get(i).expect("i is below num_ops");
         te.schema_hash = SchemaHash{salt ^ (0xAAAAULL + i)};
         te.shape_hash = ShapeHash{salt ^ (0xBBBBULL + i)};
-        te.set_inputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, OpIndex{}), dag_arena.array(A, 1, SlotId{}));
-        te.set_outputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, SlotId{}));
+        const auto input_metas_run = dag_arena.array(A, 1, meta);
+        const auto producers_run = dag_arena.array(A, 1, OpIndex{});
+        const auto input_slots_run = dag_arena.array(A, 1, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        te.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
+        const auto output_metas_run = dag_arena.array(A, 1, meta);
+        const auto output_slots_run = dag_arena.array(A, 1, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        te.set_outputs(output_metas_run.view(), output_slots_run.view());
     }
     return make_region(A, dag_arena, ops);
 }
@@ -119,7 +131,7 @@ int main() {
                           .expect("the bench opens its store");
         auto open_view = cipher.mint_open_view(ctx);
 
-        ::fixy::BumpArena warm_dag_arena{1 << 18};
+        ::fixy::BumpArena<DagArena> warm_dag_arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
         const RegionNode& warm_region = *synth_region(warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
         check_unset_ids(warm_region);
         const auto warm_payload = Cipher::content_addressed(::fixy::erase_brand(::fixy::to(warm_region)));
@@ -143,7 +155,7 @@ int main() {
         bench::add_report(reports, [&] {
             uint64_t salt = static_cast<uint64_t>(num_ops) << 32;
             return bench::run(label_cold, [&] {
-                ::fixy::BumpArena region_dag_arena{1 << 18};
+                ::fixy::BumpArena<DagArena> region_dag_arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
                 auto h = cipher.store(ctx, open_view,
                                       Cipher::content_addressed(synth_region(region_dag_arena, num_ops, ++salt)));
                 bench::do_not_optimize(h);
@@ -161,14 +173,14 @@ int main() {
                           }));
 
         bench::add_report(reports, bench::run(label_read, [&] {
-                              ::fixy::BumpArena read_arena{1 << 18};
+                              ::fixy::BumpArena<DagArena> read_arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
                               auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
                               const bool is_loaded = r.is_ok();
                               bench::do_not_optimize(is_loaded);
                           }));
 
         bench::add_report(reports, bench::run(label_ca_read, [&] {
-                              ::fixy::BumpArena read_arena{1 << 18};
+                              ::fixy::BumpArena<DagArena> read_arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
                               auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
                               const bool is_cache_hit =
                                   r.match([](auto const& loaded) noexcept { return loaded.cache_hit(); },

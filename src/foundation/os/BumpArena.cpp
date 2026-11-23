@@ -1,4 +1,4 @@
-// The cold bodies of the arena of the Ref family
+// The cold bodies of the core of the arenas of the Ref family
 // (foundation/core/BumpArena.h).
 //
 // The file is in the door layer, because the end of an epoch calls the poison
@@ -31,8 +31,8 @@ namespace {
 // and ends the process.
 [[nodiscard]] ::foundation::alloc::Layout block_layout_(std::size_t bytes) noexcept {
     return ::foundation::alloc::mint_layout(ByteCount{bytes},
-                                            ::foundation::alloc::Alignment{BumpArena::block_alignment})
-        .expect("a block of a BumpArena is a layout: its bytes are above zero and fit the largest object");
+                                            ::foundation::alloc::Alignment{detail::BumpArenaCore::block_alignment})
+        .expect("a block of an arena is a layout: its bytes are above zero and fit the largest object");
 }
 
 }  // namespace
@@ -44,18 +44,16 @@ void bump_unpoison_(void const* first, std::size_t count) noexcept { ::foundatio
 #endif
 
 void refuse_arena_array_(std::size_t count, std::size_t element_bytes) noexcept {
-    fatal("an array of {} elements of {} bytes in a BumpArena is longer than the largest View", count, element_bytes);
+    fatal("an array of {} elements of {} bytes in an arena is longer than the largest View", count, element_bytes);
 }
 
 void refuse_arena_address_(std::size_t alignment) noexcept {
-    fatal("the next address of a BumpArena does not fit in the address space at the alignment {}", alignment);
+    fatal("the next address of an arena does not fit in the address space at the alignment {}", alignment);
 }
 
-}  // namespace detail
+BumpArenaCore::~BumpArenaCore() { free_blocks_from_(0); }
 
-BumpArena::~BumpArena() { free_blocks_from_(0); }
-
-void* BumpArena::bump_slow_(std::size_t bytes, std::size_t alignment) noexcept {
+void* BumpArenaCore::bump_slow_(std::size_t bytes, std::size_t alignment) noexcept {
     // The block holds the bytes at each address that the alignment can give.
     std::size_t const needed =
         checked_add(bytes, alignment).expect("the bytes of a request below the largest View fit in size_t");
@@ -74,14 +72,14 @@ void* BumpArena::bump_slow_(std::size_t bytes, std::size_t alignment) noexcept {
 // blocks.  A new block is poisoned, so each of its bytes that the bump did
 // not give out is not addressable, also before the first epoch ends.  A block
 // of an earlier epoch is poisoned already.  Complexity: O(max_blocks).
-void BumpArena::enter_block_(std::uint32_t first_index, std::size_t needed) noexcept {
+void BumpArenaCore::enter_block_(std::uint32_t first_index, std::size_t needed) noexcept {
     std::uint32_t index = first_index;
     while (index < block_count_ && block_bytes_[index] < needed) {
         ++index;
     }
     if (index == block_count_) {
         if (index >= max_blocks) [[unlikely]] {
-            fatal("a BumpArena needs more than its {} blocks: each block doubles, so the size saturated", max_blocks);
+            fatal("an arena needs more than its {} blocks: each block doubles, so the size saturated", max_blocks);
         }
         std::size_t const standard = saturating_shift_(block_size_, index);
         std::size_t const wanted = needed > standard ? needed : standard;
@@ -99,7 +97,7 @@ void BumpArena::enter_block_(std::uint32_t first_index, std::size_t needed) noex
 
 // The end of an epoch can leave a block poisoned, so each block becomes
 // addressable before it goes back to the door.
-void BumpArena::free_blocks_from_(std::uint32_t first_index) noexcept {
+void BumpArenaCore::free_blocks_from_(std::uint32_t first_index) noexcept {
     for (std::uint32_t index = first_index; index < block_count_; ++index) {
         ::foundation::os::unpoison_bytes(blocks_[index], block_bytes_[index]);
         detail::heap_release_(blocks_[index], block_layout_(block_bytes_[index]));
@@ -112,17 +110,7 @@ void BumpArena::free_blocks_from_(std::uint32_t first_index) noexcept {
     }
 }
 
-void BumpArena::open_epoch_() noexcept {
-    if (has_open_epoch_) [[unlikely]] {
-        fatal("an epoch of a BumpArena in an epoch of the same arena: end the first epoch before the next one opens");
-    }
-    if (cur_index_ != 0 || offset_ != 0) [[unlikely]] {
-        fatal("an epoch of a BumpArena that holds bytes: open the epoch before the first allocation");
-    }
-    has_open_epoch_ = true;
-}
-
-void BumpArena::end_epoch_() noexcept {
+void BumpArenaCore::end_epoch_() noexcept {
     if (retained_bytes_ > retained_limit_) {
         free_blocks_from_(1);
     }
@@ -135,7 +123,8 @@ void BumpArena::end_epoch_() noexcept {
         cur_block_ = blocks_[0];
         end_offset_ = block_bytes_[0];
     }
-    has_open_epoch_ = false;
 }
+
+}  // namespace detail
 
 }  // namespace foundation::core

@@ -55,14 +55,21 @@ struct DataScope {
 // admits only a type whose every subobject is an implicit-lifetime type, so
 // it refuses each other type, as an arena of live objects must.  Each element
 // of a run holds the value-initialized T.
+// The bump arena is the one member of the class, so it takes a member tag
+// that the class nests.
 class Arena {
-    ::foundation::core::BumpArena bump_{std::size_t{1} << 16};
+    struct[[= ::foundation::brand::arena_member_brand{}]] Bump final {};
+
+    ::foundation::core::BumpArena<Bump> bump_ = ::foundation::core::mint_bump_arena<Bump>(
+        ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>{std::size_t{1} << 16});
 
 public:
     template <typename T>
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc alloc, std::size_t n) noexcept {
-        return bump_.array(alloc, n, T{});
+        auto const run = bump_.array(alloc, n, T{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        return run.view();
     }
 };
 

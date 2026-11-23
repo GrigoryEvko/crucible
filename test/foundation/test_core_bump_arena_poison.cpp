@@ -7,9 +7,11 @@
 // only in a build with AddressSanitizer, and the test passes only on the text
 // of that report.
 //
-// The result of an epoch holds no borrow, so the View leaves the epoch
-// through a variable that the body captures.  That route is the one that the
-// run-time check of the poison covers.
+// The result of an epoch holds no borrow, and a capture by reference of a
+// type that can hold the epoch brand is refused.  A plain View carries no
+// brand, so the View leaves the epoch through a variable that the body
+// captures.  That route is the one that the run-time check of the poison
+// covers.
 
 #include <foundation/core/BumpArena.h>
 
@@ -17,14 +19,29 @@
 #include <foundation/core/Report.h>
 #include <foundation/effects/Effect.h>
 
+#include <cstddef>
 #include <cstdint>
 
+namespace {
+
+// The owner of the epoch arena of the program.
+struct Scratch {
+    struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
+
+    ::foundation::core::EpochArena<Arena> arena = ::foundation::core::mint_epoch_arena<Arena>(
+        ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>{4096});
+};
+
+}  // namespace
+
 int main() {
-    ::foundation::core::BumpArena arena{4096};
+    Scratch scratch{};
     ::foundation::core::View<std::uint64_t> value{};
-    arena.with_epoch([&]() noexcept {
-        value = arena.array<std::uint64_t>(::foundation::effects::testing::test().alloc, 1, 0x5EED);
-    });
+    scratch.arena.with_epoch(
+        [&value](::foundation::core::Epoch<::foundation::core::EpochOf<Scratch::Arena>>& epoch) noexcept {
+            auto const run = epoch.array<std::uint64_t>(::foundation::effects::testing::test().alloc, 1, 0x5EED);
+            value = run.view();
+        });
 
     // The epoch ended, so this read must not return.
     std::uint64_t total = 0;

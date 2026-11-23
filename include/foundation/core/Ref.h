@@ -723,6 +723,11 @@ struct BoxDoor {
     [[nodiscard]] static constexpr BoxKey key() noexcept { return BoxKey{}; }
 };
 
+// The form of the constructor of a Box that builds its object from a prvalue
+// that a callable gives (the mint_box of an arena of
+// foundation/core/BumpArena.h).
+struct BoxBuild final {};
+
 namespace owner {
 
 // The field of a Box: its object, or null when it holds none.
@@ -913,6 +918,18 @@ public:
               && std::constructible_from<T, Args&&...>
     explicit Box(detail::BoxKey const& /*key*/, Hole<Size, Align>&& hole, Args&&... args) noexcept
         : Core{State{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)}} {}
+
+    // Takes the storage of the size and the alignment of T from the
+    // allocation door, and builds in it the T that build gives as a prvalue.
+    // The guaranteed elision builds the object in place, so a T that cannot
+    // move and that only a door builds, such as an arena, fits a Box.  Only a
+    // mint holds the key.
+    template <class Build>
+        requires CompleteBoxPayload<T> && std::is_nothrow_invocable_v<Build&&>
+              && std::same_as<std::invoke_result_t<Build&&>, T>
+    explicit Box(detail::BoxKey const& /*key*/, detail::BoxBuild /*form*/, Build&& build) noexcept
+        : Core{State{::new(detail::heap_allocate_(::foundation::alloc::Layout::of<T>()))
+                         T(static_cast<Build&&>(build)())}} {}
 
     // A Box of the object of a word of the authority of the key (the word of
     // a Box).  claim_box calls it.  The empty word ends the process through

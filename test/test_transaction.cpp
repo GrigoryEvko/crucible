@@ -16,7 +16,11 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
 }  // namespace
+
+using crucible::DagArena;
 
 namespace {
 
@@ -137,12 +141,13 @@ template <class LogType>
 
 // One region for each step, so that each transaction holds a region that no
 // other transaction holds.  The region and a copy of its op are in the arena.
-[[nodiscard]] crucible::RegionNode* region_of_step(::foundation::effects::Alloc alloc, ::fixy::BumpArena& arena,
-                                                   uint32_t step) {
+[[nodiscard]] crucible::RegionNode* region_of_step(::foundation::effects::Alloc alloc,
+                                                   ::fixy::BumpArena<DagArena>& arena, uint32_t step) {
     crucible::TraceEntry entry{};
     entry.schema_hash = crucible::SchemaHash{0x5000u + step};
-    const ::fixy::Ref<crucible::RegionNode> region =
-        crucible::make_region(alloc, arena, arena.array<crucible::TraceEntry>(alloc, 1, entry));
+    const auto ops_run = arena.array<crucible::TraceEntry>(alloc, 1, entry);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(alloc, arena, ops_run.view());
     crucible::recompute_merkle(*region);
     return &*region;
 }
@@ -198,7 +203,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
                                        RollbackOrder order) {
     constexpr uint32_t kSlots = 16;
     Log log{};
-    ::fixy::BumpArena arena(1 << 14);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 14});
     std::array<crucible::RegionNode*, kSlots + 2> regions{};
     for (uint32_t step = 1; step <= kSlots + 1; ++step)
         regions[step] = region_of_step(alloc, arena, step);
@@ -235,7 +240,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
 // rollback target is not the superseded transaction with the newest claim.
 void previous_follows_the_order_of_displacements(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     Log log{};
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     std::array<crucible::RegionNode*, 5> regions{};
     for (uint32_t step = 1; step <= 4; ++step)
         regions[step] = region_of_step(alloc, arena, step);
@@ -277,7 +282,7 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
 // The fourth transaction stays committed, and its slot does not change.
 void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     SmallestLog log{};
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     std::array<crucible::RegionNode*, 6> regions{};
     for (uint32_t step = 1; step <= 5; ++step)
         regions[step] = region_of_step(alloc, arena, step);
@@ -314,7 +319,7 @@ void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::A
 void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::effects::Alloc alloc,
                                                                const SoloOwner& owner) {
     SmallestLog log{};
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     std::array<crucible::RegionNode*, 5> regions{};
     for (uint32_t step = 1; step <= 4; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
@@ -343,7 +348,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
 // run time, so the refusal is a run-time compare of the claim.
 void committed_goes_stale_after_the_ring_wraps(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     SmallestLog log{};
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode* const region = region_of_step(alloc, arena, 1);
     const auto kept = commit_step(log, owner, 1, region);
     CRUCIBLE_TEST_ASSERT(kTest, facts_of(log, owner, kept).status == crucible::TxStatus::COMMITTED);
@@ -363,7 +368,7 @@ void committed_goes_stale_after_the_ring_wraps(::foundation::effects::Alloc allo
 // draft: they would name the transaction of a later claim.
 void draft_goes_stale_on_a_log_of_unkeyed(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     SmallestLog log{};
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode* const region = region_of_step(alloc, arena, 1);
     auto held = log.begin_tx(owner, 100);
     CRUCIBLE_TEST_ASSERT(kTest, log.with_draft(owner, held, facts_of_tx).expect("fresh").step == 100);
@@ -379,7 +384,7 @@ void draft_goes_stale_on_a_log_of_unkeyed(::foundation::effects::Alloc alloc, co
 // A keyed log takes its key at each door.  The draft holds the key, and the
 // commit gives it back after the CommittedTx.
 void keyed_log_passes_its_key(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode* const region = region_of_step(alloc, arena, 1);
     auto minted = ::fixy::mint_cyclic_buffer<crucible::Transaction, 4>();
     auto& ring = minted.at(::fixy::index<0>());
@@ -408,7 +413,7 @@ using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
 
 // Publishes kRunSteps regions into a log of its own, rolls back after each
 // third, and gives the stamp of each transaction at the end.
-[[nodiscard]] RunStamps publish_and_stamp(::foundation::effects::Alloc alloc, ::fixy::BumpArena& arena,
+[[nodiscard]] RunStamps publish_and_stamp(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena,
                                           const SoloOwner& owner) {
     Log log{};
     auto minted = ::foundation::core::mint_fixed_array<::fixy::Option<Log::Committed>, kRunSteps>();
@@ -434,7 +439,7 @@ using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
 }
 
 void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
-    ::fixy::BumpArena arena(1 << 13);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 13});
     const RunStamps first = publish_and_stamp(alloc, arena, owner);
     const RunStamps second = publish_and_stamp(alloc, arena, owner);
     CRUCIBLE_TEST_ASSERT(kTest, first == second);
@@ -448,9 +453,11 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     auto test = ::foundation::effects::testing::test();
     const SoloOwner owner = SoloOwner::claim();
     Log log{};
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
 
-    ::fixy::View<crucible::TraceEntry> const ops = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto const ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
     ops.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xFEED};
     const ::fixy::Ref<crucible::RegionNode> region1 = crucible::make_region(test.alloc, arena, ops);
     // A commit requires a non-zero merkle root, so the hash is recomputed
@@ -459,7 +466,9 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     crucible::recompute_merkle(*region1);
     CRUCIBLE_TEST_ASSERT(kTest, region1->merkle_hash.raw() != 0);
 
-    ::fixy::View<crucible::TraceEntry> const ops2 = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto const ops2_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry> const ops2 = ops2_run.view();
     ops2.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xBEEF};
     const ::fixy::Ref<crucible::RegionNode> region2 = crucible::make_region(test.alloc, arena, ops2);
     crucible::recompute_merkle(*region2);
@@ -533,8 +542,9 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     for (uint32_t i = 3; i <= 32; i++) {
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
-        const ::fixy::Ref<crucible::RegionNode> r =
-            crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
+        const auto entry_run = arena.array<crucible::TraceEntry>(test.alloc, 1, e);
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::Ref<crucible::RegionNode> r = crucible::make_region(test.alloc, arena, entry_run.view());
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(*r);
         static_cast<void>(publish(log, owner, i, &*r));

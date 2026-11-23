@@ -106,8 +106,8 @@ constexpr uint32_t kNumSlots = 12;
 // `data_ptr_base` is the only thing that differs between the two builds.
 // It stands for the run-to-run variation the allocator produces, and the
 // hashes must not see it.
-void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy::View<TraceEntry> ops,
-               uint64_t data_ptr_base) noexcept {
+void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagArena>& arena,
+               ::fixy::View<TraceEntry> ops, uint64_t data_ptr_base) noexcept {
     for (uint32_t op_index = 0; op_index < kNumOps; op_index++) {
         TraceEntry& entry = *ops.get(op_index).expect("op_index is below kNumOps");
         entry = TraceEntry{};
@@ -121,7 +121,9 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy
         const uint16_t num_scalars = static_cast<uint16_t>(seed % 3);
         entry.grad_enabled = ((seed & 0x100) != 0);
 
-        const ::fixy::View<TensorMeta> metas = arena.array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
+        const auto metas_run = arena.array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorMeta> metas = metas_run.view();
         for (uint16_t input_index = 0; input_index < num_inputs; input_index++) {
             TensorMeta& meta =
                 *metas.get(input_index).expect("a test reads an element at or past the count of its View");
@@ -139,12 +141,18 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy
             const std::uintptr_t address = data_ptr_base + (uint64_t{op_index} * 64 + input_index) * 4096;
             meta.data_ptr = crucible::external_data_ptr(std::bit_cast<void*>(address));
         }
-        entry.set_inputs(metas, arena.array<OpIndex>(ctx.alloc, num_inputs, OpIndex{}),
-                         arena.array<SlotId>(ctx.alloc, num_inputs, SlotId{}));
-        entry.set_outputs(arena.array<TensorMeta>(ctx.alloc, 1, TensorMeta{}),
-                          arena.array<SlotId>(ctx.alloc, 1, SlotId{}));
+        const auto producers_run = arena.array<OpIndex>(ctx.alloc, num_inputs, OpIndex{});
+        const auto input_slots_run = arena.array<SlotId>(ctx.alloc, num_inputs, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        entry.set_inputs(metas, producers_run.view(), input_slots_run.view());
+        const auto output_metas_run = arena.array<TensorMeta>(ctx.alloc, 1, TensorMeta{});
+        const auto output_slots_run = arena.array<SlotId>(ctx.alloc, 1, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        entry.set_outputs(output_metas_run.view(), output_slots_run.view());
 
-        const ::fixy::View<int64_t> scalars = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
+        const auto scalars_run = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<int64_t> scalars = scalars_run.view();
         for (uint16_t scalar_index = 0; scalar_index < num_scalars; scalar_index++) {
             *scalars.get(scalar_index).expect("a test reads an element at or past the count of its View") =
                 static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
@@ -192,11 +200,15 @@ struct Built {
 // and main() checks that the two values actually came out different so this
 // cannot silently decay back into one pin.
 [[nodiscard]] Built build_once(::foundation::effects::Test ctx, uint64_t data_ptr_base) noexcept {
-    ::fixy::BumpArena arena{1 << 20};
-    ::fixy::BumpArena dag_arena{1 << 20};
+    using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 20});
+    ::fixy::BumpArena<crucible::DagArena> dag_arena =
+        ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 20});
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
+    const auto ops_run = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> ops = ops_run.view();
     build_ops(ctx, arena, ops, data_ptr_base);
 
     constexpr uint32_t kSplit = kNumOps / 2;
@@ -206,12 +218,21 @@ struct Built {
         ctx.alloc, dag_arena, ops.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
     head->next = crucible::make_link(*tail);
 
-    const ::fixy::View<TensorSlot> slots = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
+    const auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TensorSlot> slots = slots_run.view();
     build_slots(slots);
     crucible::MemoryPlan plan_storage{};
-    ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    head->plan = crucible::PlanLink::some(bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots)
-                                              .expect("the slots of the test fit in 64 bits"));
+    crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
+    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    sweep_scratch.arena.with_epoch(
+        [target, alloc = ctx.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
+            static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots)
+                                  .expect("the slots of the test fit in 64 bits"));
+        });
+    // The sweep writes the plan into the storage of the caller, and the head
+    // links that storage.
+    head->plan = crucible::make_plan_link(plan_storage);
     crucible::recompute_merkle(*head);
 
     Built out;

@@ -32,9 +32,14 @@ using crucible::RecipePool;
 using crucible::RecipeRegistry;
 using crucible::SchemaHash;
 using crucible::TraceEntry;
+using crucible::DagArena;
+using crucible::RecipeArena;
 using fixy::BumpArena;
 
 namespace names = crucible::recipe_names;
+
+// The block size of each arena of the test.
+constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> kArenaBlock{size_t{1} << 20};
 
 auto g_test = ::foundation::effects::testing::test();
 auto g_init = ::foundation::effects::testing::init();
@@ -79,8 +84,8 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
     // as soon as a second process starts.  Pointer identity holds within a
     // pool, and identity across pools runs through the recipe hash.
     {
-        BumpArena arena_a{};
-        BumpArena arena_b{};
+        BumpArena<RecipeArena> arena_a = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
+        BumpArena<RecipeArena> arena_b = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool_a{::fixy::to(arena_a), init_cap()};
         RecipePool pool_b{::fixy::to(arena_b), init_cap()};
         RecipeRegistry reg_a{::fixy::to(pool_a), alloc_cap()};
@@ -105,8 +110,8 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
     // on a lookup pinned to the other, which produces wrong bits and
     // breaks replay determinism.
     {
-        BumpArena arena{};
-        BumpArena recipe_arena{};
+        BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
+        BumpArena<RecipeArena> recipe_arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 
@@ -115,7 +120,9 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         RecipeRegistry::RecipeRef const rec_strict =
             registry.by_name(kPure, names::kF32Strict).expect("the starter is present");
 
-        ::fixy::View<TraceEntry> const ops = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto const ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TraceEntry> const ops = ops_run.view();
         mk_ops(ops);
 
         const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops, *rec_tc);
@@ -141,8 +148,8 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
     // assumed.  Recovery runs by hash, which returns the canonical
     // interned pointer in the current process.
     {
-        BumpArena arena{};
-        BumpArena recipe_arena{};
+        BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
+        BumpArena<RecipeArena> recipe_arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 
@@ -151,7 +158,9 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         const NumericalRecipe* recipe_orig =
             &*registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
-        ::fixy::View<TraceEntry> const ops = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto const ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TraceEntry> const ops = ops_run.view();
         mk_ops(ops);
         const crucible::RegionNode& region_orig = *crucible::make_region(alloc_cap(), arena, ops, *recipe_orig);
         const ContentHash persisted_content_hash = region_orig.content_hash;
@@ -182,22 +191,24 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
     // both rest on that.
     {
         // The original process.
-        BumpArena arena_a{};
-        BumpArena recipe_arena_a{};
+        BumpArena<DagArena> arena_a = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
+        BumpArena<RecipeArena> recipe_arena_a = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool_a{::fixy::to(recipe_arena_a), init_cap()};
         RecipeRegistry reg_a{::fixy::to(pool_a), alloc_cap()};
         RecipeRegistry::RecipeRef const rec_a =
             reg_a.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
 
-        ::fixy::View<TraceEntry> const ops_a = arena_a.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto const ops_a_run = arena_a.array(alloc_cap(), kOpsCount, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TraceEntry> const ops_a = ops_a_run.view();
         mk_ops(ops_a);
         const crucible::RegionNode& region_a = *crucible::make_region(alloc_cap(), arena_a, ops_a, *rec_a);
         const ContentHash hash_in_proc_a = region_a.content_hash;
 
         // A second process, with its own pool, registry and arena, and so
         // with different addresses throughout.
-        BumpArena arena_b{};
-        BumpArena recipe_arena_b{};
+        BumpArena<DagArena> arena_b = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
+        BumpArena<RecipeArena> recipe_arena_b = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool_b{::fixy::to(recipe_arena_b), init_cap()};
         RecipeRegistry reg_b{::fixy::to(pool_b), alloc_cap()};
         RecipeRegistry::RecipeRef const rec_b =
@@ -207,7 +218,9 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         // One hash, which is the identity that crosses them.
         CRUCIBLE_TEST_ASSERT(kTest, rec_a->hash == rec_b->hash);
 
-        ::fixy::View<TraceEntry> const ops_b = arena_b.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto const ops_b_run = arena_b.array(alloc_cap(), kOpsCount, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TraceEntry> const ops_b = ops_b_run.view();
         mk_ops(ops_b);
         const crucible::RegionNode& region_b = *crucible::make_region(alloc_cap(), arena_b, ops_b, *rec_b);
         const ContentHash hash_in_proc_b = region_b.content_hash;
@@ -222,8 +235,8 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
     // and no diagnostic.  The content hash is recipe-aware, so the cache
     // key is too, and the two recipes cannot share a slot.
     {
-        BumpArena arena{};
-        BumpArena recipe_arena{};
+        BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
+        BumpArena<RecipeArena> recipe_arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::to(pool), alloc_cap()};
 
@@ -234,7 +247,9 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         RecipeRegistry::RecipeRef const rec_bf16_tc =
             registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
-        ::fixy::View<TraceEntry> const ops = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto const ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TraceEntry> const ops = ops_run.view();
         mk_ops(ops);
 
         const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops, *rec_tc);
@@ -289,8 +304,8 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
     // under it.  The content hash refuses a recipe hash of 0, so the hash of
     // the interned recipe must not be 0.
     {
-        BumpArena arena{};
-        BumpArena recipe_arena{};
+        BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
+        BumpArena<RecipeArena> recipe_arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(recipe_arena), init_cap()};
         const NumericalRecipe zero_bytes{
             .accum_dtype = crucible::ScalarType::Byte,
@@ -303,7 +318,9 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
             .flags = {},
             .hash = {},
         };
-        ::fixy::View<TraceEntry> const entry = arena.array(alloc_cap(), 1, TraceEntry{});
+        auto const entry_run = arena.array(alloc_cap(), 1, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TraceEntry> const entry = entry_run.view();
         entry.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0xAA01};
 
         const ContentHash with_recipe =

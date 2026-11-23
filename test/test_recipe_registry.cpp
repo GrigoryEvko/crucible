@@ -47,8 +47,12 @@ using crucible::ScalarType;
 using crucible::ScalePolicy;
 using crucible::SoftmaxRecurrence;
 using fixy::BumpArena;
+using crucible::RecipeArena;
 
 namespace names = crucible::recipe_names;
+
+// The block size of each arena of the test.
+constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> kArenaBlock{size_t{1} << 20};
 
 namespace eff = ::foundation::effects;
 
@@ -106,7 +110,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -129,7 +133,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -172,7 +176,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // Lookup by name is exact and case-sensitive, so the near-misses
     // below have to miss just as firmly as the nonsense ones.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -199,7 +203,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // behind an existing name changes what every consumer that pinned it
     // receives, without any of them changing a line.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -269,7 +273,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // an error: the first match would win and the second recipe would
     // become unreachable without anything reporting it.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -287,7 +291,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // up with identical fields would collapse into one pooled recipe and
     // the pool would simply hold fewer entries than there are names.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -315,7 +319,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // The failure message below says what to do once such a change has
     // been audited and accepted.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -355,7 +359,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // starter's fields by hand has to reach the pointer the registry
     // already holds, rather than adding a second copy beside it.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -373,7 +377,7 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // Lookup by hash is how a persisted entry finds its recipe again, so
     // it has to reach the same pointer as lookup by name.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap()};
         RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -412,8 +416,8 @@ static_assert(!ReadsByName<::fixy::ColdInitCtx>);
     // over separate pools therefore hand out different pointers for the
     // same recipe, and those recipes still hash alike.
     {
-        BumpArena arena_a{};
-        BumpArena arena_b{};
+        BumpArena<RecipeArena> arena_a = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
+        BumpArena<RecipeArena> arena_b = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool_a{::fixy::to(arena_a), init_cap()};
         RecipePool pool_b{::fixy::to(arena_b), init_cap()};
         RecipeRegistry reg_a{::fixy::to(pool_a), alloc_cap()};

@@ -2178,11 +2178,12 @@ crucible_neg_compile_test(neg_built_region_buffer_assignment
 crucible_neg_compile_test(neg_publish_job_captures_this
   "static assertion failed: run_on_publish_stage: the body captures .this. \\(field __this, type \\{anonymous\\}::Owner\\*\\)"
   "Capture the parts that the body uses, not the whole object")
-# A build of a trace outside the pipeline writes the scratch of the build
-# stage, so it takes the proof that no pipeline runs.
+# A build of a trace outside the pipeline writes the state of the trace build
+# of the build stage, so the door of that state takes the proof that no
+# pipeline runs.
 crucible_neg_compile_test(neg_background_thread_build_trace_without_a_proof
-  "no matching function for call to .crucible::BackgroundThread::build_trace_from\\(foundation::core::Alloc, foundation::core::BumpArena&"
-  "candidate expects 9 arguments, 8 provided")
+  "no matching function for call to .crucible::BackgroundThread::trace_build_state\\(\\)"
+  "candidate expects 1 argument, 0 provided")
 # A job reaches the publish stage only through its view, so the door refuses a
 # capture that reaches the BackgroundThread, such as a Ref of it.
 crucible_neg_compile_test(neg_publish_job_captures_a_ref_of_the_background_thread
@@ -3641,15 +3642,15 @@ crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
   "no match for .operator=."
   "crucible::RecipePool::Size.*fixy::Monotonic<unsigned int")
 
-# The RecipePool constructor takes a branded Ref<BumpArena, Brand>.  A raw
-# pointer to the arena and a Ref of a different type must fail at the
-# constructor.
+# The RecipePool constructor takes a branded Ref<BumpArena<RecipeArena>,
+# Brand>.  A raw pointer to the arena and a Ref of a different type must fail
+# at the constructor.
 crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "mismatched types .foundation::core::Ref<foundation::core::BumpArena, [A-Za-z]+>. and .foundation::core::BumpArena\\*.")
+  "mismatched types .foundation::core::Ref<foundation::core::BumpArena<crucible::RecipeArena>, [A-Za-z]+>. and .foundation::core::BumpArena<crucible::RecipeArena>\\*.")
 crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "mismatched types .foundation::core::BumpArena. and .OtherArena.")
+  "mismatched types .foundation::core::BumpArena<crucible::RecipeArena>. and .OtherArena.")
 
 # A RecipePool is built in the initialization phase.  The constructor
 # defaults to Row<Init>, and a pure row, a row with only Alloc and a row
@@ -3672,7 +3673,7 @@ crucible_neg_compile_test(neg_recipe_registry_pool_raw_pointer
   "mismatched types .foundation::core::Ref<crucible::RecipePool, [A-Za-z]+>. and .crucible::RecipePool\\*.")
 crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
   "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
-  "mismatched types .crucible::RecipePool. and .foundation::core::BumpArena.")
+  "mismatched types .crucible::RecipePool. and .foundation::core::BumpArena<crucible::RecipeArena>.")
 
 # forge/recipes/Network.h network-kernel recipe constraints.
 #   * neg_network_recipe_strict_sharp: BITEXACT_STRICT cannot enter SHARP.

@@ -618,7 +618,8 @@ template <class Region, ::foundation::brand::IsBrand Brand>
 // content hash that the operations do not fold to.  The reason is the first
 // fault of the image.  Every structure it builds lives in the arena.
 CRUCIBLE_COLD [[nodiscard]] inline ::fixy::Result<LoadedRegionNode, LoadError>
-deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image, ::fixy::BumpArena& arena) {
+deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
+                   ::fixy::BumpArena<DagArena>& arena) {
     using namespace detail_ser;
     Reader r{.image = image};
 
@@ -677,7 +678,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         if (!r.has_remaining(num_slots, kTensorSlotWireBytes)) {
             return ::fixy::err(r.reason_or(LoadError::truncated));
         }
-        const ::fixy::View<TensorSlot> slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
+        const auto slots_run = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorSlot> slots = slots_run.view();
         loaded_plan->slots = slots;
         uint32_t slot_position = 0;
         for (TensorSlot& slot : slots) {
@@ -707,7 +710,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     if (!r.has_remaining(num_ops, kTraceEntryMinWireBytes)) {
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
-    const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
+    const auto ops_run = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> ops = ops_run.view();
 
     for (TraceEntry& te : ops) {
         te.schema_hash = SchemaHash{r.r<uint64_t>()};
@@ -762,28 +767,38 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
                 "the gate refuses a word past the data slots, and a refused word reads as zero");
         }
 
-        const ::fixy::View<TensorMeta> input_metas = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
+        const auto input_metas_run = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorMeta> input_metas = input_metas_run.view();
         for (TensorMeta& meta : input_metas) {
             meta = read_meta(r);
         }
 
-        const ::fixy::View<TensorMeta> output_metas = arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
+        const auto output_metas_run = arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorMeta> output_metas = output_metas_run.view();
         for (TensorMeta& meta : output_metas) {
             meta = read_meta(r);
         }
 
-        const ::fixy::View<int64_t> scalar_args = arena.array<int64_t>(a, num_scalar_args, int64_t{0});
+        const auto scalar_args_run = arena.array<int64_t>(a, num_scalar_args, int64_t{0});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<int64_t> scalar_args = scalar_args_run.view();
         for (int64_t& value : scalar_args) {
             value = r.r<int64_t>();
         }
         te.set_scalar_args(scalar_args);
 
-        const ::fixy::View<OpIndex> producers = arena.array<OpIndex>(a, num_inputs, OpIndex{});
+        const auto producers_run = arena.array<OpIndex>(a, num_inputs, OpIndex{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<OpIndex> producers = producers_run.view();
         for (OpIndex& producer : producers) {
             producer = OpIndex{r.r<uint32_t>()};
         }
 
-        const ::fixy::View<SlotId> input_slot_ids = arena.array<SlotId>(a, num_inputs, SlotId{});
+        const auto input_slot_ids_run = arena.array<SlotId>(a, num_inputs, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<SlotId> input_slot_ids = input_slot_ids_run.view();
         for (SlotId& slot_id : input_slot_ids) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // A slot id indexes the replay slot table, and replay checks only
@@ -801,7 +816,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         }
         te.set_inputs(input_metas, producers, input_slot_ids);
 
-        const ::fixy::View<SlotId> output_slot_ids = arena.array<SlotId>(a, num_outputs, SlotId{});
+        const auto output_slot_ids_run = arena.array<SlotId>(a, num_outputs, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<SlotId> output_slot_ids = output_slot_ids_run.view();
         for (SlotId& slot_id : output_slot_ids) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.
@@ -897,7 +914,7 @@ template <typename Resolve>
     requires std::is_invocable_r_v<TraceLink, Resolve&, MerkleHash>
 [[nodiscard]] inline ::fixy::Result<::fixy::Ref<BranchNode>, LoadError>
 deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
-                   ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
+                   ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
     Reader r{.image = image};
@@ -926,7 +943,9 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     node->merkle_hash = hdr.merkle_hash;
     node->next = ::fixy::none;  // the caller resolves the continuation separately
     node->guard = guard;
-    node->set_arms(arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{}));
+    const auto arms_run = arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    node->set_arms(arms_run.view());
     for (BranchNode::Arm& arm : node->arms()) {
         arm.value = r.r<int64_t>();
         const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
@@ -945,7 +964,7 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 // caller resolves the targets later.
 [[nodiscard]] inline ::fixy::Result<::fixy::Ref<BranchNode>, LoadError>
 deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
-                   ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) {
+                   ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND) {
     return deserialize_branch(a, image, arena, [](MerkleHash) noexcept { return TraceLink{}; });
 }
 
@@ -954,7 +973,7 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 // The deduced parameters hold the other arguments, and no parameter of the
 // twin has a type of the standard library.
 template <class Buffer, class... Rest>
-void deserialize_branch(::foundation::effects::Alloc, Buffer&&, ::fixy::BumpArena&&, Rest&&...) =
+void deserialize_branch(::foundation::effects::Alloc, Buffer&&, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 }  // namespace crucible

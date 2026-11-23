@@ -36,8 +36,10 @@ using RegionIndex = ::fixy::Index<NUM_REGIONS>;
 // Region r of the fixture: 128 ops with hashes of r, and an empty plan.
 // The arena builds each op and each plan with its member initializers.
 [[nodiscard]] ::fixy::Ref<RegionNode> make_fixture_region(::foundation::effects::Test const& test,
-                                                          ::fixy::BumpArena& arena, RegionIndex r) {
-    const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
+                                                          ::fixy::BumpArena<DagArena>& arena, RegionIndex r) {
+    const auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> ops = ops_run.view();
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
         op.schema_hash = SchemaHash{0x1000 + r.raw() * 0x100 + i};
@@ -55,14 +57,15 @@ using RegionIndex = ::fixy::Index<NUM_REGIONS>;
 // elements in order, so the arena gives each region the addresses of a
 // loop over r.
 template <std::size_t... Region>
-[[nodiscard]] Regions make_fixture_regions(::foundation::effects::Test const& test, ::fixy::BumpArena& arena,
+[[nodiscard]] Regions make_fixture_regions(::foundation::effects::Test const& test, ::fixy::BumpArena<DagArena>& arena,
                                            std::index_sequence<Region...> /*order*/) {
     return Regions{make_fixture_region(test, arena, ::fixy::index<Region>())...};
 }
 
 struct TestFixture {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena{1 << 20};
+    ::fixy::BumpArena<DagArena> arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
     Regions regions = make_fixture_regions(test, arena, std::make_index_sequence<NUM_REGIONS>{});
 
     [[nodiscard]] RegionNode& region(RegionIndex r) noexcept { return *regions.at(r); }

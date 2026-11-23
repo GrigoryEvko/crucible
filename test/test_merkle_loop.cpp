@@ -23,16 +23,21 @@ using crucible::SchemaHash;
 
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena(1 << 16);
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
 
-    ::fixy::View<crucible::TraceEntry> const body_ops1 = arena.array(test.alloc, 2, crucible::TraceEntry{});
+    auto const body_ops1_run = arena.array(test.alloc, 2, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry> const body_ops1 = body_ops1_run.view();
     body_ops1.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x1111};
     body_ops1.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x2222};
     // The nodes are held as references: a Ref local in this large function
     // costs the Debug compile far more than a reference.
     crucible::RegionNode& body_r1 = *crucible::make_region(test.alloc, arena, body_ops1);
 
-    ::fixy::View<crucible::TraceEntry> const body_ops2 = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto const body_ops2_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry> const body_ops2 = body_ops2_run.view();
     body_ops2.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x3333};
     crucible::RegionNode& body_r2 = *crucible::make_region(test.alloc, arena, body_ops2);
 
@@ -45,7 +50,9 @@ using crucible::SchemaHash;
 
     CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_body_content_hash(body_r1) == body_ch);
 
-    ::fixy::View<crucible::FeedbackEdge> const fb_edges = arena.array(test.alloc, 1, crucible::FeedbackEdge{});
+    auto const fb_edges_run = arena.array(test.alloc, 1, crucible::FeedbackEdge{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::FeedbackEdge> const fb_edges = fb_edges_run.view();
     fb_edges.get(0).expect("the run holds one edge")->output_idx = 0;
     fb_edges.get(0).expect("the run holds one edge")->input_idx = 0;
 
@@ -63,7 +70,9 @@ using crucible::SchemaHash;
     static_assert(sizeof(crucible::LoopNode) == 72);
     static_assert(sizeof(crucible::FeedbackEdge) == 4);
 
-    ::fixy::View<crucible::TraceEntry> const final_ops = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto const final_ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry> const final_ops = final_ops_run.view();
     final_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x4444};
     crucible::RegionNode& final_region = *crucible::make_region(test.alloc, arena, final_ops);
     crucible::TraceNode& dag_term = *crucible::make_terminal(test.alloc, arena);
@@ -88,7 +97,9 @@ using crucible::SchemaHash;
     CRUCIBLE_TEST_ASSERT(kTest, loop3.merkle_hash != loop_merkle);
     CRUCIBLE_TEST_ASSERT(kTest, loop3.merkle_hash != loop2.merkle_hash);
 
-    ::fixy::View<crucible::FeedbackEdge> const fb_edges2 = arena.array(test.alloc, 2, crucible::FeedbackEdge{});
+    auto const fb_edges2_run = arena.array(test.alloc, 2, crucible::FeedbackEdge{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::FeedbackEdge> const fb_edges2 = fb_edges2_run.view();
     *fb_edges2.get(0).expect("the run holds two edges") = {.output_idx = 0, .input_idx = 0};
     *fb_edges2.get(1).expect("the run holds two edges") = {.output_idx = 1, .input_idx = 1};
     crucible::LoopNode& loop4 =
@@ -142,7 +153,9 @@ using crucible::SchemaHash;
     CRUCIBLE_TEST_ASSERT(kTest, zero_ok);
     CRUCIBLE_TEST_ASSERT(kTest, zero_count == 1);  // the continuation region alone
 
-    ::fixy::View<crucible::TraceEntry> const alt_body_ops = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto const alt_body_ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry> const alt_body_ops = alt_body_ops_run.view();
     alt_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x9999};
     crucible::RegionNode& alt_body = *crucible::make_region(test.alloc, arena, alt_body_ops);
     crucible::TraceNode& alt_body_term = *crucible::make_terminal(test.alloc, arena);
@@ -159,7 +172,9 @@ using crucible::SchemaHash;
     // that dropped epsilon from the hash would let two loops with different
     // thresholds share a compiled kernel.
     {
-        ::fixy::View<crucible::TraceEntry> const loop_body_ops = arena.array(test.alloc, 1, crucible::TraceEntry{});
+        auto const loop_body_ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TraceEntry> const loop_body_ops = loop_body_ops_run.view();
         loop_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x5EED};
 
         // Two loops that agree on everything but the threshold.  Each gets

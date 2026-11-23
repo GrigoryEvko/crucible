@@ -5,9 +5,11 @@
 # of an arena of a member tag.  Each route that keeps an epoch brand past its
 # epoch is an error in each mode: a Ref of the epoch in a class that does not
 # state the brand (55), a carrier in such a class by value (59) and through a
-# pointer (63), and a static (67) and a thread_local (76) object.  A static
+# pointer (63), and a static (67) and a thread_local (82) object.  A static
 # owner of a member arena (72) reaches the arena with no capture, and a const
-# owner (73) gives no line.
+# owner (73) gives no line.  A const pointer to an owner (78) reaches the
+# arena, because C++ const is shallow, and a pointer to a const owner (79)
+# gives no line of the rule.
 
 compile arenas src/arenas.cpp linear-shapes=on errors=arenas
 flag arenas -freflection
@@ -23,12 +25,15 @@ finding arenas brand-escape epoch-member src/arenas.cpp:59:13 | planted::HoldsCa
 finding arenas brand-escape epoch-member src/arenas.cpp:63:14 | planted::PointsToCarrier: carrier, planted::EpochOf
 finding arenas brand-escape epoch-static src/arenas.cpp:67:31 | planted: kept_ref, planted::EpochOf
 finding arenas brand-escape arena-member src/arenas.cpp:72:7 | planted: global_owner, an object of static or thread storage duration that reaches the arena planted::Arena of the class of planted::Owner::Tag
-finding arenas brand-escape epoch-static src/arenas.cpp:76:26 | planted::kept_carrier: carrier, planted::EpochOf
+finding arenas brand-escape arena-member src/arenas.cpp:78:14 | planted: pointer_to_owner, an object of static or thread storage duration that reaches the arena planted::Arena of the class of planted::Owner::Tag
+finding arenas brand-escape epoch-static src/arenas.cpp:82:26 | planted::kept_carrier: carrier, planted::EpochOf
 finding arenas process-wide-state unmarked-static src/arenas.cpp:40:19 | planted::global_arena
 finding arenas process-wide-state unmarked-static src/arenas.cpp:67:31 | planted::kept_ref
 finding arenas process-wide-state unmarked-static src/arenas.cpp:72:7 | planted::global_owner
-finding arenas process-wide-state unmarked-static src/arenas.cpp:76:26 | planted::kept_carrier()::carrier
+finding arenas process-wide-state unmarked-static src/arenas.cpp:82:26 | planted::kept_carrier()::carrier
 finding arenas quarantine raw-pointer-object src/arenas.cpp:63:14 | carrier
+finding arenas quarantine raw-pointer-object src/arenas.cpp:78:14 | pointer_to_owner
+finding arenas quarantine raw-pointer-object src/arenas.cpp:79:20 | pointer_to_const_owner
 finding arenas quarantine raw-pointer-object src/Arena.h:22:8 | object
 text arenas | nest the tag in the class beside its one member, which holds the arena itself
 text arenas | state the epoch brand as the 'brand_type' of the class, or keep the value in a local of the body of the epoch

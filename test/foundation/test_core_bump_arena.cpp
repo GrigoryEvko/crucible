@@ -1,4 +1,5 @@
-// Tests of foundation/core/BumpArena.h: the allocations and the epoch.
+// Tests of foundation/core/BumpArena.h: the allocations, the brands and the
+// epochs.
 
 #include <foundation/core/BumpArena.h>
 
@@ -14,13 +15,21 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 
 namespace {
 
 using ::foundation::core::Address;
 using ::foundation::core::address_of;
+using ::foundation::core::ArenaRun;
 using ::foundation::core::BumpArena;
+using ::foundation::core::Epoch;
+using ::foundation::core::EpochArena;
+using ::foundation::core::EpochOf;
+using ::foundation::core::Ref;
 using ::foundation::core::View;
+using Bytes = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
 
 struct Pair {
     std::uint64_t key = 0;
@@ -35,129 +44,173 @@ struct alignas(64) Wide {
     std::uint64_t last = 0;
 };
 
+// The family of the arenas of the tests that keep an arena past one scope.
+struct[[= ::foundation::brand::arena_family_brand{}]] TestFamily final {};
+
+// The owner of one epoch arena.  Each test holds its own owner, and two
+// owners share the brand of the arena.
+struct Scratch {
+    struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
+
+    explicit Scratch(Bytes block) noexcept : arena{::foundation::core::mint_epoch_arena<Arena>(block)} {}
+
+    EpochArena<Arena> arena;
+};
+
+using ScratchEpoch = Epoch<EpochOf<Scratch::Arena>>;
+
 // The address of the first element of a View that holds one.
 template <class T>
 [[nodiscard]] Address first_address(View<T> view) noexcept {
     return address_of(view.get(0).expect("the view holds an element"));
 }
 
-// count bytes of the arena, as the address of the first one.
-[[nodiscard]] Address take(BumpArena& arena, std::size_t count) noexcept {
-    return first_address(arena.array(::foundation::effects::testing::test().alloc, count, std::byte{0}));
+// count bytes of the arena or the epoch, as the address of the first one.
+template <class Arena>
+[[nodiscard]] Address take(Arena& arena, std::size_t count) noexcept {
+    auto const run = arena.array(::foundation::effects::testing::test().alloc, count, std::byte{0});
+    return first_address(run.view());
 }
 
 void test_make_builds_the_object() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    BumpArena arena{4096};
-    auto const pair = arena.make<Pair>(alloc, Pair{.key = 7, .count = 3, .flags = 1});
-    CRUCIBLE_FATAL_INVARIANT(pair->key == 7 && pair->count == 3 && pair->flags == 1);
-    auto const zeroed = arena.make<Pair>(alloc);
-    CRUCIBLE_FATAL_INVARIANT(zeroed->key == 0 && zeroed->count == 0 && zeroed->flags == 0);
-    zeroed->count = 9;
-    CRUCIBLE_FATAL_INVARIANT((*zeroed).count == 9);
-    CRUCIBLE_FATAL_INVARIANT(!(address_of(pair) == address_of(zeroed)));
-    auto const wide = arena.make<Wide>(alloc);
-    CRUCIBLE_FATAL_INVARIANT(address_of(wide).is_aligned<64>());
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == 4096);
+    ::foundation::core::with_bump_arena(alloc, Bytes{4096}, [alloc](auto& arena) noexcept {
+        auto const pair = arena.template make<Pair>(alloc, Pair{.key = 7, .count = 3, .flags = 1});
+        CRUCIBLE_FATAL_INVARIANT(pair->key == 7 && pair->count == 3 && pair->flags == 1);
+        auto const zeroed = arena.template make<Pair>(alloc);
+        CRUCIBLE_FATAL_INVARIANT(zeroed->key == 0 && zeroed->count == 0 && zeroed->flags == 0);
+        zeroed->count = 9;
+        CRUCIBLE_FATAL_INVARIANT((*zeroed).count == 9);
+        CRUCIBLE_FATAL_INVARIANT(!(address_of(pair) == address_of(zeroed)));
+        auto const wide = arena.template make<Wide>(alloc);
+        CRUCIBLE_FATAL_INVARIANT(address_of(wide).template is_aligned<64>());
+        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == 4096);
+    });
 }
 
 void test_array_fills_each_element() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    BumpArena arena{4096};
-    View<std::uint32_t> const numbers = arena.array<std::uint32_t>(alloc, 1000, 7);
-    CRUCIBLE_FATAL_INVARIANT(numbers.size() == 1000);
-    std::uint64_t total = 0;
-    for (std::uint32_t const element : numbers) {
-        total += element;
-    }
-    CRUCIBLE_FATAL_INVARIANT(total == 7000);
-    *numbers.get(999).expect("the position is below the count") = 1;
-    CRUCIBLE_FATAL_INVARIANT(*numbers.get(999).expect("the position is below the count") == 1);
+    ::foundation::core::with_bump_arena(alloc, Bytes{4096}, [alloc](auto& arena) noexcept {
+        auto const numbers_run = arena.template array<std::uint32_t>(alloc, 1000, 7);
+        View<std::uint32_t> const numbers = numbers_run.view();
+        CRUCIBLE_FATAL_INVARIANT(numbers.size() == 1000 && numbers_run.size() == 1000);
+        std::uint64_t total = 0;
+        for (std::uint32_t const element : numbers) {
+            total += element;
+        }
+        CRUCIBLE_FATAL_INVARIANT(total == 7000);
+        *numbers.get(999).expect("the position is below the count") = 1;
+        CRUCIBLE_FATAL_INVARIANT(*numbers.get(999).expect("the position is below the count") == 1);
 
-    View<Wide> const wide = arena.array(alloc, 3, Wide{});
-    CRUCIBLE_FATAL_INVARIANT(first_address(wide).is_aligned<64>());
-    View<Pair> const pairs = arena.array(alloc, 5, Pair{.key = 2});
-    for (Pair const& element : pairs) {
-        CRUCIBLE_FATAL_INVARIANT(element.key == 2 && element.count == 0);
-    }
+        auto const wide = arena.array(alloc, 3, Wide{});
+        CRUCIBLE_FATAL_INVARIANT(first_address(wide.view()).template is_aligned<64>());
+        auto const pairs = arena.array(alloc, 5, Pair{.key = 2});
+        for (Pair const& element : pairs.view()) {
+            CRUCIBLE_FATAL_INVARIANT(element.key == 2 && element.count == 0);
+        }
+    });
 }
 
-// A count of zero gives the empty View and takes no block.
+// A count of zero gives the empty run and takes no block.
 void test_empty_array_takes_no_bytes() {
-    BumpArena arena{4096};
-    View<std::uint64_t> const empty = arena.array<std::uint64_t>(::foundation::effects::testing::test().alloc, 0, 5);
-    CRUCIBLE_FATAL_INVARIANT(empty.size() == 0);
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == 0);
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    ::foundation::core::with_bump_arena(alloc, Bytes{4096}, [alloc](auto& arena) noexcept {
+        auto const empty = arena.template array<std::uint64_t>(alloc, 0, 5);
+        CRUCIBLE_FATAL_INVARIANT(empty.size() == 0 && empty.view().size() == 0);
+        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == 0);
+    });
 }
 
 // A request larger than a block takes a block of its own size, and the arena
 // then serves from that block.
 void test_large_request_takes_its_own_block() {
-    BumpArena arena{4096};
-    static_cast<void>(take(arena, 1000));
-    static_cast<void>(take(arena, 20000));
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() >= 4096 + 20000);
+    ::foundation::core::with_bump_arena(::foundation::effects::testing::test().alloc, Bytes{4096},
+                                        [](auto& arena) noexcept {
+                                            static_cast<void>(take(arena, 1000));
+                                            static_cast<void>(take(arena, 20000));
+                                            CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() >= 4096 + 20000);
+                                        });
+}
+
+// An arena of a family tag lives past one scope, alone and in a Box.  Each
+// Ref and each run carries the tag, and the Box builds the arena in its own
+// storage, so a Ref of the boxed arena stays valid after a move of the Box.
+void test_family_arena_lives_in_a_box() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    BumpArena<TestFamily> arena = ::foundation::core::mint_bump_arena<TestFamily>(Bytes{4096});
+    Ref<int, TestFamily> const seven = arena.make<int>(alloc, 7);
+    ArenaRun<std::uint32_t, TestFamily> const run = arena.array(alloc, std::size_t{4}, std::uint32_t{3});
+    CRUCIBLE_FATAL_INVARIANT(*seven == 7 && run.size() == 4);
+
+    ::foundation::core::Box<BumpArena<TestFamily>> boxed =
+        ::foundation::core::mint_box<BumpArena<TestFamily>>(alloc, Bytes{4096});
+    Ref<int, TestFamily> const eight = boxed->make<int>(alloc, 8);
+    ::foundation::core::Box<BumpArena<TestFamily>> moved = std::move(boxed);
+    CRUCIBLE_FATAL_INVARIANT(*eight == 8 && moved->retained_bytes() == 4096);
 }
 
 // The second epoch gets the addresses of the first epoch, and the arena
 // takes no block for it.
 void test_end_keeps_the_blocks() {
-    BumpArena arena{4096};
+    Scratch scratch{Bytes{4096}};
     struct Addresses {
         Address small;
         Address large;
         Address after;
     };
-    Addresses const first = arena.with_epoch(
-        [&]() noexcept { return Addresses{take(arena, 1000), take(arena, 20000), take(arena, 1000)}; });
-    std::size_t const retained = arena.retained_bytes();
-    Addresses const second = arena.with_epoch(
-        [&]() noexcept { return Addresses{take(arena, 1000), take(arena, 20000), take(arena, 1000)}; });
+    auto const fill = [](ScratchEpoch& epoch) noexcept {
+        return Addresses{take(epoch, 1000), take(epoch, 20000), take(epoch, 1000)};
+    };
+    Addresses const first = scratch.arena.with_epoch(fill);
+    std::size_t const retained = scratch.arena.retained_bytes();
+    Addresses const second = scratch.arena.with_epoch(fill);
     CRUCIBLE_FATAL_INVARIANT(first.small == second.small);
     CRUCIBLE_FATAL_INVARIANT(first.large == second.large);
     CRUCIBLE_FATAL_INVARIANT(first.after == second.after);
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == retained);
+    CRUCIBLE_FATAL_INVARIANT(scratch.arena.retained_bytes() == retained);
 }
 
 // An end above the limit gives back each block but the first, and the arena
-// then serves the next epoch.
+// then serves the next epoch.  The body reads the arena through a const
+// reference, which opens no epoch.
 void test_end_above_the_limit_keeps_one_block() {
     constexpr std::size_t block = std::size_t{1} << 20;
-    BumpArena arena{block};
-    arena.with_epoch([&]() noexcept {
-        static_cast<void>(take(arena, 64));
-        static_cast<void>(take(arena, BumpArena::default_retained_bytes_limit));
-        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() > BumpArena::default_retained_bytes_limit);
+    constexpr std::size_t limit = EpochArena<Scratch::Arena>::default_retained_bytes_limit;
+    Scratch scratch{Bytes{block}};
+    scratch.arena.with_epoch([&arena = std::as_const(scratch.arena)](ScratchEpoch& epoch) noexcept {
+        static_cast<void>(take(epoch, 64));
+        static_cast<void>(take(epoch, limit));
+        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() > limit);
     });
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == block);
-    arena.with_epoch([&]() noexcept { static_cast<void>(take(arena, 64)); });
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == block);
+    CRUCIBLE_FATAL_INVARIANT(scratch.arena.retained_bytes() == block);
+    scratch.arena.with_epoch([](ScratchEpoch& epoch) noexcept { static_cast<void>(take(epoch, 64)); });
+    CRUCIBLE_FATAL_INVARIANT(scratch.arena.retained_bytes() == block);
 }
 
 // A retained limit that set_retained_limit sets refuses each block but the
 // first at the end of an epoch above it.  The same epoch under the default
 // limit keeps each block.
 void test_set_limit_refuses_the_blocks_above_it() {
-    using Bytes = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
-    BumpArena kept{4096};
-    CRUCIBLE_FATAL_INVARIANT(kept.retained_limit() == Bytes{BumpArena::default_retained_bytes_limit});
-    kept.with_epoch([&]() noexcept { static_cast<void>(take(kept, 20000)); });
-    CRUCIBLE_FATAL_INVARIANT(kept.retained_bytes() > 4096);
+    Scratch kept{Bytes{4096}};
+    CRUCIBLE_FATAL_INVARIANT(kept.arena.retained_limit()
+                             == Bytes{EpochArena<Scratch::Arena>::default_retained_bytes_limit});
+    kept.arena.with_epoch([](ScratchEpoch& epoch) noexcept { static_cast<void>(take(epoch, 20000)); });
+    CRUCIBLE_FATAL_INVARIANT(kept.arena.retained_bytes() > 4096);
 
-    BumpArena limited{4096};
-    limited.set_retained_limit(Bytes{4096});
-    CRUCIBLE_FATAL_INVARIANT(limited.retained_limit() == Bytes{4096});
-    limited.with_epoch([&]() noexcept {
-        static_cast<void>(take(limited, 1000));
-        static_cast<void>(take(limited, 20000));
-        CRUCIBLE_FATAL_INVARIANT(limited.retained_bytes() > 4096);
+    Scratch limited{Bytes{4096}};
+    limited.arena.set_retained_limit(Bytes{4096});
+    CRUCIBLE_FATAL_INVARIANT(limited.arena.retained_limit() == Bytes{4096});
+    limited.arena.with_epoch([&arena = std::as_const(limited.arena)](ScratchEpoch& epoch) noexcept {
+        static_cast<void>(take(epoch, 1000));
+        static_cast<void>(take(epoch, 20000));
+        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() > 4096);
     });
-    CRUCIBLE_FATAL_INVARIANT(limited.retained_bytes() == 4096);
+    CRUCIBLE_FATAL_INVARIANT(limited.arena.retained_bytes() == 4096);
 
-    BumpArena zero{4096};
-    zero.set_retained_limit(Bytes{0});
-    zero.with_epoch([&]() noexcept { static_cast<void>(take(zero, 64)); });
-    CRUCIBLE_FATAL_INVARIANT(zero.retained_bytes() == 4096);
+    Scratch zero{Bytes{4096}};
+    zero.arena.set_retained_limit(Bytes{0});
+    zero.arena.with_epoch([](ScratchEpoch& epoch) noexcept { static_cast<void>(take(epoch, 64)); });
+    CRUCIBLE_FATAL_INVARIANT(zero.arena.retained_bytes() == 4096);
 }
 
 // A long run of epochs with a mix of sizes takes its blocks in its first
@@ -165,63 +218,50 @@ void test_set_limit_refuses_the_blocks_above_it() {
 // of 3000 turns, because 7919 and 3000 have no common factor.
 void test_long_run_keeps_its_blocks() {
     constexpr std::uint32_t period = 3000;
-    BumpArena arena{4096};
+    Scratch scratch{Bytes{4096}};
     std::size_t retained_after_one_period = 0;
     for (std::uint32_t turn = 0; turn < 2 * period; ++turn) {
         std::size_t const count = 1 + (std::size_t{turn} * 7919) % period;
-        arena.with_epoch([&]() noexcept {
+        scratch.arena.with_epoch([count](ScratchEpoch& epoch) noexcept {
             for (std::uint32_t index = 0; index < 8; ++index) {
-                static_cast<void>(take(arena, count + std::size_t{index} * 512));
+                static_cast<void>(take(epoch, count + std::size_t{index} * 512));
             }
         });
         if (turn == period - 1) {
-            retained_after_one_period = arena.retained_bytes();
+            retained_after_one_period = scratch.arena.retained_bytes();
         }
     }
     CRUCIBLE_FATAL_INVARIANT(retained_after_one_period > 0);
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == retained_after_one_period);
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() <= BumpArena::default_retained_bytes_limit);
+    CRUCIBLE_FATAL_INVARIANT(scratch.arena.retained_bytes() == retained_after_one_period);
+    CRUCIBLE_FATAL_INVARIANT(scratch.arena.retained_bytes()
+                             <= EpochArena<Scratch::Arena>::default_retained_bytes_limit);
 }
 
-// Each wrong use ends the process: an epoch in an epoch of one arena, an
-// epoch of an arena that holds bytes, an array past the largest View, and a
-// block size of zero.  Each wrong use runs in a child through expect_dies of
-// the Check family.
+// Each wrong use that a type cannot refuse ends the process: an array past
+// the largest View, and a block size of zero.  Each wrong use runs in a child
+// through expect_dies of the Check family.
 void test_wrong_uses_end_the_process(::fixy::TestRunnerCtx const& test) {
-    BumpArena nested{4096};
-    ::fixy::check::expect_dies(
-        test, [&nested] noexcept { nested.with_epoch([&nested]() noexcept { nested.with_epoch([]() noexcept {}); }); },
-        ::foundation::core::TextView{
-            "foundation: fatal: an epoch of a BumpArena in an epoch of the same arena: end the first epoch "
-            "before the next one opens"});
-
-    BumpArena holds_bytes{4096};
-    static_cast<void>(take(holds_bytes, 64));
-    ::fixy::check::expect_dies(
-        test, [&holds_bytes] noexcept { holds_bytes.with_epoch([]() noexcept {}); },
-        ::foundation::core::TextView{
-            "foundation: fatal: an epoch of a BumpArena that holds bytes: open the epoch before the first "
-            "allocation"});
-
-    BumpArena too_long{4096};
     ::fixy::check::expect_dies(
         test,
-        [&too_long] noexcept {
-            static_cast<void>(
-                too_long.array<std::uint64_t>(::foundation::effects::testing::test().alloc, ~std::size_t{0} / 4, 0));
+        [] noexcept {
+            ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+            ::foundation::core::with_bump_arena(alloc, Bytes{4096}, [alloc](auto& arena) noexcept {
+                static_cast<void>(arena.template array<std::uint64_t>(alloc, ~std::size_t{0} / 4, 0));
+            });
         },
         ::foundation::core::TextView{
-            "foundation: fatal: an array of 4611686018427387903 elements of 8 bytes in a BumpArena is longer "
-            "than the largest View"});
+            "foundation: fatal: an array of 4611686018427387903 elements of 8 bytes in an arena is longer than "
+            "the largest View"});
 
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            BumpArena const zero{0};
-            static_cast<void>(zero.retained_bytes());
+            ::foundation::core::with_bump_arena(
+                ::foundation::effects::testing::test().alloc, Bytes{0},
+                [](auto& arena) noexcept { static_cast<void>(arena.retained_bytes()); });
         },
-        ::foundation::core::TextView{
-            "foundation: fatal: a BumpArena of blocks of zero bytes: give a block size above zero"});
+        ::foundation::core::TextView{"foundation: fatal: an arena of blocks of zero bytes: give a block size above "
+                                     "zero"});
 }
 
 // The property: arrays of random counts and alignments in random epochs sit
@@ -230,20 +270,20 @@ void test_wrong_uses_end_the_process(::fixy::TestRunnerCtx const& test) {
 // The fills of the epoch are the model.
 void test_agrees_with_plain_model() {
     ::crucible::test::PhiloxStream stream{0x5EEDA7E4A0000001u};
-    BumpArena arena{512};
+    Scratch scratch{Bytes{512}};
     for (int trial = 0; trial < 64; ++trial) {
-        arena.with_epoch([&]() noexcept {
+        scratch.arena.with_epoch([&stream](ScratchEpoch& epoch) noexcept {
+            ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
             ::foundation::core::FixedArray<View<Wide>, 32> arrays{};
             for (auto const position : arrays.indices()) {
                 std::size_t const count = 1 + stream.below(40);
                 std::uint64_t const fill = position.raw() + 1;
                 if (stream.below(2) == 0) {
-                    View<std::uint32_t> const odd =
-                        arena.array<std::uint32_t>(::foundation::effects::testing::test().alloc, 1, 0);
-                    CRUCIBLE_FATAL_INVARIANT(first_address(odd).is_aligned<alignof(std::uint32_t)>());
+                    auto const odd = epoch.array<std::uint32_t>(alloc, 1, 0);
+                    CRUCIBLE_FATAL_INVARIANT(first_address(odd.view()).is_aligned<alignof(std::uint32_t)>());
                 }
-                View<Wide> const lines =
-                    arena.array(::foundation::effects::testing::test().alloc, count, Wide{.first = fill});
+                auto const lines_run = epoch.array(alloc, count, Wide{.first = fill});
+                View<Wide> const lines = lines_run.view();
                 arrays.with_element(position, [lines](View<Wide>& slot) noexcept { slot = lines; });
                 CRUCIBLE_FATAL_INVARIANT(first_address(arrays.at(position)).is_aligned<64>());
             }
@@ -265,6 +305,7 @@ int main() {
     test_array_fills_each_element();
     test_empty_array_takes_no_bytes();
     test_large_request_takes_its_own_block();
+    test_family_arena_lives_in_a_box();
     test_end_keeps_the_blocks();
     test_end_above_the_limit_keeps_one_block();
     test_set_limit_refuses_the_blocks_above_it();

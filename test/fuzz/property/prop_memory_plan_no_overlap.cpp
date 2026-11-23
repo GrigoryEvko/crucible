@@ -165,9 +165,13 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         [](const SlotSet& set) noexcept -> bool {
             const uint32_t num_slots = set.count;
 
-            ::fixy::BumpArena slot_arena{size_t{1} << 16};
-            const ::fixy::View<TensorSlot> slots1 =
+            using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+            ::fixy::BumpArena<crucible::DagArena> slot_arena =
+                ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
+            const auto slots1_run =
                 slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TensorSlot> slots1 = slots1_run.view();
             const uint32_t max_death = materialize(set, slots1);
             const ::fixy::View<TensorSlot> set_slots1 =
                 slots1.window(0, num_slots).expect("a set holds at most kMaxSlots slots");
@@ -175,10 +179,16 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             auto test = ::foundation::effects::testing::test();
             BackgroundThread bt1{::foundation::effects::testing::test().alloc};
             crucible::MemoryPlan plan_storage1{};
-            ::fixy::BumpArena sweep_arena1{size_t{1} << 16};
-            const crucible::MemoryPlan& plan1 =
-                *bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, set_slots1)
-                     .expect("the slots of a set are below 2^20 bytes");
+            crucible::PlanScratch sweep_scratch1{Bytes{size_t{1} << 16}};
+            BackgroundThread::PlanTarget const target1 = bt1.plan_target();
+            sweep_scratch1.arena.with_epoch([target1, alloc = test.alloc, &plan_storage1,
+                                             set_slots1](crucible::PlanScratch::Epoch& epoch) noexcept {
+                static_cast<void>(
+                    BackgroundThread::compute_memory_plan(alloc, target1, plan_storage1, epoch, set_slots1)
+                        .expect("the slots of a set are below 2^20 bytes"));
+            });
+            // The plan is in the storage of the caller.
+            const crucible::MemoryPlan& plan1 = plan_storage1;
 
             // (A) Structural fidelity.
             if (plan1.num_slots() != num_slots) return false;
@@ -212,17 +222,25 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
             // (D) Determinism: replan the same set on a fresh arena;
             //     offsets and pool_bytes must be byte-identical.
-            const ::fixy::View<TensorSlot> slots2 =
+            const auto slots2_run =
                 slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TensorSlot> slots2 = slots2_run.view();
             (void)materialize(set, slots2);
             const ::fixy::View<TensorSlot> set_slots2 =
                 slots2.window(0, num_slots).expect("a set holds at most kMaxSlots slots");
             BackgroundThread bt2{::foundation::effects::testing::test().alloc};
             crucible::MemoryPlan plan_storage2{};
-            ::fixy::BumpArena sweep_arena2{size_t{1} << 16};
-            const crucible::MemoryPlan& plan2 =
-                *bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, set_slots2)
-                     .expect("the slots of a set are below 2^20 bytes");
+            crucible::PlanScratch sweep_scratch2{Bytes{size_t{1} << 16}};
+            BackgroundThread::PlanTarget const target2 = bt2.plan_target();
+            sweep_scratch2.arena.with_epoch([target2, alloc = test.alloc, &plan_storage2,
+                                             set_slots2](crucible::PlanScratch::Epoch& epoch) noexcept {
+                static_cast<void>(
+                    BackgroundThread::compute_memory_plan(alloc, target2, plan_storage2, epoch, set_slots2)
+                        .expect("the slots of a set are below 2^20 bytes"));
+            });
+            // The plan is in the storage of the caller.
+            const crucible::MemoryPlan& plan2 = plan_storage2;
             if (plan2.pool_bytes != plan1.pool_bytes) return false;
             for (uint32_t i = 0; i < num_slots; ++i) {
                 const uint64_t first_offset = set_slots1.get(i).expect("the set holds this slot")->offset_bytes;

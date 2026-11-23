@@ -51,7 +51,8 @@ template <class Fake>
 
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena(1 << 16);
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
 
     crucible::TensorMeta m{};
     m.ndim = 2;
@@ -124,7 +125,9 @@ template <class Fake>
         CRUCIBLE_TEST_ASSERT(kTest, agrees(m));
     }
 
-    ::fixy::View<crucible::TraceEntry> const ops = arena.array(test.alloc, 3, crucible::TraceEntry{});
+    auto const ops_run = arena.array(test.alloc, 3, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
     ops.get(0).expect("the run holds three ops")->schema_hash = SchemaHash{0xAABB};
     ops.get(1).expect("the run holds three ops")->schema_hash = SchemaHash{0xCCDD};
     ops.get(2).expect("the run holds three ops")->schema_hash = SchemaHash{0xEEFF};
@@ -371,10 +374,14 @@ template <class Fake>
         const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, recipe_tc);
         CRUCIBLE_TEST_ASSERT(kTest, h_alt_tc != h_tc);
 
-        ::fixy::View<crucible::TraceEntry> const rops_a = arena.array(test.alloc, 2, crucible::TraceEntry{});
+        auto const rops_a_run = arena.array(test.alloc, 2, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TraceEntry> const rops_a = rops_a_run.view();
         rops_a.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
         rops_a.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
-        ::fixy::View<crucible::TraceEntry> const rops_b = arena.array(test.alloc, 2, crucible::TraceEntry{});
+        auto const rops_b_run = arena.array(test.alloc, 2, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TraceEntry> const rops_b = rops_b_run.view();
         rops_b.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
         rops_b.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
 
@@ -468,10 +475,16 @@ template <class Fake>
             return fold.finish();
         };
 
-        ::fixy::View<crucible::TensorMeta> const input_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        auto const input_meta_run = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TensorMeta> const input_meta = input_meta_run.view();
         // The fold reads no producer and no slot id of an input.
-        ::fixy::View<crucible::OpIndex> const no_producer = arena.array(test.alloc, 1, crucible::OpIndex{});
-        ::fixy::View<crucible::SlotId> const no_slot = arena.array(test.alloc, 1, crucible::SlotId{});
+        auto const no_producer_run = arena.array(test.alloc, 1, crucible::OpIndex{});
+        auto const no_slot_run = arena.array(test.alloc, 1, crucible::SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::OpIndex> const no_producer = no_producer_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::SlotId> const no_slot = no_slot_run.view();
 
         crucible::TraceEntry e_empty{};
         e_empty.schema_hash = SchemaHash{0x11};
@@ -550,7 +563,9 @@ template <class Fake>
         // and neither shape is special, but the vectors keep using a tensor
         // with a real dtype and device: a vector should exercise the ordinary
         // path, and the two former collapse shapes have their own block below.
-        ::fixy::View<crucible::TensorMeta> const real_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        auto const real_meta_run = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TensorMeta> const real_meta = real_meta_run.view();
         crucible::TensorMeta& real_input = *real_meta.get(0).expect("the run holds one meta");
         real_input.dtype = crucible::ScalarType::Float;
         real_input.device_type = crucible::DeviceType::CUDA;
@@ -603,7 +618,9 @@ template <class Fake>
         // Frozen 2026-11-16 when the word took these facts.  The tensor of
         // the vectors above has the rank zero, the strided layout, no bit and
         // the offset zero, so its word did not move.
-        ::fixy::View<crucible::TensorMeta> const fact_meta = arena.array(test.alloc, 1, real_input);
+        auto const fact_meta_run = arena.array(test.alloc, 1, real_input);
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TensorMeta> const fact_meta = fact_meta_run.view();
         crucible::TensorMeta& fact_input = *fact_meta.get(0).expect("the run holds one meta");
         fact_input.ndim = 2;
         fact_input.sizes[0] = crucible::tensor_dim(3);
@@ -663,8 +680,12 @@ template <class Fake>
     // used to pin the defect: same two metas, opposite expectation.
     {
         // The fold reads no producer and no slot id of an input.
-        ::fixy::View<crucible::OpIndex> const no_producer = arena.array(test.alloc, 1, crucible::OpIndex{});
-        ::fixy::View<crucible::SlotId> const no_slot = arena.array(test.alloc, 1, crucible::SlotId{});
+        auto const no_producer_run = arena.array(test.alloc, 1, crucible::OpIndex{});
+        auto const no_slot_run = arena.array(test.alloc, 1, crucible::SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::OpIndex> const no_producer = no_producer_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::SlotId> const no_slot = no_slot_run.view();
         auto with_meta = [&no_producer, &no_slot](uint64_t schema, ::fixy::View<crucible::TensorMeta> meta) {
             crucible::TraceEntry e{};
             e.schema_hash = SchemaHash{schema};
@@ -678,8 +699,12 @@ template <class Fake>
         };
 
         // dtype Undefined == -1
-        ::fixy::View<crucible::TensorMeta> const undefined_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
-        ::fixy::View<crucible::TensorMeta> const zero_packed_meta = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        auto const undefined_meta_run = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        auto const zero_packed_meta_run = arena.array(test.alloc, 1, crucible::TensorMeta{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TensorMeta> const undefined_meta = undefined_meta_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TensorMeta> const zero_packed_meta = zero_packed_meta_run.view();
         crucible::TensorMeta& zero_packed = *zero_packed_meta.get(0).expect("the run holds one meta");
         zero_packed.dtype = crucible::ScalarType::Byte;
         zero_packed.device_type = crucible::DeviceType::CPU;
@@ -803,14 +828,17 @@ template <class Fake>
     {
         ::fixy::TestRunnerCtx const runner{::foundation::effects::testing::test()};
 
-        ::fixy::View<crucible::TraceEntry> const guard_body_ops = arena.array(test.alloc, 1, crucible::TraceEntry{});
+        auto const guard_body_ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TraceEntry> const guard_body_ops = guard_body_ops_run.view();
         guard_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x6AA6};
 
         // Each child builds its own arena: the parent's arena must not carry
         // a bump from a child that was about to abort.
         auto make = [&](crucible::LoopTermKind kind, uint32_t count, float epsilon) {
             return [&, kind, count, epsilon] {
-                ::fixy::BumpArena child_arena(1 << 12);
+                ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+                    ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
                 crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops);
                 body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
                 crucible::LoopNode& node =
@@ -855,11 +883,14 @@ template <class Fake>
         // resolves it.  The merkle hash of such a branch ends the process
         // with its reason, and it reads no null node.
         auto hash_unresolved_branch = [&] {
-            ::fixy::BumpArena child_arena(1 << 12);
+            ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+                ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
             crucible::BranchNode& branch = *child_arena.make<crucible::BranchNode>(test.alloc);
             branch.kind = crucible::TraceNodeKind::BRANCH;
-            branch.set_arms(child_arena.array<crucible::BranchNode::Arm>(
-                test.alloc, 1, crucible::BranchNode::Arm{1, crucible::TraceLink{}}));
+            const auto arms_run = child_arena.array<crucible::BranchNode::Arm>(
+                test.alloc, 1, crucible::BranchNode::Arm{1, crucible::TraceLink{}});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            branch.set_arms(arms_run.view());
             crucible::recompute_merkle(branch);
             // The child prints the hash only when the hash returns.
             ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n", branch.merkle_hash.raw());
@@ -879,7 +910,8 @@ template <class Fake>
         };
         auto open_door = [&](crucible::TraceNodeKind node_kind, Door door) {
             return [&, node_kind, door] {
-                ::fixy::BumpArena child_arena(1 << 12);
+                ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+                    ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
                 crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops);
                 body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
                 crucible::TraceNode& loop_node =
@@ -922,10 +954,18 @@ template <class Fake>
         // count together, so an array of a different count ends the process.
         // No door sets a count with no array, so no array is absent at a
         // count above zero.
-        ::fixy::View<crucible::TensorMeta> const two_metas = arena.array(test.alloc, 2, crucible::TensorMeta{});
-        ::fixy::View<crucible::OpIndex> const two_producers = arena.array(test.alloc, 2, crucible::OpIndex{});
-        ::fixy::View<crucible::SlotId> const two_slots = arena.array(test.alloc, 2, crucible::SlotId{});
-        ::fixy::View<crucible::SlotId> const one_slot = arena.array(test.alloc, 1, crucible::SlotId{});
+        auto const two_metas_run = arena.array(test.alloc, 2, crucible::TensorMeta{});
+        auto const two_producers_run = arena.array(test.alloc, 2, crucible::OpIndex{});
+        auto const two_slots_run = arena.array(test.alloc, 2, crucible::SlotId{});
+        auto const one_slot_run = arena.array(test.alloc, 1, crucible::SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TensorMeta> const two_metas = two_metas_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::OpIndex> const two_producers = two_producers_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::SlotId> const two_slots = two_slots_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::SlotId> const one_slot = one_slot_run.view();
         // The refusal is a call of fixy::fatal, which the optimizer keeps.
         auto set_inputs = [&](::fixy::View<crucible::SlotId> slot_ids) {
             return [&, slot_ids] {

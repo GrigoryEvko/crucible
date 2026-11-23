@@ -3289,11 +3289,42 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
   endforeach()
 endif()
 foundation_neg_compile_test(neg_core_bump_arena_make_on_temporary
-  "use of deleted function .void foundation::core::BumpArena::make\\(Rest&& ...\\) && \\[with T = int; Rest = \\{foundation::core::Alloc, int\\}\\]."
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&&, Rest&& ...\\) \\[with T = int; Rest = \\{foundation::core::Alloc, int\\}; Brand = Family\\]."
   "a temporary arena gives back its blocks at the end of the statement")
 foundation_neg_compile_test(neg_core_bump_arena_make_with_destructor
-  "no matching function for call to .foundation::core::BumpArena::make<Ended>\\(foundation::core::Alloc\\)."
+  "no matching function for call to .foundation::core::BumpArena<Family>::make<Ended>\\(foundation::core::Alloc\\)."
   "the expression .is_trivially_destructible_v<T> \\[with T = Ended\\]. evaluated to .false.")
+# The brands of an arena: the two mints take a named tag of one kind, a Ref
+# of one family does not fit a different family, an arena has no public
+# constructor, and the view-escape rule refuses a Ref of a local arena that
+# leaves through erase_brand.
+foundation_neg_compile_test(neg_core_bump_arena_mint_unmarked_tag
+  "no matching function for call to .mint_bump_arena<Unmarked>\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\)."
+  "required for the satisfaction of .ArenaBrand<Brand>. \\[with Brand = Unmarked\\]")
+foundation_neg_compile_test(neg_core_bump_arena_mint_both_marks
+  "no matching function for call to .mint_bump_arena<Both>\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\)."
+  "required for the satisfaction of .ArenaBrand<Brand>. \\[with Brand = Both\\]")
+foundation_neg_compile_test(neg_core_epoch_arena_mint_family_tag
+  "no matching function for call to .mint_epoch_arena<Family>\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\)."
+  "required for the satisfaction of .ArenaMemberTag<Tag>. \\[with Tag = Family\\]")
+foundation_neg_compile_test(neg_core_epoch_arena_mint_unmarked_tag
+  "no matching function for call to .mint_epoch_arena<Unmarked>\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\)."
+  "required for the satisfaction of .ArenaMemberTag<Tag>. \\[with Tag = Unmarked\\]")
+foundation_neg_compile_test(neg_core_bump_arena_cross_family
+  "conversion from .Ref<\\[...\\],Family>. to non-scalar type .Ref<\\[...\\],Other>. requested"
+  "neg_core_bump_arena_cross_family\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_bump_arena_public_constructor
+  "foundation::core::BumpArena<Brand>::BumpArena\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\) \\[with Brand = Family\\]. is private within this context"
+  "BumpArena\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_bump_arena_ref_of_dead_arena
+  "this function gives back a borrow of the local arena, and that object ends with the frame of the function"
+  "neg_core_bump_arena_ref_of_dead_arena\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_bump_arena_scope_gives_ref
+  "use of deleted function .void foundation::core::with_bump_arena\\(Marker, Quantity<unit::Byte, long unsigned int>, Body&&\\)"
+  "the end of the scope of with_bump_arena ends the arena, so the result of the body holds no reference")
+foundation_neg_compile_test(neg_core_bump_arena_scope_erase
+  "no matching function for call to .erase_brand\\(foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >\\)."
+  "required for the satisfaction of .ErasableBrand<Brand>.")
 # The field walk refuses a class that hides an address: a Ref, a View, a Box
 # and a class with a private View.
 foundation_neg_compile_test(neg_core_for_each_field_ref
@@ -3308,17 +3339,37 @@ foundation_neg_compile_test(neg_core_for_each_field_box
 foundation_neg_compile_test(neg_core_for_each_field_private_address
   "no matching function for call to .for_each_field\\(const .anonymous.::Cursor&"
   "required for the satisfaction of .FieldWalkable<T>. \\[with T = <unnamed>::Cursor\\]")
-# The result of an epoch holds no borrow: a Ref, a View, or a class that
-# holds one of the epoch does not leave it.
+# The result of an epoch holds no borrow: a Ref, a run, or a class that
+# holds a View of the epoch does not leave it.  The body captures no owner of
+# the arena and no writer of a type that can hold the epoch brand, and the
+# arena gives no make outside an epoch.
 foundation_neg_compile_test(neg_core_bump_arena_epoch_gives_ref
-  "use of deleted function .void foundation::core::BumpArena::with_epoch\\(Body&&\\) &"
-  "the result of an epoch holds no borrow, because the end of the epoch ends each byte")
+  "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
+  "the result of an epoch holds no borrow and names no epoch brand, because the end of the epoch ends each byte")
 foundation_neg_compile_test(neg_core_bump_arena_epoch_gives_view
-  "use of deleted function .void foundation::core::BumpArena::with_epoch\\(Body&&\\) &"
-  "the result of an epoch holds no borrow, because the end of the epoch ends each byte")
+  "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
+  "the result of an epoch holds no borrow and names no epoch brand, because the end of the epoch ends each byte")
 foundation_neg_compile_test(neg_core_bump_arena_epoch_gives_holder
-  "use of deleted function .void foundation::core::BumpArena::with_epoch\\(Body&&\\) &"
-  "the result of an epoch holds no borrow, because the end of the epoch ends each byte")
+  "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
+  "the result of an epoch holds no borrow and names no epoch brand, because the end of the epoch ends each byte")
+foundation_neg_compile_test(neg_core_epoch_arena_capture_owner
+  "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
+  "the body of an epoch captures a writer of a type that can hold the epoch brand, or reaches the arena")
+foundation_neg_compile_test(neg_core_epoch_arena_public_constructor
+  "foundation::core::EpochArena<Tag>::EpochArena\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\) \\[with Tag = Owner::Scratch\\]. is private within this context"
+  "BumpArena\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_epoch_handle_from_arena
+  "no matching function for call to .foundation::core::Epoch<foundation::core::EpochOf<Owner::Scratch> >::Epoch\\(<brace-enclosed initializer list>\\)."
+  "neg_core_epoch_handle_from_arena\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_epoch_arena_capture_const_ref
+  "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
+  "the body of an epoch captures a writer of a type that can hold the epoch brand, or reaches the arena")
+foundation_neg_compile_test(neg_core_epoch_arena_capture_kept_ref
+  "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
+  "the body of an epoch captures a writer of a type that can hold the epoch brand, or reaches the arena")
+foundation_neg_compile_test(neg_core_epoch_arena_make_outside_epoch
+  "class foundation::core::EpochArena<Owner::Scratch>. has no member named .make."
+  "neg_core_epoch_arena_make_outside_epoch\\.cpp:[0-9]+:[0-9]+: error")
 
 # Runs that share a table of counts.  A write of a View of a different count
 # ends the process, and the test catches the abort.
@@ -4864,7 +4915,7 @@ foundation_neg_compile_test(neg_core_tested_window_door_forged
   "foundation::core::TestedWindowDoor::started_run_\\(uint8_t\\*, std::size_t\\) \\[with T = int; uint8_t = unsigned char; std::size_t = long unsigned int\\]. is private within this context"
   "AlignedBytes\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_arena_array_door_forged
-  "foundation::core::ArenaArrayDoor::built_run_\\(T\\*, std::size_t\\) \\[with T = int; std::size_t = long unsigned int\\]. is private within this context"
+  "foundation::core::ArenaArrayDoor::built_run_\\(T\\*, std::size_t\\) \\[with T = int; Brand = Family; std::size_t = long unsigned int\\]. is private within this context"
   "BumpArena\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_committed_range_door_forged
   "foundation::core::CommittedRangeDoor::committed_bytes_\\(uint8_t\\*, std::size_t\\). is private within this context"

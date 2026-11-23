@@ -171,7 +171,8 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
         kTest,
         ::fixy::equal(image_after,
                       serialized_before.view().window(0, bytes_before).expect("the writer writes inside its image")));
-    ::fixy::BumpArena load_arena{std::size_t{1} << 16};
+    ::fixy::BumpArena<crucible::DagArena> load_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
     const auto loaded =
         crucible::deserialize_region(::foundation::effects::testing::test().alloc, image_after, load_arena);
     CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok());

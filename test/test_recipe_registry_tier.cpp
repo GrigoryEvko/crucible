@@ -33,6 +33,7 @@ using crucible::ScalarType;
 using crucible::tolerance_for_dtype;
 using crucible::tolerance_of;
 using ::fixy::BumpArena;
+using crucible::RecipeArena;
 using ::fixy::NumericalTier;
 using ::fixy::Tolerance;
 using ::fixy::ToleranceLattice;
@@ -126,7 +127,8 @@ template <class Found>
         CRUCIBLE_TEST_ASSERT(kTest, tolerance_of(r_unordered) == Tolerance::RELAXED);
     }
 
-    BumpArena arena{};
+    BumpArena<RecipeArena> arena =
+        ::fixy::mint_bump_arena<RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
     RecipePool pool{::fixy::to(arena), init_cap()};
     RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 

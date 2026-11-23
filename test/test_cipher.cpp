@@ -20,7 +20,11 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
 }  // namespace
+
+using crucible::DagArena;
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -47,10 +51,12 @@ static auto g_test = ::foundation::effects::testing::test();
 // The salt goes into the schema hashes, so two salts give two regions with
 // two content hashes.  The ops, their arrays and the region are in
 // dag_arena.
-static ::fixy::Ref<crucible::RegionNode> make_test_region(::fixy::BumpArena& dag_arena, std::uint64_t salt = 0) {
+static ::fixy::Ref<crucible::RegionNode> make_test_region(::fixy::BumpArena<DagArena>& dag_arena,
+                                                          std::uint64_t salt = 0) {
     constexpr uint32_t NUM_OPS = 2;
-    const ::fixy::View<crucible::TraceEntry> ops =
-        dag_arena.array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
+    const auto ops_run = dag_arena.array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
@@ -548,7 +554,7 @@ static void test_commit_after_a_torn_record(::fixy::TextView root) {
 static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) {
     auto cipher = open_cipher_under(root, ::fixy::TextView{"writers"});
     auto ov = cipher.mint_open_view(store_ctx());
-    ::fixy::BumpArena writers_dag{1 << 16};
+    ::fixy::BumpArena<DagArena> writers_dag = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const crucible::RegionNode& writer_region = *make_test_region(writers_dag, 0x61);
     const crucible::ContentHash writer_hash = writer_region.content_hash;
     write_beside_object(cipher.root(), writer_hash, ::fixy::TextView{".tmp"}, ::fixy::TextView{"another writer"});
@@ -562,7 +568,7 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
     {
         const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"writers"});
         const auto fresh_ov = fresh.mint_open_view(store_ctx());
-        ::fixy::BumpArena fresh_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> fresh_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const auto loaded = fresh.load_content_addressed(store_ctx(), fresh_ov, g_test.alloc, writer_hash, fresh_arena);
         CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok() && !is_cache_hit(loaded) && "the stored object loads from the disk");
     }
@@ -584,7 +590,7 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
             == plain.content_hash);
     const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"writers"});
     const auto fresh_ov = fresh.mint_open_view(store_ctx());
-    ::fixy::BumpArena fresh_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> fresh_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const auto loaded =
         fresh.load_content_addressed(store_ctx(), fresh_ov, g_test.alloc, plain.content_hash, fresh_arena);
     CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok() && region_of(loaded).variant_id.get() == 7
@@ -600,7 +606,7 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
 static void test_two_writers_of_one_object(::fixy::TextView root) {
     auto cipher = open_cipher_under(root, ::fixy::TextView{"two_writers"});
     auto ov = cipher.mint_open_view(store_ctx());
-    ::fixy::BumpArena two_dag{1 << 16};
+    ::fixy::BumpArena<DagArena> two_dag = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const crucible::RegionNode& two_region = *make_test_region(two_dag, 0x63);
     const ::fixy::fs::DirectoryHandle two_root = root_directory_of(cipher);
     const ::foundation::os::PathText<64> object = beside_object_path(two_region.content_hash, ::fixy::TextView{});
@@ -623,7 +629,7 @@ static void test_two_writers_of_one_object(::fixy::TextView root) {
         kTest, ::fixy::process::wait(std::move(second)).expect("the test waits for its child").is_exit_with(0));
     const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"two_writers"});
     const auto fresh_ov = fresh.mint_open_view(store_ctx());
-    ::fixy::BumpArena fresh_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> fresh_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     CRUCIBLE_TEST_ASSERT(
         kTest,
         fresh.load_content_addressed(store_ctx(), fresh_ov, g_test.alloc, two_region.content_hash, fresh_arena).is_ok()
@@ -659,7 +665,7 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, dir_owner.is_open() && "the test makes its temporary directory");
     const ::fixy::TextView dir = dir_owner.path().view();
 
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
 
     {
         auto cipher = open_cipher(dir);
@@ -696,7 +702,7 @@ int main() {
         // can be a pointer back into the arena that produced it.
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        ::fixy::BumpArena arena2{1 << 16};
+        ::fixy::BumpArena<DagArena> arena2 = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto loaded_ca = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, expected_hash, arena2);
         CRUCIBLE_TEST_ASSERT(kTest, loaded_ca.is_ok() && "load() must succeed for a stored hash");
         CRUCIBLE_TEST_ASSERT(kTest, region_of(loaded_ca).content_hash == expected_hash);
@@ -758,8 +764,8 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        ::fixy::BumpArena arena3{1 << 16};
-        ::fixy::BumpArena reason_dag_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> arena3 = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
+        ::fixy::BumpArena<DagArena> reason_dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const auto load = [&](std::uint64_t hash) {
             return cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, crucible::ContentHash{hash}, arena3);
         };
@@ -800,7 +806,7 @@ int main() {
         const ::fixy::fs::TemporaryDirectory dir_ca = make_temporary_directory();
         CRUCIBLE_TEST_ASSERT(kTest, dir_ca.is_open());
 
-        ::fixy::BumpArena ca_dag_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> ca_dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const crucible::RegionNode& ca_region = *make_test_region(ca_dag_arena);
         const auto ca_payload = crucible::Cipher::content_addressed(::fixy::erase_brand(::fixy::to(ca_region)));
 
@@ -827,7 +833,7 @@ int main() {
         // Deleting the object leaves the load no disk to fall back on,
         // so a successful read can only have come from memory.
         remove_object_file(cipher, hash);
-        ::fixy::BumpArena read_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> read_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto loaded = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hash, read_arena);
         CRUCIBLE_TEST_ASSERT(kTest, is_cache_hit(loaded) && "resident ContentAddressed bytes must avoid disk fetch");
         CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok());
@@ -843,7 +849,7 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, sender_dir.is_open());
         CRUCIBLE_TEST_ASSERT(kTest, receiver_dir.is_open());
 
-        ::fixy::BumpArena ca_dag_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> ca_dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const auto ca_payload = crucible::Cipher::content_addressed(make_test_region(ca_dag_arena));
 
         auto sender = open_cipher(sender_dir.path().view());
@@ -855,7 +861,7 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, sender_hash == receiver_hash);
 
         remove_object_file(receiver, receiver_hash);
-        ::fixy::BumpArena read_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> read_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         auto loaded = receiver.load_content_addressed(store_ctx(), receiver_ov, g_test.alloc, sender_hash, read_arena);
         CRUCIBLE_TEST_ASSERT(kTest, is_cache_hit(loaded));
         CRUCIBLE_TEST_ASSERT(kTest, loaded.is_ok());
@@ -1110,12 +1116,12 @@ int main() {
     {
         const ::fixy::fs::TemporaryDirectory dir_cache = make_temporary_directory();
         CRUCIBLE_TEST_ASSERT(kTest, dir_cache.is_open());
-        ::fixy::BumpArena cache_dag_arena{1 << 20};
+        ::fixy::BumpArena<DagArena> cache_dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         auto cipher = open_cipher(dir_cache.path().view());
         auto ov = cipher.mint_open_view(store_ctx());
         constexpr std::size_t kStoreCount = 65;
         ::fixy::FixedArray<crucible::ContentHash, kStoreCount> hashes{};
-        ::fixy::BumpArena read_arena{1 << 16};
+        ::fixy::BumpArena<DagArena> read_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         for (std::size_t i = 0; i < kStoreCount; ++i) {
             if (i + 1 == kStoreCount) {
                 CRUCIBLE_TEST_ASSERT(

@@ -119,17 +119,30 @@ private:
     edges_of_(::fixy::View<const Edge> edges, ::fixy::View<const uint32_t> offsets, uint32_t index) noexcept;
 };
 
-// The graph is in the arena, and the build stage keeps its Ref for the length
-// of one epoch.  The bodies of this function and of build_csr are in
+// The owner of the epoch arena of the build of a trace.  The background
+// thread holds one for its build epoch, and each test or bench that builds a
+// trace holds its own.  Two objects of the class share the brand of the
+// arena, which no type tells apart.
+class TraceScratch {
+public:
+    struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
+    using Epoch = ::foundation::core::Epoch<::fixy::EpochOf<Arena>>;
+    explicit TraceScratch(::fixy::Quantity<::fixy::unit::Byte, size_t> block_size) noexcept
+        : arena{::fixy::mint_epoch_arena<Arena>(block_size)} {}
+    ::fixy::EpochArena<Arena> arena;
+};
+
+// The graph is in the epoch, and the build stage keeps its Ref for the length
+// of the epoch.  The bodies of this function and of build_csr are in
 // src/TraceGraph.cpp, so a unit that includes this header compiles no part of
 // the build.
 [[nodiscard]] ::fixy::Ref<TraceGraph> alloc_trace_graph(::foundation::effects::Alloc a,
-                                                        ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;
+                                                        TraceScratch::Epoch& epoch CRUCIBLE_LIFETIMEBOUND) noexcept;
 
-// The graph is in the arena, and a temporary arena releases it at the end of
-// the statement.  This twin refuses a temporary arena.
-void alloc_trace_graph(::foundation::effects::Alloc, ::fixy::BumpArena&&) =
-    delete("a temporary arena releases the graph at the end of the statement. Use an arena that has a name");
+// The graph is in the epoch, and an epoch lives only in the frame of
+// with_epoch.  This twin refuses a temporary epoch.
+void alloc_trace_graph(::foundation::effects::Alloc, TraceScratch::Epoch&&) =
+    delete("a temporary epoch releases the graph at the end of the statement. Use the epoch that with_epoch gives");
 
 namespace detail {
 
@@ -145,7 +158,7 @@ template <class T>
 // Counting sort into both adjacency arrays, linear in ops plus edges. The
 // caller owns the graph struct. Only the arrays inside it are allocated here.
 // The source and the destination of each edge are below num_ops.
-void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph& graph,
+void build_csr(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch, TraceGraph& graph,
                ::fixy::View<const Edge> edges, uint32_t num_ops);
 
 }  // namespace crucible

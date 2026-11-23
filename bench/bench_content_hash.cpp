@@ -16,7 +16,7 @@ using namespace crucible;
 static constexpr auto A = ::foundation::effects::testing::bg().alloc;
 
 // Each input and the output of each op have one metadata.
-static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena& arena, uint32_t count, uint8_t ndim,
+static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena<DagArena>& arena, uint32_t count, uint8_t ndim,
                                               uint16_t num_inputs) {
     TensorMeta meta{};
     meta.ndim = ndim;
@@ -31,9 +31,15 @@ static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena& arena, uint32_t
         for (uint32_t i = 0; i < count; i++) {
             auto& te = *run.get(i).expect("i is below count");
             te.schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
-            te.set_inputs(arena.array(A, num_inputs, meta), arena.array(A, num_inputs, OpIndex{}),
-                          arena.array(A, num_inputs, SlotId{}));
-            te.set_outputs(arena.array(A, 1, meta), arena.array(A, 1, SlotId{}));
+            const auto input_metas_run = arena.array(A, num_inputs, meta);
+            const auto producers_run = arena.array(A, num_inputs, OpIndex{});
+            const auto input_slots_run = arena.array(A, num_inputs, SlotId{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            te.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
+            const auto output_metas_run = arena.array(A, 1, meta);
+            const auto output_slots_run = arena.array(A, 1, SlotId{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            te.set_outputs(output_metas_run.view(), output_slots_run.view());
         }
     });
     return ops;
@@ -65,7 +71,8 @@ int main() {
     ::fixy::FixedList<bench::Report, 5> reports{};
 
     for (const auto& c : cfgs) {
-        ::fixy::BumpArena arena{1 << 20};
+        ::fixy::BumpArena<DagArena> arena =
+            ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
         auto ops = make_ops(arena, c.n, c.ndim, c.ins);
         const ::fixy::View<const TraceEntry> span = ops.view();
 

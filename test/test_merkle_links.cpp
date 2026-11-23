@@ -22,12 +22,15 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 namespace {
 
 // A branch of two arms, of the values 1 and 2, in the arena.
-[[nodiscard]] crucible::BranchNode& make_two_arm_branch(::foundation::effects::Alloc alloc, ::fixy::BumpArena& arena,
+[[nodiscard]] crucible::BranchNode& make_two_arm_branch(::foundation::effects::Alloc alloc,
+                                                        ::fixy::BumpArena<crucible::DagArena>& arena,
                                                         crucible::TraceLink first,
                                                         crucible::TraceLink second) noexcept {
     crucible::BranchNode& branch = *arena.make<crucible::BranchNode>(alloc);
     branch.kind = crucible::TraceNodeKind::BRANCH;
-    branch.set_arms(arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{}));
+    const auto arms_run = arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    branch.set_arms(arms_run.view());
     *branch.arms().get(0).expect("the branch holds two arms") = crucible::BranchNode::Arm{1, first};
     *branch.arms().get(1).expect("the branch holds two arms") = crucible::BranchNode::Arm{2, second};
     return branch;
@@ -37,10 +40,12 @@ namespace {
 
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena arena(1 << 16);
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
 
-    ::fixy::View<crucible::TraceEntry, 1> const ops =
-        arena.array(test.alloc, 1, crucible::TraceEntry{}).window<1>(0).expect("the run holds one op");
+    auto const ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry, 1> const ops = ops_run.view().window<1>(0).expect("the run holds one op");
     ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0x1111};
     crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops);
     crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
@@ -78,11 +83,13 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, terminal.as_loop().is_none());
 
     // ── The arms of a branch ──────────────────────────────────────────
-    ::fixy::View<crucible::TraceEntry, 1> const ops_a =
-        arena.array(test.alloc, 1, crucible::TraceEntry{}).window<1>(0).expect("the run holds one op");
+    auto const ops_a_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry, 1> const ops_a = ops_a_run.view().window<1>(0).expect("the run holds one op");
     ops_a.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xA1};
-    ::fixy::View<crucible::TraceEntry, 1> const ops_b =
-        arena.array(test.alloc, 1, crucible::TraceEntry{}).window<1>(0).expect("the run holds one op");
+    auto const ops_b_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TraceEntry, 1> const ops_b = ops_b_run.view().window<1>(0).expect("the run holds one op");
     ops_b.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xB2};
     crucible::RegionNode& region_a = *crucible::make_region(test.alloc, arena, ops_a);
     crucible::RegionNode& region_b = *crucible::make_region(test.alloc, arena, ops_b);

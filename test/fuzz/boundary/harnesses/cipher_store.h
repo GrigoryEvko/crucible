@@ -190,7 +190,7 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
     // Lines an attacker appends to the index after the writer ran.
     detail::append_store_file(index.c_text(), extra_index_lines);
 
-    ::fixy::BumpArena arena{};
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     if (object_hash != 0) {
         const auto loaded =
             cipher.load_content_addressed(kHarnessCtx, view, test_alloc(), ContentHash{object_hash}, arena);
@@ -265,8 +265,8 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
             ::fixy::unreachable();
     }
 
-    ::fixy::BumpArena arena{};
-    ::fixy::BumpArena dag_arena{};
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     const ::fixy::Ref<RegionNode> region = build_seed_region(arena, dag_arena, SeedPlan::two_slots);
     const SeedBytes image = region_image(*region);
     const std::uint64_t hash = region->content_hash.raw();

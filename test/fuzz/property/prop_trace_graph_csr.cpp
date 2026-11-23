@@ -147,6 +147,18 @@ template <class KeyOf>
     return *edges.get(k).expect("the position is below the edge count");
 }
 
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
+// The elements of source in the first positions of copy.  The source holds
+// at most N elements.  Complexity: O(source.size()).
+template <class T, std::size_t N>
+void copy_prefix(::fixy::FixedArray<T, N>& copy, ::fixy::View<const T> source) noexcept {
+    copy.with_mut([source](auto run) noexcept {
+        ::fixy::copy(run.view().window(0, source.size()).expect("the copy holds each element of the source"), source)
+            .expect("the window holds the count of the source");
+    });
+}
+
 }  // namespace
 
 int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
@@ -154,8 +166,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using crucible::Edge;
     using crucible::OpIndex;
     using crucible::TraceGraph;
+    using crucible::TraceScratch;
     using crucible::build_csr;
-    using fixy::BumpArena;
 
     const Config cfg = parse_args(arguments, 20000);  // O(V·E) per iter
 
@@ -189,67 +201,91 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 in_edges.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
 
             auto test = ::foundation::effects::testing::test();
-            BumpArena arena{1 << 16};
-            TraceGraph graph{};
-            build_csr(test.alloc, arena, graph, in_run, num_ops);
+            // The first build copies its CSR arrays here before its epoch
+            // ends, so the rebuild in a second epoch compares with them.
+            ::fixy::FixedArray<uint32_t, kMaxOps + 1> fwd_copy{};
+            ::fixy::FixedArray<uint32_t, kMaxOps + 1> rev_copy{};
+            ::fixy::FixedArray<Edge, kMaxEdges> fwd_edges_copy{};
+            ::fixy::FixedArray<Edge, kMaxEdges> rev_edges_copy{};
+            TraceScratch scratch{Bytes{size_t{1} << 16}};
+            const bool is_first_build_correct =
+                scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept -> bool {
+                    TraceGraph graph{};
+                    build_csr(test.alloc, epoch, graph, in_run, num_ops);
 
-            // (A) Offset shape — forward and reverse.
-            const ::fixy::View<const uint32_t> fwd = graph.fwd_offsets;
-            const ::fixy::View<const uint32_t> rev = graph.rev_offsets;
-            if (fwd.size() != num_ops + 1u || rev.size() != num_ops + 1u) return false;
-            if (offset_at(fwd, 0) != 0u || offset_at(rev, 0) != 0u) return false;
-            if (offset_at(fwd, num_ops) != num_edges || offset_at(rev, num_ops) != num_edges) return false;
-            for (uint32_t v = 0; v < num_ops; ++v) {
-                if (offset_at(fwd, v + 1) < offset_at(fwd, v) || offset_at(rev, v + 1) < offset_at(rev, v))
-                    return false;
-            }
+                    // (A) Offset shape — forward and reverse.
+                    const ::fixy::View<const uint32_t> fwd = graph.fwd_offsets;
+                    const ::fixy::View<const uint32_t> rev = graph.rev_offsets;
+                    if (fwd.size() != num_ops + 1u || rev.size() != num_ops + 1u) return false;
+                    if (offset_at(fwd, 0) != 0u || offset_at(rev, 0) != 0u) return false;
+                    if (offset_at(fwd, num_ops) != num_edges || offset_at(rev, num_ops) != num_edges) return false;
+                    for (uint32_t v = 0; v < num_ops; ++v) {
+                        if (offset_at(fwd, v + 1) < offset_at(fwd, v) || offset_at(rev, v + 1) < offset_at(rev, v))
+                            return false;
+                    }
 
-            // (C) Degree consistency — count input edges per src / dst.
-            ::fixy::FixedArray<uint32_t, kMaxOps> src_count{};
-            ::fixy::FixedArray<uint32_t, kMaxOps> dst_count{};
-            for (uint32_t e = 0; e < num_edges; ++e) {
-                increment_count_at(src_count, edge_spec_at(spec, e).src);
-                increment_count_at(dst_count, edge_spec_at(spec, e).dst);
-            }
-            for (uint32_t v = 0; v < num_ops; ++v) {
-                if (offset_at(fwd, v + 1) - offset_at(fwd, v) != count_at(src_count, v)) return false;
-                if (offset_at(rev, v + 1) - offset_at(rev, v) != count_at(dst_count, v)) return false;
-            }
+                    // (C) Degree consistency — count input edges per src / dst.
+                    ::fixy::FixedArray<uint32_t, kMaxOps> src_count{};
+                    ::fixy::FixedArray<uint32_t, kMaxOps> dst_count{};
+                    for (uint32_t e = 0; e < num_edges; ++e) {
+                        increment_count_at(src_count, edge_spec_at(spec, e).src);
+                        increment_count_at(dst_count, edge_spec_at(spec, e).dst);
+                    }
+                    for (uint32_t v = 0; v < num_ops; ++v) {
+                        if (offset_at(fwd, v + 1) - offset_at(fwd, v) != count_at(src_count, v)) return false;
+                        if (offset_at(rev, v + 1) - offset_at(rev, v) != count_at(dst_count, v)) return false;
+                    }
 
-            // (B) Bucketing + stability + preservation via an INDEPENDENT
-            //     stable order of the edge indices (vs build_csr's counting
-            //     sort).  Forward = stable-by-src, reverse = stable-by-dst.
-            if (num_edges > 0) {
-                // Forward: the stable order of the indices by src.
-                const EdgeOrder by_src = stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.src; });
-                for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(edge_at(graph.fwd_edges, k), edge_at(in_run, position_at(by_src, k)))) return false;
-                }
+                    // (B) Bucketing + stability + preservation via an INDEPENDENT
+                    //     stable order of the edge indices (vs build_csr's counting
+                    //     sort).  Forward = stable-by-src, reverse = stable-by-dst.
+                    if (num_edges > 0) {
+                        // Forward: the stable order of the indices by src.
+                        const EdgeOrder by_src =
+                            stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.src; });
+                        for (uint32_t k = 0; k < num_edges; ++k) {
+                            if (!edge_eq(edge_at(graph.fwd_edges, k), edge_at(in_run, position_at(by_src, k))))
+                                return false;
+                        }
 
-                // Reverse: the stable order of the indices by dst.
-                const EdgeOrder by_dst = stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.dst; });
-                for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(edge_at(graph.rev_edges, k), edge_at(in_run, position_at(by_dst, k)))) return false;
-                }
-            }
+                        // Reverse: the stable order of the indices by dst.
+                        const EdgeOrder by_dst =
+                            stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.dst; });
+                        for (uint32_t k = 0; k < num_edges; ++k) {
+                            if (!edge_eq(edge_at(graph.rev_edges, k), edge_at(in_run, position_at(by_dst, k))))
+                                return false;
+                        }
+                    }
 
-            // (D) Determinism — rebuild on a fresh arena, compare bytes.
+                    copy_prefix(fwd_copy, fwd);
+                    copy_prefix(rev_copy, rev);
+                    copy_prefix(fwd_edges_copy, ::fixy::View<const Edge>{graph.fwd_edges});
+                    copy_prefix(rev_edges_copy, ::fixy::View<const Edge>{graph.rev_edges});
+                    return true;
+                });
+            if (!is_first_build_correct) return false;
+
+            // (D) Determinism — rebuild in a fresh epoch, compare bytes.
             ::fixy::FixedArray<Edge, kMaxEdges> in_edges2{};
             in_edges2.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, run.view())); });
             const ::fixy::View<const Edge> in_run2 =
                 in_edges2.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
-            BumpArena arena2{1 << 16};
-            TraceGraph graph2{};
-            build_csr(test.alloc, arena2, graph2, in_run2, num_ops);
-            for (uint32_t v = 0; v <= num_ops; ++v) {
-                if (offset_at(graph2.fwd_offsets, v) != offset_at(fwd, v)) return false;
-                if (offset_at(graph2.rev_offsets, v) != offset_at(rev, v)) return false;
-            }
-            for (uint32_t k = 0; k < num_edges; ++k) {
-                if (!edge_eq(edge_at(graph2.fwd_edges, k), edge_at(graph.fwd_edges, k))) return false;
-                if (!edge_eq(edge_at(graph2.rev_edges, k), edge_at(graph.rev_edges, k))) return false;
-            }
-
-            return true;
+            const ::fixy::FixedArray<uint32_t, kMaxOps + 1>& fwd = fwd_copy;
+            const ::fixy::FixedArray<uint32_t, kMaxOps + 1>& rev = rev_copy;
+            const ::fixy::FixedArray<Edge, kMaxEdges>& fwd_edges = fwd_edges_copy;
+            const ::fixy::FixedArray<Edge, kMaxEdges>& rev_edges = rev_edges_copy;
+            return scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept -> bool {
+                TraceGraph graph2{};
+                build_csr(test.alloc, epoch, graph2, in_run2, num_ops);
+                for (uint32_t v = 0; v <= num_ops; ++v) {
+                    if (offset_at(graph2.fwd_offsets, v) != offset_at(fwd.view(), v)) return false;
+                    if (offset_at(graph2.rev_offsets, v) != offset_at(rev.view(), v)) return false;
+                }
+                for (uint32_t k = 0; k < num_edges; ++k) {
+                    if (!edge_eq(edge_at(graph2.fwd_edges, k), edge_at(fwd_edges.view(), k))) return false;
+                    if (!edge_eq(edge_at(graph2.rev_edges, k), edge_at(rev_edges.view(), k))) return false;
+                }
+                return true;
+            });
         });
 }

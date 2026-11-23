@@ -26,7 +26,7 @@ namespace {
 
 int main() {
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
-    ::fixy::BumpArena arena{};
+    auto arena = ::fixy::mint_bump_arena<crucible::RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{1 << 20});
     crucible::RecipePool pool{::fixy::to(arena), eff::testing::init()};
     crucible::RecipeRegistry reg{::fixy::to(pool), eff::testing::test().alloc};
     return reads_from_an_allocating_caller(test, reg) ? 0 : 1;

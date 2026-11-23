@@ -30,12 +30,16 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 namespace {
 
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
 // Returns the number of bytes written, or zero if the region could not be
 // built.  The op, its arrays and the region are in an arena of the call.
 [[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, ::fixy::View<std::byte> out_buf) {
-    ::fixy::BumpArena dag_arena{1 << 16};
-    const ::fixy::View<crucible::TraceEntry> ops =
-        dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
+    ::fixy::BumpArena<crucible::DagArena> dag_arena =
+        ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
+    const auto ops_run = dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
     crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
 
     op.schema_hash = crucible::SchemaHash{0xAA};
@@ -92,14 +96,14 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
 
 // Rejection is no region coming back out of the boundary.
 [[nodiscard]] bool is_rejected(::foundation::effects::Test bg, ::fixy::View<const std::byte> bytes) {
-    ::fixy::BumpArena arena{1 << 16};
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
     return crucible::deserialize_region(bg.alloc, bytes, arena).is_err();
 }
 
 // A rejection of a byte outside the values of its field names that reason.
 [[nodiscard]] bool is_rejected_as_field_out_of_range(::foundation::effects::Test bg,
                                                      ::fixy::View<const std::byte> bytes) {
-    ::fixy::BumpArena arena{1 << 16};
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
     return crucible::deserialize_region(bg.alloc, bytes, arena)
         .match([](crucible::LoadedRegionNode) noexcept { return false; },
                [](crucible::LoadError reason) noexcept { return reason == crucible::LoadError::field_out_of_range; });

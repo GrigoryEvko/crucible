@@ -124,9 +124,12 @@ int main() {
     // that produces it to the last one that reads it.  The plan borrows the
     // slots.  The slots, the ops, their slot ids, their zero metadata and
     // their producers are arrays of this arena.
-    ::fixy::BumpArena runs{size_t{1} << 16};
+    ::fixy::BumpArena<DagArena> runs =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
+    auto const slots_run = runs.array(test.alloc, N_SLOTS, TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot, N_SLOTS> const slots =
-        runs.array(test.alloc, N_SLOTS, TensorSlot{}).window<N_SLOTS>(0).expect("the run holds N_SLOTS slots");
+        slots_run.view().window<N_SLOTS>(0).expect("the run holds N_SLOTS slots");
 
     slots.at(::foundation::core::index<SL_X>()) = {.offset_bytes = 0,
                                                    .nbytes = BATCH * IN_DIM * 4,
@@ -216,9 +219,15 @@ int main() {
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::MemoryPlan plan_storage{};
-    ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots)
-                                      .expect("the slots of the test fit in 64 bits");
+    crucible::PlanScratch sweep_scratch{::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16}};
+    BackgroundThread::PlanTarget const target = bt.plan_target();
+    sweep_scratch.arena.with_epoch(
+        [target, alloc = test.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
+            static_cast<void>(BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots)
+                                  .expect("the slots of the test fit in 64 bits"));
+        });
+    // The plan is in the storage of the caller.
+    crucible::MemoryPlan& plan = plan_storage;
 
     ::fixy::report(::fixy::Sink::Out, "  plan: pool={} bytes, {} slots ({} external)\n",
                    static_cast<unsigned long>(plan.pool_bytes), plan.num_slots(), plan.num_external);
@@ -235,8 +244,9 @@ int main() {
     ::fixy::View<SlotId> const op3_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM2});
     ::fixy::View<SlotId> const op3_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_SM});
 
-    ::fixy::View<TraceEntry, N_OPS> const ops =
-        runs.array(test.alloc, N_OPS, TraceEntry{}).window<N_OPS>(0).expect("the run holds N_OPS ops");
+    auto const ops_run = runs.array(test.alloc, N_OPS, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry, N_OPS> const ops = ops_run.view().window<N_OPS>(0).expect("the run holds N_OPS ops");
 
     ops.at(::fixy::index<0>()).schema_hash = H_MM1;
     ops.at(::fixy::index<0>()).shape_hash = S_MM1;

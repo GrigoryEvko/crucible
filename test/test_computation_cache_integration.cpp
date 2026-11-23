@@ -88,8 +88,12 @@ using namespace test_computation_cache_integration_functions;
 using Slot = ::fixy::Option<::fixy::Ref<cipher::CompiledBody>>;
 using Bodies = ::fixy::View<cipher::CompiledBody>;
 
+// The family tag of the arena of the two populations of eight bodies.
+struct[[= ::foundation::brand::arena_family_brand{}]] PopulationArena final {};
+
 // The arena of the two populations of eight bodies.
-::fixy::BumpArena g_population_arena{4096};
+::fixy::BumpArena<PopulationArena> g_population_arena =
+    ::fixy::mint_bump_arena<PopulationArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
 
 // The bodies that the scenarios insert.  Each object lives as long as the
 // process, as the slots do.
@@ -99,10 +103,14 @@ cipher::CompiledBody blind_body{};
 cipher::CompiledBody empty_row_body{};
 cipher::CompiledBody bg_row_body{};
 cipher::CompiledBody io_row_body{};
-Bodies const blind_population =
+::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> const blind_run =
     g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
-Bodies const aware_population =
+::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> const aware_run =
     g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
+// A plain View of an arena run: the View carries no brand of its arena.
+Bodies const blind_population = blind_run.view();
+// A plain View of an arena run: the View carries no brand of its arena.
+Bodies const aware_population = aware_run.view();
 cipher::CompiledBody lifetime_body{};
 cipher::CompiledBody hot_body{};
 

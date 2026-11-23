@@ -126,7 +126,8 @@ void test_cache_dedup_and_cap() {
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, cache.empty());
 
-    ::fixy::BumpArena arena(4096);
+    ::fixy::BumpArena<DagArena> arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
     const auto region = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
     region->content_hash = ContentHash{0x1234};
 
@@ -177,10 +178,12 @@ void test_cache_dedup_and_cap() {
 void test_find_alternate_tracks_live_plan() {
     auto test = ::foundation::effects::testing::test();
     RegionCache cache;
-    ::fixy::BumpArena arena(1 << 14);
+    ::fixy::BumpArena<DagArena> arena =
+        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 14});
 
-    ::fixy::View<TraceEntry, 2> const ops =
-        arena.array(test.alloc, 2, TraceEntry{}).window<2>(0).expect("the run holds two ops");
+    auto const ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
     TraceEntry& op0 = ops.at(::foundation::core::index<0>());
     TraceEntry& op1 = ops.at(::foundation::core::index<1>());
     op0.schema_hash = SchemaHash{0x900};
@@ -202,8 +205,9 @@ void test_find_alternate_tracks_live_plan() {
     CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).is_none());
 
     // The plan arrives after the insert. No second call into the cache.
-    ::fixy::View<TensorSlot, 1> const slots =
-        arena.array(test.alloc, 1, TensorSlot{}).window<1>(0).expect("the run holds one slot");
+    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TensorSlot, 1> const slots = slots_run.view().window<1>(0).expect("the run holds one slot");
     TensorSlot& slot = slots.at(::foundation::core::index<0>());
     slot.nbytes = 4096;
     slot.birth_op = OpIndex{0};

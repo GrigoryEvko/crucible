@@ -18,8 +18,8 @@
 namespace crucible {
 
 ::fixy::Result<::fixy::Ref<MemoryPlan>, BackgroundThread::PlanRefusal>
-BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
-                                      ::fixy::BumpArena& scratch, ::fixy::View<TensorSlot> slots) noexcept {
+BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget target, MemoryPlan& plan_storage,
+                                      PlanScratch::Epoch& scratch, ::fixy::View<TensorSlot> slots) noexcept {
     static constexpr uint32_t ALIGNMENT = 256;
 
     MemoryPlan& plan = plan_storage;
@@ -28,9 +28,9 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     plan.num_external = 0;
     plan.pool_bytes = 0;
 
-    plan.rank = rank_;
-    plan.world_size = world_size_;
-    plan.device_capability = device_capability_.value();
+    plan.rank = target.rank;
+    plan.world_size = target.world_size;
+    plan.device_capability = target.device_capability.value();
     plan.device_type = DeviceType::CPU;
     plan.device_idx = -1;
     plan.pad0 = decltype(plan.pad0){};
@@ -91,8 +91,12 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
     // so num_ops and num_ops + 1 are positive and do not wrap.
     uint32_t num_ops = max_op + 1;
-    const ::fixy::View<uint32_t> birth_count = scratch.array<uint32_t>(a, num_ops, 0);
-    const ::fixy::View<uint32_t> death_count = scratch.array<uint32_t>(a, num_ops, 0);
+    const auto birth_count_run = scratch.array<uint32_t>(a, num_ops, 0);
+    const auto death_count_run = scratch.array<uint32_t>(a, num_ops, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> birth_count = birth_count_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> death_count = death_count_run.view();
 
     for (const TensorSlot& slot : slots) {
         if (slot.is_external) continue;
@@ -102,8 +106,12 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
     }
 
     // The first offset of each array is the zero of the fill.
-    const ::fixy::View<uint32_t> birth_off = scratch.array<uint32_t>(a, num_ops + 1, 0);
-    const ::fixy::View<uint32_t> death_off = scratch.array<uint32_t>(a, num_ops + 1, 0);
+    const auto birth_off_run = scratch.array<uint32_t>(a, num_ops + 1, 0);
+    const auto death_off_run = scratch.array<uint32_t>(a, num_ops + 1, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> birth_off = birth_off_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> death_off = death_off_run.view();
     for (uint32_t o = 0; o < num_ops; o++) {
         detail::csr_element_(birth_off, o + 1) =
             detail::csr_element_(birth_off, o) + detail::csr_element_(birth_count, o);
@@ -111,11 +119,19 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan
             detail::csr_element_(death_off, o) + detail::csr_element_(death_count, o);
     }
 
-    const ::fixy::View<uint32_t> born_slots = scratch.array<uint32_t>(a, num_internal, 0);
-    const ::fixy::View<uint32_t> dead_slots = scratch.array<uint32_t>(a, num_internal, 0);
+    const auto born_slots_run = scratch.array<uint32_t>(a, num_internal, 0);
+    const auto dead_slots_run = scratch.array<uint32_t>(a, num_internal, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> born_slots = born_slots_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> dead_slots = dead_slots_run.view();
     // Cursors start as copies of the offsets and advance during scatter.
-    const ::fixy::View<uint32_t> birth_cur = scratch.array<uint32_t>(a, num_ops, 0);
-    const ::fixy::View<uint32_t> death_cur = scratch.array<uint32_t>(a, num_ops, 0);
+    const auto birth_cur_run = scratch.array<uint32_t>(a, num_ops, 0);
+    const auto death_cur_run = scratch.array<uint32_t>(a, num_ops, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> birth_cur = birth_cur_run.view();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<uint32_t> death_cur = death_cur_run.view();
     ::fixy::copy(birth_cur, birth_off.window(0, num_ops).expect("the offsets hold one entry for each op"))
         .expect("the cursors hold one entry for each op");
     ::fixy::copy(death_cur, death_off.window(0, num_ops).expect("the offsets hold one entry for each op"))

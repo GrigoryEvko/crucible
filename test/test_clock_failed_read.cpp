@@ -302,10 +302,11 @@ private:
 
 // Makes a region of a copy of one operation and calculates its merkle root.
 // The copy and the region are in the arena.
-[[nodiscard]] crucible::RegionNode* committed_region(eff::Test const& test, ::fixy::BumpArena& arena,
-                                                     crucible::TraceEntry& op) {
-    const ::fixy::Ref<crucible::RegionNode> region =
-        crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, op));
+[[nodiscard]] crucible::RegionNode*
+committed_region(eff::Test const& test, ::fixy::BumpArena<crucible::DagArena>& arena, crucible::TraceEntry& op) {
+    const auto ops_run = arena.array<crucible::TraceEntry>(test.alloc, 1, op);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(test.alloc, arena, ops_run.view());
     crucible::recompute_merkle(*region);
     return &*region;
 }
@@ -319,7 +320,8 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     const auto test = eff::testing::test();
     const SoloOwner owner = SoloOwner::claim();
     crucible::TransactionLog<16, SoloOwner> log{};
-    ::fixy::BumpArena arena(1 << 12);
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
 
     crucible::TraceEntry ops[3]{};
     ops[0].schema_hash = crucible::SchemaHash{0xFEED};

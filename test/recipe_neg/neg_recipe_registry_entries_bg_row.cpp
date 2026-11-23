@@ -18,7 +18,7 @@
 namespace eff = ::foundation::effects;
 
 int main() {
-    ::fixy::BumpArena arena{};
+    auto arena = ::fixy::mint_bump_arena<crucible::RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{1 << 20});
     auto init = eff::testing::init();
     auto test = eff::testing::test();
     const ::fixy::BgDrainCtx bg{eff::testing::bg()};

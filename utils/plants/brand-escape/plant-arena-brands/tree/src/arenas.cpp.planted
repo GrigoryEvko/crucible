@@ -72,6 +72,12 @@ Ref<int, EpochOf<Owner::Tag>> kept_ref{};
 Owner global_owner{};
 Owner const const_owner{};
 
+// A const pointer to an owner still reaches the arena that is not const,
+// because C++ const is shallow.  A pointer to a const owner reaches nothing
+// that opens an epoch.
+Owner* const pointer_to_owner = nullptr;
+Owner const* const pointer_to_const_owner = nullptr;
+
 unsigned kept_carrier() noexcept {
     thread_local Carrier carrier{};
     return carrier.kept.object == nullptr ? 0u : 1u;

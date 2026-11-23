@@ -39,6 +39,7 @@ using crucible::ScalarType;
 using crucible::recipe_family_of;
 using crucible::tolerance_of;
 using ::fixy::BumpArena;
+using crucible::RecipeArena;
 using ::fixy::RecipeFamily;
 using ::fixy::RecipeFamilyLattice;
 using ::fixy::RecipeSpec;
@@ -101,7 +102,8 @@ template <class Found>
         static_assert(noexcept(recipe_family_of(std::declval<const NumericalRecipe&>())));
     }
 
-    BumpArena arena{};
+    BumpArena<RecipeArena> arena =
+        ::fixy::mint_bump_arena<RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
     RecipePool pool{::fixy::to(arena), init_cap()};
     RecipeRegistry reg{::fixy::to(pool), alloc_cap()};
 
@@ -406,7 +408,8 @@ template <class Found>
 
         // The persisted hash of each entry, and the second registry that
         // resolves it.
-        BumpArena arena2{};
+        BumpArena<RecipeArena> arena2 =
+            ::fixy::mint_bump_arena<RecipeArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
         RecipePool pool2{::fixy::to(arena2), init_cap()};
         RecipeRegistry reg2{::fixy::to(pool2), alloc_cap()};
 

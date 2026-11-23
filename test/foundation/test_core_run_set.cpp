@@ -20,6 +20,10 @@ using ::foundation::core::BumpArena;
 using ::foundation::core::RunOf;
 using ::foundation::core::RunSet;
 using ::foundation::core::View;
+using Bytes = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
+
+// The family of the arenas of the runs of the tests.
+struct[[= ::foundation::brand::arena_family_brand{}]] RunArena final {};
 
 struct Meta {
     std::uint64_t key = 0;
@@ -69,13 +73,17 @@ void test_empty_run_has_its_elements() {
 // reaches them, and the other run of the slot stays absent.
 void test_full_run_gives_its_elements() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    BumpArena arena{4096};
+    BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
     OpRuns runs{};
     runs.set_count<0>(4);
     runs.set_count<1>(2);
     runs.set_count<2>(1);
-    runs.set<1>(arena.array<std::uint32_t>(alloc, 4, 5));
-    runs.set<0>(arena.array<std::uint32_t>(alloc, 2, 9));
+    auto const outputs = arena.array<std::uint32_t>(alloc, 4, 5);
+    auto const inputs = arena.array<std::uint32_t>(alloc, 2, 9);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    runs.set<1>(outputs.view());
+    // A plain View of an arena run: the View carries no brand of its arena.
+    runs.set<0>(inputs.view());
     CRUCIBLE_FATAL_INVARIANT(runs.has_run<0>() && runs.has_run<1>());
     CRUCIBLE_FATAL_INVARIANT(!runs.has_run<2>() && !runs.has_run<3>() && !runs.has_run<4>());
     CRUCIBLE_FATAL_INVARIANT(runs.view<1>().size() == 4 && sum_of(runs.view<1>()) == 20);
@@ -90,19 +98,27 @@ void test_full_run_gives_its_elements() {
 // only.
 void test_new_count_drops_the_runs_of_its_slot() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    BumpArena arena{4096};
+    BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
     OpRuns runs{};
     runs.set_count<0>(3);
     runs.set_count<1>(1);
-    runs.set<1>(arena.array<std::uint32_t>(alloc, 3, 1));
-    runs.set<2>(arena.array(alloc, 3, Meta{.key = 4}));
-    runs.set<0>(arena.array<std::uint32_t>(alloc, 1, 6));
+    auto const outputs = arena.array<std::uint32_t>(alloc, 3, 1);
+    auto const output_metas = arena.array(alloc, 3, Meta{.key = 4});
+    auto const inputs = arena.array<std::uint32_t>(alloc, 1, 6);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    runs.set<1>(outputs.view());
+    // A plain View of an arena run: the View carries no brand of its arena.
+    runs.set<2>(output_metas.view());
+    // A plain View of an arena run: the View carries no brand of its arena.
+    runs.set<0>(inputs.view());
     CRUCIBLE_FATAL_INVARIANT(runs.view<2>().size() == 3 && runs.view<1>().size() == 3);
     runs.set_count<0>(2);
     CRUCIBLE_FATAL_INVARIANT(!runs.has_run<1>() && !runs.has_run<2>());
     CRUCIBLE_FATAL_INVARIANT(runs.view<1>().size() == 0 && runs.view<2>().size() == 0);
     CRUCIBLE_FATAL_INVARIANT(runs.has_run<0>() && sum_of(runs.view<0>()) == 6);
-    runs.set<1>(arena.array<std::uint32_t>(alloc, 2, 2));
+    auto const new_outputs = arena.array<std::uint32_t>(alloc, 2, 2);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    runs.set<1>(new_outputs.view());
     CRUCIBLE_FATAL_INVARIANT(runs.has_run<1>() && sum_of(runs.view<1>()) == 4);
 }
 
@@ -110,10 +126,12 @@ void test_new_count_drops_the_runs_of_its_slot() {
 // not change the source.
 void test_copy_holds_the_same_runs() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    BumpArena arena{4096};
+    BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
     OpRuns runs{};
     runs.set_count<2>(2);
-    runs.set<4>(arena.array<std::int64_t>(alloc, 2, -3));
+    auto const scalars = arena.array<std::int64_t>(alloc, 2, -3);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    runs.set<4>(scalars.view());
     OpRuns copy = runs;
     CRUCIBLE_FATAL_INVARIANT(copy.count<2>() == 2 && sum_of(copy.view<4>()) == sum_of(runs.view<4>()));
     copy.set_count<2>(0);
@@ -127,15 +145,19 @@ void test_copy_holds_the_same_runs() {
 // through expect_dies of the Check family.
 void test_wrong_count_ends_the_process(::fixy::TestRunnerCtx const& test) {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    BumpArena arena{4096};
+    BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
     OpRuns runs{};
     runs.set_count<0>(3);
-    View<std::uint32_t> const short_run = arena.array<std::uint32_t>(alloc, 2, 0);
+    auto const short_arena_run = arena.array<std::uint32_t>(alloc, 2, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    View<std::uint32_t> const short_run = short_arena_run.view();
     ::fixy::check::expect_dies(
         test, [&runs, &short_run] noexcept { runs.set<1>(short_run); },
         ::foundation::core::TextView{
             "foundation: fatal: RunSet::set got a run of 2 elements for a slot of the count 3"});
-    View<std::uint32_t> const long_run = arena.array<std::uint32_t>(alloc, 4, 0);
+    auto const long_arena_run = arena.array<std::uint32_t>(alloc, 4, 0);
+    // A plain View of an arena run: the View carries no brand of its arena.
+    View<std::uint32_t> const long_run = long_arena_run.view();
     ::fixy::check::expect_dies(
         test, [&runs, &long_run] noexcept { runs.set<1>(long_run); },
         ::foundation::core::TextView{

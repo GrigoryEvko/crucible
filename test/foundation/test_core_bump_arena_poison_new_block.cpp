@@ -20,10 +20,19 @@
 #include <foundation/core/Report.h>
 #include <foundation/effects/Effect.h>
 
+#include <cstddef>
 #include <cstdint>
 
+namespace {
+
+// The family of the arena of the program.
+struct[[= ::foundation::brand::arena_family_brand{}]] Probe final {};
+
+}  // namespace
+
 int main() {
-    ::foundation::core::BumpArena arena{4096};
+    ::foundation::core::BumpArena<Probe> arena = ::foundation::core::mint_bump_arena<Probe>(
+        ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>{4096});
     auto const value = arena.make<std::uint64_t>(::foundation::effects::testing::test().alloc, std::uint64_t{0x5EED});
 
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a read of the bytes after an allocation, which the arena did not give out")

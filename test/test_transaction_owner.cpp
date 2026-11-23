@@ -18,6 +18,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
 
@@ -230,7 +231,9 @@ void job_runs_on_the_stage_while_it_runs() {
 // instead of letting it hang.  The refused call runs in a child through
 // expect_dies of the Check family, before the test starts a thread.
 void nested_job_ends_the_process() {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a nested publish job names the thread with no capture, in a child process")
     static crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     background.run_on_publish_stage(
         [](crucible::BackgroundThread::PublishStageView&, crucible::BackgroundThread::PublishStage const&) noexcept {
             background.run_on_publish_stage([](crucible::BackgroundThread::PublishStageView&,

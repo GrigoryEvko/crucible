@@ -27,7 +27,11 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
 }  // namespace
+
+using crucible::DagArena;
 
 // Opening the store and its open view need a context whose row admits IO
 // and Block.
@@ -69,9 +73,11 @@ inline constexpr CipherTierTag_v tier_v = ::fixy::band_tier_v<W>;
 // The seed varies the schema hash, so every test gets a region with its
 // own content hash and writes its own file.  The ops, their arrays and the
 // region are in dag_arena.
-static ::fixy::Ref<RegionNode> make_test_region(::fixy::BumpArena& dag_arena, uint32_t seed) {
+static ::fixy::Ref<RegionNode> make_test_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t seed) {
     constexpr uint32_t NUM_OPS = 1;
-    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
+    const auto ops_run = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<TraceEntry> ops = ops_run.view();
     TraceEntry& op = *ops.get(0).expect("the region holds one op");
     op.schema_hash = SchemaHash{0xCAFEBABE00000000ULL + seed};
     TensorMeta meta{};
@@ -88,7 +94,7 @@ static ::fixy::Ref<RegionNode> make_test_region(::fixy::BumpArena& dag_arena, ui
 }
 
 static void test_publish_warm_bit_equality(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 1);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -105,7 +111,7 @@ static void test_publish_warm_bit_equality(const char* dir) {
 }
 
 static void test_publish_warm_type_identity(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 2);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -121,7 +127,7 @@ static void test_publish_warm_type_identity(const char* dir) {
 }
 
 static void test_publish_hot_type_identity(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 3);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -139,7 +145,7 @@ static void test_publish_hot_type_identity(const char* dir) {
 }
 
 static void test_publish_cold_type_identity(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 4);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -157,7 +163,7 @@ static void test_publish_cold_type_identity(const char* dir) {
 }
 
 static void test_view_and_payload_route(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 5);
     auto cipher = open_cipher(dir);
 
@@ -204,7 +210,7 @@ static void test_cold_rejected_at_higher_fences() {
 }
 
 static void test_relax_to_weaker_tiers(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 9);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -239,7 +245,7 @@ static ContentHash hot_reshard_consumer(W wrapped) noexcept {
 }
 
 static void test_e2e_hot_fence_consumer(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 11);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -259,7 +265,7 @@ static ContentHash warm_publish_consumer(W wrapped) noexcept {
 }
 
 static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 12);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -276,7 +282,7 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
 }
 
 static void test_phase5_stub_semantics(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 13);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -309,7 +315,7 @@ template <typename W>
 }
 
 static void test_runtime_tier_reader_pattern(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 14);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -338,7 +344,7 @@ static ContentHash replay_consumer(W wrapped) noexcept {
 }
 
 static void test_replay_engine_admits_all_tiers(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 15);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
@@ -360,7 +366,7 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
 // so the three results cannot be confused for one another even though
 // they describe the same region.
 static void test_sequential_three_tier_publish(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 16);
     auto cipher = open_cipher(dir);
 
@@ -416,7 +422,7 @@ static void test_cannot_tighten_to_stronger_tier() {
 }
 
 static void test_content_addressed_publish_overloads(const char* dir) {
-    ::fixy::BumpArena dag_arena{1 << 16};
+    ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 18);
     const auto payload = Cipher::content_addressed(region);
     auto cipher = open_cipher(dir);

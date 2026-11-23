@@ -51,10 +51,10 @@ static_assert(sizeof(c::detail::transparent_payload_families) == 15 * sizeof(std
               "The five containers (WriteOnce, FixedArray, HeapArray, RunSet, std::vector) hide their "
               "elements, a Box hides its object, and an Option hides its payload.  A new wrapper that unwraps "
               "is one line here.");
-static_assert(std::size(c::detail::leaf_payload_families) == 2,
-              "Two families are admitted as leaves: a Saturated value and a PackedWord.  Every entry is a claim "
-              "that the template hides no effect row, which is why a leaf needs a line rather than falling "
-              "through to a default.");
+static_assert(std::size(c::detail::leaf_payload_families) == 3,
+              "Three families are admitted as leaves: a Saturated value, a PackedWord and a BumpArena.  Every "
+              "entry is a claim that the template hides no effect row, which is why a leaf needs a line rather "
+              "than falling through to a default.");
 
 // The row a payload carries is a type, and the types below are the ones
 // a stage's admission check compares.  Instantiating each as a runtime
@@ -72,9 +72,12 @@ struct HeldComputations {
     ::fixy::FixedArray<BgComp, 2> computations;
 };
 
+// The family tag of the arena of the message below.
+struct[[= ::foundation::brand::arena_family_brand{}]] MessageArena final {};
+
 // A message that may own an arena, as the region of a build does.
 struct HoldsOptionalArena {
-    ::fixy::Option<::fixy::Box<::fixy::BumpArena>> arena{};
+    ::fixy::Option<::fixy::Box<::fixy::BumpArena<MessageArena>>> arena{};
     std::uint32_t count = 0;
 };
 

@@ -37,7 +37,11 @@ using crucible::ScalarType;
 using crucible::ScalePolicy;
 using crucible::SoftmaxRecurrence;
 using fixy::BumpArena;
+using crucible::RecipeArena;
 using RecipeRef = ::fixy::Ref<const NumericalRecipe>;
+
+// The block size of each arena of the test.
+constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> kArenaBlock{size_t{1} << 20};
 
 // Other fields stay at their defaults.  These three vary enough to
 // avoid hash collisions across the small matrices below.
@@ -62,7 +66,7 @@ inline eff::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline eff::Init init_cap() noexcept { return g_init; }
 
 // The Ref that to() gives, with the fresh brand of its call.
-using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
+using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena<RecipeArena>&>()));
 
 }  // namespace
 
@@ -77,7 +81,7 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
                       "RecipePool capacity must carry the power-of-two invariant");
         static_assert(std::is_same_v<RecipePool::Size, ::fixy::Monotonic<uint32_t>>,
                       "RecipePool size must carry the monotonic-growth invariant");
-        static_assert(std::is_same_v<RecipePool::ArenaBorrow, ::fixy::Ref<BumpArena>>,
+        static_assert(std::is_same_v<RecipePool::ArenaBorrow, ::fixy::Ref<BumpArena<RecipeArena>>>,
                       "RecipePool arena dependency must be an explicit borrow");
         static_assert(sizeof(RecipePool::Capacity) == sizeof(uint32_t),
                       "PowerOfTwo capacity wrapper must stay zero-cost");
@@ -96,14 +100,14 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 32};
         CRUCIBLE_TEST_ASSERT(kTest, pool.size() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, pool.capacity() == 32);
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 32};
 
         const NumericalRecipe fields = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::BITEXACT_TC);
@@ -120,7 +124,7 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 32};
 
         const RecipeRef r_f32_strict =
@@ -137,7 +141,7 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 32};
 
         NumericalRecipe poisoned = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::ORDERED);
@@ -153,7 +157,7 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     // The probe comparison looks at the semantic fields only.  A refactor
     // that folded the stored hash into it would break this.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 32};
 
         NumericalRecipe fresh = mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT);
@@ -171,7 +175,7 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     // stays valid after it.  Capacity 8 at 50% load grows after 4 entries,
     // so 10 insertions force two grows, to 16 and then 32.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 8};
         CRUCIBLE_TEST_ASSERT(kTest, pool.capacity() == 8);
 
@@ -218,7 +222,7 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     // The 5 × 5 × 4 × 4 grid of dtype, dtype, determinism and scale gives
     // 400 distinct recipes.
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 32};
 
         const ScalarType dtypes[] = {
@@ -266,8 +270,8 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     // The identity of a recipe is a per-pool invariant, not a global one:
     // each pool owns its own arena storage.
     {
-        BumpArena arena_a{};
-        BumpArena arena_b{};
+        BumpArena<RecipeArena> arena_a = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
+        BumpArena<RecipeArena> arena_b = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool_a{::fixy::to(arena_a), init_cap(), 32};
         RecipePool pool_b{::fixy::to(arena_b), init_cap(), 32};
 
@@ -282,7 +286,7 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena&>()));
     }
 
     {
-        BumpArena arena{};
+        BumpArena<RecipeArena> arena = ::fixy::mint_bump_arena<RecipeArena>(kArenaBlock);
         RecipePool pool{::fixy::to(arena), init_cap(), 32};
         const auto r =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::ORDERED));

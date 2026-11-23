@@ -56,7 +56,8 @@ auto g_test = ::foundation::effects::testing::test();
 // first_read and second_read.  The ops keep the Views of their inputs and
 // their outputs, so these are runs of the arena of the region.
 struct Region {
-    ::fixy::BumpArena arena{4096};
+    ::fixy::BumpArena<crucible::DagArena> arena =
+        ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
     ::fixy::View<TensorMeta> out_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
     ::fixy::View<SlotId> slot_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0});
     ::fixy::View<TensorMeta> out_b = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));

@@ -48,24 +48,27 @@ namespace crucible {
 // against that scratch, on a BackgroundThread that runs no pipeline.
 struct BuildScratchOfBench {
     [[nodiscard]] static ::fixy::MaskedArray<BackgroundThread::PtrSlot>& map(BackgroundThread& bg) noexcept {
-        return bg.scratch_map_;
+        return bg.build_state_.scratch_map_;
     }
     // Empties each slot of the map through the frame door of the map, as the
     // build does when its generation wraps.
     static void clear_map(BackgroundThread& bg) noexcept {
-        bg.scratch_map_ = ::fixy::with_mut(std::move(bg.scratch_map_), [](auto slots) noexcept {
-            for (BackgroundThread::PtrSlot& slot : slots.view()) {
-                slot = BackgroundThread::PtrSlot{};
-            }
-        });
+        bg.build_state_.scratch_map_ =
+            ::fixy::with_mut(std::move(bg.build_state_.scratch_map_), [](auto slots) noexcept {
+                for (BackgroundThread::PtrSlot& slot : slots.view()) {
+                    slot = BackgroundThread::PtrSlot{};
+                }
+            });
     }
-    [[nodiscard]] static uint8_t& map_generation(BackgroundThread& bg) noexcept { return bg.map_gen_; }
-    [[nodiscard]] static uint32_t slot_capacity(BackgroundThread const& bg) noexcept { return bg.slot_cap_max_.get(); }
+    [[nodiscard]] static uint8_t& map_generation(BackgroundThread& bg) noexcept { return bg.build_state_.map_gen_; }
+    [[nodiscard]] static uint32_t slot_capacity(BackgroundThread const& bg) noexcept {
+        return bg.build_state_.slot_cap_max_.get();
+    }
     // The growth of the scratch buffers that the build makes after its scan.
     // The counts pass through as the build gives them.
     template <class... Counts>
     static void ensure_buffers(BackgroundThread& bg, ::foundation::effects::Alloc alloc, Counts... counts) {
-        bg.ensure_scratch_buffers(alloc, counts...);
+        bg.build_state_.ensure_scratch_buffers(alloc, counts...);
     }
 };
 
@@ -80,6 +83,8 @@ namespace {
 // through every capability-tagged call.
 const auto BG_CTX = ::foundation::effects::testing::bg();
 constexpr auto A = BG_CTX.alloc;
+
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 
 struct PhaseTiming {
     ::fixy::TextView name{};
@@ -146,32 +151,39 @@ void check_ops_without_metas(::fixy::View<const TraceEntry> ops, ::fixy::View<co
     }
 }
 
-// Builds the trace graph of the recorded trace into scratch.  The build reads
-// the arrays of the trace and does not write them.  No pipeline of the bench
-// runs, so each build takes a fresh proof of quiescence.
-BackgroundThread::TraceBuild build_recorded(BackgroundThread& bg, ::fixy::BumpArena& scratch,
-                                            const LoadedTrace& trace) {
-    return bg.build_trace_from(bg.prove_quiescence(), A, scratch, trace.entries.view(), trace.meta_starts.view(),
-                               trace.scope_hashes.view(), trace.callsite_hashes.view(), trace.depths.view(),
-                               bg.numerics());
+// Builds the trace graph of the recorded trace into the epoch, with the state
+// of the trace build of a BackgroundThread that runs no pipeline
+// (trace_build_state).  The build reads the arrays of the trace and does not
+// write them.  Each body of an epoch captures the state, the metadata log by
+// a const reference and the trace by a const reference, and not the
+// BackgroundThread, so it reaches no arena of the BackgroundThread.
+BackgroundThread::TraceBuild build_recorded(BackgroundThread::TraceBuildState& state, MetaLog const& meta_log,
+                                            const LoadedTrace& trace, NumericsHash numerics,
+                                            TraceScratch::Epoch& scratch) {
+    return BackgroundThread::build_trace_from(state, meta_log, A, scratch, trace.entries.view(),
+                                              trace.meta_starts.view(), trace.scope_hashes.view(),
+                                              trace.callsite_hashes.view(), trace.depths.view(), numerics);
 }
 
 // ── Top-level Report via bench::run ──────────────────────────────────
 //
 // The full build_trace pipeline on a real recorded trace. The body
-// opens an epoch of the scratch arena and refills the MetaLog every call,
-// then runs the build, then ends the epoch. The build does not write the
-// arrays of the trace, so each sample measures the same work.
+// refills the MetaLog every call, then opens an epoch of the scratch arena,
+// runs the build, and ends the epoch. The build does not write the arrays
+// of the trace, so each sample measures the same work.
 bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
     const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
-    ::fixy::BumpArena scratch{arena_bytes};
+    TraceScratch scratch{Bytes{arena_bytes}};
+    BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
+    MetaLog const& log = meta_log;
+    NumericsHash const numerics = bg.numerics();
 
     bench::Run r{bench::format_name("build_trace (full pipeline, {} ops)", trace.num_ops)};
     if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
     return r.samples(500).warmup(10).batch(1).measure([&] {
-        scratch.with_epoch([&]() noexcept {
-            bench::refill_meta_log(meta_log, trace);
-            auto built = build_recorded(bg, scratch, trace);
+        bench::refill_meta_log(meta_log, trace);
+        scratch.arena.with_epoch([&state, &log, &trace, numerics](TraceScratch::Epoch& epoch) noexcept {
+            auto built = build_recorded(state, log, trace, numerics, epoch);
             bench::do_not_optimize(built);
         });
     });
@@ -189,16 +201,18 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
     const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const double nspc = bench::Timer::ns_per_cycle();
-    ::fixy::BumpArena scratch{arena_bytes};
-    // The planner writes the offsets into the slots, so each run plans a copy
-    // of them here.
-    ::fixy::BumpArena slot_scratch{arena_bytes};
+    TraceScratch scratch{Bytes{arena_bytes}};
+    // The sweep of each plan takes its arrays from this scratch.
+    PlanScratch plan_scratch{Bytes{arena_bytes}};
+    BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
+    MetaLog const& log = meta_log;
+    NumericsHash const numerics = bg.numerics();
 
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
-        scratch.with_epoch([&]() noexcept {
-            bench::refill_meta_log(meta_log, trace);
-            auto built = build_recorded(bg, scratch, trace);
+        bench::refill_meta_log(meta_log, trace);
+        scratch.arena.with_epoch([&state, &log, &trace, numerics](TraceScratch::Epoch& epoch) noexcept {
+            auto built = build_recorded(state, log, trace, numerics, epoch);
             bench::do_not_optimize(built);
         });
     }
@@ -208,17 +222,17 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // for each iteration.
     double total_ns = 0;
     ::fixy::HeapArray<double> samples = ::fixy::mint_heap_array_with<double>(
-        A, iters, [&scratch, &meta_log, &trace, &bg, &total_ns, nspc](std::size_t) noexcept {
-            const double ns = scratch.with_epoch([&]() noexcept {
-                bench::refill_meta_log(meta_log, trace);
+        A, iters, [&scratch, &meta_log, &trace, &state, &log, &total_ns, numerics, nspc](std::size_t) noexcept {
+            bench::refill_meta_log(meta_log, trace);
+            const double ns =
+                scratch.arena.with_epoch([&state, &log, &trace, numerics, nspc](TraceScratch::Epoch& epoch) noexcept {
+                    const uint64_t t0 = bench::rdtsc_start();
+                    auto built = build_recorded(state, log, trace, numerics, epoch);
+                    const uint64_t t1 = bench::rdtsc_end();
 
-                const uint64_t t0 = bench::rdtsc_start();
-                auto built = build_recorded(bg, scratch, trace);
-                const uint64_t t1 = bench::rdtsc_end();
-
-                bench::do_not_optimize(built);
-                return static_cast<double>(t1 - t0) * nspc;
-            });
+                    bench::do_not_optimize(built);
+                    return static_cast<double>(t1 - t0) * nspc;
+                });
             total_ns += ns;
             return ns;
         });
@@ -235,51 +249,63 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     double ns_memplan = 0;
     {
         // One full build to get realistic edge data.  The graph of the
-        // reference build stays in ref_scratch until the end of this block,
-        // so the copies need no epoch.
-        ::fixy::BumpArena ref_scratch{arena_bytes};
+        // reference build dies with its epoch, so the epoch copies the
+        // counts and the edges, and the region leaves it.
+        TraceScratch ref_scratch{Bytes{arena_bytes}};
         bench::refill_meta_log(meta_log, trace);
-        auto [ref, ref_region] = build_recorded(bg, ref_scratch, trace).expect("the recorded trace builds");
-
-        const uint32_t num_ops = ref->num_ops.get();
-        const uint32_t num_slots = ref->num_slots.get();
-
-        // The forward edges are in the order of their sources.
-        const ::fixy::HeapArray<Edge> saved_edges = ::fixy::mint_heap_array_copy<Edge>(A, ref->fwd_edges);
+        uint32_t num_ops = 0;
+        uint32_t num_slots = 0;
+        ::fixy::HeapArray<Edge> saved_edges{};
+        BackgroundThread::BuiltRegion ref_region{};
+        ref_scratch.arena.with_epoch([&state, &log, &trace, numerics, &num_ops, &num_slots, &saved_edges,
+                                      &ref_region](TraceScratch::Epoch& epoch) noexcept {
+            auto [ref, region] = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds");
+            num_ops = ref->num_ops.get();
+            num_slots = ref->num_slots.get();
+            // The forward edges are in the order of their sources.
+            saved_edges = ::fixy::mint_heap_array_copy<Edge>(A, ref->fwd_edges);
+            ref_region = std::move(region);
+        });
 
         const ::fixy::View<const TensorSlot> saved_slots = ref_region.slots();
 
-        // build_csr
+        // build_csr, with fresh blocks in each iteration
         for (uint32_t iter = 0; iter < iters; iter++) {
-            ::fixy::BumpArena csr_arena{1 << 18};
-            const ::fixy::Ref<TraceGraph> graph2 = alloc_trace_graph(A, csr_arena);
+            TraceScratch csr_scratch{Bytes{size_t{1} << 18}};
+            ns_csr += csr_scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
+                const ::fixy::Ref<TraceGraph> graph2 = alloc_trace_graph(A, epoch);
 
-            const uint64_t t0 = bench::rdtsc_start();
-            build_csr(A, csr_arena, *graph2, saved_edges.view(), num_ops);
-            const uint64_t t1 = bench::rdtsc_end();
+                const uint64_t t0 = bench::rdtsc_start();
+                build_csr(A, epoch, *graph2, saved_edges.view(), num_ops);
+                const uint64_t t1 = bench::rdtsc_end();
 
-            bench::do_not_optimize(graph2);
-            ns_csr += static_cast<double>(t1 - t0) * nspc;
+                bench::do_not_optimize(graph2);
+                return static_cast<double>(t1 - t0) * nspc;
+            });
         }
 
-        // compute_memory_plan
+        // compute_memory_plan.  The planner writes the offsets into the
+        // slots, so each run plans a copy of them in an arena of its own.
         for (uint32_t iter = 0; iter < iters; iter++) {
-            const double ns = slot_scratch.with_epoch([&]() noexcept {
-                const ::fixy::View<TensorSlot> slots = slot_scratch.array<TensorSlot>(A, num_slots, TensorSlot{});
-                ::fixy::copy(slots, saved_slots).expect("the copy holds one entry for each slot");
+            ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{arena_bytes});
+            const auto slots_run = slot_arena.array<TensorSlot>(A, num_slots, TensorSlot{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TensorSlot> slots = slots_run.view();
+            ::fixy::copy(slots, saved_slots).expect("the copy holds one entry for each slot");
 
-                MemoryPlan plan_storage{};
-                return scratch.with_epoch([&]() noexcept {
+            MemoryPlan plan_storage{};
+            BackgroundThread::PlanTarget const target = bg.plan_target();
+            ns_memplan +=
+                plan_scratch.arena.with_epoch([target, &plan_storage, slots, nspc](PlanScratch::Epoch& epoch) noexcept {
                     const uint64_t t0 = bench::rdtsc_start();
-                    const ::fixy::Ref<MemoryPlan> plan = bg.compute_memory_plan(A, plan_storage, scratch, slots)
-                                                             .expect("the slots of the bench fit in 64 bits");
+                    const ::fixy::Ref<MemoryPlan> plan =
+                        BackgroundThread::compute_memory_plan(A, target, plan_storage, epoch, slots)
+                            .expect("the slots of the bench fit in 64 bits");
                     const uint64_t t1 = bench::rdtsc_end();
 
                     bench::do_not_optimize(plan);
                     return static_cast<double>(t1 - t0) * nspc;
                 });
-            });
-            ns_memplan += ns;
         }
 
         const double ns_other = total_ns - ns_csr - ns_memplan;
@@ -302,7 +328,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // The phases that copy the loop of build_trace take their buffers from
     // the heap, as build_trace does.  build_trace takes its graph from
     // build_scratch.
-    ::fixy::BumpArena build_scratch{arena_bytes};
+    TraceScratch build_scratch{Bytes{arena_bytes}};
+    BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
+    MetaLog const& log = meta_log;
+    NumericsHash const numerics = bg.numerics();
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
     for (const TraceRing::Entry& entry : trace.entries) {
@@ -313,9 +342,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     (void)trace_total_outputs;
 
     // One build to prime scratch buffers and reference ops.
-    build_scratch.with_epoch([&]() noexcept {
-        bench::refill_meta_log(meta_log, trace);
-        auto ref = build_recorded(bg, build_scratch, trace);
+    bench::refill_meta_log(meta_log, trace);
+    build_scratch.arena.with_epoch([&state, &log, &trace, numerics](TraceScratch::Epoch& epoch) noexcept {
+        auto ref = build_recorded(state, log, trace, numerics, epoch);
         bench::do_not_optimize(ref);
     });
 
@@ -379,16 +408,26 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                                   + size_t{total_inputs} * sizeof(OpIndex)
                                   + (size_t{total_inputs} + total_outputs) * sizeof(SlotId) + alignof(TraceEntry)
                                   + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId);
-        ::fixy::Box<::fixy::BumpArena> region_arena = ::fixy::mint_box<::fixy::BumpArena>(A, region_bytes);
-        const ::fixy::View<TraceEntry> op_run = region_arena->array(A, count, TraceEntry{});
-        const ::fixy::View<int64_t> scalar_run = region_arena->array(A, total_scalars, int64_t{0});
-        const ::fixy::View<OpIndex> producer_run = region_arena->array(A, total_inputs, OpIndex{});
-        const ::fixy::View<SlotId> slot_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
+        ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
+            ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, Bytes{region_bytes});
+        const auto op_arena_run = region_arena->array(A, count, TraceEntry{});
+        const auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
+        const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
+        const auto slot_arena_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> op_run = op_arena_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<int64_t> scalar_run = scalar_arena_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<OpIndex> producer_run = producer_arena_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<SlotId> slot_run = slot_arena_run.view();
         BuildScratchOfBench::ensure_buffers(bg, A, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
         const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(bg),
                                               ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
-        build_scratch.with_epoch([&build_scratch, slot_cap]() noexcept {
-            bench::do_not_optimize(build_scratch.array(A, slot_cap, BackgroundThread::SlotInfo{}));
+        build_scratch.arena.with_epoch([slot_cap](TraceScratch::Epoch& epoch) noexcept {
+            const auto slot_infos = epoch.array(A, slot_cap, BackgroundThread::SlotInfo{});
+            bench::do_not_optimize(slot_infos);
         });
 
         const uint64_t t1 = bench::rdtsc_end();
@@ -470,13 +509,24 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                                   + size_t{total_scalars} * sizeof(int64_t) + size_t{total_inputs} * sizeof(OpIndex)
                                   + (size_t{total_inputs} + total_outputs) * sizeof(SlotId) + alignof(TraceEntry)
                                   + alignof(TensorMeta) + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId);
-        ::fixy::Box<::fixy::BumpArena> region_arena = ::fixy::mint_box<::fixy::BumpArena>(A, region_bytes);
-        const ::fixy::View<TraceEntry> ops = region_arena->array(A, count, TraceEntry{});
-        const ::fixy::View<TensorMeta> meta_run = region_arena->array(A, total_metas, TensorMeta{});
+        ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
+            ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, Bytes{region_bytes});
+        const auto ops_arena_run = region_arena->array(A, count, TraceEntry{});
+        const auto meta_arena_run = region_arena->array(A, total_metas, TensorMeta{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_arena_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorMeta> meta_run = meta_arena_run.view();
         meta_log.copy_run(first_meta.raw(), meta_run);
-        const ::fixy::View<int64_t> scalar_run = region_arena->array(A, total_scalars, int64_t{0});
-        const ::fixy::View<OpIndex> producer_run = region_arena->array(A, total_inputs, OpIndex{});
-        const ::fixy::View<SlotId> slot_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
+        const auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
+        const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
+        const auto slot_arena_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<int64_t> scalar_run = scalar_arena_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<OpIndex> producer_run = producer_arena_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<SlotId> slot_run = slot_arena_run.view();
         size_t scalar_cursor = 0;
         size_t producer_cursor = 0;
         size_t slot_cursor = 0;
@@ -555,9 +605,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         // The region of the build owns the ops, so the ops outlive the epoch.
         // The graph dies at the end of the epoch, so only the region leaves it.
         BackgroundThread::BuiltRegion ref{};
-        build_scratch.with_epoch([&]() noexcept {
-            bench::refill_meta_log(meta_log, trace);
-            ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
+        bench::refill_meta_log(meta_log, trace);
+        build_scratch.arena.with_epoch([&state, &log, &trace, numerics, &ref](TraceScratch::Epoch& epoch) noexcept {
+            ref = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
         });
         const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
@@ -596,9 +646,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         // The region of the build owns the ops, so the ops outlive the epoch.
         // The graph dies at the end of the epoch, so only the region leaves it.
         BackgroundThread::BuiltRegion ref{};
-        build_scratch.with_epoch([&]() noexcept {
-            bench::refill_meta_log(meta_log, trace);
-            ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
+        bench::refill_meta_log(meta_log, trace);
+        build_scratch.arena.with_epoch([&state, &log, &trace, numerics, &ref](TraceScratch::Epoch& epoch) noexcept {
+            ref = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
         });
         const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
@@ -645,9 +695,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         // The region of the build owns the ops, so the ops outlive the epoch.
         // The graph dies at the end of the epoch, so only the region leaves it.
         BackgroundThread::BuiltRegion ref{};
-        build_scratch.with_epoch([&]() noexcept {
-            bench::refill_meta_log(meta_log, trace);
-            ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
+        bench::refill_meta_log(meta_log, trace);
+        build_scratch.arena.with_epoch([&state, &log, &trace, numerics, &ref](TraceScratch::Epoch& epoch) noexcept {
+            ref = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
         });
         const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
@@ -688,10 +738,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         // The slots of a build, made from the slots of its region.  The epoch
         // of the build arena ends the scratch slots of the build itself.
         ::fixy::HeapArray<BackgroundThread::SlotInfo> saved_slots{};
-        build_scratch.with_epoch([&]() noexcept {
-            bench::refill_meta_log(meta_log, trace);
+        bench::refill_meta_log(meta_log, trace);
+        build_scratch.arena.with_epoch([&state, &log, &trace, numerics,
+                                        &saved_slots](TraceScratch::Epoch& epoch) noexcept {
             const BackgroundThread::BuiltRegion region =
-                build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
+                build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
             const ::fixy::View<TensorSlot const> region_slots = region.slots();
             saved_slots = ::fixy::mint_heap_array_with<BackgroundThread::SlotInfo>(
                 A, region_slots.size(), [region_slots](size_t position) noexcept {
@@ -715,9 +766,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
             // The run of the slots comes from an arena of the region, as
             // build_trace takes it.
-            ::fixy::Box<::fixy::BumpArena> slot_arena =
-                ::fixy::mint_box<::fixy::BumpArena>(A, num_slots * sizeof(TensorSlot) + alignof(TensorSlot));
-            const ::fixy::View<TensorSlot> slots = slot_arena->array(A, num_slots, TensorSlot{});
+            ::fixy::Box<::fixy::BumpArena<DagArena>> slot_arena = ::fixy::mint_box<::fixy::BumpArena<DagArena>>(
+                A, Bytes{num_slots * sizeof(TensorSlot) + alignof(TensorSlot)});
+            const auto slots_run = slot_arena->array(A, num_slots, TensorSlot{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TensorSlot> slots = slots_run.view();
             uint32_t position = 0;
             for (const auto [info, slot] :
                  built_slots.walk().try_zip(slots.walk()).expect("the run of the slots holds each slot")) {
