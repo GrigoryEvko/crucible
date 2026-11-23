@@ -274,8 +274,8 @@ if mode == "moves":
     ledger = pathlib.Path("utils/ledgers/home.txt").read_text()
     statuses["test_ledger"] = "fail" if "include/old.h" in ledger else "run"
 if mode in ("budget", "budget-plugin"):
-    ledger = pathlib.Path("utils/ledgers/header-alone.txt").read_text()
-    statuses["guard_header_alone"] = "fail" if "| 3.1 |" in ledger else "run"
+    ledger = pathlib.Path("utils/ledgers/object-size.txt").read_text()
+    statuses["guard_object_size"] = "fail" if "| 3.1 |" in ledger else "run"
 if mode == "budget-plugin":
     statuses["guard_plugin"] = "fail"
 inventory = build / "inventory.txt"
@@ -293,7 +293,7 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
 # of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
 # reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
-# gate does.  `write --rule header-alone --reason TEXT` raises the row of include/a.h from 3.1 to 3.3 with that reason,
+# gate does.  `write --rule object-size --reason TEXT` raises the row of include/a.h from 3.1 to 3.3 with that reason,
 # as a raise of a budget does, also in each other row with that value.  `write --row ITEM... --reason TEXT` writes
 # that reason into each row of the path ITEM.  `write --lower --row ITEM --reason TEXT` lowers the row of step-cost
 # from 123.912 to
@@ -360,8 +360,8 @@ if words[0] == "write":
                 cells[4] = words[words.index("--reason") + 1]
             lines.append(" | ".join(cells))
         ledger.write_text("".join(f"{line}\\n" for line in lines))
-    elif words[2] == "header-alone":
-        ledger = pathlib.Path("utils/ledgers/header-alone.txt")
+    elif words[2] == "object-size":
+        ledger = pathlib.Path("utils/ledgers/object-size.txt")
         raised = f"| 3.3 | - | {words[words.index('--reason') + 1]}"
         ledger.write_text(ledger.read_text().replace("| 3.1 | - | a kept header", raised))
     elif words[2] == "door-unit":
@@ -1690,13 +1690,13 @@ def ratchet_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
-BUDGET_PATH = "utils/ledgers/header-alone.txt"
-BUDGET_LEDGER = "format 1\nrule header-alone\ninclude/a.h | - | 3.1 | - | a kept header\n"
+BUDGET_PATH = "utils/ledgers/object-size.txt"
+BUDGET_LEDGER = "format 1\nrule object-size\ninclude/a.h | - | 3.1 | - | a kept header\n"
 BUDGET_REASON = "the owner decision of 2026-11-15: the header grows with a new door"
 
 
 def budget_cases(expect: testing.Expect) -> None:
-    """Hold the raise of a budget: a crossed row of header-alone rises with the reason, and a different problem stays.
+    """Hold the raise of a budget: a crossed row of object-size rises with the reason, and a different problem stays.
 
     With no budget reason, the crossed row refuses the commit.  With a budget reason, the gate writes the row with the
     reason, folds it into the commit, runs the round again with the checks of the red configuration, and gives the line
@@ -1711,18 +1711,18 @@ def budget_cases(expect: testing.Expect) -> None:
         gate.move_tree(root, tree, head)
         planted = planted_gate(work, root, tree, "budget", OTHER_BUILDS)
         build = tree / "build"
-        (build / "red.txt").write_text("guard_header_alone\n", encoding="utf-8")
-        finding = f"{tree}/include/a.h:0: error: [header-alone] include/a.h includes 3.3 MB, above its row\n"
-        (build / "guard_header_alone.out").write_text(finding, encoding="utf-8")
+        (build / "red.txt").write_text("guard_object_size\n", encoding="utf-8")
+        finding = f"{tree}/include/a.h:0: error: [object-size] include/a.h includes 3.3 MB, above its row\n"
+        (build / "guard_object_size.out").write_text(finding, encoding="utf-8")
         plain = gate.Candidate(head, commit, ("src/a.cpp",))
         verdict, printed = testing.captured(lambda: planted.check(plain, False))
         holds = (
             not verdict.is_accepted
-            and any("red alone too: guard_header_alone" in problem for problem in verdict.problems)
+            and any("red alone too: guard_object_size" in problem for problem in verdict.problems)
             and verdict.raised == ()
             and git.show(root, verdict.final, BUDGET_PATH) == BUDGET_LEDGER.encode()
         )
-        label = f"with no budget reason, a crossed row of header-alone refuses the commit: {verdict.problems}"
+        label = f"with no budget reason, a crossed row of object-size refuses the commit: {verdict.problems}"
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         checks = build / "checks.txt"
         checks.unlink(missing_ok=True)
@@ -1747,7 +1747,7 @@ def budget_cases(expect: testing.Expect) -> None:
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         (build / "mode.txt").write_text("budget-plugin\n", encoding="utf-8")
-        (build / "red.txt").write_text("guard_header_alone guard_plugin\n", encoding="utf-8")
+        (build / "red.txt").write_text("guard_object_size guard_plugin\n", encoding="utf-8")
         (build / "guard_plugin.out").write_text(f"{tree}/src/a.cpp:1: error: [quarantine] a raw pointer\n")
         verdict, printed = testing.captured(lambda: planted.check(reasoned, False))
         holds = (
@@ -1778,8 +1778,7 @@ def budget_cases(expect: testing.Expect) -> None:
 
 
 BUDGET_ROWS_LEDGER = (
-    "format 1\nrule header-alone\ninclude/a.h | - | 3.1 | - | a kept header\n"
-    "include/b.h | - | 3.1 | - | a kept header\n"
+    "format 1\nrule object-size\ninclude/a.h | - | 3.1 | - | a kept header\ninclude/b.h | - | 3.1 | - | a kept header\n"
 )
 OWN_REASON = "the owner decision of 2026-11-15: a.h reads a new door"
 
@@ -1787,7 +1786,7 @@ OWN_REASON = "the owner decision of 2026-11-15: a.h reads a new door"
 def budget_row_cases(expect: testing.Expect) -> None:
     """Hold the text of one row in the raise of a budget: --budget-reason ITEM=TEXT next to the plain text.
 
-    Two rows of header-alone cross.  The row of an item gets its own text, and the other row gets the plain text.  With
+    Two rows of object-size cross.  The row of an item gets its own text, and the other row gets the plain text.  With
     no plain text, the row with no own text refuses the commit.  An item that names no crossed row refuses it too.
     """
     with tempfile.TemporaryDirectory(prefix="gate-budget-row-") as work_text:
@@ -1799,15 +1798,15 @@ def budget_row_cases(expect: testing.Expect) -> None:
         gate.move_tree(root, tree, head)
         planted = planted_gate(work, root, tree, "budget", OTHER_BUILDS)
         build = tree / "build"
-        (build / "red.txt").write_text("guard_header_alone\n", encoding="utf-8")
-        finding = f"{tree}/include/a.h:0: error: [header-alone] include/a.h includes 3.3 MB, above its row\n"
-        (build / "guard_header_alone.out").write_text(finding, encoding="utf-8")
+        (build / "red.txt").write_text("guard_object_size\n", encoding="utf-8")
+        finding = f"{tree}/include/a.h:0: error: [object-size] include/a.h includes 3.3 MB, above its row\n"
+        (build / "guard_object_size.out").write_text(finding, encoding="utf-8")
         plain = gate.Candidate(head, commit, ("src/a.cpp",))
         both = replace(plain, budget_reason=BUDGET_REASON, budget_rows=(("include/a.h", OWN_REASON),))
         verdict, printed = testing.captured(lambda: planted.check(both, False))
         landed = git.show(root, verdict.final, BUDGET_PATH) if verdict.final else None
         wanted = (
-            f"format 1\nrule header-alone\ninclude/a.h | - | 3.3 | - | {OWN_REASON}\n"
+            f"format 1\nrule object-size\ninclude/a.h | - | 3.3 | - | {OWN_REASON}\n"
             f"include/b.h | - | 3.3 | - | {BUDGET_REASON}\n"
         )
         raised = (f"{BUDGET_PATH}: include/a.h from 3.1 to 3.3", f"{BUDGET_PATH}: include/b.h from 3.1 to 3.3")
@@ -1817,7 +1816,7 @@ def budget_row_cases(expect: testing.Expect) -> None:
         refusals = {
             "a crossed row with no own text and no plain text": (
                 replace(plain, budget_rows=(("include/a.h", OWN_REASON),)),
-                "the crossed row include/b.h of utils/ledgers/header-alone.txt gets no text",
+                "the crossed row include/b.h of utils/ledgers/object-size.txt gets no text",
             ),
             "an item that names no crossed row": (
                 replace(both, budget_rows=(("include/c.h", OWN_REASON),)),
@@ -1828,9 +1827,9 @@ def budget_row_cases(expect: testing.Expect) -> None:
             verdict, printed = testing.captured(functools.partial(planted.check, candidate, False))
             holds = (
                 not verdict.is_accepted
-                and any("red alone too: guard_header_alone" in problem for problem in verdict.problems)
+                and any("red alone too: guard_object_size" in problem for problem in verdict.problems)
                 and any(problem.startswith(line) for problem in verdict.problems)
-                and verdict.items == ("default: guard_header_alone: include/a.h:0 [header-alone]",)
+                and verdict.items == ("default: guard_object_size: include/a.h:0 [object-size]",)
                 and verdict.raised == ()
                 and (tree / BUDGET_PATH).read_text(encoding="utf-8") == BUDGET_ROWS_LEDGER
             )

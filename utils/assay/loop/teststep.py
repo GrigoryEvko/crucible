@@ -55,7 +55,7 @@ Emulator
     program.  That count does not measure the test, and a native build of the
     same test runs a different count.  On 2026-11-19, each of the 256 parts of
     test_core_storage_float_exhaustive ran 732 G to 744 G under qemu-aarch64,
-    above the limit of 600 G of the kind test.  Thus the launcher does not
+    above the limit of that day, 600 G of the kind test.  Thus the launcher does not
     judge the instruction count of a test behind an emulator, and the record
     of the test keeps no count (emulated_run()).  So `guard write` of a cross
     build reads no such count.  The launcher prints one line with the count

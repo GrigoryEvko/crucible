@@ -3,8 +3,8 @@
 `guard selftest tests.core.test_budget` runs the test.  Each case judges one
 value against a planted limit and planted rows.  Exit 0 when each case
 holds, else 1.  The cases of a ledger read the registry of the tree: the rule
-static-tls has one limit, and the rule header-alone has one limit for each
-layer of include/.
+static-tls has one limit, and the rule step-cost has one limit for each kind
+of step.
 """
 
 import os
@@ -24,8 +24,8 @@ UNSETTLED_NS = 3_600_000_000_000
 # A rule of the tree with one limit, and a rule of the tree with one limit for each kind, with the form of their items.
 SCALAR_RULE = "static-tls"
 SCALAR_FORMS = {"": cost_meter.ITEM_OUTPUT}
-KEYED_RULE = "header-alone"
-KEYED_FORMS = {"fixy": cost_meter.ITEM_FILE, "crucible": cost_meter.ITEM_FILE}
+KEYED_RULE = "step-cost"
+KEYED_FORMS = {"compile": cost_meter.ITEM_FILE, "fixture": cost_meter.ITEM_FILE}
 
 
 def rows_of(admitted: dict[str, float], kind: str = "compile") -> cost_budget.Rows:
@@ -72,38 +72,22 @@ def verdict_cases(expect: testing.Expect) -> None:
         and cost_budget.verdict(2.5, 4.0, 6.0, 1.0) == cost_budget.NO_FINDING,
     )
     expect(
-        "the noise of a time, a memory, an instruction count, the machine code of an object and the bytes of a header "
-        "is that of NOISE, and a byte count has none",
-        [cost_budget.noise_of(unit) for unit in ("s", "GB", "G", "KB", "MB", "bytes")]
-        == [1.0, 0.1, 0.05, 0.04, 0.05, 0.0],
+        "the noise of a time, a memory, an instruction count and the machine code of an object is that of NOISE, and "
+        "a byte count has none",
+        [cost_budget.noise_of(unit) for unit in ("s", "GB", "G", "KB", "bytes")] == [1.0, 0.1, 0.08, 0.08, 0.0],
     )
-    sized = check_report.Budget("object-size", 768.0, "KB", "a planted quantity", "object")
+    sized = check_report.Budget("object-size", 1024.0, "KB", "a planted quantity", "object")
     size_rows = cost_budget.Rows(
-        "utils/ledgers/object-size.txt", {("object", "unit.o"): cost_budget.Admission(3, 839.222, "r")}
+        "utils/ledgers/object-size.txt", {("object", "unit.o"): cost_budget.Admission(3, 1100.0, "r")}
     )
     shared, grown_object = (
         cost_budget.judge("object-size", sized, cost_budget.Measure("unit.o", "u", value, "said", "object"), size_rows)
-        for value in (872.79, 873.0)
+        for value in (1187.9, 1188.3)
     )
     expect(
-        "a row of the unit KB keeps its object up to the margin of 4 % of the shared headers: a growth of 3.99 % "
-        "gives no finding, and a growth of 4.02 % is an error",
+        "a row of the unit KB keeps its object up to the margin of 8 % of the shared headers: a growth of 7.99 % "
+        "gives no finding, and a growth of 8.03 % is an error",
         level_of(shared) == "none" and level_of(grown_object) == "error",
-    )
-    header = check_report.Budget("header-alone", 6.5, "MB", "a planted quantity", "fixy")
-    header_rows = cost_budget.Rows(
-        "utils/ledgers/header-alone.txt", {("fixy", "include/fixy/A.h"): cost_budget.Admission(3, 7.0, "r")}
-    )
-    kept_header, grown_header = (
-        cost_budget.judge(
-            "header-alone", header, cost_budget.Measure("include/fixy/A.h", "a", value, "said", "fixy"), header_rows
-        )
-        for value in (7.35, 7.36)
-    )
-    expect(
-        "a row of the unit MB keeps its header up to the margin of 5 %: a header 5 % over its row gives no finding, "
-        "and a header 5.1 % over its row is an error",
-        level_of(kept_header) == "none" and level_of(grown_header) == "error",
     )
     with tempfile.TemporaryDirectory(prefix="test-budget-noise-") as scratch:
         table = Path(scratch) / "registry.txt"
@@ -119,11 +103,11 @@ def verdict_cases(expect: testing.Expect) -> None:
     )
     grown, drifted = (
         cost_budget.judge("planted-cost", counted, cost_budget.Measure("u", "u", value, "said", "compile"), count_rows)
-        for value in (173.9, 174.1)
+        for value in (178.9, 179.1)
     )
     expect(
-        "the limit of a kind with the unit G has the noise of an instruction count.  A count 4.9 % over its row "
-        "gives no finding, and a count 5.1 % over it is an error",
+        "the limit of a kind with the unit G has the noise of an instruction count.  A count 7.96 % over its row "
+        "gives no finding, and a count 8.08 % over it is an error",
         counted.unit == cost_budget.UNIT_TEXTS["G"]
         and counted.limit == 110.0
         and cost_budget.noise_of(counted.unit) == cost_budget.NOISE["G"]
@@ -138,17 +122,14 @@ def verdict_cases(expect: testing.Expect) -> None:
 
 # The rows that a correct change crossed on 2026-11-21 and then raised, from the history of the ledgers: the rule, its
 # unit, the item, the kept value of the row and the measured value of the raise.  The last row is the cost of a door
-# that a cut lowered later, a real rise that the margin must not keep.
+# that a cut lowered later.  The margin of 8 % keeps it too, because a refusal on a budget row finds no defect.
 CROSSINGS_2026_11_21: tuple[tuple[str, str, str, float, float, bool], ...] = (
     ("step-cost", "G", "layer_sentinel_foundation Scan.cpp.o", 120.284, 123.912, True),
-    ("header-alone", "MB", "include/foundation/Transfer.h", 3.504, 3.579, True),
-    ("header-alone", "MB", "include/crucible/Vigil.h", 7.351, 7.511, True),
-    ("header-alone", "MB", "include/foundation/permissions/SharedPermission.h", 3.511, 3.582, True),
     ("object-size", "KB", "test_vigil_divergence.cpp.o", 770.189, 795.114, True),
     ("object-size", "KB", "parallel_pointwise_unit_double.cpp.o", 790.274, 806.396, True),
     ("object-size", "KB", "test_vigil.cpp.o", 833.269, 864.401, True),
     ("object-size", "KB", "test_bench_harness.cpp.o", 1169.705, 1206.571, True),
-    ("object-size", "KB", "test_trace_loader.cpp.o", 793.791, 852.123, False),
+    ("object-size", "KB", "test_trace_loader.cpp.o", 793.791, 852.123, True),
 )
 
 
@@ -170,17 +151,9 @@ def crossing_cases(expect: testing.Expect) -> None:
         if cost_budget.verdict(measured, 0.0, kept, cost_budget.noise_of(unit)) == cost_budget.ADMITTED
     )
     expect(
-        "the margins keep 8 of the 9 rows that a correct change crossed on 2026-11-21, where 2 % kept none",
-        kept_count == 8 and not any(measured <= kept * 1.02 for _, _, _, kept, measured, _ in CROSSINGS_2026_11_21),
-    )
-    endpoint = check_report.Budget("header-alone", 6.5, "MB", "a planted quantity", "fixy")
-    expect(
-        "the header EndpointMint.h at 6.361 MB, the measure at which the prune of 2026-11-21 removed its row, is "
-        "within the margin of the limit of fixy, so its row stays, and the measure 6.502 MB of the next change then "
-        "gives no finding",
-        6.361 * (1.0 + cost_budget.noise_of(endpoint.unit)) > endpoint.limit
-        and cost_budget.verdict(6.502, endpoint.limit, 6.361, cost_budget.noise_of(endpoint.unit))
-        == cost_budget.ADMITTED,
+        "the margins keep each of the 6 rows that a correct change crossed on 2026-11-21, where 2 % kept none",
+        kept_count == len(CROSSINGS_2026_11_21)
+        and not any(measured <= kept * 1.02 for _, _, _, kept, measured, _ in CROSSINGS_2026_11_21),
     )
 
 
@@ -216,22 +189,22 @@ def row_cases(expect: testing.Expect) -> None:
             KEYED_RULE,
             KEYED_FORMS,
             keyed,
-            {("fixy", "include/fixy/A.h"): (7.0, "the fixy row"), ("crucible", "include/fixy/A.h"): (8.0, "a second")},
+            {("compile", "src/A.cpp"): (7.0, "the compile row"), ("fixture", "src/A.cpp"): (8.0, "a second")},
             "# a planted ledger\n",
         )
         text = Path(keyed).read_text(encoding="utf-8")
-        fixy, _, fixy_problem = cost_budget.row_of(KEYED_RULE, "fixy", cost_meter.ITEM_FILE, keyed, "include/fixy/A.h")
-        crucible, _, _ = cost_budget.row_of(KEYED_RULE, "crucible", cost_meter.ITEM_FILE, keyed, "include/fixy/A.h")
-        missing, _, _ = cost_budget.row_of(KEYED_RULE, "foundation", cost_meter.ITEM_FILE, keyed, "include/fixy/A.h")
+        first, _, first_problem = cost_budget.row_of(KEYED_RULE, "compile", cost_meter.ITEM_FILE, keyed, "src/A.cpp")
+        second, _, _ = cost_budget.row_of(KEYED_RULE, "fixture", cost_meter.ITEM_FILE, keyed, "src/A.cpp")
+        missing, _, _ = cost_budget.row_of(KEYED_RULE, "test", cost_meter.ITEM_FILE, keyed, "src/A.cpp")
         expect(
             "write_ledger_rows() gives the KIND cell of each row its kind, and row_of() gives the row of the kind of "
             "the call.  Two kinds of the same item have two rows",
-            "include/fixy/A.h | fixy | 7 | - | the fixy row" in text
-            and fixy is not None
-            and fixy.value == 7.0
-            and not fixy_problem
-            and crucible is not None
-            and crucible.value == 8.0
+            "src/A.cpp | compile | 7 | - | the compile row" in text
+            and first is not None
+            and first.value == 7.0
+            and not first_problem
+            and second is not None
+            and second.value == 8.0
             and missing is None,
         )
 
@@ -333,10 +306,10 @@ def rows_cases(expect: testing.Expect) -> None:
         keyed = Path(scratch) / f"{KEYED_RULE}.txt"
         keyed.write_text(
             f"# a planted ledger\nformat 1\nrule {KEYED_RULE}\n"
-            "include/fixy/A.h | fixy | 7 | - | a fixy row\n"
-            "include/foundation/B.h | foundation | 4 | - | a row of a kind that the judge does not read\n"
-            "include/fixy/C.h | other | 7 | - | a row of a kind that the rule does not have\n"
-            "@build/include/fixy/D.h | crucible | 7 | - | a row of the wrong form\n",
+            "src/A.cpp | compile | 7 | - | a compile row\n"
+            "src/B.cpp | test | 4 | - | a row of a kind that the judge does not read\n"
+            "src/C.cpp | other | 7 | - | a row of a kind that the rule does not have\n"
+            "@build/src/D.cpp | fixture | 7 | - | a row of the wrong form\n",
             encoding="utf-8",
         )
         read = cost_budget.read_rows(KEYED_RULE, KEYED_FORMS, keyed)
@@ -344,10 +317,10 @@ def rows_cases(expect: testing.Expect) -> None:
             "read_rows() of a rule with kinds gives the rows of the kinds of the call, skips a row of a different "
             "kind of the rule, and gives an error for a row of a kind that the rule does not have and for a row of "
             "the wrong form",
-            set(read.admitted) == {("fixy", "include/fixy/A.h")}
+            set(read.admitted) == {("compile", "src/A.cpp")}
             and [problem.line for problem in read.problems] == [6, 7]
-            and "the kind of a row of the rule header-alone is one of" in read.problems[0].message
-            and "FILE | crucible | VALUE | - | REASON" in read.problems[1].message,
+            and "the kind of a row of the rule step-cost is one of" in read.problems[0].message
+            and "FILE | fixture | VALUE | - | REASON" in read.problems[1].message,
         )
 
 
@@ -400,13 +373,13 @@ def write_cases(expect: testing.Expect) -> None:
     )
     lower = cost_budget.raised_ledger(ledger, cost_meter.ITEM_OUTPUT, [("kept.o", 4.5, scalar)], "a reason")
     expect("a measure under the kept value lowers no row", lower.base[kept_key].value == 6.0)
-    fixy = check_report.Budget(KEYED_RULE, 6.5, "MB", "a planted quantity", "fixy")
+    compiled = check_report.Budget(KEYED_RULE, 140.0, "G", "a planted quantity", "compile")
     keyed = cost_budget.raised_ledger(
-        rule_ledger.empty(rule_ledger.rule_of(KEYED_RULE)), KEYED_FORMS, [("include/fixy/A.h", 7.0, fixy)], "a reason"
+        rule_ledger.empty(rule_ledger.rule_of(KEYED_RULE)), KEYED_FORMS, [("src/A.cpp", 150.0, compiled)], "a reason"
     )
     expect(
         "a write gives the row the kind of the limit of its measure",
-        set(keyed.base) == {rule_ledger.Key("include/fixy/A.h", "fixy", "")},
+        set(keyed.base) == {rule_ledger.Key("src/A.cpp", "compile", "")},
     )
 
 

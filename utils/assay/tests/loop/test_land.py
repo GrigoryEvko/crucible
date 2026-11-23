@@ -398,13 +398,13 @@ def word_cases(expect: testing.Expect) -> None:
             and only_rows.budget_reason == ""
             and only_rows.budget_rows == (("a.o", "the cause of a.o"),),
         )
-        lower_words = ["--lower", "step-cost", "a.o", "--lower", "header-alone", "include/a.h", "--lower", "step-cost"]
+        lower_words = ["--lower", "step-cost", "a.o", "--lower", "object-size", "b.o", "--lower", "step-cost"]
         _request, lowering = land.parse(
             ["--series", "wt/a", *lower_words, "a.o", "--lower-reason", "the cut of a door", "--"], scratch
         )
         expect(
             "--lower gives each named row once, in the sequence of the words, and --lower-reason the reason of the cut",
-            lowering.lowers == (("step-cost", "a.o"), ("header-alone", "include/a.h"))
+            lowering.lowers == (("step-cost", "a.o"), ("object-size", "b.o"))
             and lowering.lower_reason == "the cut of a door",
         )
 
@@ -1378,7 +1378,7 @@ def budget_reason_cases(expect: testing.Expect) -> None:
             "the request file holds the budget reason and the text of each named row",
             decoded.options.budget_reason == "a cause" and decoded.options.budget_rows == own_row,
         )
-        line = "utils/ledgers/header-alone.txt: include/a.h from 3.1 to 3.3"
+        line = "utils/ledgers/object-size.txt: include/a.h from 3.1 to 3.3"
         seen: list[gate.Candidate] = []
 
         def raising(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:

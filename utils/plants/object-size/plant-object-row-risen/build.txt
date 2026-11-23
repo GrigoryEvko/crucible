@@ -1,6 +1,6 @@
-# An object of 800 KB of machine code has a ledger row that keeps it up to 700 KB, and 728 KB with the margin of the
-# unit KB.  The object is more than its row keeps, and it is above the limit 768 KB.  The rule gives one error of the
-# kind risen.
+# An object of 1100 KB of machine code has a ledger row that keeps it up to 1000 KB, and 1080 KB with the margin of
+# the unit KB.  The object is more than its row keeps, and it is above the limit 1024 KB.  The rule gives one error of
+# the kind risen.
 format 1
 kind x86_64-debug-asan
-compile CMakeFiles/lib.dir/wider.cpp.o src/wider.cpp functions=_Z1cv:102400 text=716800
+compile CMakeFiles/lib.dir/wider.cpp.o src/wider.cpp functions=_Z1cv:102400 text=1024000

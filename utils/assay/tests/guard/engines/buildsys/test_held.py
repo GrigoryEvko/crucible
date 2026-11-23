@@ -91,30 +91,24 @@ def routing_cases(expect: testing.Expect) -> None:
     step_rule = rule_registry.planted_rules(planted_rows)["planted-step"]
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
         context = context_of(Path(scratch), BUILD_HEAD)
-        expect("a rule with no holder is refused", is_refused(tree_rule("header-alone"), context))
+        expect("a rule with no holder is refused", is_refused(tree_rule("object-size"), context))
         expect("a holder with no judge in the witness is refused", is_refused(step_rule, context))
 
 
 def rule_holder_cases(expect: testing.Expect) -> None:
     """A rule that a rule holds gets the findings of its holder on the plant."""
-    rows = (
-        BUILD_HEAD
-        + "file system.h size=1000\n"
-        + "file include/fixy/Base.h size=7024459\n"
-        + "compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Base.cpp.o "
-        + "test/layer/checks/fixy/Base.cpp cpu=3\n"
-        + "deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Base.cpp.o | "
-        + "test/layer/checks/fixy/Base.cpp system.h include/fixy/Base.h\n"
-    )
+    rows = BUILD_HEAD + "compile CMakeFiles/lib.dir/heavy.cpp.o src/heavy.cpp cpu=5 instructions=150\n"
     planted_rows = [
-        rule_registry.measured_rule("planted-layer", 6.5, "MB").replace("held-by=loop-gauge", "held-by=header-alone")
+        rule_registry.measured_rule("planted-cost", {"compile": 140, "fixture": 60, "test": 750}, "G").replace(
+            "held-by=loop-gauge", "held-by=step-cost"
+        )
     ]
-    layer_rule = rule_registry.planted_rules(planted_rows)["planted-layer"]
+    cost_rule = rule_registry.planted_rules(planted_rows)["planted-cost"]
     with tempfile.TemporaryDirectory(prefix="test-held-") as scratch:
-        found = held.held_findings(layer_rule, context_of(Path(scratch), rows))
+        found = held.held_findings(cost_rule, context_of(Path(scratch), rows))
         expect(
-            "a header of 6.7 MB alone gives the error of the holder header-alone for the kind fixy",
-            len(found) == 1 and found[0].check == "header-alone" and "of the kind fixy" in found[0].message,
+            "a compile of 150 G instructions gives the error of the holder step-cost for the kind compile",
+            len(found) == 1 and found[0].check == "step-cost" and "of the kind compile" in found[0].message,
         )
 
 

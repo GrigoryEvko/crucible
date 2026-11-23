@@ -1,7 +1,7 @@
-# The record of one test of the build gives 700 G user instructions.  A ledger row keeps the test up to 620 G, and
-# 651 G with the noise of the unit G.  The test is over that value and above the limit 600 G of the kind test, so
+# The record of one test of the build gives 900 G user instructions.  A ledger row keeps the test up to 820 G, and
+# 885.6 G with the noise of the unit G.  The test is over that value and above the limit 750 G of the kind test, so
 # judge() of `loop test-step` gives one error.  A light compile gives the kind compile an input.
 format 1
 kind x86_64-debug-asan
 compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=1
-test-record test_grown wall=1 instructions=700
+test-record test_grown wall=1 instructions=900

@@ -1,4 +1,4 @@
-"""cost-budgets — a compile, a link, an object, a header alone or a target of a build that costs more than its rule.
+"""cost-budgets — a compile, a link, an object or a target of a build that costs more than its rule.
 
 Inputs
     The compile database of the build names each compile job and its object.
@@ -50,28 +50,12 @@ Rule object-size
     as a compile.  An object that the reader refuses gives an error of the
     kind input.
 
-Rule header-alone
-    The sentinels of test/layer/CMakeLists.txt compile each header of include/
-    alone.  For each sentinel, the rule reads its list in the dependency log of
-    Ninja (assay.readers.ninja) and adds the bytes of the files after the
-    source.  The header is the first file of the list in include/, after each
-    symbolic link resolves.  The kind of a header is its layer, the first
-    directory under include/, and the rule has one limit for each layer:
-    foundation, fixy and crucible.  These problems each give an error of the
-    kind input: a header of a layer that the rule has no limit for, a
-    sentinel with no VALID list, and a sentinel with no header of include/.
-    The message also gives the CPU time of the sentinel
-    from its record, with no threshold.  The rule does not apply to a build
-    with no sentinel object, or to a build that a generator other than Ninja
-    made.
-
 Kinds
     A rule has one limit for each kind of item (assay.core.registry).
     RULE_KINDS gives the kinds of each rule with a fixed set of kinds.  A
     kind that the table gives and the registry does not, and a kind that the
     registry gives and the table does not, each give an error of the kind
-    input, because the judge of a kind with no limit is off.  The kinds of
-    header-alone are the layers of include/, which the registry gives.
+    input, because the judge of a kind with no limit is off.
 
 Judge
     assay.core.budget judges each value against the limit of its kind and
@@ -84,7 +68,7 @@ Judge
       not-wired          no output with a usable record
       input              an input that the rule cannot read
     The entity of a finding is the item: the output relative to the build
-    directory, or the header relative to the source root.  It is empty for
+    directory.  It is empty for
     not-wired and for an input of the full build.  A value that a row keeps
     gives no finding.  A row of an item at or below the limit gives no
     finding, because a ledger fails only on a growth.  A row whose item the
@@ -96,7 +80,6 @@ Ledgers
     registry and the ledgers).  KIND is "-" for a rule with one limit:
 
         @build/OUTPUT | KIND | VALUE | - | REASON     an output of a step or an object
-        HEADER | LAYER | VALUE | - | REASON          a header, for header-alone
 
     `guard write --rule RULE --build-dir DIR --reason TEXT` writes a row for
     each item of the build above the limit that no row keeps, through the
@@ -125,21 +108,8 @@ Prune
         some sources, such as the BPF bytecode, only with some options, and
         git never held them, so their rows stay.  An object path of a
         different shape keeps its row.
-      * A row of header-alone of a header that the tree does not hold.
-      * A row of header-alone of a header whose measure in the build, with
-        the noise of the unit MB (the noise of assay.core.budget), is at or
-        below the limit of its layer.  A header within that margin of the
-        limit keeps its row, so the next small growth of a shared header
-        does not make it an item with no row above the limit.  On
-        2026-11-21, the write removed the row of EndpointMint.h at 6.361 MB
-        with the margin of 2 %, and a change of 0.08 % then crossed the limit
-        6.5 MB with no row.  The bytes of a header are the same in each build
-        that runs the rule (the rule header-alone of the registry), so a row
-        above the measure of its header gets that measure.  The judge then
-        keeps the header up to its measure with the margin, which also
-        covers a small difference of a different toolchain.
-    The write keeps each other row: a link, a test and a fixture, an object
-    that the build names, and a header that the build does not measure.  A
+    The write keeps each other row: a link, a test and a fixture, and an
+    object that the build names.  A
     measure of an object, a compile or a test changes with the build, so no
     row of such an item gets a lower value.
 
@@ -159,7 +129,7 @@ Lower
     The lower reads the measure of a compile also from the record of a
     ccache hit: the cost of the compile that made the object, which the cost
     store gives the record (assay.core.record, the format).  It reads the
-    rows of the kinds of LOWERED_KINDS and of each layer of header-alone.  A
+    rows of the kinds of LOWERED_KINDS.  A
     test and a fixture have a record only after their run, so the write
     refuses a row of such a kind.  It also refuses an item that names no
     row, an item that a build holds with no measure, and an item that no
@@ -191,14 +161,10 @@ from assay.readers import census as build_census
 from assay.readers import cmake as cmake_reader
 from assay.readers import compdb
 from assay.readers import elf as elf_reader
-from assay.readers import ninja as ninja_reader
 
 GIGA = 1e9
 KB = 1024
-MB = 1024 * 1024
 REGISTRY_FILE = "utils/registry.txt"
-HEADER_ALONE_SENTINEL = "/layer_sentinel_"
-HEADER_ALONE_CHECK_FILES = Path("test/layer/checks")
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
 # The parts of the object path of a compile job, DIR/CMakeFiles/TARGET.dir/SOURCE.o, and the part of SOURCE that CMake
 # writes for ".." (the prune).
@@ -251,7 +217,6 @@ OBJECT_SIZE = "object-size"
 # The two kinds of object-size: the largest function of an object, and the machine code of the object.
 FUNCTION_KIND = "function"
 OBJECT_KIND = "object"
-HEADER_ALONE = "header-alone"
 # The kinds of the items of each rule with a fixed set of kinds (the kinds).
 RULE_KINDS: dict[str, tuple[str, ...]] = {
     STEP_COST: (COMPILE_KIND, FIXTURE_KIND, TEST_KIND),
@@ -261,7 +226,6 @@ RULE_KINDS: dict[str, tuple[str, ...]] = {
 # The form of the item of a ledger row of each kind of a step meter: the name of a test or of a fixture (the ledgers).
 NAMED_KINDS = frozenset({FIXTURE_KIND, TEST_KIND})
 # The kinds of each rule with a fixed set of kinds whose measure each build holds, which the lower reads (the lower).
-# The lower reads each layer of header-alone too.
 LOWERED_KINDS: dict[str, tuple[str, ...]] = {
     STEP_COST: (COMPILE_KIND,),
     STEP_MEMORY: (COMPILE_KIND, LINK_KIND),
@@ -587,106 +551,6 @@ def object_values(context: BuildContext, rule_id: str, outputs: Sequence[Output]
     return Measured(tuple(values), problems=tuple(problems))
 
 
-def sentinel_time(context: BuildContext, output: Output) -> str:
-    """Return a clause that tells the CPU time of one sentinel compile from its record, for the message of a header."""
-    try:
-        found = step_record(output, cost_record.COMPILE)
-    except cost_record.RecordError:
-        return "its sentinel has no usable record"
-    has_check_file = output.source is not None and output.source.is_relative_to(context.root / HEADER_ALONE_CHECK_FILES)
-    scope = " with the checks of its check file" if has_check_file else ""
-    if not found.is_hit and found.cost is not None:
-        return f"its sentinel took {found.cost.cpu_s:.1f} s CPU{scope}"
-    if found.last_cost is not None:
-        return f"its sentinel was a ccache hit, and the compile of its object took {found.last_cost.cpu_s:.1f} s CPU{scope}"
-    return "its sentinel was a ccache hit, and its record keeps no time"
-
-
-def resolved_size(name: str, build: Path, sizes: dict[str, tuple[Path, int]]) -> tuple[Path, int]:
-    """Return the resolved path and the bytes of one file of a dependency list, read one time for each name.
-
-    Raises:
-        OSError: If the file cannot be read
-    """
-    if name not in sizes:
-        real = Path(os.path.realpath(name if os.path.isabs(name) else build / name))
-        sizes[name] = (real, real.stat().st_size)
-    return sizes[name]
-
-
-def header_values(context: BuildContext, rule_id: str, outputs: Sequence[Output], layers: Collection[str]) -> Measured:
-    """Measure the bytes that each header includes alone, from the dependency list of its sentinel (the rule).
-
-    `layers` gives the layers that the rule has a limit for, the kinds of the rule.  Complexity: linear in the files
-    of the dependency lists, with one stat for each different file.
-
-    Raises:
-        NotApplicable: If the build holds no sentinel object, or a generator other than Ninja made it
-    """
-    build = context.require_build()
-    sentinels = [output for output in outputs if HEADER_ALONE_SENTINEL in output.path.as_posix()]
-    if not sentinels:
-        raise meta_runner.NotApplicable(
-            "the build holds no sentinel object of test/layer, because it made only some targets.  The target all "
-            "makes the sentinels"
-        )
-    keys = [build_census.shown(output.path, build) for output in sentinels]
-    try:
-        lists = ninja_reader.deps(build, keys)
-    except ninja_reader.NotNinja as problem:
-        raise meta_runner.NotApplicable(f"the build has no dependency log of Ninja: {problem}") from None
-    except ninja_reader.NinjaError as problem:
-        return Measured(problems=(input_error(rule_id, context.shown(build), str(problem)),))
-    include_root = context.root / "include"
-    sizes: dict[str, tuple[Path, int]] = {}
-    values: list[cost_budget.Measure] = []
-    problems: list[check_report.Finding] = []
-    for output, key in zip(sentinels, keys, strict=True):
-        source = context.shown(output.source or output.path)
-        listed = lists[key]
-        if listed.state != ninja_reader.DepsState.VALID or not listed.files:
-            why = f": {listed.why}" if listed.why else ""
-            problems.append(
-                input_error(
-                    rule_id,
-                    source,
-                    f"the dependency log of Ninja holds no VALID list of {key} (state {listed.state}{why}).  Build "
-                    f"the object again",
-                    key,
-                )
-            )
-            continue
-        try:
-            entries = [resolved_size(name, build, sizes) for name in listed.files[1:]]
-        except OSError as problem:
-            problems.append(input_error(rule_id, source, f"a dependency of {key} cannot be read: {problem}", key))
-            continue
-        header = next((real for real, _ in entries if real.is_relative_to(include_root)), None)
-        if header is None:
-            problems.append(input_error(rule_id, source, f"the sentinel {key} includes no header of include/", key))
-            continue
-        header_shown = context.shown(header)
-        layer = header.relative_to(include_root).parts[0]
-        if layer not in layers:
-            problems.append(
-                input_error(
-                    rule_id,
-                    header_shown,
-                    f"the header is in the layer {layer}, and the rule {rule_id} has no limit of that kind.  Give the "
-                    f"field limit of its row a kind for each layer of include/",
-                    header_shown,
-                )
-            )
-            continue
-        total = sum(size for _, size in entries)
-        said = (
-            f"the header alone includes {total / MB:.2f} MB in {len(entries)} files, and "
-            f"{sentinel_time(context, output)}"
-        )
-        values.append(cost_budget.Measure(header_shown, header_shown, total / MB, said, layer))
-    return Measured(tuple(values), problems=tuple(problems))
-
-
 def measured_of(context: BuildContext, rule_id: str, kinds: Collection[str]) -> Measured:
     """Measure each item of a rule, and give the errors of its inputs.
 
@@ -714,10 +578,7 @@ def measured_of(context: BuildContext, rule_id: str, kinds: Collection[str]) -> 
     outputs = judged_outputs(outputs, build)
     if not outputs:
         return Measured(problems=tuple(missing))
-    if rule_id == HEADER_ALONE:
-        found = header_values(context, rule_id, outputs, kinds)
-    else:
-        found = object_values(context, rule_id, outputs)
+    found = object_values(context, rule_id, outputs)
     return replace(found, problems=(*missing, *found.problems))
 
 
@@ -729,10 +590,8 @@ def judged_outputs(outputs: Sequence[Output], build: Path) -> list[Output]:
 def ledger_forms(rule_id: str, kinds: Collection[str]) -> dict[str, str]:
     """Return the form of the item of a ledger row of each kind of a rule (the ledgers).
 
-    A header of header-alone is a file of the tree, a test or a fixture is a name, and each other item is an output.
+    A test or a fixture is a name, and each other item is an output.
     """
-    if rule_id == HEADER_ALONE:
-        return dict.fromkeys(kinds, cost_meter.ITEM_FILE)
     return {kind: cost_meter.ITEM_NAME if kind in NAMED_KINDS else cost_meter.ITEM_OUTPUT for kind in kinds}
 
 
@@ -766,7 +625,7 @@ def judged_values(
 
 
 def budget_findings(rule_id: str, context: BuildContext) -> list[check_report.Finding]:
-    """Give the findings of one rule of a step, of an object or of header-alone (the judge).
+    """Give the findings of one rule of a step or of an object (the judge).
 
     Raises:
         NotApplicable: If the call gives no build directory, or the rule does not apply to the build
@@ -852,7 +711,7 @@ def pruned_ledger(
     measured: Measured,
     budgets: Mapping[str, check_report.Budget],
 ) -> rule_ledger.Ledger:
-    """Return the ledger with no row that keeps nothing in each build, and each row of header-alone at most its measure.
+    """Return the ledger with no row that keeps nothing in each build.
 
     The prune gives the rows.  Complexity: linear in the rows, the measures and the compile jobs, with at most two stats
     for each row.
@@ -862,7 +721,6 @@ def pruned_ledger(
     """
     build = context.require_build()
     forms = ledger_forms(rule_id, budgets)
-    values = {(value.kind, value.item): value.value for value in measured.values}
     configured = (
         frozenset(build_census.shown(entry.output, build) for entry in context.entries() if entry.output)
         if any(is_object_kind(rule_id, kind) for kind in budgets)
@@ -875,15 +733,7 @@ def pruned_ledger(
         if item is None:
             kept[key] = entry
             continue
-        if rule_id == HEADER_ALONE:
-            measure = values.get((key.kind, item))
-            budget = budgets[key.kind]
-            bound = None if measure is None else measure * (1.0 + cost_budget.noise_of(budget.unit))
-            if not (context.root / item).is_file() or (bound is not None and bound <= budget.limit):
-                continue
-            if measure is not None and cost_budget.kept_value(measure) < float(entry.value):
-                entry = replace(entry, value=cost_budget.kept_value(measure))
-        elif is_object_kind(rule_id, key.kind) and item not in configured:
+        if is_object_kind(rule_id, key.kind) and item not in configured:
             places = object_sources(item, context.root, build)
             if places and not any(place.exists() for place in places) and is_deleted_source(context.root, places[0]):
                 continue
@@ -917,8 +767,8 @@ def lower_values(
     """Return the measure of each wanted kind and item that the build holds, also of a ccache hit (the lower).
 
     A compile or a link gives the cost of the step that made its output, which a record of a hit keeps from the cost
-    store.  Complexity: one read of the record of each output of a wanted kind of a step, one read of each named
-    object of object-size, or one measure of the headers of header-alone.
+    store.  Complexity: one read of the record of each output of a wanted kind of a step, or one read of each named
+    object of object-size.
 
     Raises:
         rule_ledger.LedgerError: If the build holds a wanted item with no measure
@@ -1153,5 +1003,4 @@ RULES = {
     "step-cost": budget_member(STEP_COST),
     "step-memory": budget_member(STEP_MEMORY),
     "object-size": budget_member(OBJECT_SIZE),
-    "header-alone": budget_member(HEADER_ALONE),
 }

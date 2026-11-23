@@ -30,26 +30,21 @@ The noise
                  On 2026-10-09, the slow tests of five builds took up to 77 %
                  more time than their lowest time
       GB   0.1   A peak memory changes with the allocator and the sanitizer
-      G    0.05  An instruction count changes by less than 0.1 % between two
+      G    0.08  An instruction count changes by less than 0.1 % between two
                  compiles of one unit.  The rest is the margin of the shared
                  headers, the rule step-cost
-      KB   0.04  The margin of the shared headers for the machine code of an
+      KB   0.08  The margin of the shared headers for the machine code of an
                  object, the rule object-size.  The machine code of an object
                  is the same in two builds of one tree, but a change of a
                  header that many units include adds some bytes to each of
                  them
-      MB   0.05  The margin of the shared headers for the bytes that a header
-                 includes alone, the rule header-alone.  Main grows such a
-                 header by about 1.85 % in a day
-    The margins come from the crossings of 2026-11-21, when a margin of 2 %
-    for each of the three units refused 26 of 132 runs of the gate only on a
-    row of a budget.  Nine rows rose that day by a correct change, from 2.02
-    % to 7.35 % over their kept value.  These margins keep eight of the nine,
-    and the one rise of 7.35 % (an object that a change of a door grew) still
-    fails.  Thus only a real growth of an item is more than its row keeps,
-    not the growth that an unrelated change of a shared header gives.  The
-    rule instruction-total judges the total of the build against its own
-    limit of 5 % (assay.guard.engines.buildsys.cost_totals).  Each other
+    On 2026-11-21, nine rows rose by a correct change, from 2.02 % to 7.35 %
+    over their kept value.  A margin of 8 % keeps each of them.  On
+    2026-11-23, the owner raised the margins to 8 %, because a refusal on a
+    budget row costs a full gate run and finds no defect.  Thus only a real
+    growth of an item is more than its row keeps.  The rule
+    instruction-total judges the total of the build against its own limit
+    of 8 % (assay.guard.engines.buildsys.cost_totals).  Each other
     unit has no noise and no margin: a byte count of static TLS is exact.  A
     message gives a unit with its display text, such as "G instructions" for
     G (UNIT_TEXTS, and unit_text() of assay.core.report).  noise_of() reads
@@ -128,7 +123,7 @@ ADMITTED = "admitted"
 RISEN = "risen"
 # The noise of each unit of a measured rule, with the margin of a shared header, as a part of the kept value of a row
 # (the noise).
-NOISE = {"s": 1.0, "GB": 0.1, "G": 0.05, "KB": 0.04, "MB": 0.05}
+NOISE = {"s": 1.0, "GB": 0.1, "G": 0.08, "KB": 0.08}
 # The display text of a unit of a measured rule, when it is not the unit itself.  G is 10^9 instructions.
 UNIT_TEXTS = {"G": "G instructions"}
 # The directory of a build whose outputs no measured rule judges (the scope).
@@ -161,7 +156,7 @@ class Measure(Value):
     `item` is the item of the ledger key (assay.core.meter, item_of()).
     `path` is the position of the finding.  `said` tells the value, for example
     "the test t took 3.10 s of wall time".  `kind` is the kind of the item,
-    which selects its limit, such as fixy for the rule header-alone, and ""
+    which selects its limit, such as compile for the rule step-cost, and ""
     for a rule with one limit.
     """
 

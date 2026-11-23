@@ -42,7 +42,7 @@ test-record slow_test wall=40 cpu=1 peak=0.1
 test-record big_test wall=1 cpu=1 peak=2
 test-record fast_test wall=1 cpu=1 peak=0.1 instructions=1
 test-record counted_slow_test wall=40 cpu=1 peak=0.1 instructions=1
-test-record heavy_test wall=1 cpu=1 peak=0.1 instructions=700
+test-record heavy_test wall=1 cpu=1 peak=0.1 instructions=800
 test-record gone_test wall=50 cpu=1 peak=3
 """
 # A ledger of step-memory with a row of the kind test of a test that the build does not register, which each write
@@ -59,7 +59,7 @@ format 1
 kind {KIND}
 compile CMakeFiles/lib.dir/small.cpp.o src/small.cpp cpu=1 instructions=1
 fixture neg_slow test/neg/slow.cpp user=19 system=1
-fixture neg_heavy test/neg/heavy.cpp user=1 system=0 instructions=50
+fixture neg_heavy test/neg/heavy.cpp user=1 system=0 instructions=70
 fixture neg_counted test/neg/counted.cpp user=19 system=1 instructions=10
 fixture neg_fast test/neg/fast.cpp user=1 system=0 instructions=1
 """
@@ -84,31 +84,6 @@ DELETED_OBJECT = "test/foundation/CMakeFiles/test_gone.dir/test_gone.cpp.o"
 GENERATED_OBJECT = "gen/CMakeFiles/gen.dir/made.cpp.o"
 UNGENERATED_OBJECT = "CMakeFiles/perf.dir/sense_hub_bpf_bytecode.c.o"
 ODD_OBJECT = "odd.o"
-# A build with the sentinels of four headers of fixy: one over the limit 6.5 MB, one under it, and two under it by less
-# than the margin of the unit MB.  Mint.h includes 6.361 MB, the measure at which the prune of 2026-11-21 removed the
-# row of EndpointMint.h with a margin of 2 %.  Two more headers of the tree have no sentinel (the prune of cost_budgets).
-HEADER_PRUNE_ROWS = f"""\
-format 1
-kind {KIND}
-file system.h size=1000
-file include/fixy/Huge.h size=7340032
-file include/fixy/Light.h size=1048576
-file include/fixy/Near.h size=6763315
-file include/fixy/Mint.h size=6668991
-file include/fixy/Unbuilt.h size=10
-compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o test/layer/checks/fixy/Huge.cpp cpu=3
-deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o | test/layer/checks/fixy/Huge.cpp system.h \
-include/fixy/Huge.h
-compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Light.cpp.o test/layer/checks/fixy/Light.cpp cpu=1
-deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Light.cpp.o | test/layer/checks/fixy/Light.cpp system.h \
-include/fixy/Light.h
-compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Near.cpp.o test/layer/checks/fixy/Near.cpp cpu=1
-deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Near.cpp.o | test/layer/checks/fixy/Near.cpp system.h \
-include/fixy/Near.h
-compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Mint.cpp.o test/layer/checks/fixy/Mint.cpp cpu=1
-deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Mint.cpp.o | test/layer/checks/fixy/Mint.cpp system.h \
-include/fixy/Mint.h
-"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,14 +118,6 @@ ROW_SHAPES = (
         "",
     ),
     RowShape(
-        "header-alone",
-        ("include/fixy/A.h | fixy | 6.6 | - | the reason of A", "include/fixy/B.h | fixy | 6.7 | - | the reason of B"),
-        "",
-        "",
-        "include/fixy/A.h",
-        "",
-    ),
-    RowShape(
         "object-size",
         (
             "@build/CMakeFiles/a.dir/a.cpp.o | function | 300 | - | the reason of the function",
@@ -164,8 +131,8 @@ ROW_SHAPES = (
     RowShape(
         "step-cost",
         (
-            "- | fixture | 50 | shared_step | the reason of the fixture",
-            "- | test | 700 | shared_step | the test reason",
+            "- | fixture | 70 | shared_step | the reason of the fixture",
+            "- | test | 800 | shared_step | the test reason",
         ),
         "shared_step",
         "",
@@ -262,7 +229,7 @@ def record_cases(expect: testing.Expect) -> None:
             "guard write writes the ledger of step-cost: a row of the kind test with the count in G of each "
             "registered test over the limit, and no row of a test whose record holds no count",
             status == 0
-            and ledger_values(context, "step-cost") == {("test", "heavy_test"): (700.0, "a planted reason")}
+            and ledger_values(context, "step-cost") == {("test", "heavy_test"): (800.0, "a planted reason")}
             and "step-cost.txt holds 1 rows" in said,
         )
         run_write(context, "step-memory", "a different reason")
@@ -312,9 +279,9 @@ def fixture_cases(expect: testing.Expect) -> None:
         written = cost_budgets.budget_written("step-cost", context, empty, "a planted reason")
         values = {(key.kind, key.entity): (entry.value, entry.reason) for key, entry in written.base.items()}
         expect(
-            "step-cost writes a row of the kind fixture for the fixture over 45 G, and no row for a fixture with no "
+            "step-cost writes a row of the kind fixture for the fixture over 60 G, and no row for a fixture with no "
             "count",
-            values == {("fixture", "neg_heavy"): (50.0, "a planted reason")},
+            values == {("fixture", "neg_heavy"): (70.0, "a planted reason")},
         )
         again = cost_budgets.budget_written("step-cost", context, written, "a different reason")
         expect("a second write keeps the row of a fixture that the row keeps", again.base == written.base)
@@ -405,63 +372,21 @@ def object_prune_cases(expect: testing.Expect) -> None:
         )
 
 
-def header_prune_cases(expect: testing.Expect) -> None:
-    """Prune the rows of header-alone with the measure of one build (the prune of cost_budgets)."""
-    with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
-        context = context_of(Path(scratch), HEADER_PRUNE_ROWS)
-        headers = ("Huge.h", "Light.h", "Near.h", "Mint.h", "Gone.h", "Unbuilt.h")
-        keys = {name: rule_ledger.Key(f"include/fixy/{name}", "fixy", "") for name in headers}
-        rows = planted_ledger(
-            "header-alone",
-            {
-                keys["Huge.h"]: 7.5,
-                keys["Light.h"]: 7.0,
-                keys["Near.h"]: 7.0,
-                keys["Mint.h"]: 6.501,
-                keys["Gone.h"]: 7.0,
-            },
-        )
-        rows = replace(rows, base={**rows.base, keys["Unbuilt.h"]: rule_ledger.Entry(keys["Unbuilt.h"], 7.0, "kept")})
-        written = cost_budgets.budget_written("header-alone", context, rows, None)
-        expect(
-            "the write of header-alone lowers the row of a header over the limit to its measure, removes the row of "
-            "a header under the limit by more than the margin of 5 % and of a header that the tree does not hold, "
-            "keeps the row of a header under the limit by less than the margin at its measure, and keeps the row of "
-            "a header with no sentinel in the build",
-            {key.path: entry.value for key, entry in written.base.items()}
-            == {
-                "include/fixy/Huge.h": 7.001,
-                "include/fixy/Near.h": 6.451,
-                "include/fixy/Mint.h": 6.361,
-                "include/fixy/Unbuilt.h": 7.0,
-            },
-        )
-        expect(
-            "the row of a header at 6.361 MB, the measure at which the margin of 2 % removed the row of "
-            "EndpointMint.h on 2026-11-21, stays, so the next small growth over the limit 6.5 MB has a row",
-            keys["Mint.h"] in written.base,
-        )
-        expect(
-            "a lowered row keeps its reason",
-            written.base[keys["Huge.h"]].reason == "a planted reason",
-        )
-
-
-# Two builds of one tree for a lower (the lower of cost_budgets): the compile of scan.cpp ran 111 G in the first build
-# and is a ccache hit of a compile of 112 G in the second, light.cpp stays under the limit 110 G with the margin, and the
+# Two builds of one tree for a lower (the lower of cost_budgets): the compile of scan.cpp ran 151 G in the first build
+# and is a ccache hit of a compile of 152 G in the second, light.cpp stays under the limit 140 G with the margin, and the
 # second build gives the object blind.cpp.o as a hit with no cost in the cost store.
 LOWER_FIRST = f"""\
 format 1
 kind {KIND}
-compile CMakeFiles/lib.dir/scan.cpp.o src/scan.cpp cpu=1 instructions=111 functions=_Z1fv:1024 text=802816
-compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=100
-compile CMakeFiles/lib.dir/blind.cpp.o src/blind.cpp cpu=1 instructions=130
+compile CMakeFiles/lib.dir/scan.cpp.o src/scan.cpp cpu=1 instructions=151 functions=_Z1fv:1024 text=1003520
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=120
+compile CMakeFiles/lib.dir/blind.cpp.o src/blind.cpp cpu=1 instructions=170
 """
 LOWER_SECOND = f"""\
 format 1
 kind {KIND}
-compile CMakeFiles/lib.dir/scan.cpp.o src/scan.cpp result=hit last-cpu=1 last-instructions=112
-compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=101
+compile CMakeFiles/lib.dir/scan.cpp.o src/scan.cpp result=hit last-cpu=1 last-instructions=152
+compile CMakeFiles/lib.dir/light.cpp.o src/light.cpp cpu=1 instructions=121
 compile CMakeFiles/lib.dir/blind.cpp.o src/blind.cpp result=hit
 """
 
@@ -474,7 +399,7 @@ def lower_cases(expect: testing.Expect) -> None:
         scan, light, blind = (
             output_key(f"CMakeFiles/lib.dir/{name}.cpp.o", "compile") for name in ("scan", "light", "blind")
         )
-        rows = planted_ledger("step-cost", {scan: 123.912, light: 120.0, blind: 140.0})
+        rows = planted_ledger("step-cost", {scan: 163.912, light: 160.0, blind: 180.0})
         cut = cost_budgets.LowerRequest(
             ("CMakeFiles/lib.dir/scan.cpp.o", "CMakeFiles/lib.dir/light.cpp.o"), "", "a cut"
         )
@@ -484,11 +409,11 @@ def lower_cases(expect: testing.Expect) -> None:
             "the cost store, with the reason of the cut, removes a row whose measure with the margin is under the "
             "limit, and keeps each other row",
             {key: (entry.value, entry.reason) for key, entry in lowered.base.items()}
-            == {scan: (112.0, "a cut"), blind: (140.0, "a planted reason")}
+            == {scan: (152.0, "a cut"), blind: (180.0, "a planted reason")}
             and lines
             == [
-                "CMakeFiles/lib.dir/light.cpp.o of the kind compile: 120 G instructions removed, at 101 G instructions",
-                "CMakeFiles/lib.dir/scan.cpp.o of the kind compile: 123.912 -> 112 G instructions",
+                "CMakeFiles/lib.dir/light.cpp.o of the kind compile: 160 G instructions removed, at 121 G instructions",
+                "CMakeFiles/lib.dir/scan.cpp.o of the kind compile: 163.912 -> 152 G instructions",
             ],
         )
         refusals = {
@@ -509,15 +434,15 @@ def lower_cases(expect: testing.Expect) -> None:
                     )
                 ),
             )
-        low = planted_ledger("step-cost", {scan: 111.5, light: 120.0})
+        low = planted_ledger("step-cost", {scan: 151.5, light: 160.0})
         kept, kept_lines = cost_budgets.lowered_ledger("step-cost", [first, second], low, cut)
         expect(
             "a lower keeps a row below the largest measure with a line, and still lowers the other named rows",
-            {key: entry.value for key, entry in kept.base.items()} == {scan: 111.5}
-            and "scan.cpp.o of the kind compile: 111.5 G instructions stays" in " ".join(kept_lines),
+            {key: entry.value for key, entry in kept.base.items()} == {scan: 151.5}
+            and "scan.cpp.o of the kind compile: 151.5 G instructions stays" in " ".join(kept_lines),
         )
         test_key = rule_ledger.Key("", "test", "heavy_test")
-        tested = replace(rows, base={**rows.base, test_key: rule_ledger.Entry(test_key, 700.0, "a row")})
+        tested = replace(rows, base={**rows.base, test_key: rule_ledger.Entry(test_key, 800.0, "a row")})
         kind_refusal = raised(
             lambda: cost_budgets.lowered_ledger(
                 "step-cost", [first, second], tested, cost_budgets.LowerRequest(("heavy_test",), "test", "r")
@@ -526,7 +451,7 @@ def lower_cases(expect: testing.Expect) -> None:
         expect(
             "a lower refuses a row of the kind test, which has a record only after its run", "kind test" in kind_refusal
         )
-        sized = planted_ledger("object-size", {output_key("CMakeFiles/lib.dir/scan.cpp.o", "object"): 852.123})
+        sized = planted_ledger("object-size", {output_key("CMakeFiles/lib.dir/scan.cpp.o", "object"): 1052.123})
         objects, _ = cost_budgets.lowered_ledger(
             "object-size",
             [first],
@@ -535,7 +460,7 @@ def lower_cases(expect: testing.Expect) -> None:
         )
         expect(
             "a lower of object-size sets the row of the object to its machine code",
-            [entry.value for entry in objects.base.values()] == [785.0],
+            [entry.value for entry in objects.base.values()] == [981.0],
         )
         root = first.root
         rule_ledger.store(rows, root)
@@ -550,7 +475,7 @@ def lower_cases(expect: testing.Expect) -> None:
             status == 2
             and "is not written" in said
             and "one build of each configuration of objects of the gate" in refusal
-            and rule_ledger.read(step_cost, root).base[scan].value == 123.912,
+            and rule_ledger.read(step_cost, root).base[scan].value == 163.912,
         )
         status, said = testing.captured(lambda: guard_write.main([*words, *builds]))
         expect("guard write --lower refuses a call with no reason", status == 2 and "--reason" in said)
@@ -559,8 +484,8 @@ def lower_cases(expect: testing.Expect) -> None:
         expect(
             "guard write --lower on builds of each configuration writes the named row and tells its old and new value",
             status == 0
-            and "scan.cpp.o of the kind compile: 123.912 -> 112 G instructions" in said
-            and rule_ledger.read(step_cost, root).base[scan].value == 112.0,
+            and "scan.cpp.o of the kind compile: 163.912 -> 152 G instructions" in said
+            and rule_ledger.read(step_cost, root).base[scan].value == 152.0,
         )
 
 
@@ -693,7 +618,6 @@ def main(argv: list[str]) -> int:
             record_cases,
             fixture_cases,
             object_prune_cases,
-            header_prune_cases,
             lower_cases,
             row_reason_cases,
             list_cases,

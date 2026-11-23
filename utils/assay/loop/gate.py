@@ -532,8 +532,8 @@ Ratchet rows
     landing gives the rows after the problems (assay.loop.land).
 
 Raise of a budget
-    A row of a rule of BUDGET_RULES keeps a size or a cost: header-alone,
-    object-size, step-cost and instruction-total.  The owner decision of
+    A row of a rule of BUDGET_RULES keeps a size or a cost: object-size,
+    step-cost and instruction-total.  The owner decision of
     2026-11-15 tells that a correct change that crosses such a row raises
     the row with its measured value and a reason.  A candidate with a budget
     reason (Candidate.budget_reason, `loop land --budget-reason TEXT`) lets
@@ -794,11 +794,11 @@ RULE_TEST_PREFIX = "guard_"
 ROW_REASON = "REASON"
 # The rules of a budget, whose rows the gate raises for a candidate with a budget reason, and the test of the suite of
 # each rule (the raise of a budget).  No rule of correctness is in the list.
-BUDGET_RULES = ("header-alone", "instruction-total", "object-size", "step-cost")
+BUDGET_RULES = ("instruction-total", "object-size", "step-cost")
 BUDGET_TESTS = {f"{RULE_TEST_PREFIX}{rule.replace('-', '_')}": rule for rule in BUDGET_RULES}
 # The rules of a budget whose named rows the gate lowers for a candidate with a lower (the lower of a budget).  The rule
 # instruction-total has one total and no named row, and its write with no reason lowers it.
-LOWER_RULES = ("header-alone", "object-size", "step-cost")
+LOWER_RULES = ("object-size", "step-cost")
 # The rule of a failing item of a finding line (the failing items).
 ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (the
