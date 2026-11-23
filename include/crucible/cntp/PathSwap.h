@@ -171,6 +171,19 @@ admit_swap_timeout_ns(std::uint64_t ns) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(ns, SwapError::Timeout);
 }
 
+// The two roles of a state in one step of a swap: the state that the step
+// leaves, and the state that it enters.  Two roles give two types, so a step
+// cannot take its two states in the other order.
+namespace side {
+
+struct SwapFrom final {};
+struct SwapTo final {};
+
+}  // namespace side
+
+using SwapFromState = ::fixy::Side<side::SwapFrom, SwapState>;
+using SwapToState = ::fixy::Side<side::SwapTo, SwapState>;
+
 template <std::size_t MaxEvents = 16>
 class PathSwapper;
 
@@ -228,9 +241,10 @@ private:
     // The caller holds the lock and gives the guarded fields, and begin_swap
     // set the plan.  The ring gives each event the slot after the slot of
     // the event before it.
-    static void append_event(Guarded& guarded, SwapState from, SwapState to, std::uint64_t at_ns) noexcept {
+    static void append_event(Guarded& guarded, SwapFromState const& from, SwapToState const& to,
+                             std::uint64_t at_ns) noexcept {
         ++guarded.sequence;
-        PathSwapEvent event{.from = from, .to = to, .at_ns = at_ns, .sequence = guarded.sequence};
+        PathSwapEvent event{.from = from.value(), .to = to.value(), .at_ns = at_ns, .sequence = guarded.sequence};
         guarded.plan.match(
             [&event](PathSwapPlan const& plan) noexcept {
                 event.flow_id = plan.flow_id().value();
@@ -262,7 +276,7 @@ private:
         if (!is_valid_path_swap_transition(prev, next)) {
             return false;
         }
-        append_event(guarded, prev, next, at_ns);
+        append_event(guarded, SwapFromState{prev}, SwapToState{next}, at_ns);
         state_.store_release(next);
         return true;
     }
@@ -288,10 +302,10 @@ private:
 
     // The caller holds the lock and gives the guarded fields.  Moves a live
     // swap from `from` to `to`.
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> advance(Guarded& guarded, SwapState from, SwapState to,
-                                                                  std::uint64_t now_ns) noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError>
+    advance(Guarded& guarded, SwapFromState const& from, SwapToState const& to, std::uint64_t now_ns) noexcept {
         CRUCIBLE_TRY(_, check_live(guarded, now_ns));
-        if (state_.load_acquire() != from || !transition_to(guarded, to, now_ns)) {
+        if (state_.load_acquire() != from.value() || !transition_to(guarded, to.value(), now_ns)) {
             return ::fixy::err(SwapError::InvalidTransition);
         }
         return ::fixy::Unit{};
@@ -299,8 +313,8 @@ private:
 
     // Takes the lock and moves a live swap from `from` to `to`.
     template <class Ctx>
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> advance_locked(Ctx const& ctx, SwapState from, SwapState to,
-                                                                         std::uint64_t now_ns) noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError>
+    advance_locked(Ctx const& ctx, SwapFromState from, SwapToState to, std::uint64_t now_ns) noexcept {
         return guarded_.with(
             ctx, [this, from, to, now_ns](Guarded& guarded) noexcept { return advance(guarded, from, to, now_ns); });
     }
@@ -372,14 +386,15 @@ public:
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> receiver_accepts_bidir(Ctx const& ctx,
                                                                                  std::uint64_t now_ns) noexcept {
-        return advance_locked(ctx, SwapState::Draining, SwapState::BidirReceive, now_ns);
+        return advance_locked(ctx, SwapFromState{SwapState::Draining}, SwapToState{SwapState::BidirReceive}, now_ns);
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> sender_observed_drain_ack(Ctx const& ctx,
                                                                                     std::uint64_t now_ns) noexcept {
-        return advance_locked(ctx, SwapState::BidirReceive, SwapState::NewPathFlushing, now_ns);
+        return advance_locked(ctx, SwapFromState{SwapState::BidirReceive}, SwapToState{SwapState::NewPathFlushing},
+                              now_ns);
     }
 
     // Detaching `current` drops whatever is still buffered on the old path:
@@ -408,7 +423,8 @@ public:
         // refused must not consume `current`, or the resource leaks and the
         // audit log gains an event for a transition that never happened.
         // The detach and the new mint run after the lock is given back.
-        CRUCIBLE_TRY(_, advance_locked(ctx, SwapState::NewPathFlushing, SwapState::Complete, now_ns));
+        CRUCIBLE_TRY(_, advance_locked(ctx, SwapFromState{SwapState::NewPathFlushing}, SwapToState{SwapState::Complete},
+                                       now_ns));
         std::move(current).detach(::fixy::session::detach_reason::TransportClosedOutOfBand{});
         return ::fixy::session::mint_session<Proto, Policy, Ctx, NewResource>(ctx,
                                                                               std::forward<NewResource>(new_resource));

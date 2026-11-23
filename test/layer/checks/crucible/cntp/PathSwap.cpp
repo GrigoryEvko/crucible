@@ -28,4 +28,11 @@ static_assert(CtxFitsPathSwapRead<::fixy::BgLoadCtx> && CtxFitsPathSwapRead<::fi
 static_assert(!CtxFitsPathSwapRead<::fixy::BgDrainCtx> && !CtxFitsPathSwapRead<::fixy::HotFgCtx>);
 static_assert(!std::is_default_constructible_v<PathSwapper<>>, "mint_path_swapper must be the only door to a swapper");
 
+// The state that a step leaves and the state that it enters are two types,
+// so a step cannot take its two states in the other order, and no bare state
+// stands for either role.
+static_assert(!std::is_convertible_v<SwapFromState, SwapToState> && !std::is_convertible_v<SwapToState, SwapFromState>);
+static_assert(!std::is_constructible_v<SwapToState, SwapFromState>);
+static_assert(!std::is_convertible_v<SwapState, SwapFromState> && !std::is_convertible_v<SwapState, SwapToState>);
+
 }  // namespace crucible::cntp
