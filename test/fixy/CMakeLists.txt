@@ -6560,6 +6560,16 @@ fixy_neg_compile_test(neg_library_function_erased_through_closure
   "a CallRef erases the type of its callable, so the rule brand-escape cannot read a scope brand behind it"
   "neg_library_function_erased_through_closure\\.cpp:[0-9]+:[0-9]+: error: use of deleted function")
 
+# The walk of a scope brand has no depth limit, and it reads the members of
+# each class of a function, also of a class nested in a local class.
+fixy_neg_compile_test(neg_library_function_erased_behind_nine_locals
+  "a CallRef erases the type of its callable, so the rule brand-escape cannot read a scope brand behind it"
+  "neg_library_function_erased_behind_nine_locals\\.cpp:[0-9]+:[0-9]+: error: use of deleted function")
+
+fixy_neg_compile_test(neg_library_function_erased_behind_nested_local
+  "a CallRef erases the type of its callable, so the rule brand-escape cannot read a scope brand behind it"
+  "neg_library_function_erased_behind_nested_local\\.cpp:[0-9]+:[0-9]+: error: use of deleted function")
+
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")

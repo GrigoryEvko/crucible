@@ -81,6 +81,40 @@ void test_void_result_and_proof_argument() {
 // A CallRef is two words: the address of the callable and the thunk.
 void test_two_words() { CRUCIBLE_FATAL_INVARIANT(sizeof(CallRef<void() noexcept>) == 2 * sizeof(void*)); }
 
+// The walk of the scope brand reads each class one time.  So it ends on a
+// closure over a local class that holds an optional reference of its own
+// type, and the CallRef takes the closure.
+void test_walk_ends_on_a_cycle() {
+    struct NodeBrand final {};
+    struct Node {
+        ::foundation::core::Option<::foundation::core::Ref<Node, NodeBrand>> next{};
+        std::uint32_t value = 0;
+    };
+    Node node{.next = {}, .value = 4};
+    auto read_value = [&node]() noexcept { return node.value; };
+    static_assert(::foundation::core::HoldsNoScopeBrand<decltype(read_value)>);
+    CallRef<std::uint32_t() noexcept> const call_ref{read_value};
+    CRUCIBLE_FATAL_INVARIANT(call_ref() == 4);
+}
+
+// The walk has no depth limit.  A chain of nine closures with no scope brand
+// holds no brand at any step, so the CallRef takes its last closure.
+void test_walk_of_a_deep_chain() {
+    std::uint32_t value = 6;
+    auto first = [&value]() noexcept { return value; };
+    auto second = [&first]() noexcept { return first(); };
+    auto third = [&second]() noexcept { return second(); };
+    auto fourth = [&third]() noexcept { return third(); };
+    auto fifth = [&fourth]() noexcept { return fourth(); };
+    auto sixth = [&fifth]() noexcept { return fifth(); };
+    auto seventh = [&sixth]() noexcept { return sixth(); };
+    auto eighth = [&seventh]() noexcept { return seventh(); };
+    auto ninth = [&eighth]() noexcept { return eighth(); };
+    static_assert(::foundation::core::HoldsNoScopeBrand<decltype(ninth)>);
+    CallRef<std::uint32_t() noexcept> const call_ref{ninth};
+    CRUCIBLE_FATAL_INVARIANT(call_ref() == 6);
+}
+
 }  // namespace
 
 int main() {
@@ -89,5 +123,7 @@ int main() {
     test_call_through_a_member();
     test_void_result_and_proof_argument();
     test_two_words();
+    test_walk_ends_on_a_cycle();
+    test_walk_of_a_deep_chain();
     return 0;
 }
