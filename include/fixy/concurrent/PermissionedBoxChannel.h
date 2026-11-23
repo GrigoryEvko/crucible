@@ -343,11 +343,13 @@ public:
 
     // The producer door of a merge.  It lends a share of the producer pool, or
     // gives no value while an exclusive transition is in flight.  A lent handle
-    // opens the channel.
-    [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer() noexcept
+    // opens the channel.  The lend reads the schedule, so the door takes the
+    // tag of Nondet, as the door of the inner channel does.
+    [[nodiscard]] ::foundation::core::Option<ProducerHandle>
+    producer(::foundation::effects::cap::Nondet nondet) noexcept
         requires(Form == ChannelForm::merge)
     {
-        auto lent = cells_.producer();
+        auto lent = cells_.producer(nondet);
         if (lent.is_none()) return ::foundation::core::none;
         return ::foundation::core::Option<ProducerHandle>::some(
             ProducerHandle{std::move(lent).expect("the test above found a producer")});
@@ -365,12 +367,12 @@ public:
     // share, so no Box lands.  The Box channel gives no recombined access,
     // because a body with the ring of the words could pop a word and lose it,
     // and a lost word leaks its object.  The withdraw is a claim door of the
-    // inner channel.
+    // inner channel, and it takes the tag of Nondet, as that door does.
     [[nodiscard]] ::foundation::core::Option<typename cell_channel::producer_lease>
-    try_withdraw_producer_root() noexcept
+    try_withdraw_producer_root(::foundation::effects::cap::Nondet nondet) noexcept
         requires(Form == ChannelForm::merge)
     {
-        return cells_.try_withdraw_producer_root();
+        return cells_.try_withdraw_producer_root(nondet);
     }
 
     void deposit_producer_root(typename cell_channel::producer_lease&& root) noexcept

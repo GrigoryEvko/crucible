@@ -994,11 +994,12 @@ struct RowChannel<OpKind::LanesPermissionedPush, Threads, Root> {
 // exclusive is out in the bench, so an empty lend ends the process.
 template <OpKind Kind, std::size_t Slot, class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend_producer(Channel& channel) noexcept {
+    eff::cap::Nondet const nondet = eff::testing::test().nondet;
     if constexpr (Kind == OpKind::LanesPermissionedPush) {
-        return channel.producer(typename Channel::lane_index{::fixy::index<Slot>()})
+        return channel.producer(nondet, typename Channel::lane_index{::fixy::index<Slot>()})
             .expect("the channel lends the lane of a slot while no exclusive is out");
     } else {
-        return channel.producer().expect("the channel lends a producer while no exclusive is out");
+        return channel.producer(nondet).expect("the channel lends a producer while no exclusive is out");
     }
 }
 

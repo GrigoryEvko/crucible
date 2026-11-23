@@ -35,6 +35,9 @@ namespace ses = fixy::channels::swmr_session;
 
 namespace {
 
+// The tag of Nondet, which the doors of the producer root of a merge take.
+constexpr foundation::effects::cap::Nondet kNondet = foundation::effects::testing::test().nondet;
+
 struct LinkTag {};
 struct MpscTag {};
 struct WriterTag {
@@ -116,7 +119,7 @@ void merge_recombined_access_with_the_root_of_another_channel() {
     ::foundation::linear::drop(std::move(other_consumer));
     Mpsc channel{std::move(producer_root)};
     Mpsc other{std::move(other_root)};
-    auto lease = other.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto lease = other.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
     auto parts = channel.with_recombined_access(
         Mpsc::RecombinedParts{.root = std::move(lease), .consumer = std::move(consumer_perm)},
         [](Mpsc::RecombinedRing&) noexcept {});
@@ -133,12 +136,12 @@ void deposit_during_a_recombined_access() {
     ::foundation::linear::drop(std::move(other_consumer));
     Mpsc channel{std::move(producer_root)};
     Mpsc other{std::move(other_root)};
-    auto lease = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto lease = channel.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
     auto parts = channel.with_recombined_access(
         Mpsc::RecombinedParts{.root = std::move(lease), .consumer = std::move(consumer_perm)},
         [&channel, &other](Mpsc::RecombinedRing&) noexcept {
             channel.deposit_producer_root(
-                other.try_withdraw_producer_root().expect("the root comes out with no producer out"));
+                other.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out"));
         });
     ::foundation::linear::drop(std::move(parts.root));
     ::foundation::linear::drop(std::move(parts.consumer));

@@ -759,11 +759,15 @@ public:
     // A claim door (the doors of a synchronized class of foundation/
     // Transfer.h): one compare-exchange of the pool makes the share, and the
     // handle holds it.  After the compare-exchange the door writes only the
-    // count of the producers, an atomic cell, and the handle.
-    [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer() noexcept
+    // count of the producers, an atomic cell, and the handle.  Another thread
+    // deposits the producer root at a time that the schedule decides, so the
+    // door takes the tag of Nondet.  The producer tag has an empty row, so the
+    // tag stands for a context, and a row on the tag stops the lend here.
+    [[nodiscard]] ::foundation::core::Option<ProducerHandle>
+    producer(::foundation::effects::cap::Nondet nondet) noexcept
         requires(Form == ChannelForm::merge)
     {
-        auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(producer_pool_);
+        auto lent = producer_pool_.lend(nondet);
         if (lent.is_none()) return ::foundation::core::none;
         side_.producers_.add_producer();
         return ::foundation::core::Option<ProducerHandle>::some(
@@ -782,11 +786,13 @@ public:
     // Transfer.h): one compare-exchange of the pool makes the share, and the
     // handle holds it.  After the compare-exchange the door takes the atomic
     // claim of the lane, reads the end of the lane under that claim, and
-    // builds the handle.
-    [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer(lane_index lane) noexcept
+    // builds the handle.  The lend reads the schedule, as the lend of a merge
+    // does, so the door takes the tag of Nondet.
+    [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer(::foundation::effects::cap::Nondet nondet,
+                                                                      lane_index lane) noexcept
         requires(Form == ChannelForm::lanes)
     {
-        auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(producer_pool_);
+        auto lent = producer_pool_.lend(nondet);
         if (lent.is_none()) return ::foundation::core::none;
         // The claim of a lane is an atomic claim, so two threads can take the
         // claims of two lanes through the element door at the same time.
@@ -936,11 +942,13 @@ public:
     // A claim door: its result is the exclusive token of the pool, which one
     // compare-exchange of the pool makes.  The write of the parked root after
     // that compare-exchange happens only on the thread that won it, until that
-    // thread deposits the lease.
-    [[nodiscard]] ::foundation::core::Option<producer_lease> try_withdraw_producer_root() noexcept
+    // thread deposits the lease.  A producer handle ends at a time that the
+    // schedule decides, so the door takes the tag of Nondet.
+    [[nodiscard]] ::foundation::core::Option<producer_lease>
+    try_withdraw_producer_root(::foundation::effects::cap::Nondet nondet) noexcept
         requires(is_pooled)
     {
-        return ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_pool_);
+        return producer_pool_.try_upgrade(nondet);
     }
 
     // Gives the lease of the producer root back to the pool of a merge or a

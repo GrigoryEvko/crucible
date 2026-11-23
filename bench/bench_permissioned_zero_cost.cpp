@@ -77,6 +77,9 @@ auto bench_halves() noexcept {
 // The allocation capability of the rings and the channels of the rows.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
+// The tag of Nondet, which the lend of a producer share takes.
+constexpr ::foundation::effects::cap::Nondet kNondet = ::foundation::effects::testing::test().nondet;
+
 // The owner of the bare ring.  It makes the proof of the one consumer
 // (the writers of fixy/concurrent/MpscRing.h), which pops on the thread of the
 // row.
@@ -103,7 +106,7 @@ bench::Report wrapped_mpsc_push() {
     auto [producer_root, consumer_perm] = bench_halves();
     (void)consumer_perm;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
-    auto p_opt = ch->producer();
+    auto p_opt = ch->producer(kNondet);
     CRUCIBLE_BENCH_CHECK(p_opt.is_some());
     auto p = std::move(p_opt).expect("the test above found a producer");
     Item i = 0;
@@ -130,7 +133,7 @@ bench::Report wrapped_mpsc_pop() {
     auto [producer_root, consumer_perm] = bench_halves();
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
     {
-        auto p_opt = ch->producer();
+        auto p_opt = ch->producer(kNondet);
         CRUCIBLE_BENCH_CHECK(p_opt.is_some());
         auto p = std::move(p_opt).expect("the test above found a producer");
         for (Item i = 0; i < kCap / 2; ++i)
@@ -166,7 +169,7 @@ bench::Report handle_mpsc_round_trip() {
     auto [producer_root, consumer_perm] = bench_halves();
     const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(alloc, std::move(producer_root));
-    auto p_opt = ch->producer();
+    auto p_opt = ch->producer(kNondet);
     CRUCIBLE_BENCH_CHECK(p_opt.is_some());
     auto p = std::move(p_opt).expect("the test above found a producer");
     const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
@@ -189,7 +192,7 @@ bench::Report endpoint_mpsc_round_trip() {
     auto [producer_root, consumer_perm] = bench_halves();
     const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(alloc, std::move(producer_root));
-    auto p_opt = ch->producer();
+    auto p_opt = ch->producer(kNondet);
     CRUCIBLE_BENCH_CHECK(p_opt.is_some());
     auto p = std::move(p_opt).expect("the test above found a producer");
     Item i = 0;

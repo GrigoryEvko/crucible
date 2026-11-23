@@ -68,7 +68,8 @@ template <class Received>
 // ends the process.
 template <class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel) noexcept {
-    return channel.producer().expect("the channel lends a producer while no exclusive is out");
+    return channel.producer(eff::testing::test().nondet)
+        .expect("the channel lends a producer while no exclusive is out");
 }
 
 template <class Producer>
@@ -157,7 +158,7 @@ template <class Handle>
     failures += expect_code("a channel after its last producer", code_of(consumer.try_receive(merge)), kClosed);
 
     channel.deposit_producer_root(
-        channel.try_withdraw_producer_root().expect("the root comes out with no producer out"));
+        channel.try_withdraw_producer_root(merge).expect("the root comes out with no producer out"));
     failures += expect_code("a closed channel after the root came back", code_of(consumer.try_receive(merge)), kClosed);
     {
         auto later = lend(channel);

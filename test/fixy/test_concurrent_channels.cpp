@@ -58,7 +58,8 @@ using Spsc = c::channel_t<int, 8, decltype(trace_root())>;
 using Mpsc = c::channel_t<int, 8, decltype(meta_root())>;
 // The lend of a producer gives the Option of the base.
 static_assert(
-    std::is_same_v<decltype(std::declval<Mpsc&>().producer()), ::foundation::core::Option<Mpsc::ProducerHandle>>);
+    std::is_same_v<decltype(std::declval<Mpsc&>().producer(std::declval<::foundation::effects::cap::Nondet>())),
+                   ::foundation::core::Option<Mpsc::ProducerHandle>>);
 using OtherSpsc = c::channel_t<int, 8, decltype(other_root())>;
 
 // ── Ownership is in the types ────────────────────────────────────────
@@ -231,7 +232,7 @@ template <class Channel, class Producer, class Consumer>
 // goes back to the pool at once.
 template <class Channel>
 [[nodiscard]] bool can_withdraw_root(Channel& channel) noexcept {
-    return channel.try_withdraw_producer_root().match(
+    return channel.try_withdraw_producer_root(kSnapshot).match(
         [&channel](auto root) noexcept {
             channel.deposit_producer_root(std::move(root));
             return true;
@@ -247,7 +248,7 @@ template <class Channel>
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
     Mpsc channel{std::move(producer_root)};
-    auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto root = channel.try_withdraw_producer_root(kSnapshot).expect("the root comes out with no producer out");
     auto returned = channel.with_recombined_access(
         Mpsc::RecombinedParts{.root = std::move(root), .consumer = std::move(consumer_perm)},
         [](Mpsc::RecombinedRing& ring) noexcept { static_cast<void>(ring.try_push(41)); });
@@ -260,7 +261,7 @@ template <class Channel>
         std::fprintf(stderr, "the body of with_recombined_access did not reach the ring of a merge channel\n");
         return 1;
     }
-    if (channel.is_exclusive_active() || channel.producer().is_none()) {
+    if (channel.is_exclusive_active() || channel.producer(kSnapshot).is_none()) {
         std::fprintf(stderr, "the pool of a merge channel did not lend after the deposit of its root\n");
         return 1;
     }
@@ -279,8 +280,8 @@ template <class Channel>
     }
 
     {
-        auto first_lent = channel.producer();
-        auto second_lent = channel.producer();
+        auto first_lent = channel.producer(kSnapshot);
+        auto second_lent = channel.producer(kSnapshot);
         if (first_lent.is_none() || second_lent.is_none()) {
             std::fprintf(stderr, "the pool refused a second producer — the fractional side is not fractional\n");
             return 1;
@@ -312,8 +313,8 @@ template <class Channel>
 
     // With no share out, the root comes out, and the pool lends no share
     // while it is out.
-    auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
-    bool const is_lent_while_out = channel.producer().is_some();
+    auto root = channel.try_withdraw_producer_root(kSnapshot).expect("the root comes out with no producer out");
+    bool const is_lent_while_out = channel.producer(kSnapshot).is_some();
     channel.deposit_producer_root(std::move(root));
     if (is_lent_while_out) {
         std::fprintf(stderr, "the pool lent a share while its root was out\n");
@@ -323,7 +324,7 @@ template <class Channel>
     // The pool lends again once the root is back, which is what makes the
     // exclusive window scoped rather than terminal.
     {
-        auto after = channel.producer();
+        auto after = channel.producer(kSnapshot);
         if (after.is_none()) {
             std::fprintf(stderr, "the pool stayed exclusive after the body returned\n");
             return 1;
@@ -376,7 +377,7 @@ template <class Channel>
         std::vector<std::jthread> producers;
         for (int p = 0; p < kProducers; ++p) {
             producers.emplace_back([&channel, &failures, &finished] {
-                auto lent = channel.producer();
+                auto lent = channel.producer(kSnapshot);
                 if (lent.is_none()) {
                     static_cast<void>(failures.fetch_add_acq_rel(1));
                     static_cast<void>(finished.fetch_add_acq_rel(1));

@@ -71,7 +71,8 @@ inline constexpr std::uint64_t kNoLabel = ~std::uint64_t{0};
 // so an empty lend ends the process.
 template <class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel) noexcept {
-    return channel.producer().expect("the channel lends a producer while no exclusive is out");
+    return channel.producer(eff::testing::test().nondet)
+        .expect("the channel lends a producer while no exclusive is out");
 }
 
 // Two producers push into one ring, and the pop gives a Box of each object.

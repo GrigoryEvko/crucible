@@ -2,8 +2,8 @@
 //
 // An upgrade fails while a share is out, and another thread ends a share at
 // a time that the schedule decides.  So an upgrade takes a context that
-// holds Nondet, also for a tag whose row is empty.  The upgrade with no
-// context stays only as the internal door of the channels of the base.
+// holds Nondet, or the bare tag of Nondet for a tag whose row is empty.  An
+// upgrade with neither does not compile.
 //
 // Expected diagnostic: try_upgrade has no candidate with no argument.
 

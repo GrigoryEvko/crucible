@@ -114,7 +114,9 @@ concept GivesLeasedAccess = requires(Channel& channel, typename Channel::Recombi
     channel.with_recombined_access(std::move(parts), [](typename Channel::RecombinedRing&) noexcept {});
 };
 template <typename Channel>
-concept HasRootDoors = requires(Channel& channel) { channel.try_withdraw_producer_root(); };
+concept HasRootDoors = requires(Channel& channel, ::foundation::effects::cap::Nondet nondet) {
+    channel.try_withdraw_producer_root(nondet);
+};
 static_assert(GivesRecombinedAccess<Wire> && !GivesRecombinedAccess<Merge> && !GivesRecombinedAccess<Lanes>);
 static_assert(!GivesLeasedAccess<Wire> && GivesLeasedAccess<Merge> && GivesLeasedAccess<Lanes>);
 static_assert(HasRootDoors<Merge> && HasRootDoors<Lanes> && !HasRootDoors<Wire>);
@@ -122,8 +124,22 @@ static_assert(HasRootDoors<Merge> && HasRootDoors<Lanes> && !HasRootDoors<Wire>)
 // The producer door of a lanes channel takes the lane, and the other forms
 // take none.
 template <typename Channel>
-concept LendsALane = requires(Channel& channel, typename Channel::lane_index lane) { channel.producer(lane); };
+concept LendsALane = requires(Channel& channel, ::foundation::effects::cap::Nondet nondet,
+                              typename Channel::lane_index lane) { channel.producer(nondet, lane); };
 static_assert(LendsALane<Lanes> && !LendsALane<Merge> && !LendsALane<Wire>);
+
+// The lend of a producer share and the withdraw of the producer root read the
+// schedule, so each pooled door takes the tag of Nondet, and a call with no
+// tag finds no door.
+template <typename Channel>
+concept LendsWithNoTag = requires(Channel& channel) { channel.producer(); };
+template <typename Channel>
+concept LendsWithTag =
+    requires(Channel& channel, ::foundation::effects::cap::Nondet nondet) { channel.producer(nondet); };
+template <typename Channel>
+concept WithdrawsRootWithNoTag = requires(Channel& channel) { channel.try_withdraw_producer_root(); };
+static_assert(LendsWithTag<Merge> && !LendsWithNoTag<Merge> && !LendsWithNoTag<Lanes>);
+static_assert(!WithdrawsRootWithNoTag<Merge> && !WithdrawsRootWithNoTag<Lanes>);
 
 // Each handle states the capacity of its channel, so a check of the waits
 // reads it from the type of the handle.  A lanes channel holds the capacity

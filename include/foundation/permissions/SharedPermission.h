@@ -329,30 +329,16 @@ concept PoolCtx = CtxAdmitsPermission<Tag, Ctx>
 
 namespace detail {
 
-// Internal door of the channels.  A lend and an upgrade with no
-// context, for the members of the channels of fixy/concurrent that take no
-// context yet: producer, try_withdraw_producer_root and drain of the merge
-// and lanes forms of PermissionedChannel.  Each of them asks for the share
-// or the exclusive of a pool that the channel itself owns, for a tag whose
-// row is empty.  The schedule
-// decides its outcome, as it decides the outcome of lend(ctx), and no
-// context gates these members yet.  They move to a form that takes the
-// context, one channel at a time, and then the door goes.  No other code
-// calls the door.  The rule owners keeps each use of a
-// detail namespace of the base out of the code outside the base, and the
-// fixtures neg_share_pool_*_without_ctx_* hold that a lend or an upgrade
-// with no context does not compile.
+// Internal door of the channels.  An upgrade with no context, for the
+// drain of the merge and lanes forms of PermissionedChannel, which takes no
+// context yet.  It asks for the exclusive of a pool that the channel itself
+// owns, for a tag whose row is empty.  The schedule decides its outcome, as
+// it decides the outcome of try_upgrade(ctx).  No other code calls the door.
+// The rule owners keeps each use of a detail namespace of the base out of the
+// code outside the base, and the fixtures neg_share_pool_*_without_ctx_* hold
+// that a lend or an upgrade with no context and no tag does not compile.
 class ChannelPoolDoor final : ::foundation::NoObject<ChannelPoolDoor> {
 public:
-    template <typename Tag, typename Brand>
-    [[nodiscard]] static ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>>
-    lend(SharedPermissionPool<Tag, Brand>& pool) noexcept {
-        static_assert(permission_row_empty(^^Tag), "the internal door of the channels lends only a share of a tag "
-                                                   "whose permission row is empty.  A tag with effects uses "
-                                                   "lend(ctx).");
-        return pool.lend_raw_();
-    }
-
     template <typename Tag, typename Brand>
     [[nodiscard]] static ::foundation::core::Option<ExclusiveLease<Tag, Brand>>
     try_upgrade(SharedPermissionPool<Tag, Brand>& pool) noexcept {
@@ -404,6 +390,25 @@ public:
     template <typename Ctx>
         requires PoolCtx<Tag, Ctx>
     [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>> try_upgrade(Ctx const&) noexcept {
+        return try_upgrade_raw_();
+    }
+
+    // The lend and the upgrade with the bare tag of Nondet, for a door that
+    // takes no context, as the pop of a merge does.  A tag whose row is empty
+    // admits each context, so the tag of Nondet is all that a context gives
+    // here.  If the tag gets a row, these forms stop compiling, and the door
+    // takes a context.
+    [[nodiscard]] ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>>
+    lend(::foundation::effects::cap::Nondet) noexcept
+        requires(permission_row_empty(^^Tag))
+    {
+        return lend_raw_();
+    }
+
+    [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>>
+    try_upgrade(::foundation::effects::cap::Nondet) noexcept
+        requires(permission_row_empty(^^Tag))
+    {
         return try_upgrade_raw_();
     }
 

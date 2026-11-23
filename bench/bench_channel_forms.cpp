@@ -149,7 +149,7 @@ void report_merge() noexcept {
         perm::mint_permission_split<Merge::producer_tag, Merge::consumer_tag>(std::move(root));
     Merge channel{std::move(producer_root)};
     ::foundation::effects::cap::Nondet const merge = ::foundation::effects::testing::test().nondet;
-    auto producer = channel.producer().expect("the pool lends a producer while its root is in the pool");
+    auto producer = channel.producer(merge).expect("the pool lends a producer while its root is in the pool");
     auto consumer = channel.consumer(std::move(consumer_perm));
     bench::Report const row = bench::run(
         "merge push then pop", [producer_ref = ::fixy::to(producer), consumer_ref = ::fixy::to(consumer), merge] {
@@ -169,8 +169,10 @@ void report_lanes() noexcept {
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
-    auto first = channel.producer(kFirstLane).expect("the pool lends the producer of the first lane");
-    auto second = channel.producer(kSecondLane).expect("the pool lends the producer of the second lane");
+    // The lend of a lane reads the schedule, so it takes the tag of Nondet.
+    ::foundation::effects::cap::Nondet const lend = ::foundation::effects::testing::test().nondet;
+    auto first = channel.producer(lend, kFirstLane).expect("the pool lends the producer of the first lane");
+    auto second = channel.producer(lend, kSecondLane).expect("the pool lends the producer of the second lane");
     auto consumer = channel.consumer(std::move(consumer_perm));
     bench::Report const row = bench::run(
         "lanes push into two lanes then two receives",

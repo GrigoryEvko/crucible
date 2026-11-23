@@ -2,8 +2,8 @@
 //
 // A lend fails while the exclusive is out, and another thread deposits the
 // exclusive at a time that the schedule decides.  So a lend takes a context
-// that holds Nondet, also for a tag whose row is empty.  The lend with no
-// context stays only as the internal door of the channels of the base.
+// that holds Nondet, or the bare tag of Nondet for a tag whose row is empty.
+// A lend with neither does not compile.
 //
 // Expected diagnostic: lend has no candidate with no argument.
 

@@ -173,8 +173,9 @@
 //         comment states the invariant that protects its plain writes: the
 //         writes after the step happen only on the thread that won it, until
 //         that thread gives the token back.  The claim doors of the base are
-//         try_withdraw_producer_root, producer() and producer(lane) of a
-//         pooled PermissionedChannel, claim_drain of each PermissionedChannel,
+//         try_withdraw_producer_root(nondet), producer(nondet) and
+//         producer(nondet, lane) of a pooled PermissionedChannel,
+//         claim_drain of each PermissionedChannel,
 //         and try_withdraw_reader_root(ctx) and reader(ctx) of SwmrSession.
 //     A door is a public or protected member function or member function
 //     template that is not a constructor, not a destructor and not deleted.

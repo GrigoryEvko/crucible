@@ -301,7 +301,8 @@ template <class Consumer>
 // template argument, so the brand of the handle comes from the caller.
 template <class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel) noexcept {
-    return channel.producer().expect("the channel lends a producer while no exclusive is out");
+    return channel.producer(eff::testing::test().nondet)
+        .expect("the channel lends a producer while no exclusive is out");
 }
 
 // The body of a worker that pushes into its producer end until the row

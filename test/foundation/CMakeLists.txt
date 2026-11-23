@@ -1868,7 +1868,8 @@ foundation_neg_compile_test(neg_share_pool_upgrade_ctx_without_nondet
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(const .anonymous.::CompileCtx&\\)."
   "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo; Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
 # A lend and an upgrade take a context, for a tag with effects and for a
-# pure tag.  The form with no context is the internal door of the channels.
+# pure tag.  A pure tag also takes the bare tag of Nondet, and a tag with a
+# row refuses that form.
 foundation_neg_compile_test(neg_share_pool_lend_without_ctx_refuses_row
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::lend\\(\\)."
   "candidate expects 1 argument, 0 provided")
@@ -1881,6 +1882,12 @@ foundation_neg_compile_test(neg_share_pool_lend_without_ctx_pure_tag
 foundation_neg_compile_test(neg_share_pool_upgrade_without_ctx_pure_tag
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::Pure, .*>::try_upgrade\\(\\)."
   "candidate expects 1 argument, 0 provided")
+foundation_neg_compile_test(neg_share_pool_lend_nondet_tag_refuses_row
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::lend\\(foundation::effects::cap::Nondet&?\\)."
+  "::lend\\(foundation::effects::cap::Nondet\\) requires +permission_row_empty")
+foundation_neg_compile_test(neg_share_pool_upgrade_nondet_tag_refuses_row
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(foundation::effects::cap::Nondet&?\\)."
+  "::try_upgrade\\(foundation::effects::cap::Nondet\\) requires +permission_row_empty")
 # The check of a statement of synchronized{} reads the doors of the class: a
 # door with no proof, a mutable plain member, a token of an unrelated class, a
 # LoanKey, a template door with no proof, a template door that the probe body

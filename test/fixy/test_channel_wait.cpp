@@ -246,8 +246,8 @@ void expect_each_item_then_the_end_of_a_merge(::fixy::BgLoadCtx const& ctx, std:
     cc::EventCount events{};
     typename Merge::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
     eff::cap::Nondet const merge = eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx);
-    typename Merge::ProducerHandle first_producer = channel.producer().expect("the pool lends a producer");
-    typename Merge::ProducerHandle second_producer = channel.producer().expect("the pool lends a producer");
+    typename Merge::ProducerHandle first_producer = channel.producer(merge).expect("the pool lends a producer");
+    typename Merge::ProducerHandle second_producer = channel.producer(merge).expect("the pool lends a producer");
     auto receive_beside_second = make_receive_beside(
         ctx, events, std::move(consumer), make_producer(events, std::move(second_producer), Lane::second, seed), merge);
     auto values = ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{},
@@ -273,10 +273,14 @@ void expect_the_turn_of_two_lanes(::fixy::BgLoadCtx const& ctx, std::uint64_t se
     TwoLanes channel{std::move(producer_root)};
     cc::EventCount events{};
     typename TwoLanes::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
+    // The lend of a lane reads the schedule, so it takes the tag of Nondet.
+    eff::cap::Nondet const lend = eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx);
     typename TwoLanes::ProducerHandle first_producer =
-        channel.producer(typename TwoLanes::lane_index{::fixy::index<0>()}).expect("the pool lends the first lane");
+        channel.producer(lend, typename TwoLanes::lane_index{::fixy::index<0>()})
+            .expect("the pool lends the first lane");
     typename TwoLanes::ProducerHandle second_producer =
-        channel.producer(typename TwoLanes::lane_index{::fixy::index<1>()}).expect("the pool lends the second lane");
+        channel.producer(lend, typename TwoLanes::lane_index{::fixy::index<1>()})
+            .expect("the pool lends the second lane");
     auto receive_beside_second = make_receive_beside(
         ctx, events, std::move(consumer), make_producer(events, std::move(second_producer), Lane::second, seed));
     auto values = ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{},

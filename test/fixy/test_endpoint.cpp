@@ -114,7 +114,7 @@ struct MergeTag {};
 
     // A receive on an empty pole waits, so the test fills the pole first, and
     // it ends the process when the pole refuses a value.
-    auto feeder = channel.producer().expect("the merge channel lends a producer share");
+    auto feeder = channel.producer(kSnapshot).expect("the merge channel lends a producer share");
     const bool is_filled = feeder.try_push(5) && feeder.try_push(6);
     if (!is_filled) ::fixy::fatal("test_endpoint: the merge channel refused a value below capacity");
 
@@ -271,7 +271,7 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
     (void)feeder.try_push(1);
     (void)feeder.try_push(2);
 
-    auto out_producer = out_channel.producer();
+    auto out_producer = out_channel.producer(kSnapshot);
     if (out_producer.is_none()) return fail("the MPSC channel lent no producer share");
     auto stage = channels::mint_stage_from_endpoints<&forwarding_stage>(
         ctx,

@@ -30,6 +30,10 @@ constexpr c::LaneIndex<kLanes> kFirst{::fixy::index<0>()};
 constexpr c::LaneIndex<kLanes> kSecond{::fixy::index<1>()};
 constexpr c::LaneIndex<kLanes> kThird{::fixy::index<2>()};
 
+// The tag of Nondet, which the lend of a producer and the withdraw of the
+// producer root take.
+constexpr ::foundation::effects::cap::Nondet kNondet = ::foundation::effects::testing::test().nondet;
+
 // The codes of a receive that gives no item.  No push gives either code.
 constexpr int kEmpty = -1;
 constexpr int kClosed = -2;
@@ -56,7 +60,7 @@ void expect_receives(Consumer& consumer, ::fixy::FixedArray<int, N> const& expec
 // an empty lend ends the test.
 template <class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel, c::LaneIndex<kLanes> lane) noexcept {
-    return channel.producer(lane).expect("the pool lends a producer while its root is in the pool");
+    return channel.producer(kNondet, lane).expect("the pool lends a producer while its root is in the pool");
 }
 
 // ── The refusals ────────────────────────────────────────────────────────
@@ -198,8 +202,8 @@ void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
-    auto withdrawn = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
-    CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && channel.producer(kFirst).is_none());
+    auto withdrawn = channel.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
+    CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && channel.producer(kNondet, kFirst).is_none());
     auto back = channel.with_recombined_access(
         Lanes::RecombinedParts{.root = std::move(withdrawn), .consumer = std::move(consumer_perm)},
         [](Lanes::RecombinedRing& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
