@@ -271,9 +271,14 @@ struct RefDoor {
 
 }  // namespace detail
 
+// A reference names an object, and the build keeps each test of an address
+// for null (-fno-delete-null-pointer-checks), so an assumption states the
+// fact, as erase_brand and as_ref do, and an Option of the result takes no
+// test of the null pointer.
 template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0)
 [[nodiscard]] constexpr Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> to(T& object) noexcept {
+    [[assume(__builtin_addressof(object) != nullptr)]];
     return detail::RefDoor::lend<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(object);
 }
 
