@@ -150,14 +150,18 @@ int main() {
     for (::fixy::Index<N> const i : hashes.indices()) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
         hashes.with_element(i, [h](SchemaHash& hash) noexcept { hash = SchemaHash{h}; });
+        // The names are texts of the run time, so they come through the
+        // validator of a name from outside.
         ::fixy::FixedText<16> name{};
         const ::fixy::TextView name_view =
             ::fixy::format(name, "aten::op{}", i.raw()).expect("aten::op and a number below 250 fit in 16 characters");
-        const bool was_registered =
-            table
-                .register_name(writer, ::foundation::effects::testing::test().alloc, mutable_view, hashes.at(i),
-                               ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name_view))
-                .is_ok();
+        const SchemaTable::SanitizedName sanitized =
+            crucible::sanitize_schema_name(hashes.at(i), ::fixy::mint_tagged<::fixy::tags::source::External>(name_view))
+                .expect("each name of the bench passes the validator");
+        const bool was_registered = table
+                                        .register_name(writer, ::foundation::effects::testing::test().alloc,
+                                                       mutable_view, hashes.at(i), sanitized)
+                                        .is_ok();
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 

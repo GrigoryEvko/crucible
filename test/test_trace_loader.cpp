@@ -542,9 +542,8 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
         .match(
             [&kHeldHash](SchemaTable::MutableView view) noexcept {
                 const bool was_registered =
-                    register_schema_name(
-                        kTestIo, kTestIo.cap().alloc, view, kHeldHash,
-                        ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::held"}))
+                    register_schema_name(kTestIo, kTestIo.cap().alloc, view, kHeldHash,
+                                         SchemaTable::InternalName{::fixy::TextView{"aten::held"}})
                         .is_ok();
                 CRUCIBLE_TEST_ASSERT(kTest, was_registered);
             },
@@ -599,9 +598,8 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
             [](SchemaTable::MutableView view) noexcept {
                 for (uint64_t filler = 1; filler < SCHEMA_TABLE_CAP; ++filler) {
                     const bool was_registered =
-                        register_schema_name(
-                            kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
-                            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::filler"}))
+                        register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
+                                             SchemaTable::InternalName{::fixy::TextView{"aten::filler"}})
                             .is_ok();
                     CRUCIBLE_TEST_ASSERT(kTest, was_registered);
                 }
@@ -642,9 +640,8 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
             [](SchemaTable::MutableView view) noexcept {
                 for (uint64_t filler = 1; filler <= SCHEMA_TABLE_CAP - 3; ++filler) {
                     const bool was_registered =
-                        register_schema_name(
-                            kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
-                            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::filler"}))
+                        register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
+                                             SchemaTable::InternalName{::fixy::TextView{"aten::filler"}})
                             .is_ok();
                     CRUCIBLE_TEST_ASSERT(kTest, was_registered);
                 }

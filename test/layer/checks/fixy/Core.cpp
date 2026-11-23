@@ -110,7 +110,8 @@ static_assert(::fixy::ForeignElement<float> && !::fixy::ForeignElement<bool>);
 static_assert(std::is_same_v<decltype(::fixy::mint_foreign_view(static_cast<float const*>(nullptr), 0)),
                              ::fixy::View<float const>>);
 static_assert(
-    std::is_same_v<decltype(::fixy::mint_foreign_text(static_cast<char const*>(nullptr), 0)), ::fixy::TextView>);
+    std::is_same_v<decltype(::fixy::mint_foreign_text(static_cast<char const*>(nullptr), 0)), ::fixy::ForeignText>);
+static_assert(std::is_same_v<::fixy::ForeignText, ::foundation::core::ForeignText>);
 static_assert(std::is_same_v<::fixy::GrowText, ::foundation::core::GrowText>);
 static_assert(std::is_same_v<decltype(::fixy::mint_grow_text(std::size_t{4})), ::fixy::GrowText>);
 static_assert(std::is_same_v<::fixy::HeapText, ::foundation::core::HeapText>);

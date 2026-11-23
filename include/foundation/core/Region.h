@@ -86,8 +86,8 @@
 //                       foreign ABI gives, such as the bytes of the fuzz
 //                       entry or the data of a tensor.  Each bit pattern of
 //                       the element is a value
-//   mint_foreign_text(first, count)   the TextView of such a run of
-//                       characters
+//   mint_foreign_text(first, count)   the ForeignText of such a run of
+//                       characters, which keeps that source in its type
 //   foreign_c_str(text)   the address of the first character of a CText,
 //                       for a foreign reader that reads up to the zero
 //   foreign_first(view)   the address of the first element of a View, for a
@@ -1447,18 +1447,19 @@ View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept {
     return View<T const>{first, count};
 }
 
-// The TextView of the count characters at first, which a foreign ABI gives.
+// The ForeignText of the count characters at first, which a foreign ABI
+// gives.  The text keeps its source in its type (foundation/core/Text.h).
 // The mint ends the process for a count past __PTRDIFF_MAX__ and for a null
 // pointer with a count.  As for mint_foreign_view, the caller keeps the run
 // alive, and a call stands only in an opt-out region of the class ABI.
-[[nodiscard]] inline TextView mint_foreign_text(char const* first, std::size_t count) noexcept {
+[[nodiscard]] inline ForeignText mint_foreign_text(char const* first, std::size_t count) noexcept {
     if (count > max_view_count(1)) [[unlikely]] {
         fatal("mint_foreign_text got a count past the largest count of a TextView");
     }
     if (first == nullptr && count != 0) [[unlikely]] {
         fatal("mint_foreign_text got a null pointer with a count");
     }
-    return detail::text_over_(first, count);
+    return detail::foreign_text_over_(detail::text_over_(first, count));
 }
 
 // The address of the first character of text, for a reader of a foreign ABI

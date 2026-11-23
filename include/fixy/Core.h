@@ -94,6 +94,7 @@ using ::foundation::core::for_each_enumerator_text;
 using ::foundation::core::has_enumerator_named;
 using ::foundation::core::unknown_enum_text;
 using ::foundation::core::FixedText;
+using ::foundation::core::ForeignText;
 using ::foundation::core::freeze;
 using ::foundation::core::GrowText;
 using ::foundation::core::HeapText;

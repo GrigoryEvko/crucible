@@ -21,8 +21,10 @@ namespace source = ::fixy::tags::source;
 static SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
 // The inputs here are string literals in the source, so crucible produced
-// them: they register as internal names.
-static SchemaTable::InternalName S(::fixy::TextView s) { return ::fixy::mint_tagged<source::FromInternal>(s); }
+// them: they register as internal names.  The constructor of an internal
+// name is consteval, so this helper is consteval too, and it takes only a
+// text of the program image.
+static consteval SchemaTable::InternalName S(::fixy::TextView s) { return SchemaTable::InternalName{s}; }
 
 static bool missing(::fixy::Option<SchemaTable::LookupName> const& name) { return name.is_none(); }
 
@@ -70,7 +72,8 @@ concept registers_name = requires(SchemaTable& t, Ctx const& ctx, SchemaTable::M
 template <typename Tag, typename Ctx = ::fixy::TestRunnerCtx>
 concept registers_as = registers_name<TaggedName<Tag>, Ctx>;
 static_assert(registers_name<SchemaTable::SanitizedName>);
-static_assert(registers_as<source::FromInternal>);
+static_assert(registers_name<SchemaTable::InternalName>);
+static_assert(!registers_as<source::FromInternal>, "a FromInternal tag can wrap a text of the run time");
 static_assert(!registers_as<source::Sanitized>, "a retag to Sanitized skips sanitize_schema_name");
 static_assert(!registers_as<source::External>, "a raw external name must not reach the table");
 static_assert(!registers_as<source::ABIBoundary>, "a C ABI name must pass its boundary check first");
@@ -78,10 +81,15 @@ static_assert(!registers_as<source::ABIBoundary>, "a C ABI name must pass its bo
 // The writer of a registration is the producer claim of a Vigil, or a
 // context that owns Div.  The cold init context and the foreground context
 // with no brand are neither.
-static_assert(registers_as<source::FromInternal, crucible::VigilFgCtx>);
-static_assert(registers_as<source::FromInternal, ::fixy::BgLoadCtx>);
-static_assert(!registers_as<source::FromInternal, ::fixy::ColdInitCtx>);
-static_assert(!registers_as<source::FromInternal, ::fixy::HotFgCtx>);
+static_assert(registers_name<SchemaTable::InternalName, crucible::VigilFgCtx>);
+static_assert(registers_name<SchemaTable::InternalName, ::fixy::BgLoadCtx>);
+static_assert(!registers_name<SchemaTable::InternalName, ::fixy::ColdInitCtx>);
+static_assert(!registers_name<SchemaTable::InternalName, ::fixy::HotFgCtx>);
+
+// An internal name has no default value, so each one comes from its
+// consteval constructor.
+static_assert(!std::is_default_constructible_v<SchemaTable::InternalName>);
+static_assert(!std::is_constructible_v<SchemaTable::InternalName, TaggedName<source::FromInternal>>);
 
 // The seal waits with no exit, so its context owns Div.
 template <typename Ctx>
@@ -196,11 +204,12 @@ static ::fixy::FixedText<16> op_name(uint32_t i) {
 // hash that the full table refuses.
 static SchemaHash filler_hash(uint32_t i) { return H(0x1000 + i); }
 
-// Fills the table with SCHEMA_TABLE_CAP internal names.
+// Fills the table with SCHEMA_TABLE_CAP names.  The names are texts of the
+// run time, so they come from outside, through sanitize_schema_name.
 static void fill_table(SchemaTable& t, SchemaTable::MutableView const& view) {
     for (uint32_t i = 0; i < SCHEMA_TABLE_CAP; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
-        reg(t, view, filler_hash(i), S(name.view()));
+        reg(t, view, filler_hash(i), sanitize_outside_name(filler_hash(i), name.view()));
     }
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP);
 }
@@ -259,7 +268,7 @@ static void test_binary_search_across_many() {
         // Deterministic but shuffled — test sort-on-insert.
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
         const ::fixy::FixedText<16> name = op_name(i);
-        reg(t, mv, SchemaHash{key}, S(name.view()));
+        reg(t, mv, SchemaHash{key}, sanitize_outside_name(SchemaHash{key}, name.view()));
     }
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == N);
     for (uint32_t i = 0; i < N; ++i) {
@@ -284,37 +293,55 @@ static void test_global_table_convenience() {
     ::fixy::check::pass(kTest, "  test_global_helpers:            PASSED\n");
 }
 
-static void test_empty_name_is_noop() {
+// No door gives an empty name.  The validator refuses an empty name from
+// outside, and the consteval constructor of an internal name refuses one at
+// compile time.
+static void test_empty_name_is_refused() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x77), S(::fixy::TextView{}));  // must not crash or corrupt
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         sanitize_schema_name(H(0x77), ::fixy::mint_tagged<source::External>(::fixy::TextView{})).err()
+                             == ::fixy::some(SchemaNameError::empty));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, missing(t.lookup(H(0x77))));
     ::fixy::check::pass(kTest, "  test_empty_name:                PASSED\n");
 }
 
-// A name holds the characters before its first zero, as a C reader sees it.
-static void test_name_ends_at_its_first_zero() {
+// An internal name of two parts is the name, a dot and the overload.  The same
+// parts again, and the full name as one text, are the same name of the hash,
+// so the table keeps one entry.  The overload of an empty overload adds no dot.
+static void test_internal_name_of_two_parts() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    ::fixy::FixedText<16> name{"aten::mm"};
-    name.append('\0').expect("the name fits");
-    name.append("tail").expect("the name fits");
-    reg(t, mv, H(0x78), S(name.view()));
-    CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x78)), "aten::mm"));
-    CRUCIBLE_TEST_ASSERT(kTest, eq(t.short_name(H(0x78)), "mm"));
-    ::fixy::check::pass(kTest, "  test_name_ends_at_first_zero:   PASSED\n");
+    constexpr SchemaTable::InternalName add_tensor{::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::add"}),
+                                                   ::fixy::side_as<side::SchemaOverload>(::fixy::TextView{"Tensor"})};
+    constexpr SchemaTable::InternalName relu{::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::relu"}),
+                                             ::fixy::side_as<side::SchemaOverload>(::fixy::TextView{})};
+    reg(t, mv, H(0x61), add_tensor);
+    reg(t, mv, H(0x61), add_tensor);
+    reg(t, mv, H(0x61), S("aten::add.Tensor"));
+    reg(t, mv, H(0x62), relu);
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x61)), "aten::add.Tensor"));
+    CRUCIBLE_TEST_ASSERT(kTest, eq(t.short_name(H(0x61)), "add.Tensor"));
+    CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x62)), "aten::relu"));
+    const SchemaTable::SanitizedName other_overload = sanitize_outside_name(H(0x61), "aten::add.Scalar");
+    CRUCIBLE_TEST_ASSERT(kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv,
+                                                             H(0x61), other_overload)));
+    const SchemaTable::SanitizedName no_overload = sanitize_outside_name(H(0x61), "aten::add");
+    CRUCIBLE_TEST_ASSERT(kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv,
+                                                             H(0x61), no_overload)));
+    ::fixy::check::pass(kTest, "  test_internal_name_of_two_parts: PASSED\n");
 }
 
-// Registers an internal name that starts with a zero, so it has no character
-// before its first zero.
-static void register_name_with_a_leading_zero() noexcept {
+// Registers an internal name of two parts on the hash of a different full
+// name.
+static void register_other_overload_of_one_hash() noexcept {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    ::fixy::FixedText<16> name{};
-    name.append('\0').expect("the name fits");
-    name.append("aten::mm").expect("the name fits");
-    reg(t, mv, H(0x79), S(name.view()));
+    reg(t, mv, H(0x63), S("aten::add.Tensor"));
+    reg(t, mv, H(0x63),
+        SchemaTable::InternalName{::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::add"}),
+                                  ::fixy::side_as<side::SchemaOverload>(::fixy::TextView{"Scalar"})});
 }
 
 // Registers an internal name on the hash zero, the sentinel of no schema.
@@ -324,17 +351,18 @@ static void register_name_of_the_hash_zero() noexcept {
     reg(t, mv, H(0), S("aten::mm"));
 }
 
-// An internal name that starts with a zero would be kept as an empty name,
-// and a name on the hash zero would stand for no schema.  Each is a defect of
-// the program, and the registration ends the process with the reason, in a
-// child process of expect_dies.
+// A name on the hash zero would stand for no schema, and a second internal
+// name of one hash is a collision.  Each is a defect of the program, and the
+// registration ends the process with the reason, in a child process of
+// expect_dies.  A name with no character or with a zero is a refusal of the
+// compile (the fixtures neg_schema_internal_name_*).
 static void test_refused_internal_name_ends_the_process() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
-    ::fixy::check::expect_dies(test, register_name_with_a_leading_zero,
-                               ::fixy::TextView{"crucible: the internal schema name of the hash 121 has no character "
-                                                "before its first zero"});
     ::fixy::check::expect_dies(test, register_name_of_the_hash_zero,
                                ::fixy::TextView{"crucible: an internal schema name has the hash zero"});
+    ::fixy::check::expect_dies(
+        test, register_other_overload_of_one_hash,
+        ::fixy::TextView{"crucible: the schema hash 99 names two schemas, aten::add.Tensor and aten::add.Scalar"});
     ::fixy::check::pass(kTest, "  test_refused_internal_name:     PASSED\n");
 }
 
@@ -549,7 +577,7 @@ static void test_register_names_writes_each_name_or_none() {
     // The table takes fillers until it has one place.
     for (uint32_t i = 0; t.count() < SCHEMA_TABLE_CAP - 1; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
-        reg(t, mv, filler_hash(i), S(name.view()));
+        reg(t, mv, filler_hash(i), sanitize_outside_name(filler_hash(i), name.view()));
     }
     const ::fixy::FixedArray<WalkName, 2> two_new{WalkName{.hash = H(0x45), .name = "aten::d"},
                                                   WalkName{.hash = H(0x46), .name = "aten::e"}};
@@ -584,8 +612,8 @@ int main() {
     test_outside_name_at_full_table_is_refused();
     test_internal_name_at_full_table_ends_the_process();
     test_global_table_convenience();
-    test_empty_name_is_noop();
-    test_name_ends_at_its_first_zero();
+    test_empty_name_is_refused();
+    test_internal_name_of_two_parts();
     test_refused_internal_name_ends_the_process();
     test_default_is_mutable_and_seal_flips();
     test_sealed_table_mints_no_mutable_view();

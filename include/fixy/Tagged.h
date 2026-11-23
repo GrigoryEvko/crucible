@@ -13,7 +13,11 @@
 // (Sanitized, Verified, Validated and the others that a discharge edge of
 // the catalog below enters) is EARNED, and only retag along that edge
 // reaches it.  The catalog decides which tags are earned, by reflection,
-// so no second list states it.  The constructor is not public, so no
+// so no second list states it.  A ForeignText, the text of a foreign ABI,
+// takes only a tag that an edge takes into Sanitized (BoundaryTag), so no
+// foreign text carries the tag of an internal source.
+//
+// The constructor is not public, so no
 // caller can write `Tagged<T, Src>{raw}` around a hand-built aggregate
 // and get a value that looks the same as one that a validating factory
 // produced.  This matters most for the `Declared*` alias family, whose
@@ -51,6 +55,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/TrustLattice.h>
 #include <foundation/core/Equatable.h>
+#include <foundation/core/Text.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/reflect/Instance.h>
 
@@ -232,6 +237,24 @@ namespace detail::earned_tag {
 template <typename Tag>
 concept MintableTag = ValidTaggedTag<Tag> && (!detail::earned_tag::is_earned(^^Tag));
 
+// A tag of a value from outside the process: a mintable tag that an edge of
+// the catalog takes into Sanitized.  The input sanitizer discharges such a
+// tag, so the tag names a place where data from outside enters the process:
+// External, ABIBoundary, FromUser, the path tags and the others.
+// FromInternal and each tag of a value that the program made have no such
+// edge.  Sanitized itself is earned, so it is no mintable tag.  A text that
+// a foreign ABI gives takes only such a tag (mint_tagged of a ForeignText
+// below).
+template <typename Tag>
+concept BoundaryTag = MintableTag<Tag> && RetagAllowed<Tag, tags::source::Sanitized>;
+
+// A tag and a value that the factory mint_tagged admits: a mintable tag, and
+// a value that is no ForeignText.  A ForeignText takes its tag at its own
+// door below, which admits only a BoundaryTag, so no foreign text carries
+// the tag of an internal source.
+template <typename Tag, typename T>
+concept MintableTagOf = MintableTag<Tag> && !std::same_as<std::remove_cvref_t<T>, ::foundation::core::ForeignText>;
+
 template <typename T, typename Tag>
 class Tagged;
 
@@ -240,7 +263,7 @@ class Tagged;
 // Sanitized, Verified or Validated, comes from retag and from nothing
 // else.
 template <typename Tag, typename T>
-    requires MintableTag<Tag>
+    requires MintableTagOf<Tag, T>
 [[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
 
 // Moves the value under a new tag along an admitted edge.  The member
@@ -284,7 +307,7 @@ private:
         : impl_{key_{}, std::move(v), typename lattice_type::element_type{}} {}
 
     template <typename S, typename U>
-        requires MintableTag<S>
+        requires MintableTagOf<S, U>
     friend constexpr Tagged<U, S> mint_tagged(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
 
     template <typename To, typename U, typename From>
@@ -357,9 +380,20 @@ public:
 };
 
 template <typename Tag, typename T>
-    requires MintableTag<Tag>
+    requires MintableTagOf<Tag, T>
 [[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return Tagged<T, Tag>{std::move(value)};
+}
+
+// The characters of a foreign text under the tag of its boundary.  The tag is
+// a BoundaryTag, so a foreign text never carries the tag of an internal
+// source, and its characters reach Sanitized only by the retag of a
+// sanitizer.
+template <typename Tag>
+    requires BoundaryTag<Tag>
+[[nodiscard]] constexpr Tagged<::foundation::core::TextView, Tag>
+mint_tagged(::foundation::core::ForeignText text) noexcept {
+    return mint_tagged<Tag>(text.characters());
 }
 
 template <typename To, typename T, typename From>

@@ -671,7 +671,7 @@ void test_name_of_zero_fold_registers() {
     const bool is_registered =
         table
             .register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash,
-                           ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::zero_fold"}))
+                           crucible::SchemaTable::InternalName{::fixy::TextView{"aten::zero_fold"}})
             .is_ok();
     CRUCIBLE_FATAL_INVARIANT(is_registered && "the table takes a name whose fold is zero");
     const ::fixy::Option<crucible::SchemaTable::LookupName> stored = table.lookup(hash);

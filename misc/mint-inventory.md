@@ -49,7 +49,7 @@ that the axis does not apply to the row.
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | HS14: 4 |
-| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 9 |
+| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 10 |
 | `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 3 |
 | `mint_dag_node(foundation::effects::Alloc, foundation::core::Box<foundation::core::BumpArena<crucible::DagArena> >&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 12 |
@@ -202,7 +202,8 @@ that the axis does not apply to the row.
 | `mint_sequence_source` | `include/fixy/Stale.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 5 |
-| `mint_tagged` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 17 |
+| `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 19 |
+| `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 19 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -419,4 +420,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 84 | 48 | 27 | 9 | 0 | 8 |
-| substrate (`include/foundation/`, `include/fixy/`) | 176 | 63 | 109 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 177 | 63 | 110 | 4 | 0 | 3 |

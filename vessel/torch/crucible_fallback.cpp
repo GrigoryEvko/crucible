@@ -357,10 +357,13 @@ static void keep_schema_facts(::fixy::AddressKey const& key, ::fixy::Option<Sche
 }
 
 // The two parts of the name of an operator of PyTorch, as the dispatcher
-// gives them: "namespace::name" and the overload, which can be empty.
+// gives them: "namespace::name" and the overload, which can be empty.  The
+// parts are outside data, so each one keeps the tag of its boundary.
+using OperatorNamePart = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::ABIBoundary>;
+
 struct OperatorNameParts {
-    ::fixy::TextView base{};
-    ::fixy::TextView overload{};
+    OperatorNamePart base{};
+    OperatorNamePart overload{};
 };
 
 // The reason of a refusal of the door of an outside name, for a report.
@@ -397,13 +400,15 @@ struct OperatorNameParts {
 CRUCIBLE_COLD static void refuse_schema_name(::fixy::AddressKey const& key, OperatorNameParts const& name,
                                              crucible::vessel::OutsideNameRefusal refused) noexcept {
     keep_schema_facts(key, ::fixy::none);
-    const bool has_overload = name.overload.size() != 0;
-    const std::size_t characters = name.base.size() + (has_overload ? 1 + name.overload.size() : 0);
+    const ::fixy::TextView base = name.base.value();
+    const ::fixy::TextView overload = name.overload.value();
+    const bool has_overload = overload.size() != 0;
+    const std::size_t characters = base.size() + (has_overload ? 1 + overload.size() : 0);
     ::fixy::report(::fixy::Sink::Err,
                    "crucible: the fallback records no operation of the operator {}{}{} ({} characters), and the "
                    "operator runs eagerly: {}\n",
-                   shown_part(name.base), has_overload ? ::fixy::TextView{"."} : ::fixy::TextView{},
-                   shown_part(name.overload), characters, refusal_text(refused));
+                   shown_part(base), has_overload ? ::fixy::TextView{"."} : ::fixy::TextView{}, shown_part(overload),
+                   characters, refusal_text(refused));
 }
 
 // The facts of an operator that the cache does not hold, from the two parts
@@ -427,10 +432,11 @@ CRUCIBLE_COLD static ::fixy::Option<SchemaInfo> record_schema_miss(crucible::Vig
     // door refuses such a name too.  The door of the schema hash maps a fold
     // of zero, so a name never gives the sentinel of no schema
     // (schema_hash_of_name of entry_slots.h).
+    const ::fixy::TextView overload = name.overload.value();
     ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
     const bool is_joined =
-        full_name.append(name.base).is_ok()
-        && (name.overload.size() == 0 || (full_name.append('.').is_ok() && full_name.append(name.overload).is_ok()));
+        full_name.append(name.base.value()).is_ok()
+        && (overload.size() == 0 || (full_name.append('.').is_ok() && full_name.append(overload).is_ok()));
     if (!is_joined) [[unlikely]] {
         refuse_schema_name(key, name, crucible::vessel::OutsideNameRefusal::too_long);
         return ::fixy::none;
@@ -440,6 +446,8 @@ CRUCIBLE_COLD static ::fixy::Option<SchemaInfo> record_schema_miss(crucible::Vig
     // The tables take names only from a thread that holds a Vigil's producer
     // claim, which the caller checked.  The global table is sealed by now,
     // so the name goes to the late table, which the vessel library reads.
+    // The joined copy of the parts is outside data too, so it takes the tag
+    // of the boundary again.
     return crucible::vessel::register_outside_schema_name(
                vigil, schema_hash, ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(full_name.view()))
         .match(
@@ -447,7 +455,7 @@ CRUCIBLE_COLD static ::fixy::Option<SchemaInfo> record_schema_miss(crucible::Vig
                 // Half of what the phase derivation reads to name an
                 // operation an optimizer operation.  The overload never
                 // carries the infix, so the base name is the whole question.
-                const SchemaInfo info{schema_hash, mutable_op, is_foreach_op_name(name.base),
+                const SchemaInfo info{schema_hash, mutable_op, is_foreach_op_name(name.base.value()),
                                       without_structural_scalars(schema_hash, data_by_type)};
                 keep_schema_facts(key, ::fixy::some(info));
                 return ::fixy::Option<SchemaInfo>::some(info);
@@ -519,8 +527,10 @@ get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op, const c10
     // (add.out: out(a!)). FunctionSchema::is_mutable() checks if any
     // argument has AliasInfo with isWrite() == true.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch gives the operator name in two std::string parts")
-    const ::fixy::TextView base_name = ::fixy::mint_foreign_text(name.name.data(), name.name.size());
-    const ::fixy::TextView overload = ::fixy::mint_foreign_text(name.overload_name.data(), name.overload_name.size());
+    const OperatorNamePart base_name = ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(
+        ::fixy::mint_foreign_text(name.name.data(), name.name.size()));
+    const OperatorNamePart overload = ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(
+        ::fixy::mint_foreign_text(name.overload_name.data(), name.overload_name.size()));
     const bool mutable_op = schema.is_mutable();
     const DataArguments data_by_type = data_arguments_of(schema);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

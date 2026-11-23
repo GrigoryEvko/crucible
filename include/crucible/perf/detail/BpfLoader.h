@@ -138,7 +138,7 @@ concept CtxFitsBpfLoad =
     while (name[count] != '\0') {
         ++count;
     }
-    return ::fixy::mint_foreign_text(name, count);
+    return ::fixy::mint_foreign_text(name, count).characters();
 }
 
 // The switches CRUCIBLE_PERF_QUIET and CRUCIBLE_PERF_VERBOSE of the

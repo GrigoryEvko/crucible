@@ -75,7 +75,9 @@ void remove_the_fifo() noexcept {
 }
 
 // The text of the path of the FIFO.
-[[nodiscard]] ::fixy::TextView fifo_text() noexcept { return ::fixy::mint_foreign_text(fifo_path, fifo_path_length); }
+[[nodiscard]] ::fixy::TextView fifo_text() noexcept {
+    return ::fixy::mint_foreign_text(fifo_path, fifo_path_length).characters();
+}
 
 // Installs the handler of SIGALRM with no SA_RESTART, and a timer that raises
 // the signal each 2 ms.

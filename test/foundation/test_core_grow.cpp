@@ -461,7 +461,7 @@ void test_foreign_doors() {
     View<float const> const view = ::foundation::core::mint_foreign_view(&*numbers.get(0).expect("4 elements"), 4);
     CRUCIBLE_TEST_ASSERT(kTest, view.size() == 4 && *view.get(3).expect("3 is below the count") > 3.5f);
     FixedArray<char, 2> const letters{'o', 'k'};
-    TextView const text = ::foundation::core::mint_foreign_text(&*letters.get(0).expect("2 elements"), 2);
+    TextView const text = ::foundation::core::mint_foreign_text(&*letters.get(0).expect("2 elements"), 2).characters();
     CRUCIBLE_TEST_ASSERT(kTest, text == TextView{"ok"});
     CRUCIBLE_TEST_ASSERT(kTest,
                          ::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 0).size() == 0);

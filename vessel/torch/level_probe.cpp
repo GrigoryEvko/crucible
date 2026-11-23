@@ -59,7 +59,7 @@ extern "C" {
 uint64_t crucible_level_abi_version(void) noexcept { return crucible::vessel::kLevelProbeAbiVersion; }
 
 uint32_t crucible_level_pick(char const* request, uint64_t size) noexcept {
-    ::foundation::core::TextView const text = ::foundation::core::mint_foreign_text(request, size);
+    ::foundation::core::TextView const text = ::foundation::core::mint_foreign_text(request, size).characters();
     ::foundation::os::X86Level const level =
         ::foundation::os::require_x86_level(::foundation::os::read_x86_feature_words(), text);
     return static_cast<uint32_t>(level);

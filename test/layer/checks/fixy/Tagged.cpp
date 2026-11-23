@@ -68,6 +68,26 @@ static_assert(MintableTag<tags::source::External> && MintableTag<tags::source::F
 static_assert(MintableTag<tags::source::X86Pinned> && MintableTag<tags::source::ArmPinned>
                   && MintableTag<tags::source::PortablePinned>,
               "an edge inside one pin family changes a parameter and records no check, so every pin is mintable");
+// The tags of a boundary, read off the catalog: each tag that an edge takes
+// into Sanitized.  A foreign text takes only such a tag, and the generic
+// factory takes no foreign text.
+static_assert(BoundaryTag<tags::source::External> && BoundaryTag<tags::source::ABIBoundary>
+                  && BoundaryTag<tags::source::FromUser> && BoundaryTag<tags::source::FromDb>
+                  && BoundaryTag<tags::source::FromConfig> && BoundaryTag<tags::source::FromUserPath>
+                  && BoundaryTag<tags::source::FromEnvPath> && BoundaryTag<tags::source::FromConfigPath>,
+              "a tag that the input sanitizer discharges names a boundary of the process");
+static_assert(!BoundaryTag<tags::source::FromInternal> && !BoundaryTag<tags::source::Interned>
+                  && !BoundaryTag<tags::source::Sanitized> && !BoundaryTag<tags::source::Recorded>
+                  && !BoundaryTag<tags::source::CipherPath> && !BoundaryTag<tags::trust::Unverified>,
+              "a tag of a value that the program made, or of a check, names no boundary");
+static_assert(MintableTagOf<tags::source::FromInternal, ::foundation::core::TextView>
+                  && !MintableTagOf<tags::source::FromInternal, ::foundation::core::ForeignText>
+                  && !MintableTagOf<tags::source::External, ::foundation::core::ForeignText const&>,
+              "a foreign text takes its tag only at its own door");
+static_assert(
+    std::is_same_v<decltype(mint_tagged<tags::source::ABIBoundary>(std::declval<::foundation::core::ForeignText>())),
+                   Tagged<::foundation::core::TextView, tags::source::ABIBoundary>>,
+    "the door of a foreign text gives its characters under the tag of the boundary");
 static_assert(!std::is_default_constructible_v<Tagged<int, tags::trust::Verified>>
                   && std::is_default_constructible_v<Tagged<int, tags::source::FromUser>>,
               "an earned tag has no empty-slot door: a default value under it would claim a check that never ran");

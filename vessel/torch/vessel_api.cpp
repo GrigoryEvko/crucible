@@ -497,7 +497,7 @@ int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const 
     // sanitize_schema_name, the sanitizer of the boundary.  A sealed global
     // table sends the name to the late table, so no seal drops it.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller gives the name as a pointer, and strnlen gave its length")
-    const ::fixy::TextView name_text = ::fixy::mint_foreign_text(name, len);
+    const auto name_text = ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(::fixy::mint_foreign_text(name, len));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     // The tables take names only from the thread that holds the producer
@@ -538,16 +538,16 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     if (path == nullptr) return 0;
     const size_t path_len = ::strnlen(path, MAX_PATH_LEN + 1);
     if (path_len == 0 || path_len > MAX_PATH_LEN) return 0;
-    const ::fixy::TextView path_text = ::fixy::mint_foreign_text(path, path_len);
+    const auto path_text =
+        ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::mint_foreign_text(path, path_len));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     // The path checks of the base refuse a ".." part, as each other open of
     // a path that a caller gives.
     using Sanitized = ::fixy::Path<::fixy::tags::source::Sanitized>;
-    const ::fixy::Option<Sanitized> sanitized =
-        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(path_text))
-            .match([](Sanitized checked) noexcept { return ::fixy::Option<Sanitized>::some(std::move(checked)); },
-                   [](::fixy::PathTraversalError) noexcept { return ::fixy::Option<Sanitized>{::fixy::none}; });
+    const ::fixy::Option<Sanitized> sanitized = ::fixy::sanitize_path(path_text).match(
+        [](Sanitized checked) noexcept { return ::fixy::Option<Sanitized>::some(std::move(checked)); },
+        [](::fixy::PathTraversalError) noexcept { return ::fixy::Option<Sanitized>{::fixy::none}; });
     if (sanitized.is_none()) return 0;
 
     // The export runs on a thread of the caller, outside the hot path.  The

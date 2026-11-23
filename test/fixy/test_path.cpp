@@ -120,10 +120,10 @@ void check_every_error_variant() {
         // absolute path, so the length rule is the one that fires.
         std::string huge(::fixy::kPathBytes + 1, 'a');
         huge[0] = '/';
-        expect_err(pt::check_no_dotdot(::fixy::mint_foreign_text(huge.data(), huge.size())),
+        expect_err(pt::check_no_dotdot(::fixy::mint_foreign_text(huge.data(), huge.size()).characters()),
                    PathTraversalError::TooLong, "check_no_dotdot oversize path");
         // A text of exactly the bound fits.
-        expect_ok(pt::check_no_dotdot(::fixy::mint_foreign_text(huge.data(), ::fixy::kPathBytes)),
+        expect_ok(pt::check_no_dotdot(::fixy::mint_foreign_text(huge.data(), ::fixy::kPathBytes).characters()),
                   "check_no_dotdot path of the bound");
     }
 
@@ -134,7 +134,7 @@ void check_every_error_variant() {
         // embedded-NUL rule must reject.
         std::string nul_path = "/good\0/etc/passwd";
         nul_path.resize(17);
-        expect_err(pt::check_no_dotdot(::fixy::mint_foreign_text(nul_path.data(), nul_path.size())),
+        expect_err(pt::check_no_dotdot(::fixy::mint_foreign_text(nul_path.data(), nul_path.size()).characters()),
                    PathTraversalError::EmbeddedNul, "check_no_dotdot embedded NUL");
     }
 
@@ -235,17 +235,19 @@ void check_every_admitted_lane() {
                         "sanitize_path of a text with ..");
     {
         const std::string huge(::fixy::kPathBytes + 1, 'a');
-        expect_sanitize_err(::fixy::sanitize_path(external(::fixy::mint_foreign_text(huge.data(), huge.size()))),
-                            PathTraversalError::TooLong, "sanitize_path of a text past the bound");
-        expect_sanitize_ok(::fixy::sanitize_path(external(::fixy::mint_foreign_text(huge.data(), ::fixy::kPathBytes))),
+        expect_sanitize_err(
+            ::fixy::sanitize_path(mint_tagged<src::External>(::fixy::mint_foreign_text(huge.data(), huge.size()))),
+            PathTraversalError::TooLong, "sanitize_path of a text past the bound");
+        expect_sanitize_ok(::fixy::sanitize_path(
+                               mint_tagged<src::External>(::fixy::mint_foreign_text(huge.data(), ::fixy::kPathBytes))),
                            "sanitize_path of a text of the bound");
     }
     {
         std::string nul_path = "/good\0/etc/passwd";
         nul_path.resize(17);
-        expect_sanitize_err(
-            ::fixy::sanitize_path(external(::fixy::mint_foreign_text(nul_path.data(), nul_path.size()))),
-            PathTraversalError::EmbeddedNul, "sanitize_path of a text with a zero byte");
+        expect_sanitize_err(::fixy::sanitize_path(mint_tagged<src::External>(
+                                ::fixy::mint_foreign_text(nul_path.data(), nul_path.size()))),
+                            PathTraversalError::EmbeddedNul, "sanitize_path of a text with a zero byte");
     }
 
     // A sanitized path re-enters the sanitizer through the identity

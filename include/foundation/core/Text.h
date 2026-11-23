@@ -9,6 +9,8 @@
 //                   one, for a call of the kernel that reads up to the zero
 //   FixedText<N>    an owned buffer of N characters and the count of the
 //                   characters that it holds
+//   ForeignText     a borrowed run of characters that a foreign ABI gives,
+//                   which keeps that source in its type
 //
 // A CText comes from a string literal.  The consteval constructor proves the
 // zero at the end and refuses a zero before it, so a reader that stops at the
@@ -78,6 +80,7 @@ namespace foundation::core {
 
 class TextView;
 class CText;
+class ForeignText;
 
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
@@ -98,6 +101,7 @@ void text_literal_holds_a_zero_byte_before_its_end() noexcept;
 [[nodiscard]] constexpr TextView text_over_(char const* first, std::size_t size) noexcept;
 [[nodiscard]] constexpr char const* c_text_first_(CText text) noexcept;
 [[nodiscard]] constexpr CText c_text_over_(char const* first, std::size_t size) noexcept;
+[[nodiscard]] constexpr ForeignText foreign_text_over_(TextView characters) noexcept;
 
 template <std::size_t Capacity>
 [[nodiscard]] constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept;
@@ -239,6 +243,25 @@ public:
     [[nodiscard]] constexpr TextView view() const noexcept { return TextView{first_, size_}; }
 };
 
+// The characters of a run that a foreign ABI gives, which mint_foreign_text of
+// foundation/core/Region.h makes.  The type keeps the source of the
+// characters: no door that takes a TextView takes a ForeignText, and the
+// provenance door of fixy/Tagged.h gives the characters only a tag that names
+// a boundary, such as ABIBoundary or External.  So no foreign text carries
+// the tag of an internal source.  characters() gives the TextView for a read
+// that claims no source: a hash, a print, or a parse that checks each
+// character.
+class ForeignText {
+    TextView characters_{};
+
+    friend constexpr ForeignText detail::foreign_text_over_(TextView characters) noexcept;
+
+    constexpr explicit ForeignText(TextView characters) noexcept : characters_{characters} {}
+
+public:
+    [[nodiscard]] constexpr TextView characters() const noexcept { return characters_; }
+};
+
 // An owned buffer of Capacity characters.  The count of the characters that
 // it holds is at most Capacity in each state, so view() never reads past
 // the buffer.
@@ -351,6 +374,10 @@ constexpr char const* c_text_first_(CText text) noexcept { return text.first_; }
 // foundation::os::PathText or the name of an entry that the kernel writes
 // with its zero.
 constexpr CText c_text_over_(char const* first, std::size_t size) noexcept { return CText{first, size}; }
+
+// The ForeignText of the characters of a foreign run.  The caller is the door
+// that checked the raw parts of the run, mint_foreign_text.
+constexpr ForeignText foreign_text_over_(TextView characters) noexcept { return ForeignText{characters}; }
 
 template <std::size_t Capacity>
 constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept {

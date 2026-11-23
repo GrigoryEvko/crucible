@@ -1681,6 +1681,16 @@ fixy_neg_compile_test(neg_tagged_mint_earned_tag
   "no matching function for call to .mint_tagged<fixy::tags::source::Sanitized>"
   "satisfaction of .MintableTag<Tag>.")
 
+# A foreign text takes only the tag of a boundary that the input sanitizer
+# discharges.  A FromInternal tag on it fails the constraint of its door,
+# also through a helper that deduces the type of the text.
+fixy_neg_compile_test(neg_tagged_foreign_text_from_internal
+  "no matching function for call to .mint_tagged<fixy::tags::source::FromInternal>\\(foundation::core::ForeignText\\)."
+  "required for the satisfaction of .BoundaryTag<Tag>. \\[with Tag = fixy::tags::source::FromInternal\\]")
+fixy_neg_compile_test(neg_tagged_foreign_text_through_helper
+  "no matching function for call to .mint_tagged<fixy::tags::source::FromInternal>\\(foundation::core::ForeignText&\\)."
+  "required for the satisfaction of .BoundaryTag<Tag>. \\[with Tag = fixy::tags::source::FromInternal\\]")
+
 fixy_neg_compile_test(neg_tagged_default_earned_tag
   "no matching function for call to .fixy::Tagged<int, fixy::tags::trust::Verified>::Tagged\\(<brace-enclosed initializer list>\\)."
   "satisfaction of .MintableTag<Tag>.")

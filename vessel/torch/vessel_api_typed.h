@@ -457,10 +457,10 @@ register_outside_schema_name(VigilType& vigil, crucible::SchemaHash hash,
 // or the code of the refusal of register_outside_schema_name.
 template <class VigilType>
     requires std::same_as<VigilType, crucible::Vigil>
-[[nodiscard, gnu::cold]] int register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
-                                                        ::fixy::TextView name) noexcept {
-    return register_outside_schema_name(vigil, crucible::SchemaHash{schema_hash},
-                                        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name))
+[[nodiscard, gnu::cold]] int
+register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
+                           ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::ABIBoundary> const& name) noexcept {
+    return register_outside_schema_name(vigil, crucible::SchemaHash{schema_hash}, name)
         .match([](::fixy::Unit) noexcept { return int{CRUCIBLE_SCHEMA_NAME_REGISTERED}; },
                [](OutsideNameRefusal refused) noexcept { return schema_name_code_of(refused); });
 }

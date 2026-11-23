@@ -50,7 +50,7 @@ void write_struct(::fixy::TextView name) noexcept {
     template for (constexpr std::meta::info member : members) {
         constexpr auto identifier = std::meta::identifier_of(member);
         ::fixy::report(::fixy::Sink::Out, "field {} {} {}\n", name,
-                       ::fixy::mint_foreign_text(identifier.data(), identifier.size()),
+                       ::fixy::mint_foreign_text(identifier.data(), identifier.size()).characters(),
                        static_cast<std::size_t>(std::meta::offset_of(member).bytes));
     }
 #pragma GCC diagnostic pop
@@ -66,7 +66,7 @@ void write_constants() noexcept {
     template for (constexpr std::meta::info enumerator : enumerators) {
         constexpr auto identifier = std::meta::identifier_of(enumerator);
         ::fixy::report(::fixy::Sink::Out, "constant {} {}\n",
-                       ::fixy::mint_foreign_text(identifier.data(), identifier.size()),
+                       ::fixy::mint_foreign_text(identifier.data(), identifier.size()).characters(),
                        static_cast<long long>([:enumerator:]));
     }
 #pragma GCC diagnostic pop

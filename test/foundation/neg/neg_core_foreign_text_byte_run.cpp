@@ -5,5 +5,5 @@
 
 int main() {
     auto const text = ::foundation::core::mint_foreign_text(static_cast<unsigned char const*>(nullptr), 0);
-    return static_cast<int>(text.size());
+    return static_cast<int>(text.characters().size());
 }

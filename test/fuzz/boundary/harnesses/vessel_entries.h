@@ -282,7 +282,8 @@ inline void check_name(InputCursor& cursor, NameForm form) noexcept {
     }
     const ::fixy::TextView name = text.view();
     const std::size_t held_before = names_held();
-    const int code = vessel::register_schema_name_typed(harness_vigil(), hash, name);
+    const int code = vessel::register_schema_name_typed(harness_vigil(), hash,
+                                                        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name));
 
     const bool is_refused =
         hash == 0 || name.size() == 0 || name.size() > SCHEMA_NAME_MAX || ::fixy::find(name, '\0').is_some();

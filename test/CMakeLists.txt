@@ -4291,6 +4291,17 @@ crucible_neg_compile_test(neg_schema_register_no_div
   "no matching function for call to .crucible::SchemaTable::register_name\\(const fixy::ColdInitCtx&, "
   "satisfaction of .CtxMayEnterWriteSection<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 
+# An internal name is a text of the program image: its constructor is
+# consteval.  A copy of a foreign text in a buffer, the old route of the
+# boxed fallback, is no constant, and a part with a zero stops the check of
+# the constructor.
+crucible_neg_compile_test(neg_schema_internal_name_from_foreign_copy
+  "call to consteval function .crucible::SchemaTable::InternalName\\(full_name.foundation::core::FixedText<64>::view\\(\\)\\). is not a constant expression"
+  "the value of .full_name. is not usable in a constant expression")
+crucible_neg_compile_test(neg_schema_internal_name_holds_zero
+  "call to non-.constexpr. function .void crucible::detail::internal_schema_name_holds_a_zero_byte\\(\\)."
+  "neg_schema_internal_name_holds_zero.cpp:24")
+
 # The names and schemas in the two tables come from the ops that a Vigil
 # records, so a mutable view, and a trace load that registers names, ask
 # for the context of a Vigil's producer claim.

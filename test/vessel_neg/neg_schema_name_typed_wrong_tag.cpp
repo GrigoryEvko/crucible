@@ -5,7 +5,7 @@
 // that expects the same text with source::External.
 //
 // The Interned tag says that the schema table owns the characters, and that
-// the table admitted them only as Sanitized or FromInternal names.  If an
+// the table admitted them only as Sanitized or internal names.  If an
 // interned name could pass as raw External input, a lane that reads only
 // sanitizer output could not tell the two apart.  The type system refuses
 // the conversion.

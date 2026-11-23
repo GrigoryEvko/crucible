@@ -1,5 +1,5 @@
-// mint_foreign_text gives the one TextView of a foreign run, so a call that
-// drops its result is refused.
+// mint_foreign_text gives the one ForeignText of a foreign run, so a call
+// that drops its result is refused.
 
 #include <foundation/core/Region.h>
 

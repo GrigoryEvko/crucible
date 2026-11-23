@@ -318,7 +318,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
             // process, so it carries hash_family::FamilyB and must never key
             // anything that outlives the run.
             meta.grad_fn_hash = ::crucible::grad_fn_hash(
-                fnv1a_text(::fixy::mint_foreign_text(grad_fn_name.data(), grad_fn_name.size())));
+                fnv1a_text(::fixy::mint_foreign_text(grad_fn_name.data(), grad_fn_name.size()).characters()));
         }
         meta.output_nr = static_cast<uint8_t>(torch::autograd::impl::get_autograd_meta(tensor)->output_nr_ & 0xFF);
     }
@@ -1451,10 +1451,11 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // sealed by now, so the name goes to the late table, which the vessel
         // library reads.  PyTorch's operator names are compiled into the
         // generated headers this table was built from, so crucible produced
-        // the name.
-        const QualifiedOpName name{kRow};
-        vigil.register_schema_name(kSchemaHash,
-                                   ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_text().view()));
+        // the name.  The two parts of the row are texts of the program image,
+        // and the constructor of the internal name checks them at compile time.
+        vigil.register_schema_name(kSchemaHash, crucible::SchemaTable::InternalName{
+                                                    ::fixy::side_as<crucible::side::SchemaBaseName>(kRow.name),
+                                                    ::fixy::side_as<crucible::side::SchemaOverload>(kRow.overload)});
         schema_name_registered.store_release(true);
     }
 
