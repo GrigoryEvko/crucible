@@ -330,6 +330,7 @@ that the axis does not apply to the row.
 | `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 10 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_epoch_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 12 |
+| `mint_erased_address` | `include/foundation/core/CallRef.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_fixed_array` | `include/foundation/core/Array.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 | `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 8 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
@@ -417,4 +418,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 177 | 62 | 111 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 178 | 62 | 112 | 4 | 0 | 3 |

@@ -49,7 +49,7 @@ test/fixy/ | discarded-temporary | 3 | - | -
 test/fixy/ | double-consume | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
 test/fixy/ | unconsumed | 119 | - | -
 test/foundation/ | borrow-move-out | 2 | - | test_core_hole spends one lent Hole two times on purpose, to show that the second spend ends the process
-test/foundation/ | double-consume | 2 | - | test_core_hole spends one lent Hole two times on purpose, to show that the second spend ends the process
+test/foundation/ | double-consume | 7 | - | test_core_hole spends one lent Hole two times on purpose, and test_moved_from_token and test_core_owner_probe move a token and a region through the reference helper through() and then again on purpose, to show that the second spend and the moved-from value end the process
 test/foundation/ | unconsumed | 8 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
 test/layer/checks/foundation/core/ | unconsumed | 1 | - | -
