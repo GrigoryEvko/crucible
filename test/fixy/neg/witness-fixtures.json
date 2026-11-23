@@ -337,6 +337,11 @@
       "constructor": "(?<!~)\\bBrandedView\\("
     },
     {
+      "name": "neg_witness_core_bumparena_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bBumpArena\\("
+    },
+    {
       "name": "neg_witness_core_committedrangedoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "(?<!~)\\bCommittedRangeDoor\\("
@@ -495,6 +500,16 @@
       "name": "neg_witness_core_detail_zipstage_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bZipStage\\("
+    },
+    {
+      "name": "neg_witness_core_epoch_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "(?<!~)\\bEpoch\\("
+    },
+    {
+      "name": "neg_witness_core_epocharena_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bEpochArena\\("
     },
     {
       "name": "neg_witness_core_fixedheaparray_direct_construction",
@@ -1624,6 +1639,18 @@
     {
       "type": "foundation::core::Alloc",
       "header": "foundation/core/AllocTag.h"
+    },
+    {
+      "type": "foundation::core::BumpArena<forge::arena>",
+      "header": "foundation/core/BumpArena.h"
+    },
+    {
+      "type": "foundation::core::EpochArena<forge::owner::arena>",
+      "header": "foundation/core/BumpArena.h"
+    },
+    {
+      "type": "foundation::core::Epoch<foundation::core::EpochOf<forge::owner::arena>>",
+      "header": "foundation/core/BumpArena.h"
     },
     {
       "type": "foundation::alloc::Layout",

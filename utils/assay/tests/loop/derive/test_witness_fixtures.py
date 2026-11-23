@@ -63,6 +63,29 @@ def text_cases(expect: testing.Expect) -> None:
         "witness <planted/Open.h> private | planted::Open | planted::Open{forge::lvalue<forge::brand>()}\n"
     ).witnesses[0]
     expect("a fixture whose expression names the brand declares it", "struct brand {};" in writer.render(branded))
+    expect(
+        "a fixture declares no tag of an arena when its expression names none",
+        "arena_family_brand" not in text and "struct owner" not in text,
+    )
+    family = ruletable.parse(
+        "witness <planted/Open.h> private | planted::Open | planted::Open{forge::lvalue<forge::arena>()}\n"
+    ).witnesses[0]
+    family_text = writer.render(family)
+    expect(
+        "a fixture whose expression names the family tag declares it, and no owner",
+        "struct [[= ::foundation::brand::arena_family_brand{}]] arena final {};" in family_text
+        and "struct owner" not in family_text,
+    )
+    member = ruletable.parse(
+        "witness <planted/Open.h> private | planted::Open | planted::Open{forge::lvalue<forge::owner::arena>()}\n"
+    ).witnesses[0]
+    member_text = writer.render(member)
+    expect(
+        "a fixture whose expression names the member tag declares its owner with one member arena, and no family tag",
+        "struct owner {" in member_text
+        and "::foundation::core::EpochArena<arena> member" in member_text
+        and "arena_family_brand" not in member_text,
+    )
     manifest = writer.manifest_text((witness,))
     pattern = manifest_pattern(manifest)
     expect(

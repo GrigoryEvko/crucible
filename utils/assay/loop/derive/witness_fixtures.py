@@ -85,6 +85,30 @@ BRAND_DECLARATION = """
 // foundation::brand::IsBrand asks of a brand.
 struct brand {};
 """
+# The tags of arenas that an expression can name (foundation/core/BumpArena.h).  forge::arena is a family tag, which
+# no rule counts.  forge::owner::arena is a member tag: the rule brand-escape asks for one member of an arena of the
+# tag in its owner, so the owner holds that member.  The rule also refuses a local arena of a member tag, so a row of
+# such an arena puts its construction in an operand of sizeof.  Only a fixture with an expression that names a tag
+# holds its declaration.
+ARENA_DECLARATION = """
+// The family tag of arenas that the expression names.
+struct [[= ::foundation::brand::arena_family_brand{}]] arena final {};
+"""
+OWNER_DECLARATION = """
+// The owner of the one arena of the member tag that the expression names.
+struct owner {
+    struct [[= ::foundation::brand::arena_member_brand{}]] arena final {};
+    ::foundation::core::EpochArena<arena> member =
+        ::foundation::core::mint_epoch_arena<arena>(::foundation::core::ByteCount{64});
+};
+"""
+# The declarations of the namespace forge, each with the name that an expression spells to need it, in the order of
+# the fixture.
+FORGE_DECLARATIONS = (
+    ("forge::brand", BRAND_DECLARATION),
+    ("forge::arena", ARENA_DECLARATION),
+    ("forge::owner::", OWNER_DECLARATION),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +173,7 @@ def constructor_pattern(name: str) -> str:
 
 def render(witness: ruletable.Witness) -> str:
     """Return the text of the fixture of a witness row."""
-    brand = BRAND_DECLARATION if "forge::brand" in witness.expression else ""
+    declarations = "".join(text for name, text in FORGE_DECLARATIONS if name in witness.expression)
     return f"""// Written by `{WRITER}` from the witness row of
 // {witness.type_} in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
@@ -173,7 +197,7 @@ namespace forge {{
 // construction, so no fixture links, and neither stand-in has a body.
 template <class T> T& lvalue() noexcept;
 template <class T> T&& rvalue() noexcept;
-{brand}}}  // namespace forge
+{declarations}}}  // namespace forge
 
 int main() {{
     [[maybe_unused]] auto forged = {witness.expression};

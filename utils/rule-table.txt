@@ -185,7 +185,9 @@
 #       names it from include/.  EXPRESSION is a construction that a forger can
 #       write, with the raw data given to the constructor.
 #       forge::lvalue<T>() and forge::rvalue<T>() give a T& and a T&& of each
-#       type, and forge::brand gives a brand.  REFUSAL is the refusal of the
+#       type, and forge::brand gives a brand.  forge::arena gives a family
+#       tag of arenas, and forge::owner::arena a member tag of arenas, whose
+#       owner holds its one member arena.  REFUSAL is the refusal of the
 #       compiler: private, deleted or no-match.  `loop derive witness-fixtures`
 #       (utils/assay/loop/derive/witness_fixtures.py) writes one negative
 #       fixture for each row, and the fixture must see that refusal.  The rule
@@ -671,6 +673,15 @@ witness <foundation/effects/ImageRead.h> private | foundation::effects::host::Im
 # friend is the owner of the atoms, which only the three contexts and
 # extract_bare build.
 witness <foundation/core/AllocTag.h> private | foundation::core::Alloc | foundation::core::Alloc{}
+# An arena owns its blocks, and only the door of its brand builds one, so a
+# forger with a block size gets no arena of a family tag and no epoch arena
+# of a member tag.  The rule brand-escape refuses a local arena of a member
+# tag, so that construction stands in an operand of sizeof.  An epoch lives
+# in the frame of with_epoch, which builds it from the core of the arena, so
+# a forger with no core gets no epoch.
+witness <foundation/core/BumpArena.h> private | foundation::core::BumpArena<forge::arena> | foundation::core::BumpArena<forge::arena>{forge::rvalue<foundation::core::ArenaBlockSize>()}
+witness <foundation/core/BumpArena.h> private | foundation::core::EpochArena<forge::owner::arena> | sizeof(foundation::core::EpochArena<forge::owner::arena>{forge::rvalue<foundation::core::ArenaBlockSize>()})
+witness <foundation/core/BumpArena.h> no-match | foundation::core::Epoch<foundation::core::EpochOf<forge::owner::arena>> | foundation::core::Epoch<foundation::core::EpochOf<forge::owner::arena>>{}
 # A Layout keeps its constructor from its two words private.  Its one
 # friend is mint_layout, and its static members of and of_array check the
 # facts of a layout, so no request that the allocation door refuses has a
