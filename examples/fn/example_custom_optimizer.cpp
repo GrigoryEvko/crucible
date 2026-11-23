@@ -128,6 +128,16 @@ template <class T, std::size_t Count>
     return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("a dense line fits its run");
 }
 
+// The unique rank-1 view of the elements of the run of a frame, in order.
+// The view takes the run, so it is the one writer of the run.
+template <class T, class Brand, std::size_t Count>
+[[nodiscard]] ::fixy::StridedViewMut<T, 1, Brand> line_of(::fixy::ViewMut<T, Brand, Count> run) noexcept {
+    ::fixy::FixedArray<std::size_t, 1> const sizes{Count};
+    ::fixy::FixedArray<std::size_t, 1> const strides{std::size_t{1}};
+    return ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
+        .expect("a dense line fits its run");
+}
+
 // The pack of a user optimizer step on the background thread, named one
 // time.  fixy::mint_fn_for<UserBgOptimizer> is its door.
 //
@@ -190,11 +200,14 @@ int main() {
 
     // The step writes the three state arrays through the runs that their frame doors lend.
     params.with_mut([&bound, &m, &v, &grad](auto params_run) noexcept {
-        m.with_mut([&bound, &v, &grad, &params_run](auto first_moment_run) noexcept {
-            v.with_mut([&bound, &grad, &params_run, &first_moment_run](auto second_moment_run) noexcept {
-                bound.value()(::fixy::side_as<buffer_role::Parameters>(line_of(params_run.view())),
-                              ::fixy::side_as<buffer_role::FirstMoment>(line_of(first_moment_run.view())),
-                              ::fixy::side_as<buffer_role::SecondMoment>(line_of(second_moment_run.view())),
+        auto params_line = line_of(std::move(params_run));
+        m.with_mut([&bound, &v, &grad, &params_line](auto first_moment_run) noexcept {
+            auto first_moment_line = line_of(std::move(first_moment_run));
+            v.with_mut([&bound, &grad, &params_line, &first_moment_line](auto second_moment_run) noexcept {
+                auto second_moment_line = line_of(std::move(second_moment_run));
+                bound.value()(::fixy::side_as<buffer_role::Parameters>(params_line.view()),
+                              ::fixy::side_as<buffer_role::FirstMoment>(first_moment_line.view()),
+                              ::fixy::side_as<buffer_role::SecondMoment>(second_moment_line.view()),
                               ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
                               AdamHyperparameters{
                                   .learning_rate = 0.01f, .beta1 = 0.9f, .beta2 = 0.999f, .epsilon = 1e-8f, .step = 1});

@@ -300,26 +300,26 @@ int main() {
         // which the index alone does not.
         auto s = ctx.advance(H_MM1, S_MM1, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> mm1_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx, &cv](auto mm1_out) noexcept {
             cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // X
                     make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W1
-                    mm1_out, make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN),
+                    std::move(mm1_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN),
                     make_dim<roles::Inner>(IN_DIM));
         });
 
         s = ctx.advance(H_RELU, S_RELU, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> relu_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx, &cv](auto relu_out) noexcept {
             cpu::relu(kTest, read_input(ctx, cv, InputPosition{0}),  // mm1_out
-                      relu_out, make_dim<roles::Count>(BATCH * HIDDEN));
+                      std::move(relu_out), make_dim<roles::Count>(BATCH * HIDDEN));
         });
 
         s = ctx.advance(H_MM2, S_MM2, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> mm2_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx, &cv](auto mm2_out) noexcept {
             cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // relu_out
                     make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W2
-                    mm2_out, make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM),
+                    std::move(mm2_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM),
                     make_dim<roles::Inner>(HIDDEN));
         });
 
@@ -327,9 +327,9 @@ int main() {
         // than matching.
         s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
-        write_output(kTest, ctx, cv, [&ctx, &cv](::fixy::View<float> softmax_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx, &cv](auto softmax_out) noexcept {
             cpu::softmax(kTest, read_input(ctx, cv, InputPosition{0}),  // mm2_out
-                         softmax_out, make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
+                         std::move(softmax_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
         });
     }
 
@@ -347,18 +347,19 @@ int main() {
         ctx.pool().slot_view<float>(SlotId{SL_W2}, pv).expect("W2 is registered");
 
     ref_mm1.with_mut([&x_floats, &w1_floats](auto mm1) noexcept {
-        cpu::mm(kTest, make_input<LeftFactor>(x_floats), make_input<RightFactor>(w1_floats), mm1.view(),
+        cpu::mm(kTest, make_input<LeftFactor>(x_floats), make_input<RightFactor>(w1_floats), std::move(mm1),
                 make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN), make_dim<roles::Inner>(IN_DIM));
     });
     ref_relu.with_mut([&ref_mm1](auto relu) noexcept {
-        cpu::relu(kTest, ref_mm1.view(), relu.view(), make_dim<roles::Count>(BATCH * HIDDEN));
+        cpu::relu(kTest, ref_mm1.view(), std::move(relu), make_dim<roles::Count>(BATCH * HIDDEN));
     });
     ref_mm2.with_mut([&ref_relu, &w2_floats](auto mm2) noexcept {
-        cpu::mm(kTest, make_input<LeftFactor>(ref_relu.view()), make_input<RightFactor>(w2_floats), mm2.view(),
+        cpu::mm(kTest, make_input<LeftFactor>(ref_relu.view()), make_input<RightFactor>(w2_floats), std::move(mm2),
                 make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM), make_dim<roles::Inner>(HIDDEN));
     });
     ref_sm.with_mut([&ref_mm2](auto sm) noexcept {
-        cpu::softmax(kTest, ref_mm2.view(), sm.view(), make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
+        cpu::softmax(kTest, ref_mm2.view(), std::move(sm), make_dim<roles::Rows>(BATCH),
+                     make_dim<roles::Width>(OUT_DIM));
     });
 
     const ::fixy::View<float const> pool_sm =

@@ -52,11 +52,12 @@ OpData op_at(uint32_t iter, uint32_t op_idx) {
 
     made.metas.with_mut([iter, op_idx](auto run) noexcept {
         uint16_t idx = 0;
-        if (op_idx > 0)
-            *run.get(idx++).expect("a test reads an element at or past the count of its array") =
-                meta_at(fake_ptr(iter, op_idx - 1));
-        *run.get(idx++).expect("a test reads an element at or past the count of its array") =
-            meta_at(fake_ptr(iter, op_idx));
+        if (op_idx > 0) {
+            auto input = run.get_mut(idx++).expect("a test reads an element at or past the count of its array");
+            *input = meta_at(fake_ptr(iter, op_idx - 1));
+        }
+        auto output = run.get_mut(idx++).expect("a test reads an element at or past the count of its array");
+        *output = meta_at(fake_ptr(iter, op_idx));
     });
     made.n_metas = static_cast<uint16_t>(made.entry.num_inputs + made.entry.num_outputs);
     return made;

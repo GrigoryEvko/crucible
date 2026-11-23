@@ -109,7 +109,7 @@ struct HeaderSpec {
         .reserved = 0,
     };
     Bytes<kHeader> out{};
-    out.with_mut([&hdr](auto run) noexcept { ::fixy::encode(hdr, run.view()); });
+    out.with_mut([&hdr](auto run) noexcept { ::fixy::encode(hdr, std::move(run)); });
     return out;
 }
 
@@ -537,7 +537,8 @@ static void test_deserialize_rejects_truncated_payload() {
     spec.payload_size = 100u;  // claims 100 bytes; only 4 remain
     const Bytes<kHeader> header = header_bytes(spec);
     buf.with_mut([&header](auto run) noexcept {
-        ::fixy::copy(run.view().template window<kHeader>(0).expect("the buffer holds the header"), header.view());
+        ::fixy::copy(::fixy::take_window<kHeader>(std::move(run), 0).expect("the buffer holds the header"),
+                     header.view());
     });
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
@@ -854,8 +855,9 @@ static void test_extra_bytes_at_end() {
     // A value that appears nowhere in the payload, so its absence from
     // the decoded payload is meaningful.
     buf.with_mut([](auto run) noexcept {
+        std::size_t const rest = run.size() - kHeader - 4;
         ::fixy::fill(
-            run.view().window(kHeader + 4, run.size() - kHeader - 4).expect("the buffer holds bytes after the entry"),
+            ::fixy::take_window(std::move(run), kHeader + 4, rest).expect("the buffer holds bytes after the entry"),
             std::byte{0xEE});
     });
 

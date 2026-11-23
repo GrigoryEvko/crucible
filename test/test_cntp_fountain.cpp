@@ -41,7 +41,7 @@ template <typename Packet>
     Packet packet{};
     packet.source_bytes = Packet::admit_source_bytes(Packet::max_source_bytes).expect("the full capacity fits");
     packet.mask = mask;
-    packet.payload.with_mut([fill](auto run) noexcept { ::fixy::fill(run.view(), fill); });
+    packet.payload.with_mut([fill](auto run) noexcept { ::fixy::fill(std::move(run), fill); });
     return packet;
 }
 

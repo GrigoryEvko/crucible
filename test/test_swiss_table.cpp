@@ -75,7 +75,7 @@ static void test_bitmask_iteration() {
 
 static void test_group_match_empty() {
     alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-    ctrl.with_mut([](auto run) noexcept { ::fixy::fill(run.view(), kEmpty); });
+    ctrl.with_mut([](auto run) noexcept { ::fixy::fill(std::move(run), kEmpty); });
     auto g = CtrlGroup::load(ctrl.view());
     auto empty = g.match_empty();
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(empty));

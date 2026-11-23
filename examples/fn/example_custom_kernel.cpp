@@ -91,6 +91,16 @@ template <class T, std::size_t Count>
     return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("a dense matrix fits its run");
 }
 
+// The unique rank-2 view of the M x N elements of the run of a frame in
+// row-major order.  The view takes the run, so it is the one writer of the run.
+template <class T, class Brand, std::size_t Count>
+[[nodiscard]] ::fixy::StridedViewMut<T, 2, Brand> matrix_of(::fixy::ViewMut<T, Brand, Count> run,
+                                                            ::fixy::FixedArray<std::size_t, 2> const& sizes) noexcept {
+    ::fixy::FixedArray<std::size_t, 2> const strides{sizes.at(::fixy::index<1>()), std::size_t{1}};
+    return ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
+        .expect("a dense matrix fits its run");
+}
+
 // The pack of a user kernel on the background thread.  The alias names
 // the pack one time, as a role of fixy/Role.h does, and
 // fixy::mint_fn_for<UserBgKernel> is its door.
@@ -167,8 +177,9 @@ int main() {
 
     // The kernel writes C through the run that the frame door of c lends.
     c.with_mut([&bound, &a, &b](auto run) noexcept {
+        auto out = matrix_of(std::move(run), ::fixy::FixedArray<std::size_t, 2>{M, N});
         bound.value()(
-            matrix_of(run.view(), ::fixy::FixedArray<std::size_t, 2>{M, N}),
+            out.view(),
             ::fixy::side_as<::fixy::side::LeftFactor>(matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
             ::fixy::side_as<::fixy::side::RightFactor>(matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
     });

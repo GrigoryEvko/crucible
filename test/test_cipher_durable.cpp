@@ -97,7 +97,7 @@ template <typename T>
     Payload readback{};
     // A failed read gives the count zero, so it returns false too.
     auto const read_count = readback.with_mut(
-        [&ctx, &file](auto run) noexcept { return fs::read_full(ctx, file.ref(), run.view()).value_or(0); });
+        [&ctx, &file](auto run) noexcept { return fs::read_full(ctx, file.ref(), std::move(run)).value_or(0); });
     if (read_count != kPayloadBytes) return false;
     return readback == expected;
 }

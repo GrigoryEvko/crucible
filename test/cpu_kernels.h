@@ -5,13 +5,13 @@
 // speed, and none of them belongs in production.
 //
 // Each kernel reads its inputs as View<float const> and writes its output
-// as View<float>, and every array is row-major.  Two inputs of one type
-// come in their roles (Side), and each dimension is a count of elements in
-// a role of its own (Dim), so no call can swap two of them.  A kernel first
-// checks that each run holds the elements that its dimensions name, and
-// each read and write then checks its position, so no kernel reaches past a
-// run.  Each kernel keeps the order of its float operations, so its result
-// has the same bits on each run.
+// through the ViewMut of a frame, and every array is row-major.  Two inputs
+// of one type come in their roles (Side), and each dimension is a count of
+// elements in a role of its own (Dim), so no call can swap two of them.  A
+// kernel first checks that each run holds the elements that its dimensions
+// name, and each read and write then checks its position, so no kernel
+// reaches past a run.  Each kernel keeps the order of its float operations,
+// so its result has the same bits on each run.
 
 #include <crucible/CrucibleContext.h>
 #include <fixy/Core.h>
@@ -106,6 +106,27 @@ template <class Element>
     return *run.get(position.raw()).expect("a reference kernel reads and writes inside its runs");
 }
 
+// The writer of the element at a position of the output of a kernel.  A
+// position at or past the count ends the process.
+template <class Brand, std::size_t Extent>
+[[nodiscard]] auto writer_at(::fixy::ViewMut<float, Brand, Extent>& run, Offset position) noexcept {
+    return run.get_mut(position.raw()).expect("a reference kernel reads and writes inside its runs");
+}
+
+// Writes value into the element at a position of the output of a kernel.
+template <class Brand, std::size_t Extent>
+void write_at(::fixy::ViewMut<float, Brand, Extent>& run, Offset position, float value) noexcept {
+    auto element = writer_at(run, position);
+    *element = value;
+}
+
+// The value of the element at a position of the output of a kernel.  The
+// const reference reads the run, and it does not write it.
+template <class Brand, std::size_t Extent>
+[[nodiscard]] float read_at(::fixy::ViewMut<float, Brand, Extent> const& run, Offset position) noexcept {
+    return *run.get(position.raw()).expect("a reference kernel reads and writes inside its runs");
+}
+
 // The larger of two floats with the rule of std::max: the second value only
 // when the first is less, so a NaN first value stays.
 [[nodiscard]] constexpr float max_keep_first(float first, ::fixy::Side<side::Candidate, float> second) noexcept {
@@ -115,10 +136,12 @@ template <class Element>
 }  // namespace detail
 
 // C[M,N] = A[M,K] times B[K,N].
-inline void mm(::fixy::TestRunnerCtx const& test,
-               ::fixy::Side<::foundation::core::side::LeftFactor, ::fixy::View<float const>> A,
-               ::fixy::Side<::foundation::core::side::RightFactor, ::fixy::View<float const>> B, ::fixy::View<float> C,
-               Dim<side::Rows> rows, Dim<side::Columns> columns, Dim<side::Inner> inner) {
+template <class Brand, std::size_t Extent>
+void mm(::fixy::TestRunnerCtx const& test,
+        ::fixy::Side<::foundation::core::side::LeftFactor, ::fixy::View<float const>> A,
+        ::fixy::Side<::foundation::core::side::RightFactor, ::fixy::View<float const>> B,
+        ::fixy::ViewMut<float, Brand, Extent> C, Dim<side::Rows> rows, Dim<side::Columns> columns,
+        Dim<side::Inner> inner) {
     std::size_t const M = detail::count_of(rows);
     std::size_t const N = detail::count_of(columns);
     std::size_t const K = detail::count_of(inner);
@@ -129,7 +152,7 @@ inline void mm(::fixy::TestRunnerCtx const& test,
             for (std::size_t k = 0; k < K; k++)
                 sum +=
                     detail::element_at(A.value(), Offset{i * K + k}) * detail::element_at(B.value(), Offset{k * N + j});
-            detail::element_at(C, Offset{i * N + j}) = sum;
+            detail::write_at(C, Offset{i * N + j}, sum);
         }
     }
 }
@@ -137,108 +160,120 @@ inline void mm(::fixy::TestRunnerCtx const& test,
 // C[n] = A[n] + B[n].  A shorter second operand is tiled over the
 // first, so a period equal to n is a plain elementwise add and a period
 // equal to the last dimension is a bias add.  A period of zero is n.
-inline void add(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Augend, ::fixy::View<float const>> A,
-                ::fixy::Side<side::Addend, ::fixy::View<float const>> B, ::fixy::View<float> C, Dim<side::Count> count,
-                Dim<side::Period> period = make_dim<side::Period>(0)) {
+template <class Brand, std::size_t Extent>
+void add(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Augend, ::fixy::View<float const>> A,
+         ::fixy::Side<side::Addend, ::fixy::View<float const>> B, ::fixy::ViewMut<float, Brand, Extent> C,
+         Dim<side::Count> count, Dim<side::Period> period = make_dim<side::Period>(0)) {
     std::size_t const n = detail::count_of(count);
     std::size_t const bias_n = detail::count_of(period) == 0 ? n : detail::count_of(period);
     CRUCIBLE_TEST_ASSERT(test, A.value().size() >= n && B.value().size() >= bias_n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++)
-        detail::element_at(C, Offset{i}) =
-            detail::element_at(A.value(), Offset{i}) + detail::element_at(B.value(), Offset{i % bias_n});
+        detail::write_at(C, Offset{i},
+                         detail::element_at(A.value(), Offset{i}) + detail::element_at(B.value(), Offset{i % bias_n}));
 }
 
 // C[n] = A[n] - B[n].
-inline void sub(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Minuend, ::fixy::View<float const>> A,
-                ::fixy::Side<side::Subtrahend, ::fixy::View<float const>> B, ::fixy::View<float> C,
-                Dim<side::Count> count) {
+template <class Brand, std::size_t Extent>
+void sub(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Minuend, ::fixy::View<float const>> A,
+         ::fixy::Side<side::Subtrahend, ::fixy::View<float const>> B, ::fixy::ViewMut<float, Brand, Extent> C,
+         Dim<side::Count> count) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, A.value().size() >= n && B.value().size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++)
-        detail::element_at(C, Offset{i}) =
-            detail::element_at(A.value(), Offset{i}) - detail::element_at(B.value(), Offset{i});
+        detail::write_at(C, Offset{i},
+                         detail::element_at(A.value(), Offset{i}) - detail::element_at(B.value(), Offset{i}));
 }
 
 // C[n] = A[n] times B[n].
-inline void mul(::fixy::TestRunnerCtx const& test,
-                ::fixy::Side<::foundation::core::side::LeftFactor, ::fixy::View<float const>> A,
-                ::fixy::Side<::foundation::core::side::RightFactor, ::fixy::View<float const>> B, ::fixy::View<float> C,
-                Dim<side::Count> count) {
+template <class Brand, std::size_t Extent>
+void mul(::fixy::TestRunnerCtx const& test,
+         ::fixy::Side<::foundation::core::side::LeftFactor, ::fixy::View<float const>> A,
+         ::fixy::Side<::foundation::core::side::RightFactor, ::fixy::View<float const>> B,
+         ::fixy::ViewMut<float, Brand, Extent> C, Dim<side::Count> count) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, A.value().size() >= n && B.value().size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++)
-        detail::element_at(C, Offset{i}) =
-            detail::element_at(A.value(), Offset{i}) * detail::element_at(B.value(), Offset{i});
+        detail::write_at(C, Offset{i},
+                         detail::element_at(A.value(), Offset{i}) * detail::element_at(B.value(), Offset{i}));
 }
 
 // C[n] = max(A[n], 0).
-inline void relu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
-                 Dim<side::Count> count) {
+template <class Brand, std::size_t Extent>
+void relu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::ViewMut<float, Brand, Extent> C,
+          Dim<side::Count> count) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++) {
         float const value = detail::element_at(A, Offset{i});
-        detail::element_at(C, Offset{i}) = value > 0.0f ? value : 0.0f;
+        detail::write_at(C, Offset{i}, value > 0.0f ? value : 0.0f);
     }
 }
 
 // C[n] = grad[n] where the input was positive, and zero elsewhere.
-inline void relu_bwd(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Gradient, ::fixy::View<float const>> grad,
-                     ::fixy::Side<side::Activation, ::fixy::View<float const>> input, ::fixy::View<float> C,
-                     Dim<side::Count> count) {
+template <class Brand, std::size_t Extent>
+void relu_bwd(::fixy::TestRunnerCtx const& test, ::fixy::Side<side::Gradient, ::fixy::View<float const>> grad,
+              ::fixy::Side<side::Activation, ::fixy::View<float const>> input, ::fixy::ViewMut<float, Brand, Extent> C,
+              Dim<side::Count> count) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, grad.value().size() >= n && input.value().size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++)
-        detail::element_at(C, Offset{i}) =
-            detail::element_at(input.value(), Offset{i}) > 0.0f ? detail::element_at(grad.value(), Offset{i}) : 0.0f;
+        detail::write_at(
+            C, Offset{i},
+            detail::element_at(input.value(), Offset{i}) > 0.0f ? detail::element_at(grad.value(), Offset{i}) : 0.0f);
 }
 
 // C[n] = A[n] * 0.5 * (1 + erf(A[n] / sqrt(2))).
-inline void gelu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
-                 Dim<side::Count> count) {
+template <class Brand, std::size_t Extent>
+void gelu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::ViewMut<float, Brand, Extent> C,
+          Dim<side::Count> count) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
     constexpr float k = 0.7071067811865476f;  // 1/sqrt(2)
     for (std::size_t i = 0; i < n; i++) {
         float const value = detail::element_at(A, Offset{i});
-        detail::element_at(C, Offset{i}) = value * 0.5f * (1.0f + std::erf(value * k));
+        detail::write_at(C, Offset{i}, value * 0.5f * (1.0f + std::erf(value * k)));
     }
 }
 
 // C[n] = 1 / (1 + exp(-A[n])).
-inline void sigmoid(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
-                    Dim<side::Count> count) {
+template <class Brand, std::size_t Extent>
+void sigmoid(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::ViewMut<float, Brand, Extent> C,
+             Dim<side::Count> count) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++)
-        detail::element_at(C, Offset{i}) = 1.0f / (1.0f + std::exp(-detail::element_at(A, Offset{i})));
+        detail::write_at(C, Offset{i}, 1.0f / (1.0f + std::exp(-detail::element_at(A, Offset{i}))));
 }
 
 // C[n] = A[n] * sigmoid(A[n]).
-inline void silu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::View<float> C,
-                 Dim<side::Count> count) {
+template <class Brand, std::size_t Extent>
+void silu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy::ViewMut<float, Brand, Extent> C,
+          Dim<side::Count> count) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++) {
         float const value = detail::element_at(A, Offset{i});
         float s = 1.0f / (1.0f + std::exp(-value));
-        detail::element_at(C, Offset{i}) = value * s;
+        detail::write_at(C, Offset{i}, value * s);
     }
 }
 
 // C[n] = value.
-inline void fill(::fixy::TestRunnerCtx const& test, ::fixy::View<float> C, Dim<side::Count> count, float value) {
+template <class Brand, std::size_t Extent>
+void fill(::fixy::TestRunnerCtx const& test, ::fixy::ViewMut<float, Brand, Extent> C, Dim<side::Count> count,
+          float value) {
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, C.size() >= n);
     for (std::size_t i = 0; i < n; i++)
-        detail::element_at(C, Offset{i}) = value;
+        detail::write_at(C, Offset{i}, value);
 }
 
 // Y[B,D] = softmax of X[B,D] over the last dimension.  The row
 // maximum is subtracted before the exponential, so the largest
 // exponent is zero and no term can overflow.
-inline void softmax(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
-                    Dim<side::Rows> rows, Dim<side::Width> width) {
+template <class Brand, std::size_t Extent>
+void softmax(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::ViewMut<float, Brand, Extent> Y,
+             Dim<side::Rows> rows, Dim<side::Width> width) {
     std::size_t const B = detail::count_of(rows);
     std::size_t const D = detail::count_of(width);
     CRUCIBLE_TEST_ASSERT(test, X.size() >= B * D && Y.size() >= B * D && D > 0);
@@ -249,21 +284,25 @@ inline void softmax(::fixy::TestRunnerCtx const& test, ::fixy::View<float const>
             mx = detail::max_keep_first(mx, ::fixy::side_as<side::Candidate>(detail::element_at(X, Offset{row + d})));
         float sum = 0.0f;
         for (std::size_t d = 0; d < D; d++) {
-            detail::element_at(Y, Offset{row + d}) = std::exp(detail::element_at(X, Offset{row + d}) - mx);
-            sum += detail::element_at(Y, Offset{row + d});
+            auto element = detail::writer_at(Y, Offset{row + d});
+            *element = std::exp(detail::element_at(X, Offset{row + d}) - mx);
+            sum += *element;
         }
         float inv = 1.0f / sum;
-        for (std::size_t d = 0; d < D; d++)
-            detail::element_at(Y, Offset{row + d}) *= inv;
+        for (std::size_t d = 0; d < D; d++) {
+            auto element = detail::writer_at(Y, Offset{row + d});
+            *element *= inv;
+        }
     }
 }
 
 // Y[B,D] = (X - mean) / sqrt(var + eps), scaled by gamma[D] and
 // shifted by beta[D], with both statistics taken over each row.
-inline void layer_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
-                       ::fixy::Side<side::Scale, ::fixy::View<float const>> gamma,
-                       ::fixy::Side<side::Shift, ::fixy::View<float const>> beta, ::fixy::View<float> Y,
-                       Dim<side::Rows> rows, Dim<side::Width> width, float eps = 1e-5f) {
+template <class Brand, std::size_t Extent>
+void layer_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                ::fixy::Side<side::Scale, ::fixy::View<float const>> gamma,
+                ::fixy::Side<side::Shift, ::fixy::View<float const>> beta, ::fixy::ViewMut<float, Brand, Extent> Y,
+                Dim<side::Rows> rows, Dim<side::Width> width, float eps = 1e-5f) {
     std::size_t const B = detail::count_of(rows);
     std::size_t const D = detail::count_of(width);
     CRUCIBLE_TEST_ASSERT(test, X.size() >= B * D && gamma.value().size() >= D && beta.value().size() >= D
@@ -282,20 +321,22 @@ inline void layer_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float con
         var /= static_cast<float>(D);
         float inv = 1.0f / std::sqrt(var + eps);
         for (std::size_t d = 0; d < D; d++)
-            detail::element_at(Y, Offset{row + d}) =
-                (detail::element_at(X, Offset{row + d}) - mean) * inv * detail::element_at(gamma.value(), Offset{d})
-                + detail::element_at(beta.value(), Offset{d});
+            detail::write_at(Y, Offset{row + d},
+                             (detail::element_at(X, Offset{row + d}) - mean) * inv
+                                     * detail::element_at(gamma.value(), Offset{d})
+                                 + detail::element_at(beta.value(), Offset{d}));
     }
 }
 
 // Y[N,C,HW], normalized per channel.  The mean and variance are taken
 // over all positions of all samples in a channel, and gamma[C] and
 // beta[C] scale and shift it.
-inline void batch_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
-                       ::fixy::Side<side::Scale, ::fixy::View<float const>> gamma,
-                       ::fixy::Side<side::Shift, ::fixy::View<float const>> beta, ::fixy::View<float> Y,
-                       Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Positions> positions,
-                       float eps = 1e-5f) {
+template <class Brand, std::size_t Extent>
+void batch_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                ::fixy::Side<side::Scale, ::fixy::View<float const>> gamma,
+                ::fixy::Side<side::Shift, ::fixy::View<float const>> beta, ::fixy::ViewMut<float, Brand, Extent> Y,
+                Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Positions> positions,
+                float eps = 1e-5f) {
     std::size_t const N = detail::count_of(batch);
     std::size_t const C = detail::count_of(channels);
     std::size_t const HW = detail::count_of(positions);
@@ -319,9 +360,10 @@ inline void batch_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float con
         for (std::size_t n = 0; n < N; n++)
             for (std::size_t hw = 0; hw < HW; hw++) {
                 Offset const idx{(n * C + c) * HW + hw};
-                detail::element_at(Y, idx) =
-                    (detail::element_at(X, idx) - mean) * inv * detail::element_at(gamma.value(), Offset{c})
-                    + detail::element_at(beta.value(), Offset{c});
+                detail::write_at(Y, idx,
+                                 (detail::element_at(X, idx) - mean) * inv
+                                         * detail::element_at(gamma.value(), Offset{c})
+                                     + detail::element_at(beta.value(), Offset{c}));
             }
     }
 }
@@ -329,11 +371,12 @@ inline void batch_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float con
 // Y[N,Co,Ho,Wo] from X[N,Ci,Hi,Wi] and W[Co,Ci,Kh,Kw].  There is no
 // padding and the stride is one, so Ho is Hi - Kh + 1 and Wo is
 // Wi - Kw + 1.
-inline void conv2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
-                   ::fixy::Side<side::Filter, ::fixy::View<float const>> W, ::fixy::View<float> Y,
-                   Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Height> height,
-                   Dim<side::WidthOfImage> image_width, Dim<side::OutChannels> out_channels,
-                   Dim<side::KernelHeight> kernel_height, Dim<side::KernelWidth> kernel_width) {
+template <class Brand, std::size_t Extent>
+void conv2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+            ::fixy::Side<side::Filter, ::fixy::View<float const>> W, ::fixy::ViewMut<float, Brand, Extent> Y,
+            Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Height> height,
+            Dim<side::WidthOfImage> image_width, Dim<side::OutChannels> out_channels,
+            Dim<side::KernelHeight> kernel_height, Dim<side::KernelWidth> kernel_width) {
     std::size_t const N = detail::count_of(batch);
     std::size_t const Ci = detail::count_of(channels);
     std::size_t const Hi = detail::count_of(height);
@@ -346,23 +389,29 @@ inline void conv2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> 
     std::size_t Wo = Wi - Kw + 1;
     CRUCIBLE_TEST_ASSERT(test, X.size() >= N * Ci * Hi * Wi && W.value().size() >= Co * Ci * Kh * Kw
                                    && Y.size() >= N * Co * Ho * Wo);
-    ::fixy::fill(Y.window(0, N * Co * Ho * Wo).expect("the check above bounds the output"), 0.0f);
+    Y = ::fixy::reborrow(std::move(Y), [count = N * Co * Ho * Wo](auto output) noexcept {
+        ::fixy::fill(::fixy::take_window(std::move(output), 0, count).expect("the check above bounds the output"),
+                     0.0f);
+    });
     for (std::size_t n = 0; n < N; n++)
         for (std::size_t co = 0; co < Co; co++)
             for (std::size_t ci = 0; ci < Ci; ci++)
                 for (std::size_t ho = 0; ho < Ho; ho++)
                     for (std::size_t wo = 0; wo < Wo; wo++)
                         for (std::size_t kh = 0; kh < Kh; kh++)
-                            for (std::size_t kw = 0; kw < Kw; kw++)
-                                detail::element_at(Y, Offset{((n * Co + co) * Ho + ho) * Wo + wo}) +=
+                            for (std::size_t kw = 0; kw < Kw; kw++) {
+                                auto element = detail::writer_at(Y, Offset{((n * Co + co) * Ho + ho) * Wo + wo});
+                                *element +=
                                     detail::element_at(X, Offset{((n * Ci + ci) * Hi + (ho + kh)) * Wi + (wo + kw)})
                                     * detail::element_at(W.value(), Offset{((co * Ci + ci) * Kh + kh) * Kw + kw});
+                            }
 }
 
 // Y[N,C,H/K,W/K], the maximum over each K by K window.
-inline void maxpool2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
-                      Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Height> height,
-                      Dim<side::WidthOfImage> image_width, Dim<side::Window> window = make_dim<side::Window>(2)) {
+template <class Brand, std::size_t Extent>
+void maxpool2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::ViewMut<float, Brand, Extent> Y,
+               Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Height> height,
+               Dim<side::WidthOfImage> image_width, Dim<side::Window> window = make_dim<side::Window>(2)) {
     std::size_t const N = detail::count_of(batch);
     std::size_t const C = detail::count_of(channels);
     std::size_t const H = detail::count_of(height);
@@ -381,13 +430,15 @@ inline void maxpool2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float cons
                             mx = detail::max_keep_first(
                                 mx, ::fixy::side_as<side::Candidate>(detail::element_at(
                                         X, Offset{((n * C + c) * H + ho * K + kh) * W + wo * K + kw})));
-                    detail::element_at(Y, Offset{((n * C + c) * Ho + ho) * Wo + wo}) = mx;
+                    detail::write_at(Y, Offset{((n * C + c) * Ho + ho) * Wo + wo}, mx);
                 }
 }
 
 // Y[N,C] = the mean of X[N,C,HW] over all positions.
-inline void avgpool_global(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
-                           Dim<side::Batch> batch, Dim<side::Channels> channels, Dim<side::Positions> positions) {
+template <class Brand, std::size_t Extent>
+void avgpool_global(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                    ::fixy::ViewMut<float, Brand, Extent> Y, Dim<side::Batch> batch, Dim<side::Channels> channels,
+                    Dim<side::Positions> positions) {
     std::size_t const N = detail::count_of(batch);
     std::size_t const C = detail::count_of(channels);
     std::size_t const HW = detail::count_of(positions);
@@ -398,7 +449,7 @@ inline void avgpool_global(::fixy::TestRunnerCtx const& test, ::fixy::View<float
             float sum = 0.0f;
             for (std::size_t hw = 0; hw < HW; hw++)
                 sum += detail::element_at(X, Offset{(n * C + c) * HW + hw});
-            detail::element_at(Y, Offset{n * C + c}) = sum * inv;
+            detail::write_at(Y, Offset{n * C + c}, sum * inv);
         }
 }
 
@@ -407,10 +458,11 @@ inline void avgpool_global(::fixy::TestRunnerCtx const& test, ::fixy::View<float
 //
 // The attention weights of one sequence form an S by S matrix in a block
 // of the heap of the test, which this never runs anywhere but a test.
-inline void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
-                 ::fixy::Side<side::Keys, ::fixy::View<float const>> K,
-                 ::fixy::Side<side::Values, ::fixy::View<float const>> V, ::fixy::View<float> Y, Dim<side::Batch> batch,
-                 Dim<side::Sequence> sequence, Dim<side::Width> width) {
+template <class Brand, std::size_t Extent>
+void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
+          ::fixy::Side<side::Keys, ::fixy::View<float const>> K,
+          ::fixy::Side<side::Values, ::fixy::View<float const>> V, ::fixy::ViewMut<float, Brand, Extent> Y,
+          Dim<side::Batch> batch, Dim<side::Sequence> sequence, Dim<side::Width> width) {
     std::size_t const B = detail::count_of(batch);
     std::size_t const S = detail::count_of(sequence);
     std::size_t const D = detail::count_of(width);
@@ -423,8 +475,7 @@ inline void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
 
     // Each sequence writes the weights again, so one frame of the weights
     // holds the loop over the batch.
-    weights = ::fixy::with_mut(std::move(weights), [&](auto run) noexcept {
-        ::fixy::View<float> const attn = run.view();
+    weights = ::fixy::with_mut(std::move(weights), [&](auto attn) noexcept {
         for (std::size_t b = 0; b < B; b++) {
             std::size_t const base = b * S * D;
 
@@ -434,33 +485,35 @@ inline void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
                     for (std::size_t d = 0; d < D; d++)
                         dot += detail::element_at(Q, Offset{base + i * D + d})
                              * detail::element_at(K.value(), Offset{base + j * D + d});
-                    detail::element_at(attn, Offset{i * S + j}) = dot * scale;
+                    detail::write_at(attn, Offset{i * S + j}, dot * scale);
                 }
 
             for (std::size_t i = 0; i < S; i++) {
                 std::size_t const row = i * S;
-                float mx = detail::element_at(attn, Offset{row});
+                float mx = detail::read_at(attn, Offset{row});
                 for (std::size_t j = 1; j < S; j++)
                     mx = detail::max_keep_first(
-                        mx, ::fixy::side_as<side::Candidate>(detail::element_at(attn, Offset{row + j})));
+                        mx, ::fixy::side_as<side::Candidate>(detail::read_at(attn, Offset{row + j})));
                 float sum = 0.0f;
                 for (std::size_t j = 0; j < S; j++) {
-                    detail::element_at(attn, Offset{row + j}) =
-                        std::exp(detail::element_at(attn, Offset{row + j}) - mx);
-                    sum += detail::element_at(attn, Offset{row + j});
+                    auto element = detail::writer_at(attn, Offset{row + j});
+                    *element = std::exp(*element - mx);
+                    sum += *element;
                 }
                 float inv = 1.0f / sum;
-                for (std::size_t j = 0; j < S; j++)
-                    detail::element_at(attn, Offset{row + j}) *= inv;
+                for (std::size_t j = 0; j < S; j++) {
+                    auto element = detail::writer_at(attn, Offset{row + j});
+                    *element *= inv;
+                }
             }
 
             for (std::size_t i = 0; i < S; i++)
                 for (std::size_t d = 0; d < D; d++) {
                     float sum = 0.0f;
                     for (std::size_t j = 0; j < S; j++)
-                        sum += detail::element_at(attn, Offset{i * S + j})
+                        sum += detail::read_at(attn, Offset{i * S + j})
                              * detail::element_at(V.value(), Offset{base + j * D + d});
-                    detail::element_at(Y, Offset{base + i * D + d}) = sum;
+                    detail::write_at(Y, Offset{base + i * D + d}, sum);
                 }
         }
     });
@@ -470,42 +523,50 @@ inline void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
 // probability at the target class.  logits is [B,C], targets is [B],
 // and probs is a [B,C] scratch buffer the caller supplies, which is
 // left holding the softmax on return.
-inline float cross_entropy(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> logits,
-                           ::fixy::Side<side::Targets, ::fixy::View<int const>> targets, ::fixy::View<float> probs,
-                           Dim<side::Rows> rows, Dim<side::Width> classes) {
+template <class Brand, std::size_t Extent>
+float cross_entropy(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> logits,
+                    ::fixy::Side<side::Targets, ::fixy::View<int const>> targets,
+                    ::fixy::ViewMut<float, Brand, Extent> probs, Dim<side::Rows> rows, Dim<side::Width> classes) {
     std::size_t const B = detail::count_of(rows);
     std::size_t const C = detail::count_of(classes);
     CRUCIBLE_TEST_ASSERT(test, targets.value().size() >= B);
-    softmax(test, logits, probs, rows, classes);
+    probs = ::fixy::reborrow(std::move(probs), [&test, logits, rows, classes](auto output) noexcept {
+        softmax(test, logits, std::move(output), rows, classes);
+    });
     float loss = 0.0f;
     for (std::size_t b = 0; b < B; b++) {
         int const target = detail::element_at(targets.value(), Offset{b});
         CRUCIBLE_TEST_ASSERT(test, target >= 0 && static_cast<std::size_t>(target) < C);
         loss -=
-            std::log(detail::max_keep_first(detail::element_at(probs, Offset{b * C + static_cast<std::size_t>(target)}),
+            std::log(detail::max_keep_first(detail::read_at(probs, Offset{b * C + static_cast<std::size_t>(target)}),
                                             ::fixy::side_as<side::Candidate>(1e-7f)));
     }
     return loss / static_cast<float>(B);
 }
 
 // Y[B,D] = X[B,idx,D], one position taken from every sequence.
-inline void index_select(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
-                         Dim<side::Batch> batch, Dim<side::Sequence> sequence, Dim<side::Width> width,
-                         Dim<side::Selected> selected) {
+template <class Brand, std::size_t Extent>
+void index_select(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                  ::fixy::ViewMut<float, Brand, Extent> Y, Dim<side::Batch> batch, Dim<side::Sequence> sequence,
+                  Dim<side::Width> width, Dim<side::Selected> selected) {
     std::size_t const B = detail::count_of(batch);
     std::size_t const S = detail::count_of(sequence);
     std::size_t const D = detail::count_of(width);
     std::size_t const idx = detail::count_of(selected);
     CRUCIBLE_TEST_ASSERT(test, idx < S && X.size() >= B * S * D && Y.size() >= B * D);
     for (std::size_t b = 0; b < B; b++)
-        ::fixy::copy(Y.window(b * D, D).expect("the check above bounds the output"),
-                     X.window((b * S + idx) * D, D).expect("the check above bounds the input"))
-            .expect("the two windows hold one count of elements");
+        Y = ::fixy::reborrow(std::move(Y), [X, b, S, D, idx](auto output) noexcept {
+            ::fixy::copy(::fixy::take_window(std::move(output), b * D, D).expect("the check above bounds the output"),
+                         X.window((b * S + idx) * D, D).expect("the check above bounds the input"))
+                .expect("the two windows hold one count of elements");
+        });
 }
 
 // Y[batch,N,M] = X[batch,M,N], transposing the last two dimensions.
-inline void transpose_2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::fixy::View<float> Y,
-                         Dim<side::Batch> batch, Dim<side::Rows> rows, Dim<side::Columns> columns) {
+template <class Brand, std::size_t Extent>
+void transpose_2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
+                  ::fixy::ViewMut<float, Brand, Extent> Y, Dim<side::Batch> batch, Dim<side::Rows> rows,
+                  Dim<side::Columns> columns) {
     std::size_t const batches = detail::count_of(batch);
     std::size_t const M = detail::count_of(rows);
     std::size_t const N = detail::count_of(columns);
@@ -514,7 +575,7 @@ inline void transpose_2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float c
         std::size_t const base = b * M * N;
         for (std::size_t i = 0; i < M; i++)
             for (std::size_t j = 0; j < N; j++)
-                detail::element_at(Y, Offset{base + j * M + i}) = detail::element_at(X, Offset{base + i * N + j});
+                detail::write_at(Y, Offset{base + j * M + i}, detail::element_at(X, Offset{base + i * N + j}));
     }
 }
 
@@ -522,8 +583,8 @@ inline void transpose_2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float c
 //
 // A test that replays a region through a compiled context reads each input
 // of the matched op through input_view, and it writes the one output of
-// the op through with_output_views.  The kernel gets the plain View of the
-// ViewMut of the output, for the time of the call.
+// the op through with_output_views.  The kernel gets the ViewMut of the
+// output, for the time of the call.
 
 // The input at a position of the matched op, as floats.  An input that the
 // context gives no View of floats ends the process.
@@ -532,8 +593,8 @@ read_input(CrucibleContext const& ctx, CrucibleContext::CompiledView const& cv, 
     return ctx.input_view<float>(position, cv).expect("each input of a reference op is a slot of floats");
 }
 
-// Runs kernel on the View of the one output of the matched op.  A refusal of
-// the outputs, or an op with a count of outputs other than one, fails the
+// Runs kernel on the ViewMut of the one output of the matched op.  A refusal
+// of the outputs, or an op with a count of outputs other than one, fails the
 // test.
 template <class Kernel>
 void write_output(::fixy::TestRunnerCtx const& test, CrucibleContext& ctx, CrucibleContext::CompiledView const& cv,
@@ -541,7 +602,7 @@ void write_output(::fixy::TestRunnerCtx const& test, CrucibleContext& ctx, Cruci
     std::size_t outputs = 0;
     const auto written = ctx.with_output_views<float>(cv, [&kernel, &outputs](auto& views) noexcept {
         for (auto& view : views) {
-            kernel(view.view());
+            kernel(std::move(view));
             ++outputs;
         }
     });

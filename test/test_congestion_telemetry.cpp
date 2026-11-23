@@ -111,8 +111,9 @@ using CongestionInfoBytes = ::foundation::core::FixedArray<std::byte, layout::cc
 template <class T, std::size_t Size>
 void put_field(::foundation::core::FixedArray<std::byte, Size>& bytes, layout::KernelField<T> field, T value) {
     bytes.with_mut([field, value](auto run) noexcept {
-        ::fixy::copy(run.view().template window<sizeof(T)>(field.offset).expect("the field lies inside the struct"),
-                     ::fixy::bytes(value));
+        ::fixy::copy(
+            ::fixy::take_window<sizeof(T)>(std::move(run), field.offset).expect("the field lies inside the struct"),
+            ::fixy::bytes(value));
     });
 }
 

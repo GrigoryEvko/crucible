@@ -284,8 +284,10 @@ OpPacket build_op(uint32_t op_idx, uint32_t iter) {
     pkt.entry.num_outputs = op.n_out;
     pkt.n_metas = static_cast<uint16_t>(op.n_in + op.n_out);
     pkt.metas.with_mut([count = pkt.n_metas, &op, iter](auto run) noexcept {
-        for (uint8_t i = 0; i < count; i++)
-            *run.get(i).expect("a test reads an element at or past the count of its array") = make_meta(op.t[i], iter);
+        for (uint8_t i = 0; i < count; i++) {
+            auto element = run.get_mut(i).expect("a test reads an element at or past the count of its array");
+            *element = make_meta(op.t[i], iter);
+        }
     });
     return pkt;
 }
