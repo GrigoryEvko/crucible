@@ -51,6 +51,7 @@
 // and never names the core has no state in a home, so the roster cannot see
 // it at all.  The check finds such an owner only when a probe names it.
 
+#include <fixy/OwnedRegion.h>
 #include <fixy/os/OwnedMmap.h>
 #include <fixy/os/OwnedThread.h>
 #include <foundation/AlignedBytes.h>
@@ -60,6 +61,7 @@
 #include <foundation/SwissTableBuffer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/BitSet.h>
+#include <foundation/core/BumpArena.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Grow.h>
 #include <foundation/core/Owner.h>
@@ -67,6 +69,7 @@
 #include <foundation/core/SlotMap.h>
 #include <foundation/core/SmallList.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -1108,6 +1111,78 @@ struct OwnedThreadProbe {
     }
 };
 
+// ── The owned region ────────────────────────────────────────────────────
+
+// The tag of the permission of the probe regions.
+struct ProbeRegionTag final {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+// The arena of the probe regions: one bump arena, the one member of the
+// class, with the member tag that the class nests.
+class ProbeRegionArena {
+    struct[[= ::foundation::brand::arena_member_brand{}]] Bump final {};
+
+    ::foundation::core::BumpArena<Bump> bump_ = ::foundation::core::mint_bump_arena<Bump>(
+        ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>{std::size_t{1} << 12});
+
+public:
+    template <typename T>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc alloc,
+                                                          std::size_t count) noexcept {
+        // A plain View of an arena run: the View carries no brand of its arena.
+        auto const run = bump_.array(alloc, count, T{});
+        return run.view();
+    }
+};
+
+// A region owns no storage: its arena does.  So it has no child move, and
+// its elements are implicit-lifetime words, so it has no linear element.  It
+// holds a linear permission, so its move assignment is deleted, as for an
+// owned thread, and it has no self-move.  test/fixy/test_owned_region.cpp
+// runs its split and its recombine.  The roster reads the region of a brand
+// of the probe.  Each hazard makes a region of the brand of the root
+// permission of its own call site, which stays in the hazard.
+struct OwnedRegionProbe {
+    struct RosterBrand final {};
+    using Owner = ::fixy::OwnedRegion<std::uint64_t, ProbeRegionTag, RosterBrand>;
+
+    static void self_move() { static_assert(!MoveAssignable<Owner>); }
+
+    static void child_move() {}
+
+    // Moved-from: the target takes the run and the permission.
+    static void moved_from() {
+        ProbeRegionArena arena{};
+        auto source = ::fixy::mint_owned_region<std::uint64_t>(
+            kAlloc, arena, 4, ::foundation::permissions::mint_permission_root<ProbeRegionTag>());
+        using Region = decltype(source);
+        static_assert(!MoveAssignable<Region>);
+        Region taken{static_cast<Region&&>(source)};
+        CRUCIBLE_FATAL_INVARIANT(taken.size() == 4);
+        ::foundation::linear::drop(std::move(taken).release());
+    }
+
+    static void linear() {}
+
+    // Empty: a moved-from region covers no element, and its borrow is empty.
+    // The end consumes the permission of the moved-from region too, which a
+    // move took.
+    static void empty() {
+        ProbeRegionArena arena{};
+        auto source = ::fixy::mint_owned_region<std::uint64_t>(
+            kAlloc, arena, 4, ::foundation::permissions::mint_permission_root<ProbeRegionTag>());
+        using Region = decltype(source);
+        Region target{static_cast<Region&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.size() == 4);
+        CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0 && through(source).empty());
+        CRUCIBLE_FATAL_INVARIANT(::fixy::mint_borrowed(through(source)).size() == 0);
+        ::foundation::linear::drop(std::move(target).release());
+        ::foundation::linear::drop(std::move(source).release());
+    }
+};
+
 // Runs each hazard of one probe.  Each hazard ends with no live node.
 template <class Probe>
 void run_probe() {
@@ -1134,7 +1209,7 @@ struct ProbeList {
 
 using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
                             HeapTextProbe, SmallListProbe, AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe,
-                            SwissTableBufferProbe, OwnedMmapProbe, OwnedThreadProbe>;
+                            SwissTableBufferProbe, OwnedMmapProbe, OwnedThreadProbe, OwnedRegionProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "
