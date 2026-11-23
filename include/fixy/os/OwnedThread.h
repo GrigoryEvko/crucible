@@ -253,9 +253,9 @@ namespace fixy::thread {
 // is on a thread other than its mint in any case.  The frame fields are
 // pointers that only the holder of the owner reads.
 class [[nodiscard]][[= ::foundation::transfer::sendable{}]] OwnedThread final
-    : public ::foundation::core::OwnerCore<::fixy::detail::owner::OwnedThreadState> {
+    : public ::foundation::core::OwnerCore<::fixy::detail::owner::OwnedThreadState, OwnedThread> {
     using State = ::fixy::detail::owner::OwnedThreadState;
-    using Core = ::foundation::core::OwnerCore<State>;
+    using Core = ::foundation::core::OwnerCore<State, OwnedThread>;
 
 public:
     OwnedThread(OwnedThread const&) = delete("one thread has one owner of its join.  A copy would join it two times");

@@ -4480,10 +4480,10 @@ target_link_libraries(test_core_owner_probe PRIVATE fixy)
 # and the operations of the core.  A record with no marker, and a marked
 # record with no release, do not compile as the state of an owner.
 foundation_neg_compile_test(neg_core_owner_state_no_mark
-  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::OwnerCore."
+  "template constraint failure for .template<class State, class Owner>  requires \\(OwnerState<State>\\) && \\(OwnerOfTheBase<Owner>\\) class foundation::core::OwnerCore."
   "required for the satisfaction of .MarksOwnerState<State>. \\[with State = <unnamed>::RecordWithNoMark\\]")
 foundation_neg_compile_test(neg_core_owner_state_mark_no_release
-  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::OwnerCore."
+  "template constraint failure for .template<class State, class Owner>  requires \\(OwnerState<State>\\) && \\(OwnerOfTheBase<Owner>\\) class foundation::core::OwnerCore."
   "required for the satisfaction of .GivesOwnerOperations<State>. \\[with State = <unnamed>::MarkedRecordWithNoRelease\\]")
 
 # A FixedList holds at most N elements, and an append into a full list
@@ -5158,11 +5158,34 @@ foundation_neg_compile_test(neg_core_view_first_of_specialized
 foundation_neg_compile_test(neg_core_view_first_of_unnamed_tag
   "converting to .const foundation::core::detail::BaseLayerRead. from initializer list would use explicit constructor"
   "constexpr foundation::core::detail::BaseLayerRead::BaseLayerRead\\(\\). declared here")
-# The key of an owner on the core comes only from the protected run_key_() of
-# OwnerCore, so a unit that derives from no core makes no View of raw parts.
+# The key of an owner on the core comes only from the private run_key_() of
+# OwnerCore, whose one friend is its Owner, a class of the base.  So a unit
+# that is no Owner makes no View of raw parts: a unit that asks the core for
+# the key, the two routes of the core of one argument, a thief outside the
+# base that names itself as Owner, with its own state or with the state of a
+# Box, and a thief that names the Box as Owner and takes the key or builds the
+# core.
 foundation_neg_compile_test(neg_core_owner_run_key_outside_owner
-  "foundation::core::detail::OwnerRunKey foundation::core::OwnerCore<State>::run_key_\\(\\) \\[with State = \\{anonymous\\}::LoneState\\]. is protected within this context"
-  "declared protected here")
+  "OwnerRunKey foundation::core::OwnerCore<State, Owner>::run_key_\\(\\) \\[with State = \\{anonymous\\}::LoneState; Owner = foundation::core::View<int>\\]. is private within this context"
+  "declared private here")
+foundation_neg_compile_test(neg_core_owner_core_derive_own_state
+  "wrong number of template arguments \\(1, should be 2\\)"
+  "OwnerCore")
+foundation_neg_compile_test(neg_core_owner_core_deduced_state
+  "wrong number of template arguments \\(1, should be 2\\)"
+  "OwnerCore")
+foundation_neg_compile_test(neg_core_owner_core_thief_names_itself
+  "template constraint failure for .template<class State, class Owner>  requires \\(OwnerState<State>\\) && \\(OwnerOfTheBase<Owner>\\) class foundation::core::OwnerCore."
+  "required for the satisfaction of .OwnerOfTheBase<Owner>. \\[with Owner = crucible::probe::Thief\\]")
+foundation_neg_compile_test(neg_core_owner_core_thief_on_base_state
+  "template constraint failure for .template<class State, class Owner>  requires \\(OwnerState<State>\\) && \\(OwnerOfTheBase<Owner>\\) class foundation::core::OwnerCore."
+  "required for the satisfaction of .OwnerOfTheBase<Owner>. \\[with Owner = crucible::probe::Thief\\]")
+foundation_neg_compile_test(neg_core_owner_core_thief_names_base_owner
+  "OwnerRunKey foundation::core::OwnerCore<State, Owner>::run_key_\\(\\) \\[with State = foundation::core::detail::owner::BoxState<int>; Owner = foundation::core::Box<int>\\]. is private within this context"
+  "declared private here")
+foundation_neg_compile_test(neg_core_owner_core_thief_builds_core
+  "foundation::core::OwnerCore<State, Owner>::.*OwnerCore.*\\(\\) .*is private within this context"
+  "Owner = foundation::core::Box<int>\\]")
 # Each door of an owner above Region.h gives the raw constructors of a View
 # only to its owner, so a unit of another group calls no member of the door.
 foundation_neg_compile_test(neg_core_fixed_list_slots_door_forged

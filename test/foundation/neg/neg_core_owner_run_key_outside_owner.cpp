@@ -1,7 +1,8 @@
 // A unit that is no owner on the core, such as a door of another group of the
 // base or a file of src/, asks OwnerCore for the key of a View from raw parts
-// and makes a View of any pointer.  run_key_() is a protected member of the
-// core, so only a class that derives from OwnerCore reaches it.
+// and makes a View of any pointer.  run_key_() is a private member of the
+// core, and the Owner of the core is its one friend, so only the Owner
+// reaches it.
 
 #include <foundation/core/Region.h>
 
@@ -17,7 +18,7 @@ struct LoneState {
 }  // namespace
 
 int main() {
-    using Core = ::foundation::core::OwnerCore<LoneState>;
+    using Core = ::foundation::core::OwnerCore<LoneState, ::foundation::core::View<int>>;
     ::foundation::core::View<int> const forged{Core::run_key_(), static_cast<int*>(nullptr), std::size_t{4}};
     return static_cast<int>(forged.size());
 }

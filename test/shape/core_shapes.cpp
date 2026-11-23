@@ -851,10 +851,23 @@ using ShapeKinds =
 // the optimizer keeps each read of the state.
 constinit fixy::Atomic<std::uint64_t> released_words{std::uint64_t{0}};
 
-// The state of a probe owner on the core: three words, as the state of
+}  // namespace
+
+// The owner of the probe owner_take_and_end is a class of the base, as the
+// core asks of its Owner (OwnerOfTheBase of foundation/core/Owner.h).  No
+// owner of the base has a state of three words with a release that makes no
+// call: the release of a block checks its stored layout and calls the release
+// door.  So the probe declares its own owner in a namespace of the base,
+// inside a PROBE region.  The namespace is no detail namespace, so the probe
+// names no private name of the base.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the probe measures the moves of the core state of an owner through registers")
+
+namespace foundation::core::shape_probe {
+
+// The state of the probe owner on the core: three words, as the state of
 // AlignedBytes.
 struct ThreeWordState final {
-    using owner_state_mark = fixy::OwnerStateMark;
+    using owner_state_mark = OwnerStateMark;
 
     std::uint64_t first = 0;
     std::uint64_t second = 0;
@@ -869,13 +882,19 @@ struct ThreeWordState final {
     }
 };
 
-class ThreeWordOwner final : public fixy::OwnerCore<ThreeWordState> {
+class ThreeWordOwner final : public OwnerCore<ThreeWordState, ThreeWordOwner> {
 public:
     ThreeWordOwner(ThreeWordOwner&&) noexcept = default;
     ThreeWordOwner& operator=(ThreeWordOwner&&) noexcept = default;
 
     [[nodiscard]] std::uint64_t second() const noexcept { return state_.second; }
 };
+
+}  // namespace foundation::core::shape_probe
+
+namespace {
+
+using ThreeWordOwner = foundation::core::shape_probe::ThreeWordOwner;
 
 // The take of an owner out of its place, a read of one field, and the end of
 // the owner through a const local.  The core moves the state through a local
@@ -887,6 +906,12 @@ public:
     ThreeWordOwner const ended{std::move(taken)};
     return second;
 }
+
+}  // namespace
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
 
 // Two mints of a block whose bytes hold no value, and their ends.  The mint,
 // the constructor of the block and the take of its storage are always

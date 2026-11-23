@@ -324,13 +324,17 @@ struct RegionRunState {
 // through the key of an owner on the core.
 template <typename T, typename Tag, typename Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]] OwnedRegion
-    : public ::foundation::core::OwnerCore<detail::owner::RegionRunState<T>> {
+    : public ::foundation::core::OwnerCore<detail::owner::RegionRunState<T>, OwnedRegion<T, Tag, Brand>> {
     static_assert(::foundation::brand::IsBrand<Brand>, "OwnedRegion<T, Tag, Brand>: Brand must be an empty class "
                                                        "type: the brand of the permission the region was built "
                                                        "from, or DefaultBrand.");
 
     using State = detail::owner::RegionRunState<T>;
-    using Core = ::foundation::core::OwnerCore<State>;
+    using Core = ::foundation::core::OwnerCore<State, OwnedRegion>;
+    // The key of the run, for the friends that make a View of the run: the
+    // frame door frame_run_, mint_borrowed and the shared door of
+    // fixy/SharedRegion.h.
+    using Core::run_key_;
 
     [[no_unique_address]] ::foundation::permissions::Permission<Tag, Brand> perm_;
 

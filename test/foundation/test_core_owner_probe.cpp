@@ -121,6 +121,31 @@ template <class Owner>
 
 using ::fixy::check::expect_dies;
 
+// ── The Owner of a core ─────────────────────────────────────────────────
+
+// The core of an owner and its state, by deduction from the public base of
+// the owner.  The functions have no body: only decltype reads them.
+template <class State, class Owner>
+::foundation::core::OwnerCore<State, Owner> const&
+core_of(::foundation::core::OwnerCore<State, Owner> const& core) noexcept;
+template <class State, class Owner>
+State state_of(::foundation::core::OwnerCore<State, Owner> const& core) noexcept;
+
+// A Box for the deduction, with no body.
+template <class T>
+Box<T> const& some_box() noexcept;
+
+// The positive control of the fixtures neg_core_owner_core_thief_*: a unit
+// outside the base deduces the core of a Box and its state.  The core names
+// the Box as its Owner, so the deduction gives no core to a different class:
+// a class outside the base that names itself as Owner is no Owner of the
+// base, and a class on the core of the Box is no friend of it.
+using BoxCore = std::remove_cvref_t<decltype(core_of(some_box<int>()))>;
+static_assert(std::is_base_of_v<BoxCore, Box<int>>);
+static_assert(std::is_same_v<BoxCore, ::foundation::core::OwnerCore<decltype(state_of(some_box<int>())), Box<int>>>);
+static_assert(::foundation::core::OwnerOfTheBase<Box<int>> && ::foundation::core::OwnerOfTheBase<AlignedBytes>);
+static_assert(!std::is_default_constructible_v<BoxCore> && !std::is_destructible_v<BoxCore>);
+
 // ── The chain of Boxes ──────────────────────────────────────────────────
 
 struct BoxNode;

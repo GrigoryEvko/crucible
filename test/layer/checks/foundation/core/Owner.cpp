@@ -90,15 +90,29 @@ struct MarkedRecordWithNoRelease {
     }
 };
 
-// An owner on the core, with the moves of the core.
-struct CheckOwner final : public OwnerCore<owner::CheckState> {
+// An owner on the core, with the moves of the core.  It is the Owner of its
+// core, so it takes the key of its run.
+struct CheckOwner final : public OwnerCore<owner::CheckState, CheckOwner> {
     CheckOwner() noexcept = default;
     CheckOwner(CheckOwner&&) noexcept = default;
     CheckOwner& operator=(CheckOwner&&) noexcept = default;
+
+    [[nodiscard]] static constexpr OwnerRunKey key_of_run() noexcept { return run_key_(); }
+};
+
+// A second owner of the state of CheckOwner, as UnwrittenBytes is a second
+// owner of the state of AlignedBytes.  Each owner of one state has a core of
+// its own, and each takes the key of its run.
+struct SecondCheckOwner final : public OwnerCore<owner::CheckState, SecondCheckOwner> {
+    SecondCheckOwner() noexcept = default;
+    SecondCheckOwner(SecondCheckOwner&&) noexcept = default;
+    SecondCheckOwner& operator=(SecondCheckOwner&&) noexcept = default;
+
+    [[nodiscard]] static constexpr OwnerRunKey key_of_run() noexcept { return run_key_(); }
 };
 
 // An owner on the core with a state outside each home.
-struct OwnerOutsideHome final : public OwnerCore<StateOutsideHome> {
+struct OwnerOutsideHome final : public OwnerCore<StateOutsideHome, OwnerOutsideHome> {
     OwnerOutsideHome() noexcept = default;
     OwnerOutsideHome(OwnerOutsideHome&&) noexcept = default;
     OwnerOutsideHome& operator=(OwnerOutsideHome&&) noexcept = default;
@@ -121,9 +135,25 @@ static_assert(std::is_empty_v<OwnerStateMark>);
 // names it with no use of a detail namespace.
 static_assert(std::meta::parent_of(^^OwnerCore) == ^^::foundation::core);
 
+// The Owner of a core is a class of the base, and each owner of one state
+// takes the key of its own run: the positive controls of the fixtures
+// neg_core_owner_core_*.  A class outside the base is no Owner (the checks at
+// the end of this file).
+static_assert(OwnerOfTheBase<CheckOwner> && OwnerOfTheBase<SecondCheckOwner>);
+static_assert(!OwnerOfTheBase<int> && !OwnerOfTheBase<owner::CheckState&>);
+static_assert((static_cast<void>(CheckOwner::key_of_run()), true));
+static_assert((static_cast<void>(SecondCheckOwner::key_of_run()), true));
+
+// A class that is not the Owner of a core builds no core, moves no core and
+// ends no core: each is private, and the Owner is the one friend.
+static_assert(!std::is_default_constructible_v<OwnerCore<owner::CheckState, CheckOwner>>);
+static_assert(!std::is_move_constructible_v<OwnerCore<owner::CheckState, CheckOwner>>);
+static_assert(!std::is_destructible_v<OwnerCore<owner::CheckState, CheckOwner>>);
+static_assert(std::is_default_constructible_v<CheckOwner> && std::is_destructible_v<SecondCheckOwner>);
+
 // The core adds no byte to the state, and an owner on it moves and does not
 // copy.
-static_assert(sizeof(OwnerCore<owner::CheckState>) == sizeof(owner::CheckState));
+static_assert(sizeof(OwnerCore<owner::CheckState, CheckOwner>) == sizeof(owner::CheckState));
 static_assert(sizeof(CheckOwner) == sizeof(owner::CheckState));
 static_assert(std::is_nothrow_move_constructible_v<CheckOwner>);
 static_assert(std::is_nothrow_move_assignable_v<CheckOwner>);
@@ -228,3 +258,21 @@ static_assert(kOneHomeVerdict.roster == 3 && kOneHomeVerdict.covered == 1 && kOn
 }  // namespace owner_checks
 
 }  // namespace foundation::core::detail
+
+// A class outside the namespaces foundation and fixy is no Owner of a core,
+// also when it is a class of a namespace with one of the two names inside
+// another namespace.
+namespace owner_gate_checks {
+
+struct OwnerOutsideTheBase final {};
+
+namespace foundation {
+
+struct OwnerOfAnInnerFoundation final {};
+
+}  // namespace foundation
+
+}  // namespace owner_gate_checks
+
+static_assert(!::foundation::core::OwnerOfTheBase<owner_gate_checks::OwnerOutsideTheBase>);
+static_assert(!::foundation::core::OwnerOfTheBase<owner_gate_checks::foundation::OwnerOfAnInnerFoundation>);

@@ -187,9 +187,9 @@ template <class T, std::size_t Inline>
 template <class T, std::size_t Inline>
     requires SmallListElement<T> && SmallListInline<T, Inline>
 class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList final
-    : public OwnerCore<detail::owner::SmallListState<T, Inline>> {
+    : public OwnerCore<detail::owner::SmallListState<T, Inline>, SmallList<T, Inline>> {
     using State = detail::owner::SmallListState<T, Inline>;
-    using Core = OwnerCore<State>;
+    using Core = OwnerCore<State, SmallList>;
 
     // The first element: the heap storage, or the inline slots.
     [[nodiscard]] constexpr T* first_() noexcept {

@@ -652,6 +652,11 @@
       "constructor": "(?<!~)\\bOptionCursor\\("
     },
     {
+      "name": "neg_witness_core_ownercore_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bOwnerCore\\("
+    },
+    {
       "name": "neg_witness_core_ref_direct_construction",
       "reason": "no matching function for call",
       "constructor": "(?<!~)\\bRef\\("
@@ -2158,6 +2163,10 @@
     {
       "type": "foundation::core::detail::OwnerRunKey",
       "header": "foundation/core/Owner.h"
+    },
+    {
+      "type": "foundation::core::OwnerCore<foundation::core::detail::owner::AlignedBytesState, foundation::AlignedBytes>",
+      "header": "foundation/AlignedBytes.h"
     },
     {
       "type": "foundation::core::FixedListSlotsDoor",

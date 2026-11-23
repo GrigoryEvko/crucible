@@ -19,7 +19,7 @@ struct MarkedRecordWithNoRelease {
     }
 };
 
-struct OwnerOfRecord final : ::foundation::core::OwnerCore<MarkedRecordWithNoRelease> {};
+struct OwnerOfRecord final : ::foundation::core::OwnerCore<MarkedRecordWithNoRelease, OwnerOfRecord> {};
 
 }  // namespace
 

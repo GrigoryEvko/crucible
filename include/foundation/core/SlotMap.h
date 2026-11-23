@@ -402,9 +402,9 @@ template <class T, class Tag, ::foundation::brand::IsBrand Brand, class Generati
     requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::brand::branded_arena{}]]
-    SlotMap final : public OwnerCore<detail::owner::SlotMapState<T, Generation>> {
+    SlotMap final : public OwnerCore<detail::owner::SlotMapState<T, Generation>, SlotMap<T, Tag, Brand, Generation>> {
     using State = detail::owner::SlotMapState<T, Generation>;
-    using Core = OwnerCore<State>;
+    using Core = OwnerCore<State, SlotMap>;
 
     // The slots of a mint.  Only the mints call it.
     constexpr explicit SlotMap(State const& state) noexcept : Core{state} {}

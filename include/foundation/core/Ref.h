@@ -1031,13 +1031,13 @@ public:
 // (foundation/Transfer.h).
 template <BoxPayload T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box<T>>]][[= ::foundation::transfer::by_arguments{}]]
-    Box final : public OwnerCore<detail::owner::BoxState<T>> {
+    Box final : public OwnerCore<detail::owner::BoxState<T>, Box<T>> {
     static_assert(!detail::is_loan_key_type_(^^T),
                   "a Box of a LoanKey would carry the key past the frame that lent it (THE DISPATCH BRAND of "
                   "foundation/core/Frame.h)");
 
     using State = detail::owner::BoxState<T>;
-    using Core = OwnerCore<State>;
+    using Core = OwnerCore<State, Box>;
 
     // A moved-from or consumed Box holds no object.  The use-after-move
     // guard refuses a use of it that it can see, and each build tests it
@@ -1395,9 +1395,9 @@ void with_view(Box<T> const& box, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REF
 template <std::size_t Size, std::size_t Align>
     requires HoleShape<Size, Align>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Hole final
-    : public OwnerCore<detail::owner::HoleState<Size, Align>> {
+    : public OwnerCore<detail::owner::HoleState<Size, Align>, Hole<Size, Align>> {
     using State = detail::owner::HoleState<Size, Align>;
-    using Core = OwnerCore<State>;
+    using Core = OwnerCore<State, Hole>;
 
     template <BoxPayload T>
     friend class Box;

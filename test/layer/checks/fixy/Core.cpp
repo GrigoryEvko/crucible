@@ -40,8 +40,8 @@ struct CoreCheckOwnerState {
     static constexpr void release(CoreCheckOwnerState const& /*state*/) noexcept {}
 };
 static_assert(::fixy::OwnerState<CoreCheckOwnerState>);
-static_assert(
-    std::is_same_v<::fixy::OwnerCore<CoreCheckOwnerState>, ::foundation::core::OwnerCore<CoreCheckOwnerState>>);
+static_assert(std::is_same_v<::fixy::OwnerCore<CoreCheckOwnerState, ::fixy::Box<int>>,
+                             ::foundation::core::OwnerCore<CoreCheckOwnerState, ::foundation::core::Box<int>>>);
 struct CoreCheckBrand {};
 // An object for the unevaluated operands below, with no definition.
 extern int core_number;

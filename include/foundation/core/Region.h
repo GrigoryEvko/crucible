@@ -650,8 +650,9 @@ public:
     // The door of an owner on the core (foundation/core/Owner.h): the count
     // elements of the run that the owner holds, with no check.  The state of
     // the owner proves the elements live, the count at most max_view_count,
-    // and first not null when the count is above zero.  Only a class that
-    // derives from OwnerCore reaches the key, through run_key_().
+    // and first not null when the count is above zero.  Only the Owner of a
+    // core, a class of the base, reaches the key, through the private
+    // run_key_() of its core.
     constexpr View(detail::OwnerRunKey const& /*key*/, T* first, std::size_t count) noexcept
         requires(Extent == dynamic_extent)
         : View{first, count} {}

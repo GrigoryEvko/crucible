@@ -84,9 +84,9 @@ struct SwissTableBufferState {
 // buffer.
 template <SwissTableSlot SlotPtr>
 class [[nodiscard]] SwissTableBuffer final
-    : public core::OwnerCore<core::detail::owner::SwissTableBufferState<SlotPtr>> {
+    : public core::OwnerCore<core::detail::owner::SwissTableBufferState<SlotPtr>, SwissTableBuffer<SlotPtr>> {
     using State = core::detail::owner::SwissTableBufferState<SlotPtr>;
-    using Core = core::OwnerCore<State>;
+    using Core = core::OwnerCore<State, SwissTableBuffer>;
 
 public:
     using ctrl_type = std::int8_t;

@@ -258,8 +258,9 @@ struct AlignedBytesState {
 
 // A block whose bytes each hold a value.  The core of foundation/core/Owner.h
 // gives the moves and the end of a block.
-class [[nodiscard]] AlignedBytes final : public core::OwnerCore<core::detail::owner::AlignedBytesState> {
+class [[nodiscard]] AlignedBytes final : public core::OwnerCore<core::detail::owner::AlignedBytesState, AlignedBytes> {
     using State = core::detail::owner::AlignedBytesState;
+    using Core = core::OwnerCore<State, AlignedBytes>;
 
     // The first byte of the block: the first address at the alignment in the
     // storage, or null for the empty block.  The storage holds alignment - 1
@@ -278,8 +279,7 @@ public:
     // of the zeroed door, or fields whose bytes a door of an UnwrittenBytes
     // wrote.  The constructor is always inline, as the constructor of an
     // UnwrittenBytes is.
-    CRUCIBLE_INLINE AlignedBytes(detail::AlignedBytesKey const& /*key*/, State const& state) noexcept
-        : core::OwnerCore<State>{state} {}
+    CRUCIBLE_INLINE AlignedBytes(detail::AlignedBytesKey const& /*key*/, State const& state) noexcept : Core{state} {}
 
     AlignedBytes(AlignedBytes const&) =
         delete("an AlignedBytes owns its block alone: a copy would give it back two times");
@@ -325,8 +325,10 @@ public:
 // A block whose bytes hold no value.  It has no view and no read, so no code
 // reads a byte before its write.  The core of foundation/core/Owner.h gives
 // the moves and the end of a block.
-class [[nodiscard]] UnwrittenBytes final : public core::OwnerCore<core::detail::owner::AlignedBytesState> {
+class [[nodiscard]] UnwrittenBytes final
+    : public core::OwnerCore<core::detail::owner::AlignedBytesState, UnwrittenBytes> {
     using State = core::detail::owner::AlignedBytesState;
+    using Core = core::OwnerCore<State, UnwrittenBytes>;
 
     // The View of the count bytes from the first byte of the block of the
     // fields, for a door that writes each byte (the storage).  The View is no
@@ -351,7 +353,7 @@ public:
     // that cannot occur (the copy of a state of foundation/core/Owner.h).
     // Complexity: one allocation.
     CRUCIBLE_INLINE UnwrittenBytes(detail::AlignedBytesKey const& /*key*/, ::foundation::alloc::Layout layout) noexcept
-        : core::OwnerCore<State>{State::allocated(layout, detail::BlockStorage::unwritten)} {}
+        : Core{State::allocated(layout, detail::BlockStorage::unwritten)} {}
 
     UnwrittenBytes(UnwrittenBytes const&) =
         delete("an UnwrittenBytes owns its block alone: a copy would give it back two times");

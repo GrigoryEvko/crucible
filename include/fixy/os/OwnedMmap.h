@@ -367,9 +367,10 @@ public:
 // unmaps the old mapping of the target, so a source inside that mapping is
 // read before the unmap.
 template <typename Tag, typename Prot, typename Share, typename Brand = ::foundation::brand::DefaultBrand>
-class [[nodiscard]] OwnedMmap final : public ::foundation::core::OwnerCore<::fixy::detail::owner::MappingState> {
+class [[nodiscard]] OwnedMmap final
+    : public ::foundation::core::OwnerCore<::fixy::detail::owner::MappingState, OwnedMmap<Tag, Prot, Share, Brand>> {
     using State = ::fixy::detail::owner::MappingState;
-    using Core = ::foundation::core::OwnerCore<State>;
+    using Core = ::foundation::core::OwnerCore<State, OwnedMmap>;
 
     static_assert(::foundation::brand::IsBrand<Brand>,
                   "OwnedMmap<Tag, Prot, Share, Brand>: Brand must be an empty class type: the brand of the "

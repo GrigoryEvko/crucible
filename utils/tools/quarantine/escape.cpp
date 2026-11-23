@@ -122,15 +122,32 @@ bool carries_mark(tree type, tree name) {
     return carries_base_annotation(TYPE_ATTRIBUTES(type), name, escape_names.transfer);
 }
 
-// True for a class with a base OwnerCore of include/foundation/core/Owner.h:
-// an owner of the base that holds its storage alone.
+// True for a type or a declaration of the namespace foundation or fixy, or of
+// a namespace inside them.  The rule base-namespace refuses a class of these
+// namespaces in a file outside the base.
+bool is_of_base_namespace(tree entity) {
+    tree top = top_namespace(entity);
+    return top != NULL_TREE && top != global_namespace
+        && (DECL_NAME(top) == escape_names.foundation || DECL_NAME(top) == escape_names.fixy);
+}
+
+// True for a class of the namespace foundation or fixy with a base OwnerCore
+// of include/foundation/core/Owner.h, the template of the base: an owner of
+// the base that holds its storage alone.  The core asks that its Owner is a
+// class of the two namespaces, so a class outside the base is no owner on the
+// core, and neither is a class on a template of another namespace with the
+// name OwnerCore.
 bool is_owner_core_class(tree type) {
     static tree const owner_core = get_identifier("OwnerCore");
+    if (!is_of_base_namespace(type)) {
+        return false;
+    }
     tree binfo = TYPE_BINFO(type);
     for (unsigned index = 0; binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
         tree base = BINFO_TYPE(BINFO_BASE_BINFO(binfo, index));
         tree info = base != NULL_TREE && CLASS_TYPE_P(base) ? CLASSTYPE_TEMPLATE_INFO(base) : NULL_TREE;
-        if (info != NULL_TREE && DECL_NAME(TI_TEMPLATE(info)) == owner_core) {
+        if (info != NULL_TREE && DECL_NAME(TI_TEMPLATE(info)) == owner_core
+            && is_of_base_namespace(TI_TEMPLATE(info))) {
             return true;
         }
     }
@@ -151,11 +168,7 @@ bool owns_its_storage(tree type) {
 // owns_its_storage{} (the borrow).  The rule base-namespace refuses a class of
 // these namespaces in a file outside the base, so only the base states the
 // mark in this form.
-bool is_base_storage_owner(tree type) {
-    tree top = top_namespace(type);
-    return owns_its_storage(type) && top != NULL_TREE && top != global_namespace
-        && (DECL_NAME(top) == escape_names.foundation || DECL_NAME(top) == escape_names.fixy);
-}
+bool is_base_storage_owner(tree type) { return owns_its_storage(type) && is_of_base_namespace(type); }
 
 // True when TYPE holds a borrow (the borrow).  Complexity: linear in the
 // distinct classes that the type reaches, one time for each class in a unit.

@@ -11,11 +11,23 @@
 //   release(state)   ends what the state owns, such as each element and the
 //                    storage.  It does nothing for an emptied state
 //
-// OwnerCore<State> holds the state and gives the two moves and the end of
-// the owner.  An owner derives from the core, reads its fields through
-// state_, and defaults its own moves, so each owner has one order.  Each
-// member of the core is protected, so the public base gives a caller no
-// door, and the walks of the roster see the base with no unchecked access.
+// OwnerCore<State, Owner> holds the state and gives the two moves and the end
+// of the owner.  An owner derives from the core with itself as Owner, reads
+// its fields through state_, and defaults its own moves, so each owner has
+// one order.  No member of the core is public, so the public base gives a
+// caller no door, and the walks of the roster see the base with no unchecked
+// access.
+//
+// Owner of a core
+// The core names its Owner as its one friend.  The constructors, the moves,
+// the end and run_key_() are private, so only the Owner builds the core and
+// takes the key of its run.  A class that derives from the core of another
+// owner, such as OwnerCore<S, Box<int>> with S from the public base of a
+// Box, builds no core and takes no key.  The core asks that Owner is a class
+// of the namespace foundation or fixy (OwnerOfTheBase), and the rule
+// base-namespace refuses such a class in a file outside the base.  So a
+// class outside the base that names itself as Owner is refused too.  A state
+// can have more than one owner, as AlignedBytesState has.
 //
 // Order of a move assignment
 // The source can live inside the value that the target holds, as in
@@ -71,6 +83,7 @@
 // new owner on the core is in its roster at once.
 
 #include <foundation/Platform.h>
+#include <foundation/reflect/Members.h>
 
 #include <cstddef>
 #include <meta>
@@ -121,7 +134,33 @@ struct owns_its_storage final {};
 template <class State>
 concept ReleasesNothing = requires { requires State::releases_nothing; };
 
-template <OwnerState State>
+namespace detail {
+
+// True when the class of type is declared in the namespace foundation or
+// fixy, or in a namespace inside them: the outermost named scope of the
+// class below the global namespace is one of the two.  A specialization
+// gives the scope of its template.  Complexity: the depth of the scopes.
+[[nodiscard]] consteval bool is_class_of_the_base_(std::meta::info type) {
+    std::meta::info scope = std::meta::parent_of(std::meta::dealias(type));
+    std::meta::info outermost = scope;
+    while (scope != ^^::) {
+        outermost = scope;
+        scope = std::meta::parent_of(scope);
+    }
+    return std::meta::is_namespace(outermost)
+        && (::foundation::reflect::has_identifier_named(outermost, "foundation")
+            || ::foundation::reflect::has_identifier_named(outermost, "fixy"));
+}
+
+}  // namespace detail
+
+// The Owner of a core: a class of the base (owner of a core).  A class
+// template gives the namespace of its template.
+template <class Owner>
+concept OwnerOfTheBase = std::is_class_v<Owner> && detail::is_class_of_the_base_(^^Owner);
+
+template <OwnerState State, class Owner>
+    requires OwnerOfTheBase<Owner>
 class OwnerCore;
 
 namespace detail {
@@ -130,13 +169,14 @@ namespace detail {
 // (foundation/core/Region.h).  An owner on the core proves its run: its state
 // holds the first element and the count of the elements that it owns, and its
 // moves and its end keep the two.  OwnerCore is the one friend of the key,
-// and it gives the key to its owners through the protected run_key_().  So
-// only a class that derives from OwnerCore makes a View from raw parts, and
-// the roster of the owners names each such class.  The key is in namespace
-// detail, and the rule owners keeps each caller outside the base out, also a
-// caller that deduces the key from run_key_().
+// and it gives the key only to its Owner, through the private run_key_().  So
+// only an owner of the base makes a View from raw parts, and the roster of
+// the owners names each such class.  The key is in namespace detail, and the
+// rule owners keeps each caller outside the base out, also a caller that
+// deduces the key from run_key_().
 class [[nodiscard]] OwnerRunKey final {
-    template <OwnerState State>
+    template <OwnerState State, class Owner>
+        requires OwnerOfTheBase<Owner>
     friend class ::foundation::core::OwnerCore;
 
     constexpr OwnerRunKey() noexcept {}
@@ -148,16 +188,17 @@ public:
 
 }  // namespace detail
 
-template <OwnerState State>
+template <OwnerState State, class Owner>
+    requires OwnerOfTheBase<Owner>
 class OwnerCore {
-protected:
-    // The key of the constructors of a View from raw parts, for the run that
-    // this owner holds (detail::OwnerRunKey).
-    [[nodiscard]] static constexpr detail::OwnerRunKey run_key_() noexcept { return detail::OwnerRunKey{}; }
+    // The one class that builds, moves and ends this core, and takes the key
+    // of its run (owner of a core).
+    friend Owner;
 
-    // The fields of the owner.  The owner reads and writes them, and the core
-    // moves and releases them.
-    State state_{};
+    // The key of the constructors of a View from raw parts, for the run that
+    // this owner holds (detail::OwnerRunKey).  An owner whose friend needs the
+    // key names it in its own private part with `using Core::run_key_;`.
+    [[nodiscard]] static constexpr detail::OwnerRunKey run_key_() noexcept { return detail::OwnerRunKey{}; }
 
     constexpr OwnerCore() noexcept = default;
     // The build from a state is always inline, as the moves are.  A build out
@@ -193,6 +234,11 @@ protected:
     constexpr ~OwnerCore()
         requires ReleasesNothing<State>
     = default;
+
+protected:
+    // The fields of the owner.  The owner reads and writes them, and the core
+    // moves and releases them.
+    State state_{};
 
     // Gives the state to the caller, and leaves the emptied state in this
     // owner.  The caller then owns what the state owns.

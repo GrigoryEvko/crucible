@@ -960,6 +960,10 @@ witness <foundation/core/Region.h> private | foundation::core::View<int> | found
 # An owner on the core reaches the raw constructors of a View through the key
 # that only OwnerCore builds, and only for the run that its state holds.
 witness <foundation/core/Owner.h> private | foundation::core::detail::OwnerRunKey | foundation::core::detail::OwnerRunKey{}
+# Only the Owner of a core builds the core, so no class on the core of
+# another owner writes a state that the end of the core then releases.  The
+# core of a block names a state of a detail namespace, as each state is.
+witness <foundation/AlignedBytes.h> private | foundation::core::OwnerCore<foundation::core::detail::owner::AlignedBytesState, foundation::AlignedBytes> | foundation::core::OwnerCore<foundation::core::detail::owner::AlignedBytesState, foundation::AlignedBytes>{}
 # The doors of the owners above Region.h hold static members only, so no
 # caller builds a door, and only the owner of each reaches its members.
 witness <foundation/core/List.h> deleted | foundation::core::FixedListSlotsDoor | foundation::core::FixedListSlotsDoor{}

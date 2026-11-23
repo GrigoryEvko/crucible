@@ -330,9 +330,11 @@ template <class T>
     requires GrowListElement<T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::lifetime::no_start_over_bytes{}]] GrowList final
-    : public OwnerCore<detail::owner::GrowListState<T>> {
+    : public OwnerCore<detail::owner::GrowListState<T>, GrowList<T>> {
     using State = detail::owner::GrowListState<T>;
-    using Core = OwnerCore<State>;
+    using Core = OwnerCore<State, GrowList>;
+    // The key of the run, for the frame door lend_elements_, a friend.
+    using Core::run_key_;
 
     [[nodiscard]] constexpr T* first_() const noexcept { return static_cast<T*>(this->state_.storage); }
 
@@ -686,9 +688,9 @@ class GrowTextDoor final : ::foundation::NoObject<GrowTextDoor> {
 // them, so a borrow of them ends only at the end or at a move assignment of
 // the text.  The one door is freeze(std::move(text)) of a GrowText.
 class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] HeapText final
-    : public OwnerCore<detail::owner::HeapTextState> {
+    : public OwnerCore<detail::owner::HeapTextState, HeapText> {
     using State = detail::owner::HeapTextState;
-    using Core = OwnerCore<State>;
+    using Core = OwnerCore<State, HeapText>;
 
     // The characters of a frozen GrowText.  Only freeze calls it.
     constexpr explicit HeapText(State const& state) noexcept : Core{state} {}
@@ -731,9 +733,9 @@ public:
 };
 
 class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText final
-    : public OwnerCore<detail::owner::GrowTextState> {
+    : public OwnerCore<detail::owner::GrowTextState, GrowText> {
     using State = detail::owner::GrowTextState;
-    using Core = OwnerCore<State>;
+    using Core = OwnerCore<State, GrowText>;
 
     // Moves the characters into new storage of the next capacity, puts the
     // count characters at characters after them, and gives the old storage

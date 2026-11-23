@@ -971,8 +971,11 @@ template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::transfer::by_arguments{}]] HeapArray final
-    : public OwnerCore<detail::owner::HeapArrayState<T, Align>> {
+    : public OwnerCore<detail::owner::HeapArrayState<T, Align>, HeapArray<T, Align>> {
     using State = detail::owner::HeapArrayState<T, Align>;
+    using Core = OwnerCore<State, HeapArray>;
+    // The key of the run, for the frame door frame_run_, a friend.
+    using Core::run_key_;
 
 public:
     using element_type = T;
@@ -1351,8 +1354,11 @@ template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::transfer::by_arguments{}]] MaskedArray final
-    : public OwnerCore<detail::owner::MaskedArrayState<T, Align>> {
+    : public OwnerCore<detail::owner::MaskedArrayState<T, Align>, MaskedArray<T, Align>> {
     using State = detail::owner::MaskedArrayState<T, Align>;
+    using Core = OwnerCore<State, MaskedArray>;
+    // The key of the run, for the frame door frame_run_, a friend.
+    using Core::run_key_;
 
     // The first element.  A default or moved-from array holds no storage.
     // The use-after-move guard refuses a use of a moved-from local that it
