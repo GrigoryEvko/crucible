@@ -435,6 +435,20 @@ read_tcp_option(Ctx const&, Borrow socket, TcpOption option, ::foundation::core:
                                     first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), capacity);
 }
 
+// The read of a TCP option into the run of a frame.  The door takes the
+// ViewMut of the frame by value, as fill does, so the read is the one writer
+// of the run.
+template <eff::IsExecCtx Ctx, typename Borrow, class Brand, std::size_t Extent>
+    requires CtxFitsSocketCall<Ctx> && TcpBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_tcp_option(Ctx const&, Borrow socket, TcpOption option,
+                ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer) noexcept {
+    std::size_t const size = buffer.size();
+    std::uint32_t const capacity = size < 0xFFFFFFFFU ? static_cast<std::uint32_t>(size) : 0xFFFFFFFFU;
+    return detail::read_tcp_option_(detail::socket_descriptor_of(socket), option,
+                                    first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), capacity);
+}
+
 // Sets the least retransmission timeout of a TCP socket in microseconds
 // (TCP_RTO_MIN_US).  A kernel with no such option gives enoprotoopt.
 template <eff::IsExecCtx Ctx, typename Borrow>
@@ -487,6 +501,18 @@ template <typename Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsSocketCallWith<Ctx, Rights, ::fixy::os::RightSet::read>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 receive_bytes(Ctx const&, SocketRef<Kind, Rights> socket, ::foundation::core::View<std::byte> buffer) noexcept {
+    return detail::receive_with_flags_(::fixy::os::detail::HandleDoor::descriptor_of(socket),
+                                       first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(),
+                                       detail::no_wait_flag);
+}
+
+// The receive into the run of a frame.  The door takes the ViewMut of the
+// frame by value, as fill does, so the receive is the one writer of the run.
+template <typename Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Brand, std::size_t Extent>
+    requires CtxFitsSocketCallWith<Ctx, Rights, ::fixy::os::RightSet::read>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+receive_bytes(Ctx const&, SocketRef<Kind, Rights> socket,
+              ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer) noexcept {
     return detail::receive_with_flags_(::fixy::os::detail::HandleDoor::descriptor_of(socket),
                                        first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(),
                                        detail::no_wait_flag);

@@ -222,6 +222,15 @@ public:
         return R;
     }
 
+    // The pop into the run of a frame.  The door takes the ViewMut of the
+    // frame by value, as fill does, so the pop is the one writer of the run.
+    template <::foundation::brand::IsBrand Brand, std::size_t Extent>
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(consumer_proof const& proof,
+                                                      ::foundation::effects::cap::Nondet nondet,
+                                                      ::foundation::core::ViewMut<T, Brand, Extent> out) noexcept {
+        return try_pop_batch(proof, nondet, ::foundation::core::View<T>{::foundation::core::detail::run_of_(out)});
+    }
+
     // A snapshot reads cells and indexes that the producers write, and the
     // schedule decides when they write them.  So two runs with the same
     // inputs can read two values, and each snapshot takes the bare tag of

@@ -1344,8 +1344,8 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
                                                                  Less less = Less{}) noexcept {
     std::size_t const count = elements.size();
     if (scratch.size() != count) return err(LengthMismatch{});
-    View<T> const run{elements.view()};
-    auto const room = side_as<side::SortScratch>(View<T>{scratch.view()});
+    View<T> const run{detail::run_of_(elements)};
+    auto const room = side_as<side::SortScratch>(View<T>{detail::run_of_(scratch)});
     // The key of the radix sort has at most eight bytes.  A wider integer of a
     // GNU dialect, such as __int128, takes the comparator form.
     if constexpr (std::same_as<Less, Ascending> && sizeof(T) <= 8) {

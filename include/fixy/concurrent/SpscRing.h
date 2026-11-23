@@ -284,6 +284,13 @@ public:
         return count;
     }
 
+    // The pop into the run of a frame.  The door takes the ViewMut of the
+    // frame by value, as fill does, so the pop is the one writer of the run.
+    template <::foundation::brand::IsBrand Brand, std::size_t Extent>
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::core::ViewMut<T, Brand, Extent> out) noexcept {
+        return try_pop_batch(::foundation::core::View<T>{::foundation::core::detail::run_of_(out)});
+    }
+
     // A snapshot reads the index of the other side, and the schedule decides
     // when that side moves it.  So two runs with the same inputs can read two
     // values, and each snapshot takes the bare tag of Nondet.

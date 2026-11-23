@@ -4796,6 +4796,14 @@ foundation_neg_compile_test(neg_core_view_mut_take_window_of_named
 foundation_neg_compile_test(neg_core_view_mut_take_window_of_const
   "neg_core_view_mut_take_window_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a window")
+# The bytes of a ViewMut take it by move, so the bytes are the one writer of
+# the run.  The bytes of a named ViewMut and of a const one do not compile.
+foundation_neg_compile_test(neg_core_view_mut_byte_view_of_named
+  "neg_core_view_mut_byte_view_of_named\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::byte_view\\(ViewMut<T, Brand, Extent>&\\)"
+  "the bytes take the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_byte_view_of_const
+  "neg_core_view_mut_byte_view_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::byte_view\\(const ViewMut<T, Brand, Extent>&\\)"
+  "a const ViewMut writes nothing, so it gives no writer of its bytes")
 # The copy of a View into a ViewMut of one fixed extent takes the ViewMut by
 # value, and only one fixed extent on the two sides gives the copy that
 # cannot fail.  Two other counts give a Result that the body must read.

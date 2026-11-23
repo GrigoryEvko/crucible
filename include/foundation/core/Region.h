@@ -38,7 +38,8 @@
 //                     the copy of two Views of one fixed extent into the
 //                     run of a frame, which cannot fail
 //   byte_view(run)    the bytes of a run of unsigned chars as std::byte, of
-//                     the same count and extent and the same const
+//                     the same count and extent and the same const.  A
+//                     ViewMut gives its bytes by move, as a ViewMut
 //   offset_of(whole, part)
 //                     the position of part inside whole, or no value when
 //                     part does not lie inside whole or starts between two
@@ -325,8 +326,8 @@ class ViewMutChunks;
 
 namespace detail {
 
-// The run of a ViewMut as a plain View of its extent, for the doors of this
-// header that hold the ViewMut by move.  This header defines it.
+// The run of a ViewMut as a plain View of its extent, for the doors of the
+// base that hold the ViewMut by move or by value.  This header defines it.
 template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept;
 
@@ -455,15 +456,18 @@ template <class T, class Brand, std::size_t Extent, class Body>
 [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>,
                                                ViewMut<T, Brand, Extent>>
 reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept;
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires std::same_as<T, unsigned char>
+[[nodiscard]] ViewMut<std::byte, Brand, Extent> byte_view(ViewMut<T, Brand, Extent>&& run) noexcept;
 
 // The door of the Region family to the key of the frame doors (the doors of
 // the owners above foundation/core/Frame.h).  Its one member is private.  The
 // invariant: each friend holds a ViewMut by move or by a reference, and it
 // builds a ViewMut or a RefMut only over a part of the run of that ViewMut,
 // with its brand.  ViewMut, ViewMutChunks, the two forms of split_at,
-// split_chunks, the two forms of take_window and reborrow are its friends.  A
-// home owner row of utils/rule-table.txt keeps this definition in this
-// header.
+// split_chunks, the two forms of take_window, reborrow and the byte_view of a
+// ViewMut are its friends.  A home owner row of utils/rule-table.txt keeps
+// this definition in this header.
 class RegionFrameKeyDoor final : ::foundation::NoObject<RegionFrameKeyDoor> {
     template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
         requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
@@ -489,6 +493,10 @@ class RegionFrameKeyDoor final : ::foundation::NoObject<RegionFrameKeyDoor> {
     friend constexpr auto ::foundation::core::take_window(ViewMut<T, Brand, Extent>&& whole,
                                                           std::size_t offset) noexcept
         -> Option<ViewMut<T, Brand, Count>>;
+    template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+        requires std::same_as<T, unsigned char>
+    friend auto ::foundation::core::byte_view(ViewMut<T, Brand, Extent>&& run) noexcept
+        -> ViewMut<std::byte, Brand, Extent>;
     template <class T, class Brand, std::size_t Extent, class Body>
         requires FrameBody<Body, T, Brand, Extent>
     friend constexpr auto ::foundation::core::reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept
@@ -1449,9 +1457,10 @@ give_run_back_(FrameKey const& key, Owner&& held, View<T, Extent> run, Body&& bo
 
 namespace detail {
 
-// The run of view as a plain View of its extent.  Only the doors of this
-// header use it, and each of them holds the ViewMut by move.  The ViewMut
-// proves its run, so the View takes its parts with no check.
+// The run of view as a plain View of its extent.  Only the doors of the base
+// use it, and each of them holds the ViewMut by move or by value, so the View
+// is a part of the one writer that the door holds.  The ViewMut proves its
+// run, so the View takes its parts with no check.
 template <class T, class Brand, std::size_t Extent>
 constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept {
     T* const first = first_of_(BaseLayerRead{}, view);
@@ -2588,6 +2597,22 @@ byte_view(View<T, Extent> run) noexcept {
         return View<Byte, Extent>{first};
     }
 }
+
+// The bytes of the run of a frame of unsigned chars, as the ViewMut of
+// std::byte of the same count, extent and brand.  The door takes the ViewMut
+// by move, as a split does, so the bytes are the one writer of the run.  A
+// named ViewMut and a const one are refused below.  Complexity: O(1).
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires std::same_as<T, unsigned char>
+[[nodiscard]] ViewMut<std::byte, Brand, Extent> byte_view(ViewMut<T, Brand, Extent>&& run) noexcept {
+    return ViewMut<std::byte, Brand, Extent>{RegionFrameKeyDoor::key_(), byte_view(detail::run_of_(run))};
+}
+
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void byte_view(ViewMut<T, Brand, Extent>&) = delete("the bytes take the ViewMut by move: pass std::move(view)");
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void byte_view(ViewMut<T, Brand, Extent> const&) =
+    delete("a const ViewMut writes nothing, so it gives no writer of its bytes: read its view() through byte_view");
 
 }  // namespace foundation::core
 

@@ -34,7 +34,9 @@
 //                       run of bytes that the program owns, such as a pool.
 //                       An offset equal to the count gives the address one
 //                       past the last byte.  No value for an empty run and
-//                       for an offset past the count
+//                       for an offset past the count.  bytes is a View of
+//                       bytes, or the ViewMut of a frame through a const
+//                       reference
 //   mint_foreign_run_address(first)   the address that a foreign ABI gives,
 //                       such as the data pointer of a tensor of a front end.
 //                       No value for the null pointer
@@ -244,6 +246,10 @@ struct niche<DataAddress<Device>> {
 template <class Byte, std::size_t Extent>
     requires RunBytes<Byte>
 [[nodiscard]] constexpr Option<RunAddress> mint_run_address(View<Byte, Extent> bytes, std::size_t offset) noexcept;
+template <class Byte, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires RunBytes<Byte>
+[[nodiscard]] constexpr Option<RunAddress> mint_run_address(ViewMut<Byte, Brand, Extent> const& bytes,
+                                                            std::size_t offset) noexcept;
 
 template <class Pointer>
     requires ForeignRunPointer<Pointer>
@@ -255,6 +261,10 @@ class RunAddressDoor final : ::foundation::NoObject<RunAddressDoor> {
     template <class Byte, std::size_t Extent>
         requires RunBytes<Byte>
     friend constexpr Option<RunAddress> core::mint_run_address(View<Byte, Extent> bytes, std::size_t offset) noexcept;
+    template <class Byte, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+        requires RunBytes<Byte>
+    friend constexpr Option<RunAddress> core::mint_run_address(ViewMut<Byte, Brand, Extent> const& bytes,
+                                                               std::size_t offset) noexcept;
     template <class Pointer>
         requires ForeignRunPointer<Pointer>
     friend Option<RunAddress> core::mint_foreign_run_address(Pointer first) noexcept;
@@ -271,6 +281,21 @@ class RunAddressDoor final : ::foundation::NoObject<RunAddressDoor> {
 template <class Byte, std::size_t Extent>
     requires RunBytes<Byte>
 [[nodiscard]] constexpr Option<RunAddress> mint_run_address(View<Byte, Extent> bytes, std::size_t offset) noexcept {
+    if (bytes.size() == 0 || offset > bytes.size()) [[unlikely]] {
+        return Option<RunAddress>{none};
+    }
+    Byte* const first = first_of_(detail::BaseLayerRead{}, bytes);
+    return Option<RunAddress>::some(RunAddress{static_cast<void*>(first + offset), detail::RunAddressDoor::key()});
+}
+
+// The address of the byte at offset of the run of a frame, as the form above
+// gives it for a View.  The mint reads the run through a const reference, so
+// the frame keeps its one writer, and a body mints the addresses of many
+// offsets of one run.
+template <class Byte, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires RunBytes<Byte>
+[[nodiscard]] constexpr Option<RunAddress> mint_run_address(ViewMut<Byte, Brand, Extent> const& bytes,
+                                                            std::size_t offset) noexcept {
     if (bytes.size() == 0 || offset > bytes.size()) [[unlikely]] {
         return Option<RunAddress>{none};
     }

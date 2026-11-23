@@ -1020,7 +1020,7 @@ mint_strided_view_mut(ViewMut<T, Brand, RunExtent> run, View<S, SizesExtent> siz
     // The arms of a match would give the brand of the frame through a return
     // type that no template argument of the match names, so the mint reads
     // the Option with a test and an expect.
-    Option<StridedView<T, rank>> plain = mint_strided_view(run.view(), sizes, strides, offset);
+    Option<StridedView<T, rank>> plain = mint_strided_view(detail::run_of_(run), sizes, strides, offset);
     if (plain.is_none()) return Minted{none};
     StridedView<T, rank> const view = std::move(plain).expect("the test above");
     if (view.count() != 0 && !detail::has_no_overlap_(detail::strided_lanes_of_(view))) {

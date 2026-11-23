@@ -1511,6 +1511,19 @@ read_full_at(Ctx const&, FileRef<Rights> file, ::foundation::core::View<std::byt
                                  offset.raw());
 }
 
+// The read at an offset into the run of a frame.  The door takes the ViewMut
+// of the frame by value, as fill does, so the read is the one writer of the
+// run.
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Brand, std::size_t Extent>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read | ::fixy::os::RightSet::seek>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full_at(Ctx const&, FileRef<Rights> file, ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer,
+             FileOffset offset) noexcept {
+    return detail::read_full_at_(::fixy::os::detail::HandleDoor::descriptor_of(file),
+                                 first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(),
+                                 offset.raw());
+}
+
 // Sets the size of the file to length bytes: the file loses each byte at
 // length or after it, and a shorter file gets zero bytes up to length.  The
 // call changes the bytes of the file, so it asks for the write right.  A file
@@ -1528,6 +1541,17 @@ template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 read_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle, ::foundation::core::View<std::byte> buffer) noexcept {
+    return detail::read_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
+                              first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size());
+}
+
+// The read into the run of a frame.  The door takes the ViewMut of the frame
+// by value, as fill does, so the read is the one writer of the run.
+template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Brand, std::size_t Extent>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle,
+          ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer) noexcept {
     return detail::read_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
                               first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size());
 }

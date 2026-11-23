@@ -159,15 +159,16 @@ private:
 
 // Writes the CPU of each stage of one run into cpus, in the order of the
 // stages, or -1 for a stage with no free candidate (the order of the
-// candidates, the claims).  allowed is the mask of the caller, and an empty
-// mask gives -1 to each stage.  clusters lists the cache clusters, each one a
-// list of CPU ids, as Topology::cache_clusters() gives them.  Complexity:
-// O(K * E + B) for K clusters, E CPU entries in all clusters and
-// B = AffinityMask::kBits, one time for each run, next to the start of one
-// thread for each stage.
-template <class Clusters>
+// candidates, the claims).  cpus is the ViewMut of the frame of the CPUs, and
+// the door takes it by value, as fill does.  allowed is the mask of the
+// caller, and an empty mask gives -1 to each stage.  clusters lists the cache
+// clusters, each one a list of CPU ids, as Topology::cache_clusters() gives
+// them.  Complexity: O(K * E + B) for K clusters, E CPU entries in all
+// clusters and B = AffinityMask::kBits, one time for each run, next to the
+// start of one thread for each stage.
+template <class Clusters, class Brand, std::size_t Extent>
 void claim_stage_cpus(StageCpuClaims& claims, ::foundation::algebra::lattices::AffinityMask const& allowed,
-                      Clusters const& clusters, ::foundation::core::View<int> cpus) noexcept {
+                      Clusters const& clusters, ::foundation::core::ViewMut<int, Brand, Extent> cpus) noexcept {
     detail::StageCpuOrder order{allowed};
 
     // Each pass puts the cluster with the most open CPUs into the order.  A
@@ -197,11 +198,23 @@ void claim_stage_cpus(StageCpuClaims& claims, ::foundation::algebra::lattices::A
         }
     }
     order.add_rest_of_mask();
-    order.claim_into(claims, cpus);
+    order.claim_into(claims, ::foundation::core::detail::run_of_(cpus));
 }
 
-// Gives back each CPU of cpus that is not -1, and writes -1 over it.
+namespace detail {
+
+// The body of give_back_stage_cpus.  It is no template, so each frame of the
+// CPUs shares one copy of it in src/fixy/concurrent/StageCpus.cpp.
+void give_back_stage_cpus_(StageCpuClaims& claims, ::foundation::core::View<int> cpus) noexcept;
+
+}  // namespace detail
+
+// Gives back each CPU of cpus that is not -1, and writes -1 over it.  cpus is
+// the ViewMut of the frame of the CPUs, and the door takes it by value.
 // Complexity: O(cpus.size()).
-void give_back_stage_cpus(StageCpuClaims& claims, ::foundation::core::View<int> cpus) noexcept;
+template <class Brand, std::size_t Extent>
+void give_back_stage_cpus(StageCpuClaims& claims, ::foundation::core::ViewMut<int, Brand, Extent> cpus) noexcept {
+    detail::give_back_stage_cpus_(claims, ::foundation::core::detail::run_of_(cpus));
+}
 
 }  // namespace fixy::concurrent

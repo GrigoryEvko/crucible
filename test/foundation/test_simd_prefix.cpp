@@ -73,7 +73,8 @@ void check_prefixes() {
         fc::HeapArray<T> target = fc::mint_heap_array(test.alloc, lanes + 1, sentinel);
         V const stored{[](auto lane) noexcept { return static_cast<T>(decltype(lane)::value + 10); }};
         target = fc::with_mut(std::move(target), [&stored, count](auto cells) noexcept {
-            simd::store_prefix(stored, cells.view().window(0, count).expect("the count is at most the lane count"));
+            simd::store_prefix(
+                stored, fc::take_window(std::move(cells), 0, count).expect("the count is at most the lane count"));
         });
         std::size_t position = 0;
         for (T const element : target) {

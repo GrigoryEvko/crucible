@@ -60,8 +60,9 @@ struct OutputRing {
     void put(core::View<char const> run) noexcept {
         bytes.with_mut([this, run](auto slots) noexcept {
             for (char const character : run) {
-                *slots.get(total % kChildOutputCapacity).expect("a position modulo the capacity is in the ring") =
-                    character;
+                auto slot =
+                    slots.get_mut(total % kChildOutputCapacity).expect("a position modulo the capacity is in the ring");
+                *slot = character;
                 ++total;
             }
         });
@@ -75,7 +76,8 @@ struct OutputRing {
     core::FixedArray<char, kReadChunk> chunk{};
     return chunk.with_mut([error_output, &ring](auto run) noexcept -> core::Option<os::Errno> {
         for (;;) {
-            core::Result<std::size_t, os::Errno> taken = os::detail::read_child_output_(error_output, run.view());
+            core::Result<std::size_t, os::Errno> taken =
+                os::detail::read_child_output_(error_output, core::detail::run_of_(run));
             if (taken.is_err()) {
                 return taken.err();
             }
@@ -83,8 +85,7 @@ struct OutputRing {
             if (count == 0) {
                 return core::none;
             }
-            ring.put(
-                core::View<char>{run.view()}.window(0, count).expect("a read gives at most the size of its buffer"));
+            ring.put(run.view().window(0, count).expect("a read gives at most the size of its buffer"));
         }
     });
 }
@@ -199,7 +200,8 @@ struct OutputRing {
         core::FixedArray<std::uint64_t, kSyscallArguments> arguments{};
         arguments.with_mut([&info](auto run) noexcept {
             for (std::size_t index = 0; index < kSyscallArguments; ++index) {
-                *run.get(index).expect("the entry has six arguments") = info.entry.args[index];
+                auto argument = run.get_mut(index).expect("the entry has six arguments");
+                *argument = info.entry.args[index];
             }
         });
         return Read{core::Option<SyscallStop>::some(

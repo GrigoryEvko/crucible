@@ -84,13 +84,13 @@ void StageCpuOrder::claim_into(StageCpuClaims& claims, ::foundation::core::View<
     }
 }
 
-}  // namespace detail
-
-void give_back_stage_cpus(StageCpuClaims& claims, ::foundation::core::View<int> cpus) noexcept {
+void give_back_stage_cpus_(StageCpuClaims& claims, ::foundation::core::View<int> cpus) noexcept {
     for (int& cpu : cpus) {
         if (cpu >= 0) claims.give_back(static_cast<std::uint16_t>(cpu));
         cpu = -1;
     }
 }
+
+}  // namespace detail
 
 }  // namespace fixy::concurrent

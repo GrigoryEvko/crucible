@@ -128,7 +128,7 @@ static void test_store_bytes_and_bit_cast() {
     simd::u64x4 const v{simd::u64x4::raw_type{0x0807060504030201ULL, 0x100F0E0D0C0B0A09ULL, 0x1817161514131211ULL,
                                               0x201F1E1D1C1B1A19ULL}};
     bytes.with_mut([v](auto run) noexcept {
-        simd::store(v, run.view().template window<32>(1).expect("32 bytes fit after the first"));
+        simd::store(v, ::fixy::take_window<32>(std::move(run), 1).expect("32 bytes fit after the first"));
     });
     for (auto index : bytes.indices()) {
         auto const expected = index.raw() == 0 || index.raw() == 33 ? 0U : index.raw();
@@ -149,7 +149,7 @@ static void test_store_lanes() {
     ::foundation::core::FixedArray<int64_t, 10> lanes{};
     simd::i64x8 const v = simd::iota_v<simd::i64x8>() * simd::i64x8{int64_t{-3}} + simd::i64x8{int64_t{7}};
     lanes.with_mut([v](auto run) noexcept {
-        simd::store(v, run.view().template window<8>(1).expect("8 lanes fit after the first"));
+        simd::store(v, ::fixy::take_window<8>(std::move(run), 1).expect("8 lanes fit after the first"));
     });
     for (auto index : lanes.indices()) {
         auto const lane = static_cast<int64_t>(index.raw());
@@ -164,7 +164,7 @@ static void test_store_lanes() {
     ::foundation::core::FixedArray<std::uint32_t, 10> words{};
     simd::u32x8 const w = simd::iota_v<simd::u32x8>() + simd::u32x8{std::uint32_t{0xA0000000U}};
     words.with_mut([w](auto run) noexcept {
-        simd::store(w, run.view().template window<8>(2).expect("8 lanes fit after the second"));
+        simd::store(w, ::fixy::take_window<8>(std::move(run), 2).expect("8 lanes fit after the second"));
     });
     for (auto index : words.indices()) {
         auto const expected = index.raw() < 2 ? 0U : 0xA0000000U + static_cast<std::uint32_t>(index.raw() - 2);

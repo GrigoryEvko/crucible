@@ -518,7 +518,7 @@ template <class T, class Brand, std::size_t Extent>
         }
     }
     if (runs.size() == 0) {
-        fill(View<T>{sums.view()}, T{});
+        fill(std::move(sums), T{});
         return Unit{};
     }
     View<T const> const* const first_run = first_of_(detail::BaseLayerRead{}, runs);

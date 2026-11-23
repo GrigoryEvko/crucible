@@ -191,8 +191,9 @@ template <class Value>
         [](::foundation::core::View<std::byte const, sizeof(Value)> window) -> Decoded {
             ::foundation::core::FixedArray<std::byte, sizeof(Value)> word{};
             word.with_mut([window](auto run) noexcept {
-                for (::foundation::core::Index<sizeof(Value)> const index : run.view().indices()) {
-                    run.view().at(index) = window.at(index);
+                for (::foundation::core::Index<sizeof(Value)> const index : window.indices()) {
+                    auto byte = run.get_mut(index.raw()).expect("an index of the window is inside the word");
+                    *byte = window.at(index);
                 }
             });
             return ::foundation::core::decode<Value>(word);

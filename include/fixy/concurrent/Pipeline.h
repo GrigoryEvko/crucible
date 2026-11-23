@@ -802,7 +802,7 @@ private:
         ::foundation::core::FixedArray<int, sizeof...(Is)> affinity_cpus{};
         affinity_cpus.with_mut([&ctx](auto cpus) noexcept {
             claim_stage_cpus(*process_stage_cpu_claims(), caller_affinity_(ctx),
-                             ::fixy::topology::Topology::instance().cache_clusters(), cpus.view());
+                             ::fixy::topology::Topology::instance().cache_clusters(), std::move(cpus));
         });
         (affinity_cpus.with_element(::foundation::core::index<Is>(),
                                     [](int& cpu) noexcept { give_back_unpinnable_stage_cpu_<Stages>(cpu); }),
@@ -816,7 +816,7 @@ private:
             .expect("Pipeline: no stage thread started.  The stages wait on each other, so the pipeline cannot run "
                     "them on the calling thread");
         affinity_cpus.with_mut(
-            [](auto cpus) noexcept { give_back_stage_cpus(*process_stage_cpu_claims(), cpus.view()); });
+            [](auto cpus) noexcept { give_back_stage_cpus(*process_stage_cpu_claims(), std::move(cpus)); });
     }
 
     std::tuple<Stages...> stages_;

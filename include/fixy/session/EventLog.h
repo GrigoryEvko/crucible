@@ -586,8 +586,9 @@ decode_session_event(::foundation::core::View<std::byte const> bytes) noexcept {
         bytes.template window<session_event_size>(0).expect("the test above found the bytes of one record");
     ::foundation::core::FixedArray<std::byte, session_event_size> block{};
     block.with_mut([record](auto run) noexcept {
-        for (auto const index : run.view().indices()) {
-            run.view().at(index) = record.at(index);
+        for (auto const index : record.indices()) {
+            auto byte = run.get_mut(index.raw()).expect("an index of the record is inside the block");
+            *byte = record.at(index);
         }
     });
     const auto raw = std::bit_cast<detail::event_log::RawEvent>(block);

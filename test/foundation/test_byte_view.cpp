@@ -1,7 +1,8 @@
 // Tests of byte_view of foundation/core/Region.h.
 //
 // The View of std::byte reads and writes the bytes of a run of unsigned
-// chars.  It keeps the count, the fixed extent and the const of the run.
+// chars.  It keeps the count, the fixed extent and the const of the run.  The
+// ViewMut of a frame gives its bytes by move, with its brand.
 
 #include <foundation/core/Region.h>
 
@@ -31,7 +32,9 @@ void test_reads_and_writes_the_run() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::foundation::core::HeapArray<std::uint8_t> run = ::foundation::core::mint_heap_array(alloc, 5, std::uint8_t{0});
     run = ::foundation::core::with_mut(std::move(run), [](auto cells) noexcept {
-        View<std::byte> const bytes = byte_view(cells.view());
+        using Cells = decltype(cells);
+        auto bytes = byte_view(std::move(cells));
+        static_assert(std::is_same_v<typename decltype(bytes)::brand_type, typename Cells::brand_type>);
         CRUCIBLE_FATAL_INVARIANT(bytes.size() == 5);
         std::uint8_t value = 1;
         for (std::byte& byte : bytes) {
@@ -58,8 +61,10 @@ void test_reads_and_writes_the_run() {
 void test_fixed_extent() {
     ::foundation::core::FixedArray<std::uint8_t, 4> run{};
     run.with_mut([](auto cells) noexcept {
-        View<std::byte, 4> const bytes = byte_view(cells.view());
-        bytes.at(::foundation::core::index<3>()) = std::byte{0x7F};
+        auto bytes = byte_view(std::move(cells));
+        static_assert(decltype(bytes)::extent == 4);
+        auto last = bytes.get_mut(3).expect("four bytes");
+        *last = std::byte{0x7F};
     });
     CRUCIBLE_FATAL_INVARIANT(run.view().at(::foundation::core::index<3>()) == 0x7F);
     CRUCIBLE_FATAL_INVARIANT(run.view().at(::foundation::core::index<0>()) == 0);

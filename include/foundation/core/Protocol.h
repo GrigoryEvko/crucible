@@ -1901,6 +1901,14 @@ constexpr void encode(T const& value, View<std::byte, encoded_size_v<T>> out) no
     detail::encode_part_(value, first_of_(detail::BaseLayerRead{}, out));
 }
 
+// Writes the image of the value into the run of a frame (the image).  The
+// door takes the ViewMut of the frame by value, as fill does, so the encode
+// is the one writer of the run.  Complexity: one pass over the parts.
+template <Encodable T, class Brand>
+constexpr void encode(T const& value, ViewMut<std::byte, Brand, encoded_size_v<T>> out) noexcept {
+    detail::encode_part_(value, first_of_(detail::BaseLayerRead{}, out));
+}
+
 // The hash of a run of values (the hash of a run): the fold of the images of
 // the elements one after the other as one image, and then of one block with
 // the count of the elements.  The count keeps two runs apart when one is the
@@ -1952,6 +1960,19 @@ template <HeapEncodable T>
 // each byte of the image.
 template <HeapEncodable T>
 constexpr void encode(T const& value, View<std::byte> out) noexcept {
+    std::size_t const needed = detail::heap_size_(value);
+    if (out.size() != needed || needed > detail::max_image_bytes) [[unlikely]] {
+        detail::refuse_heap_encode_(out.size(), needed);
+    }
+    if (needed != 0) detail::encode_heap_part_(value, first_of_(detail::BaseLayerRead{}, out));
+}
+
+// Writes the image of the value into the run of a frame (the heap parts), as
+// the form above does.  The door takes the ViewMut of the frame by value, as
+// fill does, so the encode is the one writer of the run.  Complexity: one
+// store for each byte of the image.
+template <HeapEncodable T, class Brand, std::size_t Extent>
+constexpr void encode(T const& value, ViewMut<std::byte, Brand, Extent> out) noexcept {
     std::size_t const needed = detail::heap_size_(value);
     if (out.size() != needed || needed > detail::max_image_bytes) [[unlikely]] {
         detail::refuse_heap_encode_(out.size(), needed);

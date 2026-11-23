@@ -403,6 +403,17 @@ CRUCIBLE_INLINE void store(V value, core::View<Lane, Lanes> lanes) noexcept {
     __builtin_memcpy(first_of_(core::detail::BaseLayerRead{}, lanes), &raw, sizeof(raw));
 }
 
+// The store of a vector into the bytes or the lanes of one register of the
+// run of a frame, the lowest lane first.  The door takes the ViewMut of the
+// frame by value, as fill does, so the store is the one writer of the run.
+// The type of the ViewMut proves the count, so the copy has no check.
+template <typename V, typename Lane, ::foundation::brand::IsBrand Brand, std::size_t Lanes>
+    requires RegisterBytes<V, Lane, Lanes> || WritableRegisterLanes<V, Lane, Lanes>
+CRUCIBLE_INLINE void store(V value, core::ViewMut<Lane, Brand, Lanes> lanes) noexcept {
+    const typename V::raw_type raw = value.raw();
+    __builtin_memcpy(first_of_(core::detail::BaseLayerRead{}, lanes), &raw, sizeof(raw));
+}
+
 namespace detail {
 
 // The mask of the first bytes of a register of 64, 32 or 16 bytes: bit i set
@@ -502,6 +513,15 @@ template <typename V, typename Lane>
 template <typename V, typename Lane>
     requires std::is_same_v<Lane, typename V::value_type>
 CRUCIBLE_INLINE void store_prefix(V value, core::View<Lane> lanes) noexcept {
+    store_prefix(value, first_of_(core::detail::BaseLayerRead{}, lanes), lanes.size());
+}
+
+// The prefix store into the run of a frame: the first lanes.size() lanes of
+// value, and no other byte.  The door takes the ViewMut of the frame by
+// value, as fill does, so the store is the one writer of the run.
+template <typename V, typename Lane, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires std::is_same_v<Lane, typename V::value_type>
+CRUCIBLE_INLINE void store_prefix(V value, core::ViewMut<Lane, Brand, Extent> lanes) noexcept {
     store_prefix(value, first_of_(core::detail::BaseLayerRead{}, lanes), lanes.size());
 }
 
