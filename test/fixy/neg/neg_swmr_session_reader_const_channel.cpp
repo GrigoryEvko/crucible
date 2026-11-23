@@ -2,11 +2,12 @@
 //
 // mint_swmr_reader lends a share of the channel's reader pool, which
 // changes the pool.  A const channel cannot lend a share, so the mint
-// refuses it.
+// refuses it.  The context holds Nondet, so only the const channel fails.
 //
 // Expected diagnostic: SwmrSessionSurface is not satisfied for the const
 // channel.
 
+#include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
@@ -30,8 +31,9 @@ using Swmr = ::fixy::channels::swmr_session::SwmrSession<int, WriterTag, ReaderT
 int main() {
     using namespace swmr_reader_const_fixture;
     namespace ses = ::fixy::channels::swmr_session;
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader(std::as_const(swmr));
+    auto reader = ses::mint_swmr_reader(ctx, std::as_const(swmr));
     (void)reader;
     return 0;
 }

@@ -5,6 +5,7 @@
 //
 // Expected diagnostic: CtxFitsSwmrWriterSession is not satisfied.
 
+#include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
@@ -30,8 +31,10 @@ int main() {
     namespace ses = ::fixy::channels::swmr_session;
     namespace eff = ::foundation::effects;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
+    // The lend of the reader share takes Nondet.
+    const ::fixy::TestRunnerCtx reader_ctx{eff::testing::test()};
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader<Swmr>(swmr);
+    auto reader = ses::mint_swmr_reader<Swmr>(reader_ctx, swmr);
     auto session = ses::mint_writer_runtime_session<Swmr>(ctx, std::move(reader).expect("the pool lends a share"));
     (void)session;
     return 0;

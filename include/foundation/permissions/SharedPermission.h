@@ -330,12 +330,11 @@ concept PoolCtx = CtxAdmitsPermission<Tag, Ctx>
 namespace detail {
 
 // Internal door of the channels.  A lend and an upgrade with no
-// context, for the members of the channels of fixy/concurrent and
-// fixy/channels that take no context yet: producer,
-// try_withdraw_producer_root and drain of the merge form of
-// PermissionedChannel, and reader and try_withdraw_reader_root of the SWMR
-// session.  Each of them asks for the share or the exclusive of a pool
-// that the channel itself owns, for a tag whose row is empty.  The schedule
+// context, for the members of the channels of fixy/concurrent that take no
+// context yet: producer, try_withdraw_producer_root and drain of the merge
+// and lanes forms of PermissionedChannel.  Each of them asks for the share
+// or the exclusive of a pool that the channel itself owns, for a tag whose
+// row is empty.  The schedule
 // decides its outcome, as it decides the outcome of lend(ctx), and no
 // context gates these members yet.  They move to a form that takes the
 // context, one channel at a time, and then the door goes.  No other code

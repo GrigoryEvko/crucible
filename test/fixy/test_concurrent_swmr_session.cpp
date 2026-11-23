@@ -116,7 +116,7 @@ void test_writer_publish_reader_loads_latest() {
 
     writer.publish(42);
 
-    auto minted = ses::mint_swmr_reader<Swmr>(swmr);
+    auto minted = ses::mint_swmr_reader<Swmr>(kTest, swmr);
     CRUCIBLE_REQUIRE(minted.is_some());
     const Swmr::ReaderHandle reader = std::move(minted).expect("the pool lends a share");
     CRUCIBLE_REQUIRE(reader.load(kTest) == 42);
@@ -127,7 +127,7 @@ void test_writer_publish_reader_loads_latest() {
 // True when the reader root came out of the pool of the session.  The root
 // goes back to the pool at once.
 [[nodiscard]] bool can_withdraw_reader_root(Swmr& swmr) noexcept {
-    return swmr.try_withdraw_reader_root().match(
+    return swmr.try_withdraw_reader_root(kTest).match(
         [&swmr](auto root) noexcept {
             swmr.deposit_reader_root(std::move(root));
             return true;
@@ -138,8 +138,8 @@ void test_writer_publish_reader_loads_latest() {
 void test_multiple_readers_track_pool_lifetime() {
     Swmr swmr{reader_root(), 1};
 
-    auto r1 = ses::mint_swmr_reader<Swmr>(swmr);
-    auto r2 = ses::mint_swmr_reader<Swmr>(swmr);
+    auto r1 = ses::mint_swmr_reader<Swmr>(kTest, swmr);
+    auto r2 = ses::mint_swmr_reader<Swmr>(kTest, swmr);
 
     CRUCIBLE_REQUIRE(r1.is_some());
     CRUCIBLE_REQUIRE(r2.is_some());
@@ -154,14 +154,14 @@ void test_multiple_readers_track_pool_lifetime() {
 
     // With no reader out, the root comes out, and the pool lends no reader
     // while it is out.
-    auto root = swmr.try_withdraw_reader_root().expect("the root comes out with no reader out");
+    auto root = swmr.try_withdraw_reader_root(kTest).expect("the root comes out with no reader out");
     bool const is_root_out = swmr.is_exclusive_active();
-    bool const is_lend_refused = ses::mint_swmr_reader<Swmr>(swmr).is_none();
+    bool const is_lend_refused = ses::mint_swmr_reader<Swmr>(kTest, swmr).is_none();
     swmr.deposit_reader_root(std::move(root));
     CRUCIBLE_REQUIRE(is_root_out);
     CRUCIBLE_REQUIRE(is_lend_refused);
     CRUCIBLE_REQUIRE(!swmr.is_exclusive_active());
-    CRUCIBLE_REQUIRE(ses::mint_swmr_reader<Swmr>(swmr).is_some());
+    CRUCIBLE_REQUIRE(ses::mint_swmr_reader<Swmr>(kTest, swmr).is_some());
 }
 
 void test_late_reader_observes_latest_publish() {
@@ -170,13 +170,13 @@ void test_late_reader_observes_latest_publish() {
 
     // The handle that expect gives ends at the end of the statement, and it
     // gives its share back there.
-    auto early = ses::mint_swmr_reader<Swmr>(swmr);
+    auto early = ses::mint_swmr_reader<Swmr>(kTest, swmr);
     CRUCIBLE_REQUIRE(early.is_some());
     CRUCIBLE_REQUIRE(std::move(early).expect("the pool lends a share").load(kTest) == 3);
 
     writer.publish(99);
 
-    auto late = ses::mint_swmr_reader<Swmr>(swmr);
+    auto late = ses::mint_swmr_reader<Swmr>(kTest, swmr);
     CRUCIBLE_REQUIRE(late.is_some());
     CRUCIBLE_REQUIRE(std::move(late).expect("the pool lends a share").load(kTest) == 99);
 }
@@ -189,7 +189,7 @@ void test_moved_handles_keep_their_channel() {
     auto moved_writer = std::move(writer);
     moved_writer.publish(6);
 
-    auto reader = ses::mint_swmr_reader<Swmr>(swmr);
+    auto reader = ses::mint_swmr_reader<Swmr>(kTest, swmr);
     CRUCIBLE_REQUIRE(reader.is_some());
     Swmr::ReaderHandle moved_reader = std::move(reader).expect("the pool lends a share");
     CRUCIBLE_REQUIRE(moved_reader.load(kTest) == 6);
@@ -207,15 +207,17 @@ void test_session_send_recv() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     Swmr swmr{reader_root(), 0};
     auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
-    auto reader = ses::mint_swmr_reader<Swmr>(swmr);
+    auto reader = ses::mint_swmr_reader<Swmr>(kTest, swmr);
     CRUCIBLE_REQUIRE(reader.is_some());
 
     auto writer_session = ses::mint_writer_runtime_session<Swmr>(ctx, std::move(writer));
+    // The read of a reader session takes Nondet, and the foreground context
+    // holds no atom, so the reader session runs in the context of the test.
     auto reader_session =
-        ses::mint_reader_runtime_session<Swmr>(ctx, std::move(reader).expect("the pool lends a share"));
+        ses::mint_reader_runtime_session<Swmr>(kTest, std::move(reader).expect("the pool lends a share"));
 
     auto next_writer = std::move(writer_session).send(ctx, 91);
-    auto [value, next_reader] = std::move(reader_session).recv(ctx);
+    auto [value, next_reader] = std::move(reader_session).recv(kTest);
 
     CRUCIBLE_REQUIRE(value == 91);
 
@@ -232,7 +234,7 @@ void test_writer_publishes_1000_values_four_readers_observe_sequence() {
 
     std::array<std::optional<PayloadSwmr::ReaderHandle>, kReaders> readers{};
     for (auto& reader : readers) {
-        auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+        auto minted = ses::mint_swmr_reader<PayloadSwmr>(kTest, swmr);
         CRUCIBLE_REQUIRE(minted.is_some());
         reader.emplace(std::move(minted).expect("the pool lends a share"));
     }
@@ -263,7 +265,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
 
     for (std::size_t idx = 0; idx < kReaders; ++idx) {
         reader_threads[idx] = std::jthread{[&, idx] {
-            auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+            auto minted = ses::mint_swmr_reader<PayloadSwmr>(kTest, swmr);
             if (minted.is_none()) {
                 failed.store(true, std::memory_order_release);
                 return;
@@ -313,7 +315,7 @@ void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
 
     // The reader leaves at the end of the block and gives its share back.
     {
-        auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+        auto minted = ses::mint_swmr_reader<PayloadSwmr>(kTest, swmr);
         CRUCIBLE_REQUIRE(minted.is_some());
         const PayloadSwmr::ReaderHandle reader = std::move(minted).expect("the pool lends a share");
         CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
@@ -331,7 +333,7 @@ void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
         writer.publish(payload_at(seq));
     }
 
-    auto rejoined = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+    auto rejoined = ses::mint_swmr_reader<PayloadSwmr>(kTest, swmr);
     CRUCIBLE_REQUIRE(rejoined.is_some());
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
 
@@ -354,7 +356,7 @@ void test_sixteen_readers_stress_latest_snapshot() {
 
     for (std::size_t idx = 0; idx < kReaders; ++idx) {
         readers[idx] = std::jthread([&, idx] {
-            auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+            auto minted = ses::mint_swmr_reader<PayloadSwmr>(kTest, swmr);
             if (minted.is_none()) {
                 failed.store(true, std::memory_order_release);
                 return;
@@ -421,9 +423,13 @@ void test_static_shape_witnesses() {
     static_assert(std::is_same_v<::fixy::concurrent::swmr_reader_value_t<ReaderHandle>, int>);
 
     static_assert(ses::CtxFitsSwmrWriterSession<FgCtx, Swmr, WriterHandle>);
-    static_assert(ses::CtxFitsSwmrReaderSession<FgCtx, Swmr, ReaderHandle>);
+    // The read of a reader session takes Nondet, so the foreground context,
+    // which holds no atom, opens no reader session.
+    static_assert(ses::CtxFitsSwmrReaderSession<::fixy::TestRunnerCtx, Swmr, ReaderHandle>);
+    static_assert(!ses::CtxFitsSwmrReaderSession<FgCtx, Swmr, ReaderHandle>, "a reader session reads the schedule");
     static_assert(!ses::CtxFitsSwmrWriterSession<FgCtx, Swmr, ReaderHandle>, "a reader handle is not a writer");
-    static_assert(!ses::CtxFitsSwmrReaderSession<FgCtx, Swmr, WriterHandle>, "a writer handle is not a reader");
+    static_assert(!ses::CtxFitsSwmrReaderSession<::fixy::TestRunnerCtx, Swmr, WriterHandle>,
+                  "a writer handle is not a reader");
     static_assert(!ses::CtxFitsSwmrWriterSession<FgCtx, int, WriterHandle>, "an int is not a channel");
 
     CRUCIBLE_REQUIRE(true);

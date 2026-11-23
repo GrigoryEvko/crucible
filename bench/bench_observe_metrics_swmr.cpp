@@ -33,7 +33,10 @@ int main() {
         ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(metrics, steps)};
     auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
-    auto minted = observe::mint_keeper_metrics_reader(channel);
+    // The context of the reader: the lend of its share and its load take
+    // Nondet, and the load spins, so it also takes Div.
+    const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
+    auto minted = observe::mint_keeper_metrics_reader(spin, channel);
     if (minted.is_none()) {
         ::fixy::report(::fixy::Sink::Err, "failed to mint runtime metrics reader\n");
         return 1;
@@ -50,7 +53,6 @@ int main() {
             bench::mark_changed(seq);
         })};
 
-    const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
     auto observed = reader.load(spin);
 
     using ::fixy::TextView;

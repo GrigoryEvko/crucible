@@ -2614,6 +2614,14 @@ crucible_neg_compile_test(neg_observe_mint_keeper_metrics_reader_without_channel
 crucible_neg_compile_test(neg_observe_mint_canopy_metrics_reader_int_channel
   "no matching function|could not convert|cannot convert|invalid initialization|cannot bind"
   "RuntimeMetricsChannel|int")
+# The lend of a reader share reads the schedule, so each reader mint refuses
+# a context that holds no Nondet.
+crucible_neg_compile_test(neg_observe_mint_keeper_metrics_reader_ctx_without_nondet
+  "no matching function for call to .mint_keeper_metrics_reader"
+  "CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>")
+crucible_neg_compile_test(neg_observe_mint_canopy_metrics_reader_ctx_without_nondet
+  "no matching function for call to .mint_canopy_metrics_reader"
+  "CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>")
 
 # cntp/CongestionControl.h per-socket TCP CC selection.
 #   * neg_congestion_control_raw_algorithm_apply: raw enum values cannot

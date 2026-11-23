@@ -81,14 +81,21 @@ public:
     operator=(RuntimeMetricsRoleReader&&) = delete("the share lifetime is fixed at construction");
 
     // The load spins with no exit while the writer publishes, so the context
-    // owns Div (AtomicSnapshot::load).
+    // owns Div (AtomicSnapshot::load).  The schedule of the writer decides
+    // which sample the load gives, so the context also owns Nondet.
     template <class Ctx>
         requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+              && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>
     [[nodiscard]] RuntimeMetricsSample load(Ctx const& ctx) const noexcept {
         return handle_.load(ctx);
     }
-    // The sample, or no value while the writer publishes.
-    [[nodiscard]] ::fixy::Option<RuntimeMetricsSample> try_load() const noexcept { return handle_.try_load(); }
+    // The sample, or no value while the writer publishes.  The schedule
+    // decides the sample and the outcome, so the call takes the tag of
+    // Nondet.
+    [[nodiscard]] ::fixy::Option<RuntimeMetricsSample>
+    try_load(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return handle_.try_load(nondet);
+    }
     [[nodiscard]] std::uint64_t version() const noexcept { return handle_.version(); }
 
 private:
@@ -103,22 +110,28 @@ using KeeperMetricsReader = RuntimeMetricsRoleReader<KeeperMetricsRole, ReaderBr
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
 using CanopyMetricsReader = RuntimeMetricsRoleReader<CanopyMetricsRole, ReaderBrand, WriterBrand>;
 
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
+// Each reader mint lends a share of the reader pool of the channel.  The lend
+// fails while the reader root is out, and the schedule decides when the root
+// comes back, so the mint takes a context that holds Nondet (the gate of
+// mint_swmr_reader).
+template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand, class Ctx>
+    requires ::fixy::channels::swmr_session::CtxFitsSwmrReaderMint<Ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>>
 [[nodiscard]] ::fixy::Option<KeeperMetricsReader<ReaderBrand, WriterBrand>>
-mint_keeper_metrics_reader(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
+mint_keeper_metrics_reader(Ctx const& ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
     using Reader = KeeperMetricsReader<ReaderBrand, WriterBrand>;
     auto handle =
-        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
+        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(ctx, channel);
     if (handle.is_none()) return ::fixy::none;
     return ::fixy::Option<Reader>::some(Reader{std::move(handle).expect("the reader pool lent a share")});
 }
 
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
+template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand, class Ctx>
+    requires ::fixy::channels::swmr_session::CtxFitsSwmrReaderMint<Ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>>
 [[nodiscard]] ::fixy::Option<CanopyMetricsReader<ReaderBrand, WriterBrand>>
-mint_canopy_metrics_reader(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
+mint_canopy_metrics_reader(Ctx const& ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
     using Reader = CanopyMetricsReader<ReaderBrand, WriterBrand>;
     auto handle =
-        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
+        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(ctx, channel);
     if (handle.is_none()) return ::fixy::none;
     return ::fixy::Option<Reader>::some(Reader{std::move(handle).expect("the reader pool lent a share")});
 }

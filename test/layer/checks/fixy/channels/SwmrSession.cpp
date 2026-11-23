@@ -84,6 +84,36 @@ static_assert(std::is_same_v<::fixy::session::pole_peer_protocol_t<WriterHandle>
 static_assert(std::is_same_v<::fixy::session::pole_protocol_t<ReaderHandle>, ReaderRuntimeProto<int>>);
 static_assert(std::is_same_v<::fixy::session::pole_peer_protocol_t<ReaderHandle>, WriterRuntimeProto<int>>);
 
+// Each read of the schedule takes Nondet: the lend of a reader share, the
+// withdraw of the reader root, the load, the read with no wait, and the read
+// of a reader session.  A context of the drain owns no Nondet, and a context
+// with Div and no Nondet loads nothing.
+using NoNondetCtx = ::fixy::BgDrainCtx;
+using DivNoNondetCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Bg,
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Div>>;
+using NondetCtx = ::fixy::BgLoadCtx;
+template <typename Session, typename Ctx>
+concept LendsReaderIn = requires(Session& session, Ctx const& ctx) { session.reader(ctx); };
+template <typename Session, typename Ctx>
+concept WithdrawsReaderRootIn = requires(Session& session, Ctx const& ctx) { session.try_withdraw_reader_root(ctx); };
+template <typename Handle, typename Ctx>
+concept LoadsIn = requires(Handle const& handle, Ctx const& ctx) { handle.load(ctx); };
+template <typename Handle>
+concept TryLoadsWithNoTag = requires(Handle const& handle) { handle.try_load(); };
+template <typename Handle>
+concept TryLoadsWithTag =
+    requires(Handle const& handle, ::foundation::effects::cap::Nondet nondet) { handle.try_load(nondet); };
+static_assert(LendsReaderIn<SmallSession, NondetCtx> && !LendsReaderIn<SmallSession, NoNondetCtx>);
+static_assert(WithdrawsReaderRootIn<SmallSession, NondetCtx> && !WithdrawsReaderRootIn<SmallSession, NoNondetCtx>);
+static_assert(LoadsIn<ReaderHandle, NondetCtx> && !LoadsIn<ReaderHandle, DivNoNondetCtx>);
+static_assert(TryLoadsWithTag<ReaderHandle> && !TryLoadsWithNoTag<ReaderHandle>);
+static_assert(CtxFitsSwmrReaderMint<NondetCtx, SmallSession> && !CtxFitsSwmrReaderMint<NoNondetCtx, SmallSession>);
+static_assert(CtxFitsSwmrReaderSession<NondetCtx, SmallSession, ReaderHandle>
+              && !CtxFitsSwmrReaderSession<NoNondetCtx, SmallSession, ReaderHandle>);
+// The write reads no schedule, so a writer session needs no Nondet.
+static_assert(CtxFitsSwmrWriterSession<NoNondetCtx, SmallSession, WriterHandle>);
+
 // The unit includes the bridge too, so the root of the pole tables holds two
 // families, and each pole reads the one table that knows it.
 struct BridgeUserTag {};

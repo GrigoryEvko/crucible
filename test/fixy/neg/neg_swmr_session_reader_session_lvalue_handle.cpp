@@ -2,10 +2,12 @@
 //
 // mint_reader_runtime_session takes the reader handle by move, so the
 // session owns it.  An lvalue handle would stay usable beside the
-// session, so the mint refuses it.
+// session, so the mint refuses it.  The context holds Nondet, as a reader
+// session asks, so only the lvalue fails.
 //
 // Expected diagnostic: CtxFitsSwmrReaderSession is not satisfied.
 
+#include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
@@ -28,9 +30,9 @@ int main() {
     using namespace swmr_reader_session_lvalue_fixture;
     namespace ses = ::fixy::channels::swmr_session;
     namespace eff = ::foundation::effects;
-    const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader<Swmr>(swmr);
+    auto reader = ses::mint_swmr_reader<Swmr>(ctx, swmr);
     auto handle = std::move(reader).expect("the pool lends a share");
     auto session = ses::mint_reader_runtime_session<Swmr>(ctx, handle);
     (void)session;

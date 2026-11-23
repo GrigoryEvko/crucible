@@ -5123,6 +5123,14 @@ fixy_neg_compile_test(neg_swmr_session_reader_non_surface
 fixy_neg_compile_test(neg_swmr_session_reader_const_channel
   "no matching function for call to .mint_swmr_reader"
   "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = const fixy::channels::swmr_session::SwmrSession<int, swmr_reader_const_fixture::WriterTag")
+# The lend of a reader share and the read with no wait take Nondet, so a
+# context with no Nondet and a call with no tag fail.
+fixy_neg_compile_test(neg_swmr_session_reader_ctx_without_nondet
+  "no matching function for call to .mint_swmr_reader<swmr_reader_nondet_fixture::Swmr>"
+  "CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>")
+fixy_neg_compile_test(neg_swmr_session_try_load_without_nondet
+  "no matching function for call to .*ReaderHandle::try_load\\(\\)"
+  "candidate expects 1 argument, 0 provided")
 
 # Each session mint takes the handle of its own role, by move.
 fixy_neg_compile_test(neg_swmr_session_writer_session_reader_handle
@@ -5137,6 +5145,11 @@ fixy_neg_compile_test(neg_swmr_session_reader_session_writer_handle
 fixy_neg_compile_test(neg_swmr_session_reader_session_lvalue_handle
   "no matching function for call to .mint_reader_runtime_session<swmr_reader_session_lvalue_fixture::Swmr>"
   "satisfaction of .CtxFitsSwmrReaderSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+# The read of a reader session takes the tag of Nondet from the context of
+# the step, so the mint refuses a context with no Nondet.
+fixy_neg_compile_test(neg_swmr_session_reader_session_without_nondet
+  "no matching function for call to .mint_reader_runtime_session<swmr_reader_session_nondet_fixture::Swmr>"
+  "CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>")
 
 # ── The handle poles and the stage shape ──────────────────────────────
 #

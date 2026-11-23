@@ -66,6 +66,10 @@ using WriterRuntimeProto = ::fixy::session::Loop<::fixy::session::Send<T, ::fixy
 template <typename T>
 using ReaderRuntimeProto = ::fixy::session::dual_of_t<WriterRuntimeProto<T>>;
 
+// The reader door lends a share of a pool, and the schedule decides its
+// outcome, so the door takes a context that holds Nondet.  The surface reads
+// the door with the witness context of the load of a reader pole
+// (fixy/concurrent/HandleTraits.h), which holds Nondet.
 template <typename S>
 concept SwmrSessionSurface =
     requires {
@@ -81,7 +85,9 @@ concept SwmrSessionSurface =
                 std::declval<
                     ::foundation::permissions::Permission<typename S::writer_tag, typename S::writer_brand>&&>())
         } -> std::same_as<typename S::WriterHandle>;
-        { std::declval<S&>().reader() } -> std::same_as<::fixy::Option<typename S::ReaderHandle>>;
+        {
+            std::declval<S&>().reader(std::declval<::fixy::concurrent::detail::load_witness_ctx const&>())
+        } -> std::same_as<::fixy::Option<typename S::ReaderHandle>>;
     } && ::fixy::concurrent::IsSwmrWriter<typename S::WriterHandle>
     && ::fixy::concurrent::IsSwmrReader<typename S::ReaderHandle>
     && std::is_same_v<::fixy::concurrent::swmr_writer_value_t<typename S::WriterHandle>, typename S::value_type>
@@ -221,14 +227,22 @@ public:
         operator=(ReaderHandle&&) = delete("SwmrSession::ReaderHandle share lifetime is fixed at construction");
 
         // The load spins with no exit while a write is in flight, so the
-        // context owns Div (AtomicSnapshot::load).  try_load does not wait.
+        // context owns Div (AtomicSnapshot::load).  The value of a load is the
+        // last publish before it, and the schedule of the writer decides which
+        // publish that is.  So the context also owns Nondet.
         template <class Ctx>
             requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+                  && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>
         [[nodiscard]] T load(Ctx const& ctx) const noexcept {
             return session_->snapshot_.load(ctx);
         }
 
-        [[nodiscard]] ::fixy::Option<T> try_load() const noexcept { return session_->snapshot_.try_load(); }
+        // The value, or no value while a write is in flight.  It does not
+        // wait.  The schedule decides the value and the outcome, so the call
+        // takes the tag of Nondet, as empty_approx of a channel does.
+        [[nodiscard]] ::fixy::Option<T> try_load(::foundation::effects::cap::Nondet) const noexcept {
+            return session_->snapshot_.try_load();
+        }
 
         [[nodiscard]] std::uint64_t version() const noexcept { return session_->snapshot_.version(); }
 
@@ -254,9 +268,14 @@ public:
     // A claim door (the doors of a synchronized class of foundation/
     // Transfer.h): one compare-exchange of the pool makes the share, and the
     // handle holds it.  After the compare-exchange the door writes only the
-    // handle, and a reader handle reads the snapshot with atomic steps.
-    [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderHandle> reader() noexcept {
-        auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(reader_pool_);
+    // handle, and a reader handle reads the snapshot with atomic steps.  The
+    // lend fails while the reader root is out, and another thread deposits
+    // the root at a time that the schedule decides, so the door takes a
+    // context that holds Nondet (PoolCtx).
+    template <class Ctx>
+        requires ::foundation::permissions::PoolCtx<reader_tag, Ctx>
+    [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderHandle> reader(Ctx const& ctx) noexcept {
+        auto lent = reader_pool_.lend(ctx);
         if (lent.is_none()) return ::fixy::none;
         return ::fixy::some(ReaderHandle{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
     }
@@ -277,9 +296,12 @@ public:
     // A claim door: its result is the exclusive token of the pool, which one
     // compare-exchange of the pool makes.  The write of the parked root after
     // that compare-exchange happens only on the thread that won it, until that
-    // thread deposits the lease.
-    [[nodiscard]] ::fixy::Option<reader_lease> try_withdraw_reader_root() noexcept {
-        return ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(reader_pool_);
+    // thread deposits the lease.  A reader handle ends at a time that the
+    // schedule decides, so the door takes a context that holds Nondet.
+    template <class Ctx>
+        requires ::foundation::permissions::PoolCtx<reader_tag, Ctx>
+    [[nodiscard]] ::fixy::Option<reader_lease> try_withdraw_reader_root(Ctx const& ctx) noexcept {
+        return reader_pool_.try_upgrade(ctx);
     }
 
     // Gives the lease of the reader root back to the pool.  A lease of another
@@ -306,16 +328,27 @@ template <SwmrSessionSurface Swmr>
     return session.writer(std::move(perm));
 }
 
-template <SwmrSessionSurface Swmr>
-[[nodiscard]] auto mint_swmr_reader(Swmr& session) noexcept {
-    return session.reader();
+// The gate of the reader mint: a channel of the SWMR shape, and a context
+// that fits the lend of its reader pool (PoolCtx), so the context holds
+// Nondet.
+template <typename Ctx, typename Swmr>
+concept CtxFitsSwmrReaderMint =
+    SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>;
+
+template <typename Swmr, class Ctx>
+    requires CtxFitsSwmrReaderMint<Ctx, Swmr>
+[[nodiscard]] auto mint_swmr_reader(Ctx const& ctx, Swmr& session) noexcept {
+    return session.reader(ctx);
 }
 
 // The pole table of a session (fixy/session/Admission.h, section The pole
 // table of a channel): the writer handle runs the writer protocol, and each
 // reader handle runs the reader protocol.  A publish never lacks room, so
 // the write always takes the value.  The read gives the snapshot, or none
-// while a write is in flight.  Neither reads the context of the step.
+// while a write is in flight.  The write does not read the context of the
+// step.  The schedule decides the value of a read, so the read takes the
+// bare tag of Nondet from the context of the step, and that context holds
+// Nondet.
 template <class Pole>
     requires SwmrSessionSurface<typename Pole::channel_type>
           && (std::same_as<Pole, typename Pole::channel_type::WriterHandle>
@@ -336,9 +369,9 @@ struct swmr_pole_protocols {
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
-        requires(!is_writer)
-    [[nodiscard]] static constexpr ::fixy::Option<value_type> read(Ctx const& /*ctx*/, Pole& pole) noexcept {
-        return pole.try_load();
+        requires(!is_writer) && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>
+    [[nodiscard]] static constexpr ::fixy::Option<value_type> read(Ctx const& ctx, Pole& pole) noexcept {
+        return pole.try_load(::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx));
     }
 };
 
@@ -347,14 +380,17 @@ struct swmr_pole_protocols {
 // of fixy/session/Handle.h for that handle.  The handle is a template
 // parameter so that each refusal is a clause of one concept: a type that
 // is not a channel, a handle of the other role, and a handle passed as an
-// lvalue all fail here.
+// lvalue all fail here.  The read of a reader pole takes the bare tag of
+// Nondet from the context of the step, so the context of a reader session
+// holds Nondet, and a context with no Nondet fails at the mint.
 template <typename Ctx, typename Swmr, typename Handle>
 concept CtxFitsSwmrWriterSession =
     SwmrSessionSurface<Swmr> && SwmrWriterHandleOf<Swmr, Handle> && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
 
 template <typename Ctx, typename Swmr, typename Handle>
 concept CtxFitsSwmrReaderSession = SwmrSessionSurface<Swmr> && std::same_as<Handle, typename Swmr::ReaderHandle>
-                                && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
+                                && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>
+                                && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>;
 
 // Each mint opens the handle on the protocol that the table above names
 // for its role.

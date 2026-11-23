@@ -1,10 +1,12 @@
 // Negative compile test.  This file must fail to compile.
 //
 // mint_reader_runtime_session runs the reader protocol over a reader
-// handle.  A writer handle cannot load, so the mint refuses it.
+// handle.  A writer handle cannot load, so the mint refuses it.  The
+// context holds Nondet, as a reader session asks, so only the role fails.
 //
 // Expected diagnostic: CtxFitsSwmrReaderSession is not satisfied.
 
+#include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 
 #include <foundation/effects/Ctx.h>
@@ -31,7 +33,7 @@ int main() {
     namespace ses = ::fixy::channels::swmr_session;
     namespace eff = ::foundation::effects;
     namespace perm = ::foundation::permissions;
-    const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
     Swmr swmr{reader_root(), 1};
     auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
     auto session = ses::mint_reader_runtime_session<Swmr>(ctx, std::move(writer));

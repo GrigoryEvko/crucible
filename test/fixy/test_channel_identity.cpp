@@ -241,13 +241,14 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     { [[maybe_unused]] auto first_writer = ses::mint_swmr_writer<Swmr>(session, writer_root()); }
     auto later_writer = ses::mint_swmr_writer<Swmr>(session, writer_root());
     later_writer.publish(5);
+    // The context of each reader: the lend of a share and the load take Nondet.
+    const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
     // True when the reader exists and loads the expected value.
-    const auto loads = [](auto const& reader, int expected) noexcept {
-        const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
+    const auto loads = [&spin](auto const& reader, int expected) noexcept {
         return reader.match([expected, &spin](auto const& handle) noexcept { return handle.load(spin) == expected; },
                             []() noexcept { return false; });
     };
-    const auto reader = ses::mint_swmr_reader<Swmr>(session);
+    const auto reader = ses::mint_swmr_reader<Swmr>(spin, session);
     if (!loads(reader, 5)) return 1;
 
     // A move of a writer handle keeps the claim of its session in the
@@ -256,7 +257,7 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     auto source = ses::mint_swmr_writer<Swmr>(moved_session, writer_root());
     auto target = std::move(source);
     target.publish(7);
-    const auto moved_reader = ses::mint_swmr_reader<Swmr>(moved_session);
+    const auto moved_reader = ses::mint_swmr_reader<Swmr>(spin, moved_session);
     if (!loads(moved_reader, 7)) return 1;
     return 0;
 }

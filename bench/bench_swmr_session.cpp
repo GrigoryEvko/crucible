@@ -57,6 +57,10 @@ using Swmr = ses::SwmrSession<Payload, WriterTag, ReaderTag, ::foundation::brand
 
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
+// The context of each reader: the lend of a reader share and each read take
+// Nondet, and the foreground context holds no atom.
+constexpr ::fixy::TestRunnerCtx kReader{::foundation::effects::testing::test()};
+
 // The Run of each row: its counts of samples and of warmup calls, and its cap.
 [[nodiscard]] bench::Run run_of(::fixy::TextView name) {
     bench::Run run{name};
@@ -71,7 +75,7 @@ template <typename Body>
 
 // A reader of the channel, which has a free share by construction.
 [[nodiscard]] Swmr::ReaderHandle take_reader(Swmr& swmr) noexcept {
-    auto reader = ses::mint_swmr_reader<Swmr>(swmr);
+    auto reader = ses::mint_swmr_reader<Swmr>(kReader, swmr);
     CRUCIBLE_BENCH_CHECK(reader.is_some());
     return std::move(reader).expect("the pool lends a share");
 }
@@ -144,10 +148,10 @@ template <typename Body>
     Swmr swmr{reader_root(), payload_at(123)};
     auto [report, session] = bench::measure_with(
         run_of("SwmrSession session recv"),
-        ::foundation::core::mint_seat(ses::mint_reader_runtime_session<Swmr>(kForeground, take_reader(swmr))),
+        ::foundation::core::mint_seat(ses::mint_reader_runtime_session<Swmr>(kReader, take_reader(swmr))),
         [](auto& seat) noexcept {
             seat.step([](auto&& held) noexcept {
-                auto [observed, next] = std::move(held).recv(kForeground);
+                auto [observed, next] = std::move(held).recv(kReader);
                 bench::do_not_optimize(observed);
                 return std::move(next);
             });

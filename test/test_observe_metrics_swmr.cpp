@@ -19,6 +19,9 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
+// The tag of Nondet, which a read with no wait takes.
+constexpr ::foundation::effects::cap::Nondet kNondet = ::foundation::effects::testing::test().nondet;
+
 }  // namespace
 
 namespace {
@@ -104,8 +107,8 @@ void test_writer_publish_keeper_and_canopy_readers() {
 
     auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
 
-    auto keeper = observe::mint_keeper_metrics_reader(channel).expect("a fresh channel has a free reader share");
-    auto canopy = observe::mint_canopy_metrics_reader(channel).expect("a fresh channel has a free reader share");
+    auto keeper = observe::mint_keeper_metrics_reader(kTest, channel).expect("a fresh channel has a free reader share");
+    auto canopy = observe::mint_canopy_metrics_reader(kTest, channel).expect("a fresh channel has a free reader share");
 
     // The sample of step zero, graded seven steps later.
     ::fixy::SequenceStamp const sampled = steps.stamp();
@@ -117,7 +120,7 @@ void test_writer_publish_keeper_and_canopy_readers() {
 
     auto keeper_sample = keeper.load(kTest);
     auto canopy_sample = canopy.load(kTest);
-    CRUCIBLE_REQUIRE(keeper.try_load().is_some());
+    CRUCIBLE_REQUIRE(keeper.try_load(kNondet).is_some());
 
     CRUCIBLE_REQUIRE(near(keeper_sample.peek().meb_lambda_max, 101.0));
     CRUCIBLE_REQUIRE(near(canopy_sample.peek().ntk_alpha_drift, 107.0));
@@ -133,10 +136,10 @@ void test_exclusive_drain_waits_for_readers() {
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(make_metrics(0.0), steps)};
 
     {
-        auto reader = observe::mint_keeper_metrics_reader(channel);
+        auto reader = observe::mint_keeper_metrics_reader(kTest, channel);
         CRUCIBLE_REQUIRE(reader.is_some());
         // The reader root stays in the pool while a reader lives.
-        bool const is_refused = channel.try_withdraw_reader_root().match(
+        bool const is_refused = channel.try_withdraw_reader_root(kTest).match(
             [&channel](auto root) noexcept {
                 channel.deposit_reader_root(std::move(root));
                 return false;
@@ -147,7 +150,7 @@ void test_exclusive_drain_waits_for_readers() {
 
     // The end of the scope gives the share of the reader back, so the root
     // comes out.
-    auto root = channel.try_withdraw_reader_root().expect("the root comes out with no reader out");
+    auto root = channel.try_withdraw_reader_root(kTest).expect("the root comes out with no reader out");
     bool const is_root_out = channel.is_exclusive_active();
     channel.deposit_reader_root(std::move(root));
     CRUCIBLE_REQUIRE(is_root_out);
