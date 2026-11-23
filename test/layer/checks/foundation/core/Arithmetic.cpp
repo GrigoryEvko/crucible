@@ -128,6 +128,21 @@ static_assert(widening_mul(std::uint32_t{0x80000000u}, std::uint32_t{4}).low == 
 static_assert(widening_mul(std::uint8_t{255}, std::uint8_t{255}).high == 254);
 static_assert(widening_mul(std::uint8_t{255}, std::uint8_t{255}).low == 1);
 
+// checked_mul_div divides the exact product, so a product past the type
+// still gives the quotient that the type holds.  A zero divisor and a
+// quotient past the type have no value.  test_core_scalar_arith holds the
+// refusal of a signed type, and its death tests end mul_div_floor for a zero
+// divisor and a quotient past the type.
+static_assert(holds(checked_mul_div(max_of<std::uint64_t>, max_of<std::uint64_t>, max_of<std::uint64_t>),
+                    max_of<std::uint64_t>));
+static_assert(empty(checked_mul_div(max_of<std::uint64_t>, std::uint64_t{6}, std::uint64_t{4})));
+static_assert(holds(checked_mul_div(max_of<std::uint64_t>, std::uint64_t{3}, std::uint64_t{4}),
+                    max_of<std::uint64_t> / 4 * 3 + 2));
+static_assert(empty(checked_mul_div(std::uint64_t{7}, std::uint64_t{3}, std::uint64_t{0})));
+static_assert(holds(checked_mul_div(std::uint8_t{200}, std::uint8_t{200}, std::uint8_t{250}), std::uint8_t{160}));
+static_assert(empty(checked_mul_div(std::uint8_t{200}, std::uint8_t{200}, std::uint8_t{156})));
+static_assert(mul_div_floor(std::uint32_t{10}, std::uint32_t{10}, std::uint32_t{3}) == 33u);
+
 // The layout: an Option of a value of four bytes has eight bytes, and a
 // WideProduct of two words holds the low word first.
 static_assert(sizeof(Option<std::uint32_t>) == 8 && sizeof(Option<std::uint64_t>) == 16);

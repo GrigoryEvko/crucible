@@ -4,7 +4,9 @@
 // pairs of each width.  The checked form has a value exactly when the exact
 // result fits, the wrapping form is the exact result modulo 2^bits, and the
 // saturating form is the exact result clamped to the limits.  A zero divisor
-// of saturating_div ends the process.
+// of saturating_div ends the process.  checked_mul_div agrees with a long
+// division of the exact product, and mul_div_floor ends the process for a
+// zero divisor and for a quotient past the type.
 
 #include <foundation/core/Arithmetic.h>
 
@@ -295,6 +297,76 @@ void test_widening_mul() {
     check_widening(core::max_of<unsigned long long>, core::max_of<unsigned long long>);
 }
 
+// The floor of a * b / c of the exact product, or no value: the model takes
+// the product in 128 bits and divides it one bit at a time, from the top
+// bit, with no division of the compiler.  A quotient past T has no value.
+// Complexity: 128 steps.
+template <class T>
+[[nodiscard]] Option<T> long_division(T left, T right, T divisor) noexcept {
+    if (divisor == T{0}) return core::none;
+    Unsigned128 const product = static_cast<Unsigned128>(left) * static_cast<Unsigned128>(right);
+    Unsigned128 quotient = 0;
+    Unsigned128 remainder = 0;
+    for (int bit = 127; bit >= 0; --bit) {
+        remainder = (remainder << 1) | ((product >> bit) & 1U);
+        if (remainder >= divisor) {
+            remainder -= divisor;
+            quotient |= Unsigned128{1} << bit;
+        }
+    }
+    if (quotient > static_cast<Unsigned128>(core::max_of<T>)) return core::none;
+    return Option<T>::some(static_cast<T>(quotient));
+}
+
+template <class T>
+void check_mul_div(T left, T right, T divisor) {
+    Option<T> const expected = long_division(left, right, divisor);
+    Option<T> const found = core::checked_mul_div(opaque(left), opaque(right), opaque(divisor));
+    CRUCIBLE_FATAL_INVARIANT(found.is_some() == expected.is_some());
+    CRUCIBLE_FATAL_INVARIANT(Option<T>{found}.value_or(T{0}) == Option<T>{expected}.value_or(T{0}));
+    if (expected.is_some()) {
+        CRUCIBLE_FATAL_INVARIANT(core::mul_div_floor(opaque(left), opaque(right), opaque(divisor))
+                                 == Option<T>{expected}.value_or(T{0}));
+    }
+}
+
+// checked_mul_div agrees with the long division of the exact product: over
+// each triple of 4-bit values, over the edges of each width, and over Philox
+// triples of each width.  The divisor of a random triple is a random word
+// shifted right by a random count, so small divisors and quotients past the
+// type both occur.
+void test_mul_div_against_long_division() {
+    for (unsigned left = 0; left < 16; ++left) {
+        for (unsigned right = 0; right < 16; ++right) {
+            for (unsigned divisor = 0; divisor < 16; ++divisor) {
+                check_mul_div(static_cast<std::uint8_t>(left * 17), static_cast<std::uint8_t>(right * 17),
+                              static_cast<std::uint8_t>(divisor));
+            }
+        }
+    }
+    std::uint64_t const top = core::max_of<std::uint64_t>;
+    check_mul_div(top, top, top);
+    check_mul_div(top, top, top - 1);
+    check_mul_div(top, std::uint64_t{1}, std::uint64_t{1});
+    check_mul_div(top, std::uint64_t{2}, std::uint64_t{2});
+    check_mul_div(top, std::uint64_t{2}, std::uint64_t{1});
+    check_mul_div(std::uint64_t{1} << 63, std::uint64_t{2}, std::uint64_t{2});
+    check_mul_div(std::uint64_t{0}, top, std::uint64_t{0});
+    check_mul_div(core::max_of<std::uint32_t>, core::max_of<std::uint32_t>, core::max_of<std::uint32_t>);
+    check_mul_div(core::max_of<std::uint32_t>, std::uint32_t{2}, std::uint32_t{1});
+    ::crucible::test::PhiloxStream stream{50};
+    for (int index = 0; index < 100000; ++index) {
+        std::uint64_t const left = stream.next_wide();
+        std::uint64_t const right = stream.next_wide() >> stream.below(64);
+        std::uint64_t const divisor = stream.next_wide() >> stream.below(64);
+        check_mul_div(left, right, divisor);
+        check_mul_div(static_cast<std::uint32_t>(left), static_cast<std::uint32_t>(right),
+                      static_cast<std::uint32_t>(divisor));
+        check_mul_div(static_cast<std::uint16_t>(left), static_cast<std::uint16_t>(right),
+                      static_cast<std::uint16_t>(divisor));
+    }
+}
+
 // gcd agrees with the algorithm of Euclid, also at the minimum of a signed
 // type.
 template <class T>
@@ -340,6 +412,12 @@ static_assert(SomeSetTakes<int> && SomeSetTakes<std::uint8_t> && SomeSetTakes<lo
 static_assert(!SomeSetTakes<double> && !SomeSetTakes<float> && !SomeSetTakes<bool>);
 static_assert(!SomeSetTakes<char> && !SomeSetTakes<char8_t> && !SomeSetTakes<wchar_t>);
 
+// The quotient of an exact product takes an unsigned Integer only.
+template <class T>
+concept TakesMulDiv = requires(T value) { core::checked_mul_div(value, value, value); };
+static_assert(TakesMulDiv<std::uint8_t> && TakesMulDiv<std::uint64_t> && TakesMulDiv<unsigned long long>);
+static_assert(!TakesMulDiv<int> && !TakesMulDiv<std::int64_t> && !TakesMulDiv<double> && !TakesMulDiv<bool>);
+
 // A zero divisor of saturating_div ends the process, signed and unsigned,
 // and a divisor other than 0 returns.
 // Each division by 0 runs in a child through expect_dies of the Check family,
@@ -358,6 +436,31 @@ void test_saturating_div_ends_on_zero(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(core::saturating_div(opaque(core::min_of<int>), -1) == core::max_of<int>);
 }
 
+// A zero divisor and a quotient past the type of mul_div_floor end the
+// process, each in a child.  The largest quotient that the type holds is
+// the control in the test process.
+void test_mul_div_floor_ends(::fixy::TestRunnerCtx const& test) {
+    using ::fixy::check::expect_dies;
+    expect_dies(
+        test, [] noexcept { (void)core::mul_div_floor(opaque(std::uint64_t{7}), std::uint64_t{3}, std::uint64_t{0}); },
+        ::foundation::core::TextView{"foundation: fatal: mul_div_floor got the divisor 0, which gives no quotient"});
+    expect_dies(
+        test,
+        [] noexcept {
+            (void)core::mul_div_floor(opaque(core::max_of<std::uint64_t>), std::uint64_t{2}, std::uint64_t{1});
+        },
+        ::foundation::core::TextView{"foundation: fatal: mul_div_floor got a quotient that the type does not hold"});
+    expect_dies(
+        test,
+        [] noexcept {
+            (void)core::mul_div_floor(opaque(core::max_of<std::uint32_t>), std::uint32_t{3}, std::uint32_t{2});
+        },
+        ::foundation::core::TextView{"foundation: fatal: mul_div_floor got a quotient that the type does not hold"});
+    CRUCIBLE_FATAL_INVARIANT(
+        core::mul_div_floor(opaque(core::max_of<std::uint64_t>), std::uint64_t{2}, std::uint64_t{2})
+        == core::max_of<std::uint64_t>);
+}
+
 }  // namespace
 
 int main() {
@@ -366,6 +469,8 @@ int main() {
     test_philox_pairs_of_each_width();
     test_widening_mul();
     test_gcd_against_euclid();
+    test_mul_div_against_long_division();
     test_saturating_div_ends_on_zero(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_mul_div_floor_ends(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     return 0;
 }

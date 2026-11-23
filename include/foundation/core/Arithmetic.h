@@ -32,6 +32,14 @@
 //                                           an unsigned value, for each input
 //   widening_mul(a, b)                      the full product of two unsigned
 //                                           values, as two halves
+//   checked_mul_div(a, b, c)                the floor of a * b / c for an
+//                                           unsigned type, from the exact
+//                                           product, or no value for a zero
+//                                           c and for a quotient past the
+//                                           type
+//   mul_div_floor(a, b, c)                  the same floor.  A zero c and a
+//                                           quotient past the type end the
+//                                           process
 //
 // Each operation takes two operands of one Integer type, so a pair of
 // different types does not compile and no promotion hides a conversion.
@@ -66,6 +74,16 @@
 // WideProduct holds the low half first.  The x86-64 System V ABI gives the
 // first half back in rax and the second in rdx, the two registers of the
 // result of mul, so the return moves no register.
+//
+// The quotient of mul_div takes the full product of a * b, so no product
+// overflows.  For a 64-bit type the product has 128 bits.  The quotient fits
+// the type exactly when the high half of the product is below c, so one
+// compare refuses each quotient past the type before the division.  A
+// product with a high half of zero takes one division of 64 bits.  Each
+// other product takes the division of 128 bits by 64 bits of libgcc, whose
+// last step on x86_64 is one divq.  A narrower type takes its product in 64
+// bits.  The result is an integer function of the operands, so it has the
+// same bits on each target, where a float or a long double does not.
 
 #include <foundation/core/Choice.h>
 #include <foundation/core/Number.h>
@@ -336,6 +354,32 @@ template <UnsignedInteger T>
         std::uint64_t const product = std::uint64_t{left} * std::uint64_t{right};
         return WideProduct<T>{static_cast<T>(product), static_cast<T>(product >> bits_of<T>)};
     }
+}
+
+template <UnsignedInteger T>
+[[nodiscard]] constexpr Option<T> checked_mul_div(T left, T right, T divisor) noexcept {
+    if (divisor == T{0}) return none;
+    if constexpr (sizeof(T) == sizeof(std::uint64_t)) {
+        WideProduct<T> const product = widening_mul(left, right);
+        if (product.high >= divisor) return none;
+        if (product.high == T{0}) return Option<T>::some(static_cast<T>(product.low / divisor));
+        detail::WideWord const wide = (static_cast<detail::WideWord>(product.high) << 64) | product.low;
+        return Option<T>::some(static_cast<T>(wide / divisor));
+    } else {
+        std::uint64_t const quotient = (std::uint64_t{left} * std::uint64_t{right}) / std::uint64_t{divisor};
+        if (quotient > std::uint64_t{max_of<T>}) return none;
+        return Option<T>::some(static_cast<T>(quotient));
+    }
+}
+
+template <UnsignedInteger T>
+[[nodiscard]] constexpr T mul_div_floor(T left, T right, T divisor) noexcept {
+    if (divisor == T{0}) [[unlikely]] {
+        fatal("mul_div_floor got the divisor 0, which gives no quotient");
+    }
+    return checked_mul_div(left, right, divisor)
+        .match([](T quotient) noexcept { return quotient; },
+               [] noexcept -> T { fatal("mul_div_floor got a quotient that the type does not hold"); });
 }
 
 }  // namespace foundation::core
