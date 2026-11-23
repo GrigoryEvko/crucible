@@ -284,6 +284,30 @@ void test_moves() {
     CRUCIBLE_FATAL_INVARIANT(*other.get(key).expect("the key is live") == 5 && other.size() == 1);
 }
 
+// A class that holds its map as a member names a member tag, which it nests
+// beside the member, and the map takes the tag as its brand.  The class names
+// the key type with the tag.
+struct HandleTable {
+    struct[[= ::foundation::brand::arena_member_brand{}]] MapTag final {};
+    using Key = ::foundation::core::SlotKey<HandleTag, MapTag>;
+    ::foundation::core::SlotMap<int, HandleTag, MapTag> map =
+        ::foundation::core::mint_member_slot_map<int, HandleTag, MapTag>(kAlloc, Capacity{4});
+};
+
+// The map of a member keeps its keys and its values as a minted map does.
+// Two objects of the class share the brand (the residual of a member brand),
+// so a move gives the slots of one holder to the other, and the keys follow
+// the slots.  The probe of the owners reads the moved-from map.
+void test_member_map() {
+    HandleTable first{};
+    HandleTable::Key const key = first.map.insert(5).expect("the map has a free slot");
+    CRUCIBLE_FATAL_INVARIANT(*first.map.get(key).expect("the key is live") == 5 && first.map.capacity().raw() == 4);
+    HandleTable second{};
+    second.map = std::move(first.map);
+    CRUCIBLE_FATAL_INVARIANT(*second.map.get(key).expect("the key is live") == 5 && second.map.size() == 1);
+    CRUCIBLE_FATAL_INVARIANT(second.map.remove(key).expect("the key is live") == 5 && second.map.is_empty());
+}
+
 void test_refusals(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
@@ -440,6 +464,7 @@ int main() {
     test_over_aligned_values();
     test_each_value_ends_once_in_slot_order();
     test_moves();
+    test_member_map();
     test_refusals(test);
     test_map_agrees_with_the_model();
     return 0;

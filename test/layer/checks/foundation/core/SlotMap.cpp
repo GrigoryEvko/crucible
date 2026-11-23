@@ -102,6 +102,27 @@ static_assert(CanMintSlotMap<int, HandleTag, std::uint32_t, Alloc>
 static_assert(!CanMintSlotMap<int, HandleTag, std::uint64_t, Alloc>
               && !CanMintSlotMap<ThrowingMove, HandleTag, std::uint8_t, Alloc>);
 
+// The constraint of the mint of the map of a member: the arguments of
+// mint_slot_map and a member tag, which is the brand of the map.  A brand
+// with no mark and a family tag are refused.  The map and its key take the
+// tag.  The plant plant-arena-brands of the rule brand-escape shows that the
+// rule reads the member tag of a class whose brand is not its first type
+// argument, as the brand of a SlotMap is.
+struct MapHolder {
+    struct[[= ::foundation::brand::arena_member_brand{}]] MapTag final {};
+    SlotMap<int, HandleTag, MapTag> map{};
+};
+struct[[= ::foundation::brand::arena_family_brand{}]] FamilyTag final {};
+static_assert(CanMintMemberSlotMap<int, HandleTag, MapHolder::MapTag, std::uint32_t, Alloc>);
+static_assert(!CanMintMemberSlotMap<int, HandleTag, MapBrand, std::uint32_t, Alloc>
+              && !CanMintMemberSlotMap<int, HandleTag, FamilyTag, std::uint32_t, Alloc>);
+static_assert(!CanMintMemberSlotMap<int, HandleTag, MapHolder::MapTag, std::uint32_t, OtherMarker>
+              && !CanMintMemberSlotMap<int, HandleTag, MapHolder::MapTag, std::uint64_t, Alloc>);
+using MemberMap = decltype(mint_member_slot_map<int, HandleTag, MapHolder::MapTag>(
+    std::declval<Alloc>(), std::declval<Quantity<unit::Element, std::uint32_t>>()));
+static_assert(std::is_same_v<MemberMap, SlotMap<int, HandleTag, MapHolder::MapTag>>);
+static_assert(std::is_same_v<MemberMap::key_type, SlotKey<HandleTag, MapHolder::MapTag>>);
+
 // Each call site of the mint gives a brand of its own, so two maps of one tag
 // have two types, and a key of one does not compile against the other.  The
 // brands stay in the scope of the function.

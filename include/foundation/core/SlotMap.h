@@ -25,14 +25,28 @@
 //                       std::uint32_t, and std::uint32_t when the call names
 //                       none.  A pack refuses each further template argument,
 //                       so no caller names the brand
+//   mint_member_slot_map<T, Tag, MemberTag>(alloc, capacity)
+//                       the same map with the member tag MemberTag as its
+//                       brand, for a class that holds the map as a member.
+//                       The fourth template argument is the word of a
+//                       generation
 //
 // Brands
-//   Each call site of the mint gives its own brand, so the maps of two call
-//   sites with one tag take no key of each other.  The maps that one call
-//   site gives, such as the maps of a loop or of each call of one helper,
-//   share the brand, and a key of one of them names a slot of the others
-//   (the residual of a brand of a call site).  A holder that must name the
-//   type of its map names it through decltype of its own mint.
+//   Each call site of mint_slot_map gives its own brand, so the maps of two
+//   call sites with one tag take no key of each other.  The maps that one
+//   call site gives, such as the maps of a loop or of each call of one
+//   helper, share the brand, and a key of one of them names a slot of the
+//   others (the residual of a brand of a call site).
+//
+//   A class that holds a map as a member names a member tag (ArenaMemberTag
+//   of foundation/core/ArenaTag.h): a class that it nests beside the member,
+//   with the mark arena_member_brand.  The map carries the mark
+//   branded_arena, so the rule brand-escape of the quarantine plugin refuses
+//   a tag that does not name exactly one member, and a local or a static
+//   object of a map of the tag.  So no second map shares the brand, and a key
+//   of the member names no slot of a different map.  Two objects of the class
+//   still share the brand, which no type tells apart (the residual of a
+//   member brand).  A holder names the key type SlotKey<Tag, MemberTag>.
 //
 // Operations
 //   insert(value)       puts value in a free slot, and gives its key, or
@@ -95,6 +109,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/core/ArenaTag.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
@@ -353,22 +368,63 @@ template <class T, class Tag, class Generation = std::uint32_t, class... Refused
 [[nodiscard]] SlotMap<T, Tag, ::foundation::brand::undeducible_brand_t<Fresh>, Generation>
 mint_slot_map(Marker allocation, Quantity<unit::Element, std::uint32_t> capacity) noexcept;
 
+// The arguments of mint_member_slot_map: the arguments of mint_slot_map, and
+// a member tag, which is the brand of the map (the brands).
+template <class T, class Tag, class MemberTag, class Generation, class Marker>
+concept CanMintMemberSlotMap = CanMintSlotMap<T, Tag, Generation, Marker> && ArenaMemberTag<MemberTag>;
+
+template <class T, class Tag, class MemberTag, class Generation = std::uint32_t, class... Refused, class Marker>
+    requires(sizeof...(Refused) == 0) && CanMintMemberSlotMap<T, Tag, MemberTag, Generation, Marker>
+[[nodiscard]] SlotMap<T, Tag, MemberTag, Generation>
+mint_member_slot_map(Marker allocation, Quantity<unit::Element, std::uint32_t> capacity) noexcept;
+
 template <class T, class Tag, ::foundation::brand::IsBrand Brand, class Generation = std::uint32_t>
     requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
-                   [[= ::foundation::lifetime::no_start_over_bytes{}]] SlotMap final
-    : public OwnerCore<detail::owner::SlotMapState<T, Generation>> {
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::brand::branded_arena{}]]
+    SlotMap final : public OwnerCore<detail::owner::SlotMapState<T, Generation>> {
     using State = detail::owner::SlotMapState<T, Generation>;
     using Core = OwnerCore<State>;
 
-    // The slots of a mint.  Only the mint calls it.
+    // The slots of a mint.  Only the mints call it.
     constexpr explicit SlotMap(State const& state) noexcept : Core{state} {}
+
+    // The empty map of slots slots: one allocation of the values, the stack
+    // of the free indexes and the generations.  No slot holds a value, and no
+    // byte of a slot is read before an insert writes it, so each slot of the
+    // values is poisoned (the spare storage of Heap.h).  A count of zero
+    // allocates nothing.  The two mints call it.  It inlines into each mint:
+    // when GCC 16 at -O3 keeps it apart, the empty map of a count of zero
+    // reaches an inlined insert, and -Wstringop-overflow refuses a write
+    // through its null generations that no path takes.  Complexity: one
+    // allocation.
+    [[nodiscard]] CRUCIBLE_INLINE static SlotMap build_slots_(std::uint32_t slots) noexcept {
+        if (slots == 0) {
+            return SlotMap{};
+        }
+        detail::SlotMapLayout const layout = detail::slot_map_layout_<T, Generation>(slots);
+        unsigned char* const storage =
+            static_cast<unsigned char*>(detail::heap_allocate_(detail::slot_map_storage_layout_<T, Generation>(slots)));
+        State const state{
+            .values = static_cast<T*>(static_cast<void*>(storage)),
+            .free_stack = static_cast<std::uint32_t*>(static_cast<void*>(storage + layout.stack_offset)),
+            .generations = static_cast<Generation*>(static_cast<void*>(storage + layout.generation_offset)),
+            .capacity = slots,
+        };
+        detail::poison_slots_(state.values, slots);
+        return SlotMap{state};
+    }
 
     template <class OtherT, class OtherTag, class OtherGeneration, class... Refused, ::foundation::brand::IsBrand Fresh,
               class Marker>
         requires(sizeof...(Refused) == 0) && CanMintSlotMap<OtherT, OtherTag, OtherGeneration, Marker>
     friend SlotMap<OtherT, OtherTag, ::foundation::brand::undeducible_brand_t<Fresh>, OtherGeneration>
     mint_slot_map(Marker allocation, Quantity<unit::Element, std::uint32_t> capacity) noexcept;
+
+    template <class OtherT, class OtherTag, class MemberTag, class OtherGeneration, class... Refused, class Marker>
+        requires(sizeof...(Refused) == 0) && CanMintMemberSlotMap<OtherT, OtherTag, MemberTag, OtherGeneration, Marker>
+    friend SlotMap<OtherT, OtherTag, MemberTag, OtherGeneration>
+    mint_member_slot_map(Marker allocation, Quantity<unit::Element, std::uint32_t> capacity) noexcept;
 
     // True when the slot of key holds the value of key: the index is below
     // the used slots, the generation of the key is odd, and it is the
@@ -551,33 +607,26 @@ public:
     void keys() const&& = delete("a walk of a temporary SlotMap points into storage that the full expression frees");
 };
 
-// The empty map of capacity slots: one allocation of the values, the stack of
-// the free indexes and the generations.  No slot holds a value, and no byte
-// of a slot is read before an insert writes it, so each slot of the values is
-// poisoned (the spare storage of Heap.h).  A capacity of zero allocates
-// nothing.  The map has the fresh brand of the call (the brands).
-// Complexity: one allocation.
+// The empty map of capacity slots, in one allocation (build_slots_), with the
+// fresh brand of the call (the brands).  A capacity of zero allocates
+// nothing.  Complexity: one allocation.
 template <class T, class Tag, class Generation, class... Refused, ::foundation::brand::IsBrand Fresh, class Marker>
     requires(sizeof...(Refused) == 0) && CanMintSlotMap<T, Tag, Generation, Marker>
 [[nodiscard]] SlotMap<T, Tag, ::foundation::brand::undeducible_brand_t<Fresh>, Generation>
 mint_slot_map(Marker /*allocation*/, Quantity<unit::Element, std::uint32_t> capacity) noexcept {
-    using State = detail::owner::SlotMapState<T, Generation>;
-    using Map = SlotMap<T, Tag, Fresh, Generation>;
-    std::uint32_t const slots = capacity.raw();
-    if (slots == 0) {
-        return Map{};
-    }
-    detail::SlotMapLayout const layout = detail::slot_map_layout_<T, Generation>(slots);
-    unsigned char* const storage =
-        static_cast<unsigned char*>(detail::heap_allocate_(detail::slot_map_storage_layout_<T, Generation>(slots)));
-    State const state{
-        .values = static_cast<T*>(static_cast<void*>(storage)),
-        .free_stack = static_cast<std::uint32_t*>(static_cast<void*>(storage + layout.stack_offset)),
-        .generations = static_cast<Generation*>(static_cast<void*>(storage + layout.generation_offset)),
-        .capacity = slots,
-    };
-    detail::poison_slots_(state.values, slots);
-    return Map{state};
+    return SlotMap<T, Tag, Fresh, Generation>::build_slots_(capacity.raw());
+}
+
+// The empty map of capacity slots, in one allocation (build_slots_), with the
+// member tag MemberTag as its brand, for the one member of the class that
+// nests the tag (the brands).  The rule brand-escape refuses each other
+// object of the map type.  A capacity of zero allocates nothing.
+// Complexity: one allocation.
+template <class T, class Tag, class MemberTag, class Generation, class... Refused, class Marker>
+    requires(sizeof...(Refused) == 0) && CanMintMemberSlotMap<T, Tag, MemberTag, Generation, Marker>
+[[nodiscard]] SlotMap<T, Tag, MemberTag, Generation>
+mint_member_slot_map(Marker /*allocation*/, Quantity<unit::Element, std::uint32_t> capacity) noexcept {
+    return SlotMap<T, Tag, MemberTag, Generation>::build_slots_(capacity.raw());
 }
 
 }  // namespace foundation::core

@@ -294,13 +294,19 @@ struct Inner<GrowListTag> {
     GrowList<Elem<GrowListTag>> child = ::foundation::core::mint_grow_list<Elem<GrowListTag>>(8);
 };
 
-// The Inner of the probe of a SlotMap holds no child map.  The mint gives each
-// map the fresh brand of its call, and a member of a minted map would carry
-// that brand out of the scope that made it (the rule brand-escape).  SlotMap
-// comes back into the child move with the member brand of 977 series 1.
+// The count of the slots of a map of the probe.
+using SlotCapacity = ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint32_t>;
+
+// The Inner of the probe of a SlotMap holds its one child map with a member
+// tag, which it nests beside the map, so each holder of the probe is an
+// Inner.  The rule brand-escape refuses a local of a map of a member tag, so
+// the arms hold each map in an Inner.
 template <>
 struct Inner<SlotMapTag> {
     using brand_type = InnerBrand<SlotMapTag>;
+    struct[[= ::foundation::brand::arena_member_brand{}]] ChildTag final {};
+    ::foundation::core::SlotMap<Elem<SlotMapTag>, ProbeHandleTag, ChildTag> child =
+        ::foundation::core::mint_member_slot_map<Elem<SlotMapTag>, ProbeHandleTag, ChildTag>(kAlloc, SlotCapacity{8});
 };
 
 // The Inner that an element holds.  The frame door of the Option lends the
@@ -545,10 +551,6 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
     }
 };
 
-// The brand of the map type that the roster reads.  No mint gives it, so no
-// map of it holds a slot.
-struct SlotMapRosterBrand final {};
-
 // The values of a probe map: count elements in a map of eight slots.
 void fill_probe_map(auto& map, unsigned count) {
     for (unsigned inserted = 0; inserted < count; ++inserted) {
@@ -556,54 +558,78 @@ void fill_probe_map(auto& map, unsigned count) {
     }
 }
 
-// Each arm of the probe of a SlotMap mints its map in its own body, so the
-// fresh brand of the map stays in that body (the rule brand-escape).  The
-// roster reads the state of Owner, a map of a brand that no mint gives.  The
-// child move and the assignment over a map that holds values need a holder
-// that names the type of its map, as the Inner of the other probes does.
-// SlotMap comes back into those arms with the member brand of 977 series 1.
+// Each arm of the probe of a SlotMap holds each of its maps in an Inner, the
+// one class that nests the member tag of the map type.  So each map is a
+// member, and no map of the member brand is a local (the rule brand-escape).
+// Two Inner objects share the brand (the residual of a member brand), so a
+// move between their maps compiles, as a move between two owners of one
+// type of the other probes does.
 struct SlotMapProbe {
     using Tag = SlotMapTag;
-    using Owner = ::foundation::core::SlotMap<Elem<Tag>, ProbeHandleTag, SlotMapRosterBrand>;
-    using Capacity = ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint32_t>;
+    using Holder = Inner<Tag>;
+    using Owner = ::foundation::core::SlotMap<Elem<Tag>, ProbeHandleTag, Holder::ChildTag>;
+
+    // A new map of eight slots for a holder.
+    static Owner make() noexcept {
+        return ::foundation::core::mint_member_slot_map<Elem<Tag>, ProbeHandleTag, Holder::ChildTag>(kAlloc,
+                                                                                                     SlotCapacity{8});
+    }
 
     // Self-move: a move of a map into itself keeps its values.
     static void self_move() {
         {
-            auto held = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(kAlloc, Capacity{8});
-            fill_probe_map(held, 2);
-            move_into(held, held);
-            CRUCIBLE_FATAL_INVARIANT(held.size() == 2);
+            Holder held{};
+            fill_probe_map(held.child, 2);
+            move_into(held.child, held.child);
+            CRUCIBLE_FATAL_INVARIANT(held.child.size() == 2);
             CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    // Moved-from: a new value in the source ends no value of the target.  The
-    // target of the first move holds no slot, because a second map of one
-    // brand needs a holder.
+    // Child move: the map that the first value of a parent map holds takes the
+    // place of the parent map.  The assignment ends the values of the parent
+    // only after it takes the slots of the child, which a value of the parent
+    // holds.
+    static void child_move() {
+        {
+            Holder parent{};
+            auto const first = parent.child.insert(Elem<Tag>{}).expect("the map of the probe has a free slot");
+            Holder& inner = give_an_inner(*parent.child.get(first).expect("the first value of the probe is live"));
+            fill_probe_map(inner.child, 2);
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 3);
+            parent.child = static_cast<Owner&&>(inner.child);
+            CRUCIBLE_FATAL_INVARIANT(parent.child.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
+    }
+
+    // Moved-from: a new value in the source ends no value of the target.
     static void moved_from() {
         {
-            auto source = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(kAlloc, Capacity{8});
-            fill_probe_map(source, 2);
-            decltype(source) target{};
-            target = static_cast<decltype(source)&&>(source);
-            CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
+            Holder target{};
+            Holder source{};
+            fill_probe_map(target.child, 1);
+            fill_probe_map(source.child, 2);
+            target.child = static_cast<Owner&&>(source.child);
+            CRUCIBLE_FATAL_INVARIANT(target.child.size() == 2);
             CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
-            source = decltype(source){};
-            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
-            decltype(source) taken{static_cast<decltype(source)&&>(target)};
-            CRUCIBLE_FATAL_INVARIANT(taken.size() == 2);
-            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
+            source.child = make();
+            fill_probe_map(source.child, 1);
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 3);
+            Holder taken{};
+            taken.child = static_cast<Owner&&>(target.child);
+            target.child = make();
+            fill_probe_map(target.child, 1);
+            CRUCIBLE_FATAL_INVARIANT(taken.child.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 4);
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    static void child_move() {}
-
     static void linear() {
-        using LinearOwner =
-            decltype(::foundation::core::mint_slot_map<LinearElement, ProbeHandleTag>(kAlloc, Capacity{8}));
+        using LinearOwner = ::foundation::core::SlotMap<LinearElement, ProbeHandleTag, Holder::ChildTag>;
         CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<LinearOwner>());
     }
 
@@ -611,16 +637,16 @@ struct SlotMapProbe {
     // value, its walk gives nothing, and an insert gives Full.
     static void empty() {
         {
-            auto source = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(kAlloc, Capacity{8});
-            fill_probe_map(source, 2);
-            using Map = decltype(source);
-            Map::key_type const first{std::uint64_t{1} << 32};
-            Map const target{static_cast<Map&&>(through(source))};
-            CRUCIBLE_FATAL_INVARIANT(target.size() == 2 && target.get(first).is_some());
-            CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0 && through(source).capacity().raw() == 0);
-            CRUCIBLE_FATAL_INVARIANT(through(source).get(first).is_none());
-            CRUCIBLE_FATAL_INVARIANT(through(source).begin() == through(source).end());
-            CRUCIBLE_FATAL_INVARIANT(through(source).insert(Elem<Tag>{}).is_err());
+            Holder source{};
+            fill_probe_map(source.child, 2);
+            Owner::key_type const first{std::uint64_t{1} << 32};
+            Holder target{};
+            target.child = static_cast<Owner&&>(through(source.child));
+            CRUCIBLE_FATAL_INVARIANT(target.child.size() == 2 && target.child.get(first).is_some());
+            CRUCIBLE_FATAL_INVARIANT(through(source.child).size() == 0 && through(source.child).capacity().raw() == 0);
+            CRUCIBLE_FATAL_INVARIANT(through(source.child).get(first).is_none());
+            CRUCIBLE_FATAL_INVARIANT(through(source.child).begin() == through(source.child).end());
+            CRUCIBLE_FATAL_INVARIANT(through(source.child).insert(Elem<Tag>{}).is_err());
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }

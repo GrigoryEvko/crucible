@@ -4549,6 +4549,14 @@ foundation_neg_compile_test(neg_core_slot_map_wide_generation
 foundation_neg_compile_test(neg_core_slot_map_throwing_move
   "no matching function for call to .mint_slot_map<ThrowingMove, HandleTag>\\(foundation::core::Alloc,"
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
+# The map of a member takes a member tag as its brand.  A class with no mark
+# and a family tag name no one member, so the mint refuses them.
+foundation_neg_compile_test(neg_core_slot_map_member_unmarked_tag
+  "no matching function for call to .mint_member_slot_map<int, HandleTag, Unmarked>\\(foundation::core::Alloc,"
+  "required for the satisfaction of .ArenaMemberTag<MemberTag>. \\[with MemberTag = Unmarked\\]")
+foundation_neg_compile_test(neg_core_slot_map_member_family_tag
+  "no matching function for call to .mint_member_slot_map<int, HandleTag, Family>\\(foundation::core::Alloc,"
+  "required for the satisfaction of .ArenaMemberTag<MemberTag>. \\[with MemberTag = Family\\]")
 
 # A SmallList appends its first Inline elements with no allocation, spills to
 # the heap past them, doubles its storage up to its maximum, lends its
