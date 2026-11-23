@@ -224,6 +224,14 @@ template <class T, class Brand, std::size_t Extent, class Combine>
     return Unit{};
 }
 
+// A combine that holds a linear value by value binds to this overload, and to
+// the same twin of each other scan, so the refusal gives its reason
+// (LinearTreeCombine of foundation/core/Reduce.h).
+template <class T, class Brand, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void scan_inclusive(View<T const> in, ViewMut<T, Brand, Extent> out,
+                    Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // The exclusive scan of in into out, by the order: out[0] is empty, and
 // out[k] combines in[0] to in[k - 1].  The two runs hold one count, and two
 // counts that differ give LengthMismatch with no write.  Complexity: at most
@@ -238,6 +246,11 @@ template <class T, class Brand, std::size_t Extent, class Combine>
                                            static_cast<T const*>(nullptr), &empty, combine);
     return Unit{};
 }
+
+template <class T, class Brand, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void scan_exclusive(View<T const> in, ViewMut<T, Brand, Extent> out, T const& empty,
+                    Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── The sum scans with SIMD lanes ───────────────────────────────────────
 
@@ -461,6 +474,11 @@ constexpr void scan_inclusive_grains(View<T const> in, std::size_t first_grain, 
                                                      out.size(), static_cast<T const*>(nullptr), combine);
 }
 
+template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void scan_inclusive_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
+                           ViewMut<T, Brand, Extent> out, Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // The exclusive scan of the grains of the range, with the outputs and the
 // carries of scan_inclusive_grains.  out[0] of the run is empty.
 template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Combine>
@@ -470,6 +488,12 @@ constexpr void scan_exclusive_grains(View<T const> in, std::size_t first_grain, 
     detail::scan_grains_<ScanKind::Exclusive, Grain>(in, first_grain, carries, first_of_(detail::BaseLayerRead{}, out),
                                                      out.size(), &empty, combine);
 }
+
+template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void scan_exclusive_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
+                           ViewMut<T, Brand, Extent> out, T const& empty,
+                           Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
@@ -652,5 +676,11 @@ evaluate_scan_plan(View<TreeStep const> steps, View<PlanNode const> outputs, Vie
     }
     return Unit{};
 }
+
+template <class T, class ScratchBrand, std::size_t ScratchExtent, class OutBrand, std::size_t OutExtent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void evaluate_scan_plan(View<TreeStep const> steps, View<PlanNode const> outputs, View<T const> leaves,
+                        ViewMut<T, ScratchBrand, ScratchExtent> scratch, ViewMut<T, OutBrand, OutExtent> out,
+                        T const& empty, Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

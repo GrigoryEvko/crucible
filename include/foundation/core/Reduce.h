@@ -142,10 +142,19 @@ concept TreeValue = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const
                  && std::is_nothrow_destructible_v<T>;
 
 // A combine of a tree: it takes the left operand and the right operand, gives
-// a value of the same type, and does not throw.
+// a value of the same type, does not throw, and holds no linear value by value
+// (HoldsNoLinearValue of foundation/Linear.h).  A door calls the combine many
+// times and ends it, and a call is no consume.
 template <class Combine, class T>
 concept TreeCombine = std::is_nothrow_invocable_v<Combine&, T const&, T const&>
-                   && std::same_as<std::invoke_result_t<Combine&, T const&, T const&>, T>;
+                   && std::same_as<std::invoke_result_t<Combine&, T const&, T const&>, T>
+                   && ::foundation::linear::HoldsNoLinearValue<Combine>;
+
+// A combine that holds a linear value by value: the deleted twin of each
+// door of a tree and of a scan binds to it.
+template <class Combine, class T>
+concept LinearTreeCombine =
+    (!::foundation::linear::HoldsNoLinearValue<Combine>) && std::is_invocable_v<Combine&, T const&, T const&>;
 
 // An element of sum_by_tree: a float or a double.
 template <class T>
@@ -389,6 +398,13 @@ template <class T, std::size_t Extent, class Combine>
     return Option<Value>::some(detail::tree_of_run_<detail::TreeLeaves::Blocked>(first, elements.size(), combine));
 }
 
+// A combine that holds a linear value by value binds to this overload, and to
+// the same twin of each other door of a tree and of a scan, so the refusal
+// gives its reason (LinearTreeCombine).
+template <class T, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, std::remove_const_t<T>>
+void reduce_by_tree(View<T, Extent> elements, Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the elements with Lanes lanes in each vector.  The count
@@ -612,6 +628,11 @@ reduce_segments_by_tree(View<T const> elements, View<std::size_t const> offsets,
     return Unit{};
 }
 
+template <class T, class Brand, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void reduce_segments_by_tree(View<T const> elements, View<std::size_t const> offsets, ViewMut<T, Brand, Extent> results,
+                             T const& empty, Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // ── The split into grains ───────────────────────────────────────────────
 
 // The count of the grains of a run of count elements: each grain holds Grain
@@ -698,6 +719,11 @@ constexpr void reduce_grains_by_tree(View<T const> elements, std::size_t first_g
     detail::reduce_grains_by_tree_<Grain>(elements, first_grain, first_of_(detail::BaseLayerRead{}, partials),
                                           partials.size(), combine);
 }
+
+template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void reduce_grains_by_tree(View<T const> elements, std::size_t first_grain, ViewMut<T, Brand, Extent> partials,
+                           Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── The plan of the tree ────────────────────────────────────────────────
 
@@ -799,5 +825,10 @@ template <class T, class Brand, std::size_t Extent, class Combine>
     }
     return count == 0 ? leaf[0] : value[count - 1];
 }
+
+template <class T, class Brand, std::size_t Extent, class Combine>
+    requires LinearTreeCombine<Combine, T>
+void evaluate_tree_plan(View<TreeStep const> steps, View<T const> leaves, ViewMut<T, Brand, Extent> scratch,
+                        Combine combine) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

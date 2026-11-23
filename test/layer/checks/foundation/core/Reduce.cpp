@@ -177,6 +177,30 @@ static_assert(segments_take_their_trees());
 }
 static_assert(bad_segments_are_refused());
 
+// The combine of each door of a tree and of a scan holds no linear value by
+// value (TreeCombine): the door calls it many times, and a call is no consume.
+// A combine that holds a token binds to the deleted twin of each door
+// (LinearTreeCombine).
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] TreeToken {
+    int handle = 0;
+    constexpr explicit TreeToken(int value) noexcept : handle{value} {}
+    constexpr TreeToken(TreeToken&&) noexcept = default;
+    constexpr TreeToken& operator=(TreeToken&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    TreeToken(TreeToken const&) = delete("a linear token of the check does not copy");
+};
+using CombinesWithToken =
+    decltype([held = TreeToken{1}](int const& left, int const& right) noexcept { return left + right + held.handle; });
+using CombinesWithNoToken = decltype([](int const& left, int const& right) noexcept { return left + right; });
+static_assert(TreeCombine<CombinesWithNoToken, int> && !TreeCombine<CombinesWithToken, int>);
+static_assert(LinearTreeCombine<CombinesWithToken, int> && !LinearTreeCombine<CombinesWithNoToken, int>);
+template <class Combine>
+constexpr bool reduces_with =
+    requires(View<int const> elements, Combine combine) { reduce_by_tree(elements, static_cast<Combine&&>(combine)); };
+static_assert(reduces_with<CombinesWithNoToken> && !reduces_with<CombinesWithToken>);
+
 }  // namespace detail::reduce_checks
 
 }  // namespace foundation::core

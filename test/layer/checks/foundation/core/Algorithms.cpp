@@ -192,6 +192,28 @@ template <class T>
 constexpr bool bytes_of_temporary = requires { bytes(std::declval<T>()); };
 static_assert(!bytes_of_temporary<Record>);
 
+// The predicate of find_if and the key function of find_lower_bound_by_key
+// hold no linear value by value: the door calls them many times, and a call
+// is no consume.  Each binds to the deleted twin of its door when it holds a
+// token (LinearElementFunction).
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] SearchToken {
+    int handle = 0;
+    constexpr explicit SearchToken(int value) noexcept : handle{value} {}
+    constexpr SearchToken(SearchToken&&) noexcept = default;
+    constexpr SearchToken& operator=(SearchToken&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    SearchToken(SearchToken const&) = delete("a linear token of the check does not copy");
+};
+using KeysWithToken = decltype([held = SearchToken{1}](int const& value) noexcept { return value + held.handle; });
+using KeysWithNoToken = decltype([](int const& value) noexcept { return value; });
+template <class Key>
+constexpr bool searches_with =
+    requires(View<int const> elements, Key key) { find_lower_bound_by_key(elements, static_cast<Key&&>(key), 0); };
+static_assert(searches_with<KeysWithNoToken> && !searches_with<KeysWithToken>);
+static_assert(LinearElementFunction<KeysWithToken, int> && !KeyOf<KeysWithToken, int>);
+
 }  // namespace detail::algorithm_checks
 
 }  // namespace foundation::core

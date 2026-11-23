@@ -66,10 +66,19 @@ template <class T>
 concept BytewiseOrderedElement = std::same_as<T, unsigned char> || std::same_as<T, std::byte>;
 
 // A predicate of a scan: it takes an element as a const reference, gives a
-// bool and does not throw.
+// bool, does not throw, and holds no linear value by value
+// (HoldsNoLinearValue of foundation/Linear.h).  The door calls it many times
+// and ends it, and a call is no consume.
 template <class Predicate, class T>
 concept ElementPredicate =
-    std::is_nothrow_invocable_v<Predicate&, T const&> && std::same_as<std::invoke_result_t<Predicate&, T const&>, bool>;
+    std::is_nothrow_invocable_v<Predicate&, T const&> && std::same_as<std::invoke_result_t<Predicate&, T const&>, bool>
+    && ::foundation::linear::HoldsNoLinearValue<Predicate>;
+
+// A predicate or a key function that holds a linear value by value: the
+// deleted twin of find_if and of find_lower_bound_by_key binds to it.
+template <class Function, class T>
+concept LinearElementFunction =
+    (!::foundation::linear::HoldsNoLinearValue<Function>) && std::is_invocable_v<Function&, T const&>;
 
 // A key of an ordered search: an integer or an enumeration, so the order of
 // the keys is total.  A floating key is refused, because a NaN is in no
@@ -78,9 +87,11 @@ template <class K>
 concept TotalKey = (std::is_integral_v<K> && !std::same_as<K, bool>) || std::is_enum_v<K>;
 
 // A key function: it takes an element as a const reference, gives a total
-// key and does not throw.
+// key, does not throw, and holds no linear value by value, for the reason of
+// ElementPredicate.
 template <class Key, class T>
-concept KeyOf = std::is_nothrow_invocable_v<Key&, T const&> && TotalKey<std::invoke_result_t<Key&, T const&>>;
+concept KeyOf = std::is_nothrow_invocable_v<Key&, T const&> && TotalKey<std::invoke_result_t<Key&, T const&>>
+             && ::foundation::linear::HoldsNoLinearValue<Key>;
 
 }  // namespace detail
 
@@ -196,6 +207,12 @@ template <class T, std::size_t Extent, class Predicate>
     return none;
 }
 
+// A predicate that holds a linear value by value binds to this overload, so
+// the refusal gives its reason (LinearElementFunction).
+template <class T, std::size_t Extent, class Predicate>
+    requires detail::LinearElementFunction<Predicate, std::remove_const_t<T>>
+void find_if(View<T, Extent> view, Predicate predicate) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // True when text begins with the characters of prefix.  An empty prefix
 // gives true.  Complexity: O(m) for a prefix of m characters.
 [[nodiscard]] constexpr bool starts_with(TextView text, TextView prefix) noexcept {
@@ -287,6 +304,12 @@ find_lower_bound_by_key(View<T, Extent> view, Key key,
     }
     return low;
 }
+
+// A key function that holds a linear value by value binds to this overload,
+// so the refusal gives its reason (LinearElementFunction).
+template <class T, std::size_t Extent, class Key, class Probe>
+    requires detail::LinearElementFunction<Key, std::remove_const_t<T>>
+void find_lower_bound_by_key(View<T, Extent> view, Key key, Probe probe) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // An object whose bytes are its whole value: each byte is a value byte, and
 // the walk of Scalar accepts its type, so it holds no pointer, no

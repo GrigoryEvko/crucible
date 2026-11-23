@@ -4607,6 +4607,15 @@ foundation_neg_compile_test(neg_core_walk_map_linear_capture
 foundation_neg_compile_test(neg_core_strided_walk_linear_capture
   "use of deleted function .void foundation::core::walk\\(Body&&, StridedView<First, Rank>, StridedView<Rest, Rank>\\.\\.\\.\\)"
   "the body holds a linear value by value, and the door calls it with no consume")
+# The combine of a tree or a scan and the predicate or the key of a search
+# hold no linear value by value: the door calls them many times, and a call
+# is no consume.
+foundation_neg_compile_test(neg_core_reduce_combine_linear_capture
+  "use of deleted function .void foundation::core::reduce_by_tree\\(View<T, Extent>, Combine\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_find_if_linear_capture
+  "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
 
 # The types of a strided view refuse each misuse that they can see: an axis
 # past a static rank, a write through a broadcast, a broadcast to fewer axes,
