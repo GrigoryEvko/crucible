@@ -1,0 +1,63 @@
+// The ends of a linear sum in a door that the code writes, and at the end of
+// the scope of a class with scope_end_door (THE SUM HOLDERS of linear.cpp).
+// No door ends a sum, so each end gives a line.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that marks its own end and holds an Option of a token.
+struct [[= ::foundation::linear::linear{}]] Holder {
+    Option<Token> held;
+};
+
+[[nodiscard]] int look(Option<Token> const& held) noexcept;
+
+// A door that ends a holder of a sum in its body.
+[[= ::foundation::linear::drop_door{}]] void end_holder(Holder&& holder) noexcept {
+    Holder ended(std::move(holder));
+    static_cast<void>(ended);
+}
+
+// A door that ends a sum in its body.
+[[= ::foundation::linear::drop_door{}]] void end_sum(Option<Token>&& held) noexcept {
+    Option<Token> ended(std::move(held));
+    static_cast<void>(ended);
+}
+
+// A class with scope_end_door that holds a sum, and one that marks its own
+// end too.
+struct [[= ::foundation::linear::scope_end_door{}]] ScopedHolder {
+    Option<Token> held;
+};
+
+struct [[= ::foundation::linear::linear{}]] [[= ::foundation::linear::scope_end_door{}]] MarkedScopedHolder {
+    Option<Token> held;
+};
+
+int scoped_holder_ends() {
+    ScopedHolder scoped{Option<Token>::some(Token{3})};
+    return look(scoped.held);
+}
+
+int marked_scoped_holder_ends() {
+    MarkedScopedHolder scoped{Option<Token>::some(Token{4})};
+    return look(scoped.held);
+}
+
+}  // namespace planted

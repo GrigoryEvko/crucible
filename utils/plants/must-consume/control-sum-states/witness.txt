@@ -3,7 +3,7 @@
 # that take emptied, that a test of its state finds empty on a branch, also
 # through ! and the assert of the Check family, and an Option, a Result and a
 # OneOf that a consumer took.  The door expect_none ends an empty Option, also
-# a temporary, and the body of a drop door ends each value of its frame.
+# a temporary.
 
 compile states src/states.cpp must-consume=on
 flag states -freflection

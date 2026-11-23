@@ -1,0 +1,41 @@
+// A class with scope_end_door whose destructor consumes its sum by a match.
+// The rule reads no destructor, so the end of the scope of the class is no
+// door, and the end gives a line (THE SUM HOLDERS of linear.cpp).
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+struct [[= ::foundation::linear::scope_end_door{}]] ConsumingHolder {
+    Option<Token> held;
+    explicit ConsumingHolder(Option<Token>&& given) noexcept : held{std::move(given)} {}
+    ConsumingHolder(ConsumingHolder&&) noexcept = default;
+    ~ConsumingHolder() {
+        std::move(held).match([](Token token) noexcept { ::foundation::linear::drop(std::move(token)); },
+                              [] noexcept {});
+    }
+};
+
+[[nodiscard]] int look(Option<Token> const& held) noexcept;
+
+int consuming_holder_ends() {
+    ConsumingHolder scoped{Option<Token>::some(Token{1})};
+    return look(scoped.held);
+}
+
+}  // namespace planted

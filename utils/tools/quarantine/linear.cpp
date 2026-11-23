@@ -18,7 +18,8 @@
 //     elements by value is linear too, also a closure with a linear capture.
 //     A reference and a pointer hold no value.  The end of the scope of a value
 //     of a class that carries scope_end_door is a door, because the destructor
-//     of the class releases its resource.  So is the end of the scope of a
+//     of the class releases its resource, unless a part of the class is or
+//     holds a linear sum (the sum holders).  So is the end of the scope of a
 //     value whose linear parts each have such a class.  The rule reads whether
 //     a class can move from the constructors that the class declares, and it
 //     declares no implicit member and instantiates nothing.
@@ -92,8 +93,9 @@
 //     owns a closure and calls it one time, so a call of the door runs the
 //     summary of the call operator of the closure (the summaries).
 //     The rule gives no finding unconsumed, unconsumed-on-path,
-//     discarded-temporary or borrow-move-out in the body of a door.  It still gives
-//     double-consume and assign-over-live there.  It gives the record door for
+//     discarded-temporary or borrow-move-out in the body of a door, apart from
+//     the end of a value that is or holds a linear sum (the sum holders).  It
+//     still gives double-consume and assign-over-live there.  It gives the record door for
 //     each linear-door row whose function it reads, and the module of the rule
 //     refuses a row with no record (the rule table is the roster of the doors).
 //
@@ -164,7 +166,9 @@
 //     The field of a move is the innermost field that is no base on the way
 //     from the move to the object.  A move of the whole after a move of a
 //     field, or of a field after a move of the whole, is a second consume.  A
-//     reference to a field borrows it.
+//     reference to a field borrows it.  In the body of a door, a holder of a
+//     linear sum gets a slot only for each field that is or holds a sum (the
+//     sum holders).
 //
 // Sums
 //     A linear sum is a linear class that carries the annotation sum of
@@ -214,9 +218,33 @@
 //     captured sum that can be full at its end gives the kind
 //     option-unconsumed.  An empty sum at an exit drops nothing.  A Result
 //     and a OneOf have no member with these annotations, so only a consume
-//     ends one.  The body of a door gives neither kind.
-//     The rule does not see a sum that a data member, a static object or a
-//     capture holds, or the end of a sum in the body of a door.
+//     ends one.  A sum that a holder holds ends with the holder (the sum
+//     holders).
+//
+// Sum holders
+//     A linear sum ends only through its consumers, so no door ends one.  A
+//     holder of a sum is a value whose type is or holds a linear sum by value:
+//     through the element of an array, a base, a data member that is no
+//     reference, or a type argument of a linear class, such as the payload of
+//     a Box or the element of a list (holds_linear_sum).  The drop door and
+//     the door end_unrun_body of include/foundation/Linear.h refuse a holder
+//     by its type (states_own_end).  The rule reads two more ends of a holder:
+//       * The body of a door keeps the kinds of a drop for an object or a
+//         temporary of a holder: option-unconsumed and option-discarded for a
+//         sum, and unconsumed, unconsumed-on-path and discarded-temporary for
+//         each other holder.  Such an object gets one field slot for each of
+//         its own fields that is or holds a sum, also when its class carries
+//         the annotation (the fields).  So a door that consumes each such
+//         field, such as through an rvalue match, ends the holder with no line.
+//       * The end of the scope of a class with scope_end_door is no door when
+//         a part of the class is or holds a sum (the linear types), because
+//         its destructor ends that sum, and the rule reads no destructor.  So a
+//         destructor that consumes its sum still gives a line
+//         (control-known-gaps).
+//     A named end door of a sum, which takes the reason of the end, and which
+//     the drop door, the body of a door and a destructor call for each sum
+//     that they end, retires these lines: the rule then reads each such end
+//     as a call of that door.
 //
 // Lent parameters
 //     A parameter of a reference that is not const to a linear class is a
@@ -553,6 +581,7 @@ LinearNames linear_names;
 struct LinearCaches {
     std::unordered_map<tree, TypeFacts> facts;
     std::unordered_map<tree, bool> can_move;
+    std::unordered_map<tree, bool> holds_sum;
 };
 
 LinearCaches linear_caches;
@@ -688,8 +717,14 @@ bool can_move(tree type, int depth) {
     return result;
 }
 
+bool parts_hold_linear_sum(tree type, bool is_linear, int depth);
+
 // The facts of a type (the linear types).  An array has the facts of its
-// element.  Complexity: the walk visits each class one time.
+// element.  The end of the scope of a class with the annotation
+// scope_end_door is no door when a part of the class is or holds a linear sum
+// (parts_hold_linear_sum), because the destructor of the class ends that sum,
+// and the rule reads no destructor.  Complexity: the walk visits each class
+// one time.
 TypeFacts facts_of(tree type, int depth = 0) {
     if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth || !TYPE_P(type)) {
         return {};
@@ -710,7 +745,7 @@ TypeFacts facts_of(tree type, int depth = 0) {
     bool is_scope_door = carries_annotation(attributes, linear_names.scope_end_door);
     if (carries_annotation(attributes, linear_names.linear)) {
         result.linearity = Linearity::direct;
-        result.ends_at_scope = is_scope_door;
+        result.ends_at_scope = is_scope_door && !parts_hold_linear_sum(type, true, depth + 1);
     } else {
         bool holds_linear = false;
         bool each_part_ends = true;
@@ -734,7 +769,7 @@ TypeFacts facts_of(tree type, int depth = 0) {
         }
         if (holds_linear && can_move(type, 0)) {
             result.linearity = Linearity::derived;
-            result.ends_at_scope = is_scope_door || each_part_ends;
+            result.ends_at_scope = (is_scope_door && !parts_hold_linear_sum(type, true, depth + 1)) || each_part_ends;
         }
     }
     linear_caches.facts[type] = result;
@@ -780,6 +815,29 @@ bool collect_linear_fields(tree type, std::vector<tree>& fields, int depth) {
     return true;
 }
 
+bool holds_linear_sum(tree type, int depth);
+
+// Adds each field of the class TYPE that is or holds a linear sum to FIELDS,
+// for a holder of a sum in the body of a door (the sum holders).  Returns
+// false, which fails closed, when a base of TYPE holds a sum.  Complexity:
+// linear in the bases and the fields, and the walk of each one.
+bool collect_sum_fields(tree type, std::vector<tree>& fields) {
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            if (holds_linear_sum(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), 1)) {
+                return false;
+            }
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
+            && !TYPE_REF_P(TREE_TYPE(field)) && holds_linear_sum(TREE_TYPE(field), 1)) {
+            fields.push_back(field);
+        }
+    }
+    return true;
+}
+
 // True when a temporary of TYPE drops a linear value at its end: TYPE is
 // linear, and the end of its scope is no door.
 bool is_dropped_temporary_type(tree type) {
@@ -804,6 +862,65 @@ bool is_linear_sum(tree type) {
     }
     type = TYPE_MAIN_VARIANT(type);
     return CLASS_TYPE_P(type) && carries_annotation(TYPE_ATTRIBUTES(type), linear_names.sum) && is_linear_type(type);
+}
+
+// True when TYPE is a linear sum or holds one by value (the sum holders): the
+// element of an array, a base, a data member that is no reference, and a
+// type argument of a linear class, such as the payload of a Box or the
+// element of a list, at each depth.  A pointer and a reference hold nothing.
+// The walk reads each class, also one that cannot move.  Complexity: the walk
+// visits each class one time.
+bool holds_linear_sum(tree type, int depth = 0) {
+    if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth || !TYPE_P(type)) {
+        return false;
+    }
+    type = TYPE_MAIN_VARIANT(element_type_of(type));
+    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
+        return false;
+    }
+    auto found = linear_caches.holds_sum.find(type);
+    if (found != linear_caches.holds_sum.end()) {
+        return found->second;
+    }
+    // The answer while the walk is open, so that a cycle through a type
+    // argument ends.
+    linear_caches.holds_sum.emplace(type, false);
+    bool const result = is_linear_sum(type) || parts_hold_linear_sum(type, is_linear_type(type), depth);
+    linear_caches.holds_sum[type] = result;
+    return result;
+}
+
+// True when a part of the complete class TYPE is or holds a linear sum: a
+// base, a data member that is no reference, or a type argument when
+// IS_LINEAR tells that TYPE is linear (holds_linear_sum).  A linear class is
+// linear by the values that its type arguments name, so it holds them.
+// Complexity: linear in the parts, and the walk of each part.
+bool parts_hold_linear_sum(tree type, bool is_linear, int depth) {
+    if (depth > kTypeDepth) {
+        return false;
+    }
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            if (holds_linear_sum(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1)) {
+                return true;
+            }
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
+            && !TYPE_REF_P(TREE_TYPE(field)) && holds_linear_sum(TREE_TYPE(field), depth + 1)) {
+            return true;
+        }
+    }
+    tree info = is_linear ? CLASSTYPE_TEMPLATE_INFO(type) : NULL_TREE;
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        if (argument != NULL_TREE && TYPE_P(argument) && holds_linear_sum(argument, depth + 1)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // The summaries: the capture fields of each closure whose reference names a
@@ -1210,6 +1327,14 @@ bool is_same_state(const FlowState& left, const FlowState& right) {
 // fields).
 constexpr std::size_t kNoParent = SIZE_MAX;
 
+// The end of a value in the body of a door (the doors): exempt from the kinds
+// of a drop, or kept, because the value is or holds a linear sum, which no
+// door ends (the sum holders).
+enum class DoorEnd : std::uint8_t {
+    exempt,
+    kept,
+};
+
 struct Slot {
     tree decl = NULL_TREE;
     // The field of a slot of one field of the object DECL, or null for the
@@ -1221,6 +1346,9 @@ struct Slot {
     bool ends_at_scope = false;
     // The object is a linear sum, whose end reads its content (the sums).
     bool is_sum = false;
+    // The end of the object in the body of a door: kept when the object is or
+    // holds a linear sum (the sum holders).
+    DoorEnd door_end = DoorEnd::exempt;
     // A capture by reference, a stored address or a reference member names
     // the sum, so a later write through it can fill the sum (the sums).
     bool is_aliased = false;
@@ -1276,6 +1404,7 @@ struct PendingFinding {
     Kind kind;
     location_t location;
     std::string entity;
+    DoorEnd door_end = DoorEnd::exempt;
 };
 
 // One finding of a walk of a body, with its place, before the rule adds it.
@@ -1662,6 +1791,7 @@ private:
         entry.ends_at_scope = facts.ends_at_scope;
         entry.is_lent = is_lent;
         entry.is_sum = is_linear_sum(type);
+        entry.door_end = door_end_of(type);
         slots_.push_back(entry);
         slot_of_.emplace(decl, slot);
         add_field_slots(slot, type);
@@ -1723,6 +1853,7 @@ private:
         entry.decl = decl;
         entry.ends_at_scope = facts.ends_at_scope;
         entry.is_sum = is_linear_sum(type);
+        entry.door_end = door_end_of(type);
         slots_.push_back(entry);
         slot_of_.emplace(decl, slot);
         add_field_slots(slot, type);
@@ -1759,13 +1890,22 @@ private:
     // parts.  A move of a field consumes its slot, and the move of the last
     // linear field consumes the object.  A class that carries the annotation
     // hides its fields.  Complexity: linear in the bases and the fields.
+    //
+    // In the body of a door, the end of a holder of a linear sum ends each
+    // other value that the holder holds (the sum holders).  So such a holder
+    // gets one slot for each of its own fields that is or holds a linear sum,
+    // also when its class carries the annotation, and the consume of each such
+    // field consumes the holder.  A base that holds a sum gives no slot, so
+    // only a consume of the whole holder ends it.
     void add_field_slots(std::size_t slot, tree type) {
         type = TYPE_MAIN_VARIANT(type);
-        if (!CLASS_TYPE_P(type) || linearity_of(type) != Linearity::derived) {
+        bool const is_kept_holder = slots_[slot].door_end == DoorEnd::kept && !slots_[slot].is_sum;
+        if (!CLASS_TYPE_P(type) || (linearity_of(type) != Linearity::derived && !is_kept_holder)) {
             return;
         }
         std::vector<tree> linear_fields;
-        if (!collect_linear_fields(type, linear_fields, 0)) {
+        if (is_kept_holder ? !collect_sum_fields(type, linear_fields)
+                           : !collect_linear_fields(type, linear_fields, 0)) {
             return;
         }
         std::vector<std::size_t> fields;
@@ -2280,8 +2420,14 @@ private:
         return function_text(function_) + ": " + simple_name(decl) + " (" + linear_type_text(TREE_TYPE(decl)) + ")";
     }
 
-    void add_pending(Kind kind, location_t location, const std::string& entity) {
-        pending_.push_back(PendingFinding{kind, location, entity});
+    void add_pending(Kind kind, location_t location, const std::string& entity, DoorEnd door_end = DoorEnd::exempt) {
+        pending_.push_back(PendingFinding{kind, location, entity, door_end});
+    }
+
+    // The end of a value of TYPE in the body of this function (the sum
+    // holders): kept in the body of a door when TYPE is or holds a linear sum.
+    DoorEnd door_end_of(tree type) const {
+        return is_door_ && holds_linear_sum(type) ? DoorEnd::kept : DoorEnd::exempt;
     }
 
     static bool is_used(Status status) { return status == Status::consumed || status == Status::maybe; }
@@ -3532,7 +3678,8 @@ private:
             return;
         }
         Kind kind = is_linear_sum(type) ? Kind::linear_option_discarded : Kind::linear_discarded_temporary;
-        add_pending(kind, location, function_text(function_) + ": temporary (" + linear_type_text(type) + ")");
+        add_pending(kind, location, function_text(function_) + ": temporary (" + linear_type_text(type) + ")",
+                    door_end_of(type));
     }
 
     void check_discarded(tree node) {
@@ -3594,15 +3741,15 @@ private:
             if (entry.is_sum) {
                 kind = Kind::linear_option_unconsumed;
             }
-            record(kind, DECL_SOURCE_LOCATION(entry.decl), entity_of(entry.decl));
+            record(kind, DECL_SOURCE_LOCATION(entry.decl), entity_of(entry.decl), entry.door_end);
         }
         for (const PendingFinding& finding : pending_) {
-            record(finding.kind, finding.location, finding.entity);
+            record(finding.kind, finding.location, finding.entity, finding.door_end);
         }
     }
 
-    void record(Kind kind, location_t location, const std::string& entity) {
-        if (is_ended_by_door(kind)) {
+    void record(Kind kind, location_t location, const std::string& entity, DoorEnd door_end = DoorEnd::exempt) {
+        if (door_end == DoorEnd::exempt && is_ended_by_door(kind)) {
             return;
         }
         Place place = place_of(location, Scope::quarantine);
@@ -5369,6 +5516,7 @@ void on_empty_class_assignment(void* gcc_data, void*) {
 void on_linear_collection(void*, void*) {
     linear_caches.facts.clear();
     linear_caches.can_move.clear();
+    linear_caches.holds_sum.clear();
     shape_caches.refuses_lifetime.clear();
     shape_caches.library_holder.clear();
     shape_caches.brands.clear();

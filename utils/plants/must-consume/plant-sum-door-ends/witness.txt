@@ -1,0 +1,19 @@
+# No door ends a linear sum (THE SUM HOLDERS of linear.cpp): a door that ends
+# a holder of a sum in its body (line 33), a door that ends a sum in its body
+# (39), a class with scope_end_door that holds a sum (54), and such a class
+# that marks its own end too (59).  The run-time end of a full Option of a
+# linear payload caught each of them before.  The sum gives option-unconsumed,
+# an error in each mode, and each holder gives unconsumed.  The directory src/
+# has the enforce mode error, and the tree holds no ledger of must-consume, so
+# each counted line is a compile error too.
+
+compile doors src/doors.cpp must-consume=on errors=doors
+flag doors -freflection
+exit doors fail
+finding doors must-consume unconsumed src/doors.cpp:33:12 | planted::end_holder: ended (planted::Holder)
+finding doors must-consume option-unconsumed src/doors.cpp:39:19 | planted::end_sum: ended (foundation::core::Option<planted::Token>)
+finding doors must-consume unconsumed src/doors.cpp:54:18 | planted::scoped_holder_ends: scoped (planted::ScopedHolder)
+finding doors must-consume unconsumed src/doors.cpp:59:24 | planted::marked_scoped_holder_ends: scoped (planted::MarkedScopedHolder)
+error doors src/doors.cpp:33 | quarantine: unconsumed planted::end_holder: ended (planted::Holder); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error doors src/doors.cpp:54 | quarantine: unconsumed planted::scoped_holder_ends: scoped (planted::ScopedHolder); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error doors src/doors.cpp:59 | quarantine: unconsumed planted::marked_scoped_holder_ends: scoped (planted::MarkedScopedHolder); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

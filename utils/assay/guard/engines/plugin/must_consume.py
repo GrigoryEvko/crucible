@@ -81,6 +81,10 @@ Doors
     function a unit read.  A row with no record in the build is stale: the
     kind stale-door, which no ledger row admits (REFUSED_KINDS).  A tree with
     no utils/rule-table.txt, such as the tree of a plant, has no stale row.
+    No door ends a linear sum, so the body of a door and the end of the scope
+    of a class with scope_end_door still give a line for a value that is or
+    holds a linear sum and that no consumer took (linear.cpp, the sum
+    holders).
 
 Ledger
     utils/ledgers/must-consume.txt counts the findings of each directory and

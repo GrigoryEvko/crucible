@@ -1,0 +1,48 @@
+// The doors that end a linear sum through its consumer (THE SUM HOLDERS of
+// linear.cpp): an rvalue match takes the token in the arm of a payload, and
+// the arm of no payload does nothing.  So no sum ends with its payload.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that marks its own end and holds an Option of a token beside a
+// token.
+struct [[= ::foundation::linear::linear{}]] Holder {
+    Option<Token> held;
+    Token kept;
+};
+
+// A door that consumes a sum by a match.
+[[= ::foundation::linear::drop_door{}]] void end_sum(Option<Token>&& held) noexcept {
+    std::move(held).match([](Token token) noexcept { ::foundation::linear::drop(std::move(token)); }, [] noexcept {});
+}
+
+// A door that consumes the sum of a holder by a match, and ends the token of
+// the holder with the holder.
+[[= ::foundation::linear::drop_door{}]] void end_holder(Holder&& holder) noexcept {
+    std::move(holder.held)
+        .match([](Token token) noexcept { ::foundation::linear::drop(std::move(token)); }, [] noexcept {});
+}
+
+void ends_through_the_doors() {
+    end_sum(Option<Token>::some(Token{1}));
+    end_holder(Holder{Option<Token>::some(Token{2}), Token{3}});
+}
+
+}  // namespace planted

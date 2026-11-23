@@ -1,0 +1,7 @@
+# A door that consumes a linear sum by a match gives no line (THE SUM HOLDERS
+# of linear.cpp): a door that takes the sum, and a door that takes a holder of
+# the sum and consumes the sum field.  The directory src/ has the enforce mode
+# error, and the unit compiles with no line of the rule.
+compile doors src/doors.cpp must-consume=on
+flag doors -freflection
+exit doors pass

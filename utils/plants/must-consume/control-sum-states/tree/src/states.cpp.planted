@@ -107,9 +107,4 @@ void consumed_result_and_one_of() {
     std::move(held).match([](Token token) { sink(std::move(token)); }, [](Code) {});
 }
 
-// The body of a door ends the linear values of its frame.
-[[= ::foundation::linear::drop_door{}]] void ends_in_a_door(Option<Token> held) noexcept {
-    static_cast<void>(held.is_some());
-}
-
 }  // namespace planted
