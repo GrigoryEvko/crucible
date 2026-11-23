@@ -282,9 +282,13 @@ BORROW_ERROR = "this arm of a borrow match writes the sum that the match reads (
 # of borrow.cpp).
 BORROW_LOOP_MARK = "loop "
 BORROW_LOOP_ERROR = "this body of a loop over a sum writes the sum that the loop reads ({entity})"
-# The rule view-escape, and the start of its error (the errors of utils/tools/quarantine/escape.cpp).
+# The rule view-escape, and the start of the error of each of its kinds: a return and a store (the errors of
+# utils/tools/quarantine/escape.cpp).
 ESCAPE_RULE = "view-escape"
-ESCAPE_ERROR = "this function gives back a {entity}, and that object ends with the frame of the function"
+ESCAPE_ERRORS = {
+    "escaped-borrow": "this function gives back a {entity}, and that object ends with the frame of the function",
+    "stored-borrow": "this function stores a {entity}, and the borrowed object ends with the frame of the function",
+}
 # The rules that give an error in each mode for each finding: the contract rule, the rules binding-hook,
 # borrow-match and view-escape and the rules of the family unit fact.
 EACH_MODE_RULES = frozenset(
@@ -872,7 +876,7 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
         elif finding.rule == BORROW_RULE:
             errors.append((place, BORROW_ERROR.format(entity=finding.entity)))
         elif finding.rule == ESCAPE_RULE:
-            errors.append((place, ESCAPE_ERROR.format(entity=finding.entity)))
+            errors.append((place, ESCAPE_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:
             errors.append((place, SPECIALIZATION_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == BASE_NAMESPACE_RULE and finding.kind in BASE_NAMESPACE_ERRORS:

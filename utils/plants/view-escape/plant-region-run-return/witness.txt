@@ -1,0 +1,17 @@
+# The return of the run of a region over a local arena is an error in each
+# mode (42).  The walk of the returns does not read the runs outside, because
+# the rule does not follow the arena of a region and the arena can be a local
+# of the same frame.  So the region stays the origin of its run there.  The
+# walk of the stores reads them, and the constructor of the control
+# control-stored-borrows that keeps the run of a region it consumes gives no
+# line.
+
+compile region src/region.cpp
+flag region -freflection
+exit region fail
+finding region view-escape escaped-borrow src/region.cpp:42:40 | borrow of the local region
+finding region quarantine std-entity src/region.cpp:28:69 | std::size_t
+finding region quarantine std-entity src/region.cpp:28:82 | std::size_t
+finding region quarantine std-entity src/region.cpp:32:91 | std::size_t
+error region src/region.cpp:42 | this function gives back a borrow of the local region, and that object ends with the frame of the function
+text region | a read of the result reads the dead stack frame of the call

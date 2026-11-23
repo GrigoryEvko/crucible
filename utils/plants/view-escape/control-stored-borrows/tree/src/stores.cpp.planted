@@ -1,0 +1,101 @@
+// No store keeps a borrow of an object that ends with the frame, and no line
+// names the rule view-escape: a View of a list of the caller into the object
+// of a parameter by reference and into a member, a View into a local, a View
+// that a parameter by value holds into a member, a member that a constructor
+// builds from a list of its caller, and an assignment operator of namespace
+// scope.  Two more stores are the forms of src/Vigil.cpp and of
+// fixy/SharedRegion.h: a Ref of the object of a Box that a member holds
+// already, and a View of the run of a region that a constructor consumes.
+// The run lives in the storage of the arena, not in the region.
+#include <fixy/OwnedRegion.h>
+#include <foundation/Brand.h>
+#include <foundation/Platform.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using IntView = fc::View<int const>;
+using IntList = fc::FixedList<int, 4>;
+
+void keep_of_caller(fc::Option<IntView>& out, IntList const& list) noexcept {
+    out = fc::Option<IntView>::some(list.view());
+}
+
+int count_of_local() noexcept {
+    IntList const local{};
+    fc::Option<IntView> held{};
+    held = fc::Option<IntView>::some(local.view());
+    return held.is_some() ? 1 : 0;
+}
+
+class Keeper {
+public:
+    void keep(IntView view) noexcept { held_ = fc::Option<IntView>::some(view); }
+
+    void keep_of(IntList const& list) noexcept { held_ = fc::Option<IntView>::some(list.view()); }
+
+private:
+    fc::Option<IntView> held_{};
+};
+
+class Holder {
+public:
+    explicit Holder(IntList const& list CRUCIBLE_LIFETIMEBOUND) noexcept : view_{list.view()} {}
+    explicit Holder(IntList const&&) = delete("a Holder of a temporary list dangles");
+
+private:
+    IntView view_;
+};
+
+// An assignment operator of namespace scope writes the object of a parameter
+// by reference, and the class of the operator is no class.
+enum class Bits : unsigned char {};
+
+constexpr Bits& operator^=(Bits& left, Bits right) noexcept {
+    left = static_cast<Bits>(static_cast<unsigned char>(left) ^ static_cast<unsigned char>(right));
+    return left;
+}
+
+void flip(Bits& held, Bits mask) noexcept { held ^= mask; }
+
+struct Probe {
+    int value = 0;
+};
+
+class SenseKeeper {
+public:
+    void attach(fc::Box<Probe>&& box) noexcept {
+        held_ = fc::Option<fc::Box<Probe>>::some(std::move(box));
+        held_.with_mut(
+            [this](auto held) noexcept {
+                view_ = fc::Option<fc::Ref<Probe const>>::some(fc::erase_brand(std::as_const(*held).view()));
+            },
+            [] noexcept {});
+    }
+
+private:
+    fc::Option<fc::Box<Probe>> held_{};
+    fc::Option<fc::Ref<Probe const>> view_{};
+};
+
+struct RegionTag {};
+
+using Region = ::fixy::OwnedRegion<int, RegionTag, ::foundation::brand::DefaultBrand>;
+
+class RunKeeper {
+public:
+    explicit RunKeeper(Region&& region) noexcept : run_{::fixy::mint_borrowed(region)} {
+        ::foundation::linear::drop(std::move(region).release());
+    }
+
+private:
+    IntView run_;
+};
+
+}  // namespace planted

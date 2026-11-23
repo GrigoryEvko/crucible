@@ -1,0 +1,77 @@
+// Each function stores a borrow of an object that ends with its frame into an
+// object that outlives the frame.  A later read of the store reads a dead
+// stack frame: an Option of the object of a parameter by reference, a member
+// of a plain class through a parameter by reference, a member of the object
+// of a member function, a member that a constructor builds from its parameter
+// by value, an object of static storage, and a Ref of the object of a local
+// Box that moves into a member after the store.
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using IntView = fc::View<int const>;
+using IntList = fc::FixedList<int, 4>;
+
+struct Slot {
+    IntView held;
+};
+
+struct Probe {
+    int value = 0;
+};
+
+void keep_in_parameter(fc::Option<IntView>& out) noexcept {
+    IntList const local{};
+    out = fc::Option<IntView>::some(local.view());
+}
+
+void keep_in_slot(Slot& out) noexcept {
+    IntList const local{};
+    out.held = local.view();
+}
+
+class Keeper {
+public:
+    void keep() noexcept {
+        IntList const local{};
+        held_ = fc::Option<IntView>::some(local.view());
+    }
+
+private:
+    fc::Option<IntView> held_{};
+};
+
+class Holder {
+public:
+    explicit Holder(IntList list) noexcept : view_{list.view()} {}
+
+private:
+    IntView view_;
+};
+
+void keep_in_static() noexcept {
+    static fc::Option<IntView> kept{};
+    IntList const local{};
+    kept = fc::Option<IntView>::some(local.view());
+}
+
+class SenseKeeper {
+public:
+    void attach(fc::Box<Probe>&& box) noexcept {
+        fc::Box<Probe> local{std::move(box)};
+        view_ = fc::Option<fc::Ref<Probe const>>::some(fc::erase_brand(std::as_const(local).view()));
+        held_ = fc::Option<fc::Box<Probe>>::some(std::move(local));
+    }
+
+private:
+    fc::Option<fc::Box<Probe>> held_{};
+    fc::Option<fc::Ref<Probe const>> view_{};
+};
+
+}  // namespace planted

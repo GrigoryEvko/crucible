@@ -1,0 +1,31 @@
+# Each store of a borrow of an object that ends with the frame into an object
+# that outlives the frame is an error in each mode: an Option of the object of
+# a parameter by reference (31), a member of a plain class through a
+# parameter by reference (36), a member of the object of a member function
+# (43), a member that a constructor builds from its parameter by value (52),
+# an object of static storage (61), and a Ref of the object of a local Box
+# that moves into a member after the store (68).  The plugin of main gave no
+# line.  The second compile shows that a parse with no object gives the same
+# errors.
+
+compile stores src/stores.cpp
+flag stores -freflection
+exit stores fail
+finding stores view-escape stored-borrow src/stores.cpp:31:49 | borrow of the local local into the parameter out
+finding stores view-escape stored-borrow src/stores.cpp:36:27 | borrow of the local local into the parameter out
+finding stores view-escape stored-borrow src/stores.cpp:43:55 | borrow of the local local into the object of the member function
+finding stores view-escape stored-borrow src/stores.cpp:52:46 | borrow of the parameter list into the object of the member function
+finding stores view-escape stored-borrow src/stores.cpp:61:50 | borrow of the local local into the static kept
+finding stores view-escape stored-borrow src/stores.cpp:68:100 | borrow of the local local into the object of the member function
+finding stores process-wide-state unmarked-static src/stores.cpp:59:32 | planted::keep_in_static()::kept
+error stores src/stores.cpp:31 | this function stores a borrow of the local local into the parameter out, and the borrowed object ends with the frame of the function
+error stores src/stores.cpp:36 | this function stores a borrow of the local local into the parameter out, and the borrowed object ends with the frame of the function
+error stores src/stores.cpp:43 | this function stores a borrow of the local local into the object of the member function, and the borrowed object ends with the frame of the function
+error stores src/stores.cpp:52 | this function stores a borrow of the parameter list into the object of the member function, and the borrowed object ends with the frame of the function
+error stores src/stores.cpp:61 | this function stores a borrow of the local local into the static kept, and the borrowed object ends with the frame of the function
+error stores src/stores.cpp:68 | this function stores a borrow of the local local into the object of the member function, and the borrowed object ends with the frame of the function
+text stores | a later read of the store reads the dead stack frame of the call
+
+compile syntax src/stores.cpp out=no stage=syntax errors=stores notes=stores
+flag syntax -freflection
+exit syntax fail

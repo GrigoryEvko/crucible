@@ -1,0 +1,12 @@
+# The rule table of the plant plant-region-run-return of the rule view-escape.
+# The unit of src/ is quarantined.  The headers of the repository are outside
+# the root of the plant, so the table admits the names of the base that the
+# planted code uses.
+
+admit foundation::core | the arena and the View whose borrow the planted code returns
+admit foundation::effects | the allocation token and the row of the tag
+admit foundation::permissions | the root permission of the region
+admit foundation::brand | the brand of the member arena
+admit fixy | the region and its borrow
+
+quarantine src/

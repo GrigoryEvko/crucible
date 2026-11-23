@@ -1,0 +1,45 @@
+// A function builds a region over a local arena and gives back the run of the
+// region.  The run lives in the arena, and the arena ends with the frame, so
+// a read of the result reads a dead stack frame.  The rule does not follow
+// the arena of a region, so the walk of the returns keeps the region as the
+// origin of its run, and the return is an error.
+#include <fixy/OwnedRegion.h>
+#include <foundation/Brand.h>
+#include <foundation/core/BumpArena.h>
+#include <foundation/core/Region.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
+
+#include <cstddef>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct RegionTag final {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+// An arena with one bump arena, as the arena of a test of a region.
+class LocalArena {
+    struct[[= ::foundation::brand::arena_member_brand{}]] Bump final {};
+
+    fc::BumpArena<Bump> bump_ =
+        fc::mint_bump_arena<Bump>(fc::Quantity<fc::unit::Byte, std::size_t>{std::size_t{1} << 12});
+
+public:
+    template <typename T>
+    [[nodiscard]] fc::View<T> alloc_array(::foundation::effects::Alloc alloc, std::size_t count) noexcept {
+        auto const run = bump_.array(alloc, count, T{});
+        return run.view();
+    }
+};
+
+fc::View<int const> run_of_local_region(::foundation::effects::Alloc alloc) noexcept {
+    LocalArena arena{};
+    auto region = ::fixy::mint_owned_region<int>(alloc, arena, 4,
+                                                 ::foundation::permissions::mint_permission_root<RegionTag>());
+    return ::fixy::mint_borrowed(region);
+}
+
+}  // namespace planted

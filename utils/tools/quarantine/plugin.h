@@ -275,6 +275,11 @@
 //     The rule view-escape (escape.cpp, the finding, in each mode):
 //     escaped-borrow        a return of a borrow of a local, of a parameter by
 //                           value or of a temporary
+//     stored-borrow         a store of such a borrow into an object that
+//                           outlives the frame: the object of a parameter by
+//                           reference, a member of the object of a member
+//                           function, or an object of static or thread
+//                           storage (the stores)
 //     The rule proof-routes (expression.cpp, the proof routes):
 //     union                 a union definition
 //     pointer-cast          a cast to a pointer or a reference to a proof type
@@ -1087,6 +1092,7 @@ enum class Kind : std::uint8_t {
     missing_twin,
     missing_mark,
     escaped_borrow,
+    stored_borrow,
     unrostered_witness,
     route_union,
     route_pointer_cast,
@@ -1431,6 +1437,8 @@ inline const char* kind_name(Kind kind) {
             return "missing-mark";
         case Kind::escaped_borrow:
             return "escaped-borrow";
+        case Kind::stored_borrow:
+            return "stored-borrow";
         case Kind::unrostered_witness:
             return "unrostered-witness";
         case Kind::route_union:
@@ -1691,6 +1699,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::missing_mark:
             return Rule::lifetime_twin;
         case Kind::escaped_borrow:
+        case Kind::stored_borrow:
             return Rule::view_escape;
         case Kind::unrostered_witness:
             return Rule::witness_roster;
@@ -1822,9 +1831,9 @@ inline Rule rule_of(Kind kind) {
 // scope brand of the rule brand-escape (the scope brands of linear.cpp), the
 // end of a linear sum with a payload of the rule must-consume (the sums of
 // linear.cpp), a bit copy into the tag of a sum (the closed tags of
-// library.cpp), and a return of a borrow of an object that ends with the frame
-// of the rule view-escape (escape.cpp).  No enforce mode changes such a
-// finding, and an opt-out region covers it.
+// library.cpp), and a return or a store of a borrow of an object that ends
+// with the frame of the rule view-escape (escape.cpp).  No enforce mode
+// changes such a finding, and an opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::forged_tag:
@@ -1854,6 +1863,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::thread_bound_static:
         case Kind::loan_key_static:
         case Kind::escaped_borrow:
+        case Kind::stored_borrow:
             return true;
         default:
             return false;
@@ -2010,6 +2020,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"lifetime-twin", "missing-twin"},
     {"lifetime-twin", "missing-mark"},
     {"view-escape", "escaped-borrow"},
+    {"view-escape", "stored-borrow"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
     {"proof-routes", "pointer-cast"},
@@ -3100,9 +3111,9 @@ void finish_borrow_matches();
 void report_borrow_match(const Finding& finding);
 
 // escape.cpp: the family view escape, the rule view-escape.  It records a
-// return of a borrow of an object that ends with the frame (the finding of
-// escape.cpp), and report_view_escape() gives the error of one finding that no
-// region opts out.
+// return or a store of a borrow of an object that ends with the frame (the
+// finding and the stores of escape.cpp), and report_view_escape() gives the
+// error of one finding that no region opts out.
 void register_view_escape(const char* plugin_name);
 void report_view_escape(const Finding& finding);
 

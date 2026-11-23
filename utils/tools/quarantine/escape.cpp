@@ -40,6 +40,20 @@
 //   reads.  A conversion, a conditional, a comma and a temporary pass their
 //   origins on.
 //
+// Runs outside
+//   A region of fixy/OwnedRegion.h holds a run in storage that it does not
+//   own, such as an arena: its state states releases_nothing of
+//   include/foundation/core/Owner.h, so the end of its core is trivial.  Only
+//   the walk of the stores reads this property (OutsideRuns), and only on an
+//   owner of the namespace foundation or fixy (outside_run_core): no element
+//   of the run is a part of the region, and a run that a door takes from a
+//   region names no region, also at a parameter that CRUCIBLE_LIFETIMEBOUND
+//   marks.  So a constructor that consumes a region keeps its run, as
+//   fixy/SharedRegion.h does.  The rule does not follow the arena of a region,
+//   and the arena can be a local of the same frame.  So the walk of the
+//   returns keeps the region as the origin of its run, and the return of a
+//   run of a local region stays a finding.
+//
 // Marked owners
 //   A parameter that CRUCIBLE_LIFETIMEBOUND marks states that the result
 //   borrows its argument.  So the object of an argument at a marked parameter
@@ -61,6 +75,8 @@
 //                    value, a temporary of the full expression, a parameter
 //                    by an rvalue reference to a value that holds no borrow,
 //                    or a capture by value of a closure
+//   stored-borrow    a store of a value with such an origin into an object
+//                    that outlives the frame (the stores)
 //   The entity is the object.  A parameter by an rvalue reference is often a
 //   forwarding T&& that deduced a value: the caller gave a temporary, which
 //   ends with the full expression of the call.  A result by an rvalue
@@ -80,8 +96,21 @@
 //   or through a container of borrows, gives no origin.  The two exceptions of
 //   the linear design hold: a function returns
 //   a borrow of a parameter that it marks, and a class that cannot move or
-//   copy holds a view of a member that it declares first.  The rule reads only
-//   the return of a borrow, and neither of the two meets a return of a local.
+//   copy holds a view of a member that it declares first.  Neither of the two
+//   meets a return or a store of a borrow of a local.
+//
+// Stores
+//   A function can also keep a borrow past its frame with no return: it
+//   stores the borrow into an object that outlives the frame.  Such an object
+//   is the object of a parameter by reference, a member of the object of a
+//   member function or of a constructor, or an object of static or thread
+//   storage, through its members and its elements.  The rule reads each
+//   assignment and initialization of such an object, each call of its
+//   assignment operator, and each constructor that builds it in place, when
+//   its type holds a borrow.  The stored value has the origins of a returned
+//   value.  A store through a capture by reference of a closure, through a
+//   local pointer or through a local reference names no such object, so the
+//   rule does not read it.
 //
 // Retirement
 //   A View with a brand or a lifetime parameter would carry this fact in its
@@ -157,6 +186,31 @@ bool is_owner_core_class(tree type) {
         }
     }
     return false;
+}
+
+// The base OwnerCore of include/foundation/core/Owner.h of an owner of the
+// namespace foundation or fixy whose core releases nothing at its end, or
+// null.  The state of such a core states releases_nothing (ReleasesNothing),
+// so the end of the core is trivial.  Such an owner, a region, holds a run in
+// storage that it does not own, such as an arena.  No element of the run is
+// a part of the owner, and the end of the owner ends no element (the runs
+// outside).
+tree outside_run_core(tree type) {
+    static tree const owner_core = get_identifier("OwnerCore");
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type) || !is_of_base_namespace(type)) {
+        return NULL_TREE;
+    }
+    tree binfo = TYPE_BINFO(type);
+    for (unsigned index = 0; binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+        tree base = BINFO_TYPE(BINFO_BASE_BINFO(binfo, index));
+        tree info = base != NULL_TREE && CLASS_TYPE_P(base) ? CLASSTYPE_TEMPLATE_INFO(base) : NULL_TREE;
+        if (info != NULL_TREE && DECL_NAME(TI_TEMPLATE(info)) == owner_core
+            && is_of_base_namespace(TI_TEMPLATE(info))) {
+            return COMPLETE_TYPE_P(base) && !TYPE_HAS_NONTRIVIAL_DESTRUCTOR(base) ? base : NULL_TREE;
+        }
+    }
+    return NULL_TREE;
 }
 
 // True for a class that states owns_its_storage{} of
@@ -286,11 +340,21 @@ void add_borrow_targets(tree type, std::vector<tree>& out, int depth) {
     }
 }
 
+// How a walk of the origins reads an owner whose run lives outside it (the
+// runs outside): the walk of the stores reads that property, and the walk of
+// the returns ignores it, so it stays closed for a run in a local arena.
+enum class OutsideRuns : std::uint8_t {
+    ignore,
+    read,
+};
+
 // True when WHOLE holds a part of the type PART: the type itself, the element
 // of an array, a base, a member, or a type argument of a class template, which
-// an owner holds in its bytes or on the heap.  Complexity: linear in the parts
-// of the type, to the depth kNameDepth.
-bool holds_part(tree whole, tree part, int depth) {
+// an owner holds in its bytes or on the heap.  With RUNS read, an owner whose
+// run lives outside it (outside_run_core) holds no part through its type
+// arguments or its core, which name the elements of the run.  Complexity:
+// linear in the parts of the type, to the depth kNameDepth.
+bool holds_part(tree whole, tree part, int depth, OutsideRuns runs) {
     if (whole == NULL_TREE || whole == error_mark_node || depth > kNameDepth) {
         return false;
     }
@@ -299,28 +363,33 @@ bool holds_part(tree whole, tree part, int depth) {
         return true;
     }
     if (TREE_CODE(whole) == ARRAY_TYPE) {
-        return holds_part(TREE_TYPE(whole), part, depth + 1);
+        return holds_part(TREE_TYPE(whole), part, depth + 1, runs);
     }
     if (!CLASS_TYPE_P(whole) || !COMPLETE_TYPE_P(whole)) {
         return false;
     }
+    tree const outside_core = runs == OutsideRuns::read ? outside_run_core(whole) : NULL_TREE;
     tree info = CLASSTYPE_TEMPLATE_INFO(whole);
-    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    tree arguments =
+        info != NULL_TREE && outside_core == NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
     for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
         tree argument = TREE_VEC_ELT(arguments, index);
-        if (argument != NULL_TREE && TYPE_P(argument) && holds_part(argument, part, depth + 1)) {
+        if (argument != NULL_TREE && TYPE_P(argument) && holds_part(argument, part, depth + 1, runs)) {
             return true;
         }
     }
     tree binfo = TYPE_BINFO(whole);
     for (unsigned index = 0; binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-        if (holds_part(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), part, depth + 1)) {
+        if (BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)) == outside_core) {
+            continue;
+        }
+        if (holds_part(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), part, depth + 1, runs)) {
             return true;
         }
     }
     for (tree field = TYPE_FIELDS(whole); field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (TREE_CODE(field) == FIELD_DECL && !DECL_ARTIFICIAL(field)
-            && holds_part(TREE_TYPE(field), part, depth + 1)) {
+            && holds_part(TREE_TYPE(field), part, depth + 1, runs)) {
             return true;
         }
     }
@@ -339,12 +408,12 @@ enum class Lend : std::uint8_t {
 // OBJECT: an object of a target of the result for Lend::exact, or an object
 // that holds a target for Lend::part.  A door that gives a View of ints
 // borrows an owner of ints, and not a key, a flag or an Option of an index.
-bool could_name(tree result, tree object, Lend lend) {
+bool could_name(tree result, tree object, Lend lend, OutsideRuns runs) {
     std::vector<tree> targets;
     add_borrow_targets(result, targets, 0);
     tree const bare = object != NULL_TREE ? TYPE_MAIN_VARIANT(object) : NULL_TREE;
     for (tree target : targets) {
-        if (lend == Lend::exact ? bare == target : holds_part(object, target, 0)) {
+        if (lend == Lend::exact ? bare == target : holds_part(object, target, 0, runs)) {
             return true;
         }
     }
@@ -354,14 +423,14 @@ bool could_name(tree result, tree object, Lend lend) {
 // True when a borrow of the type RESULT can carry on a borrow that the type
 // HELD holds: the result names a part of a target of HELD, as a window of a
 // View names a part of its run, or erase_brand gives the target of its Ref.
-bool could_forward(tree result, tree held) {
+bool could_forward(tree result, tree held, OutsideRuns runs) {
     std::vector<tree> results;
     std::vector<tree> helds;
     add_borrow_targets(result, results, 0);
     add_borrow_targets(held, helds, 0);
     for (tree result_target : results) {
         for (tree held_target : helds) {
-            if (holds_part(held_target, result_target, 0)) {
+            if (holds_part(held_target, result_target, 0, runs)) {
                 return true;
             }
         }
@@ -410,7 +479,7 @@ tree strip_conversions(tree node) {
 // The origins of the expressions of one function (the origins).
 class OriginWalk {
 public:
-    explicit OriginWalk(tree function) : function_{function} {}
+    OriginWalk(tree function, OutsideRuns runs) : function_{function}, runs_{runs} {}
 
     // True for an object that ends with the frame of the function: a local, a
     // parameter by value, a parameter by an rvalue reference to a value that
@@ -649,7 +718,7 @@ public:
                 continue;
             }
             if (!POINTER_TYPE_P(type)) {
-                if (holds_borrow(type, 0) && could_forward(result, type)) {
+                if (holds_borrow(type, 0) && could_forward(result, type, runs_)) {
                     add_named_origins(argument, result, out, depth + 1);
                 }
                 continue;
@@ -675,8 +744,11 @@ public:
     // True when the argument at INDEX of a call of CALLEE names an owner at a
     // parameter that CRUCIBLE_LIFETIMEBOUND marks (the marked owners).  The
     // index counts the object parameter of a member first, as the arguments
-    // of the call do.
-    static bool is_marked_owner_argument(tree callee, int index, tree argument) {
+    // of the call do.  In the walk of the stores, an owner whose run lives
+    // outside it (the runs outside) is no such owner: the run that the call
+    // gives names the storage of the run, and the end of the owner ends no
+    // element of it.
+    bool is_marked_owner_argument(tree callee, int index, tree argument) const {
         tree parameter = DECL_ARGUMENTS(callee);
         for (int position = 0; parameter != NULL_TREE && position < index; ++position) {
             parameter = DECL_CHAIN(parameter);
@@ -689,7 +761,9 @@ public:
             return false;
         }
         tree object_type = TREE_TYPE(TREE_TYPE(stripped));
-        return object_type != NULL_TREE && (!holds_borrow(object_type, 0) || owns_its_storage(object_type));
+        bool const is_run_outside = runs_ == OutsideRuns::read && outside_run_core(object_type) != NULL_TREE;
+        return object_type != NULL_TREE && !is_run_outside
+            && (!holds_borrow(object_type, 0) || owns_its_storage(object_type));
     }
 
     // The object that an argument by reference names: the operand of an
@@ -726,7 +800,7 @@ public:
             // type, so it can hold each target of the result (the marked
             // owners).
             bool const holds_each_type = type != NULL_TREE && owns_its_storage(type);
-            if (origin != NULL_TREE && (holds_each_type || could_name(result, type, Lend::part))) {
+            if (origin != NULL_TREE && (holds_each_type || could_name(result, type, Lend::part, runs_))) {
                 out.push_back(origin);
             }
         }
@@ -753,7 +827,7 @@ public:
         bool const is_address = TREE_CODE(stripped) == ADDR_EXPR;
         bool const is_pointer_value = !is_address && TREE_CODE(TREE_TYPE(stripped)) == POINTER_TYPE;
         if (is_pointer_value) {
-            if (lend == Lend::object || could_forward(result, TREE_TYPE(stripped))) {
+            if (lend == Lend::object || could_forward(result, TREE_TYPE(stripped), runs_)) {
                 add_origins(stripped, out, depth + 1);
             }
             return true;
@@ -762,10 +836,11 @@ public:
         if (holds_borrow(object_type, 0)) {
             if (lend == Lend::object) {
                 add_origins(object, out, depth + 1);
-            } else if (could_forward(result, object_type)) {
+            } else if (could_forward(result, object_type, runs_)) {
                 add_named_origins(object, result, out, depth + 1);
             }
-        } else if (lend == Lend::object || (lend != Lend::forward_only && could_name(result, object_type, lend))) {
+        } else if (lend == Lend::object
+                   || (lend != Lend::forward_only && could_name(result, object_type, lend, runs_))) {
             add_object(object, out, depth + 1);
         }
         return true;
@@ -847,6 +922,8 @@ public:
 
 private:
     tree function_;
+    // How the walk reads an owner whose run lives outside it.
+    OutsideRuns runs_;
     bool is_grown_ = false;
     std::unordered_map<unsigned, std::vector<tree>> local_origins_;
     std::unordered_map<unsigned, std::vector<tree>> reference_objects_;
@@ -902,6 +979,146 @@ tree check_return(tree* node, int*, void* data) {
         break;
     }
     return NULL_TREE;
+}
+
+// One store of a value that holds a borrow into an object that outlives the
+// frame (the stores).  PLACE is the parameter by reference, the object
+// parameter this, or the object of static or thread storage that the store
+// writes.  VALUE is the stored value, or the call of a constructor that
+// builds the object in place.
+struct Store {
+    tree place = NULL_TREE;
+    tree value = NULL_TREE;
+    bool is_construction = false;
+    location_t location = UNKNOWN_LOCATION;
+};
+
+// The object outside the frame that the lvalue TARGET names, through its
+// members and its elements: a parameter by reference, the object parameter
+// this, or an object of static or thread storage.  Null for each other
+// target, such as a local.  With IS_ADDRESS, TARGET is the address of the
+// object, as the object argument of an assignment operator or a constructor
+// is.  The front end reads a parameter by reference through a dereference,
+// and its address is the parameter itself.
+tree outer_place_of(tree target, bool is_address) {
+    target = strip_conversions(target);
+    if (target == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (is_address) {
+        if (TREE_CODE(target) == PARM_DECL) {
+            return is_this_parameter(target) || TREE_CODE(TREE_TYPE(target)) == REFERENCE_TYPE ? target : NULL_TREE;
+        }
+        if (TREE_CODE(target) != ADDR_EXPR) {
+            return NULL_TREE;
+        }
+        target = strip_conversions(TREE_OPERAND(target, 0));
+    }
+    for (int depth = 0; target != NULL_TREE && depth < kEscapeDepth; ++depth) {
+        if (TREE_CODE(target) != COMPONENT_REF && TREE_CODE(target) != ARRAY_REF) {
+            break;
+        }
+        target = strip_conversions(TREE_OPERAND(target, 0));
+    }
+    if (target == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (TREE_CODE(target) == INDIRECT_REF) {
+        tree object = strip_conversions(TREE_OPERAND(target, 0));
+        bool const is_outer = object != NULL_TREE && TREE_CODE(object) == PARM_DECL
+                           && (is_this_parameter(object) || TREE_CODE(TREE_TYPE(object)) == REFERENCE_TYPE);
+        return is_outer ? object : NULL_TREE;
+    }
+    bool const is_static =
+        VAR_P(target) && (TREE_STATIC(target) || DECL_EXTERNAL(target) || DECL_THREAD_LOCAL_P(target));
+    return is_static ? target : NULL_TREE;
+}
+
+// The callback of cp_walk_tree that collects the stores of a body into an
+// object outside the frame, whose type holds a borrow (the stores): an
+// assignment or an initialization, a call of an assignment operator, and a
+// call of a constructor that builds such an object in place.
+tree collect_store(tree* node, int*, void* data) {
+    auto& stores = *static_cast<std::vector<Store>*>(data);
+    tree current = *node;
+    location_t const location = EXPR_HAS_LOCATION(current) ? EXPR_LOCATION(current) : UNKNOWN_LOCATION;
+    if (TREE_CODE(current) == INIT_EXPR || TREE_CODE(current) == MODIFY_EXPR) {
+        tree target = TREE_OPERAND(current, 0);
+        tree place = outer_place_of(target, false);
+        if (place != NULL_TREE && holds_borrow(TREE_TYPE(target), 0)) {
+            stores.push_back(Store{place, TREE_OPERAND(current, 1), false, location});
+        }
+        return NULL_TREE;
+    }
+    if (TREE_CODE(current) == AGGR_INIT_EXPR) {
+        tree place = outer_place_of(AGGR_INIT_EXPR_SLOT(current), false);
+        if (place != NULL_TREE && holds_borrow(TREE_TYPE(AGGR_INIT_EXPR_SLOT(current)), 0)) {
+            stores.push_back(Store{place, current, true, location});
+        }
+        return NULL_TREE;
+    }
+    if (TREE_CODE(current) != CALL_EXPR) {
+        return NULL_TREE;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(current);
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || argument_count(current) < 1) {
+        return NULL_TREE;
+    }
+    bool const is_assignment = DECL_ASSIGNMENT_OPERATOR_P(callee) && argument_count(current) == 2;
+    bool const is_construction = DECL_CONSTRUCTOR_P(callee);
+    if (!is_assignment && !is_construction) {
+        return NULL_TREE;
+    }
+    // The object argument of a member, and the first argument of an operator
+    // of namespace scope such as operator^= of std::byte, is the address of
+    // the target.
+    tree object = argument_at(current, 0);
+    tree object_type = object != NULL_TREE ? TREE_TYPE(object) : NULL_TREE;
+    if (object_type == NULL_TREE || !POINTER_TYPE_P(object_type)) {
+        return NULL_TREE;
+    }
+    tree place = outer_place_of(object, true);
+    if (place != NULL_TREE && holds_borrow(TREE_TYPE(object_type), 0)) {
+        tree value = is_assignment ? argument_at(current, 1) : current;
+        stores.push_back(Store{place, value, is_construction, location});
+    }
+    return NULL_TREE;
+}
+
+// The text of the object outside the frame of a store.
+std::string place_text(tree place) {
+    if (TREE_CODE(place) == PARM_DECL && is_this_parameter(place)) {
+        return "the object of the member function";
+    }
+    std::string const name = DECL_NAME(place) != NULL_TREE ? identifier_text(DECL_NAME(place)) : "(unnamed)";
+    return (TREE_CODE(place) == PARM_DECL ? "the parameter " : "the static ") + name;
+}
+
+// Gives the line stored-borrow for each store of STORES whose value has an
+// origin that ends with the frame (the stores).  A store into the object of
+// a move or a copy takes the borrows of its source parameter, which names an
+// object of the caller, so it gives no origin.
+void check_stores(OriginWalk& origins, const std::vector<Store>& stores, tree function) {
+    for (const Store& store : stores) {
+        std::vector<tree> found;
+        if (store.is_construction) {
+            origins.add_call_origins(store.value, found, 0);
+        } else {
+            origins.add_origins(store.value, found, 0);
+        }
+        for (tree origin : found) {
+            if (origin == NULL_TREE || origin == store.place || !origins.ends_with_frame(origin)) {
+                continue;
+            }
+            location_t location = store.location != UNKNOWN_LOCATION ? store.location : DECL_SOURCE_LOCATION(function);
+            Place place = place_of(location, Scope::quarantine);
+            if (place.file != nullptr) {
+                add_finding(Kind::stored_borrow, nullptr, place,
+                            "borrow of " + object_text(origin) + " into " + place_text(store.place));
+            }
+            break;
+        }
+    }
 }
 
 // The data of the walk of the returns for the borrowed parameters.
@@ -961,7 +1178,7 @@ void note_borrowed_parameters(tree function, tree body) {
         || (TREE_CODE(result) == REFERENCE_TYPE && TYPE_REF_IS_RVALUE(result))) {
         return;
     }
-    OriginWalk origins{function};
+    OriginWalk origins{function, OutsideRuns::ignore};
     origins.reads_reference_parameters_ = true;
     origins.record_locals(body);
     std::vector<tree> found;
@@ -992,11 +1209,24 @@ void on_pre_genericize(void* gcc_data, void*) {
     // The constant evaluator refuses a read of an ended object in a consteval
     // function itself, so the rule reads no such function.
     tree result = DECL_RESULT(function);
-    if (result == NULL_TREE || DECL_IMMEDIATE_FUNCTION_P(function) || !holds_borrow(TREE_TYPE(result), 0)) {
+    if (result == NULL_TREE || DECL_IMMEDIATE_FUNCTION_P(function)) {
         return;
     }
-    OriginWalk origins{function};
     tree body = DECL_SAVED_TREE(function);
+    bool const returns_borrow = holds_borrow(TREE_TYPE(result), 0);
+    std::vector<Store> stores;
+    cp_walk_tree_without_duplicates(&body, collect_store, &stores);
+    // The walk of the stores reads the runs outside, and the walk of the
+    // returns does not, so each one records the locals of its own reading.
+    if (!stores.empty()) {
+        OriginWalk store_origins{function, OutsideRuns::read};
+        store_origins.record_locals(body);
+        check_stores(store_origins, stores, function);
+    }
+    if (!returns_borrow) {
+        return;
+    }
+    OriginWalk origins{function, OutsideRuns::ignore};
     origins.record_locals(body);
     ReturnWalk walk{&origins, function};
     cp_walk_tree_without_duplicates(&body, check_return, &walk);
@@ -1008,6 +1238,19 @@ void on_collection(void*, void*) { borrow_classes.clear(); }
 }  // namespace
 
 void report_view_escape(const Finding& finding) {
+    if (finding.kind == Kind::stored_borrow) {
+        error_at(finding.spelling,
+                 "this function stores a %s, and the borrowed object ends with the frame of the function",
+                 finding.entity.c_str());
+        inform(finding.spelling, "a View, a Ref and an address own nothing, so a later read of the store reads the "
+                                 "dead stack frame of the call");
+        inform(finding.spelling, "store a value that owns its storage, or a borrow of an object that outlives the "
+                                 "store, such as an object of the caller or a member that the object holds");
+        inform(finding.spelling,
+               "a test of the store itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region "
+               "of %<foundation/Quarantine.h%>");
+        return;
+    }
     error_at(finding.spelling, "this function gives back a %s, and that object ends with the frame of the function",
              finding.entity.c_str());
     inform(finding.spelling,

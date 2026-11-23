@@ -694,7 +694,7 @@ void report(bool can_add_dependencies) {
             report_forged_tag(finding);
         } else if (finding.kind == Kind::borrow_match && !is_out) {
             report_borrow_match(finding);
-        } else if (finding.kind == Kind::escaped_borrow && !is_out) {
+        } else if (rule_of_finding == Rule::view_escape && !is_out) {
             report_view_escape(finding);
         } else if (rule_of_finding == Rule::specialization_home && !is_out) {
             report_specialization(finding);
