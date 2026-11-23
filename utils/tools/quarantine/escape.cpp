@@ -19,8 +19,9 @@
 // Origins
 //   The origins of an expression are the objects that its borrow can name.
 //   Each borrow of the base comes from a door of the base: to(), erase_brand(),
-//   view(), get(), append(), and the constructors of a View and a Ref.  So the
-//   rule follows a call of a function of the namespace foundation or fixy:
+//   view(), get(), append(), and the constructors of a View and a Ref.  A
+//   function or a constructor outside the base, a helper or a closure, can pass
+//   such a borrow on.  So the rule follows a call of each function:
 //     * an argument by reference or by pointer names an object.  When the type
 //       of the object holds a borrow, the result can carry that borrow on, as
 //       expect() of a Result of a Ref does, so the origins are the origins of
@@ -33,9 +34,11 @@
 //   A function of the namespace std that gives a reference, such as
 //   std::move or std::as_const, gives the object of its first argument.  A
 //   local that holds a borrow has the origins of its initializer and of each
-//   assignment of it, and a local reference names the object of its
-//   initializer.  A conversion, a conditional, a comma and a temporary pass
-//   their origins on.
+//   assignment of it or of its members, and a local reference names the object
+//   of its initializer.  A member of an object has the origins of the object,
+//   and a name of a structured binding has the origins of the member that it
+//   reads.  A conversion, a conditional, a comma and a temporary pass their
+//   origins on.
 //
 // Marked owners
 //   A parameter that CRUCIBLE_LIFETIMEBOUND marks states that the result
@@ -70,10 +73,12 @@
 //   function to mark the parameter, so the caller cannot give a temporary.
 //
 // Limits
-//   The rule reads one body.  A borrow that a function of the tree outside the
-//   base makes from an argument, a borrow that passes through a member of a
-//   local object, a field of a closure, or a container of borrows, gives no
-//   origin.  The two exceptions of the linear design hold: a function returns
+//   The rule reads one body.  A call reads the signature of its callee and not
+//   its body, so a function that gives back a borrow of a second argument by
+//   reference, or of an object that no argument names, hides that origin.  A
+//   borrow that passes through a field of a closure that the function keeps,
+//   or through a container of borrows, gives no origin.  The two exceptions of
+//   the linear design hold: a function returns
 //   a borrow of a parameter that it marks, and a class that cannot move or
 //   copy holds a view of a member that it declares first.  The rule reads only
 //   the return of a borrow, and neither of the two meets a return of a local.
@@ -229,13 +234,6 @@ bool holds_borrow(tree type, int depth) {
     }
     borrow_classes[TYPE_UID(type)] = is_held;
     return is_held;
-}
-
-// True for a function of the base, whose borrow the origins follow.
-bool is_base_door(tree function) {
-    tree top = top_namespace(function);
-    return top != global_namespace
-        && (DECL_NAME(top) == escape_names.foundation || DECL_NAME(top) == escape_names.fixy);
 }
 
 // True for a function of the namespace std that gives a reference.
@@ -518,12 +516,21 @@ public:
             case RESULT_DECL: {
                 // The front end gives a named return value the RESULT_DECL of
                 // the function, so the result holds the origins of the local.
+                // A name of a structured binding reads a member of its hidden
+                // variable, so it holds the origins of that member.
                 auto found = local_origins_.find(DECL_UID(expression));
                 if (found != local_origins_.end()) {
                     out.insert(out.end(), found->second.begin(), found->second.end());
+                } else if (VAR_P(expression) && DECL_HAS_VALUE_EXPR_P(expression) && !is_capture_proxy(expression)) {
+                    add_origins(DECL_VALUE_EXPR(expression), out, depth + 1);
                 }
                 return;
             }
+            case COMPONENT_REF:
+                // A member of an object that holds a borrow carries the origins
+                // of the object, as a member of a local aggregate does.
+                add_origins(TREE_OPERAND(expression, 0), out, depth + 1);
+                return;
             case CONSTRUCTOR: {
                 unsigned index = 0;
                 tree value = NULL_TREE;
@@ -614,16 +621,15 @@ public:
     }
 
     // The origins of a call (the origins).  RESULT is the type that the call
-    // makes: the class of a constructor, or the return type.
+    // makes: the class of a constructor, or the return type.  A function
+    // outside the base can pass a borrow on as a door of the base does, so the
+    // walk reads the call of each function.
     void add_call_origins(tree call, std::vector<tree>& out, int depth) {
         tree callee = cp_get_callee_fndecl_nofold(call);
         if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL) {
             return;
         }
         int const count = argument_count(call);
-        if (!is_base_door(callee)) {
-            return;
-        }
         bool const is_constructor = DECL_CONSTRUCTOR_P(callee);
         bool const is_member = DECL_IOBJ_MEMBER_FUNCTION_P(callee) && !is_constructor;
         tree result = is_constructor ? DECL_CONTEXT(callee) : TREE_TYPE(TREE_TYPE(callee));
@@ -776,7 +782,13 @@ private:
                 walk.note_value(decl, DECL_INITIAL(decl));
             }
         } else if (TREE_CODE(current) == INIT_EXPR || TREE_CODE(current) == MODIFY_EXPR) {
+            // An initialization of a member of a local gives its origins to the
+            // local, as the front end splits a braced aggregate into one
+            // initialization for each member.
             tree target = strip_conversions(TREE_OPERAND(current, 0));
+            while (target != NULL_TREE && TREE_CODE(target) == COMPONENT_REF) {
+                target = strip_conversions(TREE_OPERAND(target, 0));
+            }
             if (target != NULL_TREE && (VAR_P(target) || TREE_CODE(target) == RESULT_DECL)) {
                 walk.note_value(target, TREE_OPERAND(current, 1));
             }

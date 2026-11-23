@@ -26,10 +26,10 @@
 #include <fixy/ScopedView.h>
 
 // The HS14 scanner counts a fixture that names mint_mutable_view, so this
-// function names it.  The static_assert below is the gate under test.
-[[maybe_unused]] static auto anchor_schema_mutable_view_mint() {
-    crucible::SchemaTable t;
-    return t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
+// function names it.  The view borrows the table of the caller, so no view
+// outlives its table.  The static_assert below is the gate under test.
+[[maybe_unused]] static auto anchor_schema_mutable_view_mint(crucible::SchemaTable& table) {
+    return table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
 }
 
 // The audit reads the layout from the declaration, so the class needs no

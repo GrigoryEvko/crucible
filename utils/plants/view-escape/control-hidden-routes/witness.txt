@@ -1,0 +1,8 @@
+# No return names an object that ends with the frame, and no line names the
+# rule view-escape: the routes of plant-hidden-routes with a View of a list
+# of the caller, a member of an aggregate by value, and a count of a local
+# list through a helper outside the base.
+
+compile routes src/routes.cpp
+flag routes -freflection
+exit routes pass

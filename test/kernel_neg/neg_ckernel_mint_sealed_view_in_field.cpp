@@ -16,9 +16,9 @@
 #include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
 
-[[maybe_unused]] static auto anchor_sealed_view_mint() {
+// The view borrows the table of the caller, so no view outlives its table.
+[[maybe_unused]] static auto anchor_sealed_view_mint(crucible::CKernelTable& table) {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
-    crucible::CKernelTable table;
     table.seal(test);
     return table.mint_sealed_view();
 }

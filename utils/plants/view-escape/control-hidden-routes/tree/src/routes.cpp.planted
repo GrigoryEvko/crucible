@@ -1,0 +1,53 @@
+// No return names an object that ends with the frame, and no line names the
+// rule view-escape.  Each route of plant-hidden-routes carries a View of a
+// list of the caller here: a helper outside the base, a member of a local
+// aggregate, a structured binding and a closure that the function calls.  A
+// member of an aggregate by value holds a View that the caller gave, and a
+// helper outside the base reads a local list and gives back a count.
+#include <foundation/Platform.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using IntView = fc::View<int const>;
+using IntList = fc::FixedList<int, 4>;
+
+struct PlainAggregate {
+    IntView held;
+};
+
+IntView pass_through(IntView view) noexcept { return view; }
+
+int count_of(IntView view) noexcept { return static_cast<int>(view.size()); }
+
+IntView keep_helper(IntList const& list CRUCIBLE_LIFETIMEBOUND) noexcept { return pass_through(list.view()); }
+IntView keep_helper(IntList const&&) = delete("a View of a temporary list dangles");
+
+IntView keep_member(IntList const& list CRUCIBLE_LIFETIMEBOUND) noexcept {
+    PlainAggregate const holder{list.view()};
+    return holder.held;
+}
+IntView keep_member(IntList const&&) = delete("a View of a temporary list dangles");
+
+IntView keep_binding(IntList const& list CRUCIBLE_LIFETIMEBOUND) noexcept {
+    auto const [held] = PlainAggregate{list.view()};
+    return held;
+}
+IntView keep_binding(IntList const&&) = delete("a View of a temporary list dangles");
+
+IntView keep_closure_call(IntList const& list CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return [&list]() noexcept { return list.view(); }();
+}
+IntView keep_closure_call(IntList const&&) = delete("a View of a temporary list dangles");
+
+IntView keep_member_of_value(PlainAggregate holder) noexcept { return holder.held; }
+
+int count_of_local() noexcept {
+    IntList const local{};
+    return count_of(local.view());
+}
+
+}  // namespace planted

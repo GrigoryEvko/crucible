@@ -1,0 +1,30 @@
+# Each return of a View of a local list is an error in each mode: the direct
+# return (30), a constructor of a class outside the base (35), a helper
+# outside the base (40), a closure that the function calls (45), a member of a
+# local aggregate (51), an aggregate in the return (56), an Option of the base
+# (61), a capture by value (66), and a structured binding (72).  The plugin of
+# main gave only the four lines 30, 56, 61 and 66, and a read of each other
+# result read a dead stack frame under ASan.
+
+compile routes src/routes.cpp
+flag routes -freflection
+exit routes fail
+finding routes view-escape escaped-borrow src/routes.cpp:30:23 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:35:36 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:40:37 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:45:57 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:51:19 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:56:39 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:61:50 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:66:67 | borrow of the local local
+finding routes view-escape escaped-borrow src/routes.cpp:72:12 | borrow of the local local
+error routes src/routes.cpp:30 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:35 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:40 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:45 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:51 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:56 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:61 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:66 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+error routes src/routes.cpp:72 | this function gives back a borrow of the local local, and that object ends with the frame of the function
+text routes | a read of the result reads the dead stack frame of the call

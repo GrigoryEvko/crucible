@@ -1,0 +1,75 @@
+// Each function gives back a View of a local list past the end of its frame.
+// The direct return of the View is the control.  The other routes hide the
+// View in a class or a function outside the base: a constructor, a helper, a
+// closure that the function calls, a member of a local aggregate, an
+// aggregate in the return, an Option of the base, a capture by value, and a
+// structured binding.  A read of each result reads a dead stack frame.
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using IntView = fc::View<int const>;
+
+class PlainHolder {
+public:
+    explicit PlainHolder(IntView view) noexcept : held{view} {}
+    IntView held;
+};
+
+struct PlainAggregate {
+    IntView held;
+};
+
+IntView pass_through(IntView view) noexcept { return view; }
+
+IntView keep_direct() noexcept {
+    fc::FixedList<int, 4> const local{};
+    return local.view();
+}
+
+PlainHolder keep_constructed() noexcept {
+    fc::FixedList<int, 4> const local{};
+    return PlainHolder{local.view()};
+}
+
+IntView keep_helper() noexcept {
+    fc::FixedList<int, 4> const local{};
+    return pass_through(local.view());
+}
+
+IntView keep_closure_call() noexcept {
+    fc::FixedList<int, 4> const local{};
+    return [&local]() noexcept { return local.view(); }();
+}
+
+IntView keep_member() noexcept {
+    fc::FixedList<int, 4> const local{};
+    PlainAggregate const holder{local.view()};
+    return holder.held;
+}
+
+PlainAggregate keep_aggregate() noexcept {
+    fc::FixedList<int, 4> const local{};
+    return PlainAggregate{local.view()};
+}
+
+fc::Option<IntView> keep_option() noexcept {
+    fc::FixedList<int, 4> const local{};
+    return fc::Option<IntView>::some(local.view());
+}
+
+auto keep_capture() noexcept {
+    fc::FixedList<int, 4> const local{};
+    return [held = local.view()]() noexcept { return held.size(); };
+}
+
+IntView keep_binding() noexcept {
+    fc::FixedList<int, 4> const local{};
+    auto const [held] = PlainAggregate{local.view()};
+    return held;
+}
+
+}  // namespace planted

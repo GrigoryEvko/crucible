@@ -1,0 +1,10 @@
+# The rule table of the plant plant-hidden-routes of the rule view-escape.
+# The unit of src/ is quarantined.  The headers of the repository are outside
+# the root of the plant, so the table admits the names of the base that the
+# planted code uses.
+
+admit foundation::core | the owners, the Ref and the View whose borrows the planted code returns
+admit std::move | a cast to an rvalue reference
+admit std::as_const | a read through a const reference
+
+quarantine src/
