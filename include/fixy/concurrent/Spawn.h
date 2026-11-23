@@ -568,8 +568,8 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     // thread calls a body of its own, and runs each shard whose index is its
     // own modulo the thread count.
     template <typename Shards, typename Body, std::size_t... Is>
-    static void run_worker_(void* frame) noexcept {
-        worker_frame_<Shards, Body> const& source = *static_cast<worker_frame_<Shards, Body>*>(frame);
+    static void run_worker_(::foundation::core::ErasedAddress frame) noexcept {
+        worker_frame_<Shards, Body> const& source = frame.restore<worker_frame_<Shards, Body>>();
         Body body = *source.body;
         auto* const whole_first = first_of_whole_(*source.shards);
         ((Is % source.threads == source.worker ? run_shard_<Is, sizeof...(Is)>(*source.shards, body, whole_first)
@@ -593,7 +593,8 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
             ::foundation::core::detail::view_of_array_(tasks).window(0, threads).expect("the threads fit the tasks");
         for (std::size_t worker = 0; worker < threads; ++worker) {
             frames[worker] = worker_frame_<Shards, Body>{&shards, &body, worker, threads};
-            tasks[worker] = ::fixy::thread::detail::thread_task{&frames[worker], &run_worker_<Shards, Body, Is...>};
+            tasks[worker] = ::fixy::thread::detail::thread_task{::foundation::core::mint_erased_address(frames[worker]),
+                                                                &run_worker_<Shards, Body, Is...>};
         }
         return ::fixy::thread::detail::run_thread_tasks(started, options);
     }

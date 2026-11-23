@@ -1150,6 +1150,9 @@ inline constexpr StatedZero kZeros[] = {
      "bytes hold"},
     {^^::foundation::core::CallRef,
      "a borrow of one callable: it owns nothing, it lives in a frame, and it is never a value in a kernel signature"},
+    {^^::foundation::core::ErasedAddress,
+     "the address of one object whose type a holder erases: it changes from run to run, so it is never a value in a "
+     "kernel signature"},
     {^^::foundation::core::Address,
      "the address of one object for an alignment query: it changes from run to run, so it is never a value in a "
      "kernel signature"},
@@ -1178,6 +1181,10 @@ inline constexpr StatedZero kZeros[] = {
      "the value or the error of a partial operation: the result of a call, never a value in a kernel signature"},
     {^^::foundation::core::Err, "the mark of an error: it converts to a Result and makes no claim about the error"},
     {^^::foundation::core::closed_tag, "the annotation of a class that holds the tag of a sum: it holds nothing"},
+    {^^::foundation::core::free_door,
+     "the annotation of a function that frees the storage of an ended object: it holds nothing"},
+    {^^::foundation::core::erasure_door,
+     "the annotation of the function that erases the type of an address: it holds nothing"},
     {^^::foundation::core::derive_protocol,
      "the annotation of a class that takes equal, order, hash and its codec from its parts: it holds nothing"},
     {^^::foundation::core::local_part,

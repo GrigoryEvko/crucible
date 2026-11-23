@@ -1041,6 +1041,15 @@ struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_o
 // state, so the read has no test.
 [[gnu::used]] std::uint32_t ref_read(fixy::Ref<Payload const, RefProbeBrand> ref) noexcept { return ref->value; }
 
+// A call through a CallRef: the load of the erased address and of the
+// thunk, and one indirect call of the thunk with the address in the first
+// register.  The raw form is the pair of a pointer to void and a function
+// pointer.
+[[gnu::used]] std::uint32_t call_ref_call(foundation::core::CallRef<std::uint32_t(std::uint32_t) noexcept> const& call,
+                                          std::uint32_t value) noexcept {
+    return call(value);
+}
+
 // An Option of a plain payload, as a function gives it back: in a register.
 // expect adds one test and one branch to a cold call.  For a payload of four
 // bytes, the payload is the low word of the register and the flag is bit 32,
@@ -2530,6 +2539,21 @@ struct RawHeapState final {
 }
 
 [[gnu::used]] std::uint32_t ref_read_raw(Payload const* payload) noexcept { return payload->value; }
+
+// The two words of a CallRef with the address as a pointer to void, and its
+// call, which takes the argument by value and gives the thunk a reference.
+struct RawCallRef {
+    void* object;
+    std::uint32_t (*thunk)(void*, std::uint32_t&&) noexcept;
+
+    std::uint32_t operator()(std::uint32_t value) const noexcept {
+        return thunk(object, static_cast<std::uint32_t&&>(value));
+    }
+};
+
+[[gnu::used]] std::uint32_t call_ref_call_raw(RawCallRef const& call, std::uint32_t value) noexcept {
+    return call(value);
+}
 
 [[gnu::used]] std::uint32_t option_expect_raw(std::optional<std::uint32_t> option) noexcept { return *option; }
 

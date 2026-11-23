@@ -895,6 +895,11 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe("ref_read", "a read through a Ref is the load of a raw pointer: a Ref has no empty state, so it has no test"),
     Probe(
+        "call_ref_call",
+        "a call through a CallRef is the call of the raw pair of a pointer to void and a function pointer: the erased "
+        "address goes to the thunk in the first register, as the pointer to void does",
+    ),
+    Probe(
         "option_expect",
         "Option::expect adds one test and one branch to a call of the fatal exit.  The payload is the low word of the "
         "register and the flag is bit 32, as in std::optional, so the test of the flag takes a shift",

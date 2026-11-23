@@ -185,7 +185,7 @@ template <typename Body>
 class owned_frame_ {
 public:
     owned_frame_(Body&& moved, ThreadName const& thread_name) noexcept
-        : task_{static_cast<void*>(this), &owned_frame_::run, &name_, 0},
+        : task_{::foundation::core::mint_erased_address(*this), &owned_frame_::run, &name_, 0},
           name_{thread_name},
           body_{static_cast<Body&&>(moved)} {}
 
@@ -200,7 +200,7 @@ public:
     }
 
     // Runs on the owned thread.
-    static void run(void* frame) noexcept { static_cast<owned_frame_*>(frame)->body_(); }
+    static void run(::foundation::core::ErasedAddress frame) noexcept { frame.restore<owned_frame_>().body_(); }
 
     // Ends the body and gives the storage back.  Runs after the join.
     static void end(void* frame) noexcept {

@@ -129,8 +129,8 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
         // of the fork and copies the context, so each lives on the thread
         // and ends there.  The value of the body goes into the slot of the
         // child, which the join orders before the read of the fork.
-        static void run(void* frame) noexcept {
-            child_frame_ const& source = *static_cast<child_frame_ const*>(frame);
+        static void run(::foundation::core::ErasedAddress frame) noexcept {
+            child_frame_ const& source = frame.restore<child_frame_>();
             Body moved_body = std::move(*source.body);
             Ctx const child_ctx = *source.ctx;
             *source.child = ::foundation::permissions::detail::lend_into_(child_ctx, std::move(*source.child),
@@ -144,7 +144,7 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
     template <typename... Frames>
     static void start_and_join_(Frames... frames) noexcept {
         ::fixy::thread::detail::thread_task tasks[sizeof...(Frames)]{
-            ::fixy::thread::detail::thread_task{&frames, &Frames::run}...};
+            ::fixy::thread::detail::thread_task{::foundation::core::mint_erased_address(frames), &Frames::run}...};
         ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_of_array_(tasks),
                                                  ::fixy::thread::ThreadOptions{})
             .expect("mint_permission_fork: no thread of the fork started.  The bodies can wait on each other, so the "

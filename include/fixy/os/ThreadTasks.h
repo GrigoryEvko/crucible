@@ -230,6 +230,7 @@
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/CallRef.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Convert.h>
 #include <foundation/core/Id.h>
@@ -349,10 +350,12 @@ namespace detail {
 // One task.  The caller writes the frame and the function, and the door
 // writes the name and the handle.  The frame and the options of the name
 // live in the frame of the caller, which waits in the door until each
-// thread has joined.
+// thread has joined.  The frame is the erased address of the frame object
+// (foundation/core/CallRef.h), and the function reads it back as the type
+// of that object.
 struct thread_task {
-    void* frame = nullptr;
-    void (*run)(void* frame) noexcept = nullptr;
+    ::foundation::core::ErasedAddress frame{};
+    void (*run)(::foundation::core::ErasedAddress frame) noexcept = nullptr;
     ThreadName const* name = nullptr;
     std::uint64_t handle = 0;
 };
@@ -467,11 +470,14 @@ concept JoinedValue = ::foundation::transfer::Sendable<Value> && ::foundation::c
 // The frame of one body of run_joined: the Option that holds the body, the
 // context of the call and the slot of the value of the body.  The Option and
 // the slot live in the frame of the door, which waits for each thread (the
-// context of a body, the bodies by move, the results).
+// context of a body, the bodies by move, the results).  The thread writes the
+// slot of the body and the slot of the value, so their addresses are erased
+// addresses.  The thread only reads the context, so its address is a pointer
+// to const.
 struct joined_body_ {
-    void* body = nullptr;
+    ::foundation::core::ErasedAddress body{};
     void const* ctx = nullptr;
-    void* value = nullptr;
+    ::foundation::core::ErasedAddress value{};
 };
 
 // True when a part of a call, a body or a continuation, holds a linear value
@@ -596,12 +602,12 @@ template <typename Ctx, typename Body>
 // and writes its value.  The slot is empty after the take, so the door reads
 // that the thread took the body (the bodies by move).
 template <typename Ctx, typename Body>
-void run_joined_body_(void* frame) noexcept {
+void run_joined_body_(::foundation::core::ErasedAddress frame) noexcept {
     using Value = joined_result_t_<Ctx, Body>;
-    joined_body_ const& joined = *static_cast<joined_body_ const*>(frame);
-    *static_cast<::foundation::core::Option<Value>*>(joined.value) =
+    joined_body_ const& joined = frame.restore<joined_body_>();
+    joined.value.restore<::foundation::core::Option<Value>>() =
         ::foundation::core::Option<Value>::some(call_joined_body_<Ctx, Body>(
-            std::move(*static_cast<FrameSlot<Body>*>(joined.body)).take(), *static_cast<Ctx const*>(joined.ctx)));
+            std::move(joined.body.restore<FrameSlot<Body>>()).take(), *static_cast<Ctx const*>(joined.ctx)));
 }
 
 // Registers hook for the child of each fork (the fork hook).  The error is
@@ -657,8 +663,10 @@ run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is
     ::foundation::core::Record<FrameSlot<Bodies>...> owned{FrameSlot<Bodies>{static_cast<Bodies&&>(bodies)}...};
     ::foundation::core::Record<::foundation::core::Option<joined_result_t_<Ctx, Bodies>>...> slots{};
     joined_body_ joined[sizeof...(Bodies)]{
-        joined_body_{&owned.at(::foundation::core::index<Is>()), &ctx, &slots.at(::foundation::core::index<Is>())}...};
-    thread_task tasks[sizeof...(Bodies)]{thread_task{&joined[Is], &run_joined_body_<Ctx, Bodies>}...};
+        joined_body_{::foundation::core::mint_erased_address(owned.at(::foundation::core::index<Is>())), &ctx,
+                     ::foundation::core::mint_erased_address(slots.at(::foundation::core::index<Is>()))}...};
+    thread_task tasks[sizeof...(Bodies)]{
+        thread_task{::foundation::core::mint_erased_address(joined[Is]), &run_joined_body_<Ctx, Bodies>}...};
     using Values = joined_values_t<Ctx, Bodies...>;
     using Joined = ::foundation::core::Result<Values, start_error_t<Bodies...>>;
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
@@ -786,8 +794,9 @@ run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuatio
     using Beside = ::foundation::core::Result<Values, start_error_t<Body, Continuation>>;
     FrameSlot<Body> owned{static_cast<Body&&>(body)};
     ::foundation::core::Option<joined_result_t_<Ctx, Body>> slot{};
-    joined_body_ joined{&owned, &ctx, &slot};
-    thread_task task{&joined, &run_joined_body_<Ctx, Body>};
+    joined_body_ joined{::foundation::core::mint_erased_address(owned), &ctx,
+                        ::foundation::core::mint_erased_address(slot)};
+    thread_task task{::foundation::core::mint_erased_address(joined), &run_joined_body_<Ctx, Body>};
     ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> started = start_thread_task(task, options);
     if (started.is_err()) {
         ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
@@ -880,8 +889,8 @@ struct beside_each_frame_ {
 };
 
 template <typename Body>
-void run_beside_each_body_(void* frame) noexcept {
-    beside_each_frame_<Body> const& source = *static_cast<beside_each_frame_<Body> const*>(frame);
+void run_beside_each_body_(::foundation::core::ErasedAddress frame) noexcept {
+    beside_each_frame_<Body> const& source = frame.restore<beside_each_frame_<Body>>();
     (*source.body)(source.index);
 }
 
@@ -955,7 +964,8 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
         BesideIndex const index{::foundation::core::narrow<std::uint32_t>(slot.raw())
                                     .expect("run_beside_each: the index of a thread fits in 32 bits")};
         frame_run.at(slot) = detail::beside_each_frame_<Body>{&body, index};
-        task_run.at(slot) = detail::thread_task{&frame_run.at(slot), &detail::run_beside_each_body_<Body>};
+        task_run.at(slot) = detail::thread_task{::foundation::core::mint_erased_address(frame_run.at(slot)),
+                                                &detail::run_beside_each_body_<Body>};
     }
     // The first count tasks.  An index of the bound is below the bound, so the
     // window always fits.

@@ -3561,6 +3561,14 @@ foundation_neg_compile_test(neg_core_call_ref_of_temporary
 foundation_neg_compile_test(neg_core_call_ref_wrong_signature
   "no matching function for call to .foundation::core::CallRef<int\\(int\\) noexcept>::CallRef\\("
   "required for the satisfaction of .CallRefTarget<F, R, Args \\.\\.\\.>.")
+# The mint of an erased address refuses an object of bytes and a const
+# object, so no erased address names bytes or writes a const object.
+foundation_neg_compile_test(neg_core_erased_address_of_bytes
+  "no matching function for call to .mint_erased_address\\(unsigned char&\\)."
+  "required for the satisfaction of .ErasableObject<T>. \\[with T = unsigned char\\]")
+foundation_neg_compile_test(neg_core_erased_address_of_const
+  "no matching function for call to .mint_erased_address\\(const int&\\)."
+  "required for the satisfaction of .ErasableObject<T>. \\[with T = const int\\]")
 foundation_neg_compile_test(neg_core_link_const_writes
   "conversion from .Ref<const \\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. to non-scalar type .Ref<\\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. requested"
   "neg_core_link_const_writes.cpp:[0-9]+:[0-9]+: error")

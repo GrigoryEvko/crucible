@@ -14,7 +14,8 @@
 // This header holds only these types, so that a class can carry the
 // annotation without the <memory> that the checked lifetime start includes.
 // It also holds the mark closed_tag of the Choice family, which the checked
-// lifetime start refuses in the same way.
+// lifetime start refuses in the same way, and the two marks of a function
+// that the quarantine plugin reads with it.
 
 #include <foundation/Platform.h>
 
@@ -31,6 +32,25 @@ namespace foundation::core {
 // that holds the tag of a sum slot of foundation/core/Choice.h carries the
 // mark, so a sum on the slot of the family needs no mark of its own.
 struct closed_tag final {};
+
+// The mark of a function of the base that frees the storage of an object
+// that ended, such as heap_release_ of foundation/core/Heap.h.  A pointer to
+// void that can write is a view of the bytes of the object that it points
+// into, and the quarantine plugin refuses such a view of a type that holds a
+// closed tag (utils/tools/quarantine/library.cpp, the byte views).  The
+// plugin reads each argument of a call of a marked function as an argument
+// of an operator delete, which writes no byte of the object.  The plugin
+// reads the mark only on a declaration in a base file.
+struct free_door final {};
+
+// The mark of the one function of the base that erases the type of the
+// address of an object, mint_erased_address of foundation/core/CallRef.h.
+// The quarantine plugin reads the conversion of each parameter of a marked
+// function to a pointer to void as no view of bytes (the byte views),
+// because the erased address keeps that pointer private and gives the
+// object back only as a reference to its own type.  The plugin reads the
+// mark only on a declaration in a base file.
+struct erasure_door final {};
 
 }  // namespace foundation::core
 

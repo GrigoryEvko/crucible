@@ -782,8 +782,8 @@ private:
     // caller waits in the join, so it does not touch the tuple while a
     // thread reads it.
     template <class Stage>
-    static void run_threaded_stage_(void* frame) noexcept {
-        stage_frame_<Stage> const& source = *static_cast<stage_frame_<Stage>*>(frame);
+    static void run_threaded_stage_(::foundation::core::ErasedAddress frame) noexcept {
+        stage_frame_<Stage> const& source = frame.restore<stage_frame_<Stage>>();
         Stage stage = std::move(*source.stage);
         pin_current_pipeline_thread_(stage.ctx(), source.cpu);
         std::move(stage).run();
@@ -809,8 +809,8 @@ private:
          ...);
         std::tuple<stage_frame_<Stages>...> frames{
             stage_frame_<Stages>{&std::get<Is>(stages_), affinity_cpus.at(::foundation::core::index<Is>())}...};
-        ::fixy::thread::detail::thread_task tasks[sizeof...(Is)]{
-            ::fixy::thread::detail::thread_task{&std::get<Is>(frames), &run_threaded_stage_<Stages>}...};
+        ::fixy::thread::detail::thread_task tasks[sizeof...(Is)]{::fixy::thread::detail::thread_task{
+            ::foundation::core::mint_erased_address(std::get<Is>(frames)), &run_threaded_stage_<Stages>}...};
         ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_of_array_(tasks),
                                                  ::fixy::thread::ThreadOptions{})
             .expect("Pipeline: no stage thread started.  The stages wait on each other, so the pipeline cannot run "

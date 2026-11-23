@@ -10,13 +10,17 @@
 //   CallRef<R(Args...) noexcept>::bind<&Class::member>(object)
 //                       a member function of an object that a name holds
 //   call_ref(args...)   calls the callable with the arguments
+//   mint_erased_address(object)
+//                       the erased address of an object, which a thunk of
+//                       its type reads back (the erased address)
 //
 // Shape
-//     A CallRef is two words: the address of the callable, and a thunk that
-//     calls the callable at that address.  It owns nothing, it allocates
-//     nothing, and it has no virtual call.  The signature is noexcept, so a
-//     callable that can throw does not fit.  A call is one indirect call
-//     through the thunk, and the thunk inlines the call of the callable.
+//     A CallRef is two words: the erased address of the callable, and a
+//     thunk that calls the callable at that address.  It owns nothing, it
+//     allocates nothing, and it has no virtual call.  The signature is
+//     noexcept, so a callable that can throw does not fit.  A call is one
+//     indirect call through the thunk, and the thunk inlines the call of the
+//     callable.
 //
 // Borrow
 //     A CallRef borrows its callable, as a Ref borrows its object.  It
@@ -56,6 +60,7 @@
 // The gates of the shape are the builtins of the compiler.  The gate of the
 // scope brand reads the type by reflection.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/core/Ref.h>
 
 #include <cstddef>
@@ -160,6 +165,68 @@ concept CallRefMember = __is_object(T) && requires(T& object, Args&&... args) {
     { (object.*Member)(static_cast<Args&&>(args)...) } noexcept -> CallResultFits<R>;
 };
 
+// An object whose address an ErasedAddress can hold: an object type that is
+// not an array, not const and not volatile, and no type of bytes.  The
+// address of bytes erases no type, and a const object gives a pointer that
+// only reads.
+template <class T>
+concept ErasableObject =
+    __is_object(T) && !__is_array(T) && !__is_const(T) && !__is_volatile(T) && !__is_same(T, char)
+    && !__is_same(T, signed char) && !__is_same(T, unsigned char) && !__is_same(T, char8_t) && !__is_same(T, std::byte);
+
+class ErasedAddress;
+
+template <class T>
+    requires ErasableObject<T>
+[[= erasure_door{}]] [[nodiscard]] constexpr ErasedAddress mint_erased_address(T& object) noexcept;
+
+// Erased address
+//   The address of an object whose type a holder erases: the callable of a
+//   CallRef, or the frame of a task of a thread.  The address is private.
+//   Only mint_erased_address builds one from an object, and only restore<T>()
+//   reads it back, as a reference to an object of the type T.  So the holder
+//   keeps no pointer to void that can write the object: a copy of bytes,
+//   read() and recv() take no erased address.  The quarantine plugin reads
+//   the conversion in the mint as no view of bytes (the mark erasure_door of
+//   foundation/ByteSeal.h), and it refuses each other view of the bytes of a
+//   type that holds the tag of a sum.
+//
+//   The holder calls restore<T>() only with the type that it erased, in the
+//   thunk of that type, as a cast back of a pointer to void does.  A different
+//   type, or a restore of the empty address that the default constructor
+//   gives, is undefined.  The seal refuses std::bit_cast and a lifetime start
+//   over bytes, so no address comes from bytes, and the ABI still passes the
+//   address in one register.
+class [[nodiscard]] ErasedAddress final {
+    void* address_ = nullptr;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr explicit ErasedAddress(void* address) noexcept : address_{address} {}
+
+    template <class T>
+        requires ErasableObject<T>
+    friend constexpr ErasedAddress mint_erased_address(T& object) noexcept;
+
+public:
+    // The empty address, of a holder that holds no object, such as a CallRef
+    // of a function.
+    constexpr ErasedAddress() noexcept = default;
+
+    // The object at the address, as the type T that the holder erased.
+    template <class T>
+        requires ErasableObject<T>
+    [[nodiscard]] constexpr T& restore() const noexcept {
+        return *static_cast<T*>(address_);
+    }
+};
+
+// The erased address of an object that a name holds.
+template <class T>
+    requires ErasableObject<T>
+[[= erasure_door{}]] [[nodiscard]] constexpr ErasedAddress mint_erased_address(T& object) noexcept {
+    return ErasedAddress{static_cast<void*>(__builtin_addressof(object))};
+}
+
 template <class Signature>
 class CallRef;
 
@@ -170,8 +237,7 @@ public:
     // of the callable is the address of the reference.
     template <class F>
         requires CallRefTarget<F, R, Args...> && HoldsNoScopeBrand<F> && (!__is_same(F, CallRef))
-    constexpr CallRef(F& callable) noexcept
-        : object_{static_cast<void*>(__builtin_addressof(callable))}, thunk_{&call_object_<F>} {}
+    constexpr CallRef(F& callable) noexcept : object_{mint_erased_address(callable)}, thunk_{&call_object_<F>} {}
 
     // A callable that is a temporary ends at the end of the full expression.
     template <class F>
@@ -190,7 +256,7 @@ public:
     template <auto Function>
         requires CallRefFunction<Function, R, Args...>
     [[nodiscard]] static constexpr CallRef of() noexcept {
-        return CallRef{nullptr, &call_function_<Function>};
+        return CallRef{ErasedAddress{}, &call_function_<Function>};
     }
 
     // A member function of an object that a name holds, which holds no scope
@@ -198,7 +264,7 @@ public:
     template <auto Member, class T>
         requires CallRefMember<Member, T, R, Args...> && HoldsNoScopeBrand<T>
     [[nodiscard]] static constexpr CallRef bind(T& object) noexcept {
-        return CallRef{static_cast<void*>(__builtin_addressof(object)), &call_member_<Member, T>};
+        return CallRef{mint_erased_address(object), &call_member_<Member, T>};
     }
 
     template <auto Member, class T>
@@ -229,22 +295,22 @@ public:
 private:
     // The thunk takes each argument by reference, so an argument of a type
     // that cannot move reaches the callable with no move.
-    using Thunk = R (*)(void*, Args&&...) noexcept;
+    using Thunk = R (*)(ErasedAddress, Args&&...) noexcept;
 
-    constexpr CallRef(void* object, Thunk thunk) noexcept : object_{object}, thunk_{thunk} {}
+    constexpr CallRef(ErasedAddress object, Thunk thunk) noexcept : object_{object}, thunk_{thunk} {}
 
     // A signature with the result void drops the result of the callable.
     template <class F>
-    static constexpr R call_object_(void* object, Args&&... args) noexcept {
+    static constexpr R call_object_(ErasedAddress object, Args&&... args) noexcept {
         if constexpr (__is_same(R, void)) {
-            static_cast<void>((*static_cast<F*>(object))(static_cast<Args&&>(args)...));
+            static_cast<void>(object.restore<F>()(static_cast<Args&&>(args)...));
         } else {
-            return (*static_cast<F*>(object))(static_cast<Args&&>(args)...);
+            return object.restore<F>()(static_cast<Args&&>(args)...);
         }
     }
 
     template <auto Function>
-    static constexpr R call_function_(void*, Args&&... args) noexcept {
+    static constexpr R call_function_(ErasedAddress, Args&&... args) noexcept {
         if constexpr (__is_same(R, void)) {
             static_cast<void>(Function(static_cast<Args&&>(args)...));
         } else {
@@ -253,15 +319,15 @@ private:
     }
 
     template <auto Member, class T>
-    static constexpr R call_member_(void* object, Args&&... args) noexcept {
+    static constexpr R call_member_(ErasedAddress object, Args&&... args) noexcept {
         if constexpr (__is_same(R, void)) {
-            static_cast<void>((static_cast<T*>(object)->*Member)(static_cast<Args&&>(args)...));
+            static_cast<void>((object.restore<T>().*Member)(static_cast<Args&&>(args)...));
         } else {
-            return (static_cast<T*>(object)->*Member)(static_cast<Args&&>(args)...);
+            return (object.restore<T>().*Member)(static_cast<Args&&>(args)...);
         }
     }
 
-    void* object_ = nullptr;
+    ErasedAddress object_{};
     Thunk thunk_ = nullptr;
 };
 
