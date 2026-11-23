@@ -2345,7 +2345,8 @@ concept RestrictKernel = (DisjointInput<Inputs, Brand> && ...)
 // storage duration either.
 template <class Op, class T, class... Inputs>
 concept KernelOp = std::is_empty_v<Op> && std::is_nothrow_copy_constructible_v<Op> && (KernelInput<Inputs> && ...)
-                && std::is_nothrow_invocable_r_v<T, Op const&, typename Inputs::element_type const&...>;
+                && std::is_nothrow_invocable_r_v<T, Op const&, typename Inputs::element_type const&...>
+                && ::foundation::linear::HoldsNoLinearValue<Op>;
 
 namespace detail {
 
@@ -2429,6 +2430,14 @@ template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
     }
     return Unit{};
 }
+
+// An op that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).  Such
+// an op does not copy either, which KernelOp needs too.
+template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
+    requires(!::foundation::linear::HoldsNoLinearValue<Op>)
+             && std::is_invocable_r_v<T, Op const&, typename Inputs::element_type const&...>
+void write_each(ViewMut<T, Brand, Extent> out, Op op, Inputs const&... inputs) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 namespace detail {
 

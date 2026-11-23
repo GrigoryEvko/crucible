@@ -68,6 +68,7 @@
 //   no Option over E, for a foreign enum.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
@@ -420,6 +421,7 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
 template <::foundation::reflect::ScopedEnum E>
 [[nodiscard]] constexpr Option<TextView> enumerator_name_text(E value) noexcept;
 template <::foundation::reflect::ScopedEnum E, typename F>
+    requires ::foundation::linear::HoldsNoLinearValue<F>
 constexpr void for_each_enumerator_text(F&& f);
 
 namespace detail {
@@ -448,6 +450,7 @@ class TextPartsDoor final : ::foundation::NoObject<TextPartsDoor> {
     template <::foundation::reflect::ScopedEnum E>
     friend constexpr auto foundation::core::enumerator_name_text(E value) noexcept -> Option<TextView>;
     template <::foundation::reflect::ScopedEnum E, typename F>
+        requires ::foundation::linear::HoldsNoLinearValue<F>
     friend constexpr void foundation::core::for_each_enumerator_text(F&& f);
 
     [[nodiscard]] static constexpr TextView text_(char const* first, std::size_t size) noexcept {
@@ -600,15 +603,24 @@ template <::foundation::reflect::ScopedEnum E>
 // Calls f(value, name) for each enumerator of E, in declaration order, with
 // the identifier of the enumerator as a TextView.  Each text has static
 // storage and a zero after its last character.  An alias is an enumerator of
-// its own, so the walk gives its identifier too.  Complexity: one call of f
-// for each enumerator.
+// its own, so the walk gives its identifier too.  f holds no linear value by
+// value (HoldsNoLinearValue of foundation/Linear.h): the walk calls it and
+// ends it, and a call is no consume.  Complexity: one call of f for each
+// enumerator.
 template <::foundation::reflect::ScopedEnum E, typename F>
+    requires ::foundation::linear::HoldsNoLinearValue<F>
 constexpr void for_each_enumerator_text(F&& f) {
     ::foundation::reflect::detail::walk_enumerator_names<E>(
         [&f](E value, ::foundation::reflect::detail::NameChars name) {
             f(value, detail::TextPartsDoor::text_(name.first, name.size));
         });
 }
+
+// An f that holds a linear value by value binds to this overload, so the
+// refusal gives its reason.
+template <::foundation::reflect::ScopedEnum E, typename F>
+    requires(!::foundation::linear::HoldsNoLinearValue<F>)
+void for_each_enumerator_text(F&& f) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // True when E declares an enumerator whose identifier is name.  A patch of a
 // foreign header can remove an enumerator, and a check of the patch asks this.

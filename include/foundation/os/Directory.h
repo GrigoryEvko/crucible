@@ -77,12 +77,21 @@ template <class Visitor>
 // is one getdents64 call for each buffer of entries, and one call of visit
 // for each entry.
 // The visitor is not const, because the door calls it through the address
-// of a visitor that it can change.
+// of a visitor that it can change.  It holds no linear value by value
+// (HoldsNoLinearValue of foundation/Linear.h): the door calls it and ends it,
+// and a call is no consume.
 template <class Visitor>
     requires(std::is_nothrow_invocable_r_v<Visit, Visitor&, core::CText>
              && !std::is_const_v<std::remove_reference_t<Visitor>>)
+         && ::foundation::linear::HoldsNoLinearValue<Visitor>
 [[nodiscard]] core::Result<core::Unit, Errno> for_each_entry(core::CText path, Visitor&& visit) noexcept {
     return detail::list_directory_(path, detail::erase_visitor_(visit));
 }
+
+// A visitor that holds a linear value by value binds to this overload, so the
+// refusal gives its reason.
+template <class Visitor>
+    requires std::is_invocable_r_v<Visit, Visitor&, core::CText> && (!::foundation::linear::HoldsNoLinearValue<Visitor>)
+void for_each_entry(core::CText path, Visitor&& visit) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::os

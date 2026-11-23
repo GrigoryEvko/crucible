@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <foundation/Linear.h>
 #include <foundation/reflect/Anchor.h>
 
 #include <array>
@@ -176,18 +177,33 @@ constexpr void walk_single_bit_enumerator_names(F&& f) {
 
 // Calls f(value) for each enumerator of E, in declaration order.  The walk
 // gives no name: for_each_enumerator_text of foundation/core/Text.h gives
-// each value with its name.
+// each value with its name.  f holds no linear value by value
+// (HoldsNoLinearValue of foundation/Linear.h): the walk calls it and ends it,
+// and a call is no consume.
 template <ScopedEnum E, typename F>
+    requires ::foundation::linear::HoldsNoLinearValue<F>
 constexpr void for_each_enumerator_value(F&& f) {
     detail::walk_enumerator_names<E>([&f](E const value, detail::NameChars) { f(value); });
 }
 
+// An f that holds a linear value by value binds to this overload, and to the
+// same twin of for_each_single_bit_enumerator_value, so the refusal gives its
+// reason.
+template <ScopedEnum E, typename F>
+    requires(!::foundation::linear::HoldsNoLinearValue<F>)
+void for_each_enumerator_value(F&& f) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // Calls f(flag) for each enumerator of E whose value has one bit set, in
 // declaration order.
 template <ScopedEnum E, typename F>
+    requires ::foundation::linear::HoldsNoLinearValue<F>
 constexpr void for_each_single_bit_enumerator_value(F&& f) {
     detail::walk_single_bit_enumerator_names<E>([&f](E flag, detail::NameChars) { f(flag); });
 }
+
+template <ScopedEnum E, typename F>
+    requires(!::foundation::linear::HoldsNoLinearValue<F>)
+void for_each_single_bit_enumerator_value(F&& f) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // The number of enumerators of E.  A count constant that a lattice
 // header publishes derives from this, so the count and the enum cannot

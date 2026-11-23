@@ -4896,6 +4896,37 @@ foundation_neg_compile_test(neg_core_reduce_combine_linear_capture
 foundation_neg_compile_test(neg_core_find_if_linear_capture
   "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
   "the body holds a linear value by value, and the door calls it with no consume")
+# A sort, a step, a walk of the fields or the keys, a builder of an array, an
+# op, a combinator of a computation, a restarted call and a generator of a vec
+# each call a body of the caller with no consume, so each refuses a body that
+# holds a linear value, and its deleted twin gives the reason.
+foundation_neg_compile_test(neg_core_sort_less_linear_capture
+  "use of deleted function .void foundation::core::find_lower_bound\\(View<T, Extent>, "
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_seat_step_linear_capture
+  "use of deleted function .void foundation::core::Seat<T>::step\\(Fn&&\\) &"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_for_each_field_linear_capture
+  "use of deleted function .void foundation::core::for_each_field\\(const T&, Visit&&\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_bitset_keys_linear_capture
+  "use of deleted function .void foundation::core::BitSet<N, Key>::with_keys\\(Body&&\\) const &"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_heap_array_with_linear_capture
+  "use of deleted function .void foundation::core::mint_heap_array_with\\(Marker, std::size_t, Init\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_write_each_linear_op
+  "use of deleted function .void foundation::core::write_each\\(ViewMut<T, Brand, Extent>, Op, "
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_computation_map_linear_capture
+  "use of deleted function .void foundation::effects::Computation<R, T>::map\\(F&&\\) &&"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_os_result_of_restarted_linear_capture
+  "use of deleted function .void foundation::os::result_of_restarted\\(Call\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_simd_vec_generator_linear_capture
+  "use of deleted function .foundation::simd::[a-z0-9_]+::vec<ElementType, Lanes>::vec\\(Generator&&\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
 
 # The types of a strided view refuse each misuse that they can see: an axis
 # past a static rank, a write through a broadcast, a broadcast to fewer axes,

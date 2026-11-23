@@ -114,6 +114,7 @@
 // default HeapBitSet is the empty set of no id.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
@@ -598,11 +599,18 @@ public:
     template <class Body>
         requires std::is_invocable_v<Body, BitKeys<Key, Word> const&>
               && HoldsNoBorrow<std::invoke_result_t<Body, BitKeys<Key, Word> const&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     constexpr std::invoke_result_t<Body, BitKeys<Key, Word> const&>
     with_keys(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, BitKeys<Key, Word> const&>) {
         BitKeys<Key, Word> const keys{words_.view()};
         return static_cast<Body&&>(body)(keys);
     }
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+    template <class Body>
+        requires std::is_invocable_v<Body, BitKeys<Key, Word> const&>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_keys(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
     void with_keys(Body&& body) const&& =
         delete("a walk of a temporary BitSet reads an object that the full expression ends");
@@ -817,11 +825,18 @@ public:
     template <class Body>
         requires std::is_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>
               && HoldsNoBorrow<std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     constexpr std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&> with_keys(
         Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>) {
         BitKeys<BitId<Tag>, std::uint64_t> const ids{words_()};
         return static_cast<Body&&>(body)(ids);
     }
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+    template <class Body>
+        requires std::is_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>
+                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_keys(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
     void with_keys(Body&& body) const&& =
         delete("a walk of a temporary HeapBitSet reads storage that the full expression frees");

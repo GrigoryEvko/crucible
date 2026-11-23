@@ -77,6 +77,7 @@
 //   find_lower_bound and find_equivalent make O(log n) compares.  No operation
 //   allocates.
 
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
@@ -125,10 +126,20 @@ struct Ascending {
 };
 
 // A less function of the elements: it takes two elements and gives a bool,
-// with no throw.
+// with no throw.  It holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h): a sort or a search calls it many times and ends it,
+// and a call is no consume.
 template <class Less, class T>
 concept StrictOrder = std::is_nothrow_invocable_v<Less&, T const&, T const&>
-                   && std::same_as<std::invoke_result_t<Less&, T const&, T const&>, bool>;
+                   && std::same_as<std::invoke_result_t<Less&, T const&, T const&>, bool>
+                   && ::foundation::linear::HoldsNoLinearValue<Less>;
+
+// A less function that holds a linear value by value: the deleted twin of
+// each sort and each search binds to it, so the refusal gives its reason.
+template <class Less, class T>
+concept LinearStrictOrder = std::is_nothrow_invocable_v<Less&, T const&, T const&>
+                         && std::same_as<std::invoke_result_t<Less&, T const&, T const&>, bool>
+                         && (!::foundation::linear::HoldsNoLinearValue<Less>);
 
 // An element of a sort: an object that a copy and an assignment move, with no
 // throw.
@@ -393,6 +404,13 @@ constexpr void sort_by_network(ViewMut<T, Brand, N> elements, Less less = Less{}
         detail::compare_exchange_(first, step, less);
     }
 }
+
+// A less function that holds a linear value by value binds to this overload,
+// and to the same twin of each other sort and search, so the refusal gives
+// its reason (LinearStrictOrder).
+template <std::size_t N, class T, class Brand, class Less>
+    requires NetworkCount<N> && SortElement<T> && LinearStrictOrder<Less, T>
+void sort_by_network(ViewMut<T, Brand, N> elements, Less less) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── The stable sort ─────────────────────────────────────────────────────
 
@@ -1373,6 +1391,11 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
     return Unit{};
 }
 
+template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::size_t ScratchExtent, class Less>
+    requires SortElement<T> && LinearStrictOrder<Less, T>
+void sort_stably(ViewMut<T, Brand, Extent> elements, ViewMut<T, ScratchBrand, ScratchExtent> scratch,
+                 Less less) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // ── The ordered searches ────────────────────────────────────────────────
 
 // The first position whose element is not below value, by less, in a View in
@@ -1398,6 +1421,11 @@ template <class T, std::size_t Extent, class Less = Ascending>
     return low;
 }
 
+template <class T, std::size_t Extent, class Less>
+    requires SortElement<std::remove_const_t<T>> && LinearStrictOrder<Less, std::remove_const_t<T>>
+void find_lower_bound(View<T, Extent> sorted, std::type_identity_t<std::remove_const_t<T>> const& value,
+                      Less less) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // The first position of an element equivalent to value, by less, in a View in
 // the order of less, or no value.  Complexity: O(log n) compares.
 template <class T, std::size_t Extent, class Less = Ascending>
@@ -1410,5 +1438,10 @@ template <class T, std::size_t Extent, class Less = Ascending>
     if (less(value, first_of_(detail::BaseLayerRead{}, sorted)[position])) return none;
     return Option<std::size_t>::some(position);
 }
+
+template <class T, std::size_t Extent, class Less>
+    requires SortElement<std::remove_const_t<T>> && LinearStrictOrder<Less, std::remove_const_t<T>>
+void find_equivalent(View<T, Extent> sorted, std::type_identity_t<std::remove_const_t<T>> const& value,
+                     Less less) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

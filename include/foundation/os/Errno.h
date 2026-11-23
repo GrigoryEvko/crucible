@@ -187,8 +187,11 @@ template <class T>
 // signal whose handler has no SA_RESTART interrupts a call that waits, such as
 // an open of a FIFO with no writer, and the call gives eintr.  The loop starts
 // the call again with no bound, as each door of the base does, so a signal
-// fails no call.  Complexity: one call, and one more for each signal.
+// fails no call.  CALL holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h): the door calls it and ends it, and a call is no
+// consume.  Complexity: one call, and one more for each signal.
 template <class Call>
+    requires ::foundation::linear::HoldsNoLinearValue<Call>
 [[nodiscard]] constexpr core::Result<std::uint64_t, Errno> result_of_restarted(Call call) noexcept {
     constexpr long kInterrupted = -static_cast<long>(Errno::eintr);
     long word = kInterrupted;
@@ -197,6 +200,12 @@ template <class Call>
     }
     return result_of(word);
 }
+
+// A CALL that holds a linear value by value binds to this overload, so the
+// refusal gives its reason.
+template <class Call>
+    requires(!::foundation::linear::HoldsNoLinearValue<Call>)
+void result_of_restarted(Call call) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // The error number of the kernel, as the int of a std::error_code.  A door
 // that gives a std::error_code to its caller reads the number here.

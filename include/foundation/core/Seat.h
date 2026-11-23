@@ -108,8 +108,11 @@ public:
 
     // One turn of the loop: fn takes the payload as an rvalue, and the Seat
     // holds the payload that fn gives, in the same storage (the step).
+    // fn holds no linear value by value (HoldsNoLinearValue of
+    // foundation/Linear.h): the step calls it and ends it, and a call is no
+    // consume.
     template <class Fn>
-        requires StepOf<Fn, T>
+        requires StepOf<Fn, T> && ::foundation::linear::HoldsNoLinearValue<Fn>
     constexpr void step(Fn&& fn) & noexcept {
         // The storage of the payload, before fn moves the payload.
         void* const storage = static_cast<void*>(__builtin_addressof(payload_));
@@ -117,6 +120,12 @@ public:
         end_payload_();
         ::new(storage) T(static_cast<T&&>(next));
     }
+
+    // A function that holds a linear value by value binds to this overload,
+    // so the refusal gives its reason.
+    template <class Fn>
+        requires StepOf<Fn, T> && (!::foundation::linear::HoldsNoLinearValue<Fn>)
+    void step(Fn&&) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The deleted forms take the constraint of step too, so a function of
     // another type gets the refusal of the constraint and not the reason of

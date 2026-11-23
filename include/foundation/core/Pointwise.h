@@ -134,10 +134,13 @@ using pointwise_element_t = std::remove_const_t<typename In::element_type>;
 
 // The op of a pointwise walk with the output element T: an object with no
 // state, which takes one element of each input by const reference and gives
-// a value that converts to T, with no throw.
+// a value that converts to T, with no throw.  It holds no linear value by
+// value (HoldsNoLinearValue of foundation/Linear.h): the walk calls it and
+// ends it, and a call is no consume.
 template <class Op, class T, class... Inputs>
 concept PointwiseOp = std::is_empty_v<Op> && std::is_nothrow_copy_constructible_v<Op>
-                   && std::is_nothrow_invocable_r_v<T, Op const&, pointwise_element_t<Inputs> const&...>;
+                   && std::is_nothrow_invocable_r_v<T, Op const&, pointwise_element_t<Inputs> const&...>
+                   && ::foundation::linear::HoldsNoLinearValue<Op>;
 
 // The rule of the NaN outputs of a pointwise op: the NaN rule.
 enum class NanRule : std::uint8_t {
@@ -1490,6 +1493,15 @@ template <class T, std::size_t Rank, class Brand, class Op, class... Inputs>
     return detail::write_pointwise_(detail::ruled_op_<T>(op), std::index_sequence_for<Inputs...>{}, apart,
                                     detail::plain_view_of_(out), detail::plain_view_of_(inputs)...);
 }
+
+// An op that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).  Such
+// an op does not copy either, which PointwiseOp needs too.
+template <class T, std::size_t Rank, class Brand, class Op, class... Inputs>
+    requires(!::foundation::linear::HoldsNoLinearValue<Op>)
+             && std::is_invocable_r_v<T, Op const&, pointwise_element_t<Inputs> const&...>
+void write_pointwise(StridedViewMut<T, Rank, Brand>& out, Op op,
+                     Inputs const&... inputs) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace CRUCIBLE_SIMD_TARGET
 

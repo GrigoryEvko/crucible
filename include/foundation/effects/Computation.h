@@ -345,9 +345,12 @@ public:
     //
     // The payload constraint is the one extract carries.  f receives the
     // payload, so a payload that conveys an authority would hand it to f
-    // under a row that does not name it.
+    // under a row that does not name it.  f holds no linear value by value
+    // (HoldsNoLinearValue of foundation/Linear.h): the door calls it and ends
+    // it, and a call is no consume.
     template <typename F>
         requires std::is_invocable_v<F, const T&> && detail::extract_admits_payload_v<T>
+              && ::foundation::linear::HoldsNoLinearValue<F>
     [[nodiscard]] constexpr auto
     map(F&& f) const& noexcept(std::is_nothrow_invocable_v<F, const T&>
                                && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, const T&>>)
@@ -358,6 +361,7 @@ public:
 
     template <typename F>
         requires std::is_invocable_v<F, T> && detail::extract_admits_payload_v<T>
+              && ::foundation::linear::HoldsNoLinearValue<F>
     [[nodiscard]] constexpr auto
     map(F&& f) && noexcept(std::is_nothrow_invocable_v<F, T>
                            && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, T>>)
@@ -365,6 +369,15 @@ public:
         using U = std::invoke_result_t<F, T>;
         return Computation<R, U>{std::forward<F>(f)(std::move(*this).base::consume())};
     }
+
+    // An f that holds a linear value by value binds to these overloads, and
+    // to the same twins of then, so the refusal gives its reason.
+    template <typename F>
+        requires std::is_invocable_v<F, const T&> && (!::foundation::linear::HoldsNoLinearValue<F>)
+    void map(F&& f) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <typename F>
+        requires std::is_invocable_v<F, T> && (!::foundation::linear::HoldsNoLinearValue<F>)
+    void map(F&& f) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The result row is the union, so it claims every effect any step
     // in the chain might exercise.
@@ -382,6 +395,7 @@ public:
         requires std::is_invocable_v<F, const T&> && detail::extract_admits_payload_v<T>
               && IsComputation<std::invoke_result_t<F, const T&>>
               && detail::extract_admits_payload_v<typename std::invoke_result_t<F, const T&>::value_type>
+              && ::foundation::linear::HoldsNoLinearValue<F>
     [[nodiscard]] constexpr auto
     then(F&& k) const& -> Computation<row_union_t<R, typename std::invoke_result_t<F, const T&>::row_type>,
                                       typename std::invoke_result_t<F, const T&>::value_type> {
@@ -397,6 +411,7 @@ public:
         requires std::is_invocable_v<F, T> && detail::extract_admits_payload_v<T>
               && IsComputation<std::invoke_result_t<F, T>>
               && detail::extract_admits_payload_v<typename std::invoke_result_t<F, T>::value_type>
+              && ::foundation::linear::HoldsNoLinearValue<F>
     [[nodiscard]] constexpr auto
     then(F&& k) && -> Computation<row_union_t<R, typename std::invoke_result_t<F, T>::row_type>,
                                   typename std::invoke_result_t<F, T>::value_type> {
@@ -407,6 +422,13 @@ public:
         Inner intermediate = std::forward<F>(k)(std::move(*this).base::consume());
         return Result{std::move(intermediate).Inner::base::consume()};
     }
+
+    template <typename F>
+        requires std::is_invocable_v<F, const T&> && (!::foundation::linear::HoldsNoLinearValue<F>)
+    void then(F&& k) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <typename F>
+        requires std::is_invocable_v<F, T> && (!::foundation::linear::HoldsNoLinearValue<F>)
+    void then(F&& k) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The way out to the substrate view, for code that wants the
     // uniform grade and lattice diagnostics or a cache key.  The view

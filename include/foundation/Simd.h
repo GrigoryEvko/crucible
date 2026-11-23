@@ -196,13 +196,28 @@ public:
           }(std::make_integer_sequence<int, Lanes>{})) {}
 
     // The constraint is what keeps a scalar argument out of this
-    // overload, leaving it to the broadcast constructor above.
+    // overload, leaving it to the broadcast constructor above.  The
+    // generator holds no linear value by value (HoldsNoLinearValue of
+    // foundation/Linear.h): the constructor calls it for each lane and ends
+    // it, and a call is no consume.
     template <typename Generator>
         requires std::is_invocable_v<Generator&&, std::integral_constant<int, 0>>
+              && ::foundation::linear::HoldsNoLinearValue<Generator>
     explicit constexpr vec(Generator&& gen) noexcept
         : v_([&]<int... Lane>(std::integer_sequence<int, Lane...>) -> raw_type {
               return raw_type{static_cast<ElementType>(gen(std::integral_constant<int, Lane>{}))...};
           }(std::make_integer_sequence<int, Lanes>{})) {}
+
+    // A generator that holds a linear value by value binds to this overload,
+    // so the refusal gives its reason.  The parse kit reads no macro in the
+    // reason of a deleted constructor, so the reason is the text of
+    // CRUCIBLE_LINEAR_BODY_REFUSAL.
+    template <typename Generator>
+        requires std::is_invocable_v<Generator&&, std::integral_constant<int, 0>>
+                  && (!::foundation::linear::HoldsNoLinearValue<Generator>)
+    explicit vec(Generator&& gen) =
+        delete("the body holds a linear value by value, and the door calls it with no consume: keep the linear value "
+               "a local of the caller, and let the body capture it by reference or take it as a parameter");
 
     template <typename OtherElement>
         requires(!std::is_same_v<OtherElement, ElementType>)
@@ -653,10 +668,13 @@ template <typename ElementType, int Lanes>
 }
 
 // A body that takes the Views of one register run of each of two Views and
-// does not throw.
+// does not throw.  It holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h): the walk calls it for each run and ends it, and a
+// call is no consume.
 template <typename Body, typename V, typename First, typename Second>
 concept RegisterRunBody = std::is_nothrow_invocable_v<Body&, core::View<First, sizeof(typename V::raw_type)>,
-                                                      core::View<Second, sizeof(typename V::raw_type)>>;
+                                                      core::View<Second, sizeof(typename V::raw_type)>>
+                       && ::foundation::linear::HoldsNoLinearValue<Body>;
 
 // Calls body with the Views of each run of the bytes of one register of first
 // and of second, in lockstep, the lowest run first, and gives the two Views of
@@ -671,6 +689,13 @@ CRUCIBLE_INLINE core::Record<core::View<First>, core::View<Second>>
 for_each_register_run(core::View<First> first, core::View<Second> second, Body body) noexcept {
     return core::detail::for_each_chunk_pair_<sizeof(typename V::raw_type)>(first, second, body);
 }
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (RegisterRunBody).
+template <typename V, typename First, typename Second, typename Body>
+    requires(!::foundation::linear::HoldsNoLinearValue<Body>)
+void for_each_register_run(core::View<First> first, core::View<Second> second,
+                           Body body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // The mask has the same lane byte width as the value, so its bits cast
 // straight onto the value type and the blend is a pair of bitwise

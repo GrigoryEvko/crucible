@@ -275,9 +275,12 @@ public:
     // member, and no parameter holds a copy of it.  A wrapper of a secret
     // takes this door: the door above copies the value into its parameter,
     // and nothing clears that copy.  The checks of the grade are the checks
-    // of the door above.
+    // of the door above.  make holds no linear value by value
+    // (HoldsNoLinearValue of foundation/Linear.h): the door calls it and ends
+    // it, and a call is no consume.
     template <typename Authority, typename Make>
         requires std::is_invocable_v<Make&&> && std::same_as<std::invoke_result_t<Make&&>, T>
+                  && ::foundation::linear::HoldsNoLinearValue<Make>
     constexpr Graded(grade_key<Authority> const&, graded_from_call_t, Make&& make,
                      grade_type grade) noexcept(std::is_nothrow_invocable_v<Make&&>
                                                 && std::is_nothrow_move_constructible_v<grade_type>)
@@ -288,6 +291,16 @@ public:
             CRUCIBLE_PRE(detail::graded::witnessed<L>(this->grade(), grade));
         }
     }
+
+    // A make that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason.  The parse kit reads no macro in the
+    // reason of a deleted constructor, so the reason is the text of
+    // CRUCIBLE_LINEAR_BODY_REFUSAL.
+    template <typename Authority, typename Make>
+        requires std::is_invocable_v<Make&&> && (!::foundation::linear::HoldsNoLinearValue<Make>)
+    Graded(grade_key<Authority> const& key, graded_from_call_t from_call, Make&& make, grade_type grade) =
+        delete("the body holds a linear value by value, and the door calls it with no consume: keep the linear value "
+               "a local of the caller, and let the body capture it by reference or take it as a parameter");
 
     // Construction from the value alone, where the grade is the value or
     // is derived from it.  Neither pairing can be false, so no key is

@@ -874,10 +874,13 @@ template <class Brand, ::foundation::core::FpMode Mode>
 class KernelCall;
 
 // A kernel of the context KernelCtx<Brand, Mode>: a callable that takes the
-// token of one call first and its buffers after it, and returns nothing.
+// token of one call first and its buffers after it, and returns nothing.  It
+// holds no linear value by value (HoldsNoLinearValue of foundation/Linear.h):
+// run_kernel calls it and ends it, and a call is no consume.
 template <class Kernel, class Brand, ::foundation::core::FpMode Mode, class... Args>
 concept IsKernelOf = std::is_nothrow_invocable_r_v<void, Kernel&, KernelCall<Brand, Mode> const&, Args&&...>
-                  && std::is_void_v<std::invoke_result_t<Kernel&, KernelCall<Brand, Mode> const&, Args&&...>>;
+                  && std::is_void_v<std::invoke_result_t<Kernel&, KernelCall<Brand, Mode> const&, Args&&...>>
+                  && ::foundation::linear::HoldsNoLinearValue<Kernel>;
 
 // The one door of a token, declared here so that the token can name it as a
 // friend.  The definition is below the token.
@@ -929,6 +932,14 @@ void run_kernel(KernelCtx<Brand, Mode> const& ctx, Kernel&& kernel, Args&&... ar
     KernelCall<Brand, Mode> const call{ctx};
     kernel(call, static_cast<Args&&>(args)...);
 }
+
+// A kernel that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (IsKernelOf).
+template <class Brand, ::foundation::core::FpMode Mode, class Kernel, class... Args>
+    requires std::is_invocable_r_v<void, Kernel&, KernelCall<Brand, Mode> const&, Args&&...>
+              && (!::foundation::linear::HoldsNoLinearValue<Kernel>)
+void run_kernel(KernelCtx<Brand, Mode> const& ctx, Kernel&& kernel,
+                Args&&... args) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // The test door of the foreground context.  The rule owners of
 // the quarantine plugin refuses a use of it in code that ships, as it does

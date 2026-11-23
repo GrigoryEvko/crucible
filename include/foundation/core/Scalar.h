@@ -58,6 +58,7 @@
 // is not.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Equatable.h>
 
@@ -470,12 +471,20 @@ concept FieldWalkable =
 // of the declarations.  A private member of a plain class is a field too.
 // visit gets each field as a const lvalue.  A member of a base class is no
 // member of object, so the walk does not visit it.  A class with no member
-// gives no call.  Complexity: one call of visit for each member.
+// gives no call.  visit holds no linear value by value (HoldsNoLinearValue
+// of foundation/Linear.h): the walk calls it and ends it, and a call is no
+// consume.  Complexity: one call of visit for each member.
 template <class T, class Visit>
-    requires FieldWalkable<T>
+    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit>
 constexpr void for_each_field(T const& object, Visit&& visit) noexcept {
     detail::visit_fields_(object, visit, std::make_index_sequence<detail::member_count(^^T)>{});
 }
+
+// A visit that holds a linear value by value binds to this overload, and to
+// the same twin of for_each_base, so the refusal gives its reason.
+template <class T, class Visit>
+    requires FieldWalkable<T> && (!::foundation::linear::HoldsNoLinearValue<Visit>)
+void for_each_field(T const& object, Visit&& visit) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // Calls visit(base) for each direct base subobject of object, in the order
 // of the declarations.  A private base is a base too.  visit gets each base
@@ -485,9 +494,13 @@ constexpr void for_each_field(T const& object, Visit&& visit) noexcept {
 // constructor of the class makes them.  Complexity: one call of visit for
 // each direct base.
 template <class T, class Visit>
-    requires FieldWalkable<T>
+    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit>
 constexpr void for_each_base(T const& object, Visit&& visit) noexcept {
     detail::visit_bases_(object, visit, std::make_index_sequence<detail::base_count(^^T)>{});
 }
+
+template <class T, class Visit>
+    requires FieldWalkable<T> && (!::foundation::linear::HoldsNoLinearValue<Visit>)
+void for_each_base(T const& object, Visit&& visit) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

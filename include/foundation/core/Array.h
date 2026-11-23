@@ -867,11 +867,14 @@ concept CanMintHeapArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Alig
 // allocation capability, and an init that gives a T for each position with
 // no throw.  The result is a T and not a type that converts to T, so the
 // mint builds each element from it in place, with no copy and no move.  An
-// element that does not copy or move, such as an Atomic, passes.
+// element that does not copy or move, such as an Atomic, passes.  init holds
+// no linear value by value (HoldsNoLinearValue of foundation/Linear.h): the
+// mint calls it for each position and ends it, and a call is no consume.
 template <class T, std::size_t Align, class Marker, class Init>
 concept CanMintHeapArrayWith =
     OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
-    && std::is_nothrow_invocable_v<Init&, std::size_t> && std::same_as<std::invoke_result_t<Init&, std::size_t>, T>;
+    && std::is_nothrow_invocable_v<Init&, std::size_t> && std::same_as<std::invoke_result_t<Init&, std::size_t>, T>
+    && ::foundation::linear::HoldsNoLinearValue<Init>;
 
 // The arguments of mint_heap_array_zeroed: an element whose lifetime starts
 // over its bytes (foundation/Lifetime.h), and of which each bit pattern is a
@@ -953,11 +956,14 @@ public:
 
 // The arguments of mint_heap_array_written: an element whose lifetime starts
 // over its bytes, and that a move of bytes writes (RegionCopyElement).  The
-// writer takes the WriteLease with no throw.
+// writer takes the WriteLease with no throw, and holds no linear value by
+// value (HoldsNoLinearValue of foundation/Linear.h): the mint calls it and
+// ends it, and a call is no consume.
 template <class T, std::size_t Align, class Marker, class Writer>
-concept CanMintHeapArrayWritten = OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
-                               && AllocationCapability<Marker> && ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-                               && RegionCopyElement<T> && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&>;
+concept CanMintHeapArrayWritten =
+    OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
+    && ::foundation::lifetime::ImplicitLifetimeThroughout<T> && RegionCopyElement<T>
+    && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&> && ::foundation::linear::HoldsNoLinearValue<Writer>;
 
 // A HeapArray owns its elements alone, so it moves between threads as its
 // element does (foundation/Transfer.h).
@@ -1262,6 +1268,14 @@ template <class T, std::size_t Align = alignof(T), class Marker, class Init>
     return HeapArray<T, Align>{detail::HeapArrayDoor::key(), detail::BuildEachTag{}, count, init};
 }
 
+// An init that holds a linear value by value binds to this overload, and a
+// writer that holds one to the twin of mint_heap_array_written, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+template <class T, std::size_t Align = alignof(T), class Marker, class Init>
+    requires AllocationCapability<Marker> && std::is_nothrow_invocable_v<Init&, std::size_t>
+              && (!::foundation::linear::HoldsNoLinearValue<Init>)
+void mint_heap_array_with(Marker allocation, std::size_t count, Init init) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 // A copy of each element of source at the alignment Align.  Complexity: one
 // allocation and O(source.size()) copies.
 template <class T, std::size_t Align = alignof(T), class Marker>
@@ -1291,6 +1305,12 @@ template <class T, std::size_t Align = alignof(T), class Marker, class Writer>
                                                           Writer writer) noexcept {
     return HeapArray<T, Align>{detail::HeapArrayDoor::key(), detail::WriteTag{}, count, writer};
 }
+
+template <class T, std::size_t Align = alignof(T), class Marker, class Writer>
+    requires AllocationCapability<Marker> && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&>
+              && (!::foundation::linear::HoldsNoLinearValue<Writer>)
+void mint_heap_array_written(Marker allocation, std::size_t count,
+                             Writer writer) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── MaskedArray ────────────────────────────────────────────────────────────
 
