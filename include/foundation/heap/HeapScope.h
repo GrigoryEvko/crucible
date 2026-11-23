@@ -191,11 +191,14 @@ private:
 };
 
 // The arguments of mint_heap_scope: a body that takes the scope by reference
-// with no throw, and gives a value that does not name the brand, as the
-// comment on the scope at the top of this header tells.
+// with no throw, holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h), and gives a value that does not name the brand, as
+// the comment on the scope at the top of this header tells.  The mint calls
+// the body, and a call is no consume.
 template <class Brand, class Body>
 concept CanMintHeapScope =
     ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, HeapScope<Brand>&>
+    && ::foundation::linear::HoldsNoLinearValue<Body>
     && !std::is_void_v<std::invoke_result_t<Body&&, HeapScope<Brand>&>>
     && !::foundation::core::detail::names_brand(^^std::invoke_result_t<Body&&, HeapScope<Brand>&>, ^^Brand);
 
@@ -238,5 +241,12 @@ auto mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) n
     HeapScope<Fresh> scope = detail::HeapScopeDoor::open<Fresh>(::foundation::alloc::thread_heap());
     return static_cast<Body&&>(body)(scope);
 }
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!::foundation::linear::HoldsNoLinearValue<Body>)
+             && std::is_invocable_v<Body&&, HeapScope<Fresh>&>
+void mint_heap_scope(::foundation::core::Alloc const& capability, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::heap

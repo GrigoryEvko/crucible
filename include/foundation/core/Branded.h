@@ -260,10 +260,13 @@ template <class Element, ::foundation::brand::IsBrand Brand>
 using BrandedEnumerateRange = detail::BrandedEnumerateRange<Element, Brand>;
 
 // The arguments of mint_branded_scope: a body that takes the BrandedView of
-// the scope with no throw and gives a value that does not hold the brand.
+// the scope with no throw, holds no linear value by value (HoldsNoLinearValue
+// of foundation/Linear.h), and gives a value that does not hold the brand.
+// The mint calls the body, and a call is no consume.
 template <class T, class Body, class Brand>
 concept CanMintBrandedScope =
     ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, BrandedView<T, Brand>>
+    && ::foundation::linear::HoldsNoLinearValue<Body>
     && !std::is_void_v<std::invoke_result_t<Body&&, BrandedView<T, Brand>>>
     && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedView<T, Brand>>, ^^Brand);
 
@@ -369,5 +372,13 @@ constexpr auto mint_branded_scope(View<T, Extent> view, Body&& body) noexcept {
     }
     return static_cast<Body&&>(body)(BrandedView<T, Fresh>{View<T>{view}});
 }
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+template <class... Refused, class T, std::size_t Extent, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!::foundation::linear::HoldsNoLinearValue<Body>)
+             && std::is_invocable_v<Body&&, BrandedView<T, Fresh>>
+void mint_branded_scope(View<T, Extent> view, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

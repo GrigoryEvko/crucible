@@ -44,4 +44,12 @@ static_assert(permissions::ScopeMintableTag<heap_tag::Owner>);
 static_assert(permissions::ScopePermissionArgs<heap_tag::Owner, heap_scope_check::Brand>);
 static_assert(!permissions::ScopePermissionArgs<heap_tag::Owner, brand::DefaultBrand>);
 
+// The body of the scope mint holds no linear value by value: the mint calls
+// it, and a call is no consume.
+using HoldsBlockBody =
+    decltype([held = std::declval<heap_scope_check::Block>()](heap_scope_check::Scope&) noexcept { return 0; });
+using HoldsNoBlockBody = decltype([](heap_scope_check::Scope&) noexcept { return 0; });
+static_assert(CanMintHeapScope<heap_scope_check::Brand, HoldsNoBlockBody>);
+static_assert(!CanMintHeapScope<heap_scope_check::Brand, HoldsBlockBody>);
+
 }  // namespace foundation::heap

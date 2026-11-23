@@ -1712,11 +1712,13 @@ public:
     //   linear payload has no filter.  is_some_and and is_none_or only read,
     //   so they take a const reference and consume nothing.  Each body tests
     //   the absence first, as the match does, and costs the one branch of the
-    //   match.
+    //   match.  fn, keep and holds hold no linear value by value, as the arms
+    //   of a match do (ArmsHoldNoLinearValue), and each combinator has a
+    //   deleted twin that refuses such a function.
 
     // The result of fn on the payload, as a full Option, or an empty Option.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+        requires std::is_invocable_v<Fn, T&&> && ArmsHoldNoLinearValue<Fn> && TakesPayloadByValue<Fn, T>
               && ChoicePayload<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
     [[nodiscard]] constexpr Option<std::invoke_result_t<Fn, T&&>>
     map(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
@@ -1730,14 +1732,21 @@ public:
     // An fn of map that takes its payload by reference binds to this
     // overload, so the refusal gives its reason.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+        requires ArmsHoldNoLinearValue<Fn> && std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
     void map(Fn&& fn) && = delete(
         "the function of map takes the payload by value, so it names no object that map ends: write the parameter as "
         "a value, or name the Option and match its borrow");
 
+    // An fn that holds a linear value by value binds to this overload, and to
+    // the same twin of each other combinator, so the refusal gives its reason
+    // (ArmsHoldNoLinearValue).
+    template <class Fn>
+        requires(!ArmsHoldNoLinearValue<Fn>) && std::is_invocable_v<Fn, T&&>
+    void map(Fn&& fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // The Option that fn gives for the payload, or an empty Option.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+        requires std::is_invocable_v<Fn, T&&> && ArmsHoldNoLinearValue<Fn> && TakesPayloadByValue<Fn, T>
               && detail::IsOption<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
     [[nodiscard]] constexpr std::invoke_result_t<Fn, T&&>
     and_then(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
@@ -1750,16 +1759,20 @@ public:
     // An fn of and_then that takes its payload by reference binds to this
     // overload, so the refusal gives its reason.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+        requires ArmsHoldNoLinearValue<Fn> && std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
     void and_then(Fn&& fn) && = delete(
         "the function of and_then takes the payload by value, so it names no object that and_then ends: write the "
         "parameter as a value, or name the Option and match its borrow");
+
+    template <class Fn>
+        requires(!ArmsHoldNoLinearValue<Fn>) && std::is_invocable_v<Fn, T&&>
+    void and_then(Fn&& fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The Option when keep accepts its payload, else an empty Option.  The
     // payload moves out first, so keep reads a local through a const
     // reference, and no write through keep reaches the Option.
     template <class Keep>
-        requires DroppablePayload<T> && std::is_invocable_v<Keep&, T const&>
+        requires DroppablePayload<T> && std::is_invocable_v<Keep&, T const&> && ArmsHoldNoLinearValue<Keep>
               && std::same_as<std::invoke_result_t<Keep&, T const&>, bool>
     [[nodiscard]] constexpr Option filter(Keep&& keep) && noexcept(std::is_nothrow_invocable_v<Keep&, T const&>) {
         if (!slot_.holds_()) return Option{none};
@@ -1769,11 +1782,16 @@ public:
         return Option{detail::SomeTag{}, static_cast<T&&>(taken)};
     }
 
+    template <class Keep>
+        requires(!ArmsHoldNoLinearValue<Keep>) && DroppablePayload<T> && std::is_invocable_v<Keep&, T const&>
+    void filter(Keep&& keep) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // True when the Option holds a payload that holds accepts.  holds reads
     // the payload through a const reference, the Option keeps it, and an
     // owning Option counts the lend (the lend count).
     template <class Holds>
-        requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+        requires std::is_invocable_v<Holds&, T const&> && ArmsHoldNoLinearValue<Holds>
+              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_some_and(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
         if (!slot_.holds_()) return false;
@@ -1781,16 +1799,25 @@ public:
         return holds(slot_.payload_());
     }
 
+    template <class Holds>
+        requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, T const&>
+    void is_some_and(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // True when the Option is empty, or when holds accepts its payload.  The
     // read is that of is_some_and.
     template <class Holds>
-        requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+        requires std::is_invocable_v<Holds&, T const&> && ArmsHoldNoLinearValue<Holds>
+              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_none_or(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
         if (!slot_.holds_()) return true;
         [[maybe_unused]] auto const lend = slot_.lend_();
         return holds(slot_.payload_());
     }
+
+    template <class Holds>
+        requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, T const&>
+    void is_none_or(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The total match.  on_some gets the payload, or on_none runs, and
     // the two arms give the same type.  A call with one arm does not
@@ -2885,11 +2912,14 @@ public:
     //   the gates of the rvalue match.  A linear part moves into fn or into the
     //   new Result, so no combinator drops a part.  is_ok_and and is_err_and
     //   only read, through a const reference.  Each body tests the error
-    //   first, as the match does, and costs the one branch of the match.
+    //   first, as the match does, and costs the one branch of the match.  fn
+    //   and holds hold no linear value by value, as the arms of a match do
+    //   (ArmsHoldNoLinearValue), and each combinator has a deleted twin that
+    //   refuses such a function.
 
     // The result of fn on the value, with the same error, or the error.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+        requires std::is_invocable_v<Fn, T&&> && ArmsHoldNoLinearValue<Fn> && TakesPayloadByValue<Fn, T>
               && ChoicePayload<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
     [[nodiscard]] constexpr Result<std::invoke_result_t<Fn, T&&>, E>
     map(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
@@ -2901,15 +2931,22 @@ public:
     // An fn of map that takes its value by reference binds to this overload,
     // so the refusal gives its reason.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+        requires ArmsHoldNoLinearValue<Fn> && std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
     void map(Fn&& fn) && = delete(
         "the function of map takes the value by value, so it names no object that map ends: write the parameter as a "
         "value, or name the Result and match its borrow");
 
+    // An fn that holds a linear value by value binds to this overload, and to
+    // the same twin of each other combinator, so the refusal gives its reason
+    // (ArmsHoldNoLinearValue).
+    template <class Fn>
+        requires(!ArmsHoldNoLinearValue<Fn>) && std::is_invocable_v<Fn, T&&>
+    void map(Fn&& fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // The value, or the result of fn on the error.  The new error is an
     // ErrorValue, so a plain integer is refused, as for each Result.
     template <class Fn>
-        requires std::is_invocable_v<Fn, E&&> && TakesPayloadByValue<Fn, E>
+        requires std::is_invocable_v<Fn, E&&> && ArmsHoldNoLinearValue<Fn> && TakesPayloadByValue<Fn, E>
               && HoldsNoBorrow<std::invoke_result_t<Fn, E&&>> && ErrorValue<std::invoke_result_t<Fn, E&&>>
     [[nodiscard]] constexpr Result<T, std::invoke_result_t<Fn, E&&>>
     map_err(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, E&&>) {
@@ -2922,15 +2959,19 @@ public:
     // An fn of map_err that takes its error by reference binds to this
     // overload, so the refusal gives its reason.
     template <class Fn>
-        requires std::is_invocable_v<Fn, E&&> && (!TakesPayloadByValue<Fn, E>)
+        requires ArmsHoldNoLinearValue<Fn> && std::is_invocable_v<Fn, E&&> && (!TakesPayloadByValue<Fn, E>)
     void map_err(Fn&& fn) && =
         delete("the function of map_err takes the error by value, so it names no object that map_err ends: write the "
                "parameter as a value, or name the Result and match its borrow");
 
+    template <class Fn>
+        requires(!ArmsHoldNoLinearValue<Fn>) && std::is_invocable_v<Fn, E&&>
+    void map_err(Fn&& fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // The Result that fn gives for the value, or the error.  The error
     // converts to the error of that Result as CRUCIBLE_TRY converts it.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+        requires std::is_invocable_v<Fn, T&&> && ArmsHoldNoLinearValue<Fn> && TakesPayloadByValue<Fn, T>
               && detail::IsResult<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
               && std::is_nothrow_constructible_v<std::invoke_result_t<Fn, T&&>, Err<E>>
     [[nodiscard]] constexpr std::invoke_result_t<Fn, T&&>
@@ -2942,16 +2983,20 @@ public:
     // An fn of and_then that takes its value by reference binds to this
     // overload, so the refusal gives its reason.
     template <class Fn>
-        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+        requires ArmsHoldNoLinearValue<Fn> && std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
     void and_then(Fn&& fn) && =
         delete("the function of and_then takes the value by value, so it names no object that and_then ends: write the "
                "parameter as a value, or name the Result and match its borrow");
+
+    template <class Fn>
+        requires(!ArmsHoldNoLinearValue<Fn>) && std::is_invocable_v<Fn, T&&>
+    void and_then(Fn&& fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The value, or the Result that fn gives for the error: a recovery.  fn
     // gives a Result of the same value type, so the value passes with no
     // conversion.
     template <class Fn>
-        requires std::is_invocable_v<Fn, E&&> && TakesPayloadByValue<Fn, E>
+        requires std::is_invocable_v<Fn, E&&> && ArmsHoldNoLinearValue<Fn> && TakesPayloadByValue<Fn, E>
               && detail::IsResult<std::invoke_result_t<Fn, E&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, E&&>>
               && std::same_as<detail::result_value_t<std::invoke_result_t<Fn, E&&>>, T>
     [[nodiscard]] constexpr std::invoke_result_t<Fn, E&&>
@@ -2964,16 +3009,21 @@ public:
     // An fn of or_else that takes its error by reference binds to this
     // overload, so the refusal gives its reason.
     template <class Fn>
-        requires std::is_invocable_v<Fn, E&&> && (!TakesPayloadByValue<Fn, E>)
+        requires ArmsHoldNoLinearValue<Fn> && std::is_invocable_v<Fn, E&&> && (!TakesPayloadByValue<Fn, E>)
     void or_else(Fn&& fn) && =
         delete("the function of or_else takes the error by value, so it names no object that or_else ends: write the "
                "parameter as a value, or name the Result and match its borrow");
+
+    template <class Fn>
+        requires(!ArmsHoldNoLinearValue<Fn>) && std::is_invocable_v<Fn, E&&>
+    void or_else(Fn&& fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // True when the Result holds a value that holds accepts.  holds reads the
     // value through a const reference, the Result keeps it, and an owning
     // Result counts the lend (the lend count), as the borrow match does.
     template <class Holds>
-        requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+        requires std::is_invocable_v<Holds&, T const&> && ArmsHoldNoLinearValue<Holds>
+              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_ok_and(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
         [[maybe_unused]] auto const lend = slot_.lend_();
@@ -2981,16 +3031,25 @@ public:
         return holds(slot_.value_());
     }
 
+    template <class Holds>
+        requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, T const&>
+    void is_ok_and(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // True when the Result holds an error that holds accepts.  The read is
     // that of is_ok_and.
     template <class Holds>
-        requires std::is_invocable_v<Holds&, E const&> && std::same_as<std::invoke_result_t<Holds&, E const&>, bool>
+        requires std::is_invocable_v<Holds&, E const&> && ArmsHoldNoLinearValue<Holds>
+              && std::same_as<std::invoke_result_t<Holds&, E const&>, bool>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_err_and(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, E const&>) {
         [[maybe_unused]] auto const lend = slot_.lend_();
         if (slot_.holds_()) return false;
         return holds(slot_.error_());
     }
+
+    template <class Holds>
+        requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, E const&>
+    void is_err_and(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The total match: on_ok gets the value, or on_err gets the error, and
     // the two arms give the same type.  A call with one arm does not

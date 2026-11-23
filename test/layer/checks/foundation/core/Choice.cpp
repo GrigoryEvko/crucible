@@ -1113,6 +1113,52 @@ static_assert(!WritesWith<Option<int>, HoldsTokenArm, HoldsNoTokenRest>);
 static_assert(WritesWith<Result<int, Code>, HoldsNoTokenArm, HoldsNoTokenArm>);
 static_assert(!WritesWith<Result<int, Code>, HoldsNoTokenArm, HoldsTokenArm>);
 
+// A combinator is a match with one arm fixed, so its function holds no
+// linear value by value either.  Each combinator refuses a function that
+// holds a token, and takes the same function with no token.
+template <class S, class Fn>
+concept MapsWith = requires(S sum, Fn fn) { static_cast<S&&>(sum).map(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept ChainsWith = requires(S sum, Fn fn) { static_cast<S&&>(sum).and_then(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept FiltersWith = requires(S sum, Fn fn) { static_cast<S&&>(sum).filter(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept MapsErrorWith = requires(S sum, Fn fn) { static_cast<S&&>(sum).map_err(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept RecoversWith = requires(S sum, Fn fn) { static_cast<S&&>(sum).or_else(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept TestsSomeWith = requires(S const& sum, Fn fn) { sum.is_some_and(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept TestsNoneOrWith = requires(S const& sum, Fn fn) { sum.is_none_or(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept TestsOkWith = requires(S const& sum, Fn fn) { sum.is_ok_and(static_cast<Fn&&>(fn)); };
+template <class S, class Fn>
+concept TestsErrWith = requires(S const& sum, Fn fn) { sum.is_err_and(static_cast<Fn&&>(fn)); };
+using ChainsWithToken = decltype([held = Token{1}](auto) noexcept { return Option<int>::some(held.handle); });
+using ChainsWithNoToken = decltype([](auto) noexcept { return Option<int>{}; });
+using ResultsWithToken = decltype([held = Token{1}](auto) noexcept { return Result<int, Code>{held.handle}; });
+using ResultsWithNoToken = decltype([](auto) noexcept { return Result<int, Code>{0}; });
+using TestsWithToken = decltype([held = Token{1}](auto const&) noexcept { return held.handle == 0; });
+using TestsWithNoToken = decltype([](auto const&) noexcept { return true; });
+using KeepsCodeWithToken = decltype([held = Token{1}](Code code) noexcept {
+    static_cast<void>(held);
+    return code;
+});
+using KeepsCodeWithNoToken = decltype([](Code code) noexcept { return code; });
+static_assert(MapsWith<Option<int>, HoldsNoTokenArm> && !MapsWith<Option<int>, HoldsTokenArm>);
+static_assert(ChainsWith<Option<int>, ChainsWithNoToken> && !ChainsWith<Option<int>, ChainsWithToken>);
+static_assert(FiltersWith<Option<int>, TestsWithNoToken> && !FiltersWith<Option<int>, TestsWithToken>);
+static_assert(TestsSomeWith<Option<int>, TestsWithNoToken> && !TestsSomeWith<Option<int>, TestsWithToken>);
+static_assert(TestsNoneOrWith<Option<int>, TestsWithNoToken> && !TestsNoneOrWith<Option<int>, TestsWithToken>);
+static_assert(MapsWith<Result<int, Code>, HoldsNoTokenArm> && !MapsWith<Result<int, Code>, HoldsTokenArm>);
+static_assert(MapsErrorWith<Result<int, Code>, KeepsCodeWithNoToken>
+              && !MapsErrorWith<Result<int, Code>, KeepsCodeWithToken>);
+static_assert(ChainsWith<Result<int, Code>, ResultsWithNoToken> && !ChainsWith<Result<int, Code>, ResultsWithToken>);
+static_assert(RecoversWith<Result<int, Code>, ResultsWithNoToken>
+              && !RecoversWith<Result<int, Code>, ResultsWithToken>);
+static_assert(TestsOkWith<Result<int, Code>, TestsWithNoToken> && !TestsOkWith<Result<int, Code>, TestsWithToken>);
+static_assert(TestsErrWith<Result<int, Code>, TestsWithNoToken> && !TestsErrWith<Result<int, Code>, TestsWithToken>);
+
 // A linear error.  The const err() would copy it, so only the rvalue err()
 // gives it, and value_or() would drop it.
 static_assert(ErrorValue<Token> && ErrorValue<HoldsToken>);

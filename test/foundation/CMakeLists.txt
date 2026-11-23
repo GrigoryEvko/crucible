@@ -2569,6 +2569,17 @@ foundation_neg_compile_test(neg_core_result_match_linear_arm
 foundation_neg_compile_test(neg_core_one_of_match_linear_arm
   "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) &&"
   "the body holds a linear value by value, and the door calls it with no consume")
+# A combinator is a match with one arm fixed, and a scope mint calls its body
+# one time: each refuses a function that holds a linear value by value.
+foundation_neg_compile_test(neg_core_option_map_linear_capture
+  "use of deleted function .void foundation::core::Option<T>::map\\(Fn&&\\) &&"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_result_map_err_linear_capture
+  "use of deleted function .void foundation::core::Result<T, E>::map_err\\(Fn&&\\) &&"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_branded_scope_linear_capture
+  "use of deleted function .void foundation::core::mint_branded_scope\\("
+  "the body holds a linear value by value, and the door calls it with no consume")
 foundation_neg_compile_test(neg_core_option_map_takes_reference
   "use of deleted function .void foundation::core::Option<T>::map\\(Fn&&\\) &&"
   "the function of map takes the payload by value, so it names no object that map ends")

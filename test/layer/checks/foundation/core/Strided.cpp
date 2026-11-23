@@ -57,6 +57,27 @@ struct GivesIndex final {
 static_assert(CanMintStridedScope<int, 2, GivesCount, CheckBrand>);
 static_assert(!CanMintStridedScope<int, 2, GivesIndex, CheckBrand>);
 
+// The body of a scope holds no linear value by value: the mint calls it, and
+// a call is no consume.
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] ScopeToken {
+    int handle = 0;
+    constexpr explicit ScopeToken(int value) noexcept : handle{value} {}
+    constexpr ScopeToken(ScopeToken&&) noexcept = default;
+    constexpr ScopeToken& operator=(ScopeToken&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    ScopeToken(ScopeToken const&) = delete("a linear token of the check does not copy");
+};
+struct GivesCountWithToken final {
+    ScopeToken held;
+    template <class Brand>
+    constexpr std::size_t operator()(BrandedStridedView<int, 2, Brand> view) const noexcept {
+        return view.rank();
+    }
+};
+static_assert(!CanMintStridedScope<int, 2, GivesCountWithToken, CheckBrand>);
+
 // A unique view holds the parts of a view and nothing more.  It moves and
 // does not copy, and no plain view becomes a unique view.
 static_assert(sizeof(StridedViewMut<int, 2, CheckBrand>) == sizeof(StridedView<int, 2>));
