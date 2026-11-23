@@ -30,9 +30,9 @@ Selection
           - default for each change
           - release-v3 and tsan for a change of a C++ file or of a build
             file.  The configuration release compiles for the host level
-            (x86-64-v4 on luks-a), and it runs only with
-            --all-configurations (ON_REQUEST).  The code of v3 runs on v4,
-            and release-v3 holds the Release flags.  ThreadSanitizer gives
+            (x86-64-v4 on luks-a), and it runs only with --v4
+            (ON_REQUEST).  --all-configurations does not add it.  The code
+            of v3 runs on v4, and release-v3 holds the Release flags.  ThreadSanitizer gives
             incorrect errors of
             -Wmaybe-uninitialized that the other builds do not give, also
             for a change of a test.  release-v3 compiles for x86-64-v3, so
@@ -47,8 +47,9 @@ Selection
             only that build holds.  bench-fuzz runs only the tests of
             OWN_TEST_LABELS: the benches and the fuzz harnesses.  Its other
             tests run with the flags of default, which runs them
-          - each configuration for a change of the quarantine plugin or of
-            the rule table, and for --all-configurations.  Also for a
+          - each configuration other than those of ON_REQUEST for a change
+            of the quarantine plugin or of the rule table, and for
+            --all-configurations.  Also for a
             candidate whose composition summed two changes of one count of a
             ledger (assay.loop.land, the merge), so the reduce writes the
             measured count.
@@ -816,8 +817,8 @@ ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (the
 # selection).
 ALWAYS = "default"
-# The configurations of objects that run only with --all-configurations: release compiles for the level of the host
-# (the selection).
+# The configurations of objects that run only with --v4, and not with --all-configurations: release compiles for the
+# level of the host, x86-64-v4 on luks-a (the selection).
 ON_REQUEST = frozenset({"release"})
 # The preset of the vessel, the targets that the gate builds in its build, the label of the vessel tests, and the
 # prefix of the paths of the vessel (the vessel).  TORCH_DIR of the preset names a directory in TORCH_VENV of the
@@ -1175,7 +1176,9 @@ def is_compiled_change(path: str) -> bool:
     return guard_inputs.is_compiled_file(path) or is_build_file(path)
 
 
-def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool) -> tuple[Configuration, ...]:
+def select(
+    changed: Sequence[str], parse_presets: Sequence[str], is_every: bool, is_v4: bool = False
+) -> tuple[Configuration, ...]:
     """Return the configurations of the full suite and the parse configurations of a change (the selection).
 
     The configurations are in the sequence of CONFIGURATIONS.
@@ -1184,7 +1187,8 @@ def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool)
         changed: The paths that the change touches
         parse_presets: The parse presets that run: those that `loop syntax --changed` names, and each parse preset
             when the change touches the inputs of a rule of COUNTED_RULES
-        is_every: Select each configuration
+        is_every: Select each configuration other than those of ON_REQUEST
+        is_v4: Select each configuration of ON_REQUEST too
 
     Complexity: linear in the paths and the names.
     """
@@ -1200,7 +1204,9 @@ def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool)
         if path.startswith(EVERY_PREFIXES):
             is_every = True
     names.update(preset for preset in parse_presets if preset in BY_NAME)
-    return tuple(item for item in CONFIGURATIONS if is_every or item.name in names)
+    if is_v4:
+        names.update(ON_REQUEST)
+    return tuple(item for item in CONFIGURATIONS if (is_every and item.name not in ON_REQUEST) or item.name in names)
 
 
 def changes_each_build(tree: Path, change: guard_inputs.Change, changed: Sequence[str]) -> bool:
@@ -1879,7 +1885,7 @@ class Gate:
     lanes).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (the vessel).  `oom_kills`
     gives the count of the kills of the kernel for lack of memory (the kill for memory).  `cited` gives the name of each
     ended run that an unread verdict cites, which the sweep of the runs keeps (the logs).  `test_timeout_s` is the wall
-    guard of one test (the hang guard).
+    guard of one test (the hang guard).  `is_v4` adds each configuration of ON_REQUEST, as --v4 does (the selection).
     """
 
     root: Path
@@ -1894,6 +1900,7 @@ class Gate:
     oom_kills: Callable[[], int] = heavy.oom_kills
     cited: Callable[[], frozenset[str]] = no_cited_runs
     test_timeout_s: int = TEST_TIMEOUT_S
+    is_v4: bool = False
 
     @property
     def guard_words(self) -> list[str]:
@@ -2062,7 +2069,9 @@ class Gate:
             if careful(touches, True, "the inputs of the rules of the parse builds", "each parse configuration"):
                 presets += each_parse
             counted = careful(lambda: counted_rules(self.tree), (), "the counted ledgers", "no reduce")
-            selected = select(candidate.changed, presets, self.is_every or candidate.is_every or bool(candidate.lowers))
+            selected = select(
+                candidate.changed, presets, self.is_every or candidate.is_every or bool(candidate.lowers), self.is_v4
+            )
             plan = tuple(
                 Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
                 for item in selected
@@ -3387,10 +3396,10 @@ def free_lane(work: Path, lanes: int = LANES) -> Iterator[int | None]:
 
 
 @contextlib.contextmanager
-def session(root: Path, work: Path, jobs: int, is_every: bool) -> Iterator[Gate]:
+def session(root: Path, work: Path, jobs: int, is_every: bool, is_v4: bool = False) -> Iterator[Gate]:
     """Hold the lock of the warm tree for the block, and give the gate (the lock of the tree).
 
     The block waits while a different landing holds the lock.
     """
     with tree_lock(work):
-        yield Gate(root, work, jobs, is_every)
+        yield Gate(root, work, jobs, is_every, is_v4=is_v4)

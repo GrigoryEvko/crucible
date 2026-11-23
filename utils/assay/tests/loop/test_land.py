@@ -2402,6 +2402,19 @@ def right_word_cases(expect: testing.Expect) -> None:
             f"field that is not a truth value does not read: {found}",
             found == {"with": True, "with no": False, "of an earlier copy": False} and is_text_refused,
         )
+        _request, wide = land.parse(["--series", "wt/a", "--v4", "--"], scratch)
+        kept: dict[str, bool] = {}
+        for name, is_asked in (("with", True), ("with no", False)):
+            queued = land.Queued(7, scratch, request, replace(options(), is_v4=is_asked), token="planted")
+            kept[name] = land.decoded_request(queue, 7, land.encoded_request(queued, [])).options.is_v4
+        record = json.loads(land.encoded_request(land.Queued(7, scratch, request, options(), token="planted"), []))
+        del record["v4"]
+        kept["of an earlier copy"] = land.decoded_request(queue, 7, json.dumps(record).encode()).options.is_v4
+        expect(
+            f"--v4 applies to a series, and the request file keeps it, with no --v4 for a file of an earlier copy: "
+            f"{kept}",
+            wide.is_v4 and not plain.is_v4 and kept == {"with": True, "with no": False, "of an earlier copy": False},
+        )
 
 
 def branch_mover(root: Path, right_file: Path, held_on_run: list[bool], label: str) -> Callable[[], None]:

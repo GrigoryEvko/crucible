@@ -521,9 +521,11 @@ def select_cases(expect: testing.Expect) -> None:
         names_of(gate.select(["test/test_arena.cpp"], [], False)) == ["default", "release-v3", "tsan"],
     )
     expect(
-        "the release build at the level of the host runs only with --all-configurations",
+        "the release build at the level of the host runs only with --v4, and --all-configurations does not add it",
         "release" not in names_of(gate.select(["include/foundation/Platform.h"], [], False))
-        and "release" in names_of(gate.select(["include/foundation/Platform.h"], [], True)),
+        and "release" not in names_of(gate.select(["include/foundation/Platform.h"], [], True))
+        and "release" in names_of(gate.select(["include/foundation/Platform.h"], [], False, True))
+        and names_of(gate.select(["notes.txt"], [], False, True)) == ["default", "release"],
     )
     expect(
         "a change of include/ or of a top build file adds ThreadSanitizer and UBSan-strict",
@@ -1033,13 +1035,13 @@ def planted_pool(work: Path) -> heavy.Pool:
 
 
 def every_gate(work: Path, root: Path, tree: Path, modes: Mapping[str, str] | None = None) -> gate.Gate:
-    """Plant the build of each configuration of the gate, and return a gate of --all-configurations.
+    """Plant the build of each configuration of the gate, and return a gate of --all-configurations and --v4.
 
     Each build has the mode clean, and `modes` maps the name of a build directory to a different mode.
     """
     others = {item.build: "clean" for item in gate.CONFIGURATIONS if item.build != "build"}
     planted = planted_gate(work, root, tree, "clean", {**others, **(modes or {})})
-    return replace(planted, is_every=True)
+    return replace(planted, is_every=True, is_v4=True)
 
 
 def run_cases(expect: testing.Expect) -> None:

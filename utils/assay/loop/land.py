@@ -732,10 +732,13 @@ Driver
 
 Usage
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
-              [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... [--lower RULE ITEM]...
+              [--jobs N] [--all-configurations] [--v4] [--budget-reason TEXT | ITEM=TEXT]... [--lower RULE ITEM]...
               [--lower-reason TEXT] [--right-of-way] [--check [--here] | --dry-run | --tree] -- [PATH]...
-    loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]...
+    loop land --series BRANCH [--jobs N] [--all-configurations] [--v4] [--budget-reason TEXT | ITEM=TEXT]...
               [--lower RULE ITEM]... [--lower-reason TEXT] [--right-of-way] [--check [--here] | --dry-run | --tree] --
+
+    --v4 also builds and tests the preset release at the level of the host
+    (x86-64-v4 on luks-a).  --all-configurations does not add it.
 
     Exit 0 when the request landed, when the gate accepts the commit of
     --check, or when --dry-run or --tree printed.  Exit 1 when the gate
@@ -813,16 +816,17 @@ FLAG_CHECK = "--check"
 FLAG_HERE = "--here"
 FLAG_EVERY = "--all-configurations"
 FLAG_RIGHT = "--right-of-way"
-FLAGS = (FLAG_DRY_RUN, FLAG_TREE, FLAG_CHECK, FLAG_HERE, FLAG_EVERY, FLAG_RIGHT)
+FLAG_V4 = "--v4"
+FLAGS = (FLAG_DRY_RUN, FLAG_TREE, FLAG_CHECK, FLAG_HERE, FLAG_EVERY, FLAG_RIGHT, FLAG_V4)
 END_OF_OPTIONS = "--"
 HELP_WORDS = (["-h"], ["--help"])
 USAGE = (
     "usage: loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
     "[--block FILE AFTER BLOCK]...\n"
-    "                 [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... "
+    "                 [--jobs N] [--all-configurations] [--v4] [--budget-reason TEXT | ITEM=TEXT]... "
     "[--lower RULE ITEM]... [--lower-reason TEXT]\n"
     "                 [--right-of-way] [--check [--here] | --dry-run | --tree] -- [PATH]...\n"
-    "       loop land --series BRANCH [--jobs N] [--all-configurations] [--budget-reason TEXT | ITEM=TEXT]... "
+    "       loop land --series BRANCH [--jobs N] [--all-configurations] [--v4] [--budget-reason TEXT | ITEM=TEXT]... "
     "[--lower RULE ITEM]...\n"
     "                 [--lower-reason TEXT] [--right-of-way] [--check [--here] | --dry-run | --tree] --\n"
     "--right-of-way is only for the one big-scope series of the coordinator: its batch takes the right of way before "
@@ -1004,7 +1008,8 @@ class Options:
     """The words of the command line that are not part of the request.
 
     `is_right_of_way` tells that the batch of the request takes the right of way before its first composition (the
-    right of way).  It is the last field, because some callers give the fields in their sequence.
+    right of way).  `is_v4` adds the configurations of ON_REQUEST of assay.loop.gate: the build of release at the level
+    of the host.  These two are the last fields, because some callers give the fields in their sequence.
     """
 
     is_dry_run: bool
@@ -1019,6 +1024,7 @@ class Options:
     lower_reason: str = ""
     budget_rows: tuple[tuple[str, str], ...] = ()
     is_right_of_way: bool = False
+    is_v4: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1374,6 +1380,7 @@ def checked_options(flags: dict[str, bool], values: Mapping[str, list[list[str]]
         lower_reason,
         budget_rows,
         flags[FLAG_RIGHT],
+        flags[FLAG_V4],
     )
 
 
@@ -3684,6 +3691,7 @@ def encoded_request(queued: Queued, patch_names: Sequence[str], part_names: Sequ
         ],
         "jobs": queued.options.jobs,
         "every": queued.options.is_every,
+        "v4": queued.options.is_v4,
         "budget_reason": queued.options.budget_reason,
         "budget_rows": [{"item": item, "text": text} for item, text in queued.options.budget_rows],
         "lowers": [{"rule": rule, "item": item} for rule, item in queued.options.lowers],
@@ -3760,6 +3768,9 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
     is_right_of_way = record.get("right_of_way", False)
     if not isinstance(is_right_of_way, bool):
         raise TypeError("the field right_of_way is not a truth value")
+    is_v4 = record.get("v4", False)
+    if not isinstance(is_v4, bool):
+        raise TypeError("the field v4 is not a truth value")
     if jobs < 1:
         raise ValueError(f"the field jobs is {jobs}, and a request takes a number above 0")
     parts = tuple(
@@ -3783,6 +3794,7 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         lower_reason=lower_reason,
         budget_rows=budget_rows,
         is_right_of_way=is_right_of_way,
+        is_v4=is_v4,
     )
     is_claiming = record.get("claims") is True
     return Queued(number, Path(root), request, options, branch, common, token, head, is_claiming, entry_time)
@@ -4152,9 +4164,10 @@ def held_gate(
         return check, contextlib.nullcontext()
     jobs = min(item.options.jobs for item in batch)
     is_every = any(item.options.is_every for item in batch)
+    is_v4 = any(item.options.is_v4 for item in batch)
     repository = repository_of(batch[0])
     cited = functools.partial(cited_runs, work)
-    planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every, lane=lane, cited=cited)
+    planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every, lane=lane, cited=cited, is_v4=is_v4)
     return planned.check_in_run, heavy.gate_session(repository)
 
 
@@ -4368,7 +4381,7 @@ def checked(root: Path, request: Request, options: Options, work: Path) -> int:
     """
     decisions: list[Decision] = []
     entry_time = loop_history.iso_now()
-    with gate.session(root, work, options.jobs, options.is_every) as session, heavy.gate_session(root):
+    with gate.session(root, work, options.jobs, options.is_every, options.is_v4) as session, heavy.gate_session(root):
         run_check = session.check_in_run
         queued = Queued(0, root, request, options, entry_time=entry_time)
         if request.is_empty:
