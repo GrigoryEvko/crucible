@@ -13,6 +13,10 @@
 #              sum by a match: the rule reads no destructor, so the end of the
 #              scope of a class that holds a sum is no door (the sum holders of
 #              linear.cpp).
+# helpers.cpp:24  a move through a reference helper with no body in the unit,
+# helpers.cpp:31  and through one whose body comes after the call, names no
+#              argument: the rule reads the body of a helper at the call (the
+#              reference helpers of linear.cpp).
 
 compile gaps src/gaps.cpp must-consume=on
 flag gaps -freflection
@@ -25,3 +29,9 @@ compile scoped src/scoped.cpp must-consume=on
 flag scoped -freflection
 exit scoped pass
 finding scoped must-consume unconsumed src/scoped.cpp:37:21 | planted::consuming_holder_ends: scoped (planted::ConsumingHolder)
+
+compile helpers src/helpers.cpp must-consume=on
+flag helpers -freflection
+exit helpers pass
+finding helpers must-consume unconsumed src/helpers.cpp:24:11 | planted::moved_through_opaque: first (planted::Token)
+finding helpers must-consume unconsumed src/helpers.cpp:31:11 | planted::moved_through_later: first (planted::Token)

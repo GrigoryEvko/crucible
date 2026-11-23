@@ -1,0 +1,51 @@
+// A move through a reference helper consumes the object that the helper gives
+// back.  Each helper gives back one of its parameters by reference: a
+// function template, a plain function, and a function that gives back its
+// second parameter.  The plugin of main read no move through a call other
+// than std::move and std::forward, so it gave no double-consume and no
+// unconsumed line here.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+
+template <class T>
+T& through(T& value) noexcept {
+    return value;
+}
+
+Token& through_token(Token& value) noexcept { return value; }
+
+Token& second_of(Token& first, Token& second) noexcept {
+    static_cast<void>(first);
+    return second;
+}
+
+void moved_through_template() {
+    Token first = mint();
+    take(static_cast<Token&&>(through(first)));
+    take(static_cast<Token&&>(first));
+}
+
+void moved_through_function() {
+    Token first = mint();
+    take(static_cast<Token&&>(through_token(first)));
+    take(static_cast<Token&&>(first));
+}
+
+void moved_second() {
+    Token kept = mint();
+    Token moved = mint();
+    take(static_cast<Token&&>(second_of(kept, moved)));
+}
+
+}  // namespace planted

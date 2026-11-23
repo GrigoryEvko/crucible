@@ -1,0 +1,37 @@
+// Two reference helpers whose body the rule does not read at the call.  The
+// rule reads the body of a helper to find the parameter that it gives back,
+// and a declaration with no body, or a body after the call in the unit, gives
+// it nothing to read.  So the move through each helper names no argument, and
+// the local is unconsumed.  A change that reads such a helper makes the two
+// lines go.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+
+Token& opaque(Token& value) noexcept;
+
+void moved_through_opaque() {
+    Token first = mint();
+    take(static_cast<Token&&>(opaque(first)));
+}
+
+Token& later(Token& value) noexcept;
+
+void moved_through_later() {
+    Token first = mint();
+    take(static_cast<Token&&>(later(first)));
+}
+
+Token& later(Token& value) noexcept { return value; }
+
+}  // namespace planted

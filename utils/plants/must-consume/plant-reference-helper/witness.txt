@@ -1,0 +1,15 @@
+# A move through a reference helper consumes the object of the argument that
+# the helper gives back.  So the second move of the local is the finding
+# double-consume, through a function template (36) and through a plain
+# function (42).  A helper that gives back its second parameter consumes the
+# second argument, and the first one stays unconsumed (46).  The plugin of
+# main gave no double-consume, and it gave a false unconsumed line for the
+# moved local of moved_second.
+
+compile helper src/helper.cpp must-consume=on
+flag helper -freflection
+exit helper pass
+judge helper
+finding helper must-consume double-consume src/helper.cpp:36:9 | planted::moved_through_template: first (planted::Token)
+finding helper must-consume double-consume src/helper.cpp:42:9 | planted::moved_through_function: first (planted::Token)
+finding helper must-consume unconsumed src/helper.cpp:46:11 | planted::moved_second: kept (planted::Token)

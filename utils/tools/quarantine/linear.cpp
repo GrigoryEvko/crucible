@@ -44,7 +44,11 @@
 //
 // Consumes
 //     An object is consumed when it reaches one of these places, through
-//     casts, std::move and std::forward only:
+//     casts, std::move, std::forward and the reference helpers only.  A
+//     reference helper is a function whose each return gives back one of its
+//     parameters by an lvalue reference, such as through(T&) of a test.  A
+//     helper with no body in the unit, or with its body after the call, names
+//     no argument (control-known-gaps):
 //       * an argument of a parameter of an rvalue reference or of a class by
 //         value, of a call that is not std::move or std::forward
 //       * the object argument of a member function with the qualifier &&,
@@ -1252,6 +1256,116 @@ bool is_accessor(tree function) {
         && is_linear_type(TREE_TYPE(result));
 }
 
+// The reference helpers: a function that gives back one of its parameters by
+// an lvalue reference, such as through(T& value) { return value; }.  A move
+// of its result moves the object of that argument, so the walk goes through
+// the call to the argument, as it goes through std::move.  The map holds the
+// index of that parameter by the DECL_UID of each function whose body the
+// rule read, or kNoParameter.  The index counts the object parameter of a
+// member first, as the arguments of a call do.
+constexpr int kNoParameter = -1;
+std::unordered_map<int, int> forwarded_parameters;
+
+// The parameter that NODE gives back through the casts, an address, a
+// dereference and the store of the result, or null.
+tree returned_parameter(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        switch (TREE_CODE(node)) {
+            case NOP_EXPR:
+            case CONVERT_EXPR:
+            case NON_LVALUE_EXPR:
+            case VIEW_CONVERT_EXPR:
+            case STATIC_CAST_EXPR:
+            case IMPLICIT_CONV_EXPR:
+            case ADDR_EXPR:
+            case INDIRECT_REF:
+            case PAREN_EXPR:
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case INIT_EXPR:
+            case MODIFY_EXPR:
+                node = TREE_OPERAND(node, 1);
+                continue;
+            case PARM_DECL:
+                return node;
+            default:
+                return NULL_TREE;
+        }
+    }
+    return NULL_TREE;
+}
+
+// The state of the walk of the returns of one function for the reference
+// helpers.
+struct ParameterReturns {
+    tree parameter = NULL_TREE;
+    bool saw_return = false;
+};
+
+tree walk_parameter_returns(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE || TYPE_P(node) || TREE_CODE(node) == LAMBDA_EXPR) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) != RETURN_EXPR) {
+        return NULL_TREE;
+    }
+    auto& walk = *static_cast<ParameterReturns*>(data);
+    tree parameter = returned_parameter(TREE_OPERAND(node, 0));
+    walk.parameter = !walk.saw_return || walk.parameter == parameter ? parameter : NULL_TREE;
+    walk.saw_return = true;
+    return NULL_TREE;
+}
+
+// The index of the parameter by an lvalue reference that each return of
+// FUNCTION gives back, or kNoParameter (the reference helpers).  The function
+// gives an lvalue reference.  An instance of a template whose body the front
+// end has not made yet reads the body of its pattern, whose parameters stand
+// in the same places.  A function with no body in the unit, or with a body
+// later in the unit, gives kNoParameter, and the walk then reads no move
+// through it.  Complexity: linear in the body, one time for each function.
+int forwarded_parameter_index(tree function) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return kNoParameter;
+    }
+    tree result = TREE_TYPE(TREE_TYPE(function));
+    if (result == NULL_TREE || !TYPE_REF_P(result) || TYPE_REF_IS_RVALUE(result)) {
+        return kNoParameter;
+    }
+    auto cached = forwarded_parameters.find(static_cast<int>(DECL_UID(function)));
+    if (cached != forwarded_parameters.end()) {
+        return cached->second;
+    }
+    tree source = function;
+    if (DECL_SAVED_TREE(function) == NULL_TREE && DECL_LANG_SPECIFIC(function) != nullptr
+        && DECL_TEMPLATE_INFO(function) != NULL_TREE && DECL_TEMPLATE_INSTANTIATION(function)) {
+        tree pattern = DECL_TEMPLATE_RESULT(most_general_template(DECL_TI_TEMPLATE(function)));
+        source = pattern != NULL_TREE && TREE_CODE(pattern) == FUNCTION_DECL ? pattern : function;
+    }
+    tree body = DECL_SAVED_TREE(source);
+    if (body == NULL_TREE) {
+        return kNoParameter;
+    }
+    ParameterReturns walk;
+    cp_walk_tree_without_duplicates(&body, walk_parameter_returns, &walk);
+    int index = kNoParameter;
+    tree returned = walk.saw_return ? walk.parameter : NULL_TREE;
+    if (returned != NULL_TREE && TYPE_REF_P(TREE_TYPE(returned)) && !TYPE_REF_IS_RVALUE(TREE_TYPE(returned))) {
+        int position = 0;
+        for (tree parameter = DECL_ARGUMENTS(source); parameter != NULL_TREE;
+             parameter = DECL_CHAIN(parameter), ++position) {
+            if (parameter == returned) {
+                index = position;
+                break;
+            }
+        }
+    }
+    forwarded_parameters.emplace(static_cast<int>(DECL_UID(function)), index);
+    return index;
+}
+
 // The type of the function that a call names, or null.
 tree function_type_of(tree call, tree callee) {
     if (callee != NULL_TREE) {
@@ -2338,6 +2452,13 @@ private:
                     if (is_std_move_cast(callee) && call_expr_nargs(node) >= 1) {
                         saw_rvalue = saw_rvalue || DECL_NAME(callee) != linear_names.forward;
                         node = CALL_EXPR_ARG(node, 0);
+                        continue;
+                    }
+                    // A reference helper names the object of one argument
+                    // (the reference helpers).
+                    int const forwarded = forwarded_parameter_index(callee);
+                    if (forwarded != kNoParameter && forwarded < call_expr_nargs(node)) {
+                        node = CALL_EXPR_ARG(node, forwarded);
                         continue;
                     }
                     if (saw_rvalue && is_accessor(callee) && call_expr_nargs(node) >= 1) {
