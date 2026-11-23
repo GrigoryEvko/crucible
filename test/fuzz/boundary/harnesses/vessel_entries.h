@@ -18,7 +18,8 @@
 //   name       register_schema_name_typed refuses exactly a hash of 0, an empty
 //              name, a name past SCHEMA_NAME_MAX and a name with a zero, a
 //              refusal leaves the tables as they were, and each other code
-//              agrees with the lookup of the tables
+//              agrees with the lookup of the tables and with the reserved
+//              hashes of the generated table
 //
 // The input is a list of commands.  Its first byte picks the state of the
 // schema tables at the start of the input: both empty, and the global table
@@ -296,7 +297,10 @@ inline void check_name(InputCursor& cursor, NameForm form) noexcept {
             CRUCIBLE_FUZZ_CLAIM(kName, names_held() <= held_before + 1);
             break;
         case CRUCIBLE_SCHEMA_NAME_COLLISION:
-            CRUCIBLE_FUZZ_CLAIM(kName, held.is_some() && !is_held_name);
+            // A different name of a held hash, or of the hash of an operator
+            // of the generated table (the reserved hashes).
+            CRUCIBLE_FUZZ_CLAIM(kName, (held.is_some() && !is_held_name)
+                                           || vessel::is_reserved_for_other_name(SchemaHash{hash}, name));
             CRUCIBLE_FUZZ_CLAIM(kName, names_held() == held_before);
             break;
         case CRUCIBLE_SCHEMA_NAME_FULL:
