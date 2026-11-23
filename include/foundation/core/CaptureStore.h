@@ -135,10 +135,9 @@ enum class Annotated : unsigned char {
 // Ref<T, Brand> of the brand of a frame.
 [[nodiscard]] consteval bool is_frame_borrow_(std::meta::info type) {
     if (!std::meta::has_template_arguments(type)) return false;
-    std::size_t const count = std::meta::template_arguments_of(type).size();
-    for (std::size_t index = 0; index < count; ++index) {
-        std::meta::info const argument = std::meta::template_arguments_of(type)[index];
-        if (std::meta::is_type(argument) && is_scope_brand_(std::meta::dealias(argument))) return true;
+    std::vector<std::meta::info> const arguments = std::meta::template_arguments_of(type);
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        if (std::meta::is_type(arguments[index]) && is_scope_brand_(std::meta::dealias(arguments[index]))) return true;
     }
     return false;
 }

@@ -285,17 +285,17 @@ namespace detail {
 // such a type argument at each depth, such as the brand of a view of a walk
 // of rows.  A value of a scope brand does not outlive the call of its mint
 // (foundation/Brand.h).  The call operator of a closure is public, so the
-// current access context reads it.  The loops index the lists, as the other
-// reads of reflection in this layer do.  Complexity: quadratic in the members
-// of the type, because each step reads the list again, and a closure with no
-// capture has few members.  Linear in the type arguments at each depth.  An
-// incomplete class, such as a tag that a unit only declares, is no brand.
+// current access context reads it.  Each loop reads its list one time and
+// indexes that copy, so a class with many template arguments, such as an
+// index sequence of 256 positions, costs one read of the list and not one
+// read for each position.  Complexity: linear in the members of the type,
+// and linear in the type arguments at each depth.  An incomplete class, such
+// as a tag that a unit only declares, is no brand.
 [[nodiscard]] consteval bool names_scope_brand(std::meta::info type) {
     if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
-    std::meta::access_context const context = std::meta::access_context::current();
-    std::size_t const member_count = std::meta::members_of(type, context).size();
-    for (std::size_t index = 0; index < member_count; ++index) {
-        std::meta::info const member = std::meta::members_of(type, context)[index];
+    std::vector<std::meta::info> const members = std::meta::members_of(type, std::meta::access_context::current());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
         if (std::meta::is_function(member) && std::meta::is_operator_function(member)
             && std::meta::operator_of(member) == std::meta::operators::op_parentheses
             && !std::meta::annotations_of_with_type(member, ^^::foundation::brand::scope_brand).empty()) {
@@ -303,10 +303,10 @@ namespace detail {
         }
     }
     if (!std::meta::has_template_arguments(type)) return false;
-    std::size_t const argument_count = std::meta::template_arguments_of(type).size();
-    for (std::size_t index = 0; index < argument_count; ++index) {
-        std::meta::info const argument = std::meta::template_arguments_of(type)[index];
-        if (std::meta::is_type(argument) && names_scope_brand(std::meta::dealias(argument))) return true;
+    std::vector<std::meta::info> const arguments = std::meta::template_arguments_of(type);
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        if (std::meta::is_type(arguments[index]) && names_scope_brand(std::meta::dealias(arguments[index])))
+            return true;
     }
     return false;
 }

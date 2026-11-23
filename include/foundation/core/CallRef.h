@@ -93,10 +93,10 @@ namespace detail {
 // (scope brand).  A scope brand is the closure type of CRUCIBLE_SCOPE_BRAND,
 // which has no name.  The walk keeps a list of the types that it must read,
 // and a list of each class that it read, so it reads each class one time.
-// The loops index the lists of reflection, as names_scope_brand does.
-// Complexity: the template arguments of each class, and the members and
-// bases of each local class, times the scan of the list of read classes, at
-// compile time only.
+// Each loop reads its list of reflection one time and indexes that copy, as
+// names_scope_brand does.  Complexity: the template arguments of each class,
+// and the members and bases of each local class, times the scan of the list
+// of read classes, at compile time only.
 [[nodiscard]] consteval bool holds_scope_brand_(std::meta::info type) {
     std::meta::access_context const context = std::meta::access_context::unchecked();
     std::vector<std::meta::info> pending{type};
@@ -112,19 +112,18 @@ namespace detail {
         read.push_back(bare);
         if (!std::meta::has_identifier(bare) && names_scope_brand(bare)) return true;
         if (std::meta::has_template_arguments(bare)) {
-            std::size_t const argument_count = std::meta::template_arguments_of(bare).size();
-            for (std::size_t index = 0; index < argument_count; ++index) {
-                std::meta::info const argument = std::meta::template_arguments_of(bare)[index];
-                if (std::meta::is_type(argument)) pending.push_back(argument);
+            std::vector<std::meta::info> const arguments = std::meta::template_arguments_of(bare);
+            for (std::size_t index = 0; index < arguments.size(); ++index) {
+                if (std::meta::is_type(arguments[index])) pending.push_back(arguments[index]);
             }
         }
         if (!std::meta::is_complete_type(bare) || !is_local_class_(bare)) continue;
-        std::size_t const member_count = std::meta::nonstatic_data_members_of(bare, context).size();
-        for (std::size_t index = 0; index < member_count; ++index)
-            pending.push_back(std::meta::type_of(std::meta::nonstatic_data_members_of(bare, context)[index]));
-        std::size_t const base_count = std::meta::bases_of(bare, context).size();
-        for (std::size_t index = 0; index < base_count; ++index)
-            pending.push_back(std::meta::type_of(std::meta::bases_of(bare, context)[index]));
+        std::vector<std::meta::info> const members = std::meta::nonstatic_data_members_of(bare, context);
+        for (std::size_t index = 0; index < members.size(); ++index)
+            pending.push_back(std::meta::type_of(members[index]));
+        std::vector<std::meta::info> const bases = std::meta::bases_of(bare, context);
+        for (std::size_t index = 0; index < bases.size(); ++index)
+            pending.push_back(std::meta::type_of(bases[index]));
     }
     return false;
 }
